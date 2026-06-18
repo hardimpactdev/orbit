@@ -51,6 +51,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - The baseline records node-exporter tool/process intent on the target metrics
   node and every active workload node, installs the node-exporter host binary
   when missing, and starts the node-exporter systemd process units.
+- The baseline records protected `orbit-metrics-node-exporter` firewall rules
+  for Ubuntu node-exporter hosts, allowing the metrics node private WireGuard
+  access to TCP port 9100. Debian metrics nodes may still run node-exporter, but
+  do not receive firewall rule intent because firewall rules are Ubuntu-owned.
 - The baseline records the `metrics.orbit` proxy route.
 
 ## Renderer Contracts
@@ -75,7 +79,9 @@ the metrics runtime units it owns. Later role assignment readiness belongs to
 and node-exporter host binary drift belong to
 [`doctor --family=tool`](../../../3_tool/tool-doctor.md). Metrics process
 runtime drift belongs to
-[`doctor --family=process`](../../../7_process/process-doctor.md), and
+[`doctor --family=process`](../../../7_process/process-doctor.md), firewall
+drift for private node-exporter scrape access belongs to
+[`doctor --family=firewall_rule`](../../../4_firewall/firewall-doctor.md), and
 `metrics.orbit` route drift belongs to
 [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md).
 
@@ -85,4 +91,4 @@ runtime drift belongs to
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/Metrics/MetricsCommandsTest.php` | CLI request path, required node validation, and JSON forwarding. |
 | `apps/gateway/tests/Feature/Http/Api/NodeRoleAddControllerTest.php` | Existing metrics assignments reconverge when the metrics enable request carries the reconvergence flag. |
-| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent and runtime convergence for Docker, process definitions, Prometheus scrape config, Grafana datasource config, credentials, node-exporter, and `metrics.orbit`. |
+| `apps/gateway/tests/Feature/Services/Nodes/Roles/MetricsRoleBaselineTest.php` | Role baseline intent and runtime convergence for Docker, process definitions, Prometheus scrape config, Grafana datasource config, credentials, node-exporter, node-exporter firewall intent, and `metrics.orbit`. |

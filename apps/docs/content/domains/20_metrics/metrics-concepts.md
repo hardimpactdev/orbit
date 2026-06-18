@@ -30,13 +30,17 @@ Use these terms when reading or writing metrics command contracts.
 - **node-exporter host process:** Systemd process definition named
   `node-exporter`; depends on the `node-exporter` host binary tool and exposes
   host resource metrics for the metrics node and active workload nodes.
+- **Exporter firewall rule:** Protected firewall intent named
+  `orbit-metrics-node-exporter`; allows the metrics node to scrape TCP port
+  9100 on Ubuntu exporter hosts through the private WireGuard interface.
 - **Grafana admin credentials:** Generated `admin` username and password for
   Grafana, returned by `metrics:credentials` and rotated by
   `metrics:credentials --reset`.
 - **Metrics-domain boundaries:** Metrics commands coordinate node role
   assignment, Docker capability, node-exporter host binary capability, process
-  definitions, immediate runtime convergence, and private proxy route intent.
-  Later drift and repair remain with `node`, `tool`, `process`, and `proxy`.
+  definitions, firewall intent for private node-exporter scrape access,
+  immediate runtime convergence, and private proxy route intent. Later drift and
+  repair remain with `node`, `tool`, `process`, `firewall_rule`, and `proxy`.
 - **Metrics-domain exclusions:** Metrics does not own app metrics, container
   metrics, database metrics, alerting, public Grafana ingress, dynamic scrape
   discovery, or a `metrics` doctor state family.

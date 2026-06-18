@@ -6,6 +6,7 @@ use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
+use Illuminate\Contracts\Process\ProcessResult;
 
 it('installs OpenCode Server and creates an accessible OpenCode-backed workspace on Incus', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -147,17 +148,15 @@ it('installs OpenCode Server and creates an accessible OpenCode-backed workspace
 
         expect($workspaceHost)->toBeString();
 
-        $workspaceHttpStatus = $topology->ssh(
-            'dev',
-            sprintf(
-                'curl --resolve %s -k -sS -o /tmp/orbit-opencode-workspace-response.txt -w "%%{http_code}" %s',
-                escapeshellarg("{$workspaceHost}:443:{$state['app_node_host']}"),
-                escapeshellarg($workspaceUrl),
-            ),
-            timeoutSeconds: 120,
+        $workspaceHttpStatus = opencodeWorkspaceWaitForHttpsRoute(
+            $topology,
+            $workspaceHost,
+            $state['app_node_host'],
+            $workspaceUrl,
         );
 
-        expect(trim($workspaceHttpStatus->output()))->toBe('200');
+        expect($workspaceHttpStatus->successful())->toBeTrue($workspaceHttpStatus->output().$workspaceHttpStatus->errorOutput())
+            ->and(trim($workspaceHttpStatus->output()))->toBe('200');
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($appPath), timeoutSeconds: 60, allowFailure: true);
         $topology->cleanup();
@@ -356,6 +355,34 @@ SH,
         ),
         timeoutSeconds: 120,
     );
+}
+
+function opencodeWorkspaceWaitForHttpsRoute(E2ETopologyHarness $topology, string $workspaceHost, string $appNodeHost, string $workspaceUrl): ProcessResult
+{
+    $resolve = escapeshellarg("{$workspaceHost}:443:{$appNodeHost}");
+    $url = escapeshellarg($workspaceUrl);
+    $script = sprintf(
+        <<<'SH'
+for attempt in $(seq 1 30); do
+    status="$(curl --resolve %s -k -sS -o /tmp/orbit-opencode-workspace-response.txt -w "%%{http_code}" %s 2>/tmp/orbit-opencode-workspace-curl.err || true)"
+
+    if [ "$status" = "200" ]; then
+        printf '200'
+        exit 0
+    fi
+
+    sleep 2
+done
+
+curl --resolve %s -k -sS -o /tmp/orbit-opencode-workspace-response.txt -w "%%{http_code}" %s
+SH,
+        $resolve,
+        $url,
+        $resolve,
+        $url,
+    );
+
+    return $topology->ssh('dev', $script, timeoutSeconds: 90, allowFailure: true);
 }
 
 /**

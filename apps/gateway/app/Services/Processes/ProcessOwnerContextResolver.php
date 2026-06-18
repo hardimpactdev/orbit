@@ -249,11 +249,7 @@ final readonly class ProcessOwnerContextResolver
             return null;
         }
 
-        $candidateNodeIds = array_values(array_unique([
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-dev'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('app-prod'),
-            ...$this->nodeRoleAssignments->activeNodeIdsForRole('agent'),
-        ]));
+        $candidateNodeIds = $this->nodeRoleAssignments->activeRoleBearingNodeIds();
 
         return Node::query()
             ->whereIn('id', $candidateNodeIds)

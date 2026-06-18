@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 use App\Console\Commands\E2EDevTopologyCommand;
 use App\E2E\Support\E2EDevTopologyManifestStore;
+use App\E2E\Support\E2EInstance;
 use App\E2E\Support\E2ETopologyKind;
+use App\E2E\Support\E2ETopologyLease;
+use App\E2E\Support\SshKeyPair;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Artisan;
 
 beforeEach(function (): void {
@@ -326,6 +330,34 @@ it('overlays app-dev and app-prod onto the canonical dev and prod roles', functi
     expect($captured)->toBe(['operator', 'gateway', 'dev', 'prod']);
 });
 
+it('maps retained manifests to every topology instance even when checkout roles are limited', function (): void {
+    $command = app(E2EDevTopologyCommand::class);
+    $lease = new E2ETopologyLease(
+        kind: E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        operator: devTopologyFakeInstance('orbit-e2e-dev-abc123-operator'),
+        gateway: devTopologyFakeInstance('orbit-e2e-dev-abc123-gateway'),
+        dev: devTopologyFakeInstance('orbit-e2e-dev-abc123-dev'),
+        prod: devTopologyFakeInstance('orbit-e2e-dev-abc123-prod'),
+        sshKeyPair: new SshKeyPair('/dev/null', '/dev/null'),
+        rebuild: fn (): array => ['instances' => [], 'snapshotReset' => null],
+        agent: devTopologyFakeInstance('orbit-e2e-dev-abc123-agent'),
+    );
+
+    $roles = (fn (E2ETopologyKind $kind): array => $this->manifestRolesForKind($kind))
+        ->call($command, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
+    $instances = (fn (E2ETopologyLease $lease, array $roles): array => $this->instanceNamesByRole($lease, $roles))
+        ->call($command, $lease, $roles);
+
+    expect($roles)->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
+        ->and($instances)->toBe([
+            'operator' => 'orbit-e2e-dev-abc123-operator',
+            'gateway' => 'orbit-e2e-dev-abc123-gateway',
+            'dev' => 'orbit-e2e-dev-abc123-dev',
+            'prod' => 'orbit-e2e-dev-abc123-prod',
+            'agent' => 'orbit-e2e-dev-abc123-agent',
+        ]);
+});
+
 it('renders ssh and performance handles for app roles in json output', function (): void {
     devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology(
         timings: [
@@ -367,6 +399,46 @@ it('renders ssh and performance handles for app roles in json output', function 
         ->and($byRole['dev']['note'])->toContain('orbit app:new')
         ->and($byRole['dev']['note'])->toContain('time_total');
 });
+
+function devTopologyFakeInstance(string $name): E2EInstance
+{
+    return new class($name) implements E2EInstance
+    {
+        public function __construct(
+            private string $name,
+        ) {}
+
+        public function name(): string
+        {
+            return $this->name;
+        }
+
+        public function exec(string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            throw new RuntimeException('Not used by retained topology command tests.');
+        }
+
+        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
+        {
+            throw new RuntimeException('Not used by retained topology command tests.');
+        }
+
+        public function authorizeSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function copyFileToInstance(string $sourcePath, string $targetPath): void {}
+
+        public function waitForAgent(): void {}
+
+        public function waitForIpv4(): string
+        {
+            return '127.0.0.1';
+        }
+
+        public function waitForSsh(string $user, SshKeyPair $keyPair): void {}
+
+        public function delete(): void {}
+    };
+}
 
 it('renders ssh and performance handles in human output', function (): void {
     devTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakePreparedTopology());

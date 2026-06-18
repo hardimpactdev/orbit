@@ -4,16 +4,21 @@ declare(strict_types=1);
 
 namespace App\Services\Nodes\Roles\RoleBaselines;
 
+use App\Data\Doctor\DriftEntry;
+use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
+use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Metrics\MetricsServiceRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\FleetUpdateTargetSelector;
@@ -40,6 +45,10 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private const string GrafanaDatasourcePath = '/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml';
 
+    private const string NodeExporterFirewallRuleName = 'orbit-metrics-node-exporter';
+
+    private const string NodeExporterFirewallOwner = 'metrics';
+
     public function __construct(
         private readonly ProcessServiceDefinitionRegistry $serviceDefinitions,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
@@ -49,6 +58,8 @@ class MetricsRoleBaseline implements RoleBaseline
         private readonly ?ToolsProbe $toolsProbe = null,
         private readonly ?ToolsFixer $toolsFixer = null,
         private readonly ?ProcessRuntimeDriverRegistry $processRuntimeDrivers = null,
+        private readonly ?FirewallRuleFixer $firewallRuleFixer = null,
+        private readonly ?DnsmasqReconciler $dnsmasqReconciler = null,
     ) {}
 
     public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -62,6 +73,7 @@ class MetricsRoleBaseline implements RoleBaseline
         $this->convergeProcessRuntime($node, $this->convergePrometheus($node));
         $this->convergeProcessRuntime($node, $this->convergeGrafana($node));
         $this->convergeProcessRuntime($node, $this->convergeProcess($node, 'node-exporter', ProcessRuntime::Systemd));
+        $this->convergeNodeExporterFirewall($node, $node);
         $this->convergeWorkloadNodeExporters($node);
         $this->syncMetricsRoute($node);
     }
@@ -82,6 +94,8 @@ class MetricsRoleBaseline implements RoleBaseline
 
         if (! $this->hasOtherActiveMetricsRole($assignment)) {
             $this->removeWorkloadNodeExporters($node);
+        } else {
+            $this->removeNodeExporterFirewallRules([$node->id]);
         }
 
         ProxyRoute::query()
@@ -89,6 +103,8 @@ class MetricsRoleBaseline implements RoleBaseline
             ->where('owner_type', 'router')
             ->whereJsonContains('config->owner_name', 'grafana')
             ->delete();
+
+        $this->dnsmasqReconciler()->reconcile();
     }
 
     protected function toolCatalog(): ToolCatalog
@@ -197,6 +213,61 @@ class MetricsRoleBaseline implements RoleBaseline
             $this->convergeTool($workloadNode, 'node-exporter');
             $this->convergeToolRuntime($workloadNode, 'node-exporter');
             $this->convergeProcessRuntime($workloadNode, $this->convergeProcess($workloadNode, 'node-exporter', ProcessRuntime::Systemd));
+            $this->convergeNodeExporterFirewall($workloadNode, $metricsNode);
+        }
+    }
+
+    private function convergeNodeExporterFirewall(Node $exporterNode, Node $metricsNode): void
+    {
+        if (! $this->nodeCanOwnNodeExporterFirewall($exporterNode, $metricsNode)) {
+            return;
+        }
+
+        $source = $this->nodeAddress($metricsNode);
+
+        if (filter_var($source, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            return;
+        }
+
+        $reason = "Allow metrics node {$metricsNode->name} to scrape node-exporter.";
+        $shape = [
+            'direction' => 'incoming',
+            'action' => 'allow',
+            'source' => $source,
+            'destination' => null,
+            'port' => '9100',
+            'protocol' => 'tcp',
+        ];
+
+        $rule = FirewallRule::query()->updateOrCreate(
+            [
+                'node_id' => $exporterNode->id,
+                'name' => self::NodeExporterFirewallRuleName,
+            ],
+            [
+                ...$shape,
+                'reason' => $reason,
+                'source_hash' => $this->firewallSourceHash($exporterNode->name, self::NodeExporterFirewallRuleName, $shape, $reason),
+                'address_family' => 'v4',
+                'interface' => 'wireguard',
+                'owner' => self::NodeExporterFirewallOwner,
+                'protected' => true,
+            ],
+        );
+
+        try {
+            $this->firewallRuleFixer()->fix($rule->refresh(), new DriftEntry(
+                family: 'firewall_rule',
+                key: 'firewall_rule.rule_missing',
+                kind: DriftKind::Missing,
+                summary: "Apply metrics node-exporter firewall rule {$rule->name}.",
+            ));
+        } catch (\Throwable $exception) {
+            if ($this->shouldDeferFirewallBackendMutation()) {
+                return;
+            }
+
+            throw new RuntimeException("Metrics node-exporter firewall rule '{$rule->name}' could not be applied.", previous: $exception);
         }
     }
 
@@ -432,6 +503,33 @@ SH,
             ->whereIn('node_id', $nodeIds)
             ->where('name', 'node-exporter')
             ->delete();
+
+        $this->removeNodeExporterFirewallRules($nodeIds);
+    }
+
+    /**
+     * @param  list<int>  $nodeIds
+     */
+    private function removeNodeExporterFirewallRules(array $nodeIds): void
+    {
+        $rules = FirewallRule::query()
+            ->with('node')
+            ->whereIn('node_id', $nodeIds)
+            ->where('name', self::NodeExporterFirewallRuleName)
+            ->where('owner', self::NodeExporterFirewallOwner)
+            ->get();
+
+        foreach ($rules as $rule) {
+            try {
+                $this->firewallRuleFixer()->remove($rule);
+            } catch (\Throwable $exception) {
+                if (! $this->shouldDeferFirewallBackendMutation()) {
+                    throw new RuntimeException("Metrics node-exporter firewall rule '{$rule->name}' could not be removed.", previous: $exception);
+                }
+            }
+
+            $rule->delete();
+        }
     }
 
     private function hasOtherActiveMetricsRole(NodeRoleAssignment $assignment): bool
@@ -458,11 +556,34 @@ SH,
         return $this->processRuntimeDrivers ?? app(ProcessRuntimeDriverRegistry::class);
     }
 
+    private function firewallRuleFixer(): FirewallRuleFixer
+    {
+        return $this->firewallRuleFixer ?? app(FirewallRuleFixer::class);
+    }
+
     private function nodeSupportsHostExporter(Node $node): bool
     {
         $platform = $this->normalizedPlatform($node);
 
         return $platform !== null && in_array($platform, self::HostExporterPlatforms, true);
+    }
+
+    private function nodeCanOwnNodeExporterFirewall(Node $exporterNode, Node $metricsNode): bool
+    {
+        if (! $exporterNode->isActive() || ! $this->isUbuntuPlatform($exporterNode)) {
+            return false;
+        }
+
+        if ($exporterNode->is($metricsNode)) {
+            return true;
+        }
+
+        return $this->nodeRoleAssignments()->nodeCanOwnFirewallRules($exporterNode);
+    }
+
+    private function isUbuntuPlatform(Node $node): bool
+    {
+        return $node->platform === 'ubuntu' || str_starts_with((string) $node->platform, 'ubuntu_');
     }
 
     private function normalizedPlatform(Node $node): ?string
@@ -521,6 +642,8 @@ SH,
                 'source_hash' => $sourceHash,
             ],
         );
+
+        $this->dnsmasqReconciler()->reconcile();
     }
 
     /**
@@ -555,6 +678,63 @@ SH,
         ksort($spec);
 
         return substr(hash('sha256', json_encode($spec, JSON_THROW_ON_ERROR)), 0, 16);
+    }
+
+    private function dnsmasqReconciler(): DnsmasqReconciler
+    {
+        return $this->dnsmasqReconciler ?? app(DnsmasqReconciler::class);
+    }
+
+    /**
+     * @param  array<string, string|null>  $shape
+     */
+    private function firewallSourceHash(string $node, string $name, array $shape, ?string $reason): string
+    {
+        return hash('sha256', json_encode([
+            'node' => $node,
+            'name' => $name,
+            'shape' => $shape,
+            'reason' => $reason,
+        ], JSON_THROW_ON_ERROR));
+    }
+
+    private function shouldDeferFirewallBackendMutation(): bool
+    {
+        $provider = $this->e2eEnvironmentValue('ORBIT_E2E_TOPOLOGY_PROVIDER');
+
+        if ($provider !== null) {
+            return strtolower(trim($provider)) === 'docker';
+        }
+
+        $providers = $this->e2eEnvironmentValue('ORBIT_E2E_TOPOLOGY_PROVIDERS');
+
+        if ($providers === null) {
+            return false;
+        }
+
+        return in_array('docker', array_map(
+            static fn (string $value): string => strtolower(trim($value)),
+            explode(',', $providers),
+        ), true);
+    }
+
+    private function e2eEnvironmentValue(string $key): ?string
+    {
+        $processValue = getenv($key);
+
+        if (is_string($processValue) && $processValue !== '') {
+            return $processValue;
+        }
+
+        $serverValue = $_SERVER[$key] ?? null;
+
+        if (is_string($serverValue) && $serverValue !== '') {
+            return $serverValue;
+        }
+
+        $envValue = $_ENV[$key] ?? null;
+
+        return is_string($envValue) && $envValue !== '' ? $envValue : null;
     }
 
     private function nodeRoleAssignments(): NodeRoleAssignments

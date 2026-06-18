@@ -649,10 +649,11 @@ it('seeds appdev docker topology with database role and Redis process for downst
 
     expect($setup)
         ->toContain('NodeRoleName::Database')
+        ->toContain('ProcessServiceDefinitionRegistry::class')
         ->toContain('Process::query()->updateOrCreate')
         ->toContain('redis')
-        ->toContain('definition')
-        ->toContain('7.2');
+        ->toContain('ProcessRuntime::Docker')
+        ->toContain('$definition->runtimeConfig');
 });
 
 it('provisions Docker downstream role source images in parallel after the gateway baseline', function (): void {

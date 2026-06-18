@@ -85,14 +85,18 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         return sprintf(
             <<<'SH'
 set -euo pipefail
+needs_create=1
 if docker service inspect %1$s >/dev/null 2>&1; then
   current_spec_hash="$(docker service inspect --format '{{ index .Spec.Labels "orbit.process.spec_hash" }}' %1$s 2>/dev/null || true)"
   if [ "$current_spec_hash" = %2$s ]; then
-    exit 0
+    needs_create=0
+  else
+    docker service rm %1$s
   fi
-  docker service rm %1$s
 fi
-%3$s
+if [ "$needs_create" = 1 ]; then
+  %3$s
+fi
 SH,
             escapeshellarg($runtimeUnit),
             escapeshellarg($specHash),

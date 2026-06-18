@@ -7,11 +7,13 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use App\Enums\Processes\ProcessRuntime;
+use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -20,8 +22,10 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     $this->metricsShell = new MetricsRoleBaselineRecordingShell;
+    $this->metricsDnsmasqReconciler = new MetricsRoleBaselineRecordingDnsmasqReconciler;
 
     app()->instance(RemoteShell::class, $this->metricsShell);
+    app()->instance(DnsmasqReconciler::class, $this->metricsDnsmasqReconciler);
 });
 
 it('converges metrics role intent as process-owned Prometheus Grafana and host exporter services', function (): void {
@@ -119,7 +123,8 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             'upstreams' => [
                 ['scheme' => 'http', 'host' => 'host.docker.internal', 'port' => 3000],
             ],
-        ]);
+        ])
+        ->and($this->metricsDnsmasqReconciler->reconciles)->toBe(1);
 });
 
 it('rewrites stale metrics service route intent when the metrics baseline reconverges', function (): void {
@@ -305,6 +310,35 @@ it('converges node exporter process intent for active workload nodes', function 
 
     expect($exporterToolNodes)->toBe($exporterNodes);
 
+    $firewallRuleNodes = FirewallRule::query()
+        ->where('name', 'orbit-metrics-node-exporter')
+        ->where('owner', 'metrics')
+        ->with('node')
+        ->get()
+        ->mapWithKeys(fn (FirewallRule $rule): array => [$rule->node->name => $rule])
+        ->sortKeys();
+
+    expect($firewallRuleNodes->keys()->all())->toBe([
+        'agent-1',
+        'app-1',
+        'database-1',
+        'ingress-1',
+        'main-1',
+    ]);
+
+    $firewallRuleNodes->each(function (FirewallRule $rule) use ($gateway): void {
+        expect($rule->direction)->toBe('incoming')
+            ->and($rule->action)->toBe('allow')
+            ->and($rule->source)->toBe($gateway->wireguard_address)
+            ->and($rule->destination)->toBeNull()
+            ->and($rule->port)->toBe('9100')
+            ->and($rule->protocol)->toBe('tcp')
+            ->and($rule->address_family)->toBe('v4')
+            ->and($rule->interface)->toBe('wireguard')
+            ->and($rule->protected)->toBeTrue()
+            ->and($rule->reason)->toBe('Allow metrics node gateway to scrape node-exporter.');
+    });
+
     $prometheus = Process::query()
         ->where('node_id', $gateway->id)
         ->where('name', 'prometheus')
@@ -322,7 +356,9 @@ it('converges node exporter process intent for active workload nodes', function 
         ->not->toContain('10.6.0.16:9100');
 
     expect($this->metricsShell->scriptsForNode('agent-1'))
-        ->toContain("sudo systemctl start 'node-exporter.service'");
+        ->toContain("sudo systemctl start 'node-exporter.service'")
+        ->toContain('sudo ufw allow in on $(ip -o link show type wireguard')
+        ->toContain("from '10.6.0.1' to 0.0.0.0/0 port '9100' proto 'tcp'");
 });
 
 it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
@@ -352,7 +388,12 @@ it('removes workload node exporter process intent when the last metrics role is 
         ->and(NodeTool::query()
             ->where('name', 'node-exporter')
             ->whereIn('node_id', [$gateway->id, $workload->id])
-            ->count())->toBe(2);
+            ->count())->toBe(2)
+        ->and(FirewallRule::query()
+            ->where('name', 'orbit-metrics-node-exporter')
+            ->where('node_id', $workload->id)
+            ->where('owner', 'metrics')
+            ->count())->toBe(1);
 
     app(NodeRoleBaselineConverger::class)->remove($gateway, $assignment, purgeData: false);
 
@@ -363,6 +404,11 @@ it('removes workload node exporter process intent when the last metrics role is 
         ->and(NodeTool::query()
             ->where('name', 'node-exporter')
             ->whereIn('node_id', [$gateway->id, $workload->id])
+            ->exists())->toBeFalse()
+        ->and(FirewallRule::query()
+            ->where('name', 'orbit-metrics-node-exporter')
+            ->where('node_id', $workload->id)
+            ->where('owner', 'metrics')
             ->exists())->toBeFalse();
 });
 
@@ -398,5 +444,17 @@ final class MetricsRoleBaselineRecordingShell implements RemoteShell
             fn (array $run): string => $run['script'],
             array_filter($this->runs, fn (array $run): bool => $run['node'] === $node),
         ));
+    }
+}
+
+final class MetricsRoleBaselineRecordingDnsmasqReconciler extends DnsmasqReconciler
+{
+    public int $reconciles = 0;
+
+    public function __construct() {}
+
+    public function reconcile(): void
+    {
+        $this->reconciles++;
     }
 }

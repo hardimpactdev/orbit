@@ -311,6 +311,14 @@ class NodeRoleAssignments
      */
     public function activeMetricsExporterNodeIds(): array
     {
+        return $this->activeRoleBearingNodeIds();
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function activeRoleBearingNodeIds(): array
+    {
         return Node::query()
             ->where('status', NodeStatus::Active->value)
             ->whereIn('id', $this->activeAssignedNodeIds())

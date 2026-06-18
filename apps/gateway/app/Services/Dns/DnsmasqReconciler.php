@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Dns;
 
-use App\Models\Node;
 use App\Services\Vpn\VpnDnsSwarmManager;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -22,7 +21,7 @@ class DnsmasqReconciler
         File::ensureDirectoryExists($this->rootPath);
 
         $confPath = $this->rootPath.'/dnsmasq.conf';
-        $expected = $this->configBuilder->build(Node::query()->get());
+        $expected = $this->configBuilder->buildGatewayState();
         $current = File::exists($confPath) ? File::get($confPath) : null;
 
         if ($current === $expected) {

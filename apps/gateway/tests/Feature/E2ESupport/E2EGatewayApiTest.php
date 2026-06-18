@@ -182,6 +182,8 @@ it('repairs docker gateway config root write permissions before seeding operator
     $seedPosition = strpos($setup, 'grep -Ev');
     $sudoPosition = strpos($setup, 'sudo -iu orbit');
     $migratePosition = strpos($setup, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
+    $innerRepairPosition = strpos($setup, 'sudo chown -R orbit:orbit');
+    $tinkerPosition = strpos($setup, 'php apps/gateway/artisan tinker --execute');
     $lastRepairPosition = strrpos($setup, 'chmod -R u+rwX,g+rwX');
 
     expect($repairPosition)->toBeInt()
@@ -189,14 +191,19 @@ it('repairs docker gateway config root write permissions before seeding operator
         ->and($seedPosition)->toBeInt()
         ->and($sudoPosition)->toBeInt()
         ->and($migratePosition)->toBeInt()
+        ->and($innerRepairPosition)->toBeInt()
+        ->and($tinkerPosition)->toBeInt()
         ->and($lastRepairPosition)->toBeInt()
         ->and($repairPosition)->toBeLessThan($seedPosition)
         ->and($removeTmpPosition)->toBeLessThan($seedPosition)
         ->and($seedPosition)->toBeLessThan($sudoPosition)
         ->and($sudoPosition)->toBeLessThan($migratePosition)
+        ->and($migratePosition)->toBeLessThan($innerRepairPosition)
+        ->and($innerRepairPosition)->toBeLessThan($tinkerPosition)
         ->and($migratePosition)->toBeLessThan($lastRepairPosition)
         ->and($setup)->toContain('install -d -m 775 -o orbit -g orbit')
         ->and($setup)->toContain('chown -R orbit:orbit')
+        ->and($setup)->toContain('sudo chown -R orbit:orbit')
         ->and($setup)->toContain('chmod -R u+rwX,g+rwX')
         ->and($setup)->toContain('/home/orbit/.config/orbit/.env')
         ->and($setup)->toContain('/home/orbit/.config/orbit/.env.tmp')

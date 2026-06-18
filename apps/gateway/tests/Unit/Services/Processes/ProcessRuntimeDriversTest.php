@@ -275,6 +275,35 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->not->toContain("--restart-condition 'always'");
 });
 
+it('does not exit early from docker swarm apply scripts when the service spec already matches', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'metrics-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'prometheus',
+        'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
+        'restart_policy' => ProcessRestartPolicy::Always,
+        'runtime' => ProcessRuntime::DockerSwarm,
+        'runtime_config' => [
+            'image' => 'prom/prometheus:v3.12.0',
+            'labels' => [
+                'orbit.process.spec_hash' => 'abc123',
+            ],
+            'service_name' => 'orbit-prometheus',
+        ],
+    ]);
+
+    $driver = app(DockerSwarmProcessRuntimeDriver::class);
+
+    expect($driver->apply($node, $app, $process))->toBeTrue()
+        ->and($shell->scripts[0])
+        ->not->toContain('exit 0');
+});
+
 it('uses the image entrypoint for docker swarm service processes configured for it', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),

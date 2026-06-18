@@ -183,6 +183,10 @@ final readonly class DoctorReportRunner
             $categories[] = 'process';
         }
 
+        if ($node->isActive() && $this->isUbuntuPlatform($node) && $this->nodeRoleAssignments->nodeCanOwnFirewallRules($node)) {
+            $categories[] = 'firewall_rule';
+        }
+
         return array_values(array_unique($categories));
     }
 

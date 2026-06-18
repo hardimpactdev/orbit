@@ -23,13 +23,17 @@ touch.
   node. node-exporter is recorded as a host binary tool and host systemd
   process definition on the metrics node and every active workload node
   selected by the fleet update target selector.
+- The metrics role records protected firewall intent for each Ubuntu
+  node-exporter host so Prometheus can scrape TCP port 9100 through the private
+  WireGuard interface. It never opens node-exporter on a public interface.
 - The first metrics slice tracks host resources only. It does not claim
   container-specific, app-specific, database-specific, or dynamic scrape
   discovery coverage.
 - Metrics can run on a dedicated node or be co-located with any non-agent role,
   including a Debian gateway/router node.
-- The metrics command family coordinates node, tool, process, and proxy state.
-  It does not own an independent `doctor --family=metrics` state family.
+- The metrics command family coordinates node, tool, process, firewall rule,
+  and proxy state. It does not own an independent `doctor --family=metrics`
+  state family.
 
 ## Permissions
 
@@ -61,6 +65,11 @@ The metrics command domain coordinates state owned by other families:
   runtime drift on the metrics node and workload nodes. Metrics runtime drift is
   verified and repaired through
   `doctor --family=process`.
+- [`firewall_rule`](../4_firewall/firewall.md) owns private node-exporter scrape
+  access on Ubuntu exporter hosts. The metrics baseline records protected
+  `orbit-metrics-node-exporter` rules allowing the metrics node to reach TCP
+  port 9100 on the WireGuard interface, and firewall drift is verified and
+  repaired through `doctor --family=firewall_rule`.
 - [`proxy`](../8_proxy/README.md) owns the router-owned `metrics.orbit` route
   and derived proxy/TLS artifacts. Route drift is verified and repaired through
   `doctor --family=proxy`.

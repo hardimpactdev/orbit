@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Node;
+use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -30,6 +31,59 @@ it('emits one address line per node with both tld and wireguard address', functi
         ->and($config)->toContain('local=/gateway/')
         ->and($config)->toContain('address=/app-1.test/10.6.0.3')
         ->and($config)->toContain('local=/app-1.test/');
+});
+
+it('emits router-owned orbit service routes as an orbit tld mapping to the router wireguard address', function (): void {
+    $router = new Node(['name' => 'gateway', 'tld' => null, 'wireguard_address' => '10.6.0.2']);
+    $route = new ProxyRoute([
+        'domain' => 'metrics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+    $route->setRelation('node', $router);
+
+    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$route]));
+
+    expect($config)->toContain('address=/orbit/10.6.0.2')
+        ->and($config)->toContain('local=/orbit/')
+        ->and($config)->not->toContain('address=/metrics.orbit/');
+});
+
+it('emits a single private orbit tld mapping for multiple router-owned orbit service routes', function (): void {
+    $router = new Node(['name' => 'gateway', 'tld' => null, 'wireguard_address' => '10.6.0.2']);
+    $metricsRoute = new ProxyRoute([
+        'domain' => 'metrics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+    $metricsRoute->setRelation('node', $router);
+    $analyticsRoute = new ProxyRoute([
+        'domain' => 'analytics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+    $analyticsRoute->setRelation('node', $router);
+
+    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$metricsRoute, $analyticsRoute]));
+
+    expect($config)->toContain('address=/orbit/10.6.0.2')
+        ->and(substr_count($config, 'address=/orbit/10.6.0.2'))->toBe(1);
+});
+
+it('resolves router-owned orbit service routes without requiring a loaded node relation', function (): void {
+    $router = new Node(['name' => 'gateway', 'tld' => null, 'wireguard_address' => '10.6.0.2']);
+    $router->id = 42;
+    $route = new ProxyRoute([
+        'node_id' => 42,
+        'domain' => 'metrics.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+
+    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$route]));
+
+    expect($config)->toContain('address=/orbit/10.6.0.2')
+        ->and($config)->toContain('local=/orbit/');
 });
 
 it('skips nodes missing tld', function (): void {

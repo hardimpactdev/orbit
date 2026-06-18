@@ -87,6 +87,7 @@ PHP;
             'export ORBIT_CONFIG_ROOT='.escapeshellarg(self::OrbitConfigRoot),
             self::appKeyCommand(self::gatewayStatePath('.env')),
             'php apps/gateway/artisan migrate --force --no-interaction --ansi',
+            self::sudoRepairGatewayConfigRootOwnershipCommand(),
             self::tinkerEvalCommand($php),
         ];
         E2ECommand::exec(
