@@ -8,7 +8,14 @@ use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Nodes\Roles\RoleBaselines\AgentRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\AppDevelopmentRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\AppProductionRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\DatabaseRoleBaseline;
+use App\Services\Nodes\Roles\RoleBaselines\GatewayRoleBaseline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -71,6 +78,50 @@ describe('NodeRoleAddController', function (): void {
                 'target' => '/etc/prometheus/prometheus.yml',
                 'read_only' => true,
             ]);
+    });
+
+    it('returns an error envelope when role convergence fails', function (): void {
+        [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
+
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
+        {
+            public function __construct()
+            {
+                parent::__construct(
+                    app(GatewayRoleBaseline::class),
+                    app(AppDevelopmentRoleBaseline::class),
+                    app(AppProductionRoleBaseline::class),
+                    app(DatabaseRoleBaseline::class),
+                    app(AgentRoleBaseline::class),
+                );
+            }
+
+            public function converge(Node $node, NodeRoleAssignment $assignment): void
+            {
+                throw new RuntimeException('Docker is missing.');
+            }
+        });
+
+        $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
+            'role' => 'database',
+            'settings' => [],
+        ]);
+
+        $response->assertStatus(500)
+            ->assertJsonPath('error.code', 'node_role.convergence_failed')
+            ->assertJsonPath('error.message', "Role 'database' convergence failed.")
+            ->assertJsonPath('error.meta.role', 'database')
+            ->assertJsonPath('error.meta.status', 'error')
+            ->assertJsonPath('error.meta.last_error', 'Docker is missing.')
+            ->assertJsonMissingPath('success');
+
+        $assignment = NodeRoleAssignment::query()
+            ->where('node_id', $target->id)
+            ->where('role', 'database')
+            ->sole();
+
+        expect($assignment->status)->toBe(NodeRoleStatus::Error)
+            ->and($assignment->last_error)->toBe('Docker is missing.');
     });
 
     it('rejects reconverge existing for non metrics roles', function (): void {

@@ -73,6 +73,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Node required | `--node` is absent. | `error.code=validation_failed`, `error.meta.field=node` |
 | Role conflict | The target node has a conflicting role assignment. | `error.code=validation_failed` with gateway role-conflict metadata |
+| Convergence failed | The metrics role assignment was stored or refreshed but baseline convergence ended in `error`. | `error.code=node_role.convergence_failed`, `error.meta.last_error=<recorded convergence error>` |
 
 ## Doctor Relationship
 

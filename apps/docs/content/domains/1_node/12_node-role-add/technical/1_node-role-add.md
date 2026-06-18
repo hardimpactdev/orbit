@@ -64,7 +64,10 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 ### Convergence Rules
 
 - Adding a role triggers convergence through `NodeRoleAssignmentService`.
-- Success returns the stored assignment payload after convergence.
+- Success returns the stored assignment payload after convergence completes with
+  `status=active`.
+- If synchronous convergence leaves the assignment in `error`, return a failure
+  envelope and leave the errored assignment for `doctor --family=node --restore`.
 
 ### Caller Path Rules
 
@@ -91,6 +94,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Failure | Condition | Outcome |
 | --- | --- | --- |
 | Node not found | No active node matches `node`. | Failure |
+| Convergence failed | Role assignment was stored but baseline convergence ended in `error`. | `error.code=node_role.convergence_failed`, `error.meta.last_error=<recorded convergence error>` |
 
 ## Doctor Relationship
 

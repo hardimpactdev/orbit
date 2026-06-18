@@ -40,7 +40,9 @@ orbit doctor --family=process --node=gateway --fix --restore
 `metrics:enable` converges the runtime units it owns immediately. Use
 `process:*` for deliberate lifecycle actions and process doctor for later
 runtime drift. Use tool doctor when the `node_exporter` binary or Docker
-substrate is missing.
+substrate is missing. If synchronous convergence leaves the role assignment in
+`error`, the command fails with `node_role.convergence_failed` and the errored
+assignment remains repairable through node doctor.
 
 V1 tracks host resources only. It does not include alerting, app metrics,
 container metrics, database metrics, public Grafana ingress, or per-user

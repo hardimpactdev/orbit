@@ -22,7 +22,8 @@ it('provisions the Grafana node resources dashboard when metrics is enabled on a
         $data = e2eJsonCommandData($payload);
 
         expect($enable->successful())->toBeTrue($enable->output().$enable->errorOutput())
-            ->and($data['assignment']['role'])->toBe('metrics');
+            ->and($data['assignment']['role'])->toBe('metrics')
+            ->and($data['assignment']['status'])->toBe('active');
 
         $artifacts = $topology->ssh(
             'gateway',

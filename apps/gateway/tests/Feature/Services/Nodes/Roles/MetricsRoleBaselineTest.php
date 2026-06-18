@@ -155,8 +155,8 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ->toContain('/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml')
         ->toContain('/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml')
         ->toContain('/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json')
-        ->toContain("docker service update --replicas 1 'orbit-prometheus'")
-        ->toContain("docker service update --replicas 1 'orbit-grafana'")
+        ->toContain("docker service update --detach --replicas 1 'orbit-prometheus'")
+        ->toContain("docker service update --detach --replicas 1 'orbit-grafana'")
         ->toContain("sudo systemctl start 'node-exporter.service'");
 
     $route = ProxyRoute::query()->where('domain', 'metrics.orbit')->sole();

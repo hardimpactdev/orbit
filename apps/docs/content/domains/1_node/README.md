@@ -260,9 +260,9 @@ These rules apply to all node commands and define the invariants the family enfo
   `analytics` stores `postgres_node_id` and `clickhouse_node_id`, which point
   at active `database` role nodes whose managed PostgreSQL and ClickHouse
   service processes back Plausible CE.
-- Role add and role update converge synchronously. Failed convergence leaves the
-  role assignment in `error` for a later `doctor --family=node --restore`
-  retry.
+- Role add and role update converge synchronously. Failed convergence makes the
+  mutating command fail, while leaving the role assignment in `error` for a
+  later `doctor --family=node --restore` retry.
 - Role removal blocks while dependents managed by Orbit still require the role.
   `--force` removes Orbit-owned dependents and configuration but preserves data.
   `--force --purge-data` deletes role-owned data only where an explicit command

@@ -26,6 +26,7 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
     public function apply(Node $node, App $app, Process $process, ?Workspace $workspace = null, ?string $preApplyScript = null): bool
     {
         $script = collect([
+            'set -euo pipefail',
             $preApplyScript,
             $this->renderer->installScript($node, $app, $process, $workspace),
         ])->filter(fn (?string $script): bool => $script !== null && trim($script) !== '')->implode(PHP_EOL);

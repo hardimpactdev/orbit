@@ -156,6 +156,31 @@ it('applies node owned docker service processes from runtime config', function (
     );
 });
 
+it('fails docker process apply when the pre apply script fails', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'database-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'redis',
+        'command' => 'redis-server',
+        'runtime' => ProcessRuntime::Docker,
+        'runtime_config' => [
+            'image' => 'redis:7.2',
+        ],
+    ]);
+
+    $driver = app(DockerProcessRuntimeDriver::class);
+
+    expect($driver->apply($node, $app, $process, preApplyScript: 'false'))->toBeFalse()
+        ->and($shell->scripts)->toBe([
+            "set -euo pipefail\nfalse",
+        ]);
+});
+
 it('runs docker swarm process lifecycle through the docker swarm runtime driver', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -188,9 +213,9 @@ it('runs docker swarm process lifecycle through the docker swarm runtime driver'
         ->toBe("docker service logs --tail 25 --follow 'orbit-redis-7' 2>&1");
 
     expect($shell->scripts)->toBe([
-        "docker service update --replicas 1 'orbit-redis-7'",
-        "docker service update --replicas 0 'orbit-redis-7'",
-        "docker service update --force 'orbit-redis-7'",
+        "docker service update --detach --replicas 1 'orbit-redis-7'",
+        "docker service update --detach --replicas 0 'orbit-redis-7'",
+        "docker service update --detach --force 'orbit-redis-7'",
     ]);
 });
 
@@ -273,6 +298,31 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
 
     expect($shell->scripts[0])
         ->not->toContain("--restart-condition 'always'");
+});
+
+it('runs docker swarm pre apply scripts under strict mode before service apply', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'metrics-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'prometheus',
+        'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
+        'restart_policy' => ProcessRestartPolicy::Always,
+        'runtime' => ProcessRuntime::DockerSwarm,
+        'runtime_config' => [
+            'image' => 'prom/prometheus:v3.12.0',
+            'service_name' => 'orbit-prometheus',
+        ],
+    ]);
+
+    $driver = app(DockerSwarmProcessRuntimeDriver::class);
+
+    expect($driver->apply($node, $app, $process, preApplyScript: 'sudo install -d /var/lib/orbit'))->toBeTrue()
+        ->and($shell->scripts[0])->toStartWith("set -euo pipefail\nsudo install -d /var/lib/orbit\nneeds_create=1");
 });
 
 it('does not exit early from docker swarm apply scripts when the service spec already matches', function (): void {
@@ -395,6 +445,7 @@ it('applies, removes, and cleans up systemd process runtime units through the sy
         ->and($driver->remove($node, $runtimeUnit))->toBeTrue();
 
     expect($shell->scripts[0])
+        ->toStartWith("set -euo pipefail\nsudo mkdir -p /etc/systemd/system")
         ->toContain("sudo tee '/etc/systemd/system/opencode-server.service' >/dev/null")
         ->toContain('sudo systemctl daemon-reload')
         ->toContain("sudo systemctl enable 'opencode-server.service' >/dev/null")

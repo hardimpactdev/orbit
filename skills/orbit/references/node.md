@@ -165,7 +165,9 @@ orbit node role:remove <node> <role> [--force] [--purge-data] [--json]
 
 Only hosted roles that the product marks assignable can be mutated here.
 Gateway-coupled `gateway`, `vpn`, and `router` are bootstrap-owned. `agent` is
-only selectable during `node:new`.
+only selectable during `node:new`. If synchronous role convergence leaves the
+assignment in `error`, role add fails and the assignment remains repairable
+through node doctor.
 
 ## `orbit node:agent-ide [name] [adapter]`
 

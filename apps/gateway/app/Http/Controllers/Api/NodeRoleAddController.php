@@ -100,6 +100,19 @@ final class NodeRoleAddController implements Loggable
             return $this->error('validation_failed', $exception->getMessage(), ['role' => $request->role()], 422);
         }
 
+        if ($assignment->status === NodeRoleStatus::Error) {
+            return $this->error(
+                'node_role.convergence_failed',
+                "Role '{$request->role()}' convergence failed.",
+                [
+                    'role' => $request->role(),
+                    'status' => $assignment->status->value,
+                    'last_error' => $assignment->last_error,
+                ],
+                500,
+            );
+        }
+
         return response()->json([
             'success' => [
                 'data' => [

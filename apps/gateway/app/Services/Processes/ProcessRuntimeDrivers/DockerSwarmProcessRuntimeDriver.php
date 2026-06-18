@@ -31,6 +31,7 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         try {
             $runtimeUnit = $this->runtimeUnitName($app, $process, $workspace);
             $script = collect([
+                'set -euo pipefail',
                 $preApplyScript,
                 $this->applyScript($process, $runtimeUnit),
             ])->filter(fn (?string $script): bool => $script !== null && trim($script) !== '')->implode(PHP_EOL);
@@ -53,17 +54,17 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function start(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service update --replicas 1 '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run($node, 'docker service update --detach --replicas 1 '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
     }
 
     public function stop(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service update --replicas 0 '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run($node, 'docker service update --detach --replicas 0 '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
     }
 
     public function restart(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service update --force '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run($node, 'docker service update --detach --force '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
     }
 
     public function logScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string
@@ -84,7 +85,6 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
         return sprintf(
             <<<'SH'
-set -euo pipefail
 needs_create=1
 if docker service inspect %1$s >/dev/null 2>&1; then
   current_spec_hash="$(docker service inspect --format '{{ index .Spec.Labels "orbit.process.spec_hash" }}' %1$s 2>/dev/null || true)"
