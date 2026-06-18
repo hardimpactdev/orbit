@@ -137,7 +137,7 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderOperationError($terminal['payload']);
         }
 
-        $progress->finishSuccess($this->output);
+        $progress->finishSuccess($this->output, $this->terminalTargetVersion($terminal['payload']));
 
         return self::SUCCESS;
     }
@@ -207,6 +207,15 @@ final class UpdateAllCommand extends GatewayCommand
         $meta = $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [];
 
         return $this->renderFailure($code, $message, $meta);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function terminalTargetVersion(array $payload): ?string
+    {
+        return $this->frameString($this->frameData($payload), 'target_version')
+            ?? $this->frameString($payload, 'target_version');
     }
 
     /**

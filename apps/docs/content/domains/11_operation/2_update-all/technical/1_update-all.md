@@ -55,12 +55,16 @@ execution details live in the renderer contracts.
 - `update:all` runs a `Checking for updates` step first, resolving the latest
   available release version from the configured release source.
 - It then runs a `Checking fleet versions` step that probes each selected
-  installation's current orbit version and counts how many are behind the latest
-  release. When every node is already on the latest release, the run completes
-  after the two check steps with no update side effects.
+  installation's current orbit version (read-only `orbit --version` over
+  `RemoteShell`) and counts how many are behind the latest release.
 - A node already on the latest release is skipped (it renders
-  `Skipped: already up to date`) and runs no download. Only outdated nodes are
-  updated.
+  `Skipped: already up to date`) and runs no download. Only outdated nodes run
+  the update script. When every node is already current the gateway phase still
+  re-converges idempotently to the same digest and each node is skipped
+  individually; a whole-run short-circuit that skips the phases entirely is a
+  deferred optimization recorded in the decisions ledger.
+- Each updated node runs a post-update `orbit doctor` verify; the issue count is
+  surfaced in the node result and is non-fatal.
 - The gateway is the fleet version ceiling: it updates first, before any
   workload node is updated, so no node is ever taken past the gateway's version.
 

@@ -74,11 +74,16 @@ it('renders update-all target progress in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Tree, 'payload' => ['title' => 'Update all', 'steps' => [['label' => 'Update gateway']]]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => '2 outdated nodes found']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating orbit-gateway service']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Gateway services updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating workload node agent']],
-        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Workload node agent updated']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Updating workload node agent']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated (2 issues)']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast skipped: already up to date']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Verifying fleet update']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update verified']],
         ['type' => ProgressEventType::Complete, 'payload' => [
@@ -94,10 +99,12 @@ it('renders update-all target progress in human mode', function (): void {
         ->and($output)->toContain('Updating Orbit nodes')
         ->and($output)->toMatch('/local\s+Updating CLI/')
         ->and($output)->toMatch('/local\s+Done/')
+        ->and($output)->toMatch('/Checking for updates\s+latest version is 1.2.3/')
+        ->and($output)->toMatch('/Checking fleet versions\s+2 outdated nodes found/')
         ->and($output)->toMatch('/gateway\s+Updating gateway service/')
-        ->and($output)->toMatch('/agent\s+Updating node CLI/')
-        ->and($output)->toMatch('/agent\s+Done/')
-        ->and($output)->toContain('Successfully updated 3 nodes')
+        ->and($output)->toMatch('/agent\s+Done \(2 issues\)/')
+        ->and($output)->toMatch('/beast\s+Skipped: already up to date/')
+        ->and($output)->toContain('All nodes are running on version 1.2.3')
         ->and($output)->not->toContain('[tree]')
         ->and($output)->not->toContain('[step]')
         ->and($output)->not->toContain('status: succeeded')

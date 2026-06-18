@@ -12,17 +12,23 @@ use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use JsonException;
 use RuntimeException;
 use Throwable;
 
 final readonly class WorkloadNodeUpdater
 {
+    private const string DoctorCommand = 'orbit doctor --self --json';
+
+    private const int DoctorTimeoutSeconds = 120;
+
     public function __construct(
         private NodeRoleAssignments $roles,
         private RemoteShell $remoteShell,
         private UpdateLeaseManager $leases,
         private OperationRunRecorder $operationRuns,
         private FleetUpdateTargetSelector $targets,
+        private FleetVersionProbe $fleetVersions,
     ) {}
 
     /**
@@ -73,8 +79,21 @@ final readonly class WorkloadNodeUpdater
             ];
         }
 
-        if (($result['status'] ?? null) === 'completed') {
-            $this->operationRuns->appendStep($operationRun->id, $this->eventKey($node), 'done', "Workload node {$node->name} updated");
+        $status = $result['status'] ?? null;
+
+        if ($status === 'skipped') {
+            $this->operationRuns->appendStep($operationRun->id, $this->eventKey($node), 'done', "Workload node {$node->name} skipped: already up to date");
+
+            return $result;
+        }
+
+        if ($status === 'completed') {
+            $this->operationRuns->appendStep(
+                $operationRun->id,
+                $this->eventKey($node),
+                'done',
+                $this->updatedMessage($node, $result['doctor_issues'] ?? null),
+            );
 
             return $result;
         }
@@ -94,6 +113,13 @@ final readonly class WorkloadNodeUpdater
      */
     private function runRemoteUpdate(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
+        if ($this->fleetVersions->isCurrent($this->fleetVersions->nodeVersion($node, $operationRun), $plan->target_version)) {
+            return [
+                ...$this->targetPayload($node),
+                'status' => 'skipped',
+            ];
+        }
+
         $script = $this->remoteUpdateScript($plan, $node);
         $result = $this->remoteShell->run($node, $script, [
             'cwd' => $node->orbit_path,
@@ -115,7 +141,65 @@ final readonly class WorkloadNodeUpdater
         return [
             ...$this->targetPayload($node),
             'status' => 'completed',
+            'doctor_issues' => $this->runNodeDoctor($operationRun, $node),
         ];
+    }
+
+    /**
+     * Run `orbit doctor` in verify mode for the node as the final per-node step.
+     * The verify is non-fatal: a non-zero issue count is surfaced per node but
+     * does not by itself fail the node's update, and any failure to resolve the
+     * count yields `null` (unknown).
+     */
+    private function runNodeDoctor(OperationRun $operationRun, Node $node): ?int
+    {
+        $result = $this->remoteShell->run($node, self::DoctorCommand, [
+            'cwd' => $node->orbit_path,
+            'timeout' => self::DoctorTimeoutSeconds,
+            'metadata' => [
+                'ORBIT_OPERATION_ID' => $operationRun->id,
+            ],
+        ]);
+
+        return $this->doctorIssuesFromOutput($result->output());
+    }
+
+    private function doctorIssuesFromOutput(string $output): ?int
+    {
+        $output = trim($output);
+
+        if ($output === '') {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $envelope = $decoded['success'] ?? $decoded['error'] ?? null;
+        $data = is_array($envelope) ? ($envelope['data'] ?? null) : null;
+        $doctor = is_array($data) ? ($data['doctor'] ?? null) : null;
+        $summary = is_array($doctor) ? ($doctor['summary'] ?? null) : null;
+        $issues = is_array($summary) ? ($summary['issues'] ?? null) : null;
+
+        return is_int($issues) ? $issues : null;
+    }
+
+    private function updatedMessage(Node $node, ?int $issues): string
+    {
+        if ($issues === null || $issues === 0) {
+            return "Workload node {$node->name} updated";
+        }
+
+        $noun = $issues === 1 ? 'issue' : 'issues';
+
+        return "Workload node {$node->name} updated ({$issues} {$noun})";
     }
 
     private function remoteUpdateScript(OperationUpdatePlan $plan, Node $node): string

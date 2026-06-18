@@ -44,12 +44,17 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
 
     app(UpdateRunner::class)->run($run->id);
 
+    $updateScripts = array_values(array_filter(
+        $remoteShell->calls,
+        fn (array $call): bool => $call['script'] !== 'orbit --version' && ! str_contains($call['script'], 'doctor'),
+    ));
+
     expect($gatewayUpdater->gatewayImages)->toBe([
         'ghcr.io/hardimpactdev/orbit-gateway:2.1.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
     ])
         ->and($gatewayUpdater->manifestSnapshots)->toBe([$manifest])
-        ->and($remoteShell->calls)->toHaveCount(1)
-        ->and($remoteShell->calls[0]['script'])
+        ->and($updateScripts)->toHaveCount(1)
+        ->and($updateScripts[0]['script'])
         ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64')
         ->toContain(str_repeat('e', 64))
         ->toContain("docker pull 'caddy:2.9-alpine'");
