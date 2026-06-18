@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Support\Cli;
+namespace Orbit\Core\Progress;
 
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -11,6 +11,10 @@ use Symfony\Component\Console\Output\OutputInterface;
  * box-drawing characters, cursor hide/show, and line update formula.
  *
  * Callers are responsible for content (titles, labels, result text).
+ *
+ * Shared by the gateway control-plane CLI and the host Orbit CLI so both
+ * render the same progress-tree contract documented in
+ * apps/docs/content/ux/commands/progress/progress-tree.md.
  */
 final readonly class SpinnerTreeRenderer
 {

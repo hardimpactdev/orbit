@@ -384,6 +384,38 @@ describe('node write commands', function (): void {
             ->and($decoded['success']['data']['action'])->toBe('removed');
     });
 
+    it('renders node:remove human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'app-1',
+            'action' => 'removed',
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Removing node 'app-1'")
+            ->and($output)->toContain('Remove node record')
+            ->and($output)->toContain("Node 'app-1' removed")
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders node:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('authorization_failed', "This node is not authorized for 'node:remove' on 'app-1'."), 403);
+
+        [$exitCode, $output] = runCommand($this, 'node:remove', [
+            'name' => 'app-1',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain('not authorized')
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('posts node:grant payloads to the typed gateway API', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'consuming_node' => 'agent-1',

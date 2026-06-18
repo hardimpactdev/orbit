@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Cli;
 
+use Orbit\Core\Progress\LifecycleSummaryRenderer;
+use Orbit\Core\Progress\SpinnerTreeRenderer;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Support\Cli;
+namespace Orbit\Core\Progress;
 
 /**
  * Formats per-item result lines for spinner-tree output.
