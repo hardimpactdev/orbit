@@ -338,9 +338,13 @@ final class UpdateAllHumanProgressRenderer
         }
 
         match ($message) {
+            // Operation-level and fleet-lease events precede the check steps and
+            // the gateway phase, so they must not create a gateway row — that
+            // would render a spurious gateway entry in the all-current
+            // short-circuit. The gateway row starts at the gateway phase below.
             'Update plan persisted',
-            'Update runner started' => $this->setGatewayStage($output, self::STAGE_STARTING_OPERATION),
-            'Fleet update lease acquired',
+            'Update runner started',
+            'Fleet update lease acquired' => null,
             'Gateway and scheduler update leases acquired' => $this->setGatewayStage($output, self::STAGE_ACQUIRING_LEASES),
             'Updating gateway services',
             'Updating gateway service',

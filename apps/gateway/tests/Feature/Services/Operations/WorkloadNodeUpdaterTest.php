@@ -129,6 +129,8 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toContain('download_cli')
         ->toContain('install_cli')
         ->toContain('verify_cli')
+        ->toContain('reconcile_launcher')
+        ->toContain('command -v orbit')
         ->toContain('sudo -n ln -sfn')
         ->toContain('pull_required_images')
         ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64')

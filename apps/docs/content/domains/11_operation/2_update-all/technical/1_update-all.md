@@ -173,6 +173,13 @@ The expected target shape per calling context:
   install root. When the host launcher parent directory is not writable, the
   remote update may use non-interactive `sudo -n` only to relink the system
   launcher to that user-owned binary; it must fail rather than prompt.
+- The remote update reconciles a shadowing launcher: when `orbit` resolves
+  through the node's `PATH` to a launcher other than the relinked one (a legacy
+  install earlier in `PATH`) that points at a different binary, it relinks that
+  launcher to the new binary too, so the node's `orbit` — and the fleet version
+  probe that reads `orbit --version` over `RemoteShell` — sees the new version
+  instead of a stale shadowed one. Best-effort: an unwritable legacy path is
+  left as-is rather than failing the node update.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts and required role image metadata.
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
