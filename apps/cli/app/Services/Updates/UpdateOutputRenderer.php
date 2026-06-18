@@ -79,13 +79,11 @@ final readonly class UpdateOutputRenderer
 
     private function renderHuman(OutputInterface $output, LocalUpdateResult $result): int
     {
+        // The success/failure headline is rendered by the progress tree footer;
+        // this method only adds detail the tree cannot carry.
         if ($result->status === LocalUpdateResult::STATUS_COMPLETED) {
-            $output->writeln('Updated local Orbit checkout.');
-
             return 0;
         }
-
-        $output->writeln('Failed to update local Orbit checkout.');
 
         if ($result->status === LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE) {
             $output->writeln('Local Orbit checkout cannot be updated.');

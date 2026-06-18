@@ -4,27 +4,46 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
+use Orbit\Core\Progress\StreamedStepTree;
 use Symfony\Component\Console\Output\OutputInterface;
 
+/**
+ * Drives the animated update progress tree via the shared {@see StreamedStepTree}.
+ *
+ * The active step animates (cyan ○/◉) while the binary download runs, then
+ * settles to a green ● on success or a red ● with the failure output. The footer
+ * shows the concrete result line.
+ */
 final class UpdateHumanProgressRenderer
 {
+    /** @var array<string, array{label: string, doneLabel: string}> */
     private const array STEP_LABELS = [
-        'pull_source' => 'Download binary',
+        'pull_source' => ['label' => 'Download binary', 'doneLabel' => 'Downloaded binary'],
     ];
+
+    private const string SUCCESS_FOOTER = 'Updated local Orbit checkout.';
+
+    private const string FAILURE_FOOTER = 'Failed to update local Orbit checkout.';
+
+    private ?StreamedStepTree $tree = null;
 
     public function begin(OutputInterface $output): void
     {
-        $output->writeln('');
-        $output->writeln('┌  Updating Orbit');
+        $this->tree = new StreamedStepTree($output);
+        $this->tree->tree('Updating Orbit', array_map(
+            static fn (string $key, array $labels): array => [
+                'key' => $key,
+                'label' => $labels['label'],
+                'doneLabel' => $labels['doneLabel'],
+            ],
+            array_keys(self::STEP_LABELS),
+            array_values(self::STEP_LABELS),
+        ));
 
-        foreach (self::STEP_LABELS as $label) {
-            $output->writeln("○  {$label}");
-        }
+        $first = array_key_first(self::STEP_LABELS);
 
-        $output->writeln('└  Working...');
-
-        if ($output->isDecorated()) {
-            $output->write("\e[?25l");
+        if ($first !== null) {
+            $this->tree->step($first, 'start');
         }
     }
 
@@ -33,10 +52,12 @@ final class UpdateHumanProgressRenderer
      */
     public function recordStep(OutputInterface $output, int $index, string $step, array $result): void
     {
-        $label = self::STEP_LABELS[$step];
+        if ($this->tree === null || ! isset(self::STEP_LABELS[$step])) {
+            return;
+        }
 
         if ($result['successful']) {
-            $this->replaceStepLine($output, $index, "●  {$label}  completed");
+            $this->tree->step($step, 'done');
 
             return;
         }
@@ -45,39 +66,11 @@ final class UpdateHumanProgressRenderer
             ? $result['output']
             : "exit code {$result['exit_code']}";
 
-        $this->replaceStepLine($output, $index, "●  {$label}  {$message}");
+        $this->tree->step($step, 'fail', $message);
     }
 
     public function finish(OutputInterface $output, bool $successful): void
     {
-        $this->replaceFooter($output, $successful ? '└  Done' : '└  Failed');
-
-        if ($output->isDecorated()) {
-            $output->write("\e[?25h");
-            $output->writeln('');
-        }
-    }
-
-    private function replaceStepLine(OutputInterface $output, int $index, string $line): void
-    {
-        if (! $output->isDecorated()) {
-            $output->writeln($line);
-
-            return;
-        }
-
-        $up = count(self::STEP_LABELS) - $index + 1;
-        $output->write("\e[{$up}A\e[2K\r{$line}\e[{$up}B\r");
-    }
-
-    private function replaceFooter(OutputInterface $output, string $line): void
-    {
-        if (! $output->isDecorated()) {
-            $output->writeln($line);
-
-            return;
-        }
-
-        $output->write("\e[1A\e[2K\r{$line}\e[1B\r");
+        $this->tree?->finish($successful ? self::SUCCESS_FOOTER : self::FAILURE_FOOTER, $successful);
     }
 }
