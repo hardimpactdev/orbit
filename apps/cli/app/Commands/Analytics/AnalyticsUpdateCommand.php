@@ -40,6 +40,55 @@ final class AnalyticsUpdateCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderAnalyticsBlock($response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderAnalyticsBlock(array $response): int
+    {
+        $data = $this->successData($response);
+        $analytics = is_array($data['analytics'] ?? null) ? $data['analytics'] : [];
+
+        $this->line('analytics:');
+        $this->line('  node: '.$this->stringField($analytics, 'node'));
+
+        $previousVersion = $analytics['previous_version'] ?? null;
+
+        if (is_string($previousVersion) && $previousVersion !== '') {
+            $this->line("  previous_version: {$previousVersion}");
+        }
+
+        $this->line('  version: '.$this->stringField($analytics, 'version'));
+        $this->line('  process: '.$this->stringField($analytics, 'process'));
+        $this->line('  status: '.$this->stringField($analytics, 'status'));
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $analytics
+     */
+    private function stringField(array $analytics, string $key): string
+    {
+        $value = $analytics[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function successData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+
+        return is_array($data) ? $data : [];
     }
 }

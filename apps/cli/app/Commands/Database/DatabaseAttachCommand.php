@@ -40,6 +40,53 @@ final class DatabaseAttachCommand extends DatabaseGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $slug = $this->connectionSlug($response, $connection);
+        [$targetType, $target] = $this->humanTarget();
+        $envPrefix = $this->stringOption('env-prefix') ?? 'DB';
+
+        $this->line("Attached database connection '{$slug}' to {$targetType} '{$target}' with prefix '{$envPrefix}'.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function connectionSlug(array $response, string $fallback): string
+    {
+        $data = $response['success']['data'] ?? null;
+        $connection = is_array($data) ? ($data['connection'] ?? null) : null;
+        $slug = is_array($connection) ? ($connection['slug'] ?? null) : null;
+
+        return is_string($slug) && $slug !== '' ? $slug : $fallback;
+    }
+
+    /**
+     * Resolve the human-facing target type and selector from the validated
+     * scope options. The attach gateway response returns the full connection
+     * rather than the specific target just bound, so the descriptor is derived
+     * from the same inputs that produced the request.
+     *
+     * @return array{string, string}
+     */
+    private function humanTarget(): array
+    {
+        $app = $this->stringOption('app');
+        $instance = $this->stringOption('instance');
+        $workspace = $this->stringOption('workspace');
+
+        if ($app !== null && $instance !== null) {
+            return ['app_instance', "{$app}:{$instance}"];
+        }
+
+        if ($app !== null) {
+            return ['app', $app];
+        }
+
+        return ['workspace', (string) $workspace];
     }
 }

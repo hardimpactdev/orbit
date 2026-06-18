@@ -42,7 +42,19 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $binding = $this->bindingData($response);
+
+        $this->line('binding:');
+        $this->line('  app: '.$this->stringField($binding, 'app'));
+        $this->line('  internal_host: '.$this->stringField($binding, 'internal_host'));
+        $this->renderList('public_hosts', $this->listField($binding, 'public_hosts'));
+        $this->renderList('allowed_origins', $this->listField($binding, 'allowed_origins'));
+
+        return self::SUCCESS;
     }
 
     /**
@@ -57,5 +69,59 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
         }
 
         return array_values(array_filter($hosts, is_string(...)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function bindingData(array $response): array
+    {
+        $binding = $this->successData($response)['binding'] ?? null;
+
+        return is_array($binding) ? $binding : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $binding
+     */
+    private function stringField(array $binding, string $key): string
+    {
+        $value = $binding[$key] ?? null;
+
+        return is_string($value) ? $value : '';
+    }
+
+    /**
+     * @param  array<string, mixed>  $binding
+     * @return list<string>
+     */
+    private function listField(array $binding, string $key): array
+    {
+        $value = $binding[$key] ?? null;
+
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter($value, is_string(...)));
+    }
+
+    /**
+     * @param  list<string>  $items
+     */
+    private function renderList(string $label, array $items): void
+    {
+        if ($items === []) {
+            $this->line("  {$label}: []");
+
+            return;
+        }
+
+        $this->line("  {$label}:");
+
+        foreach ($items as $item) {
+            $this->line('    - '.$item);
+        }
     }
 }

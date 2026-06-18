@@ -211,4 +211,89 @@ describe('deploy write commands', function (): void {
             ->and($decoded['error']['code'])->toBe('authorization_failed')
             ->and($decoded['error']['meta']['missing_permission'])->toBe('deploy:run');
     });
+
+    it('renders a concise human summary for deploy:step-add without dumping the envelope', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'step' => [
+                'id' => 12,
+                'app' => 'docs',
+                'title' => 'Run migrations',
+                'command' => 'php artisan migrate --force',
+                'order' => 20,
+                'timeout_seconds' => 120,
+                'retention' => 5,
+            ],
+        ], ['action' => 'created']));
+
+        [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
+            'app' => 'docs',
+            'deploy_command' => 'php artisan migrate --force',
+            '--title' => 'Run migrations',
+            '--order' => '20',
+            '--retention' => '5',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Added deployment step #12 'Run migrations' to app 'docs'.")
+            ->and($output)->toContain('php artisan migrate --force')
+            ->and($output)->toContain('order 20')
+            ->and($output)->toContain('retention 5')
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('step:')
+            ->and($output)->not->toContain('timeout_seconds:');
+    });
+
+    it('renders retention as unlimited for deploy:step-add when no retention is set', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'step' => [
+                'id' => 13,
+                'app' => 'docs',
+                'title' => 'Clear cache',
+                'command' => 'php artisan cache:clear',
+                'order' => 30,
+                'timeout_seconds' => 600,
+                'retention' => null,
+            ],
+        ], ['action' => 'created']));
+
+        [$exitCode, $output] = runCommand($this, 'deploy:step-add', [
+            'app' => 'docs',
+            'deploy_command' => 'php artisan cache:clear',
+            '--title' => 'Clear cache',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Added deployment step #13 'Clear cache' to app 'docs'.")
+            ->and($output)->toContain('retention unlimited')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders a concise human summary for deploy:step-remove without dumping the envelope', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'step' => [
+                'id' => 12,
+                'app' => 'docs',
+                'title' => 'Run migrations',
+                'command' => 'php artisan migrate --force',
+                'order' => 20,
+            ],
+        ], [
+            'action' => 'removed',
+            'history_preserved' => true,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'deploy:step-remove', [
+            'app' => 'docs',
+            'step' => 'Run migrations',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Removed deployment step #12 'Run migrations' from app 'docs'.")
+            ->and($output)->toContain('order 20')
+            ->and($output)->toContain('history preserved')
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('step:')
+            ->and($output)->not->toContain('history_preserved:');
+    });
 });

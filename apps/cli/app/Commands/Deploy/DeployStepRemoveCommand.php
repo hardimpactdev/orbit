@@ -47,7 +47,68 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderHumanRemoval($response, $app, $step);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderHumanRemoval(array $response, string $app, string $step): int
+    {
+        $stepData = $this->stepData($response);
+
+        $id = $this->stepString($stepData, 'id') ?? $step;
+        $title = $this->stepString($stepData, 'title') ?? $step;
+        $appName = $this->stepString($stepData, 'app') ?? $app;
+        $order = $this->stepString($stepData, 'order');
+
+        $summary = "Removed deployment step #{$id} '{$title}' from app '{$appName}'.";
+
+        if ($order !== null) {
+            $summary .= " Previous order {$order}.";
+        }
+
+        $this->line($summary);
+
+        if ($this->historyPreserved($response)) {
+            $this->line('Deployment history preserved.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function stepData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+        $step = is_array($data) ? ($data['step'] ?? null) : null;
+
+        return is_array($step) ? $step : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $step
+     */
+    private function stepString(array $step, string $key): ?string
+    {
+        $value = $step[$key] ?? null;
+
+        return is_scalar($value) && (string) $value !== '' ? (string) $value : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function historyPreserved(array $response): bool
+    {
+        return ($response['success']['meta']['history_preserved'] ?? null) === true;
     }
 
     private function confirmRemoval(string $app, string $step): ?int

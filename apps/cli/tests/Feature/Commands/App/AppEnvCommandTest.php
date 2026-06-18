@@ -37,6 +37,74 @@ describe('app:env', function (): void {
             ->and($decoded['success']['data']['variable']['key'])->toBe('APP_DEBUG');
     });
 
+    it('renders human set output naming the saved key and instance', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instance' => 'development',
+            'variable' => [
+                'key' => 'APP_DEBUG',
+                'value' => 'false',
+                'secret' => false,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'set',
+            'app' => 'billing',
+            '--instance' => 'development',
+            '--key' => 'APP_DEBUG',
+            '--value' => 'false',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Saved 'APP_DEBUG' for instance 'development'.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('variable:');
+    });
+
+    it('renders human render output as an aligned effective env map', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instance' => 'production',
+            'variables' => [
+                'APP_ENV' => ['value' => 'production', 'secret' => false, 'source' => 'instance'],
+                'DB_PASSWORD' => ['value' => null, 'secret' => true, 'source' => 'database'],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'render',
+            'app' => 'billing',
+            '--instance' => 'production',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('APP_ENV=production')
+            ->and($output)->toContain('DB_PASSWORD=')
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('variables:')
+            ->and($output)->not->toContain('"secret"')
+            ->and($output)->not->toContain('source');
+    });
+
+    it('renders human render output with an empty effective env map', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'app' => 'billing',
+            'instance' => 'production',
+            'variables' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'render',
+            'app' => 'billing',
+            '--instance' => 'production',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe('No environment values found.')
+            ->and($output)->not->toContain('{');
+    });
+
     it('renders app instance env with app selector supplied as --app', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'variables' => [

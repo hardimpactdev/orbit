@@ -74,6 +74,80 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders workspace-setup-step:add human output as prose with step detail', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'added'],
+            'step' => [
+                'id' => 10,
+                'app' => 'docs',
+                'phase' => 'setup',
+                'order' => 2,
+                'command' => 'composer install',
+                'timeout_seconds' => 900,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
+            '--app' => 'docs',
+            '--command' => 'composer install',
+            '--timeout' => '900',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Setup step added for app 'docs'.")
+            ->and($output)->toContain('ID: 10')
+            ->and($output)->toContain('Command: composer install')
+            ->and($output)->toContain('Order: 2')
+            ->and($output)->toContain('Timeout: 900 seconds')
+            ->and($output)->not->toContain('result:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders workspace-teardown-step:add human output with the teardown label', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'added'],
+            'step' => [
+                'id' => 11,
+                'app' => 'docs',
+                'phase' => 'teardown',
+                'order' => 1,
+                'command' => 'dropdb docs',
+                'timeout_seconds' => 600,
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:add', [
+            '--app' => 'docs',
+            '--command' => 'dropdb docs',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Teardown step added for app 'docs'.")
+            ->and($output)->toContain('ID: 11')
+            ->and($output)->toContain('Command: dropdb docs')
+            ->and($output)->toContain('Order: 1')
+            ->and($output)->toContain('Timeout: 600 seconds')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders workspace step add gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'workspace.step_not_found',
+            "Referenced insertion step '99' not found for app 'docs' in phase 'setup'.",
+            ['id' => 99, 'app' => 'docs', 'phase' => 'setup'],
+        ), 404);
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
+            '--app' => 'docs',
+            '--command' => 'composer install',
+            '--before' => '99',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Referenced insertion step '99' not found")
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('rejects conflicting insertion anchors before contacting the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
@@ -216,6 +290,89 @@ describe('workspace step mutation commands', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders workspace-setup-step:remove human output as prose with the renumber hint', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'removed'],
+            'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+        ], [
+            'remaining_step_count' => 2,
+            'new_step_count' => 2,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:remove', [
+            '--step' => '12',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("✓ Removed setup step 12 from app 'docs'.")
+            ->and($output)->toContain('Remaining steps renumbered.')
+            ->and($output)->not->toContain('no workspace setup steps')
+            ->and($output)->not->toContain('result:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders workspace-setup-step:remove empty-list hint when the last step is removed', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'removed'],
+            'step' => ['id' => 12, 'app' => 'docs', 'phase' => 'setup'],
+        ], [
+            'remaining_step_count' => 0,
+            'new_step_count' => 0,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:remove', [
+            '--step' => '12',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("✓ Removed setup step 12 from app 'docs'.")
+            ->and($output)->toContain("App 'docs' now has no workspace setup steps.")
+            ->and($output)->not->toContain('Remaining steps renumbered.');
+    });
+
+    it('renders workspace-teardown-step:remove human output with the teardown label', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'removed'],
+            'step' => ['id' => 14, 'app' => 'docs', 'phase' => 'teardown'],
+        ], [
+            'remaining_step_count' => 1,
+            'new_step_count' => 1,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace-teardown-step:remove', [
+            '--step' => '14',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("✓ Removed teardown step 14 from app 'docs'.")
+            ->and($output)->toContain('Remaining steps renumbered.')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders workspace step removal gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'workspace.step_not_found',
+            "Setup step '99' not found for app 'docs' in phase 'setup'.",
+            ['step_id' => 99, 'app' => 'docs', 'phase' => 'setup'],
+        ), 404);
+
+        [$exitCode, $output] = runCommand($this, 'workspace-setup-step:remove', [
+            '--step' => '99',
+            '--app' => 'docs',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Setup step '99' not found")
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('prompts for setup step ids before confirmation in interactive mode', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'result' => ['action' => 'removed'],
@@ -228,7 +385,7 @@ describe('workspace step mutation commands', function (): void {
         $this->artisan('workspace-setup-step:remove', ['--app' => 'docs'])
             ->expectsQuestion('Step ID', '12')
             ->expectsConfirmation('Remove this workspace step?', 'yes')
-            ->expectsOutputToContain('result')
+            ->expectsOutputToContain("Removed setup step 12 from app 'docs'.")
             ->assertSuccessful();
 
         Http::assertSent(function (Request $request): bool {
@@ -251,7 +408,7 @@ describe('workspace step mutation commands', function (): void {
         $this->artisan('workspace-teardown-step:remove', ['--app' => 'docs'])
             ->expectsQuestion('Step ID', '14')
             ->expectsConfirmation('Remove this workspace step?', 'yes')
-            ->expectsOutputToContain('result')
+            ->expectsOutputToContain("Removed teardown step 14 from app 'docs'.")
             ->assertSuccessful();
 
         Http::assertSent(function (Request $request): bool {

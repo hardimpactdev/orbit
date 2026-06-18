@@ -55,8 +55,16 @@ describe('AppWebSocketCredentialsCommand', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('credentials:')
-            ->and($output)->toContain('websocket.orbit')
-            ->and($output)->toContain('reverb-secret');
+            ->and($output)->toContain('  app: docs')
+            ->and($output)->toContain('  internal_host: websocket.orbit')
+            ->and($output)->toContain('  public_hosts:')
+            ->and($output)->toContain('    - ws.docs.test')
+            ->and($output)->toContain('  allowed_origins:')
+            ->and($output)->toContain('    - https://docs.test')
+            ->and($output)->toContain('  reverb_app_id: docs')
+            ->and($output)->toContain('  reverb_app_key: reverb-key')
+            ->and($output)->toContain('  reverb_app_secret: reverb-secret')
+            ->and($output)->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {

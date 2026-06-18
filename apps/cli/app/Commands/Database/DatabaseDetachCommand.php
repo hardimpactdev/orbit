@@ -40,6 +40,69 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $result = $this->detachResult($response);
+        $slug = $this->resultString($result, 'connection') ?? $connection;
+        $targetType = $this->resultString($result, 'target_type') ?? $this->humanTargetType();
+        $target = $this->resultString($result, 'target') ?? $this->humanTarget();
+        $envPrefix = $this->resultString($result, 'env_prefix') ?? ($this->stringOption('env-prefix') ?? 'DB');
+
+        $this->line("Detached database connection '{$slug}' from {$targetType} '{$target}' prefix '{$envPrefix}'.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function detachResult(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+        $result = is_array($data) ? ($data['result'] ?? null) : null;
+
+        return is_array($result) ? $result : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function resultString(array $result, string $key): ?string
+    {
+        $value = $result[$key] ?? null;
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    private function humanTargetType(): string
+    {
+        if ($this->stringOption('app') !== null && $this->stringOption('instance') !== null) {
+            return 'app_instance';
+        }
+
+        if ($this->stringOption('app') !== null) {
+            return 'app';
+        }
+
+        return 'workspace';
+    }
+
+    private function humanTarget(): string
+    {
+        $app = $this->stringOption('app');
+        $instance = $this->stringOption('instance');
+
+        if ($app !== null && $instance !== null) {
+            return "{$app}:{$instance}";
+        }
+
+        if ($app !== null) {
+            return $app;
+        }
+
+        return (string) $this->stringOption('workspace');
     }
 }

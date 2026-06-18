@@ -49,7 +49,71 @@ final class DeployStepAddCommand extends DeployGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderHumanStep($response, $app);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderHumanStep(array $response, string $app): int
+    {
+        $step = $this->stepData($response);
+
+        $id = $this->stepString($step, 'id');
+        $title = $this->stepString($step, 'title');
+        $appName = $this->stepString($step, 'app') ?? $app;
+
+        $this->line("Added deployment step #{$id} '{$title}' to app '{$appName}'.");
+
+        $command = $this->stepString($step, 'command');
+
+        if ($command !== null) {
+            $this->line("Command: {$command} (order {$this->stepDetail($step, 'order')}, retention {$this->retentionLabel($step)}).");
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function stepData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+        $step = is_array($data) ? ($data['step'] ?? null) : null;
+
+        return is_array($step) ? $step : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $step
+     */
+    private function stepString(array $step, string $key): ?string
+    {
+        $value = $step[$key] ?? null;
+
+        return is_scalar($value) && (string) $value !== '' ? (string) $value : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $step
+     */
+    private function stepDetail(array $step, string $key): string
+    {
+        return $this->stepString($step, $key) ?? 'default';
+    }
+
+    /**
+     * @param  array<string, mixed>  $step
+     */
+    private function retentionLabel(array $step): string
+    {
+        return $this->stepString($step, 'retention') ?? 'unlimited';
     }
 
     private function validateNumericOptions(): ?int

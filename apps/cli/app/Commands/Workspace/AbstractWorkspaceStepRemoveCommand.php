@@ -47,7 +47,48 @@ abstract class AbstractWorkspaceStepRemoveCommand extends WorkspaceGatewayComman
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderStepRemoved($step, $response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderStepRemoved(int $step, array $response): int
+    {
+        $data = $this->successData($response);
+        $removed = is_array($data['step'] ?? null) ? $data['step'] : [];
+        $stepId = is_int($removed['id'] ?? null) ? $removed['id'] : $step;
+        $app = is_string($removed['app'] ?? null) && $removed['app'] !== '' ? $removed['app'] : '';
+
+        $this->line("✓ Removed {$this->phaseLabel()} step {$stepId} from app '{$app}'.");
+
+        if ($this->remainingStepCount($response) === 0) {
+            $this->line("App '{$app}' now has no workspace {$this->phaseLabel()} steps.");
+        } else {
+            $this->line('Remaining steps renumbered.');
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function remainingStepCount(array $response): ?int
+    {
+        $meta = $response['success']['meta'] ?? null;
+
+        if (! is_array($meta)) {
+            return null;
+        }
+
+        $count = $meta['remaining_step_count'] ?? null;
+
+        return is_int($count) ? $count : null;
     }
 
     private function resolveStepId(): ?int

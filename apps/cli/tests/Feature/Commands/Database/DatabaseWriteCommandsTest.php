@@ -395,4 +395,149 @@ describe('database write commands', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('authorization_failed');
     });
+
+    it('renders a concise human success line for database:add without dumping the envelope', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'primary-db',
+                'driver' => 'pgsql',
+                'host' => '10.6.0.20',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:add', [
+            'slug' => 'primary-db',
+            '--driver' => 'pgsql',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Database connection 'primary-db' created.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('connection:')
+            ->and($output)->not->toContain('driver:');
+    });
+
+    it('renders a concise human success line for database:update without dumping the envelope', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'renamed-db',
+                'driver' => 'pgsql',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:update', [
+            'connection' => 'primary-db',
+            '--slug' => 'renamed-db',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Database connection 'renamed-db' updated.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('connection:');
+    });
+
+    it('renders a concise human success line for database:remove without dumping the envelope', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => [
+                'action' => 'removed',
+                'connection' => 'primary-db',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:remove', [
+            'connection' => 'primary-db',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Database connection 'primary-db' removed.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('result:')
+            ->and($output)->not->toContain('action:');
+    });
+
+    it('renders a concise human success line for database:attach with target and prefix', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'primary-db',
+                'targets' => [['type' => 'app', 'name' => 'docs', 'env_prefix' => 'DB']],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:attach', [
+            'connection' => 'primary-db',
+            '--app' => 'docs',
+            '--env-prefix' => 'DB',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Attached database connection 'primary-db' to app 'docs' with prefix 'DB'.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('connection:')
+            ->and($output)->not->toContain('targets:');
+    });
+
+    it('renders an app-instance target for database:attach', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'primary-db',
+                'targets' => [['type' => 'app_instance', 'app' => 'docs', 'instance' => 'production', 'env_prefix' => 'DB']],
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:attach', [
+            'connection' => 'primary-db',
+            '--app' => 'docs',
+            '--instance' => 'production',
+            '--env-prefix' => 'DB',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Attached database connection 'primary-db' to app_instance 'docs:production' with prefix 'DB'.")
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders a concise human success line for database:detach with target and prefix', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => [
+                'action' => 'detached',
+                'connection' => 'primary-db',
+                'target_type' => 'workspace',
+                'target' => 'feature-docs',
+                'env_prefix' => 'REPORTING',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:detach', [
+            'connection' => 'primary-db',
+            '--workspace' => 'feature-docs',
+            '--env-prefix' => 'REPORTING',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Detached database connection 'primary-db' from workspace 'feature-docs' prefix 'REPORTING'.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('result:')
+            ->and($output)->not->toContain('action:');
+    });
+
+    it('does not leak database secrets in the human success line for database:add', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'primary-db',
+                'driver' => 'pgsql',
+                'password' => 'super-secret',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:add', [
+            'slug' => 'primary-db',
+            '--driver' => 'pgsql',
+            '--password' => 'super-secret',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Database connection 'primary-db' created.")
+            ->and($output)->not->toContain('super-secret');
+    });
 });

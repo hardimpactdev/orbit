@@ -42,6 +42,68 @@ final class AppWorkerCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderWorker($action, $selector, $response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderWorker(string $action, string $selector, array $response): int
+    {
+        $data = $this->successData($response);
+        $app = is_string($data['app'] ?? null) && $data['app'] !== '' ? $data['app'] : $selector;
+        $enabled = ($data['worker_enabled'] ?? null) === true;
+        $changed = ($data['changed'] ?? null) === true;
+
+        $this->line($this->statusLine($action, $app, $enabled, $changed));
+
+        foreach ($this->workerConfigPairs($data['worker_config'] ?? null) as $line) {
+            $this->line($line);
+        }
+
+        return self::SUCCESS;
+    }
+
+    private function statusLine(string $action, string $app, bool $enabled, bool $changed): string
+    {
+        if ($action === 'show') {
+            $state = $enabled ? 'enabled' : 'disabled';
+
+            return "App '{$app}' worker mode is {$state}.";
+        }
+
+        $verb = $action === 'enable' ? 'enabled' : 'disabled';
+
+        if ($changed) {
+            return "App '{$app}' worker mode {$verb}.";
+        }
+
+        return "App '{$app}' worker mode already {$verb}.";
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function workerConfigPairs(mixed $config): array
+    {
+        if (! is_array($config)) {
+            return [];
+        }
+
+        $lines = [];
+
+        foreach (['workers', 'max_requests'] as $key) {
+            $value = $config[$key] ?? null;
+
+            if (is_scalar($value) && (string) $value !== '') {
+                $lines[] = "  {$key}: {$value}";
+            }
+        }
+
+        return $lines;
     }
 }

@@ -64,7 +64,39 @@ abstract class AbstractWorkspaceStepAddCommand extends WorkspaceGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderStepAdded($response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderStepAdded(array $response): int
+    {
+        $data = $this->successData($response);
+        $step = is_array($data['step'] ?? null) ? $data['step'] : [];
+        $app = is_string($step['app'] ?? null) && $step['app'] !== '' ? $step['app'] : '';
+
+        $this->line(ucfirst($this->phaseLabel())." step added for app '{$app}'.");
+        $this->line('ID: '.$this->scalarField($step, 'id'));
+        $this->line('Command: '.$this->scalarField($step, 'command'));
+        $this->line('Order: '.$this->scalarField($step, 'order'));
+        $this->line('Timeout: '.$this->scalarField($step, 'timeout_seconds').' seconds');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $step
+     */
+    private function scalarField(array $step, string $key): string
+    {
+        $value = $step[$key] ?? null;
+
+        return is_scalar($value) ? (string) $value : '';
     }
 
     private function resolveStepCommand(): ?string

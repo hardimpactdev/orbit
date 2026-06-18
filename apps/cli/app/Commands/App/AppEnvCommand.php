@@ -145,7 +145,16 @@ final class AppEnvCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $savedKey = $this->savedKey($response, $key);
+        $savedInstance = $this->savedInstance($response, $instance);
+
+        $this->line("Saved '{$savedKey}' for instance '{$savedInstance}'.");
+
+        return self::SUCCESS;
     }
 
     private function renderEnv(string $app, string $instance): int
@@ -156,7 +165,77 @@ final class AppEnvCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $variables = $this->renderedVariables($response);
+
+        if ($variables === []) {
+            $this->line('No environment values found.');
+
+            return self::SUCCESS;
+        }
+
+        foreach ($variables as $key => $value) {
+            $this->line("{$key}={$value}");
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function savedKey(array $response, string $fallback): string
+    {
+        $variable = $this->successData($response)['variable'] ?? null;
+
+        if (is_array($variable) && is_string($variable['key'] ?? null) && $variable['key'] !== '') {
+            return $variable['key'];
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function savedInstance(array $response, string $fallback): string
+    {
+        $instance = $this->successData($response)['instance'] ?? null;
+
+        if (is_string($instance) && $instance !== '') {
+            return $instance;
+        }
+
+        return $fallback;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, string>
+     */
+    private function renderedVariables(array $response): array
+    {
+        $variables = $this->successData($response)['variables'] ?? null;
+
+        if (! is_array($variables)) {
+            return [];
+        }
+
+        $rendered = [];
+
+        foreach ($variables as $key => $entry) {
+            if (! is_string($key) || $key === '') {
+                continue;
+            }
+
+            $value = is_array($entry) ? ($entry['value'] ?? null) : $entry;
+            $rendered[$key] = is_scalar($value) ? (string) $value : '';
+        }
+
+        return $rendered;
     }
 
     private function appSelector(): string|int

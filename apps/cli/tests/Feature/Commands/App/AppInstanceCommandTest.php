@@ -46,6 +46,92 @@ describe('app:instance', function (): void {
             ->and($decoded['success']['data']['instance']['name'])->toBe('production-cloud');
     });
 
+    it('renders human add output with the created instance name driver and extensions', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'instance' => [
+                'app' => 'billing',
+                'name' => 'production',
+                'driver' => 'orbit',
+                'driver_config' => ['node' => 'app-1'],
+                'runtime' => [
+                    'mode' => 'classic',
+                    'php_version' => '8.5',
+                    'required_php_extensions' => ['intl', 'redis'],
+                ],
+            ],
+            'cloud_compatibility' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:instance', [
+            'action' => 'add',
+            'app' => 'billing',
+            '--instance' => 'production',
+            '--node' => 'app-1',
+            '--php-extension' => ['intl', 'redis'],
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Added instance 'production' to app 'billing'.")
+            ->and($output)->toContain('  driver: orbit')
+            ->and($output)->toContain('  extensions: intl, redis')
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('instance: {')
+            ->and($output)->not->toContain('"driver_config"')
+            ->and($output)->not->toContain('cloud_compatibility');
+    });
+
+    it('renders human add output without an extensions line when none are required', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'instance' => [
+                'app' => 'billing',
+                'name' => 'production',
+                'driver' => 'orbit',
+                'driver_config' => ['node' => 'app-1'],
+                'runtime' => [
+                    'mode' => 'classic',
+                    'php_version' => '8.5',
+                    'required_php_extensions' => [],
+                ],
+            ],
+            'cloud_compatibility' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:instance', [
+            'action' => 'add',
+            'app' => 'billing',
+            '--instance' => 'production',
+            '--node' => 'app-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Added instance 'production' to app 'billing'.")
+            ->and($output)->toContain('  driver: orbit')
+            ->and($output)->not->toContain('extensions:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders human remove output with the removed instance name', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => [
+                'action' => 'removed',
+                'app' => 'billing',
+                'instance' => 'production',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:instance', [
+            'action' => 'remove',
+            'app' => 'billing',
+            '--instance' => 'production',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toBe("Removed instance 'production'.")
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('result:');
+    });
+
     it('supports --app as the app selector for scripts and agents', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'instances' => [],

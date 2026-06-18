@@ -52,7 +52,13 @@ describe('AppWebSocketEnableCommand', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('binding:')
-            ->and($output)->toContain('ws.docs.test');
+            ->and($output)->toContain('  app: docs')
+            ->and($output)->toContain('  internal_host: websocket.orbit')
+            ->and($output)->toContain('  public_hosts:')
+            ->and($output)->toContain('    - ws.docs.test')
+            ->and($output)->toContain('  allowed_origins:')
+            ->and($output)->toContain('    - https://docs.test')
+            ->and($output)->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {

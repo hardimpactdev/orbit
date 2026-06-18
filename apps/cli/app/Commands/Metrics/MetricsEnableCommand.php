@@ -40,6 +40,39 @@ final class MetricsEnableCommand extends GatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderEnabled($node, $response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderEnabled(string $node, array $response): int
+    {
+        $data = $this->successData($response);
+        $assignment = is_array($data['assignment'] ?? null) ? $data['assignment'] : [];
+        $targetNode = is_string($data['node'] ?? null) && $data['node'] !== '' ? $data['node'] : $node;
+        $role = is_string($assignment['role'] ?? null) && $assignment['role'] !== '' ? $assignment['role'] : 'metrics';
+        $status = is_string($assignment['status'] ?? null) && $assignment['status'] !== '' ? $assignment['status'] : 'unknown';
+
+        $this->line("Metrics role enabled on '{$targetNode}'");
+        $this->line("Role: {$role}");
+        $this->line("Status: {$status}");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, mixed>
+     */
+    private function successData(array $response): array
+    {
+        $data = $response['success']['data'] ?? null;
+
+        return is_array($data) ? $data : [];
     }
 }

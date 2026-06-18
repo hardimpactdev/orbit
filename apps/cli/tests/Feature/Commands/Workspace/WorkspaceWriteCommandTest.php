@@ -181,6 +181,74 @@ describe('workspace write commands', function (): void {
         });
     });
 
+    it('renders workspace:remove human output as a progress tree with a success footer', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'feature-api',
+            'app' => 'my-app',
+            'action' => 'removed',
+            'worktree_removed' => true,
+        ], [
+            'kept_files' => false,
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace:remove', [
+            'name' => 'feature-api',
+            '--app' => 'my-app',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Removing Workspace')
+            ->and($output)->toContain('Apply and verify workspace removal')
+            ->and($output)->toContain('Removing worktree')
+            ->and($output)->toContain("Workspace 'feature-api' removed")
+            ->and($output)->not->toContain('action:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders workspace:remove drift warnings after the tree', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'name' => 'feature-api',
+            'app' => 'my-app',
+            'action' => 'removed',
+            'worktree_removed' => false,
+        ], [
+            'kept_files' => false,
+            'warnings' => [[
+                'code' => 'workspace.artifact_extra',
+                'family' => 'workspace',
+                'message' => 'Workspace worktree could not be removed during cleanup.',
+                'next_command' => 'doctor --family=workspace --restore',
+            ]],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'workspace:remove', [
+            'name' => 'feature-api',
+            '--app' => 'my-app',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Workspace 'feature-api' removed with drift")
+            ->and($output)->toContain('Drift detected:')
+            ->and($output)->toContain('workspace: Workspace worktree could not be removed during cleanup. (run `doctor --family=workspace --restore`)')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders workspace:remove gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('workspace.not_found', "Workspace 'feature-api' not found in registry."), 404);
+
+        [$exitCode, $output] = runCommand($this, 'workspace:remove', [
+            'name' => 'feature-api',
+            '--app' => 'my-app',
+            '--force' => true,
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Workspace 'feature-api' not found")
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('validates workspace:setup paths before opening a gateway stream', function (): void {
         Http::fake();
 

@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Commands\Vpn;
 
+use App\Commands\Concerns\WithStepTree;
 use App\Exceptions\GatewayApiException;
+use RuntimeException;
 
 final class VpnWebUiChangePasswordCommand extends VpnGatewayCommand
 {
+    use WithStepTree;
+
     #[\Override]
     protected $signature = 'vpn-web-ui:change-password
         {password? : New gateway VPN backend web UI password}
@@ -45,16 +49,63 @@ final class VpnWebUiChangePasswordCommand extends VpnGatewayCommand
             return $consent;
         }
 
-        try {
-            $response = $this->gatewayPost('/api/vpn/web-ui/password', [
-                'password' => $password,
-                'force' => true,
-                ...$this->totpPayload(),
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
+        if ($this->wantsJson()) {
+            try {
+                $response = $this->rotatePassword($password);
+            } catch (GatewayApiException $exception) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            return $this->renderSuccess($response);
         }
 
-        return $this->renderSuccess($response);
+        return $this->renderRotationTree($password);
+    }
+
+    private function renderRotationTree(string $password): int
+    {
+        $outcome = $this->runStepOperation(
+            'Rotating VPN web UI password',
+            [
+                ['label' => 'Resolve VPN runtime'],
+                ['label' => 'Authenticate VPN backend'],
+                ['label' => 'Update backend password'],
+                ['label' => 'Rotate admin sessions'],
+                ['label' => 'Apply and verify credential rotation'],
+            ],
+            work: function () use ($password): array {
+                return $this->rotatePasswordForHuman($password);
+            },
+            doneFooter: 'VPN web UI password rotated',
+        );
+
+        return $outcome->isCompleted() ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function rotatePassword(string $password): array
+    {
+        return $this->gatewayPost('/api/vpn/web-ui/password', [
+            'password' => $password,
+            'force' => true,
+            ...$this->totpPayload(),
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function rotatePasswordForHuman(string $password): array
+    {
+        try {
+            return $this->rotatePassword($password);
+        } catch (GatewayApiException $exception) {
+            throw new RuntimeException(
+                $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                previous: $exception,
+            );
+        }
     }
 }

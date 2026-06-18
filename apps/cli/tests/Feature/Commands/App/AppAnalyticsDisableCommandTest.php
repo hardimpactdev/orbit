@@ -52,7 +52,11 @@ describe('AppAnalyticsDisableCommand', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('binding:')
-            ->and($output)->toContain('analytics.orbit');
+            ->and($output)->toContain('  app: docs')
+            ->and($output)->toContain('  enabled: false')
+            ->and($output)->toContain('  internal_host: analytics.orbit')
+            ->and($output)->toContain('  public_hosts: []')
+            ->and($output)->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {

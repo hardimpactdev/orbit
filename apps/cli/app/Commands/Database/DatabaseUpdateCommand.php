@@ -46,7 +46,27 @@ final class DatabaseUpdateCommand extends DatabaseGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $resolvedSlug = $this->connectionSlug($response, $connection);
+
+        $this->line("Database connection '{$resolvedSlug}' updated.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function connectionSlug(array $response, string $fallback): string
+    {
+        $data = $response['success']['data'] ?? null;
+        $connection = is_array($data) ? ($data['connection'] ?? null) : null;
+        $slug = is_array($connection) ? ($connection['slug'] ?? null) : null;
+
+        return is_string($slug) && $slug !== '' ? $slug : $fallback;
     }
 
     /**

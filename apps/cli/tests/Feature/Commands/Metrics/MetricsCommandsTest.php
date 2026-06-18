@@ -36,6 +36,42 @@ describe('metrics commands', function (): void {
         expect($timeout)->toBe(300);
     });
 
+    it('renders metrics:enable human output as prose extracting the assignment', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'node' => 'app-1',
+            'assignment' => [
+                'role' => 'metrics',
+                'status' => 'active',
+                'settings' => [],
+                'last_error' => null,
+                'converged_at' => '2026-06-18T00:00:00.000000Z',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'metrics:enable', [
+            '--node' => 'app-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Metrics role enabled on 'app-1'")
+            ->and($output)->toContain('Role: metrics')
+            ->and($output)->toContain('Status: active')
+            ->and($output)->not->toContain('assignment:')
+            ->and($output)->not->toContain('{');
+    });
+
+    it('renders metrics:enable gateway failures as prose in human mode', function (): void {
+        fakeGateway(fakeErrorEnvelope('node.not_found', "Node 'app-1' not found."), 404);
+
+        [$exitCode, $output] = runCommand($this, 'metrics:enable', [
+            '--node' => 'app-1',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Node 'app-1' not found.")
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('requires --node before enabling metrics', function (): void {
         Http::fake();
 

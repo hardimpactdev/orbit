@@ -62,6 +62,71 @@ describe('AnalyticsUpdateCommand', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('renders analytics:update human output as an indented analytics block', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'analytics' => [
+                'node' => 'analytics-1',
+                'process' => 'plausible',
+                'previous_version' => '3.2.1',
+                'version' => '3.2.2',
+                'status' => 'updated',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'analytics:update', [
+            '--version' => '3.2.2',
+            '--node' => 'analytics-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('analytics:')
+            ->and($output)->toContain('  node: analytics-1')
+            ->and($output)->toContain('  previous_version: 3.2.1')
+            ->and($output)->toContain('  version: 3.2.2')
+            ->and($output)->toContain('  process: plausible')
+            ->and($output)->toContain('  status: updated')
+            ->and($output)->not->toContain('{')
+            ->and($output)->not->toContain('"analytics"');
+    });
+
+    it('omits the previous_version line when the gateway reports none', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'analytics' => [
+                'node' => 'analytics-1',
+                'process' => 'plausible',
+                'previous_version' => null,
+                'version' => '3.2.2',
+                'status' => 'updated',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'analytics:update', [
+            '--version' => '3.2.2',
+            '--node' => 'analytics-1',
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('  version: 3.2.2')
+            ->and($output)->not->toContain('previous_version');
+    });
+
+    it('renders analytics:update missing-process failures as prose pointing at doctor', function (): void {
+        fakeGateway(fakeErrorEnvelope(
+            'process.not_found',
+            "Process 'plausible' was not found on analytics node 'analytics-1'.",
+            ['node' => 'analytics-1', 'process' => 'plausible'],
+        ), 404);
+
+        [$exitCode, $output] = runCommand($this, 'analytics:update', [
+            '--version' => '3.2.2',
+            '--node' => 'analytics-1',
+        ]);
+
+        expect($exitCode)->toBe(1)
+            ->and($output)->toContain("Process 'plausible' was not found")
+            ->and($output)->not->toContain('"error"');
+    });
+
     it('requires a version before sending gateway requests', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 

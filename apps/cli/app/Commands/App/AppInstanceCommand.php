@@ -271,7 +271,11 @@ final class AppInstanceCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderAddedInstance($app, $instance, $response);
     }
 
     private function removeInstance(string $app): int
@@ -295,7 +299,52 @@ final class AppInstanceCommand extends AppGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        return $this->renderRemovedInstance($instance, $response);
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderAddedInstance(string $app, string $instance, array $response): int
+    {
+        $payload = $this->instanceFromGatewayResponse($response);
+        $name = $payload === null ? $instance : $this->instanceString($payload, 'name');
+        $appName = $payload !== null && ($payload['app'] ?? null) !== null
+            ? $this->instanceString($payload, 'app')
+            : $app;
+
+        $this->line("Added instance '{$name}' to app '{$appName}'.");
+
+        if ($payload !== null) {
+            $this->line('  driver: '.$this->instanceString($payload, 'driver'));
+
+            $extensions = $this->extensionsLabel($payload);
+
+            if ($extensions !== '—') {
+                $this->line("  extensions: {$extensions}");
+            }
+        }
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderRemovedInstance(string $instance, array $response): int
+    {
+        $result = $this->successData($response)['result'] ?? null;
+        $name = is_array($result) && is_string($result['instance'] ?? null) && $result['instance'] !== ''
+            ? $result['instance']
+            : $instance;
+
+        $this->line("Removed instance '{$name}'.");
+
+        return self::SUCCESS;
     }
 
     private function appSelector(): string|int

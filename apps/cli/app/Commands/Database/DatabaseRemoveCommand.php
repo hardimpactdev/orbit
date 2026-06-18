@@ -39,7 +39,27 @@ final class DatabaseRemoveCommand extends DatabaseGatewayCommand
             return $this->renderGatewayFailure($exception);
         }
 
-        return $this->renderSuccess($response);
+        if ($this->wantsJson()) {
+            return $this->renderSuccess($response);
+        }
+
+        $resolvedSlug = $this->removedConnectionSlug($response, $connection);
+
+        $this->line("Database connection '{$resolvedSlug}' removed.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function removedConnectionSlug(array $response, string $fallback): string
+    {
+        $data = $response['success']['data'] ?? null;
+        $result = is_array($data) ? ($data['result'] ?? null) : null;
+        $slug = is_array($result) ? ($result['connection'] ?? null) : null;
+
+        return is_string($slug) && $slug !== '' ? $slug : $fallback;
     }
 
     private function confirmRemoval(): ?int
