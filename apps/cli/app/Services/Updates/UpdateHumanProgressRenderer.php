@@ -28,7 +28,7 @@ final class UpdateHumanProgressRenderer
         LocalUpdateRunner::STEP_DOCTOR => 'Running doctor',
     ];
 
-    private const string SUCCESS_FOOTER = 'Successfully updated';
+    private const string SUCCESS_FOOTER = 'Success: Updated';
 
     private const string FAILURE_FOOTER = 'Failed to update local Orbit checkout.';
 
@@ -38,7 +38,7 @@ final class UpdateHumanProgressRenderer
 
     private bool $expanded = false;
 
-    private string $checkDoneMessage = 'new version available';
+    private string $checkDoneMessage = 'Done: new version available';
 
     /**
      * The check row settles `done` only when the gate allows an update, which is
@@ -115,7 +115,7 @@ final class UpdateHumanProgressRenderer
         $this->flushPendingCheck();
 
         $footer = match ($result->status) {
-            LocalUpdateResult::STATUS_SKIPPED_ALREADY => ($result->fromVersion ?? 'Orbit').' is already installed',
+            LocalUpdateResult::STATUS_SKIPPED_ALREADY => 'Skipped: '.($result->latestVersion ?? $result->fromVersion ?? 'Orbit').' is already installed',
             LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND => 'Skipped: please update your gateway first',
             default => 'Skipped.',
         };

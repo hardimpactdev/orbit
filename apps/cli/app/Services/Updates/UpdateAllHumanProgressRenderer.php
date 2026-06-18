@@ -246,7 +246,7 @@ final class UpdateAllHumanProgressRenderer
             return 'Success';
         }
 
-        return "All nodes are running on version {$targetVersion}";
+        return "Success: All nodes are running on version {$targetVersion}";
     }
 
     public function finishFailure(OutputInterface $output): void

@@ -41,9 +41,9 @@ it('emits the two check steps before the gateway phase and reports outdated node
 
     expect($steps)->toContain(
         ['check-updates', 'running', 'Checking'],
-        ['check-updates', 'done', 'latest version is 2.0.0'],
+        ['check-updates', 'done', 'Done: latest version is 2.0.0'],
         ['check-fleet-versions', 'running', 'Checking'],
-        ['check-fleet-versions', 'done', '1 outdated node found'],
+        ['check-fleet-versions', 'done', 'Done: 1 outdated node found'],
     );
 
     $keys = array_map(fn (array $step): string => $step[0], $steps);
@@ -72,7 +72,7 @@ it('reports all nodes current when the gateway and every workload node match the
     app(UpdateRunner::class)->run($run->id);
 
     expect(checkStepsEvents($run))->toContain(
-        ['check-fleet-versions', 'done', 'all nodes running on 2.0.0'],
+        ['check-fleet-versions', 'done', 'Done: all nodes running on 2.0.0'],
     );
 });
 

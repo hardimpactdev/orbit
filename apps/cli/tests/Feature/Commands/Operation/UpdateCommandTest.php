@@ -152,7 +152,7 @@ describe('update', function (): void {
             ->and($output)->toContain('Downloading binary')
             ->and($output)->toContain('Replacing binary')
             ->and($output)->toContain('Running doctor')
-            ->and($output)->toContain('Successfully updated from 0.1.130 to 0.1.131')
+            ->and($output)->toContain('Success: Updated from 0.1.130 to 0.1.131')
             ->and($output)->not->toContain('"success"');
     });
 
@@ -181,7 +181,7 @@ describe('update', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Checking for updates')
-            ->and($output)->toContain('0.1.131 is already installed')
+            ->and($output)->toContain('Skipped: 0.1.131 is already installed')
             ->and($output)->not->toContain('Downloading binary')
             ->and($output)->not->toContain('"success"');
     });
@@ -213,7 +213,7 @@ describe('update', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Checking for updates')
-            ->and($output)->toContain('new version available, 0.1.131')
+            ->and($output)->toContain('Done: new version available, 0.1.131')
             ->and($output)->toContain('Skipped: please update your gateway first')
             ->and($output)->not->toContain('Downloading binary')
             ->and($output)->not->toContain('"success"');

@@ -107,7 +107,7 @@ final readonly class UpdateRunner
     private function runCheckSteps(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
         $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'running', 'Checking');
-        $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'done', "latest version is {$plan->target_version}");
+        $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'done', "Done: latest version is {$plan->target_version}");
 
         $this->operationRuns->appendStep($operationRun->id, 'check-fleet-versions', 'running', 'Checking');
 
@@ -124,12 +124,12 @@ final readonly class UpdateRunner
     private function fleetVersionsMessage(int $outdatedCount, string $targetVersion): string
     {
         if ($outdatedCount === 0) {
-            return "all nodes running on {$targetVersion}";
+            return "Done: all nodes running on {$targetVersion}";
         }
 
         $noun = $outdatedCount === 1 ? 'node' : 'nodes';
 
-        return "{$outdatedCount} outdated {$noun} found";
+        return "Done: {$outdatedCount} outdated {$noun} found";
     }
 
     private function updateGateway(OperationRun $operationRun, OperationUpdatePlan $plan): void

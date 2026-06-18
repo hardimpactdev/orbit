@@ -77,7 +77,7 @@ final readonly class LocalUpdateRunner
         }
 
         if (! version_compare($latest, $local, '>')) {
-            $this->emit($onStep, self::STEP_CHECK, 'skip', "{$local} is already installed");
+            $this->emit($onStep, self::STEP_CHECK, 'skip', "Skipped: {$local} is already installed");
 
             return new LocalUpdateResult(
                 status: LocalUpdateResult::STATUS_SKIPPED_ALREADY,
@@ -90,7 +90,7 @@ final readonly class LocalUpdateRunner
         $gatewayVersion = $this->gatewayVersion->currentVersion();
 
         if ($gatewayVersion !== null && version_compare($gatewayVersion, $latest, '<')) {
-            $this->emit($onStep, self::STEP_CHECK, 'done', "new version available, {$latest}");
+            $this->emit($onStep, self::STEP_CHECK, 'done', "Done: new version available, {$latest}");
 
             return new LocalUpdateResult(
                 status: LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND,

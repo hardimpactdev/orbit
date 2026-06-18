@@ -75,9 +75,9 @@ it('renders update-all target progress in human mode', function (): void {
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Tree, 'payload' => ['title' => 'Update all', 'steps' => [['label' => 'Update gateway']]]],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => '2 outdated nodes found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating orbit-gateway service']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Gateway services updated']],
@@ -99,12 +99,12 @@ it('renders update-all target progress in human mode', function (): void {
         ->and($output)->toContain('Updating Orbit nodes')
         ->and($output)->toMatch('/local\s+Updating CLI/')
         ->and($output)->toMatch('/local\s+Done/')
-        ->and($output)->toMatch('/Checking for updates\s+latest version is 1.2.3/')
-        ->and($output)->toMatch('/Checking fleet versions\s+2 outdated nodes found/')
+        ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
+        ->and($output)->toMatch('/Checking fleet versions\s+Done: 2 outdated nodes found/')
         ->and($output)->toMatch('/gateway\s+Updating gateway service/')
         ->and($output)->toMatch('/agent\s+Done \(2 issues\)/')
         ->and($output)->toMatch('/beast\s+Skipped: already up to date/')
-        ->and($output)->toContain('All nodes are running on version 1.2.3')
+        ->and($output)->toContain('Success: All nodes are running on version 1.2.3')
         ->and($output)->not->toContain('[tree]')
         ->and($output)->not->toContain('[step]')
         ->and($output)->not->toContain('status: succeeded')
