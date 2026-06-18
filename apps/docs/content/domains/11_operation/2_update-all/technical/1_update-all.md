@@ -37,13 +37,15 @@ options are optional.
 1. Select the output renderer.
 2. Call the gateway to authorize gateway-admin authority and resolve selected
    non-local managed Orbit installations from active gateway node configuration.
-3. Run the caller-local CLI update first. If it fails, do not start the gateway
-   operation.
-4. Submit a start request to the gateway. The gateway persists an operation row
+3. Submit a start request to the gateway. The gateway persists an operation row
    and an immutable update plan keyed by `operation_run_id`, then launches a
    one-shot runner from the target `orbit-gateway` image.
-5. Follow the operation event stream, reconnecting with `Last-Event-ID` when the
+4. Follow the operation event stream, reconnecting with `Last-Event-ID` when the
    gateway service is replaced.
+5. After the gateway phase succeeds, update the caller-local CLI as a fan-out
+   target alongside the remote workload nodes. The gateway is the version
+   ceiling, so the local CLI is never updated ahead of the gateway; if the
+   gateway phase fails, the local update does not run.
 
 The command has no required fields and does not prompt. Renderer-specific
 execution details live in the renderer contracts.
@@ -57,14 +59,20 @@ execution details live in the renderer contracts.
 - It then runs a `Checking fleet versions` step that probes each selected
   installation's current orbit version (read-only `orbit --version` over
   `RemoteShell`) and counts how many are behind the latest release.
+- When every node is already on the latest release (0 outdated), the command
+  short-circuits: the gateway/workload/verification phases are skipped entirely
+  and the operation terminates with `Skipped: <version> is already installed on
+  all nodes`.
 - A node already on the latest release is skipped (it renders
   `Skipped: already up to date`) and runs no download. Only outdated nodes run
-  the update script. When every node is already current the gateway phase still
-  re-converges idempotently to the same digest and each node is skipped
-  individually; a whole-run short-circuit that skips the phases entirely is a
-  deferred optimization recorded in the decisions ledger.
-- Each updated node runs a post-update `orbit doctor` verify; the issue count is
-  surfaced in the node result and is non-fatal.
+  the update script.
+- Each updated node advances through per-node sub-stages: `Downloading <v>` →
+  `Replacing cli binary` → `Running doctor`. The gateway node additionally runs
+  `Updating gateway app` after download and before `Replacing cli binary`. Each
+  updated node emits these as ordered journal sub-steps so the renderer can show
+  the active sub-stage in the node row.
+- Each updated node runs a post-update `orbit doctor` verify (`Running doctor`
+  sub-stage); the issue count is surfaced in the node result and is non-fatal.
 - The gateway is the fleet version ceiling: it updates first, before any
   workload node is updated, so no node is ever taken past the gateway's version.
 
@@ -86,8 +94,8 @@ The expected target shape per calling context:
 
 | Calling context | Local target | Gateway target | App-role targets | Other client targets |
 | --- | --- | --- | --- | --- |
-| Non-gateway caller with gateway-admin authority | The caller-local installation. | Yes, when the gateway is an active node distinct from the caller. | Yes, every active node selected by the rules above. | Never. |
-| Gateway caller | The gateway installation (via the local target). | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
+| Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and app-role targets. | Yes, every active node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Never. |
+| Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
 
 ### Durable Operation Rules
 
@@ -128,10 +136,16 @@ The expected target shape per calling context:
 
 ### Per-Installation Update Rules
 
-- The caller-local installation is updated before the gateway operation starts.
-  Production installs update the native CLI binary artifact, while source-dev
-  Docker/Incus topology nodes keep `/usr/local/bin/orbit` pointed at
-  `<source>/apps/cli/orbit`.
+- The gateway updates first as the version ceiling. The gateway phase runs
+  before the local caller update or any workload fan-out. If the gateway phase
+  fails, the local update does not run.
+- The caller-local installation is updated as a fan-out target after the gateway
+  phase succeeds, in parallel with the remote workload nodes. Production installs
+  update the native CLI binary artifact; source-dev Docker/Incus topology nodes
+  keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`. A local
+  update failure after the fleet has been updated is a partial failure: the
+  fleet is updated, the operator-local install failed, and the operator
+  re-runs `orbit update` to recover.
 - Gateway replacement uses the digest-pinned `orbit-gateway` image from the
   immutable update plan. No-source production gateway hosts acquire the image by
   loading `ORBIT_GATEWAY_IMAGE_ARCHIVE` or pulling the digest-pinned
@@ -144,13 +158,17 @@ The expected target shape per calling context:
   also fails, emit an explicit terminal failure event and name the recovery
   command the operator should run.
 - After the gateway phase succeeds, selected remote app/workload-role
-  installations are updated in parallel, up to four targets at a time.
-  Production artifact targets run the binary-update path. Source-dev targets
-  keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`.
-- Each updated installation runs `orbit doctor` in verify mode for that node as
-  the final per-node step (the `Running doctor` stage). This is verification
-  only; a non-zero issue count is surfaced per node but does not by itself fail
-  the node's update.
+  installations and the caller-local installation are updated in parallel, up to
+  four targets at a time. Production artifact targets run the binary-update path.
+  Source-dev targets keep `/usr/local/bin/orbit` pointed at
+  `<source>/apps/cli/orbit`.
+- Each updated installation emits per-node sub-stages through the operation
+  journal: `Downloading <v>` → `Replacing cli binary` → `Running doctor` → `Done`
+  for local/workload nodes; `Downloading <v> assets` → `Updating gateway app` →
+  `Replacing cli binary` → `Running doctor` → `Done` for the gateway node.
+- Each updated installation runs `orbit doctor` in verify mode as the final
+  per-node sub-stage (`Running doctor`). This is verification only; a non-zero
+  issue count is surfaced per node but does not by itself fail the node's update.
 - Production workload updates install the binary into the node user's Orbit
   install root. When the host launcher parent directory is not writable, the
   remote update may use non-interactive `sudo -n` only to relink the system
@@ -182,10 +200,14 @@ The expected target shape per calling context:
 - If every selected installation updates successfully, report a full fleet
   success. If one or more installations fail after side effects begin, report
   both successful and failed target results.
-- When the caller-local installation update fails, do not start app-role execution.
-- When the gateway installation update fails, do not start app-role execution.
-  When a node with an app role fails, do not hide successful app-role updates and do not
-  cancel unrelated in-flight app-role updates.
+- When the gateway installation update fails, do not start the local or
+  app-role fan-out.
+- When the caller-local installation update fails after the gateway phase
+  succeeded, report a partial failure: the fleet was updated but the
+  operator-local install was not. The operator re-runs `orbit update` to
+  recover.
+- When a node with an app role fails, do not hide successful app-role updates
+  and do not cancel unrelated in-flight app-role updates.
 
 ### Scope Boundaries
 
@@ -207,10 +229,10 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Local update failed | The caller's local checkout update fails. | Failure |
+| Local update failed (partial) | The caller's local CLI update fails after the fleet has already been updated by the gateway phase. | Partial failure — the fleet is updated; the operator re-runs `orbit update` to recover the local install. |
 | Immutable plan missing | The gateway cannot persist or load the immutable update plan for `operation_run_id`. | Failure before side effects |
 | Update lease conflict | Another active update lease owns the same fleet, gateway, scheduler, or node resource. | Failure before conflicting side effects |
-| Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; app-role targets are not started |
+| Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; local and app-role targets are not started |
 | Scheduler recovery failed | The scheduler could not be restored after failed migrations or gateway health. | Terminal operation failure with explicit recovery metadata |
 | App-role update failed | One or more selected app-role installations fail to update. | Failure with partial target results |
 | Final verification failed | Gateway, scheduler, CLI, or required image verification fails after updates. | Terminal operation failure with partial target results |

@@ -120,6 +120,13 @@ final readonly class WorkloadNodeUpdater
             ];
         }
 
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            $this->eventKey($node),
+            'running',
+            "Downloading {$plan->target_version}",
+        );
+
         $script = $this->remoteUpdateScript($plan, $node);
         $result = $this->remoteShell->run($node, $script, [
             'cwd' => $node->orbit_path,
@@ -137,6 +144,20 @@ final readonly class WorkloadNodeUpdater
                 'output' => $this->output($result),
             ];
         }
+
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            $this->eventKey($node),
+            'running',
+            'Replacing cli binary',
+        );
+
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            $this->eventKey($node),
+            'running',
+            'Running doctor',
+        );
 
         return [
             ...$this->targetPayload($node),

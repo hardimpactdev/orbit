@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Data\Operations\FleetVersionReport;
 use App\Exceptions\UpdateLeaseConflict;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
@@ -41,6 +42,8 @@ final readonly class UpdateRunner
     {
         [$operationRun, $plan] = $this->loadRunnableContext($operationRunId);
 
+        $allCurrent = false;
+
         try {
             $this->leases->withLease(
                 resourceType: 'fleet',
@@ -48,10 +51,19 @@ final readonly class UpdateRunner
                 operationRun: $operationRun,
                 ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
                 ttlSeconds: $this->leaseTtlSeconds(),
-                callback: function () use ($operationRun, $plan): void {
+                callback: function () use ($operationRun, $plan, &$allCurrent): void {
                     $this->markStarted($operationRun, $plan);
                     $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
-                    $this->runCheckSteps($operationRun, $plan);
+
+                    $report = $this->runCheckSteps($operationRun, $plan);
+
+                    if ($report->outdatedCount === 0) {
+                        // All-current short-circuit: skip gateway, workload, and verification phases.
+                        $allCurrent = true;
+
+                        return;
+                    }
+
                     $this->runPhase(
                         $operationRun,
                         'gateway',
@@ -93,7 +105,7 @@ final readonly class UpdateRunner
             throw $exception;
         }
 
-        $this->markSucceeded($operationRun, $plan);
+        $this->markSucceeded($operationRun, $plan, $allCurrent);
 
         return $plan;
     }
@@ -103,8 +115,11 @@ final readonly class UpdateRunner
      * that resolves the target release, and a fleet version probe that counts
      * how many installations are behind it. The probe is read-only; it never
      * mutates fleet state.
+     *
+     * Returns the fleet version report so the caller can short-circuit when
+     * nothing is outdated.
      */
-    private function runCheckSteps(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    private function runCheckSteps(OperationRun $operationRun, OperationUpdatePlan $plan): FleetVersionReport
     {
         $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'running', 'Checking');
         $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'done', "Done: latest version is {$plan->target_version}");
@@ -119,6 +134,8 @@ final readonly class UpdateRunner
             'done',
             $this->fleetVersionsMessage($report->outdatedCount, $plan->target_version),
         );
+
+        return $report;
     }
 
     private function fleetVersionsMessage(int $outdatedCount, string $targetVersion): string
@@ -192,12 +209,13 @@ final readonly class UpdateRunner
         ]);
     }
 
-    private function markSucceeded(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    private function markSucceeded(OperationRun $operationRun, OperationUpdatePlan $plan, bool $allCurrent = false): void
     {
         $result = [
-            'status' => 'succeeded',
+            'status' => $allCurrent ? 'skipped' : 'succeeded',
             'target_version' => $plan->target_version,
             'manifest_version' => $plan->manifest_version,
+            ...($allCurrent ? ['skipped' => true] : []),
         ];
 
         $this->operationRuns->appendComplete($operationRun->id, 0, $result);

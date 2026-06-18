@@ -47,6 +47,12 @@ final class UpdateAllHumanProgressRenderer
 
     private const string STAGE_UPDATING_NODE_CLI = 'updating_node_cli';
 
+    private const string STAGE_DOWNLOADING = 'downloading';
+
+    private const string STAGE_REPLACING_CLI_BINARY = 'replacing_cli_binary';
+
+    private const string STAGE_RUNNING_DOCTOR = 'running_doctor';
+
     private const string STAGE_PULLING_REQUIRED_IMAGES = 'pulling_required_images';
 
     private const string STAGE_VERIFYING = 'verifying';
@@ -92,19 +98,7 @@ final class UpdateAllHumanProgressRenderer
 
     public function begin(OutputInterface $output): void
     {
-        $this->registerTarget('local');
         $this->renderInitial($output);
-        $this->setRow($output, 'local', self::STATE_ACTIVE, self::STAGE_UPDATING_CLI);
-    }
-
-    public function localSucceeded(OutputInterface $output): void
-    {
-        $this->setRow($output, 'local', self::STATE_DONE, self::STAGE_DONE);
-    }
-
-    public function localFailed(OutputInterface $output, string $message = ''): void
-    {
-        $this->setRow($output, 'local', self::STATE_FAILED, self::STAGE_FAILED, $message);
     }
 
     public function gatewayStarting(OutputInterface $output): void
@@ -201,12 +195,43 @@ final class UpdateAllHumanProgressRenderer
                 return true;
             }
 
+            // running: check for known per-node sub-stage messages
+            if ($status === 'running' && $message !== null) {
+                [$stage, $stageMessage] = $this->subStageFromMessage($message);
+                $this->setRow($output, $node, self::STATE_ACTIVE, $stage, $stageMessage);
+
+                return true;
+            }
+
             $this->setRow($output, $node, self::STATE_ACTIVE, self::STAGE_UPDATING_NODE_CLI);
 
             return true;
         }
 
         return false;
+    }
+
+    /**
+     * Map a gateway-emitted sub-stage message to a [stage, row-message] pair.
+     * Returns the renderer stage constant and the text to store in the row
+     * message field. Unknown messages fall back to `STAGE_UPDATING_NODE_CLI`.
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function subStageFromMessage(string $message): array
+    {
+        if (str_starts_with($message, 'Downloading ')) {
+            // Extract version/suffix: "Downloading 1.2.3" → stage "Downloading" + message "1.2.3"
+            $suffix = substr($message, strlen('Downloading '));
+
+            return [self::STAGE_DOWNLOADING, $suffix];
+        }
+
+        return match ($message) {
+            'Replacing cli binary' => [self::STAGE_REPLACING_CLI_BINARY, ''],
+            'Running doctor' => [self::STAGE_RUNNING_DOCTOR, ''],
+            default => [self::STAGE_UPDATING_NODE_CLI, ''],
+        };
     }
 
     /**
@@ -222,7 +247,41 @@ final class UpdateAllHumanProgressRenderer
         return '';
     }
 
-    public function finishSuccess(OutputInterface $output, ?string $targetVersion = null): void
+    /**
+     * Advance the local node fan-out row through a sub-stage message.
+     * Registers the `local` row on first call (when the gateway phase succeeds
+     * and local fan-out begins).
+     */
+    public function localNodeSubStep(OutputInterface $output, string $stage, string $message = ''): void
+    {
+        $this->ensureTarget($output, 'local');
+        $this->setRow($output, 'local', self::STATE_ACTIVE, $stage, $message);
+    }
+
+    public function localNodeSucceeded(OutputInterface $output, ?int $issues = null): void
+    {
+        $this->ensureTarget($output, 'local');
+
+        $suffix = ($issues !== null && $issues > 0)
+            ? '('.$issues.' '.($issues === 1 ? 'issue' : 'issues').')'
+            : '';
+
+        $this->setRow($output, 'local', self::STATE_DONE, self::STAGE_DONE, $suffix);
+    }
+
+    public function localNodeFailed(OutputInterface $output, string $message = ''): void
+    {
+        $this->ensureTarget($output, 'local');
+        $this->setRow($output, 'local', self::STATE_FAILED, self::STAGE_FAILED, $message);
+    }
+
+    public function localNodeSkipped(OutputInterface $output): void
+    {
+        $this->ensureTarget($output, 'local');
+        $this->setRow($output, 'local', self::STATE_SKIPPED, self::STAGE_SKIPPED);
+    }
+
+    public function finishSuccess(OutputInterface $output, ?string $targetVersion = null, bool $allCurrent = false): void
     {
         foreach ($this->order as $target) {
             $state = $this->rows[$target]['state'] ?? self::STATE_WAITING;
@@ -237,11 +296,15 @@ final class UpdateAllHumanProgressRenderer
             $this->setRow($output, $target, self::STATE_DONE, self::STAGE_DONE);
         }
 
-        $this->finish($output, $this->successFooter($targetVersion), success: true);
+        $this->finish($output, $this->successFooter($targetVersion, $allCurrent), success: true);
     }
 
-    private function successFooter(?string $targetVersion): string
+    private function successFooter(?string $targetVersion, bool $allCurrent = false): string
     {
+        if ($allCurrent && $targetVersion !== null && $targetVersion !== '') {
+            return "Skipped: {$targetVersion} is already installed on all nodes";
+        }
+
         if ($targetVersion === null || $targetVersion === '') {
             return 'Success';
         }
@@ -350,7 +413,7 @@ final class UpdateAllHumanProgressRenderer
 
     private function renderInitial(OutputInterface $output): void
     {
-        $output->writeln('┌ Updating Orbit nodes');
+        $output->writeln('┌ Updating Orbit');
 
         foreach ($this->order as $target) {
             $output->writeln($this->rowLine($target, $output->isDecorated()));
@@ -506,6 +569,9 @@ final class UpdateAllHumanProgressRenderer
             self::STAGE_RUNNING_GATEWAY_MIGRATIONS => 'Running gateway migrations',
             self::STAGE_STARTING_SCHEDULER => 'Starting scheduler',
             self::STAGE_UPDATING_NODE_CLI => 'Updating node CLI',
+            self::STAGE_DOWNLOADING => 'Downloading',
+            self::STAGE_REPLACING_CLI_BINARY => 'Replacing cli binary',
+            self::STAGE_RUNNING_DOCTOR => 'Running doctor',
             self::STAGE_PULLING_REQUIRED_IMAGES => 'Pulling required images',
             self::STAGE_VERIFYING => 'Verifying',
             self::STAGE_DONE => 'Done',

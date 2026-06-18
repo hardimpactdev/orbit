@@ -76,6 +76,56 @@ it('reports all nodes current when the gateway and every workload node match the
     );
 });
 
+it('short-circuits when the fleet-version probe finds 0 outdated nodes', function (): void {
+    config()->set('app.version', '2.0.0');
+
+    $pipeline = new CheckStepsNoopPipeline;
+    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
+        'agent-1' => '2.0.0',
+    ]));
+    app()->instance(UpdateRunnerPipeline::class, $pipeline);
+
+    $run = checkStepsRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
+
+    app(UpdateRunner::class)->run($run->id);
+
+    $keys = array_map(fn (array $step): string => $step[0], checkStepsEvents($run));
+
+    expect($pipeline->gatewayUpdateCalled)->toBeFalse()
+        ->and($pipeline->workloadsUpdateCalled)->toBeFalse()
+        ->and($pipeline->fleetVerifyCalled)->toBeFalse()
+        ->and($keys)->not->toContain('gateway')
+        ->and($keys)->not->toContain('workload-nodes')
+        ->and($keys)->not->toContain('verification');
+});
+
+it('does not short-circuit when at least one node is outdated', function (): void {
+    config()->set('app.version', '1.0.0');
+
+    $pipeline = new CheckStepsNoopPipeline;
+    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
+        'agent-1' => '2.0.0',
+    ]));
+    app()->instance(UpdateRunnerPipeline::class, $pipeline);
+
+    $run = checkStepsRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
+
+    app(UpdateRunner::class)->run($run->id);
+
+    $keys = array_map(fn (array $step): string => $step[0], checkStepsEvents($run));
+
+    expect($pipeline->gatewayUpdateCalled)->toBeTrue()
+        ->and($keys)->toContain('gateway');
+});
+
 function checkStepsRun(): OperationRun
 {
     return app(OperationRunRecorder::class)->queued(
@@ -135,24 +185,30 @@ function checkStepsSnapshot(string $targetVersion): OperationUpdatePlanSnapshot
 
 final class CheckStepsNoopPipeline extends UpdateRunnerPipeline
 {
+    public bool $gatewayUpdateCalled = false;
+
+    public bool $workloadsUpdateCalled = false;
+
+    public bool $fleetVerifyCalled = false;
+
     public function __construct() {}
 
     #[Override]
     public function updateGateway(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
-        //
+        $this->gatewayUpdateCalled = true;
     }
 
     #[Override]
     public function updateWorkloads(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
-        //
+        $this->workloadsUpdateCalled = true;
     }
 
     #[Override]
     public function verifyFleet(OperationRun $operationRun, OperationUpdatePlan $plan): void
     {
-        //
+        $this->fleetVerifyCalled = true;
     }
 }
 

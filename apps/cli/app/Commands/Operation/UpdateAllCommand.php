@@ -8,8 +8,7 @@ use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
-use App\Services\Updates\LocalUpdateResult;
-use App\Services\Updates\LocalUpdateWorkflow;
+use App\Services\Updates\RunsLocalUpdate;
 use App\Services\Updates\UpdateAllHumanProgressRenderer;
 use Orbit\Core\Progress\ProgressEventType;
 
@@ -24,72 +23,21 @@ final class UpdateAllCommand extends GatewayCommand
     protected $description = 'Update every managed Orbit installation through the gateway.';
 
     public function handle(
-        LocalUpdateWorkflow $localUpdates,
+        RunsLocalUpdate $localUpdater,
         UpdateAllHumanProgressRenderer $progress,
     ): int {
         if (! $this->wantsJson()) {
-            return $this->handleHuman($localUpdates, $progress);
+            return $this->handleHuman($localUpdater, $progress);
         }
 
-        $localResult = $localUpdates->run();
-
-        if (! $localResult->successful()) {
-            return $this->renderLocalUpdateFailure($localResult);
-        }
-
-        try {
-            $response = $this->gatewayPost('/api/update/all/start');
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
-        }
-
-        $eventsUrl = $this->eventsUrl($response);
-
-        if ($eventsUrl === null) {
-            return $this->renderFailure(
-                'gateway_unavailable',
-                'Gateway update operation did not provide an event stream URL.',
-            );
-        }
-
-        return $this->followOperationProgress(
-            $eventsUrl,
-            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
-        );
+        return $this->handleJson($localUpdater);
     }
 
     private function handleHuman(
-        LocalUpdateWorkflow $localUpdates,
+        RunsLocalUpdate $localUpdater,
         UpdateAllHumanProgressRenderer $progress,
     ): int {
         $progress->begin($this->output);
-
-        $localResult = $localUpdates->run(
-            /**
-             * @param  array{successful: bool, exit_code: int, output: string}  $result
-             */
-            function (int $_index, string $_step, array $result) use ($progress): void {
-                if ($result['successful']) {
-                    $progress->localSucceeded($this->output);
-
-                    return;
-                }
-
-                $progress->localFailed($this->output, $result['output']);
-            },
-        );
-
-        if (! $localResult->successful()) {
-            if ($localResult->status === LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE) {
-                $progress->localFailed($this->output);
-            }
-
-            $progress->finishFailure($this->output);
-
-            return $this->renderLocalUpdateFailure($localResult);
-        }
-
-        $progress->gatewayStarting($this->output);
 
         try {
             $response = $this->gatewayPost('/api/update/all/start');
@@ -137,9 +85,128 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderOperationError($terminal['payload']);
         }
 
-        $progress->finishSuccess($this->output, $this->terminalTargetVersion($terminal['payload']));
+        $targetVersion = $this->terminalTargetVersion($terminal['payload']);
+        $allCurrent = $this->terminalAllCurrent($terminal['payload']);
+
+        // All-current short-circuit: skip local update; nothing was outdated.
+        if ($allCurrent) {
+            $progress->finishSuccess($this->output, $targetVersion, allCurrent: true);
+
+            return self::SUCCESS;
+        }
+
+        // Gateway phase succeeded — run local update as a fan-out target.
+        $this->runLocalFanOut($localUpdater, $progress, $targetVersion);
+
+        $progress->finishSuccess($this->output, $targetVersion);
 
         return self::SUCCESS;
+    }
+
+    private function handleJson(RunsLocalUpdate $localUpdater): int
+    {
+        try {
+            $response = $this->gatewayPost('/api/update/all/start');
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        $eventsUrl = $this->eventsUrl($response);
+
+        if ($eventsUrl === null) {
+            return $this->renderFailure(
+                'gateway_unavailable',
+                'Gateway update operation did not provide an event stream URL.',
+            );
+        }
+
+        // Capture gateway terminal without rendering yet; we decide what to output
+        // based on whether the subsequent local fan-out also succeeds.
+        try {
+            $terminal = app(GatewayOperationFollower::class)->follow(
+                $eventsUrl,
+                function (ProgressEventType $type, array $payload): void {
+                    // Events are not rendered in JSON mode; only the terminal frame is.
+                },
+            );
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        if ($terminal['type'] === ProgressEventType::Error) {
+            // Gateway failed — output gateway error JSON directly.
+            return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
+        }
+
+        // All-current short-circuit: nothing was outdated, so the local update is
+        // skipped too. Output the gateway terminal frame directly.
+        if ($this->terminalAllCurrent($terminal['payload'])) {
+            return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
+        }
+
+        // Gateway phase succeeded — run local update as a fan-out target.
+        $download = $localUpdater->downloadBinary();
+
+        if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
+            return $this->renderFailure(
+                'local_update_failed',
+                'Failed to update local Orbit checkout.',
+                ['failed_step' => 'download'],
+                $download['output'] !== '' ? ['output' => $download['output']] : [],
+            );
+        }
+
+        $replace = $localUpdater->replaceBinary($download['staged_path'], $download['version']);
+
+        if (! $replace['successful']) {
+            return $this->renderFailure(
+                'local_update_failed',
+                'Failed to update local Orbit checkout.',
+                ['failed_step' => 'replace'],
+                $replace['output'] !== '' ? ['output' => $replace['output']] : [],
+            );
+        }
+
+        $localUpdater->runDoctor();
+
+        // Local succeeded — output the gateway terminal event as the final JSON frame.
+        return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
+    }
+
+    /**
+     * Run the local CLI update as a fan-out target after the gateway phase,
+     * emitting sub-stage rows to the progress renderer. The local row mirrors
+     * the workload-node sub-stage vocabulary: Downloading -> Replacing cli
+     * binary -> Running doctor -> Done (or `Done (<n> issues)`).
+     */
+    private function runLocalFanOut(
+        RunsLocalUpdate $localUpdater,
+        UpdateAllHumanProgressRenderer $progress,
+        ?string $targetVersion,
+    ): void {
+        $progress->localNodeSubStep($this->output, 'downloading', $targetVersion ?? '');
+
+        $download = $localUpdater->downloadBinary();
+
+        if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
+            $progress->localNodeFailed($this->output, $download['output']);
+
+            return;
+        }
+
+        $progress->localNodeSubStep($this->output, 'replacing_cli_binary');
+        $replace = $localUpdater->replaceBinary($download['staged_path'], $download['version']);
+
+        if (! $replace['successful']) {
+            $progress->localNodeFailed($this->output, $replace['output']);
+
+            return;
+        }
+
+        $progress->localNodeSubStep($this->output, 'running_doctor');
+        $doctor = $localUpdater->runDoctor();
+
+        $progress->localNodeSucceeded($this->output, $doctor['issues']);
     }
 
     /**
@@ -158,42 +225,6 @@ final class UpdateAllCommand extends GatewayCommand
         $eventsUrl = trim($eventsUrl);
 
         return $eventsUrl === '' ? null : $eventsUrl;
-    }
-
-    private function renderLocalUpdateFailure(LocalUpdateResult $result): int
-    {
-        if ($result->status === LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE) {
-            if (! $this->wantsJson()) {
-                $this->line('Local Orbit checkout cannot be updated.');
-
-                return self::FAILURE;
-            }
-
-            return $this->renderFailure(
-                'local_checkout_unavailable',
-                'Local Orbit checkout cannot be updated.',
-                ['path' => $result->checkoutPath ?? ''],
-            );
-        }
-
-        $data = $result->output !== '' ? ['output' => $result->output] : [];
-
-        if (! $this->wantsJson()) {
-            $this->line('Failed to update local Orbit CLI.');
-
-            if ($result->output !== '') {
-                $this->line($result->output);
-            }
-
-            return self::FAILURE;
-        }
-
-        return $this->renderFailure(
-            'local_update_failed',
-            'Failed to update local Orbit checkout.',
-            ['failed_step' => $result->failedStep ?? 'unknown'],
-            $data,
-        );
     }
 
     /**
@@ -216,6 +247,17 @@ final class UpdateAllCommand extends GatewayCommand
     {
         return $this->frameString($this->frameData($payload), 'target_version')
             ?? $this->frameString($payload, 'target_version');
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function terminalAllCurrent(array $payload): bool
+    {
+        $data = $this->frameData($payload);
+        $skipped = $data['skipped'] ?? $payload['skipped'] ?? false;
+
+        return $skipped === true;
     }
 
     /**
