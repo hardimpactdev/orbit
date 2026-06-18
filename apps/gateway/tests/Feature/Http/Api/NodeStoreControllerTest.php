@@ -559,6 +559,7 @@ describe('NodeStoreController', function (): void {
             ->and($node->user)->toBe('orbit')
             ->and($node->status)->toBe(NodeStatus::Active->value)
             ->and($wireGuardConfigs)->toHaveCount(1)
+            ->and($wireGuardConfigs[0])->toContain('DNS = 10.6.0.1, orbit')
             ->and($wireGuardConfigs[0])->toContain('Endpoint = 10.3.0.2:51820');
 
         expect(NodeRoleAssignment::query()
