@@ -24,6 +24,7 @@ final readonly class UpdateRunner
         private OperationUpdatePlanStore $updatePlans,
         private UpdateLeaseManager $leases,
         private UpdateRunnerPipeline $pipeline,
+        private FleetVersionProbe $fleetVersions,
         private ActivityLogger $activityLogger,
     ) {}
 
@@ -50,6 +51,7 @@ final readonly class UpdateRunner
                 callback: function () use ($operationRun, $plan): void {
                     $this->markStarted($operationRun, $plan);
                     $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
+                    $this->runCheckSteps($operationRun, $plan);
                     $this->runPhase(
                         $operationRun,
                         'gateway',
@@ -94,6 +96,40 @@ final readonly class UpdateRunner
         $this->markSucceeded($operationRun, $plan);
 
         return $plan;
+    }
+
+    /**
+     * Emit the two contract check steps before any side effect: a version check
+     * that resolves the target release, and a fleet version probe that counts
+     * how many installations are behind it. The probe is read-only; it never
+     * mutates fleet state.
+     */
+    private function runCheckSteps(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'running', 'Checking');
+        $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'done', "latest version is {$plan->target_version}");
+
+        $this->operationRuns->appendStep($operationRun->id, 'check-fleet-versions', 'running', 'Checking');
+
+        $report = $this->fleetVersions->probe($operationRun, $plan);
+
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            'check-fleet-versions',
+            'done',
+            $this->fleetVersionsMessage($report->outdatedCount, $plan->target_version),
+        );
+    }
+
+    private function fleetVersionsMessage(int $outdatedCount, string $targetVersion): string
+    {
+        if ($outdatedCount === 0) {
+            return "all nodes running on {$targetVersion}";
+        }
+
+        $noun = $outdatedCount === 1 ? 'node' : 'nodes';
+
+        return "{$outdatedCount} outdated {$noun} found";
     }
 
     private function updateGateway(OperationRun $operationRun, OperationUpdatePlan $plan): void

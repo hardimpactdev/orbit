@@ -25,7 +25,7 @@ class UpdateRunnerPipeline
         $results = $this->workloadNodes->update($operationRun, $plan);
         $failed = array_values(array_filter(
             $results,
-            fn (array $result): bool => ($result['status'] ?? null) !== 'completed',
+            fn (array $result): bool => ! in_array($result['status'] ?? null, ['completed', 'skipped'], true),
         ));
 
         if ($failed !== []) {

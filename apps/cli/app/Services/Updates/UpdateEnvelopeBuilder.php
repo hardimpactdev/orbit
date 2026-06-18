@@ -9,25 +9,26 @@ use Orbit\Core\Http\JsonEnvelope;
 final class UpdateEnvelopeBuilder
 {
     /**
-     * @param  array<string, string>  $stepResults
+     * Build the canonical success envelope for a completed or skipped local
+     * update. Completed updates carry the version transition and doctor issue
+     * count; skips carry only the resolved versions and the skip status.
+     *
      * @return array<string, mixed>
      */
-    public static function success(array $stepResults): array
+    public static function success(LocalUpdateResult $result): array
     {
-        $steps = [];
+        $update = [
+            'scope' => 'local',
+            'target' => 'local',
+            'status' => $result->status,
+            'from_version' => $result->fromVersion,
+            'to_version' => $result->toVersion,
+            'latest_version' => $result->latestVersion,
+            'doctor_issues' => $result->doctorIssues,
+            'steps' => self::steps($result->stepResults),
+        ];
 
-        foreach ($stepResults as $name => $status) {
-            $steps[] = ['name' => $name, 'status' => $status];
-        }
-
-        return JsonEnvelope::success([
-            'update' => [
-                'scope' => 'local',
-                'target' => 'local',
-                'status' => 'completed',
-                'steps' => $steps,
-            ],
-        ]);
+        return JsonEnvelope::success(['update' => $update]);
     }
 
     /**
@@ -48,5 +49,20 @@ final class UpdateEnvelopeBuilder
         }
 
         return ['error' => $error];
+    }
+
+    /**
+     * @param  array<string, string>  $stepResults
+     * @return list<array{name: string, status: string}>
+     */
+    private static function steps(array $stepResults): array
+    {
+        $steps = [];
+
+        foreach ($stepResults as $name => $status) {
+            $steps[] = ['name' => $name, 'status' => $status];
+        }
+
+        return $steps;
     }
 }

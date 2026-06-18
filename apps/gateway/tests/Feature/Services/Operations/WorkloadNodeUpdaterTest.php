@@ -78,35 +78,40 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
             'node' => 'agent-1',
             'role' => 'agent',
             'status' => 'completed',
+            'doctor_issues' => 0,
         ],
         [
             'target' => 'app-dev-1',
             'node' => 'app-dev-1',
             'role' => 'app-dev',
             'status' => 'completed',
+            'doctor_issues' => 0,
         ],
         [
             'target' => 'app-prod-1',
             'node' => 'app-prod-1',
             'role' => 'app-prod',
             'status' => 'completed',
+            'doctor_issues' => 0,
         ],
         [
             'target' => 'database-1',
             'node' => 'database-1',
             'role' => 'database',
             'status' => 'completed',
+            'doctor_issues' => 0,
         ],
         [
             'target' => 'ingress-1',
             'node' => 'ingress-1',
             'role' => 'ingress',
             'status' => 'completed',
+            'doctor_issues' => 0,
         ],
     ])
-        ->and($shell->calls)->toHaveCount(5)
+        ->and($shell->updatedNodes())->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->calls[4]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->scriptsFor('agent-1'))->toBe(['orbit --version', $shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
         ->and($shell->activeLeases)->toBe([
             'agent-1' => ['node:agent-1'],
             'app-dev-1' => ['node:app-dev-1'],
@@ -144,6 +149,80 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->not->toContain('orbit-websocket:2.0.0');
 });
 
+it('skips a workload node already on the target version and runs no remote update', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(versions: [
+        'app-dev-1' => '2.0.0',
+        'app-prod-1' => '1.0.0',
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)->toMatchArray([
+        [
+            'target' => 'app-dev-1',
+            'node' => 'app-dev-1',
+            'role' => 'app-dev',
+            'status' => 'skipped',
+        ],
+        [
+            'target' => 'app-prod-1',
+            'node' => 'app-prod-1',
+            'role' => 'app-prod',
+            'status' => 'completed',
+            'doctor_issues' => 0,
+        ],
+    ])
+        ->and($shell->updatedNodes())->toBe(['app-prod-1'])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version'])
+        ->and(workloadUpdaterStepMessages($run))->toContain(
+            ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
+        )
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+});
+
+it('runs orbit doctor after a node update and reports the issue count in the done message', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(
+        doctorIssues: ['app-dev-1' => 2, 'app-prod-1' => 0],
+    );
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0]['status'])->toBe('completed')
+        ->and($results[0]['doctor_issues'])->toBe(2)
+        ->and($results[1]['doctor_issues'])->toBe(0)
+        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version', $shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and(workloadUpdaterStepMessages($run))->toContain(
+            ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
+            ['workload.app-prod-1', 'done', 'Workload node app-prod-1 updated'],
+        );
+});
+
+it('keeps a non-zero doctor issue count from failing the node update', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(doctorIssues: ['app-dev-1' => 5]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results[0]['status'])->toBe('completed')
+        ->and($results[0]['doctor_issues'])->toBe(5);
+});
+
 it('continues updating later workload nodes when one remote update fails', function (): void {
     $shell = new WorkloadUpdaterFakeShell(failures: [
         'app-dev-1' => new RemoteShellResult(exitCode: 12, stdout: '', stderr: 'download failed', durationMs: 10),
@@ -171,9 +250,12 @@ it('continues updating later workload nodes when one remote update fails', funct
             'node' => 'app-prod-1',
             'role' => 'app-prod',
             'status' => 'completed',
+            'doctor_issues' => 0,
         ],
     ])
-        ->and($shell->calls)->toHaveCount(2)
+        ->and($shell->updatedNodes())->toBe(['app-dev-1', 'app-prod-1'])
+        ->and($shell->scriptsFor('app-dev-1'))->toHaveCount(2)
+        ->and($shell->scriptsFor('app-prod-1'))->toBe(['orbit --version', $shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
@@ -228,6 +310,7 @@ it('fails the runner workload phase with target results when any workload update
                         'node' => 'app-prod-1',
                         'role' => 'app-prod',
                         'status' => 'completed',
+                        'doctor_issues' => 0,
                     ],
                 ],
             ],
@@ -260,6 +343,7 @@ it('fails the runner workload phase with target results when any workload update
                         'node' => 'app-prod-1',
                         'role' => 'app-prod',
                         'status' => 'completed',
+                        'doctor_issues' => 0,
                     ],
                 ],
             ],
@@ -300,7 +384,7 @@ it('fails the update operation when a workload node lease is already held', func
         ->where('event_type', 'error')
         ->firstOrFail();
 
-    expect($shell->calls)->toBe([])
+    expect($shell->updatedNodes())->toBe([])
         ->and($run->refresh()->status)->toBe(OperationStatus::Failed)
         ->and($run->error)->toMatchArray([
             'code' => 'update.node_locked',
@@ -348,7 +432,7 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
 
     app(UpdateRunner::class)->run($run->id);
 
-    expect($shell->calls)->toHaveCount(1)
+    expect($shell->updatedNodes())->toBe(['app-dev-1'])
         ->and($shell->activeLeases)->toBe([
             'app-dev-1' => ['fleet:update-all', 'node:app-dev-1'],
         ])
@@ -373,6 +457,22 @@ function workloadUpdaterStepEvents(OperationRun $run): array
         ->where('event_type', 'step')
         ->get()
         ->map(fn (OperationEvent $event): array => [$event->payload['key'], $event->payload['status']])
+        ->all();
+}
+
+/**
+ * @return list<array{0: string, 1: string, 2: string|null}>
+ */
+function workloadUpdaterStepMessages(OperationRun $run): array
+{
+    return $run->events()
+        ->where('event_type', 'step')
+        ->get()
+        ->map(fn (OperationEvent $event): array => [
+            $event->payload['key'],
+            $event->payload['status'],
+            $event->payload['message'] ?? null,
+        ])
         ->all();
 }
 
@@ -455,15 +555,22 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
     public array $calls = [];
 
     /**
+     * Active leases captured at the moment the remote update script runs.
+     *
      * @var array<string, list<string>>
      */
     public array $activeLeases = [];
 
     /**
-     * @param  array<string, RemoteShellResult>  $failures
+     * @param  array<string, RemoteShellResult>  $failures  Keyed by node name; applied to the remote update script call.
+     * @param  array<string, string>  $versions  Probed `orbit --version` output keyed by node name (defaults to the target).
+     * @param  array<string, int>  $doctorIssues  Per-node doctor issue counts keyed by node name.
      */
     public function __construct(
         private array $failures = [],
+        private array $versions = [],
+        private array $doctorIssues = [],
+        private string $defaultVersion = '0.0.0',
     ) {}
 
     #[Override]
@@ -476,6 +583,24 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
             'script' => $script,
             'options' => $options,
         ];
+
+        if ($script === 'orbit --version') {
+            $version = $this->versions[$node->name] ?? $this->defaultVersion;
+
+            return new RemoteShellResult(exitCode: 0, stdout: "Version       {$version}\n", stderr: '', durationMs: 5);
+        }
+
+        if (str_contains($script, 'doctor')) {
+            $issues = $this->doctorIssues[$node->name] ?? 0;
+
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode(['success' => ['data' => ['doctor' => ['summary' => ['issues' => $issues]]]]], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 8,
+            );
+        }
+
         $this->activeLeases[$node->name] = UpdateLease::query()
             ->whereNotNull('active_resource_key')
             ->orderBy('id')
@@ -490,11 +615,38 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
     public function scriptFor(string $node): string
     {
         foreach ($this->calls as $call) {
-            if ($call['node'] === $node) {
+            if ($call['node'] === $node && $call['script'] !== 'orbit --version' && ! str_contains($call['script'], 'doctor')) {
                 return $call['script'];
             }
         }
 
-        throw new RuntimeException("No script recorded for [{$node}].");
+        throw new RuntimeException("No update script recorded for [{$node}].");
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function scriptsFor(string $node): array
+    {
+        return array_values(array_map(
+            fn (array $call): string => $call['script'],
+            array_filter($this->calls, fn (array $call): bool => $call['node'] === $node),
+        ));
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function updatedNodes(): array
+    {
+        $nodes = [];
+
+        foreach ($this->calls as $call) {
+            if ($call['script'] !== 'orbit --version' && ! str_contains($call['script'], 'doctor')) {
+                $nodes[] = $call['node'];
+            }
+        }
+
+        return $nodes;
     }
 }

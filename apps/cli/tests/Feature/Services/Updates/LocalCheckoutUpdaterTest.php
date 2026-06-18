@@ -9,6 +9,23 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
+/**
+ * Download a binary and then replace it through the split surface, returning the
+ * combined success of both steps. Mirrors the order the workflow runs them.
+ *
+ * @return array{download: array<string, mixed>, replace: array<string, mixed>}
+ */
+function runDownloadAndReplace(LocalCheckoutUpdater $updater): array
+{
+    $download = $updater->downloadBinary();
+
+    $replace = ($download['successful'] && is_string($download['staged_path']) && is_string($download['version']))
+        ? $updater->replaceBinary($download['staged_path'], $download['version'])
+        : ['successful' => false, 'exit_code' => 1, 'output' => 'download did not complete', 'skipped' => false];
+
+    return ['download' => $download, 'replace' => $replace];
+}
+
 describe('LocalCheckoutUpdater', function (): void {
     beforeEach(function (): void {
         // Point the installer to a sandboxed install root and a local binary
@@ -69,12 +86,13 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
 
         $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
         $metadata = json_decode(file_get_contents($this->installRoot.'/install.json'), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result['successful'])->toBeTrue()
+        expect($result['download']['successful'])->toBeTrue()
+            ->and($result['replace']['successful'])->toBeTrue()
             ->and($metadata['binary_path'])->toBe($expectedLinkPath);
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
@@ -92,52 +110,53 @@ describe('LocalCheckoutUpdater', function (): void {
         @rmdir($home);
     });
 
-    it('downloads the binary and relinks the host launcher on pull_source', function (): void {
+    it('downloads the binary to a staged path and reports the resolved version', function (): void {
         Process::fake(['*' => Process::result(output: 'orbit 1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $download = (new LocalCheckoutUpdater(new CheckoutPathResolver))->downloadBinary();
 
-        expect($result['successful'])->toBeTrue()
-            ->and($result['exit_code'])->toBe(0);
+        expect($download['successful'])->toBeTrue()
+            ->and($download['exit_code'])->toBe(0)
+            ->and($download['version'])->toBe('1.2.3')
+            ->and($download['staged_path'])->toBeString()
+            ->and($download['staged_path'])->toStartWith($this->binaryDest.'.download.');
 
-        $stagedBinary = null;
+        $stagedBinary = $download['staged_path'];
 
         // Assert the curl download step ran with the ORBIT_BINARY_URL override.
-        Process::assertRan(function (PendingProcess $process) use (&$stagedBinary): bool {
-            if (! is_array($process->command) || $process->command[0] !== 'curl' || ! in_array($this->binaryUrl, $process->command, strict: true)) {
-                return false;
-            }
-
-            $outputOption = array_search('-o', $process->command, true);
-
-            if (! is_int($outputOption) || ! is_string($process->command[$outputOption + 1] ?? null)) {
-                return false;
-            }
-
-            $stagedBinary = $process->command[$outputOption + 1];
-
-            return $stagedBinary !== $this->binaryDest
-                && str_starts_with($stagedBinary, $this->binaryDest.'.download.');
-        });
-
-        expect($stagedBinary)->toBeString();
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command[0] === 'curl'
+            && in_array($this->binaryUrl, $process->command, strict: true)
+            && in_array($stagedBinary, $process->command, strict: true));
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command === ['chmod', '0755', $stagedBinary]);
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command === [$stagedBinary, '--version']);
+    });
+
+    it('replaces the binary with a versioned file and relinks the host launcher', function (): void {
+        Process::fake(['*' => Process::result(output: 'orbit 1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
+        $download = $updater->downloadBinary();
+        $stagedBinary = $download['staged_path'];
+        $replace = $updater->replaceBinary($stagedBinary, $download['version']);
+
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
+
+        expect($replace['successful'])->toBeTrue()
+            ->and($replace['skipped'])->toBeFalse();
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
-            && $process->command === ['mv', '-f', $stagedBinary, $this->installRoot.'/bin/orbit-binary-1.2.3']);
+            && $process->command === ['mv', '-f', $stagedBinary, $versionedBinary]);
 
         // Assert the ln relink step ran pointing at the versioned install root binary.
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
-            && $process->command[0] === 'ln'
-            && $process->command[1] === '-sfn'
-            && $process->command[2] === $this->installRoot.'/bin/orbit-binary-1.2.3'
-            && $process->command[3] === $this->linkPath);
+            && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
 
         // Assert the --version verify step ran against the link path.
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
@@ -149,11 +168,11 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::fake(['*' => Process::result(output: 'Version       9.8.7', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
 
         $versionedBinary = $this->installRoot.'/bin/orbit-binary-9.8.7';
 
-        expect($result['successful'])->toBeTrue();
+        expect($result['replace']['successful'])->toBeTrue();
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command[0] === 'mv'
@@ -169,16 +188,17 @@ describe('LocalCheckoutUpdater', function (): void {
             && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
     });
 
-    it('does not overwrite an existing versioned binary for same-version updates', function (): void {
+    it('skips the move but still relinks for an existing versioned binary', function (): void {
         $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
         file_put_contents($versionedBinary, 'existing binary');
 
         Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
 
-        expect($result['successful'])->toBeTrue();
+        expect($result['replace']['successful'])->toBeTrue()
+            ->and($result['replace']['skipped'])->toBeTrue();
 
         Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
             && ($process->command[0] ?? null) === 'mv'
@@ -193,11 +213,11 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
 
         $metadata = json_decode(file_get_contents($this->installRoot.'/install.json'), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result['successful'])->toBeTrue()
+        expect($result['replace']['successful'])->toBeTrue()
             ->and($metadata['schema_version'])->toBe(1)
             ->and($metadata['version'])->toBe('1.2.3')
             ->and($metadata['binary_path'])->toBe($this->linkPath)
@@ -225,10 +245,10 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::preventStrayProcesses();
 
         try {
-            $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+            $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
 
-            expect($result['successful'])->toBeFalse()
-                ->and($result['output'])->toBe('ln: Permission denied');
+            expect($result['replace']['successful'])->toBeFalse()
+                ->and($result['replace']['output'])->toBe('ln: Permission denied');
 
             Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
                 && ($process->command[0] ?? null) === 'sudo');
@@ -239,9 +259,6 @@ describe('LocalCheckoutUpdater', function (): void {
     });
 
     it('reports failure when the download step fails', function (): void {
-        $binaryUrl = $this->binaryUrl;
-        $binaryDest = $this->binaryDest;
-
         Process::fake(function (PendingProcess $process): ProcessResult {
             if (is_array($process->command) && $process->command[0] === 'curl') {
                 return Process::result(errorOutput: 'curl: (6) Could not resolve host', exitCode: 6);
@@ -250,11 +267,13 @@ describe('LocalCheckoutUpdater', function (): void {
             return Process::result(output: '', exitCode: 0);
         });
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $download = (new LocalCheckoutUpdater(new CheckoutPathResolver))->downloadBinary();
 
-        expect($result['successful'])->toBeFalse()
-            ->and($result['exit_code'])->toBe(6)
-            ->and($result['output'])->toBe('curl: (6) Could not resolve host');
+        expect($download['successful'])->toBeFalse()
+            ->and($download['exit_code'])->toBe(6)
+            ->and($download['output'])->toBe('curl: (6) Could not resolve host')
+            ->and($download['staged_path'])->toBeNull()
+            ->and($download['version'])->toBeNull();
     });
 
     it('reports failure when the verify step fails', function (): void {
@@ -273,14 +292,14 @@ describe('LocalCheckoutUpdater', function (): void {
             return Process::result(output: '', exitCode: 0);
         });
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $download = (new LocalCheckoutUpdater(new CheckoutPathResolver))->downloadBinary();
 
-        expect($result['successful'])->toBeFalse()
-            ->and($result['exit_code'])->toBe(1)
-            ->and($result['output'])->toBe('Segmentation fault');
+        expect($download['successful'])->toBeFalse()
+            ->and($download['exit_code'])->toBe(1)
+            ->and($download['output'])->toBe('Segmentation fault');
     });
 
-    it('reports process exceptions as pull_source failures', function (): void {
+    it('reports process exceptions as download failures', function (): void {
         Process::fake(function (PendingProcess $process): ProcessResult {
             if (is_array($process->command) && $process->command[0] === 'curl') {
                 throw new RuntimeException('The process has been signaled with signal "9".');
@@ -289,11 +308,73 @@ describe('LocalCheckoutUpdater', function (): void {
             return Process::result(output: '', exitCode: 0);
         });
 
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
+        $download = (new LocalCheckoutUpdater(new CheckoutPathResolver))->downloadBinary();
 
-        expect($result['successful'])->toBeFalse()
-            ->and($result['exit_code'])->toBe(1)
-            ->and($result['output'])->toBe('The process has been signaled with signal "9".');
+        expect($download['successful'])->toBeFalse()
+            ->and($download['exit_code'])->toBe(1)
+            ->and($download['output'])->toBe('The process has been signaled with signal "9".');
+    });
+
+    it('uses stderr output when the download step fails', function (): void {
+        Process::fake(function (PendingProcess $process): ProcessResult {
+            if (is_array($process->command) && $process->command[0] === 'curl') {
+                return Process::result(
+                    output: 'stdout message',
+                    errorOutput: 'curl: (22) The requested URL returned error: 404',
+                    exitCode: 22,
+                );
+            }
+
+            return Process::result(output: '', exitCode: 0);
+        });
+
+        $download = (new LocalCheckoutUpdater(new CheckoutPathResolver))->downloadBinary();
+
+        expect($download['successful'])->toBeFalse()
+            ->and($download['exit_code'])->toBe(22)
+            ->and($download['output'])->toBe('curl: (22) The requested URL returned error: 404');
+    });
+
+    it('reports the doctor issue count from a healthy doctor envelope', function (): void {
+        Process::fake(['*' => Process::result(
+            output: json_encode([
+                'success' => ['data' => ['doctor' => ['summary' => ['issues' => 0]]], 'meta' => []],
+            ], JSON_THROW_ON_ERROR),
+            exitCode: 0,
+        )]);
+        Process::preventStrayProcesses();
+
+        $doctor = (new LocalCheckoutUpdater(new CheckoutPathResolver))->runDoctor();
+
+        expect($doctor['issues'])->toBe(0);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command[0] === $this->linkPath
+            && in_array('doctor', $process->command, strict: true)
+            && in_array('--json', $process->command, strict: true));
+    });
+
+    it('reports the doctor issue count from a drift doctor envelope', function (): void {
+        Process::fake(['*' => Process::result(
+            output: json_encode([
+                'error' => ['code' => 'doctor_drift', 'message' => 'drift', 'data' => ['doctor' => ['summary' => ['issues' => 4]]], 'meta' => []],
+            ], JSON_THROW_ON_ERROR),
+            exitCode: 1,
+        )]);
+        Process::preventStrayProcesses();
+
+        $doctor = (new LocalCheckoutUpdater(new CheckoutPathResolver))->runDoctor();
+
+        expect($doctor['issues'])->toBe(4);
+    });
+
+    it('returns an unknown doctor issue count when doctor output is unparseable', function (): void {
+        Process::fake(['*' => Process::result(output: 'not json', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $doctor = (new LocalCheckoutUpdater(new CheckoutPathResolver))->runDoctor();
+
+        expect($doctor['issues'])->toBeNull();
     });
 
     it('installs dependencies inside orbit-gateway', function (): void {
@@ -342,51 +423,18 @@ describe('LocalCheckoutUpdater', function (): void {
             ]);
     });
 
-    it('uses stderr output when a step fails', function (): void {
-        Process::fake(function (PendingProcess $process): ProcessResult {
-            if (is_array($process->command) && $process->command[0] === 'curl') {
-                return Process::result(
-                    output: 'stdout message',
-                    errorOutput: 'curl: (22) The requested URL returned error: 404',
-                    exitCode: 22,
-                );
-            }
-
-            return Process::result(output: '', exitCode: 0);
-        });
-
-        $result = (new LocalCheckoutUpdater(new CheckoutPathResolver))->pullSource();
-
-        expect($result)->toBe([
-            'successful' => false,
-            'exit_code' => 22,
-            'output' => 'curl: (22) The requested URL returned error: 404',
-        ]);
-    });
-
-    it('preserves the gateway-source dependency install and migration steps after a successful binary download', function (): void {
+    it('downloads, replaces, and verifies the binary end to end via a file artifact', function (): void {
         // Offline proof: ORBIT_BINARY_URL=file:// points at a local artifact.
-        // This test verifies the three-step contract end-to-end:
-        //   1. pullSource          — download binary + chmod + relink + verify
-        //   2. installDependencies — docker exec orbit-gateway composer install
-        //   3. runMigrations       — docker exec orbit-gateway php artisan migrate
+        // This verifies the full local update mechanism without a network call:
+        //   1. downloadBinary — curl (file://) + chmod + verify --version
+        //   2. replaceBinary  — mv to versioned path + relink + verify + metadata
         Process::fake(['*' => Process::result(output: 'orbit 1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
+        $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
 
-        $pull = $updater->pullSource();
-
-        Process::fake(['*' => Process::result(output: 'Nothing to install', exitCode: 0)]);
-        $deps = $updater->installDependencies();
-
-        Process::fake(['*' => Process::result(output: 'Nothing to migrate', exitCode: 0)]);
-        $migrate = $updater->runMigrations();
-
-        expect($pull['successful'])->toBeTrue()
-            ->and($deps['successful'])->toBeTrue()
-            ->and($deps['output'])->toBe('Nothing to install')
-            ->and($migrate['successful'])->toBeTrue()
-            ->and($migrate['output'])->toBe('Nothing to migrate');
+        expect($result['download']['successful'])->toBeTrue()
+            ->and($result['download']['version'])->toBe('1.2.3')
+            ->and($result['replace']['successful'])->toBeTrue();
     });
 });

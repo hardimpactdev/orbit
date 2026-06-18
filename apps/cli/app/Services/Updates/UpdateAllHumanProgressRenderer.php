@@ -17,7 +17,19 @@ final class UpdateAllHumanProgressRenderer
 
     private const string STATE_FAILED = 'failed';
 
+    private const string STATE_SKIPPED = 'skipped';
+
+    private const string ROW_CHECK_UPDATES = 'check-updates';
+
+    private const string ROW_CHECK_FLEET = 'check-fleet-versions';
+
     private const string STAGE_WAITING = 'waiting';
+
+    private const string STAGE_CHECKING = 'checking';
+
+    private const string STAGE_SETTLED = 'settled';
+
+    private const string STAGE_SKIPPED = 'skipped';
 
     private const string STAGE_UPDATING_CLI = 'updating_cli';
 
@@ -50,6 +62,8 @@ final class UpdateAllHumanProgressRenderer
     private const string GREEN = "\e[32m";
 
     private const string RED = "\e[31m";
+
+    private const string ORANGE = "\e[38;5;208m";
 
     private const string RESET = "\e[39m";
 
@@ -118,29 +132,121 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $message = $this->frameString($payload, 'message')
-            ?? $this->frameString($payload, 'status')
-            ?? $this->frameString($payload, 'key');
+        $key = $this->frameString($payload, 'key');
+        $status = $this->frameString($payload, 'status');
+        $message = $this->frameString($payload, 'message');
 
-        if ($message === null) {
+        if ($key !== null && $this->applyKeyedStep($output, $key, $status, $message)) {
             return;
         }
 
-        $this->applyStepMessage($output, $message);
-    }
+        $resolved = $message
+            ?? $status
+            ?? $key;
 
-    public function finishSuccess(OutputInterface $output): void
-    {
-        foreach ($this->order as $target) {
-            if (($this->rows[$target]['state'] ?? self::STATE_WAITING) !== self::STATE_FAILED) {
-                $this->setRow($output, $target, self::STATE_DONE, self::STAGE_DONE);
-            }
+        if ($resolved === null) {
+            return;
         }
 
-        $count = count($this->order);
-        $noun = $count === 1 ? 'node' : 'nodes';
+        $this->applyStepMessage($output, $resolved);
+    }
 
-        $this->finish($output, "Successfully updated {$count} {$noun}", success: true);
+    /**
+     * Route the structured check-step and per-node rows by their journal key,
+     * which is more robust than message matching (the two check steps share the
+     * `Checking` in-progress message and only differ by key). Returns true when
+     * the key was handled.
+     */
+    private function applyKeyedStep(OutputInterface $output, string $key, ?string $status, ?string $message): bool
+    {
+        if ($key === self::ROW_CHECK_UPDATES || $key === self::ROW_CHECK_FLEET) {
+            $this->ensureTarget($output, $key);
+
+            if ($status === 'done') {
+                $this->setRow($output, $key, self::STATE_DONE, self::STAGE_SETTLED, $message ?? '');
+
+                return true;
+            }
+
+            if ($status === 'fail') {
+                $this->setRow($output, $key, self::STATE_FAILED, self::STAGE_SETTLED, $message ?? 'Failed');
+
+                return true;
+            }
+
+            $this->setRow($output, $key, self::STATE_ACTIVE, self::STAGE_CHECKING);
+
+            return true;
+        }
+
+        if (str_starts_with($key, 'workload.')) {
+            $node = $this->normalizeTarget(substr($key, strlen('workload.')));
+            $this->ensureTarget($output, $node);
+
+            if ($status === 'done') {
+                if ($message !== null && str_contains($message, 'skipped: already up to date')) {
+                    $this->setRow($output, $node, self::STATE_SKIPPED, self::STAGE_SKIPPED);
+
+                    return true;
+                }
+
+                $this->setRow($output, $node, self::STATE_DONE, self::STAGE_DONE, $this->nodeDoctorSuffix($message));
+
+                return true;
+            }
+
+            if ($status === 'fail') {
+                $this->setRow($output, $node, self::STATE_FAILED, self::STAGE_FAILED, $message ?? '');
+
+                return true;
+            }
+
+            $this->setRow($output, $node, self::STATE_ACTIVE, self::STAGE_UPDATING_NODE_CLI);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Extract a `(<n> issues)` suffix from a `Workload node <name> updated
+     * (<n> issues)` done message so the node row settles to `Done (n issues)`.
+     */
+    private function nodeDoctorSuffix(?string $message): string
+    {
+        if ($message !== null && preg_match('/\((?P<count>\d+ issues?)\)$/', $message, $matches) === 1) {
+            return "({$matches['count']})";
+        }
+
+        return '';
+    }
+
+    public function finishSuccess(OutputInterface $output, ?string $targetVersion = null): void
+    {
+        foreach ($this->order as $target) {
+            $state = $this->rows[$target]['state'] ?? self::STATE_WAITING;
+
+            // Preserve settled check rows, skipped (orange) rows, and any failed
+            // row; only still-pending node/gateway rows settle to Done.
+            if (in_array($state, [self::STATE_DONE, self::STATE_FAILED, self::STATE_SKIPPED], true)
+                || in_array($this->rows[$target]['stage'] ?? '', [self::STAGE_SETTLED, self::STAGE_CHECKING], true)) {
+                continue;
+            }
+
+            $this->setRow($output, $target, self::STATE_DONE, self::STAGE_DONE);
+        }
+
+        $this->finish($output, $this->successFooter($targetVersion), success: true);
+    }
+
+    private function successFooter(?string $targetVersion): string
+    {
+        if ($targetVersion === null || $targetVersion === '') {
+            return 'Success';
+        }
+
+        return "All nodes are running on version {$targetVersion}";
     }
 
     public function finishFailure(OutputInterface $output): void
@@ -230,7 +336,16 @@ final class UpdateAllHumanProgressRenderer
             'stage' => self::STAGE_WAITING,
             'message' => '',
         ];
-        $this->targetWidth = max($this->targetWidth, strlen($target));
+        $this->targetWidth = max($this->targetWidth, strlen($this->displayName($target)));
+    }
+
+    private function displayName(string $target): string
+    {
+        return match ($target) {
+            self::ROW_CHECK_UPDATES => 'Checking for updates',
+            self::ROW_CHECK_FLEET => 'Checking fleet versions',
+            default => $target,
+        };
     }
 
     private function renderInitial(OutputInterface $output): void
@@ -337,12 +452,14 @@ final class UpdateAllHumanProgressRenderer
     private function rowLine(string $target, bool $styled): string
     {
         $row = $this->rows[$target];
-        $targetName = str_pad($target, $this->targetWidth);
-        $label = "{$targetName} ".$this->stageName($row['stage']);
+        $targetName = str_pad($this->displayName($target), $this->targetWidth);
+        $stage = $this->stageName($row['stage']);
+        $label = $stage === '' ? $targetName : "{$targetName} {$stage}";
 
         $line = match ($row['state']) {
             self::STATE_ACTIVE => $this->activeIcon($styled).' '.$this->decorate($label, self::ACCENT, $styled),
             self::STATE_DONE => $this->decorate('●', self::GREEN, $styled).' '.$this->decorate($label, self::ACCENT, $styled),
+            self::STATE_SKIPPED => $this->decorate('●', self::ORANGE, $styled).' '.$this->decorate($label, self::ACCENT, $styled),
             self::STATE_FAILED => $this->decorate('●', self::RED, $styled).' '.$this->decorate($label, self::RED, $styled),
             default => $this->decorate('○ '.$label, self::DIM, $styled),
         };
@@ -378,6 +495,9 @@ final class UpdateAllHumanProgressRenderer
     {
         return match ($stage) {
             self::STAGE_WAITING => 'Waiting',
+            self::STAGE_CHECKING => 'Checking',
+            self::STAGE_SETTLED => '',
+            self::STAGE_SKIPPED => 'Skipped: already up to date',
             self::STAGE_UPDATING_CLI => 'Updating CLI',
             self::STAGE_STARTING_OPERATION => 'Starting operation',
             self::STAGE_ACQUIRING_LEASES => 'Acquiring leases',
