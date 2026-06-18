@@ -83,10 +83,20 @@ is red.
 
 ## Implementation
 
-The canonical entry point is `WithStepTree::runStepTree($title, $steps,
-$jsonData, $doneFooter, $failFooter)`. ANSI constants, animation frames,
-and box-drawing logic live in `SpinnerTreeRenderer` and the `WithStepTree`
-trait. See
+The canonical entry point is the `App\Commands\Concerns\WithStepTree` trait,
+which exposes two methods:
+
+- `runStepTree($title, $steps, $doneFooter, $failFooter)` — runs each step's
+  `run` closure in sequence, animating one row at a time.
+- `runStepOperation($title, $phases, $work, $doneFooter, $failFooter)` — renders
+  the documented phase rows for a single atomic operation (typically one gateway
+  call); every phase animates while `$work` runs and settles together.
+
+Both methods drive the shared `Orbit\Core\Progress\StepTree` engine.
+Gateway-streamed progress uses `Orbit\Core\Progress\StreamedStepTree` through the
+`App\Commands\Concerns\StreamsGatewayProgress` trait. ANSI constants, animation
+frames, and box-drawing logic live in `Orbit\Core\Progress\SpinnerTreeRenderer`.
+See
 [`.agents/skills/command-designer/references/terminal-output.md`](../../../../../../.agents/skills/command-designer/references/terminal-output.md)
 for the trait API, ANSI reference, parallel and async patterns, and the
 gateway-streamed SSE shape.
@@ -121,17 +131,18 @@ return $this->runStepTree('Removing node \'app-1\'', [
         'doneLabel' => 'Removed node from gateway registry',
         'run' => fn (): string => 'gateway updated',
     ],
-], jsonData: ['action' => 'removed']);
+], doneFooter: "Successfully removed node 'app-1'");
 ```
 
 ## Reference Implementations
 
 These commands use the progress tree and are good models to follow.
 
-- `TldResolveCommand` — sequential `runStepTree`.
-- `GatewayConnectCommand` — simple sequential `runStepTree`.
-- `NodeUpdateCommand` — low-level `WithStepTree`.
-- `DeployCommand` — low-level `WithStepTree` with custom rendering.
+- `DnsResolveTldCommand` — `runStepOperation` for an atomic gateway call.
+- `GatewayAddCommand` — `runStepOperation` for the gateway-join flow.
+- `NodeUpdateCommand` — `runStepOperation` for an atomic node update.
+- `DeployRunCommand` — gateway-streamed progress via `StreamsGatewayProgress`
+  and `StreamedStepTree`.
 
 ## Cross References
 
