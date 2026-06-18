@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
 
@@ -127,7 +128,7 @@ final readonly class ToolsFixer
         $hash = $managedConfig['hash'] ?? null;
         $content = $managedConfig['content'] ?? null;
 
-        if (! is_string($path) || $path === '' || ! is_string($hash) || $hash === '' || ! is_string($content)) {
+        if (! is_string($path) || $path === '' || ! str_starts_with($path, '/') || ! is_string($hash) || $hash === '' || ! is_string($content)) {
             return null;
         }
 
@@ -135,19 +136,10 @@ final readonly class ToolsFixer
             return null;
         }
 
-        $directory = dirname($path);
-
-        return sprintf(
-            <<<'SH'
-sudo install -d -m 0755 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0644 %s
-SH,
-            escapeshellarg($directory),
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg($path),
-            escapeshellarg($path),
-        );
+        return new ManagedFile(
+            path: $path,
+            content: $content,
+        )->writeScript();
     }
 
     private function secretRepairCommand(NodeTool $tool): ?string
@@ -158,7 +150,7 @@ SH,
         $hash = $managedSecret['hash'] ?? null;
         $content = $managedSecret['content'] ?? null;
 
-        if (! is_string($path) || $path === '' || ! is_string($hash) || $hash === '' || ! is_string($content)) {
+        if (! is_string($path) || $path === '' || ! str_starts_with($path, '/') || ! is_string($hash) || $hash === '' || ! is_string($content)) {
             return null;
         }
 
@@ -166,19 +158,13 @@ SH,
             return null;
         }
 
-        $directory = dirname($path);
-
-        return sprintf(
-            <<<'SH'
-sudo install -d -m 0700 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0600 %s
-SH,
-            escapeshellarg($directory),
-            escapeshellarg(base64_encode($content)),
-            escapeshellarg($path),
-            escapeshellarg($path),
-        );
+        return new ManagedFile(
+            path: $path,
+            content: $content,
+            mode: '0600',
+            directoryMode: '0700',
+            sensitive: true,
+        )->writeScript();
     }
 
     /**

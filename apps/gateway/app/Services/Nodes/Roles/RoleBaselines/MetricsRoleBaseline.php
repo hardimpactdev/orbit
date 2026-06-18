@@ -17,6 +17,7 @@ use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\Process;
 use App\Models\ProxyRoute;
+use App\Services\Convergence\ManagedFile;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Firewall\FirewallRuleFixer;
 use App\Services\Metrics\MetricsServiceRoute;
@@ -386,18 +387,11 @@ class MetricsRoleBaseline implements RoleBaseline
                 ? $file['mode']
                 : '0644';
 
-            $scripts[] = sprintf(
-                <<<'SH'
-sudo install -d -m 0755 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod %s %s
-SH,
-                escapeshellarg(dirname($path)),
-                escapeshellarg(base64_encode($content)),
-                escapeshellarg($path),
-                escapeshellarg($mode),
-                escapeshellarg($path),
-            );
+            $scripts[] = new ManagedFile(
+                path: $path,
+                content: $content,
+                mode: $mode,
+            )->writeScript();
         }
 
         return $scripts === [] ? null : implode(PHP_EOL, $scripts);
