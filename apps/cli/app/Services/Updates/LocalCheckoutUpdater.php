@@ -7,19 +7,25 @@ namespace App\Services\Updates;
 use App\Services\Version\InstallMetadataStore;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
+use JsonException;
 use Throwable;
 
 /**
- * Performs the three-step local Orbit update sequence:
+ * Performs the local Orbit CLI binary update for the host checkout.
  *
- * 1. Download the prebuilt CLI binary for this host OS/arch and relink the
- *    host `orbit` launcher to a versioned binary file.
- * 2. Install gateway Composer dependencies inside `orbit-gateway`.
- * 3. Run gateway Orbit migrations inside `orbit-gateway`.
+ * The update is split into two phases so the orchestrator can surface each as a
+ * progress-tree row:
  *
- * Steps 2 and 3 operate on the gateway source checkout mounted inside
- * `orbit-gateway` at `/opt/orbit`. The gateway still runs from source; only
- * the CLI self-update changes from a source pull to a binary download-and-relink.
+ * 1. {@see self::downloadBinary()} — download the prebuilt CLI binary for this
+ *    host OS/arch to a staged path away from the running binary, make it
+ *    executable, and verify it responds to `--version`.
+ * 2. {@see self::replaceBinary()} — move the verified binary to a versioned file,
+ *    relink the host `orbit` launcher to it, verify the launcher, and write the
+ *    install metadata. Keeping the currently running binary path intact avoids
+ *    invalidating a PHAR while it is still loading classes.
+ *
+ * {@see self::runDoctor()} runs `orbit doctor` in verify mode through the
+ * relinked launcher as a non-fatal post-update verification step.
  *
  * Honors `ORBIT_BINARY_URL` to point at a local artifact, mirror, or specific
  * release tag instead of the default GitHub Releases URL — the same override
@@ -43,72 +49,122 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     }
 
     /**
-     * Download the prebuilt Orbit CLI binary for this host OS/arch and relink
-     * the host `orbit` launcher (`ORBIT_BIN_PATH` or `$HOME/.local/bin/orbit`).
-     *
-     * The downloaded binary is installed as
-     * `<install-root>/bin/orbit-binary-<version>` and the launcher is relinked
-     * to that immutable path. Keeping the currently running binary path intact
-     * avoids invalidating a PHAR while it is still loading classes.
-     *
-     * Verify with `--version` after relinking. Reports the captured output (or
-     * stderr when stdout is empty) on failure.
+     * Download, verify, and install the CLI binary in a single call. Composes
+     * {@see self::downloadBinary()} and {@see self::replaceBinary()} for callers
+     * that treat the local CLI update as one atomic step (the `update:all`
+     * runner).
      *
      * @return array{successful: bool, exit_code: int, output: string}
      */
     public function pullSource(): array
     {
+        $download = $this->downloadBinary();
+
+        if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
+            return [
+                'successful' => false,
+                'exit_code' => $download['exit_code'],
+                'output' => $download['output'],
+            ];
+        }
+
+        $replace = $this->replaceBinary($download['staged_path'], $download['version']);
+
+        return [
+            'successful' => $replace['successful'],
+            'exit_code' => $replace['exit_code'],
+            'output' => $replace['output'],
+        ];
+    }
+
+    /**
+     * Download the prebuilt Orbit CLI binary for this host OS/arch to a staged
+     * path, make it executable, and verify it responds to `--version`. The
+     * staged copy lives next to the install root binary so the move in
+     * {@see self::replaceBinary()} stays on the same filesystem.
+     *
+     * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
+     */
+    public function downloadBinary(): array
+    {
         $installRoot = $this->checkoutPathResolver->resolve();
         $legacyBinaryPath = $installRoot.'/bin/orbit-binary';
         $stagedBinary = $this->stagedBinaryPath($legacyBinaryPath);
-        $linkPath = $this->resolveLinkPath();
 
         $binaryUrl = $this->resolveBinaryUrl();
 
+        if ($binaryUrl === null) {
+            return $this->failedDownload(
+                'Unsupported platform: cannot determine Orbit CLI binary asset for this OS/arch.',
+                1,
+            );
+        }
+
+        // Download away from the running binary, then swap after verification.
+        $downloadResult = $this->runCommand([
+            'curl', '-fsSL', '--retry', '3', '--retry-delay', '2', '-o', $stagedBinary, $binaryUrl,
+        ], 120);
+
+        if (! $downloadResult->successful()) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownloadFrom($downloadResult);
+        }
+
+        $chmodResult = $this->runCommand(['chmod', '0755', $stagedBinary], 10);
+
+        if (! $chmodResult->successful()) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownloadFrom($chmodResult);
+        }
+
+        $verifyResult = $this->runCommand([$stagedBinary, '--version'], 30);
+
+        if (! $verifyResult->successful()) {
+            $this->discard($stagedBinary);
+
+            return $this->failedDownloadFrom($verifyResult);
+        }
+
+        return [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => trim($verifyResult->output()),
+            'staged_path' => $stagedBinary,
+            'version' => $this->versionFromOutput($verifyResult->output()),
+        ];
+    }
+
+    /**
+     * Move the verified staged binary to
+     * `<install-root>/bin/orbit-binary-<version>`, relink the host launcher to
+     * it, verify the launcher, and write the install metadata. When the
+     * versioned binary is already present the move is skipped and the staged copy
+     * discarded, but the relink and verify still run so the launcher always
+     * points at the requested version.
+     *
+     * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
+     */
+    public function replaceBinary(string $stagedPath, string $version): array
+    {
+        $installRoot = $this->checkoutPathResolver->resolve();
+        $linkPath = $this->resolveLinkPath();
+        $versionedBinary = $this->versionedBinaryPath($installRoot, $version);
+        $skipped = false;
+
         try {
-            if ($binaryUrl === null) {
-                return [
-                    'successful' => false,
-                    'exit_code' => 1,
-                    'output' => 'Unsupported platform: cannot determine Orbit CLI binary asset for this OS/arch.',
-                ];
-            }
-
-            // Download away from the running binary, then swap after verification.
-            $downloadResult = $this->runCommand([
-                'curl', '-fsSL', '--retry', '3', '--retry-delay', '2', '-o', $stagedBinary, $binaryUrl,
-            ], 120);
-
-            if (! $downloadResult->successful()) {
-                return $this->failedResult($downloadResult);
-            }
-
-            $chmodResult = $this->runCommand(['chmod', '0755', $stagedBinary], 10);
-
-            if (! $chmodResult->successful()) {
-                return $this->failedResult($chmodResult);
-            }
-
-            $stagedVerifyResult = $this->runCommand([$stagedBinary, '--version'], 30);
-
-            if (! $stagedVerifyResult->successful()) {
-                return $this->failedResult($stagedVerifyResult);
-            }
-
-            $version = $this->versionFromOutput($stagedVerifyResult->output());
-            $versionedBinary = $this->versionedBinaryPath($installRoot, $version);
-
             if (is_file($versionedBinary)) {
-                @unlink($stagedBinary);
-                $stagedBinary = null;
+                $this->discard($stagedPath);
+                $skipped = true;
             } else {
-                $moveResult = $this->runCommand(['mv', '-f', $stagedBinary, $versionedBinary], 10);
+                $moveResult = $this->runCommand(['mv', '-f', $stagedPath, $versionedBinary], 10);
 
                 if (! $moveResult->successful()) {
-                    return $this->failedResult($moveResult);
+                    return $this->failedReplaceFrom($moveResult);
                 }
 
-                $stagedBinary = null;
+                $stagedPath = '';
             }
 
             $linkDirectoryResult = $this->ensureLinkDirectory($linkPath);
@@ -120,13 +176,13 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             $linkResult = $this->runCommand($this->linkCommand($versionedBinary, $linkPath), 10);
 
             if (! $linkResult->successful()) {
-                return $this->failedResult($linkResult);
+                return $this->failedReplaceFrom($linkResult);
             }
 
             $verifyResult = $this->runCommand([$linkPath, '--version'], 30);
 
             if (! $verifyResult->successful()) {
-                return $this->failedResult($verifyResult);
+                return $this->failedReplaceFrom($verifyResult);
             }
 
             $this->installMetadata->write(
@@ -139,12 +195,55 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 'successful' => true,
                 'exit_code' => 0,
                 'output' => trim($verifyResult->output()),
+                'skipped' => $skipped,
             ];
         } finally {
-            if (is_string($stagedBinary) && $stagedBinary !== '' && is_file($stagedBinary)) {
-                @unlink($stagedBinary);
-            }
+            $this->discard($stagedPath);
         }
+    }
+
+    /**
+     * Run `orbit doctor --self --json` through the relinked launcher and return
+     * the reported issue count. The doctor verify is non-fatal: any failure to
+     * resolve the count yields `null` (unknown). The summary issue count lives
+     * under `success.data.doctor.summary.issues` for a healthy run or
+     * `error.data.doctor.summary.issues` when drift is reported.
+     *
+     * @return array{issues: int|null}
+     */
+    public function runDoctor(): array
+    {
+        $linkPath = $this->resolveLinkPath();
+        $result = $this->runCommand([$linkPath, 'doctor', '--self', '--json'], 120);
+
+        return ['issues' => $this->doctorIssuesFromOutput($result->output())];
+    }
+
+    private function doctorIssuesFromOutput(string $output): ?int
+    {
+        $output = trim($output);
+
+        if ($output === '') {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $envelope = $decoded['success'] ?? $decoded['error'] ?? null;
+        $data = is_array($envelope) ? ($envelope['data'] ?? null) : null;
+        $doctor = is_array($data) ? ($data['doctor'] ?? null) : null;
+        $summary = is_array($doctor) ? ($doctor['summary'] ?? null) : null;
+        $issues = is_array($summary) ? ($summary['issues'] ?? null) : null;
+
+        return is_int($issues) ? $issues : null;
     }
 
     /**
@@ -160,15 +259,48 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     }
 
     /**
-     * @return array{successful: false, exit_code: int, output: string}
+     * @return array{successful: false, exit_code: int, output: string, staged_path: null, version: null}
      */
-    private function failedResult(ProcessResult $result): array
+    private function failedDownload(string $output, int $exitCode): array
+    {
+        return [
+            'successful' => false,
+            'exit_code' => $exitCode,
+            'output' => $output,
+            'staged_path' => null,
+            'version' => null,
+        ];
+    }
+
+    /**
+     * @return array{successful: false, exit_code: int, output: string, staged_path: null, version: null}
+     */
+    private function failedDownloadFrom(ProcessResult $result): array
+    {
+        return $this->failedDownload(
+            trim($result->errorOutput() ?: $result->output()),
+            $result->exitCode() ?? 1,
+        );
+    }
+
+    /**
+     * @return array{successful: false, exit_code: int, output: string, skipped: false}
+     */
+    private function failedReplaceFrom(ProcessResult $result): array
     {
         return [
             'successful' => false,
             'exit_code' => $result->exitCode() ?? 1,
             'output' => trim($result->errorOutput() ?: $result->output()),
+            'skipped' => false,
         ];
+    }
+
+    private function discard(string $path): void
+    {
+        if ($path !== '' && is_file($path)) {
+            @unlink($path);
+        }
     }
 
     private function stagedBinaryPath(string $binaryDest): string
@@ -177,7 +309,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     }
 
     /**
-     * @return array{successful: false, exit_code: int, output: string}|null
+     * @return array{successful: false, exit_code: int, output: string, skipped: false}|null
      */
     private function ensureLinkDirectory(string $linkPath): ?array
     {
@@ -195,6 +327,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
             'successful' => false,
             'exit_code' => 1,
             'output' => "Unable to create Orbit launcher directory: {$linkDirectory}",
+            'skipped' => false,
         ];
     }
 

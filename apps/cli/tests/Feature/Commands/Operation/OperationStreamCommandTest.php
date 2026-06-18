@@ -141,6 +141,30 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
     }
 
     /**
+     * @return array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null}
+     */
+    public function downloadBinary(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'staged_path' => '/tmp/staged-orbit', 'version' => '1.2.3'];
+    }
+
+    /**
+     * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
+     */
+    public function replaceBinary(string $stagedPath, string $version): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
+    }
+
+    /**
+     * @return array{issues: int|null}
+     */
+    public function runDoctor(): array
+    {
+        return ['issues' => 0];
+    }
+
+    /**
      * @return array{successful: bool, exit_code: int, output: string}
      */
     public function installDependencies(): array

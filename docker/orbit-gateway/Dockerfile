@@ -66,6 +66,7 @@ COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
 COPY bin/install-orbit /srv/orbit/bin/install-orbit
 COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
 COPY packages/core/src /srv/orbit/packages/core/src
+COPY VERSION /srv/orbit/VERSION
 
 RUN install -d "$ORBIT_CONFIG_ROOT" \
     && chmod 755 /srv/orbit/bin/install-orbit \
