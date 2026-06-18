@@ -550,7 +550,6 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ])
             ->and($writtenConfig)->toContain('PrivateKey = gateway-private-v1')
             ->and($writtenConfig)->toContain('Address = 10.6.0.2/24')
-            ->and($writtenConfig)->toContain('DNS = 10.6.0.1, orbit')
             ->and($writtenConfig)->toContain('PublicKey = wg-easy-public-key')
             ->and($writtenConfig)->toContain('PresharedKey = gateway-psk-v1')
             ->and($writtenConfig)->toContain('AllowedIPs = 10.6.0.0/24')

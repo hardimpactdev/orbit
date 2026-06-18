@@ -481,7 +481,6 @@ class BootstrapGatewayLocalCommand extends Command
             '[Interface]',
             "PrivateKey = {$gatewayPrivateKey}",
             "Address = {$gatewayWireguardAddress}/24",
-            "DNS = {$this->wireGuardServerAddress($gatewayWireguardAddress)}, orbit",
             '',
             '[Peer]',
             "PublicKey = {$wireguardServerPublicKey}",
@@ -498,20 +497,6 @@ class BootstrapGatewayLocalCommand extends Command
             'PersistentKeepalive = 25',
             '',
         ]);
-    }
-
-    private function wireGuardServerAddress(string $clientAddress): string
-    {
-        $address = trim(explode('/', $clientAddress, 2)[0]);
-
-        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
-            throw new RuntimeException("WireGuard client address [{$clientAddress}] is invalid.");
-        }
-
-        $segments = explode('.', $address);
-        $segments[3] = '1';
-
-        return implode('.', $segments);
     }
 
     private function gatewayWireGuardConfig(
