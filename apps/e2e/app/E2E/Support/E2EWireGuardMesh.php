@@ -115,6 +115,7 @@ cat <<'ORBIT_WG_CONFIG' | sudo tee /etc/wireguard/wg-orbit.conf >/dev/null
 ORBIT_WG_CONFIG
 sudo chmod 0600 /etc/wireguard/wg-orbit.conf
 sudo wg-quick down wg-orbit >/dev/null 2>&1 || true
+sudo ip link delete dev wg-orbit >/dev/null 2>&1 || true
 sudo wg-quick up wg-orbit
 sudo systemctl enable wg-quick@wg-orbit
 SH,

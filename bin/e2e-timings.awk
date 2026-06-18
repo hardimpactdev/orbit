@@ -9,20 +9,24 @@ $1 != marker {
     next
 }
 
-NF != 4 {
+NF < 4 {
     next
 }
 
 {
     label = $2
     event = $3
-    duration = $4
+    duration = $NF
 
     if (duration !~ /^[0-9]+(\.[0-9]+)?s$/) {
         next
     }
 
     sub(/s$/, "", duration)
+
+    for (i = 4; i < NF; i++) {
+        event = event "." $i
+    }
 
     key = label separator event
     count[key]++

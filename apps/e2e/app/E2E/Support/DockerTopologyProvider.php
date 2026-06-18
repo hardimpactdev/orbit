@@ -1071,44 +1071,58 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             return;
         }
 
-        $commands = $this->gatewayRegistrySeedCommands($kind, $instances, $networkPlan, $mode);
+        $seedTasks = $this->gatewayRegistrySeedTasks($kind, $instances, $networkPlan, $mode);
 
-        if ($commands === []) {
+        if ($seedTasks['tasks'] === [] && $seedTasks['after_successful_tasks'] === []) {
             return;
         }
+
+        $script = DockerDownstreamProvisioningScript::make(
+            $seedTasks['tasks'],
+            $seedTasks['after_successful_tasks'],
+        );
+        $scriptPath = '/tmp/orbit-e2e-docker-runtime-downstream.sh';
+        $scriptPathArgument = escapeshellarg($scriptPath);
 
         E2ECommand::ssh(
             $gateway,
             'orbit',
             new SshKeyPair('/dev/null', '/dev/null'),
-            'cd /home/orbit/orbit && '.implode(' && ', $commands),
+            "cat > {$scriptPathArgument} <<'BASH'\n{$script}\nBASH\nchmod 755 {$scriptPathArgument} && bash {$scriptPathArgument}",
             timeoutSeconds: 300,
         );
     }
 
     /**
      * @param  array<string, DockerInstance>  $instances
-     * @return list<string>
+     * @return array{
+     *     tasks: array<string, string>,
+     *     after_successful_tasks: array<string, string>,
+     * }
      */
-    private function gatewayRegistrySeedCommands(E2ETopologyKind $kind, array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): array
+    private function gatewayRegistrySeedTasks(E2ETopologyKind $kind, array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): array
     {
-        $commands = [];
+        $tasks = [];
+        $afterSuccessfulTasks = [];
         $gatewayEndpoint = $this->gatewayEndpoint($networkPlan, $mode);
 
         if (isset($instances['dev'])) {
-            $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
-                $this->hostForRole('dev', $networkPlan, $mode),
-                $this->hostKeyHostOption('dev', $networkPlan, $mode),
-                $this->wireGuardAddressForRole('dev', $networkPlan, $mode),
-                $gatewayEndpoint,
-            );
-            $commands[] = 'php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp());
+            $tasks['dev'] = implode(' && ', [
+                'cd /home/orbit/orbit',
+                sprintf(
+                    'php apps/gateway/artisan orbit:internal:bake-app-node app-dev-1 --role=app-dev --host=%s%s --wireguard-address=%s --tld=test --gateway-endpoint=%s --user=orbit',
+                    $this->hostForRole('dev', $networkPlan, $mode),
+                    $this->hostKeyHostOption('dev', $networkPlan, $mode),
+                    $this->wireGuardAddressForRole('dev', $networkPlan, $mode),
+                    $gatewayEndpoint,
+                ),
+                'php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+            ]);
         }
 
-        if (isset($instances['ingress'])) {
-            $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+        if (isset($instances['ingress']) && ! isset($instances['prod'])) {
+            $tasks['ingress'] = sprintf(
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
                 $this->hostForRole('ingress', $networkPlan, $mode),
                 $this->hostKeyHostOption('ingress', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('ingress', $networkPlan, $mode),
@@ -1118,6 +1132,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
         if (isset($instances['prod'])) {
             $prodHostsIngress = E2EPreparedTopology::prodHostsIngressRole($kind) && ! isset($instances['ingress']);
+            $commands = ['cd /home/orbit/orbit'];
 
             if ($prodHostsIngress) {
                 $commands[] = sprintf(
@@ -1125,6 +1140,16 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                     $this->hostForRole('prod', $networkPlan, $mode),
                     $this->hostKeyHostOption('prod', $networkPlan, $mode),
                     $this->wireGuardAddressForRole('prod', $networkPlan, $mode),
+                    $gatewayEndpoint,
+                );
+            }
+
+            if (isset($instances['ingress'])) {
+                $commands[] = sprintf(
+                    'php apps/gateway/artisan orbit:internal:bake-ingress-node edge-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit',
+                    $this->hostForRole('ingress', $networkPlan, $mode),
+                    $this->hostKeyHostOption('ingress', $networkPlan, $mode),
+                    $this->wireGuardAddressForRole('ingress', $networkPlan, $mode),
                     $gatewayEndpoint,
                 );
             }
@@ -1144,11 +1169,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 $gatewayEndpoint,
                 $ingress,
             );
+            $tasks['prod'] = implode(' && ', $commands);
         }
 
         if (isset($instances['agent'])) {
-            $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
+            $tasks['agent'] = sprintf(
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-agent-node agent-1 --host=%s%s --wireguard-address=%s --tld=agent --gateway-endpoint=%s --user=orbit',
                 $this->hostForRole('agent', $networkPlan, $mode),
                 $this->hostKeyHostOption('agent', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('agent', $networkPlan, $mode),
@@ -1157,8 +1183,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         }
 
         if (self::websocketTopologyKind($kind) && isset($instances['dev'])) {
-            $commands[] = sprintf(
-                'php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
+            $afterSuccessfulTasks['websocket'] = sprintf(
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node app-dev-1 --host=%s%s --wireguard-address=%s --gateway-endpoint=%s --user=orbit --redis-node=app-dev-1',
                 $this->hostForRole('dev', $networkPlan, $mode),
                 $this->hostKeyHostOption('dev', $networkPlan, $mode),
                 $this->wireGuardAddressForRole('dev', $networkPlan, $mode),
@@ -1166,7 +1192,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             );
         }
 
-        return $commands;
+        return [
+            'tasks' => $tasks,
+            'after_successful_tasks' => $afterSuccessfulTasks,
+        ];
     }
 
     /**

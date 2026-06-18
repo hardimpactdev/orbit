@@ -89,18 +89,33 @@ factory and lease. Forced `e2e:prepare-topology` already streams checkpoints by
 default; the environment flag also covers topology acquisition, cleanup, and
 reset paths.
 
+### Topology Events
+
 Current event names include `batch.copy-start`, `clone-ready.<role>`,
 `command-ready.<role>`, `known-hosts.<role>`, `wireguard`,
 `wireguard.install.<role>`, `gateway-ssh-access.<role>`, `retarget`,
 `retarget.bake.<role>`, `network-ready.<role>`, `cleanup.bulk`, and `reset.*`.
 Warm-snapshot and checkpoint paths still emit `agent-ready.<role>` and
 `cleanup.<role>`. Output goes to STDERR with the prefix `[orbit-e2e]` so it
-interleaves cleanly with Pest output. The clone/start batch intentionally stays
-one remote SSH operation; split copy/start timing should only be added if it
-can keep that single remote operation. Incus acquisition per-role readiness,
-WireGuard installs, gateway SSH authorization, retarget bakes, and peer-route
-checks each run as one parallel host invocation whose per-role durations are
-reported through those `<role>`-suffixed events.
+interleaves cleanly with Pest output.
+
+### Checkout Events
+
+Current-checkout events include `checkout.<role>.checkout.copy`,
+`checkout.<role>.checkout.vendor`, `checkout.<role>.checkout.migrate`,
+`checkout.<role>.checkout.host-keys`, and
+`checkout.<role>.checkout.gateway-settings`. The clone/start batch
+intentionally stays one remote SSH operation; split copy/start timing should
+only be added if it can keep that single remote operation.
+
+### Aggregation
+
+Incus acquisition per-role readiness, WireGuard installs, gateway SSH
+authorization, retarget bakes, and peer-route checks each run as one parallel
+host invocation whose per-role durations are reported through those
+`<role>`-suffixed events. `bin/e2e-timings.awk` aggregates nested timing labels
+as well as single-word events, so checkout regressions should appear in the same
+timing summaries as topology acquisition and cleanup.
 
 Incus acquisition `incus.source-sync` skips full-tree ownership repair and
 permission normalization when rsync reports an unchanged checkout; only

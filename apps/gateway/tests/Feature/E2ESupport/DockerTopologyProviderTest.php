@@ -1090,7 +1090,7 @@ it('launches app production ingress as a prod-node role', function (): void {
         ->not->toContain('edge-1');
 });
 
-it('seeds gateway registry rows for composed docker app roles at acquire time', function (): void {
+it('seeds gateway registry rows for composed docker app roles in parallel at acquire time', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
@@ -1146,9 +1146,15 @@ it('seeds gateway registry rows for composed docker app roles at acquire time', 
         $lease->cleanup();
     });
 
-    $setup = implode("\n", $commands);
+    $scriptWrite = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'cat >')
+            && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh'));
+    $scriptRun = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, '/tmp/orbit-e2e-docker-runtime-downstream.sh')
+            && str_contains($command, 'bash'));
 
-    expect($setup)
+    expect($scriptWrite)
+        ->toBeString()
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
         ->toContain('--host=dev')
         ->toContain('--wireguard-address=10.6.0.4')
@@ -1156,7 +1162,89 @@ it('seeds gateway registry rows for composed docker app roles at acquire time', 
         ->toContain('orbit:internal:bake-ingress-node app-prod-1')
         ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
         ->toContain('--wireguard-address=10.6.0.5')
-        ->toContain('--ingress-node=app-prod-1');
+        ->toContain('--ingress-node=app-prod-1')
+        ->toContain('PID_NODE_NEW_DEV=$!;')
+        ->toContain('PID_NODE_NEW_PROD=$!;')
+        ->toContain('wait "$PID_NODE_NEW_DEV"')
+        ->toContain('wait "$PID_NODE_NEW_PROD"')
+        ->toContain('/tmp/orbit-e2e-docker-node-new-dev.log')
+        ->toContain('/tmp/orbit-e2e-docker-node-new-prod.log');
+
+    expect($scriptRun)->toBeString();
+});
+
+it('seeds dedicated ingress before app production references it at acquire time', function (): void {
+    $commands = [];
+
+    Process::fake(function ($process) use (&$commands) {
+        $command = (string) $process->command;
+        $commands[] = $command;
+
+        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+            return $publicKeyResult;
+        }
+
+        if (str_contains($command, 'cat ~/.ssh/id_ed25519.pub')) {
+            return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+        }
+
+        if ($command === 'command -v docker >/dev/null'
+            || $command === 'docker info >/dev/null'
+            || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
+            || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.4-bookworm' >/dev/null"
+            || $command === "docker image inspect 'dunglas/frankenphp:1-php8.3-bookworm' >/dev/null"
+            || $command === "docker image inspect 'orbit-reverb:current' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:operator_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:gateway_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:app-dev_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:app-prod_base' >/dev/null"
+            || $command === "docker image inspect 'orbit-e2e:ingress_base' >/dev/null"
+            || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+            || str_starts_with($command, 'docker network create ')
+            || str_starts_with($command, 'docker exec ')
+        ) {
+            return Process::result();
+        }
+
+        if (str_starts_with($command, 'docker run -d ')) {
+            return Process::result(output: "container-id\n");
+        }
+
+        return Process::result(exitCode: 1, errorOutput: $command);
+    });
+
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+    ], function (): void {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+
+        $lease = $provider->acquire(
+            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions,
+        );
+
+        $lease->cleanup();
+    });
+
+    $scriptWrite = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'cat >')
+            && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh'));
+
+    expect($scriptWrite)
+        ->toBeString()
+        ->toContain('orbit:internal:bake-ingress-node edge-1')
+        ->toContain('orbit:internal:bake-app-node app-prod-1 --role=app-prod')
+        ->toContain('--ingress-node=edge-1');
+
+    assert(is_string($scriptWrite));
+
+    expect(strpos($scriptWrite, 'orbit:internal:bake-ingress-node edge-1'))
+        ->toBeLessThan(strpos($scriptWrite, '--ingress-node=edge-1'))
+        ->and($scriptWrite)->not->toContain('PID_NODE_NEW_INGRESS=$!');
 });
 
 it('registers websocket on the app-dev node for docker prepared topologies', function (): void {
@@ -1223,6 +1311,9 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
     });
 
     $setup = implode("\n", $commands);
+    $scriptWrite = collect($commands)
+        ->first(fn (string $command): bool => str_contains($command, 'cat >')
+            && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh'));
 
     expect($setup)
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
@@ -1232,6 +1323,18 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
         ->toContain('--redis-node=app-dev-1')
         ->toContain('/home/orbit/.ssh/authorized_keys')
         ->not->toContain('--environment=');
+
+    expect($scriptWrite)
+        ->toBeString()
+        ->toContain('PID_NODE_NEW_DEV=$!')
+        ->toContain('PID_NODE_NEW_WEBSOCKET=$!')
+        ->toContain('wait "$PID_NODE_NEW_DEV"')
+        ->toContain('wait "$PID_NODE_NEW_WEBSOCKET"');
+
+    assert(is_string($scriptWrite));
+
+    expect(strpos($scriptWrite, 'wait "$PID_NODE_NEW_DEV"'))
+        ->toBeLessThan(strpos($scriptWrite, 'orbit:internal:bake-websocket-node app-dev-1'));
 });
 
 it('authorizes the active docker gateway ssh key into gateway self ssh and composed app role containers', function (): void {

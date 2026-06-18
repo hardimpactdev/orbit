@@ -407,6 +407,7 @@ it('aggregates e2e timing lines by label and event', function (): void {
 [orbit-e2e] topology acquire nope
 noise line
 [orbit-e2e] node new 9.00s
+[orbit-e2e] checkout checkout operator checkout.copy 0.75s
 TEXT;
 
     $process = new Process([
@@ -424,6 +425,7 @@ TEXT;
         ->all();
 
     expect($lines)->toBe([
+        'checkout/checkout.operator.checkout.copy n=1 p50=0.75 p95=0.75',
         'node/new n=1 p50=9 p95=9',
         'topology/acquire n=3 p50=2.5 p95=3.75',
         'topology/reset n=1 p50=4 p95=4',

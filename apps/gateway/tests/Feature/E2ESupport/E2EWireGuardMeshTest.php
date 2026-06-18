@@ -200,8 +200,13 @@ it('installs and restarts wg-orbit for a role', function (): void {
         ->and($commands[0])->not->toContain('apt-get')
         ->and($commands[0])->toContain('PrivateKey = dev-private')
         ->and($commands[0])->toContain('wg-quick down wg-orbit')
+        ->and($commands[0])->toContain('ip link delete dev wg-orbit')
         ->and($commands[0])->toContain('wg-quick up wg-orbit')
         ->and($commands[0])->toContain('systemctl enable wg-quick@wg-orbit');
+
+    expect(strpos($commands[0], 'ip link delete dev wg-orbit'))
+        ->toBeGreaterThan(strpos($commands[0], 'wg-quick down wg-orbit'))
+        ->toBeLessThan(strpos($commands[0], 'wg-quick up wg-orbit'));
 });
 
 it('verifies a role interface and peer reachability', function (): void {

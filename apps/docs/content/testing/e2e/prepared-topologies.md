@@ -279,6 +279,14 @@ requested, and primes the gateway API for active container addresses. Operator
 and gateway come from `operator_gateway`; app-dev, app-prod, agent, ingress,
 and websocket come from their owning source topologies.
 
+Because the reused gateway image only contains the operator/gateway registry
+base, runtime Docker acquisition reseeds the requested downstream app, ingress,
+agent, and websocket registry rows on the gateway. Independent downstream role
+bakes run in one parallel script on the gateway. Bakes with dependencies stay
+ordered: app-prod waits for the dedicated ingress bake before referencing
+`edge-1`, and websocket waits for app-dev because it depends on the Redis state
+registered for app-dev.
+
 The Incus provider clones only selected roles from the prepared
 `operator_gateway_app-dev_app-prod_agent_websocket` snapshots for ordinary
 current-role and websocket topologies. The dedicated-ingress topology clones
