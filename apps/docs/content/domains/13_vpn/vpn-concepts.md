@@ -32,7 +32,8 @@ These terms define the VPN command domain and how commands reach the gateway.
   `public_endpoint` is the host or IP WireGuard peers use to reach the VPN.
   `wireguard_cidr` defaults to `10.6.0.0/24`. `wireguard_port` defaults to
   `51820`. `dns_ip` defaults to `10.6.0.1` and is the DNS endpoint written into
-  peer configs. In v1 the DNS resolver runtime is coupled to the `vpn` role.
+  peer configs alongside the fixed private `orbit` search domain. In v1 the DNS
+  resolver runtime is coupled to the `vpn` role.
 - **Backend TOTP code:** Numeric one-time code passed to the active `vpn` role
   runtime backend when its own second-factor authentication is required. It
   authenticates backend administration; it is not Orbit node identity,
@@ -64,9 +65,10 @@ These terms define how VPN clients are identified and classified.
 - **WireGuard client configuration:** Generated WireGuard config optionally
   returned by `vpn-client:new --config` for an admin VPN client. It follows
   the active `vpn` role runtime backend policy, routes DNS to the WireGuard
-  server DNS endpoint, and does not include public fallback resolvers. In the standard
-  `10.6.0.0/24` topology, the DNS endpoint is `10.6.0.1`; the gateway node's
-  own peer address, such as `10.6.0.2`, is not the DNS endpoint.
+  server DNS endpoint with the fixed private `orbit` search domain, and does
+  not include public fallback resolvers. In the standard `10.6.0.0/24`
+  topology, the DNS endpoint is `10.6.0.1`; the gateway node's own peer address,
+  such as `10.6.0.2`, is not the DNS endpoint.
 - **VPN client enablement:** Backend peer enabled/disabled state for non-node
   VPN clients. Toggling it must not alter WireGuard keys, addresses, DNS
   policy, generated configs, Orbit node peers, or node drift.

@@ -41,9 +41,10 @@ node names are reserved and cannot be reused as VPN client names.
 
 When `--config` is supplied, the command returns the generated WireGuard config
 for the client. The generated config must use the WireGuard server DNS endpoint
-as its only `DNS =` value. For the normal `10.6.0.0/24` network this is
-`DNS = 10.6.0.1`; it is not the gateway peer address, such as `10.6.0.2`, and
-it must not include public fallback resolvers.
+and the private `orbit` search domain as its `DNS =` value. For the normal
+`10.6.0.0/24` network this is `DNS = 10.6.0.1, orbit`; it is not the gateway
+peer address, such as `10.6.0.2`, and it must not include public fallback
+resolvers.
 
 ## Output
 

@@ -82,7 +82,7 @@ it('mints client configs with the wireguard server dns address', function (): vo
     $client = WgEasyVpnBackend::fromConfig()->createClient('laptop', includeConfig: true);
 
     expect($client->config)
-        ->toContain('DNS = 10.6.0.1')
+        ->toContain('DNS = 10.6.0.1, orbit')
         ->not->toContain('10.6.0.2')
         ->not->toContain('1.1.1.1')
         ->not->toContain('bear')
