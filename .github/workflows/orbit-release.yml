@@ -151,6 +151,27 @@ jobs:
 
           DOCKER_CONFIG="$docker_config" docker pull "${GATEWAY_IMAGE}@${GATEWAY_DIGEST}"
 
+      - name: Verify gateway image bakes the release version
+        env:
+          GATEWAY_IMAGE: ${{ steps.gateway_image.outputs.image }}
+          GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          ref="${GATEWAY_IMAGE}@${GATEWAY_DIGEST}"
+
+          # config('app.version') resolves dirname(__DIR__, 3)/VERSION, which is
+          # /srv/orbit/VERSION inside the image. If the Dockerfile stops baking
+          # that file the gateway falls back to reporting 0.0.0, so assert the
+          # exact path the gateway config reads.
+          baked="$(docker run --rm --entrypoint cat "$ref" /srv/orbit/VERSION || true)"
+          if [ "$baked" != "$VERSION" ]; then
+            echo "Gateway image /srv/orbit/VERSION is [$baked], expected [$VERSION] (gateway-version regression)." >&2
+            exit 1
+          fi
+
+          echo "Gateway image bakes version ${VERSION} at /srv/orbit/VERSION."
+
       - name: Generate release manifest
         env:
           VERSION: ${{ steps.version.outputs.value }}
