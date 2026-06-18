@@ -145,8 +145,10 @@ on the same inputs produce byte-identical output.
 1. Reads current `Node` rows and active role assignments.
 2. Builds a candidate `dnsmasq.conf` via `DnsmasqConfigBuilder`.
 3. If different from the on-disk file, writes the new content.
-4. Restarts dnsmasq with `docker restart orbit-dns`. dnsmasq reloads hosts on
-   `SIGHUP`, but address rules require a restart to take effect reliably.
+4. Restarts dnsmasq by forcing the `orbit_orbit-dns` Swarm service update when
+   the Swarm stack is present, or by restarting the standalone `orbit-dns`
+   container. dnsmasq reloads hosts on `SIGHUP`, but address rules require a
+   restart to take effect reliably.
 5. Skips the restart if the file was already up to date.
 
 Triggers in the gateway application:
@@ -162,23 +164,27 @@ second call.
 
 ## Doctor Contract
 
-`doctor --family=tool` runs three checks for the `dns` runtime:
+`doctor --family=tool` runs DNS runtime checks on active gateway nodes that
+also carry the `vpn` role. The issues use family `tool` and `dns.*` keys:
 
 | Drift kind                  | Detection                                                          | Restorable | Adoptable |
 | --------------------------- | ------------------------------------------------------------------ | ---------- | --------- |
-| `tool.dns_container_missing`  | `orbit-dns` not in `docker ps -a`.                                 | Yes (rerun installer). | No |
-| `tool.dns_port_not_listening` | `orbit-dns` running but no listener on `53` inside wg-easy's netns. | Yes (restart container). | No |
-| `tool.dns_config_drift`       | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + restart). | Yes (parse file into `(node, tld, wireguard_address)` triples and adopt into node-family state). |
+| `dns.container_missing`     | Neither the standalone `orbit-dns` container nor the Swarm `orbit_orbit-dns` task is present. | Yes (rerun the persisted stack/compose installer). | No |
+| `dns.port_not_listening`    | The DNS container exists but no listener is available on `53` inside the container. | Yes (force service update or restart container). | No |
+| `dns.config_drift`          | `dnsmasq.conf` differs from `DnsmasqConfigBuilder` output for current DB state. | Yes (rewrite + force service update/restart). | No |
+| `dns.client_dns_drift`      | The persisted wg-easy default DNS or enabled client DNS contains anything other than the active `vpn.dns_ip` value, for example `["10.6.0.1", "1.1.1.1"]`. | Yes (rewrite wg-easy default/client DNS to `[vpn.dns_ip]`). | No |
 
-`tool.dns_config_drift` is the only adoptable drift, and the use case is narrow:
-an operator hand-edited the file for an emergency and now wants Orbit to adopt
-the new content as the source of truth. Adoption parses the observed
-`dnsmasq.conf` into `(node, tld, wireguard_address)` triples and records those
-into **node-family** state. The tool family does not own DNS records; the node
-family does (see
+`dns.client_dns_drift` is only about WireGuard client DNS configuration stored
+in wg-easy. It does not alter dnsmasq upstream resolvers; `server=1.1.1.1` and
+`server=8.8.8.8` remain valid upstream forwarding entries inside
+`dnsmasq.conf`.
+
+DNS runtime drift is not adoptable. The tool family does not own DNS records;
+the node and proxy families do (see
 [Architecture: DNS responsibilities](../../architecture.md#dns-responsibilities)).
-After adoption, `dnsmasq.conf` is re-rendered from the canonical node state so
-the file and DB stay in lockstep.
+Emergency DNS edits should be translated into node or proxy state explicitly,
+then `doctor --family=tool --restore` should re-render `dnsmasq.conf` from the
+canonical gateway state.
 
 ## Why install/remove are not operator commands
 

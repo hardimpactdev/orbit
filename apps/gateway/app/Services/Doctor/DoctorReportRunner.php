@@ -120,6 +120,7 @@ final readonly class DoctorReportRunner
         private S3DoctorProbe $s3DoctorProbe,
         private S3ProxyDoctorProbe $s3ProxyDoctorProbe,
         private AppRuntimeRequirementProbe $appRuntimeRequirementProbe,
+        private DnsRuntimeProbe $dnsRuntimeProbe,
     ) {}
 
     /**
@@ -181,6 +182,10 @@ final readonly class DoctorReportRunner
 
         if ($hasActiveRole) {
             $categories[] = 'process';
+        }
+
+        if ($this->nodeRoleAssignments->nodeIsGateway($node) && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node)) {
+            $categories[] = 'tool';
         }
 
         if ($node->isActive() && $this->isUbuntuPlatform($node) && $this->nodeRoleAssignments->nodeCanOwnFirewallRules($node)) {
@@ -567,6 +572,12 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->nodeScopedIssuePayload($entry, $node);
                 }
             }
+
+            if ($this->shouldProbeDnsRuntime($node)) {
+                foreach ($this->dnsRuntimeProbe->probe() as $entry) {
+                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                }
+            }
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
@@ -628,6 +639,21 @@ final readonly class DoctorReportRunner
 
         foreach ($issues as $issue) {
             if (! $this->issueSupportsMode($issue, $mode)) {
+                continue;
+            }
+
+            if (
+                $mode === 'restore'
+                && ($issue['family'] ?? null) === 'tool'
+                && is_string($issue['key'] ?? null)
+                && str_starts_with($issue['key'], 'dns.')
+            ) {
+                $action = $this->applyDnsRuntimeIssue($node, $issue['key'], is_array($issue['detail'] ?? null) ? $issue['detail'] : [], $issue);
+
+                if ($action !== null) {
+                    $actions[] = $action;
+                }
+
                 continue;
             }
 
@@ -900,6 +926,12 @@ final readonly class DoctorReportRunner
     private function activeS3Assignment(Node $node): ?NodeRoleAssignment
     {
         return $this->nodeRoleAssignments->activeAssignment($node, NodeRoleName::S3->value);
+    }
+
+    private function shouldProbeDnsRuntime(Node $node): bool
+    {
+        return $this->nodeRoleAssignments->nodeIsGateway($node)
+            && $this->nodeRoleAssignments->nodeHasActiveVpnRole($node);
     }
 
     private function nodeHasAnyActiveRole(Node $node): bool
@@ -1883,6 +1915,54 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  array<string, mixed>  $detail
+     * @param  array<string, mixed>  $issue
+     * @return array<string, mixed>|null
+     */
+    private function applyDnsRuntimeIssue(Node $node, string $key, array $detail, array $issue): ?array
+    {
+        if (! $this->dnsRuntimeProbe->isRestorable($key)) {
+            return null;
+        }
+
+        try {
+            $restored = $this->dnsRuntimeProbe->restore($key);
+        } catch (\Throwable $e) {
+            return [
+                'family' => 'tool',
+                'node' => $node->name,
+                'code' => $key,
+                'key' => $key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to fix {$key}.",
+                'details' => [
+                    ...$detail,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => 'tool',
+            'node' => $node->name,
+            'code' => $key,
+            'key' => $key,
+            'mode' => 'restore',
+            'status' => $restored ? 'completed' : 'failed',
+            'summary' => $restored
+                ? (is_string($issue['summary'] ?? null) ? $issue['summary'] : "Fixed {$key}.")
+                : "Failed to fix {$key}.",
+            'details' => $restored
+                ? $detail
+                : [
+                    ...$detail,
+                    'error' => 'restore_returned_false',
+                ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
      * @return array<string, mixed>|null
      */
     private function applyScheduleIssue(Node $node, string $key, array $detail, array $issue): ?array
@@ -2031,6 +2111,10 @@ final readonly class DoctorReportRunner
             'tool.config_mismatch',
             'tool.credentials_missing',
             'tool.credentials_mismatch',
+            'dns.container_missing',
+            'dns.port_not_listening',
+            'dns.config_drift',
+            'dns.client_dns_drift',
             'schedule.scheduler_missing',
             'schedule.scheduler_stopped',
             'schedule.scheduler_image_mismatch',

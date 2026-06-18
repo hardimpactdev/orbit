@@ -17,6 +17,7 @@ use App\Models\ProxyRoute;
 use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
+use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
@@ -1481,6 +1482,123 @@ TXT;
         expect($toolNames)->not->toContain('gh');
     });
 
+    it('dispatches vpn dns client drift through gateway tool doctor scope', function (): void {
+        $root = storage_path('framework/testing/doctor-runner-vpn-dns/'.bin2hex(random_bytes(6)));
+        File::ensureDirectoryExists($root);
+        config()->set('orbit.paths.config_root', $root);
+
+        try {
+            $gateway = Node::factory()->gateway()->create([
+                'name' => 'gateway-vpn-dns',
+                'status' => 'active',
+                'tld' => 'gateway',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+            NodeRoleAssignment::factory()->create([
+                'node_id' => $gateway->id,
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => [
+                    'public_endpoint' => '203.0.113.10',
+                    'dns_ip' => '10.6.0.1',
+                ],
+            ]);
+            File::put($root.'/dnsmasq.conf', (new DnsmasqConfigBuilder)->buildGatewayState());
+            createDoctorRunnerWgEasyDnsDatabase($root.'/wg-easy/wg-easy.db', '["10.6.0.1"]', [
+                ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
+            ]);
+
+            Process::fake(function ($process) {
+                $command = (string) $process->command;
+
+                if (str_contains($command, 'docker ps')) {
+                    return Process::result('orbit-dns-id');
+                }
+
+                if (str_contains($command, 'docker exec')) {
+                    return Process::result('udp 0 0 :::53 :::* LISTEN');
+                }
+
+                return Process::result();
+            });
+
+            $report = app(DoctorReportRunner::class)->probe($gateway, families: ['tool']);
+
+            $issue = collect($report['issues'])->first(fn (array $issue): bool => ($issue['key'] ?? null) === 'dns.client_dns_drift');
+
+            expect($issue)->not->toBeNull()
+                ->and($issue['family'])->toBe('tool')
+                ->and($issue['restorable'])->toBeTrue()
+                ->and($issue['detail']['expected_dns'])->toBe('10.6.0.1');
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+
+    it('restores vpn dns client drift through gateway tool doctor scope', function (): void {
+        $root = storage_path('framework/testing/doctor-runner-vpn-dns/'.bin2hex(random_bytes(6)));
+        File::ensureDirectoryExists($root);
+        config()->set('orbit.paths.config_root', $root);
+
+        try {
+            $gateway = Node::factory()->gateway()->create([
+                'name' => 'gateway-vpn-dns-restore',
+                'status' => 'active',
+                'tld' => 'gateway',
+                'wireguard_address' => '10.6.0.2',
+            ]);
+            NodeRoleAssignment::factory()->create([
+                'node_id' => $gateway->id,
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => [
+                    'public_endpoint' => '203.0.113.10',
+                    'dns_ip' => '10.6.0.1',
+                ],
+            ]);
+            File::put($root.'/dnsmasq.conf', (new DnsmasqConfigBuilder)->buildGatewayState());
+            createDoctorRunnerWgEasyDnsDatabase($root.'/wg-easy/wg-easy.db', '["10.6.0.1","1.1.1.1"]', [
+                ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
+            ]);
+
+            Process::fake(function ($process) {
+                $command = (string) $process->command;
+
+                if (str_contains($command, 'docker ps')) {
+                    return Process::result('orbit-dns-id');
+                }
+
+                if (str_contains($command, 'docker exec')) {
+                    return Process::result('udp 0 0 :::53 :::* LISTEN');
+                }
+
+                return Process::result();
+            });
+
+            $report = app(DoctorReportRunner::class)->run($gateway, mode: 'restore', families: ['tool']);
+
+            expect($report['healthy'])->toBeTrue()
+                ->and($report['summary'])->toMatchArray([
+                    'issues' => 0,
+                    'fixed' => 1,
+                    'skipped' => 0,
+                ])
+                ->and($report['actions'][0])->toMatchArray([
+                    'family' => 'tool',
+                    'node' => 'gateway-vpn-dns-restore',
+                    'key' => 'dns.client_dns_drift',
+                    'mode' => 'restore',
+                    'status' => 'completed',
+                ])
+                ->and(readDoctorRunnerWgEasyDnsRows($root.'/wg-easy/wg-easy.db'))->toBe([
+                    'default' => '["10.6.0.1"]',
+                    'operator' => '["10.6.0.1"]',
+                ]);
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+
     it('suppresses resolved tool version issues when a safe update restore completes', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();
@@ -2219,4 +2337,49 @@ final class DoctorReportRunnerRemoteShell implements RemoteShell
 
         return $result ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
+}
+
+/**
+ * @param  list<array{name: string, ipv4_address: string, dns: string}>  $clients
+ */
+function createDoctorRunnerWgEasyDnsDatabase(string $path, string $defaultDns, array $clients): void
+{
+    File::ensureDirectoryExists(dirname($path));
+
+    $database = new PDO("sqlite:{$path}");
+    $database->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $database->exec('create table user_configs_table (default_dns text not null)');
+    $database->exec(<<<'SQL'
+        create table clients_table (
+            name text not null,
+            ipv4_address text not null,
+            dns text not null,
+            enabled integer not null
+        )
+        SQL);
+    $database->prepare('insert into user_configs_table (default_dns) values (:default_dns)')
+        ->execute(['default_dns' => $defaultDns]);
+
+    $statement = $database->prepare('insert into clients_table (name, ipv4_address, dns, enabled) values (:name, :ipv4_address, :dns, 1)');
+
+    foreach ($clients as $client) {
+        $statement->execute($client);
+    }
+}
+
+/**
+ * @return array<string, string>
+ */
+function readDoctorRunnerWgEasyDnsRows(string $path): array
+{
+    $database = new PDO("sqlite:{$path}");
+    $rows = [
+        'default' => $database->query('select default_dns from user_configs_table limit 1')->fetchColumn(),
+    ];
+
+    foreach ($database->query('select name, dns from clients_table order by name')->fetchAll(PDO::FETCH_KEY_PAIR) as $name => $dns) {
+        $rows[(string) $name] = (string) $dns;
+    }
+
+    return array_map(static fn (mixed $value): string => (string) $value, $rows);
 }
