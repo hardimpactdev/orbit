@@ -45,10 +45,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 - Set `kind=admin` for clients created through this command.
 - When `--config` is present, return the generated admin-client WireGuard
   configuration.
-- The generated admin-client config must contain the WireGuard server interface
-  IP for the assigned peer subnet and the fixed private `orbit` search domain.
-  In the standard `10.6.0.0/24` topology this is
-  `DNS = 10.6.0.1, orbit`.
+- The generated admin-client config must contain exactly one DNS endpoint: the
+  WireGuard server interface IP for the assigned peer subnet. In the standard
+  `10.6.0.0/24` topology this is `DNS = 10.6.0.1`.
 - The generated admin-client config must not use the gateway node peer IP, such
   as `10.6.0.2`, as DNS, and must not include public fallback resolvers such as
   `1.1.1.1`.

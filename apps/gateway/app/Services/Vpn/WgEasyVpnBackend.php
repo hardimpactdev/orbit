@@ -24,8 +24,6 @@ final class WgEasyVpnBackend implements VpnBackend
 
     private const string ACTION_UPDATE_SESSION_PASSWORD = 'update-session-password';
 
-    private const string PRIVATE_ORBIT_DOMAIN = 'orbit';
-
     private const array SAFE_WG_EASY_STATE_ERROR_CODES = [
         'database_missing',
         'database_unwritable',
@@ -213,7 +211,7 @@ final class WgEasyVpnBackend implements VpnBackend
                 continue;
             }
 
-            $lines[$index] = $this->wireGuardDnsLine($serverAddress);
+            $lines[$index] = "DNS = {$serverAddress}";
 
             return implode("\n", $lines);
         }
@@ -223,17 +221,12 @@ final class WgEasyVpnBackend implements VpnBackend
                 continue;
             }
 
-            array_splice($lines, $index + 1, 0, $this->wireGuardDnsLine($serverAddress));
+            array_splice($lines, $index + 1, 0, "DNS = {$serverAddress}");
 
             return implode("\n", $lines);
         }
 
         return $config;
-    }
-
-    private function wireGuardDnsLine(string $serverAddress): string
-    {
-        return "DNS = {$serverAddress}, ".self::PRIVATE_ORBIT_DOMAIN;
     }
 
     private function wireGuardServerAddress(string $clientAddress): ?string
