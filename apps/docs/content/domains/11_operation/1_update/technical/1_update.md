@@ -66,6 +66,11 @@ fields and does not prompt.
 - After a production download, relink the host `orbit` launcher: `ln -sf
   <install-root>/bin/orbit-binary <link-path>` where `<link-path>` is
   `ORBIT_BIN_PATH` when set, or `$HOME/.local/bin/orbit` by default.
+- Reconcile a shadowing launcher: when `orbit` resolves through `PATH` to a
+  different launcher than the relinked one (a legacy install earlier in `PATH`)
+  and that launcher points at a different binary, relink it to the new binary
+  too, so the shell's actual `orbit` reflects the update. This is best-effort: a
+  legacy install in an unwritable path is left as-is rather than failing.
 - Verify the resolved local Orbit entry point responds to `--version`.
   Production artifact installs verify the updated binary; source-mounted
   Docker/Incus development and E2E lanes verify the resolved

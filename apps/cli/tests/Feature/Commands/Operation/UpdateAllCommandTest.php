@@ -133,6 +133,10 @@ it('renders update-all target progress in human mode', function (): void {
 it('renders all-current short-circuit footer when 0 outdated nodes', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        // Operation-level + fleet-lease events precede the checks and must not
+        // create a spurious gateway row in the short-circuit.
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Update runner started']],
+        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],

@@ -164,6 +164,55 @@ describe('LocalCheckoutUpdater', function (): void {
             && in_array('--version', $process->command, strict: true));
     });
 
+    it('reconciles a shadowing launcher resolved earlier in PATH', function (): void {
+        Process::fake([
+            '*command -v orbit*' => Process::result(output: "/tmp/orbit-shadow-bin/orbit\n", exitCode: 0),
+            '*' => Process::result(output: 'orbit 1.2.3', exitCode: 0),
+        ]);
+        Process::preventStrayProcesses();
+
+        $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
+        $download = $updater->downloadBinary();
+        $replace = $updater->replaceBinary($download['staged_path'], $download['version']);
+
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
+
+        expect($replace['successful'])->toBeTrue();
+
+        // The shadowing launcher (PATH-first, different from the relinked launcher)
+        // is relinked to the same new binary so the shell's `orbit` reflects the update.
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['ln', '-sfn', $versionedBinary, '/tmp/orbit-shadow-bin/orbit']);
+    });
+
+    it('does not relink when the resolved launcher is the relinked launcher', function (): void {
+        Process::fake([
+            '*command -v orbit*' => Process::result(output: $this->linkPath."\n", exitCode: 0),
+            '*' => Process::result(output: 'orbit 1.2.3', exitCode: 0),
+        ]);
+        Process::preventStrayProcesses();
+
+        $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
+        $download = $updater->downloadBinary();
+        $updater->replaceBinary($download['staged_path'], $download['version']);
+
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
+
+        // Only the managed launcher is linked; no second ln to a different path.
+        $lnToOther = 0;
+        Process::assertRan(function (PendingProcess $process) use ($versionedBinary, &$lnToOther): bool {
+            if (is_array($process->command) && ($process->command[0] ?? null) === 'ln'
+                && ($process->command[2] ?? null) === $versionedBinary
+                && ($process->command[3] ?? null) !== $this->linkPath) {
+                $lnToOther++;
+            }
+
+            return true;
+        });
+
+        expect($lnToOther)->toBe(0);
+    });
+
     it('installs updates to a versioned binary without replacing the running binary path', function (): void {
         Process::fake(['*' => Process::result(output: 'Version       9.8.7', exitCode: 0)]);
         Process::preventStrayProcesses();
