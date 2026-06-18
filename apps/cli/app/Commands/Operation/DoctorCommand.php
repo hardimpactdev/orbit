@@ -7,6 +7,7 @@ namespace App\Commands\Operation;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
+use App\Services\Doctor\DoctorPanelRenderer;
 use App\Services\Doctor\DoctorTerminalFrameExtractor;
 use App\Services\Doctor\InteractiveDoctorIssueSelector;
 use Orbit\Core\Progress\ProgressEventType;
@@ -78,11 +79,53 @@ final class DoctorCommand extends GatewayCommand
             return $this->runInteractiveDoctor();
         }
 
-        return $this->streamProgress(
-            $mode === 'verify' ? '/api/doctor/run' : '/api/doctor/fix',
-            $this->payload($mode),
-            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
-        );
+        $path = $mode === 'verify' ? '/api/doctor/run' : '/api/doctor/fix';
+
+        if ($this->wantsJson()) {
+            return $this->streamProgress(
+                $path,
+                $this->payload($mode),
+                fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+            );
+        }
+
+        $frame = $this->captureProgressTerminalFrame($path, $this->payload($mode));
+
+        if (is_int($frame)) {
+            return $frame;
+        }
+
+        return $this->renderDoctorPanel($frame['type'], $frame['payload']);
+    }
+
+    /**
+     * Render the framed doctor panel for a captured terminal frame in human
+     * mode. When the frame carries a `data.doctor` report, the panel replaces
+     * the generic step-tree footer; otherwise the shared progress/failure
+     * rendering is used (pre-panel failures keep the prose failure style).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderDoctorPanel(ProgressEventType $type, array $payload, ?string $modeOverride = null): int
+    {
+        $report = app(DoctorTerminalFrameExtractor::class)->doctor([
+            'type' => $type,
+            'payload' => $payload,
+        ]);
+
+        if ($report === null) {
+            return $this->renderProgressTerminalFrame($type, $payload);
+        }
+
+        if ($modeOverride !== null) {
+            $report['mode'] = $modeOverride;
+        }
+
+        foreach (app(DoctorPanelRenderer::class)->lines($report) as $line) {
+            $this->line($line);
+        }
+
+        return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
     }
 
     private function mode(): string|int
@@ -122,7 +165,7 @@ final class DoctorCommand extends GatewayCommand
         $probe = $frames->doctor($probeFrame);
 
         if ($probe === null || $selector->issues($probe) === []) {
-            return $this->renderProgressTerminalFrame($probeFrame['type'], $probeFrame['payload']);
+            return $this->renderDoctorPanel($probeFrame['type'], $probeFrame['payload'], 'interactive');
         }
 
         try {
@@ -170,10 +213,10 @@ final class DoctorCommand extends GatewayCommand
         }
 
         if ($finalFrame !== null) {
-            return $this->renderProgressTerminalFrame($finalFrame['type'], $finalFrame['payload']);
+            return $this->renderDoctorPanel($finalFrame['type'], $finalFrame['payload'], 'interactive');
         }
 
-        return $this->renderProgressTerminalFrame($probeFrame['type'], $probeFrame['payload']);
+        return $this->renderDoctorPanel($probeFrame['type'], $probeFrame['payload'], 'interactive');
     }
 
     /**
