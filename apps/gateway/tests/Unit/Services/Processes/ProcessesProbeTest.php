@@ -42,6 +42,11 @@ describe('interface contract', function (): void {
         expect($this->probe->label())->toBe('Processes');
     });
 
+    it('does not depend on host PHP for host-lane process probes', function (): void {
+        expect((string) file_get_contents(app_path('Services/Processes/ProcessesProbe.php')))
+            ->not->toContain('php -r');
+    });
+
     it('returns an empty foundation snapshot before live runtime probing is added', function (): void {
         $process = new Process(['name' => 'vite']);
 
@@ -68,8 +73,13 @@ describe('runtime backend availability', function (): void {
             'runtime_backend_output' => 'systemd OK',
         ]);
         expect($shell->scripts[0])->toBe('command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1');
-        expect($shell->scripts[1])->toContain('php -r');
-        expect(json_decode((string) ($shell->options[1]['input'] ?? ''), true))->toHaveKeys(['units', 'event_notifier']);
+        expect($shell->scripts[1])
+            ->toStartWith('set -eu')
+            ->not->toContain('php -r')
+            ->toContain('probe_unit')
+            ->toContain("probe_unit 'orbit_{$app->name}_main_vite'")
+            ->toContain("printf '%s\\t%s\\t%s\\t%s\\t%s\\n'");
+        expect($shell->options[1])->not->toHaveKey('input');
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
         expect($snapshot->get('vite')['runtime_units']["orbit_{$app->name}_main_vite"])->toMatchArray([
             'config_exists' => true,

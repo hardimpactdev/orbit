@@ -35,6 +35,11 @@ final class RecordingNodeSecurityShell implements RemoteShell
     }
 }
 
+it('does not depend on host PHP for host-lane node security probes', function (): void {
+    expect((string) file_get_contents(app_path('Services/Nodes/NodeSecurityPostureProbe.php')))
+        ->not->toContain('php -r');
+});
+
 it('reports missing host key material and missing runtime users under node security keys', function (): void {
     $node = Node::factory()->create([
         'platform' => 'ubuntu_24-04',
@@ -96,9 +101,12 @@ it('accepts a custom steady-state SSH runtime user from the node record', functi
     $drift = (new NodeSecurityPostureProbe($shell))->diff($node);
 
     expect($drift)->toBe([])
-        ->and($shell->scripts[0])->toContain('$managedUser = \'nckrtl\'')
-        ->and($shell->scripts[0])->toContain('id -u ".escapeshellarg($managedUser)')
-        ->and($shell->scripts[0])->toContain('"AllowUsers ".$managedUser')
+        ->and($shell->scripts[0])->toStartWith('set -eu')
+        ->and($shell->scripts[0])->not->toContain('php -r')
+        ->and($shell->scripts[0])->toContain("MANAGED_USER='nckrtl'")
+        ->and($shell->scripts[0])->toContain('id -u "$MANAGED_USER"')
+        ->and($shell->scripts[0])->toContain('AllowUsers $MANAGED_USER')
+        ->and($shell->scripts[0])->toContain('printf \'{"runtime_user":%s')
         ->and($shell->scripts[0])->toContain('/home/nckrtl');
 });
 

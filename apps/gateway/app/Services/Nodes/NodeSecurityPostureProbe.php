@@ -256,27 +256,52 @@ final readonly class NodeSecurityPostureProbe
         $managedUser = $this->managedUser($node);
         $managedHome = "/home/{$managedUser}";
 
-        return sprintf(<<<'SH'
-php -r '
-$managedUser = %s;
-$managedHome = %s;
-$sshdConfig = is_file("/etc/ssh/sshd_config.d/99-orbit-hardening.conf")
-    ? file_get_contents("/etc/ssh/sshd_config.d/99-orbit-hardening.conf")
-    : false;
-$checks = [
-    "runtime_user" => $managedUser !== "" && trim(shell_exec("id -u ".escapeshellarg($managedUser)." 2>/dev/null") ?? "") !== "",
-    "sshd_config" => is_string($sshdConfig)
-        && str_contains($sshdConfig, "PasswordAuthentication no")
-        && str_contains($sshdConfig, "AllowUsers ".$managedUser),
-    "sshd_listen" => true,
-    "sysctl" => is_file("/etc/sysctl.d/60-orbit.conf"),
-    "home_perms" => is_dir($managedHome) && substr(sprintf("%%o", fileperms($managedHome) ?: 0), -4) === "0700",
-];
-echo json_encode($checks, JSON_THROW_ON_ERROR);
-'
-SH,
-            var_export($managedUser, true),
-            var_export($managedHome, true),
+        return sprintf(<<<'SH_WRAP'
+        set -eu
+
+        MANAGED_USER=%s
+        MANAGED_HOME=%s
+        SSHD_CONFIG='/etc/ssh/sshd_config.d/99-orbit-hardening.conf'
+
+        runtime_user=false
+        sshd_config=false
+        sshd_listen=true
+        sysctl=false
+        home_perms=false
+
+        if [ "$MANAGED_USER" != "" ] && id -u "$MANAGED_USER" >/dev/null 2>&1; then
+            runtime_user=true
+        fi
+
+        if [ -f "$SSHD_CONFIG" ] \
+            && grep -Fq 'PasswordAuthentication no' "$SSHD_CONFIG" \
+            && grep -Fq "AllowUsers $MANAGED_USER" "$SSHD_CONFIG"; then
+            sshd_config=true
+        fi
+
+        if [ -f '/etc/sysctl.d/60-orbit.conf' ]; then
+            sysctl=true
+        fi
+
+        if [ -d "$MANAGED_HOME" ]; then
+            home_mode=$(stat -c '%%a' "$MANAGED_HOME" 2>/dev/null || stat -f '%%Lp' "$MANAGED_HOME" 2>/dev/null || printf '')
+
+            case "$home_mode" in
+                700|0700)
+                    home_perms=true
+                    ;;
+            esac
+        fi
+
+        printf '{"runtime_user":%%s,"sshd_config":%%s,"sshd_listen":%%s,"sysctl":%%s,"home_perms":%%s}' \
+            "$runtime_user" \
+            "$sshd_config" \
+            "$sshd_listen" \
+            "$sysctl" \
+            "$home_perms"
+        SH_WRAP,
+            escapeshellarg($managedUser),
+            escapeshellarg($managedHome),
         );
     }
 

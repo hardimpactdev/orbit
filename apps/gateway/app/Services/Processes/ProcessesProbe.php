@@ -285,69 +285,12 @@ final readonly class ProcessesProbe
             return new ProbeSnapshot($items);
         }
 
-        $php = <<<'PHP'
-$payload = json_decode(stream_get_contents(STDIN), true);
-$units = is_array($payload['units'] ?? null) ? $payload['units'] : [];
-$notifier = is_array($payload['event_notifier'] ?? null) ? $payload['event_notifier'] : [];
-$expectedNames = [];
-
-foreach ($units as $unit) {
-    $name = (string) ($unit['name'] ?? '');
-    $expectedNames[$name] = true;
-    $path = (string) ($unit['config_path'] ?? '');
-    $hash = (string) ($unit['config_hash'] ?? '');
-    $restartPolicy = (string) ($unit['restart_policy'] ?? '');
-    $environmentLines = is_array($unit['environment_lines'] ?? null) ? $unit['environment_lines'] : [];
-    $exists = is_file($path) ? '1' : '0';
-    $content = $exists === '1' ? (string) file_get_contents($path) : '';
-    $matches = $exists === '1' && hash('sha256', $content) === $hash ? '1' : '0';
-    $restartMatches = $exists === '1' && preg_match('/^Restart='.preg_quote($restartPolicy, '/').'$/m', $content) === 1 ? '1' : '0';
-    $environmentMatches = $exists === '1' ? '1' : '0';
-
-    foreach ($environmentLines as $environmentLine) {
-        if (! is_string($environmentLine) || $environmentLine === '') {
-            continue;
-        }
-
-        if (preg_match('/^'.preg_quote($environmentLine, '/').'$/m', $content) !== 1) {
-            $environmentMatches = '0';
-            break;
-        }
-    }
-
-    printf("%s\t%s\t%s\t%s\t%s\n", $name, $exists, $matches, $restartMatches, $environmentMatches);
-}
-
-$notifierPath = '/usr/local/bin/orbit-notify-exit';
-$endpointPath = '/etc/orbit/gateway-endpoint';
-$notifierExists = is_file($notifierPath) ? '1' : '0';
-$notifierExecutable = is_executable($notifierPath) ? '1' : '0';
-$notifierMatches = $notifierExists === '1' && hash_file('sha256', $notifierPath) === (string) ($notifier['script_hash'] ?? '') ? '1' : '0';
-$expectedEndpoint = (string) ($notifier['gateway_endpoint'] ?? '');
-$endpointExists = is_file($endpointPath) ? '1' : '0';
-$endpointMatches = $expectedEndpoint !== '' && $endpointExists === '1' && rtrim(trim((string) file_get_contents($endpointPath)), '/') === $expectedEndpoint ? '1' : '0';
-
-printf("__notifier\t%s\t%s\t%s\t%s\t%s\n", $notifierExists, $notifierExecutable, $notifierMatches, $endpointExists, $endpointMatches);
-
-foreach (glob('/etc/systemd/system/orbit_*.service') ?: [] as $path) {
-    $name = basename($path, '.service');
-
-    if (! isset($expectedNames[$name])) {
-        printf("__extra\t%s\n", $name);
-    }
-}
-PHP;
-
-        $script = 'set -euo pipefail'.PHP_EOL.'php -r '.escapeshellarg($php);
+        $script = $this->systemdProbeScript($spec, $notifier);
 
         $result = $this->runtimeBackendProbe()
             ->remoteShell()
             ->run($node, $script, [
                 'throw' => true,
-                'input' => (string) json_encode([
-                    'units' => $spec,
-                    'event_notifier' => $notifier,
-                ], JSON_THROW_ON_ERROR),
             ]);
 
         foreach (explode("\n", rtrim($result->stdout, "\n\r")) as $line) {
@@ -401,6 +344,167 @@ PHP;
         }
 
         return new ProbeSnapshot($items);
+    }
+
+    /**
+     * @param  list<array{name: string, config_path: string, config_hash: string, config_hash_label: string, restart_policy: string, environment_lines: list<string>}>  $units
+     * @param  array{required: bool, script_hash: string, gateway_endpoint: string|null}  $notifier
+     */
+    private function systemdProbeScript(array $units, array $notifier): string
+    {
+        $expectedNames = array_map(
+            fn (array $unit): string => $unit['name'],
+            $units,
+        );
+        $unitCalls = array_map(
+            fn (array $unit): string => 'probe_unit '.implode(' ', array_map(
+                $this->shellQuote(...),
+                [
+                    $unit['name'],
+                    $unit['config_path'],
+                    $unit['config_hash'],
+                    $unit['restart_policy'],
+                    ...$unit['environment_lines'],
+                ],
+            )),
+            $units,
+        );
+
+        return implode(PHP_EOL, [
+            'set -eu',
+            '',
+            'EXPECTED_NAMES=$(cat <<\'ORBIT_EXPECTED_UNITS\'',
+            implode(PHP_EOL, $expectedNames),
+            'ORBIT_EXPECTED_UNITS',
+            ')',
+            '',
+            <<<'SH'
+hash_file() {
+    path=$1
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$path" 2>/dev/null | awk '{print $1}'
+        return
+    fi
+
+    shasum -a 256 "$path" 2>/dev/null | awk '{print $1}'
+}
+
+line_exists() {
+    path=$1
+    expected=$2
+
+    grep -Fqx -- "$expected" "$path" 2>/dev/null
+}
+
+probe_unit() {
+    unit_name=$1
+    unit_path=$2
+    expected_hash=$3
+    restart_policy=$4
+    shift 4
+
+    exists=0
+    matches=0
+    restart_matches=0
+    environment_matches=0
+
+    if [ -f "$unit_path" ]; then
+        exists=1
+        actual_hash=$(hash_file "$unit_path" || printf '')
+
+        if [ "$actual_hash" = "$expected_hash" ]; then
+            matches=1
+        fi
+
+        if line_exists "$unit_path" "Restart=$restart_policy"; then
+            restart_matches=1
+        fi
+
+        environment_matches=1
+
+        for environment_line in "$@"; do
+            if [ "$environment_line" = "" ]; then
+                continue
+            fi
+
+            if ! line_exists "$unit_path" "$environment_line"; then
+                environment_matches=0
+                break
+            fi
+        done
+    fi
+
+    printf '%s\t%s\t%s\t%s\t%s\n' "$unit_name" "$exists" "$matches" "$restart_matches" "$environment_matches"
+}
+
+is_expected_name() {
+    expected_name=$1
+
+    printf '%s\n' "$EXPECTED_NAMES" | grep -Fqx -- "$expected_name"
+}
+
+probe_notifier() {
+    notifier_path='/usr/local/bin/orbit-notify-exit'
+    endpoint_path='/etc/orbit/gateway-endpoint'
+SH,
+            '    expected_script_hash='.$this->shellQuote((string) $notifier['script_hash']),
+            '    expected_endpoint='.$this->shellQuote((string) ($notifier['gateway_endpoint'] ?? '')),
+            <<<'SH'
+    notifier_exists=0
+    notifier_executable=0
+    notifier_matches=0
+    endpoint_exists=0
+    endpoint_matches=0
+
+    if [ -f "$notifier_path" ]; then
+        notifier_exists=1
+        notifier_hash=$(hash_file "$notifier_path" || printf '')
+
+        if [ -x "$notifier_path" ]; then
+            notifier_executable=1
+        fi
+
+        if [ "$notifier_hash" = "$expected_script_hash" ]; then
+            notifier_matches=1
+        fi
+    fi
+
+    if [ -f "$endpoint_path" ]; then
+        endpoint_exists=1
+        endpoint_value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s:/*$::' "$endpoint_path" 2>/dev/null || printf '')
+
+        if [ "$expected_endpoint" != "" ] && [ "$endpoint_value" = "$expected_endpoint" ]; then
+            endpoint_matches=1
+        fi
+    fi
+
+    printf '__notifier\t%s\t%s\t%s\t%s\t%s\n' "$notifier_exists" "$notifier_executable" "$notifier_matches" "$endpoint_exists" "$endpoint_matches"
+}
+
+probe_extras() {
+    for unit_path in /etc/systemd/system/orbit_*.service; do
+        [ -f "$unit_path" ] || continue
+
+        unit_file=${unit_path##*/}
+        unit_name=${unit_file%.service}
+
+        if ! is_expected_name "$unit_name"; then
+            printf '__extra\t%s\n' "$unit_name"
+        fi
+    done
+}
+SH,
+            implode(PHP_EOL, $unitCalls),
+            'probe_notifier',
+            'probe_extras',
+            '',
+        ]);
+    }
+
+    private function shellQuote(string $value): string
+    {
+        return escapeshellarg($value);
     }
 
     /**
