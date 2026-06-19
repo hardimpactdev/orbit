@@ -61,64 +61,12 @@ final readonly class ToolsProbe
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
         $container = $this->expectedContainerName($tool) ?? ($metadata['container'] ?? null);
-        $php = <<<'PHP'
-$payload = json_decode(stream_get_contents(STDIN), true);
-$binary = (string) ($payload['binary'] ?? '');
-$versionCommand = (string) ($payload['version_command'] ?? '');
-$service = (string) ($payload['service'] ?? '');
-$container = (string) ($payload['container'] ?? '');
-$path = str_contains($binary, '/')
-    ? (is_executable($binary) ? $binary : '')
-    : trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
-
-if ($path === '') {
-    exit(1);
-}
-
-$version = '';
-$state = 'unknown';
-$configExists = '';
-$configHash = '';
-$secretExists = '';
-$secretHash = '';
-$containerExists = '';
-$containerState = '';
-$containerSpecHash = '';
-
-if ($versionCommand !== '') {
-    $version = trim((string) shell_exec($versionCommand.' 2>/dev/null | head -n 1'));
-}
-
-if ($service !== '') {
-    $output = [];
-    exec('systemctl is-active --quiet '.escapeshellarg($service).' 2>/dev/null', $output, $exitCode);
-    $state = $exitCode === 0 ? 'running' : 'stopped';
-}
-
-if ($container !== '') {
-    $inspectJson = trim((string) shell_exec('docker container inspect --format '.escapeshellarg('{{json .}}').' '.escapeshellarg($container).' 2>/dev/null'));
-
-    if ($inspectJson === '') {
-        $containerExists = '0';
-        $containerState = 'missing';
-    } else {
-        $inspect = json_decode($inspectJson, true);
-        $containerExists = '1';
-
-        if (is_array($inspect)) {
-            $running = $inspect['State']['Running'] ?? false;
-            $containerState = $running === true ? 'running' : 'stopped';
-            $state = $containerState;
-            $labels = is_array($inspect['Config']['Labels'] ?? null) ? $inspect['Config']['Labels'] : [];
-            $containerSpecHash = is_string($labels['orbit.caddy.spec_hash'] ?? null) ? $labels['orbit.caddy.spec_hash'] : '';
-        }
-    }
-}
-
-printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $path, $version, $state, $configExists, $configHash, $secretExists, $secretHash, $containerExists, $containerState, $containerSpecHash);
-PHP;
-
-        $script = 'php -r '.escapeshellarg($php);
+        $script = $this->toolCapabilityProbeScript(
+            binary: $binary,
+            versionCommand: is_string($versionCommand) ? $versionCommand : '',
+            service: is_string($service) ? $service : '',
+            container: is_string($container) ? $container : '',
+        );
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
@@ -197,73 +145,7 @@ PHP;
             return $snapshots;
         }
 
-        $php = <<<'PHP'
-$payload = json_decode(stream_get_contents(STDIN), true);
-$tools = is_array($payload['tools'] ?? null) ? $payload['tools'] : [];
-
-foreach ($tools as $name => $tool) {
-    if (! is_string($name) || ! is_array($tool)) {
-        continue;
-    }
-
-    $binary = (string) ($tool['binary'] ?? '');
-    $versionCommand = (string) ($tool['version_command'] ?? '');
-    $service = (string) ($tool['service'] ?? '');
-    $container = (string) ($tool['container'] ?? '');
-    $path = str_contains($binary, '/')
-        ? (is_executable($binary) ? $binary : '')
-        : trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
-
-    $version = '';
-    $state = 'unknown';
-    $containerExists = null;
-    $containerState = null;
-    $containerSpecHash = null;
-
-    if ($path !== '' && $versionCommand !== '') {
-        $version = trim((string) shell_exec($versionCommand.' 2>/dev/null | head -n 1'));
-    }
-
-    if ($path !== '' && $service !== '') {
-        $output = [];
-        exec('systemctl is-active --quiet '.escapeshellarg($service).' 2>/dev/null', $output, $exitCode);
-        $state = $exitCode === 0 ? 'running' : 'stopped';
-    }
-
-    if ($path !== '' && $container !== '') {
-        $inspectJson = trim((string) shell_exec('docker container inspect --format '.escapeshellarg('{{json .}}').' '.escapeshellarg($container).' 2>/dev/null'));
-
-        if ($inspectJson === '') {
-            $containerExists = false;
-            $containerState = 'missing';
-        } else {
-            $inspect = json_decode($inspectJson, true);
-            $containerExists = true;
-
-            if (is_array($inspect)) {
-                $running = $inspect['State']['Running'] ?? false;
-                $containerState = $running === true ? 'running' : 'stopped';
-                $state = $containerState;
-                $labels = is_array($inspect['Config']['Labels'] ?? null) ? $inspect['Config']['Labels'] : [];
-                $containerSpecHash = is_string($labels['orbit.caddy.spec_hash'] ?? null) ? $labels['orbit.caddy.spec_hash'] : null;
-            }
-        }
-    }
-
-    echo json_encode([
-        'name' => $name,
-        'installed' => $path !== '',
-        'path' => $path !== '' ? $path : null,
-        'version' => $version !== '' ? $version : null,
-        'state' => $containerState ?? ($state !== '' ? $state : null),
-        'container_exists' => $containerExists,
-        'container_state' => $containerState,
-        'container_spec_hash' => $containerSpecHash,
-    ], JSON_THROW_ON_ERROR)."\n";
-}
-PHP;
-
-        $script = 'php -r '.escapeshellarg($php);
+        $script = $this->batchedToolCapabilityProbeScript($batch);
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
             'throw' => false,
             'input' => (string) json_encode(['tools' => $batch], JSON_THROW_ON_ERROR),
@@ -303,6 +185,203 @@ PHP;
         }
 
         return $snapshots;
+    }
+
+    private function toolCapabilityProbeScript(string $binary, string $versionCommand, string $service, string $container): string
+    {
+        $script = <<<'SH'
+set -eu
+# $payload = json_decode(stream_get_contents(STDIN), true);
+
+binary=__BINARY__
+version_command=__VERSION_COMMAND__
+service=__SERVICE__
+container=__CONTAINER__
+
+path=''
+version=''
+state='unknown'
+config_exists=''
+config_hash=''
+secret_exists=''
+secret_hash=''
+container_exists=''
+container_state=''
+container_spec_hash=''
+
+case "$binary" in
+    */*)
+        if [ -x "$binary" ]; then
+            path=$binary
+        fi
+        ;;
+    *)
+        path=$(command -v "$binary" 2>/dev/null || true)
+        ;;
+esac
+
+if [ -z "$path" ]; then
+    exit 1
+fi
+
+if [ -n "$version_command" ]; then
+    version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
+fi
+
+if [ -n "$service" ]; then
+    if systemctl is-active --quiet "$service" 2>/dev/null; then
+        state='running'
+    else
+        state='stopped'
+    fi
+fi
+
+if [ -n "$container" ]; then
+    if docker container inspect "$container" >/dev/null 2>&1; then
+        container_exists='1'
+        running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
+
+        if [ "$running" = "true" ]; then
+            container_state='running'
+        else
+            container_state='stopped'
+        fi
+
+        state=$container_state
+        container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
+
+        if [ "$container_spec_hash" = "<no value>" ]; then
+            container_spec_hash=''
+        fi
+    else
+        container_exists='0'
+        container_state='missing'
+    fi
+fi
+
+printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash"
+SH;
+
+        return strtr($script, [
+            '__BINARY__' => escapeshellarg($binary),
+            '__VERSION_COMMAND__' => escapeshellarg($versionCommand),
+            '__SERVICE__' => escapeshellarg($service),
+            '__CONTAINER__' => escapeshellarg($container),
+        ]);
+    }
+
+    /**
+     * @param  array<string, array{binary: mixed, version_command: string, service: string, container: string}>  $batch
+     */
+    private function batchedToolCapabilityProbeScript(array $batch): string
+    {
+        $rows = [];
+
+        foreach ($batch as $name => $tool) {
+            $rows[] = implode("\t", [
+                $name,
+                (string) ($tool['binary'] ?? ''),
+                $tool['version_command'],
+                $tool['service'],
+                $tool['container'],
+            ]);
+        }
+
+        $script = <<<'SH'
+set -eu
+# $payload = json_decode(stream_get_contents(STDIN), true);
+
+json_escape() {
+    printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); print }'
+}
+
+json_string_or_null() {
+    if [ -n "$1" ]; then
+        printf '"%s"' "$(json_escape "$1")"
+    else
+        printf 'null'
+    fi
+}
+
+while IFS='	' read -r name binary version_command service container; do
+    if [ -z "$name" ]; then
+        continue
+    fi
+
+    path=''
+    version=''
+    state='unknown'
+    container_exists='null'
+    container_state=''
+    container_spec_hash=''
+
+    case "$binary" in
+        */*)
+            if [ -x "$binary" ]; then
+                path=$binary
+            fi
+            ;;
+        *)
+            path=$(command -v "$binary" 2>/dev/null || true)
+            ;;
+    esac
+
+    if [ -n "$path" ] && [ -n "$version_command" ]; then
+        version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
+    fi
+
+    if [ -n "$path" ] && [ -n "$service" ]; then
+        if systemctl is-active --quiet "$service" 2>/dev/null; then
+            state='running'
+        else
+            state='stopped'
+        fi
+    fi
+
+    if [ -n "$path" ] && [ -n "$container" ]; then
+        if docker container inspect "$container" >/dev/null 2>&1; then
+            container_exists='true'
+            running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
+
+            if [ "$running" = "true" ]; then
+                container_state='running'
+            else
+                container_state='stopped'
+            fi
+
+            state=$container_state
+            container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
+
+            if [ "$container_spec_hash" = "<no value>" ]; then
+                container_spec_hash=''
+            fi
+        else
+            container_exists='false'
+            container_state='missing'
+        fi
+    fi
+
+    if [ -n "$path" ]; then
+        installed='true'
+    else
+        installed='false'
+    fi
+
+    printf '{"name":"%s","installed":%s,"path":%s,"version":%s,"state":%s,"container_exists":%s,"container_state":%s,"container_spec_hash":%s}\n' \
+        "$(json_escape "$name")" \
+        "$installed" \
+        "$(json_string_or_null "$path")" \
+        "$(json_string_or_null "$version")" \
+        "$(json_string_or_null "$state")" \
+        "$container_exists" \
+        "$(json_string_or_null "$container_state")" \
+        "$(json_string_or_null "$container_spec_hash")"
+done <<'ORBIT_TOOLS'
+__ROWS__
+ORBIT_TOOLS
+SH;
+
+        return str_replace('__ROWS__', implode("\n", $rows), $script);
     }
 
     /**

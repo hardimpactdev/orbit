@@ -200,9 +200,35 @@ describe('ToolsProbe', function (): void {
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($input['binary'])->toBe('/opt/orbit/php/8.5/bin/php')
-            ->and($shell->script)->toContain('str_contains($binary')
-            ->and($shell->script)->toContain('is_executable($binary)')
+            ->and($shell->script)->toStartWith('set -eu')
+            ->and($shell->script)->toContain('case "$binary" in')
+            ->and($shell->script)->toContain('[ -x "$binary" ]')
             ->and($shell->script)->toContain('command -v');
+    });
+
+    it('does not contain host-lane php eval probe snippets', function (): void {
+        expect(file_get_contents(app_path('Services/Tools/ToolsProbe.php')))->not->toContain('php -r');
+    });
+
+    it('uses POSIX shell for single tool capability probes while preserving tab output parsing', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
+        $shell = new RecordingToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\t\t\t\t\t\t\t\n",
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshot = $probe->introspect($tool);
+
+        expect($shell->script)->not->toContain('php -r')
+            ->and($shell->script)->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
+            ->and($snapshot->get('composer'))->toMatchArray([
+                'installed' => true,
+                'path' => '/usr/local/bin/composer',
+                'version' => 'Composer version 2.8.0',
+                'state' => 'stopped',
+            ]);
     });
 
     it('frankenphp probes approved Docker image inventory for the PHP tool instead of host PHP', function (): void {
@@ -491,6 +517,55 @@ describe('ToolsProbe', function (): void {
         ])
             ->and($shell->scripts)->toHaveCount(2)
             ->and($shell->scripts[1])->toContain('sudo test -f "$path"');
+    });
+
+    it('uses POSIX shell for batched tool probes while preserving line-delimited JSON parsing', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $composer = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
+        $docker = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'docker']);
+        $shell = new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(
+                0,
+                json_encode([
+                    'name' => 'composer',
+                    'installed' => true,
+                    'path' => '/usr/local/bin/composer',
+                    'version' => 'Composer version 2.8.0',
+                    'state' => 'unknown',
+                    'container_exists' => null,
+                    'container_state' => null,
+                    'container_spec_hash' => null,
+                ], JSON_THROW_ON_ERROR)."\n"
+                .json_encode([
+                    'name' => 'docker',
+                    'installed' => true,
+                    'path' => '/usr/bin/docker',
+                    'version' => 'Docker version 27.0.0',
+                    'state' => 'unknown',
+                    'container_exists' => null,
+                    'container_state' => null,
+                    'container_spec_hash' => null,
+                ], JSON_THROW_ON_ERROR)."\n",
+                '',
+                1,
+            ),
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshots = $probe->introspectMany([$composer, $docker]);
+
+        expect($shell->scripts[0])->not->toContain('php -r')
+            ->and($shell->scripts[0])->toContain('printf \'{"name":')
+            ->and($snapshots['composer']->get('composer'))->toMatchArray([
+                'installed' => true,
+                'path' => '/usr/local/bin/composer',
+                'version' => 'Composer version 2.8.0',
+            ])
+            ->and($snapshots['docker']->get('docker'))->toMatchArray([
+                'installed' => true,
+                'path' => '/usr/bin/docker',
+                'version' => 'Docker version 27.0.0',
+            ]);
     });
 
     it('detects missing managed config files through the managed file resource plan', function (): void {
