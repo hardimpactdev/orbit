@@ -191,7 +191,7 @@ final readonly class ToolsProbe
     {
         $script = <<<'SH'
 set -eu
-# $payload = json_decode(stream_get_contents(STDIN), true);
+# orbit-tool-probe:capability
 
 binary=__BINARY__
 version_command=__VERSION_COMMAND__
@@ -289,7 +289,7 @@ SH;
 
         $script = <<<'SH'
 set -eu
-# $payload = json_decode(stream_get_contents(STDIN), true);
+# orbit-tool-probe:capability-batch
 
 json_escape() {
     printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); print }'

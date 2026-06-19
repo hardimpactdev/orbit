@@ -210,6 +210,11 @@ describe('ToolsProbe', function (): void {
         expect(file_get_contents(app_path('Services/Tools/ToolsProbe.php')))->not->toContain('php -r');
     });
 
+    it('does not carry inert PHP payload markers in shell probe scripts', function (): void {
+        expect(file_get_contents(app_path('Services/Tools/ToolsProbe.php')))
+            ->not->toContain('json_decode(stream_get_contents(STDIN), true);');
+    });
+
     it('uses POSIX shell for single tool capability probes while preserving tab output parsing', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
@@ -222,6 +227,7 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
 
         expect($shell->script)->not->toContain('php -r')
+            ->and($shell->script)->toContain('# orbit-tool-probe:capability')
             ->and($shell->script)->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
             ->and($snapshot->get('composer'))->toMatchArray([
                 'installed' => true,
@@ -555,6 +561,7 @@ describe('ToolsProbe', function (): void {
         $snapshots = $probe->introspectMany([$composer, $docker]);
 
         expect($shell->scripts[0])->not->toContain('php -r')
+            ->and($shell->scripts[0])->toContain('# orbit-tool-probe:capability-batch')
             ->and($shell->scripts[0])->toContain('printf \'{"name":')
             ->and($snapshots['composer']->get('composer'))->toMatchArray([
                 'installed' => true,
