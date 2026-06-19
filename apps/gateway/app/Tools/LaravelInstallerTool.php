@@ -42,10 +42,7 @@ configure_github_auth() {
 
     sudo install -d -m 700 -o "${MANAGED_USER}" -g "${MANAGED_USER}" "\${COMPOSER_HOME}"
 
-    auth_file="\$(mktemp)"
-    php -r 'echo json_encode(["github-oauth" => ["github.com" => trim(file_get_contents($argv[1]))]], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);' "\${GITHUB_TOKEN_FILE}" > "\${auth_file}"
-    sudo install -m 600 -o "${MANAGED_USER}" -g "${MANAGED_USER}" "\${auth_file}" "\${COMPOSER_HOME}/auth.json"
-    rm -f "\${auth_file}"
+    sudo -u "${MANAGED_USER}" -H bash -lc 'COMPOSER_HOME="$1" composer config --global github-oauth.github.com "$(tr -d "\r\n" < "$2")" --no-interaction' bash "\${COMPOSER_HOME}" "\${GITHUB_TOKEN_FILE}"
 
     if command -v gh >/dev/null 2>&1; then
         sudo -u "${MANAGED_USER}" -H bash -lc 'cat "$1" | gh auth login --hostname github.com --with-token >/dev/null 2>&1 || true; gh auth setup-git --hostname github.com >/dev/null 2>&1 || true' bash "\${GITHUB_TOKEN_FILE}"
@@ -84,10 +81,7 @@ configure_github_auth() {
 
     sudo install -d -m 700 -o "${MANAGED_USER}" -g "${MANAGED_USER}" "\${COMPOSER_HOME}"
 
-    auth_file="\$(mktemp)"
-    php -r 'echo json_encode(["github-oauth" => ["github.com" => trim(file_get_contents($argv[1]))]], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);' "\${GITHUB_TOKEN_FILE}" > "\${auth_file}"
-    sudo install -m 600 -o "${MANAGED_USER}" -g "${MANAGED_USER}" "\${auth_file}" "\${COMPOSER_HOME}/auth.json"
-    rm -f "\${auth_file}"
+    sudo -u "${MANAGED_USER}" -H bash -lc 'COMPOSER_HOME="$1" composer config --global github-oauth.github.com "$(tr -d "\r\n" < "$2")" --no-interaction' bash "\${COMPOSER_HOME}" "\${GITHUB_TOKEN_FILE}"
 
     if command -v gh >/dev/null 2>&1; then
         sudo -u "${MANAGED_USER}" -H bash -lc 'cat "$1" | gh auth login --hostname github.com --with-token >/dev/null 2>&1 || true; gh auth setup-git --hostname github.com >/dev/null 2>&1 || true' bash "\${GITHUB_TOKEN_FILE}"

@@ -51,10 +51,22 @@ describe('LaravelInstallerTool', function (): void {
 
         expect($script)
             ->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
-            ->toContain('github-oauth')
-            ->toContain('${COMPOSER_HOME}/auth.json')
+            ->toContain('composer config --global github-oauth.github.com')
+            ->toContain('tr -d')
             ->toContain('gh auth login --hostname github.com --with-token')
-            ->toContain('gh auth setup-git --hostname github.com');
+            ->toContain('gh auth setup-git --hostname github.com')
+            ->not->toContain('php -r');
+    });
+
+    it('updateScript configures Composer GitHub OAuth without php inline code', function (): void {
+        $tool = new LaravelInstallerTool;
+        $script = $tool->updateScript(['github_token_file' => '/tmp/orbit-secret.github']);
+
+        expect($script)
+            ->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
+            ->toContain('composer config --global github-oauth.github.com')
+            ->toContain('gh auth setup-git --hostname github.com')
+            ->not->toContain('php -r');
     });
 
     it('updateScript runs composer global update laravel/installer', function (): void {

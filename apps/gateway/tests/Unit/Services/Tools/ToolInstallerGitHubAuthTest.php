@@ -54,12 +54,14 @@ it('stages GitHub auth for laravel installer repairs without embedding the token
         ->and($shell->options[0]['input'])->toBe(base64_encode('ghp_unit_secret'))
         ->and($shell->scripts[0])->toContain('base64 -d')
         ->and($shell->scripts[1])->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
-        ->and($shell->scripts[1])->toContain('${COMPOSER_HOME}/auth.json')
+        ->and($shell->scripts[1])->toContain('composer config --global github-oauth.github.com')
         ->and($shell->scripts[1])->toContain('gh auth login --hostname github.com --with-token')
         ->and($shell->scripts[2])->toBe("rm -f '/tmp/orbit-secret.github'");
 
     foreach ($shell->scripts as $script) {
-        expect($script)->not->toContain('ghp_unit_secret');
+        expect($script)
+            ->not->toContain('ghp_unit_secret')
+            ->not->toContain('php -r');
     }
 });
 
@@ -99,12 +101,15 @@ it('stages GitHub auth for laravel installer updates without embedding the token
     ])
         ->and($shell->options[0]['input'])->toBe(base64_encode('ghp_update_secret'))
         ->and($shell->scripts[1])->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
+        ->and($shell->scripts[1])->toContain('composer config --global github-oauth.github.com')
         ->and($shell->scripts[1])->toContain('composer global update laravel/installer')
         ->and($shell->scripts[1])->toContain('gh auth login --hostname github.com --with-token')
         ->and($shell->scripts[2])->toBe("rm -f '/tmp/orbit-secret.github'");
 
     foreach ($shell->scripts as $script) {
-        expect($script)->not->toContain('ghp_update_secret');
+        expect($script)
+            ->not->toContain('ghp_update_secret')
+            ->not->toContain('php -r');
     }
 });
 

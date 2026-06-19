@@ -44,7 +44,8 @@ describe('ComposerTool', function (): void {
         $script = $tool->installScript();
 
         expect($script)->toContain('composer.github.io/installer.sig')
-            ->and($script)->toContain('sha384');
+            ->and($script)->toContain('sha384sum composer-setup.php')
+            ->and($script)->not->toContain('php -r');
     });
 
     it('installScript installs the phar to /usr/local/bin with filename composer', function (): void {

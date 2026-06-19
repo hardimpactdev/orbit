@@ -103,7 +103,8 @@ describe('PhpCliTool', function (): void {
         $metadata = $tool->probeMetadata();
 
         expect($metadata['binary'])->toBe('/opt/orbit/php/8.5/bin/php')
-            ->and($metadata['version_command'])->toBe('/opt/orbit/php/8.5/bin/php -r "echo PHP_VERSION;"');
+            ->and($metadata['version_command'])->toBe('/opt/orbit/php/8.5/bin/php --version')
+            ->and($metadata['version_command'])->not->toContain('php -r');
     });
 
     it('is resolvable by slug from the tool catalog', function (): void {

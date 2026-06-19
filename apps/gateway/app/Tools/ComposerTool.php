@@ -40,7 +40,7 @@ EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"
 curl -fsSL https://getcomposer.org/installer -o composer-setup.php
 
 # Verify the SHA-384 hash
-ACTUAL_SIG="$(php -r "echo hash_file('sha384', 'composer-setup.php');")"
+ACTUAL_SIG="$(sha384sum composer-setup.php | awk '{print $1}')"
 
 if [ "$EXPECTED_SIG" != "$ACTUAL_SIG" ]; then
     echo "ERROR: Composer installer signature verification failed." >&2

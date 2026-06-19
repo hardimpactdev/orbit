@@ -61,7 +61,7 @@ final class PhpCliTool extends BaseTool
     {
         return [
             'binary' => self::INSTALL_ROOT.'/8.5/bin/php',
-            'version_command' => self::INSTALL_ROOT.'/8.5/bin/php -r "echo PHP_VERSION;"',
+            'version_command' => self::INSTALL_ROOT.'/8.5/bin/php --version',
         ];
     }
 
