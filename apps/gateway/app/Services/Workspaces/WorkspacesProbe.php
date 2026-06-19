@@ -49,55 +49,58 @@ final readonly class WorkspacesProbe
             'runtime_user' => $this->workspaceRuntimeUser()->forWorkspace($workspace),
         ];
 
-        $php = <<<'PHP'
-$spec = json_decode(stream_get_contents(STDIN), true);
-$name = (string) ($spec['name'] ?? '');
-$path = (string) ($spec['path'] ?? '');
-$runtimeUser = (string) ($spec['runtime_user'] ?? '');
+        $script = <<<'SH'
+set -eu
 
-$pathExists = is_dir($path) ? '1' : '0';
-$pathUsable = is_dir($path) && is_readable($path) && is_executable($path) ? '1' : '0';
-$systemUserExists = $runtimeUser !== '' && command_succeeds('id -u '.escapeshellarg($runtimeUser)) ? '1' : '0';
-$fsPermissionsOk = $pathExists === '1' && path_owned_by($path, $runtimeUser) && ! group_or_other_writable($path) ? '1' : '0';
+name=__NAME__
+path=__PATH__
+runtime_user=__RUNTIME_USER__
 
-printf(
-    "%s\t%s\t%s\t%s\t%s\n",
-    $name,
-    $pathExists,
-    $pathUsable,
-    $systemUserExists,
-    $fsPermissionsOk
-);
+path_exists=0
+path_usable=0
+system_user_exists=0
+fs_permissions_ok=0
 
-function command_succeeds(string $command): bool
-{
-    exec($command.' >/dev/null 2>&1', $output, $exitCode);
+if [ -d "$path" ]; then
+    path_exists=1
 
-    return $exitCode === 0;
-}
+    if [ -r "$path" ] && [ -x "$path" ]; then
+        path_usable=1
+    fi
+fi
 
-function path_owned_by(string $path, string $user): bool
-{
-    if ($user === '' || ! file_exists($path) || ! function_exists('posix_getpwuid')) {
-        return false;
-    }
+if [ -n "$runtime_user" ] && id -u "$runtime_user" >/dev/null 2>&1; then
+    system_user_exists=1
+fi
 
-    $owner = posix_getpwuid(fileowner($path));
+owner=''
+mode=''
 
-    return is_array($owner) && ($owner['name'] ?? null) === $user;
-}
+if [ "$path_exists" = "1" ]; then
+    owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path" 2>/dev/null || printf '')
+    mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || printf '')
+fi
 
-function group_or_other_writable(string $path): bool
-{
-    if (! file_exists($path)) {
-        return true;
-    }
+if [ "$path_exists" = "1" ] && [ -n "$runtime_user" ] && [ "$owner" = "$runtime_user" ] && [ -n "$mode" ]; then
+    group_digit=${mode%?}
+    group_digit=${group_digit#${group_digit%?}}
+    other_digit=${mode#${mode%?}}
 
-    return (fileperms($path) & 0022) !== 0;
-}
-PHP;
+    case "$group_digit:$other_digit" in
+        0:0|0:1|0:4|0:5|1:0|1:1|1:4|1:5|4:0|4:1|4:4|4:5|5:0|5:1|5:4|5:5)
+            fs_permissions_ok=1
+            ;;
+    esac
+fi
 
-        $script = 'set -euo pipefail'.PHP_EOL.'php -r '.escapeshellarg($php);
+printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$path_exists" "$path_usable" "$system_user_exists" "$fs_permissions_ok"
+SH;
+
+        $script = strtr($script, [
+            '__NAME__' => escapeshellarg($spec['name']),
+            '__PATH__' => escapeshellarg($spec['path']),
+            '__RUNTIME_USER__' => escapeshellarg($spec['runtime_user']),
+        ]);
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app->node, $script, [
             'throw' => true,

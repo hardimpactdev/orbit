@@ -59,12 +59,18 @@ describe('source path reality', function (): void {
             'system_user_exists' => true,
             'fs_permissions_ok' => true,
         ]);
-        expect($shell->scripts[0])->toContain('php -r')
+        expect($shell->scripts[0])->not->toContain('php -r')
+            ->and($shell->scripts[0])->toContain('path_exists=')
+            ->and($shell->scripts[0])->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\n\'')
             ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))->toMatchArray([
                 'name' => 'feature',
                 'path' => "{$app->path}/.worktrees/feature",
             ]);
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
+    });
+
+    it('does not contain host-lane php eval probe snippets', function (): void {
+        expect(file_get_contents(app_path('Services/Workspaces/WorkspacesProbe.php')))->not->toContain('php -r');
     });
 
     it('detects missing workspace paths', function (): void {
