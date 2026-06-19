@@ -1439,6 +1439,7 @@ PHP;
             './.env.e2e',
             './auth.json',
             './build',
+            './tmp-e2e-archive-manifest-*.txt',
             './bin/orbit-binary-*',
             './apps/gateway/database/*.sqlite',
             './apps/gateway/database/*.sqlite-*',

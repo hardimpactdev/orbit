@@ -540,8 +540,8 @@ it('excludes persisted orbit certificate material from checkout archive manifest
 
 it('builds checkout archives from tracked and unignored files only', function (): void {
     $suffix = bin2hex(random_bytes(4));
-    $includedPath = repo_path("tmp-e2e-archive-manifest-{$suffix}.txt");
-    $ignoredPath = repo_path("tmp-e2e-archive-manifest-{$suffix}.log");
+    $includedPath = repo_path("tmp-e2e-archive-include-{$suffix}.txt");
+    $ignoredPath = repo_path("tmp-e2e-archive-include-{$suffix}.log");
     $manifestEntries = [];
 
     file_put_contents($includedPath, 'included');
@@ -585,6 +585,7 @@ it('publishes the checkout archive excludes for tarball construction', function 
             './.orbit-e2e-vendor-archives',
             './.env',
             './build',
+            './tmp-e2e-archive-manifest-*.txt',
             './apps/gateway/.env',
             './apps/cli/.env',
             './apps/cli/.env.e2e',

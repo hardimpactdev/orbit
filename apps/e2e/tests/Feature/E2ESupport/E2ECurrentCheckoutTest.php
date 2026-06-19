@@ -156,3 +156,17 @@ it('excludes generated versioned Orbit binaries from checkout archives', functio
         File::delete($binary);
     }
 });
+
+it('excludes transient repo-root archive manifest fixtures from checkout archives', function (): void {
+    $manifest = repo_path('tmp-e2e-archive-manifest-'.bin2hex(random_bytes(4)).'.txt');
+
+    File::put($manifest, 'transient manifest fixture');
+
+    try {
+        $method = new ReflectionMethod(E2ECurrentCheckout::class, 'shouldIncludeArchivePath');
+
+        expect($method->invoke(null, basename($manifest)))->toBeFalse();
+    } finally {
+        File::delete($manifest);
+    }
+});
