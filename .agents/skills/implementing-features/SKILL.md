@@ -1,15 +1,16 @@
 ---
 name: implementing-features
-description: Use when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff.
+description: Use when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff through Grok implementation sub-agents.
 ---
 
 # Implementing Features
 
 ## Overview
 
-Implement a scoped Orbit change from a clear handoff or Solo todo. Documentation
-updates and project Orbit skill updates are implementation work here, alongside
-tests and code.
+Implement a scoped Orbit change from a clear handoff or Solo todo by acting as
+the Codex orchestrator for Grok implementation sub-agents. Documentation updates
+and project Orbit skill updates are implementation work here, alongside tests
+and code.
 
 ## Preconditions
 
@@ -18,7 +19,72 @@ tests and code.
   handoff or identified during implementation.
 - Acceptance criteria and verification commands are known.
 - Owned files or domains are explicit enough to avoid unrelated edits.
-- A dedicated worktree exists for the change (see Workspace Setup below).
+- A dedicated worktree can be created for the change (see Workspace Setup
+  below).
+- Grok is available as a Solo agent runtime for implementation. If Grok cannot
+  be spawned, stop and report the blocker instead of quietly implementing the
+  feature yourself.
+
+## Orchestrator Role
+
+The agent using this skill is the feature owner and orchestrator, not the
+primary implementer. Use Grok sub-agents for implementation work.
+
+Responsibilities:
+
+- Prepare and own the dedicated Orbit worktree.
+- Read the handoff, docs, and existing code enough to define clear Grok tasks.
+- Spawn one Grok worker by default. Spawn multiple Grok workers only for
+  disjoint slices with explicit ownership and merge order.
+- Keep docs, tests, and code for the same behavior in the same Grok task unless
+  the split is genuinely independent.
+- Monitor Grok output, inspect diffs, ask for corrections, and keep unrelated
+  dirty files untouched.
+- Run or require the verification gates and independently read the results.
+- Own final commit, merge-back, worktree cleanup, and the implementation report.
+
+Do not make substantive implementation edits yourself unless the user explicitly
+approves bypassing Grok. Small orchestration-only edits, conflict resolution
+after review, and mechanical formatting fixes are acceptable only when they do
+not replace the Grok implementation loop.
+
+## Grok Delegation
+
+When running inside Solo, discover the live Grok tool with `list_agent_tools`,
+spawn it with `spawn_agent`, and prepend Solo's returned `agent_instructions` to
+the first prompt. If the current environment exposes a different but equivalent
+Grok spawn mechanism, use that mechanism and record it in the report.
+
+Use this prompt shape:
+
+```text
+<prepend the agent_instructions returned by Solo spawn_agent>
+
+You are implementing one scoped Orbit feature slice in a dedicated worktree.
+Other workers may be active, so keep ownership narrow and do not revert
+unrelated changes.
+
+Worktree:
+<absolute path to .worktrees/<branch-name>>
+
+Read and follow:
+- AGENTS.md
+- .agents/skills/implementing-features/SKILL.md
+- relevant docs and tests named in the handoff
+
+Feature handoff:
+<paste the crystallized handoff or owned slice>
+
+Rules:
+- Edit only inside the assigned worktree.
+- Keep docs, tests, and code aligned.
+- Use TDD: failing Pest coverage first, then implementation.
+- Run the focused verification assigned to this slice.
+- Do not merge to main, delete the worktree, force-push, reset, clean, stash, or
+  touch unrelated dirty files.
+
+Report changed files, tests, verification commands/results, blockers, and risks.
+```
 
 ## Workspace Setup
 
@@ -208,43 +274,51 @@ moving on to durable E2E.
    relevant product docs under `apps/docs/content/**`, and relevant session
    context under `docs/superpowers/**`.
 3. Confirm owned files or domains and existing dirty work before editing.
-4. Align documentation inside this worktree when the handoff identifies missing
-   or contradictory docs.
-5. Check whether the project-owned Orbit skill under `skills/orbit/**` is
+4. Decide the Grok delegation plan. Use one Grok worker unless the feature has
+   disjoint slices with explicit file/domain ownership and merge order.
+5. Spawn the Grok worker(s) with the worktree path, handoff, owned scope,
+   documentation authority, TDD requirement, focused verification, and the rule
+   that Grok must not merge to `main` or clean up the worktree.
+6. Monitor Grok, inspect diffs, and send correction prompts until the
+   acceptance criteria are met or a blocker is explicit.
+7. Align documentation inside this worktree when the handoff identifies missing
+   or contradictory docs. Prefer sending documentation corrections back through
+   the Grok worker that owns the related behavior.
+8. Check whether the project-owned Orbit skill under `skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-6. Follow TDD (see Test-Driven Development below): write or update failing Pest
-   tests first, then implement.
-7. Implement the smallest working vertical slice to make the tests pass.
-8. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+9. Ensure the Grok implementation followed TDD (see Test-Driven Development
+   below): failing Pest tests first, then implementation.
+10. Keep the smallest working vertical slice that makes the tests pass.
+11. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-9. Run focused in-memory and prepared-topology feature verification.
-10. Run artifact-backed feature verification when production artifact behavior
-   matters and that lane exists for the provider.
-11. Run provider provision gates only as final/nightly substrate verification
-   when installer, host mutation, image, binary, or topology-preparation
-   behavior changed. Docker provision is only for Docker artifact/image or
-   Docker topology-preparer changes; do not run it as a generic post-`composer
-   test:e2e` gate.
-12. If PHP changed, run:
+12. Run focused in-memory and prepared-topology feature verification.
+13. Run artifact-backed feature verification when production artifact behavior
+    matters and that lane exists for the provider.
+14. Run provider provision gates only as final/nightly substrate verification
+    when installer, host mutation, image, binary, or topology-preparation
+    behavior changed. Docker provision is only for Docker artifact/image or
+    Docker topology-preparer changes; do not run it as a generic post-`composer
+    test:e2e` gate.
+15. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-13. Before reporting completion, run the project quality gate:
+16. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-14. Commit the verified worktree changes on the worktree branch.
-15. Merge the branch back into `main` from the primary `~/orbit` checkout,
+17. Commit the verified worktree changes on the worktree branch.
+18. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
@@ -317,6 +391,10 @@ is not required after ordinary `composer test:e2e` runs.
 - Prefer existing Orbit and Laravel patterns.
 - Treat current docs as product authority.
 - Keep docs, tests, and code aligned.
+- Grok performs implementation edits; the Codex feature owner orchestrates,
+  reviews, verifies, commits, merges, cleans up, and reports.
+- Give each Grok worker one clear ownership boundary. If a boundary is hard to
+  state, use one Grok worker serially instead of parallel workers.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
@@ -349,6 +427,10 @@ is not required after ordinary `composer test:e2e` runs.
 
 Worktree:
 - `.worktrees/<branch-name>` on branch `<branch>`
+
+Grok delegation:
+- Worker(s): <name/process id and owned scope>
+- Corrections requested: <summary or none>
 
 Changed files:
 - <path>: <why>
