@@ -9,8 +9,8 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessDockerContainerApplyOutcome;
 use App\Exceptions\ProcessDockerContainerApplyException;
 use App\Models\Node;
+use App\Services\Convergence\ProcessDockerContainerResource;
 use App\Services\Runtime\DockerCommandBuilder;
-use RuntimeException;
 use Throwable;
 
 final readonly class ProcessDockerRuntimeManager
@@ -31,34 +31,25 @@ final readonly class ProcessDockerRuntimeManager
      */
     public function apply(Node $node, ProcessDockerContainer $container): ProcessDockerContainerApplyOutcome
     {
-        $this->ensureNetwork($node, $container);
+        $resource = new ProcessDockerContainerResource($container, $this->commands);
 
-        $inspection = $this->inspect($node, $container);
-        $hadExistingContainer = $inspection !== null;
+        $resource->ensureNetwork($node, $this->remoteShell);
+
+        $probe = $resource->probe($node, $this->remoteShell);
+        $hadExistingContainer = $probe->exists;
 
         try {
-            if ($inspection === null) {
-                $this->createContainer($node, $container);
+            $plan = $resource->plan($probe);
+            $result = $resource->apply($node, $this->remoteShell, $plan);
 
-                return ProcessDockerContainerApplyOutcome::Created;
-            }
-
-            if (! $this->matchesSpec($inspection, $container)) {
-                $this->runRequired(
-                    $node,
-                    $this->commands->containerRemove($container->name()),
-                    "remove drifted {$container->name()} container",
+            if (! $result->successful()) {
+                throw new ProcessDockerContainerApplyException(
+                    hadExistingContainer: $hadExistingContainer,
+                    message: $result->summary,
                 );
-                $this->createContainer($node, $container);
-
-                return ProcessDockerContainerApplyOutcome::Recreated;
             }
 
-            // Existing container matches the rendered spec. Apply does not
-            // start it; the user's previous lifecycle choice (running or
-            // stopped) is preserved. process.runtime_unit_stopped is the
-            // lifecycle command's concern, not apply's.
-            return ProcessDockerContainerApplyOutcome::Unchanged;
+            return $plan->outcome;
         } catch (ProcessDockerContainerApplyException $exception) {
             throw $exception;
         } catch (Throwable $exception) {
@@ -81,56 +72,6 @@ final readonly class ProcessDockerRuntimeManager
         return $this->isDockerNoSuchObject($inspect);
     }
 
-    private function ensureNetwork(Node $node, ProcessDockerContainer $container): void
-    {
-        $result = $this->run($node, $this->commands->networkInspect($container->network()));
-
-        if ($result->successful()) {
-            return;
-        }
-
-        $this->runRequired(
-            $node,
-            $this->commands->networkCreate($container->network()),
-            "create {$container->network()} Docker network",
-        );
-    }
-
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function inspect(Node $node, ProcessDockerContainer $container): ?array
-    {
-        $result = $this->run($node, $this->commands->containerInspect($container->name()));
-
-        if (! $result->successful()) {
-            return null;
-        }
-
-        $output = trim($result->stdout);
-
-        if ($output === '') {
-            return null;
-        }
-
-        $inspection = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-
-        if (! is_array($inspection)) {
-            throw new RuntimeException("Docker returned an invalid inspect payload for {$container->name()} on {$node->name}.");
-        }
-
-        return $inspection;
-    }
-
-    private function createContainer(Node $node, ProcessDockerContainer $container): void
-    {
-        $this->runRequired(
-            $node,
-            $this->commands->createIdle($container),
-            "create {$container->name()} container",
-        );
-    }
-
     /**
      * Lifecycle hook used by AddProcess --start / EditProcess --restart.
      * Returns true when the lifecycle command succeeded.
@@ -150,20 +91,6 @@ final readonly class ProcessDockerRuntimeManager
         return $this->run($node, $this->commands->containerRestart($containerName))->successful();
     }
 
-    /**
-     * @param  array<string, mixed>  $inspection
-     */
-    private function matchesSpec(array $inspection, ProcessDockerContainer $container): bool
-    {
-        $labels = $inspection['Config']['Labels'] ?? [];
-
-        if (! is_array($labels)) {
-            return false;
-        }
-
-        return ($labels[ProcessDockerContainer::SpecHashLabel] ?? null) === $container->specHash();
-    }
-
     private function isDockerNoSuchObject(RemoteShellResult $result): bool
     {
         $message = $result->stderr.' '.$result->stdout;
@@ -174,19 +101,5 @@ final readonly class ProcessDockerRuntimeManager
     private function run(Node $node, string $script): RemoteShellResult
     {
         return $this->remoteShell->run($node, $script);
-    }
-
-    private function runRequired(Node $node, string $script, string $step): void
-    {
-        $result = $this->run($node, $script);
-
-        if ($result->successful()) {
-            return;
-        }
-
-        $output = trim($result->errorOutput().' '.$result->stdout);
-        $message = $output !== '' ? $output : 'unknown error';
-
-        throw new RuntimeException("Failed to {$step} on {$node->name}: {$message}");
     }
 }
