@@ -102,6 +102,27 @@ it('prunes stale checkout archive cache tarballs and locks', function (): void {
     }
 });
 
+it('ignores archive manifest paths that disappear before hashing', function (): void {
+    $stablePath = repo_path('tmp-e2e-tree-hash-stable-'.bin2hex(random_bytes(4)).'.txt');
+    $deletedPath = repo_path('tmp-e2e-tree-hash-deleted-'.bin2hex(random_bytes(4)).'.txt');
+    $stableRelativePath = basename($stablePath);
+    $deletedRelativePath = basename($deletedPath);
+
+    File::put($stablePath, 'stable');
+    File::put($deletedPath, 'deleted');
+    File::delete($deletedPath);
+
+    try {
+        $method = new ReflectionMethod(E2ECurrentCheckout::class, 'treeHashForManifest');
+
+        expect($method->invoke(null, [$stableRelativePath, $deletedRelativePath]))
+            ->toBe($method->invoke(null, [$stableRelativePath]));
+    } finally {
+        File::delete($stablePath);
+        File::delete($deletedPath);
+    }
+});
+
 it('prunes stale checkout archive artifacts while building temporary archives', function (): void {
     $previousCacheDirectory = getenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR');
     $cacheDirectory = sys_get_temp_dir().'/orbit-checkout-cache-'.bin2hex(random_bytes(6));

@@ -1652,11 +1652,25 @@ PHP;
 
     public static function treeHash(): string
     {
+        return self::treeHashForManifest(self::archiveManifest());
+    }
+
+    /**
+     * @param  list<string>  $paths
+     */
+    private static function treeHashForManifest(array $paths): string
+    {
         $manifest = '';
 
-        foreach (self::archiveManifest() as $path) {
+        foreach ($paths as $path) {
             $absolutePath = repo_path($path);
-            $manifest .= $path."\0".hash_file('sha256', $absolutePath)."\n";
+            $hash = @hash_file('sha256', $absolutePath);
+
+            if ($hash === false) {
+                continue;
+            }
+
+            $manifest .= $path."\0".$hash."\n";
         }
 
         return substr(hash('sha256', $manifest), 0, 16);
