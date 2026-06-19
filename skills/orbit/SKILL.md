@@ -48,8 +48,8 @@ Commands are grouped by family. Each reference file lists every command in that 
 | Command | What it does |
 |---|---|
 | `orbit doctor` | Diagnose state-family drift; `--fix --restore` reapplies intent, `--fix --adopt` records node reality |
-| `orbit update` | Update this Orbit checkout (git pull + composer install + migrate) |
-| `orbit update:all` | Update local checkout and every active registered node |
+| `orbit update` | Update the caller-local Orbit CLI binary, gated by the active gateway version |
+| `orbit update:all` | Update Orbit nodes gateway-first, then caller-local and workload nodes as fan-out targets |
 | `orbit profile [target]` | Profile one HTTP request against an Orbit-managed app (DNS/connect/TLS/TTFB + Toolbar enrichment) |
 
 ### Node fleet  -  [`references/node.md`](references/node.md)

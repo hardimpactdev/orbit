@@ -148,7 +148,9 @@ describe('update', function (): void {
 
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Updating Orbit')
+            ->and($output)->toContain('│')
             ->and($output)->toContain('Checking for updates')
+            ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
             ->and($output)->toContain('Downloading binary')
             ->and($output)->toContain('Replacing binary')
             ->and($output)->toContain('Running doctor')
@@ -180,7 +182,9 @@ describe('update', function (): void {
         [$exitCode, $output] = runCommand($this, 'update');
 
         expect($exitCode)->toBe(0)
+            ->and($output)->toContain('│')
             ->and($output)->toContain('Checking for updates')
+            ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
             ->and($output)->toContain('Skipped: 0.1.131 is already installed')
             ->and($output)->not->toContain('Downloading binary')
             ->and($output)->not->toContain('"success"');

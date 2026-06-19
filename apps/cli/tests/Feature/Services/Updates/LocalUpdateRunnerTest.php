@@ -199,6 +199,19 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->stepResults)->toBe(['check' => 'completed']);
     });
 
+    it('emits a blink-only check step without a textual in-progress message', function (): void {
+        config()->set('app.version', '0.1.130');
+        fakeRunnerLatest('0.1.131');
+        fakeGateway(['gateway' => ['version' => '0.1.131']]);
+
+        $steps = [];
+        makeRunner(new RunnerFakeUpdater)->run(function (string $step, string $status, ?string $message) use (&$steps): void {
+            $steps[] = [$step, $status, $message];
+        });
+
+        expect($steps[0])->toBe(['check', 'start', null]);
+    });
+
     it('proceeds when the gateway is already on the latest release', function (): void {
         config()->set('app.version', '0.1.130');
         fakeRunnerLatest('0.1.131');

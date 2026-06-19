@@ -42,7 +42,10 @@ assignment. Role-less client/operator identities remain node-family only.
 
 ## `orbit update`
 
-Update this Orbit checkout in place: `git pull` + `composer install --no-dev` + migrate. Local action only.
+Update the caller-local Orbit CLI binary in place. The command checks for the
+latest release, skips when the local CLI is current, and never updates past the
+active gateway version; when the gateway is behind it exits successfully with
+`Skipped: please update your gateway first`.
 
 ```bash
 orbit update [--json]
@@ -50,14 +53,17 @@ orbit update [--json]
 
 ## `orbit update:all`
 
-Update the local checkout and every active registered node sequentially. Streams per-node progress.
+Update managed Orbit nodes through the gateway. The command checks the latest
+release and fleet versions, skips all-current fleets, updates the gateway first
+as the version ceiling, then updates the caller-local CLI and workload nodes as
+fan-out targets. Streams per-node progress.
 
 ```bash
 orbit update:all [--json]
 ```
 
-Runs from the gateway or an authorized client. Failures on one node do not
-abort the others.
+Runs from the gateway or an authorized client. Failures on one fan-out node do
+not abort the others.
 
 ## `orbit profile`
 

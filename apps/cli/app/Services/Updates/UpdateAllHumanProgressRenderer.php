@@ -9,6 +9,8 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 final class UpdateAllHumanProgressRenderer
 {
+    private const string TITLE = 'Updating Orbit nodes';
+
     private const string STATE_WAITING = 'waiting';
 
     private const string STATE_ACTIVE = 'active';
@@ -38,6 +40,8 @@ final class UpdateAllHumanProgressRenderer
     private const string STAGE_ACQUIRING_LEASES = 'acquiring_leases';
 
     private const string STAGE_UPDATING_GATEWAY_SERVICE = 'updating_gateway_service';
+
+    private const string STAGE_UPDATING_GATEWAY_APP = 'updating_gateway_app';
 
     private const string STAGE_STOPPING_SCHEDULER = 'stopping_scheduler';
 
@@ -96,8 +100,13 @@ final class UpdateAllHumanProgressRenderer
 
     private bool $finished = false;
 
+    private ?string $targetVersion = null;
+
     public function begin(OutputInterface $output): void
     {
+        $this->registerTarget(self::ROW_CHECK_UPDATES);
+        $this->registerTarget(self::ROW_CHECK_FLEET);
+
         $this->renderInitial($output);
     }
 
@@ -157,6 +166,10 @@ final class UpdateAllHumanProgressRenderer
             $this->ensureTarget($output, $key);
 
             if ($status === 'done') {
+                if ($key === self::ROW_CHECK_UPDATES) {
+                    $this->targetVersion = $this->targetVersionFromMessage($message);
+                }
+
                 $this->setRow($output, $key, self::STATE_DONE, self::STAGE_SETTLED, $message ?? '');
 
                 return true;
@@ -169,6 +182,33 @@ final class UpdateAllHumanProgressRenderer
             }
 
             $this->setRow($output, $key, self::STATE_ACTIVE, self::STAGE_CHECKING);
+
+            return true;
+        }
+
+        if ($key === 'gateway') {
+            $this->ensureTarget($output, 'gateway');
+
+            if ($status === 'done') {
+                $this->setRow($output, 'gateway', self::STATE_DONE, self::STAGE_DONE);
+
+                return true;
+            }
+
+            if ($status === 'fail') {
+                $this->setRow($output, 'gateway', self::STATE_FAILED, self::STAGE_FAILED, $message ?? '');
+
+                return true;
+            }
+
+            if ($status === 'running' && $message !== null) {
+                [$stage, $stageMessage] = $this->subStageFromMessage($message);
+                $this->setRow($output, 'gateway', self::STATE_ACTIVE, $stage, $stageMessage);
+
+                return true;
+            }
+
+            $this->setRow($output, 'gateway', self::STATE_ACTIVE, self::STAGE_UPDATING_GATEWAY_APP);
 
             return true;
         }
@@ -228,6 +268,7 @@ final class UpdateAllHumanProgressRenderer
         }
 
         return match ($message) {
+            'Updating gateway app' => [self::STAGE_UPDATING_GATEWAY_APP, ''],
             'Replacing cli binary' => [self::STAGE_REPLACING_CLI_BINARY, ''],
             'Running doctor' => [self::STAGE_RUNNING_DOCTOR, ''],
             default => [self::STAGE_UPDATING_NODE_CLI, ''],
@@ -345,17 +386,17 @@ final class UpdateAllHumanProgressRenderer
             'Update plan persisted',
             'Update runner started',
             'Fleet update lease acquired' => null,
-            'Gateway and scheduler update leases acquired' => $this->setGatewayStage($output, self::STAGE_ACQUIRING_LEASES),
-            'Updating gateway services',
+            'Gateway and scheduler update leases acquired' => null,
+            'Updating gateway services' => $this->setGatewayStage($output, self::STAGE_DOWNLOADING, $this->gatewayAssetsMessage()),
             'Updating gateway service',
             'Updating orbit-gateway service',
-            'orbit-gateway service healthy' => $this->setGatewayStage($output, self::STAGE_UPDATING_GATEWAY_SERVICE),
+            'orbit-gateway service healthy' => $this->setGatewayStage($output, self::STAGE_REPLACING_CLI_BINARY),
             'Stopping orbit-scheduler service',
-            'orbit-scheduler service stopped' => $this->setGatewayStage($output, self::STAGE_STOPPING_SCHEDULER),
+            'orbit-scheduler service stopped' => $this->setGatewayStage($output, self::STAGE_UPDATING_GATEWAY_APP),
             'Running gateway migrations',
-            'Gateway migrations completed' => $this->setGatewayStage($output, self::STAGE_RUNNING_GATEWAY_MIGRATIONS),
+            'Gateway migrations completed' => $this->setGatewayStage($output, self::STAGE_UPDATING_GATEWAY_APP),
             'Starting orbit-scheduler service',
-            'orbit-scheduler service running' => $this->setGatewayStage($output, self::STAGE_STARTING_SCHEDULER),
+            'orbit-scheduler service running' => $this->setGatewayStage($output, self::STAGE_RUNNING_DOCTOR),
             'Gateway services updated',
             'Fleet update verified' => $this->setRow($output, 'gateway', self::STATE_DONE, self::STAGE_DONE),
             'Pulling required images' => $this->setGatewayStage($output, self::STAGE_PULLING_REQUIRED_IMAGES),
@@ -368,10 +409,10 @@ final class UpdateAllHumanProgressRenderer
         };
     }
 
-    private function setGatewayStage(OutputInterface $output, string $stage): void
+    private function setGatewayStage(OutputInterface $output, string $stage, string $message = ''): void
     {
         $this->ensureTarget($output, 'gateway');
-        $this->setRow($output, 'gateway', self::STATE_ACTIVE, $stage);
+        $this->setRow($output, 'gateway', self::STATE_ACTIVE, $stage, $message);
     }
 
     private function ensureTarget(OutputInterface $output, string $target): void
@@ -417,12 +458,14 @@ final class UpdateAllHumanProgressRenderer
 
     private function renderInitial(OutputInterface $output): void
     {
-        $output->writeln('┌ Updating Orbit');
+        $output->writeln($this->titleLine($output->isDecorated()));
 
         foreach ($this->order as $target) {
+            $output->writeln($this->spacerLine($output->isDecorated()));
             $output->writeln($this->rowLine($target, $output->isDecorated()));
         }
 
+        $output->writeln($this->spacerLine($output->isDecorated()));
         $output->writeln($this->footerLine('Working...', success: null, styled: $output->isDecorated()));
 
         if ($output->isDecorated()) {
@@ -435,6 +478,7 @@ final class UpdateAllHumanProgressRenderer
     private function renderExtension(OutputInterface $output, string $target, bool $widthChanged): void
     {
         if (! $output->isDecorated()) {
+            $output->writeln($this->spacerLine(styled: false));
             $output->writeln($this->rowLine($target, styled: false));
 
             return;
@@ -442,6 +486,7 @@ final class UpdateAllHumanProgressRenderer
 
         $output->write("\e[1A\e[2K\r");
         $output->writeln($this->rowLine($target, styled: true));
+        $output->writeln($this->spacerLine(styled: true));
         $output->writeln($this->footerLine('Working...', success: null, styled: true));
 
         if (! $widthChanged) {
@@ -492,7 +537,7 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $up = count($this->order) - $index + 1;
+        $up = (2 * (count($this->order) - $index)) + 1;
         $output->write("\e[{$up}A\e[2K\r{$line}\e[{$up}B\r");
     }
 
@@ -521,14 +566,14 @@ final class UpdateAllHumanProgressRenderer
         $row = $this->rows[$target];
         $targetName = str_pad($this->displayName($target), $this->targetWidth);
         $stage = $this->stageName($row['stage']);
-        $label = $stage === '' ? $targetName : "{$targetName} {$stage}";
+        $label = $stage === '' ? $targetName : "{$targetName}  {$stage}";
 
         $line = match ($row['state']) {
-            self::STATE_ACTIVE => $this->activeIcon($styled).' '.$this->decorate($label, self::ACCENT, $styled),
-            self::STATE_DONE => $this->decorate('●', self::GREEN, $styled).' '.$this->decorate($label, self::ACCENT, $styled),
-            self::STATE_SKIPPED => $this->decorate('●', self::ORANGE, $styled).' '.$this->decorate($label, self::ACCENT, $styled),
-            self::STATE_FAILED => $this->decorate('●', self::RED, $styled).' '.$this->decorate($label, self::RED, $styled),
-            default => $this->decorate('○ '.$label, self::DIM, $styled),
+            self::STATE_ACTIVE => '  '.$this->activeIcon($styled).'  '.$this->decorate($label, self::ACCENT, $styled),
+            self::STATE_DONE => '  '.$this->decorate('●', self::GREEN, $styled).'  '.$this->decorate($label, self::ACCENT, $styled),
+            self::STATE_SKIPPED => '  '.$this->decorate('●', self::ORANGE, $styled).'  '.$this->decorate($label, self::ACCENT, $styled),
+            self::STATE_FAILED => '  '.$this->decorate('●', self::RED, $styled).'  '.$this->decorate($label, self::RED, $styled),
+            default => $this->decorate('  ○  '.$label, self::DIM, $styled),
         };
 
         if ($row['message'] !== '') {
@@ -536,6 +581,16 @@ final class UpdateAllHumanProgressRenderer
         }
 
         return $styled ? $line : $this->stripAnsi($line);
+    }
+
+    private function titleLine(bool $styled): string
+    {
+        return $this->stripAnsiIfNeeded('  '.$this->decorate('┌', self::DIM, $styled).'  '.$this->decorate(self::TITLE, self::ACCENT, $styled), $styled);
+    }
+
+    private function spacerLine(bool $styled): string
+    {
+        return $this->stripAnsiIfNeeded('  '.$this->decorate('│', self::DIM, $styled), $styled);
     }
 
     private function footerLine(string $footer, ?bool $success, bool $styled): string
@@ -546,7 +601,7 @@ final class UpdateAllHumanProgressRenderer
             null => self::DIM,
         };
 
-        return $this->stripAnsiIfNeeded('└ '.$this->decorate($footer, $color, $styled), $styled);
+        return $this->stripAnsiIfNeeded('  '.$this->decorate('└', self::DIM, $styled).'  '.$this->decorate($footer, $color, $styled), $styled);
     }
 
     private function activeIcon(bool $styled): string
@@ -561,14 +616,15 @@ final class UpdateAllHumanProgressRenderer
     private function stageName(string $stage): string
     {
         return match ($stage) {
-            self::STAGE_WAITING => 'Waiting',
-            self::STAGE_CHECKING => 'Checking',
+            self::STAGE_WAITING => '',
+            self::STAGE_CHECKING => '',
             self::STAGE_SETTLED => '',
             self::STAGE_SKIPPED => 'Skipped: already up to date',
             self::STAGE_UPDATING_CLI => 'Updating CLI',
             self::STAGE_STARTING_OPERATION => 'Starting operation',
             self::STAGE_ACQUIRING_LEASES => 'Acquiring leases',
             self::STAGE_UPDATING_GATEWAY_SERVICE => 'Updating gateway service',
+            self::STAGE_UPDATING_GATEWAY_APP => 'Updating gateway app',
             self::STAGE_STOPPING_SCHEDULER => 'Stopping scheduler',
             self::STAGE_RUNNING_GATEWAY_MIGRATIONS => 'Running gateway migrations',
             self::STAGE_STARTING_SCHEDULER => 'Starting scheduler',
@@ -605,6 +661,26 @@ final class UpdateAllHumanProgressRenderer
         $value = trim($value);
 
         return $value === '' ? null : $value;
+    }
+
+    private function targetVersionFromMessage(?string $message): ?string
+    {
+        if ($message === null) {
+            return null;
+        }
+
+        if (preg_match('/latest version is (?P<version>\\S+)/', $message, $matches) !== 1) {
+            return null;
+        }
+
+        return $matches['version'];
+    }
+
+    private function gatewayAssetsMessage(): string
+    {
+        return $this->targetVersion === null
+            ? ''
+            : "{$this->targetVersion} assets";
     }
 
     private function decorate(string $text, string $color, bool $styled): string

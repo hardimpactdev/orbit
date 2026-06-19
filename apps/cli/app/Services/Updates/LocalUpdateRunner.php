@@ -58,7 +58,7 @@ final readonly class LocalUpdateRunner
             );
         }
 
-        $this->emit($onStep, self::STEP_CHECK, 'progress', 'Checking');
+        $this->emit($onStep, self::STEP_CHECK, 'start', null);
 
         $info = $this->versionResolver->resolve();
         $local = $info->version;

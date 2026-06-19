@@ -88,9 +88,12 @@ it('renders update-all target progress in human mode', function (): void {
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
-        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Updating orbit-gateway service']],
-        ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Gateway services updated']],
-        // Gateway sub-steps
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Downloading 1.2.3 assets']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Updating gateway app']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Running doctor']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
+        // Workload sub-steps
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Replacing cli binary']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Running doctor']],
@@ -113,13 +116,20 @@ it('renders update-all target progress in human mode', function (): void {
     [$exitCode, $output] = runCommand($this, 'update:all');
 
     expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit')
-        ->and($output)->not->toContain('Updating Orbit nodes')
+        ->and($output)->toContain('Updating Orbit nodes')
+        ->and($output)->toContain('│')
         // No preamble local row before gateway
         ->and($output)->not->toMatch('/local\s+Updating CLI/')
+        ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)->not->toMatch('/Checking fleet versions\s+Checking\b/')
         ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
         ->and($output)->toMatch('/Checking fleet versions\s+Done: 2 outdated nodes found/')
-        ->and($output)->toMatch('/gateway\s+Updating gateway service/')
+        ->and($output)->toMatch('/gateway\s+Downloading 1\.2\.3 assets/')
+        ->and($output)->toMatch('/gateway\s+Updating gateway app/')
+        ->and($output)->toMatch('/gateway\s+Replacing cli binary/')
+        ->and($output)->toMatch('/gateway\s+Running doctor/')
+        ->and($output)->toMatch('/gateway\s+Done/')
+        ->and($output)->not->toContain('Waiting')
         ->and($output)->toMatch('/agent\s+Done \(2 issues\)/')
         ->and($output)->toMatch('/beast\s+Skipped: already up to date/')
         ->and($output)->toMatch('/local\s+Done/')
@@ -152,13 +162,16 @@ it('renders all-current short-circuit footer when 0 outdated nodes', function ()
     [$exitCode, $output] = runCommand($this, 'update:all');
 
     expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit')
-        ->and($output)->not->toContain('Updating Orbit nodes')
+        ->and($output)->toContain('Updating Orbit nodes')
+        ->and($output)->toContain('│')
+        ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)->not->toMatch('/Checking fleet versions\s+Checking\b/')
         ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
         ->and($output)->toMatch('/Checking fleet versions\s+Done: all nodes running on 1.2.3/')
         // No gateway/local/workload rows appear
         ->and($output)->not->toMatch('/gateway\s+/')
         ->and($output)->not->toMatch('/local\s+/')
+        ->and($output)->not->toContain('Waiting')
         ->and($output)->toContain('Skipped: 1.2.3 is already installed on all nodes');
 });
 
@@ -177,6 +190,8 @@ it('renders per-node sub-stages for workload nodes', function (): void {
     [$exitCode, $output] = runCommand($this, 'update:all');
 
     expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Updating Orbit nodes')
+        ->and($output)->toContain('│')
         ->and($output)->toMatch('/beast\s+Downloading 1\.2\.3/')
         ->and($output)->toMatch('/beast\s+Replacing cli binary/')
         ->and($output)->toMatch('/beast\s+Running doctor/')

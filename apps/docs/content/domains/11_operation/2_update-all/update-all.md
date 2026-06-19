@@ -2,8 +2,8 @@
 
 [Back to Operation commands.](../README.md)
 
-Update the local Orbit CLI, the gateway/scheduler services, and every managed
-Orbit installation selected for a fleet update.
+Update the gateway, the local Orbit CLI, and every managed Orbit installation
+selected for a fleet update.
 
 This is the fleet update command. It is useful after a new Orbit release lands
 and the operator needs all Orbit-capable nodes to run the same version. It
@@ -31,18 +31,20 @@ orbit update:all --json
 `update:all` performs a fleet update authorized through the gateway:
 
 1. Ask the gateway to authorize gateway-admin authority (`*` on the active gateway node). The gateway identifies the calling peer over WireGuard and applies authorization; the CLI does not classify itself.
-2. Update the caller-local CLI installation using [`orbit update`](../1_update/update.md).
-   Production installs update the native CLI binary artifact; source-dev
-   topologies keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`.
-3. Start a gateway operation. The gateway creates an operation row, an ordered
+2. Start a gateway operation. The gateway creates an operation row, an ordered
    event journal, and an immutable update plan keyed by `operation_run_id`.
    That plan captures the target version, digest-pinned
    `ghcr.io/hardimpactdev/orbit-gateway` image, GitHub Release asset manifest
    snapshot, CLI artifact URLs/hashes, and required role image metadata.
-4. The gateway launches a one-shot runner from the target `orbit-gateway` image.
-   The runner acquires expiring leases, replaces `orbit-gateway`, updates
-   `orbit-scheduler`, runs migrations through the target image, then fans out
-   to selected workload nodes.
+3. The gateway launches a one-shot runner from the target `orbit-gateway` image.
+   The runner checks the latest release and probes fleet versions before side
+   effects. If every selected installation is already current, it skips the
+   gateway, local, workload, and verification phases.
+4. When outdated installations exist, the runner updates the gateway first as
+   the fleet version ceiling, then fans out to the caller-local CLI and selected
+   workload nodes. Production installs update the native CLI binary artifact;
+   source-dev topologies keep `/usr/local/bin/orbit` pointed at
+   `<source>/apps/cli/orbit`.
 5. The CLI follows the operation event journal over Server-Sent Events. If the
    gateway service is replaced mid-stream, the CLI reconnects with
    `Last-Event-ID` and replays only events it has not rendered.
@@ -56,7 +58,8 @@ but the workload phase fails before final verification if any selected node did
 not update. The failure result includes the failed node results so operators see
 the update failure directly instead of only a later version-verification error.
 
-`update:all` updates the local installation, the gateway, and active nodes.
+`update:all` updates the gateway, the local installation, and active workload
+nodes.
 **Clients other than the caller are never remote update targets.** Each
 client is an operator workstation and updates through `orbit update` on
 that machine. When the gateway is the calling peer, the command therefore
@@ -71,10 +74,13 @@ needs convergence verification.
 
 Run `orbit update:all` to see per-node progress and a final summary of updated and failed nodes.
 
-Human output shows durable operation progress and a final summary. Rows for
-selected targets whose update has not started yet show `Waiting`. Progress is
-rendered from the gateway operation event journal, so reconnecting during
-gateway replacement does not lose already-recorded state.
+Human output begins with release and fleet version checks, then shows per-node
+progress as updates run. The active row blinks while work is in progress; settled
+rows report `Done`, `Skipped: already up to date`, or a failure message. Progress
+is rendered from the gateway operation event journal, so reconnecting during
+gateway replacement does not lose already-recorded state. See the
+[terminal output contract](technical/6.1_update-all_output-render_human.md) for
+the exact layout.
 
 Use `--json` for machine-readable output. See the
 [JSON renderer contract](technical/6.2_update-all_output-render_json.md) for

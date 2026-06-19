@@ -17,8 +17,8 @@ Product families remain the owners of configuration, reality, issue codes, and r
 
 These terms describe the update workflow and its components.
 
-- **Local update:** `update` sequence that changes only the current Orbit CLI installation. Production installs replace the native CLI binary and relink the host launcher. Source-dev lanes update by changing the mounted source checkout.
-- **Fleet update:** `update:all` sequence that updates the caller's local CLI first, then replaces the gateway/scheduler services and updates selected active managed Orbit installations through a durable gateway-owned operation.
+- **Local update:** `update` sequence that changes only the current Orbit CLI installation. It checks the latest available release first, skips when the installed version is current, and never updates the local CLI past the gateway's version. Production installs replace the native CLI binary and relink the host launcher. Source-dev lanes update by changing the mounted source checkout.
+- **Fleet update:** `update:all` sequence that checks the target release and fleet versions, skips when all selected installations are current, updates the gateway first as the fleet version ceiling, then updates the caller-local CLI and selected active workload Orbit installations as fan-out targets through a durable gateway-owned operation.
 - **Operation event journal:** Durable ordered event log for a gateway-owned
   operation. Events carry a per-run sequence. The SSE event id is that sequence,
   `Last-Event-ID` replays only events with a greater sequence, and live
@@ -30,14 +30,15 @@ These terms describe the update workflow and its components.
 - **Update step:** Ordered local installation update action: native CLI artifact update or source-mounted checkout refresh, launcher verification, containerized dependency installation, or migration execution.
 - **Target result:** Per-update-target outcome preserved for renderers.
 
-Fleet update runs through gateway-owned authority. The CLI updates itself first,
-starts a gateway operation, then follows its event journal over SSE. The
-gateway persists the immutable update plan, starts a one-shot runner from the
-target `orbit-gateway` image, and the runner owns gateway replacement,
-scheduled service recovery, workload fan-out, and final verification. Clients
-are never remote update targets. A target succeeds only when all required
-update steps succeed; target results include both successful and failed targets
-when a fleet update partially fails.
+Fleet update runs through gateway-owned authority. The CLI starts a gateway
+operation, follows its event journal over SSE, and updates the caller-local CLI
+after the gateway phase succeeds. The gateway persists the immutable update
+plan, starts a one-shot runner from the target `orbit-gateway` image, and the
+runner owns the read-only fleet-version probe, all-current short-circuit,
+gateway replacement, scheduled service recovery, workload fan-out, and final
+verification. Clients are never remote update targets. A target succeeds only
+when all required update steps succeed; target results include both successful
+and failed targets when a fleet update partially fails.
 
 ## Doctor
 
