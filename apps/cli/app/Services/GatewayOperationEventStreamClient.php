@@ -196,7 +196,10 @@ class GatewayOperationEventStreamClient
      */
     private function streamOptions(): array
     {
-        $options = ['stream' => true];
+        $options = [
+            'stream' => true,
+            'read_timeout' => 0,
+        ];
 
         if (is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath)) {
             $options['verify'] = $this->caPemPath;

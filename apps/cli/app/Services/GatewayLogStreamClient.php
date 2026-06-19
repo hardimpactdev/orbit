@@ -75,14 +75,19 @@ final readonly class GatewayLogStreamClient
 
     /**
      * Build the HTTP client options for the streaming request. The stream option is always set;
-     * when a gateway CA PEM exists on disk, verify is added so the gateway's private CA is
-     * trusted (mirroring VerifyGatewayIdentity). Without a CA path, default verification is kept.
+     * read_timeout is disabled so long idle periods between chunks do not trip PHP's default
+     * socket read timeout. When a gateway CA PEM exists on disk, verify is added so the
+     * gateway's private CA is trusted (mirroring VerifyGatewayIdentity). Without a CA path,
+     * default verification is kept.
      *
      * @return array<string, mixed>
      */
     private function streamOptions(): array
     {
-        $options = ['stream' => true];
+        $options = [
+            'stream' => true,
+            'read_timeout' => 0,
+        ];
 
         if (is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath)) {
             $options['verify'] = $this->caPemPath;

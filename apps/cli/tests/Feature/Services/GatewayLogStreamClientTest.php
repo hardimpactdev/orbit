@@ -48,7 +48,24 @@ describe('GatewayLogStreamClient', function (): void {
         }
 
         expect($options['verify'] ?? null)->toBe($pemPath)
-            ->and($options['stream'] ?? null)->toBeTrue();
+            ->and($options['stream'] ?? null)->toBeTrue()
+            ->and($options['read_timeout'] ?? null)->toBe(0);
+    });
+
+    it('disables idle read timeout so long silent log streams can complete', function (): void {
+        $options = [];
+
+        Http::fake(function (Request $request, array $opts) use (&$options) {
+            $options = $opts;
+
+            return Http::response('ok', 200, ['Content-Type' => 'text/plain']);
+        });
+
+        (new GatewayLogStreamClient('https://gateway.test', 30))
+            ->streamText('/api/logs', [], fn () => null);
+
+        expect($options['stream'] ?? null)->toBeTrue()
+            ->and($options['read_timeout'] ?? null)->toBe(0);
     });
 
     it('leaves the default verify behavior when no CA PEM path is configured', function (): void {
