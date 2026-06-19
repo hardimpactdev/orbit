@@ -498,7 +498,7 @@ final class MetricsRoleBaselineRecordingShell implements RemoteShell
             'script' => $script,
         ];
 
-        if (str_contains($script, 'stream_get_contents(STDIN)')) {
+        if (str_contains($script, '# orbit-tool-probe:capability')) {
             return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
         }
 

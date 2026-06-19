@@ -502,7 +502,7 @@ final class BakeAppNodeRemoteShell implements RemoteShell
 
     private function isProbeScript(string $script): bool
     {
-        return str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);');
+        return str_contains($script, '# orbit-tool-probe:capability');
     }
 
     private function toolForRepairScript(string $script): ?string

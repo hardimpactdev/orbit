@@ -299,7 +299,7 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
 
     private function isProbeScript(string $script): bool
     {
-        return str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);');
+        return str_contains($script, '# orbit-tool-probe:capability');
     }
 
     private function toolForRepairScript(string $script): ?string
@@ -327,7 +327,7 @@ final class NodeConvergerFailingRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        if (str_contains($script, '$payload = json_decode(stream_get_contents(STDIN), true);')) {
+        if (str_contains($script, '# orbit-tool-probe:capability')) {
             return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
         }
 
