@@ -80,7 +80,11 @@ final readonly class GatewayStreamClient
         $frameBuffer = '';
 
         while (! $stream->eof()) {
-            $chunk = $stream->read(self::READ_BYTES);
+            try {
+                $chunk = $stream->read(self::READ_BYTES);
+            } catch (RuntimeException $exception) {
+                throw GatewayApiException::streamClosedBeforeTerminal($exception);
+            }
 
             if ($chunk === '') {
                 continue;
