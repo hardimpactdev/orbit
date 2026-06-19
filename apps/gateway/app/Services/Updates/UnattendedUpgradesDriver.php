@@ -278,9 +278,12 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
         $installed = trim(shell_exec('command -v unattended-upgrade 2>/dev/null') ?? '') !== '';
         $autoExists = is_file($autoPath);
         $unattendedExists = is_file($unattendedPath);
-        $dryRunExit = 127;
+        $autoHashOk = $autoExists && hash_file('sha256', $autoPath) === '__AUTO_SHA256__';
+        $unattendedHashOk = $unattendedExists && hash_file('sha256', $unattendedPath) === '__UNATTENDED_SHA256__';
+        $configReady = $autoExists && $unattendedExists && $autoHashOk && $unattendedHashOk;
+        $dryRunExit = null;
 
-        if ($installed) {
+        if ($installed && $configReady) {
             exec('sudo unattended-upgrade --dry-run >/tmp/orbit-unattended-upgrade-dry-run.log 2>&1', result_code: $dryRunExit);
         }
 
@@ -307,8 +310,8 @@ final readonly class UnattendedUpgradesDriver implements UpdateDriver
             'installed' => $installed,
             'auto_exists' => $autoExists,
             'unattended_exists' => $unattendedExists,
-            'auto_hash_ok' => $autoExists && hash_file('sha256', $autoPath) === '__AUTO_SHA256__',
-            'unattended_hash_ok' => $unattendedExists && hash_file('sha256', $unattendedPath) === '__UNATTENDED_SHA256__',
+            'auto_hash_ok' => $autoHashOk,
+            'unattended_hash_ok' => $unattendedHashOk,
             'dry_run_exit' => $dryRunExit,
             'last_run_status' => $lastRunStatus,
             'reboot_required' => is_file('/var/run/reboot-required'),

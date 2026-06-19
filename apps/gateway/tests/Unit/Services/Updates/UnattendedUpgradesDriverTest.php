@@ -116,6 +116,35 @@ it('reports dry-run failure', function (): void {
         ->and($issue->detail['dry_run_exit'])->toBe(1);
 });
 
+it('runs the unattended-upgrade dry-run only after expected config is present', function (): void {
+    $shell = new UnattendedUpgradesDriverShell([
+        new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode([
+                'installed' => true,
+                'auto_exists' => false,
+                'unattended_exists' => false,
+                'auto_hash_ok' => false,
+                'unattended_hash_ok' => false,
+                'dry_run_exit' => 127,
+                'last_run_status' => 'unknown',
+                'reboot_required' => false,
+                'reboot_required_packages' => [],
+            ], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 1,
+        ),
+    ]);
+
+    (new UnattendedUpgradesDriver($shell))->probe(updateTarget());
+
+    expect($shell->scripts[0])
+        ->toContain('$dryRunExit = null;')
+        ->toContain('$configReady = $autoExists && $unattendedExists && $autoHashOk && $unattendedHashOk;')
+        ->toContain('if ($installed && $configReady) {')
+        ->not->toContain('if ($installed) {');
+});
+
 it('reports latest unattended-upgrades run failure', function (): void {
     $issue = probeSnapshot([
         'installed' => true,

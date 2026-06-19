@@ -47,6 +47,7 @@ it('restores missing unattended-upgrades apt config on an Incus app node from th
 
     try {
         nodeUpdatesDoctorPrepareGatewayRecord($topology);
+        nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
         e2eRestartGatewayApi($topology, 'node-updates-doctor-restore');
 
         $topology->ssh(

@@ -90,8 +90,11 @@ SH;
     {
         return <<<'SH'
 set -euo pipefail
-sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
+if ! command -v unattended-upgrade >/dev/null 2>&1 \
+    && ! dpkg-query -W -f='${Status}' unattended-upgrades 2>/dev/null | grep -q 'install ok installed'; then
+    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
+fi
 SH;
     }
 

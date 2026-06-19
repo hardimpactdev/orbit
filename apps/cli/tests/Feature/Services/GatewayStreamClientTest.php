@@ -5,6 +5,10 @@ declare(strict_types=1);
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\GatewayApiFailureKind;
 use App\Services\GatewayStreamClient;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\Response as Psr7Response;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -116,6 +120,33 @@ describe('GatewayStreamClient', function (): void {
         expect($exception)->toBeInstanceOf(GatewayApiException::class)
             ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::StreamClosedBeforeTerminal)
             ->and($exception?->cliFailureCode())->toBe('gateway_unavailable');
+    });
+
+    it('classifies response body read failures as stream closed before terminal', function (): void {
+        $readFailure = new RuntimeException('Unable to read from stream');
+        $stream = FnStream::decorate(Utils::streamFor(''), [
+            'eof' => fn (): bool => false,
+            'read' => fn (int $length): string => throw $readFailure,
+        ]);
+
+        Http::fake([
+            'https://gateway.test/api/stream*' => Create::promiseFor(new Psr7Response(200, [
+                'Content-Type' => 'text/event-stream',
+            ], $stream)),
+        ]);
+
+        $exception = null;
+
+        try {
+            (new GatewayStreamClient('https://gateway.test', 30))
+                ->streamEvents('/api/stream', [], fn () => null);
+        } catch (Throwable $caught) {
+            $exception = $caught;
+        }
+
+        expect($exception)->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::StreamClosedBeforeTerminal)
+            ->and($exception?->getPrevious())->toBe($readFailure);
     });
 
     it('throws when an SSE frame is malformed', function (): void {
