@@ -2,19 +2,20 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
 it('adopts observed UFW rules into the gateway registry', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
+    $gatewayCheckout = $topology->checkout('gateway');
     $gatewayLanIp = $topology->instance('gateway')->waitForIpv4();
     $devLanIp = $topology->instance('dev')->waitForIpv4();
     $wireGuardCidr = firewallDoctorAdoptWireGuardCidr($topology->lease()->gatewayApiIp());
+    $nodeState = firewallDoctorAdoptGatewayNodeState($topology, $gatewayCheckout);
 
     try {
-        $gatewayCheckout = $topology->checkout('gateway');
-
         $topology->ssh(
             'dev',
             sprintf(
@@ -69,6 +70,7 @@ it('adopts observed UFW rules into the gateway registry', function (): void {
         expect(trim($verifyResult->output()))->toContain('found');
     } finally {
         $topology->ssh('dev', 'if command -v ufw >/dev/null 2>&1; then sudo ufw --force disable && sudo ufw --force reset; fi', timeoutSeconds: 120);
+        firewallDoctorAdoptRestoreGatewayNodeState($topology, $gatewayCheckout, $nodeState);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
@@ -82,4 +84,65 @@ function firewallDoctorAdoptWireGuardCidr(string $gatewayWireGuardIp): string
     }
 
     return "{$parts[0]}.{$parts[1]}.0.0/24";
+}
+
+/**
+ * @return array{platform: string|null, status: string|null, host: string|null, wireguard_address: string|null}
+ */
+function firewallDoctorAdoptGatewayNodeState(E2ETopologyHarness $topology, string $checkout): array
+{
+    $script = <<<'PHP'
+$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail();
+
+echo json_encode([
+    "platform" => $node->platform,
+    "status" => $node->status->value,
+    "host" => $node->host,
+    "wireguard_address" => $node->wireguard_address,
+], JSON_THROW_ON_ERROR);
+PHP;
+
+    $result = $topology->ssh(
+        'gateway',
+        sprintf(
+            'cd %s && php apps/gateway/artisan tinker --execute=%s',
+            escapeshellarg($checkout),
+            escapeshellarg($script),
+        ),
+        timeoutSeconds: 120,
+    );
+
+    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
+
+    /** @var array{platform: string|null, status: string|null, host: string|null, wireguard_address: string|null} $state */
+    $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+
+    return $state;
+}
+
+/**
+ * @param  array{platform: string|null, status: string|null, host: string|null, wireguard_address: string|null}  $state
+ */
+function firewallDoctorAdoptRestoreGatewayNodeState(E2ETopologyHarness $topology, string $checkout, array $state): void
+{
+    $stateValue = var_export($state, true);
+    $script = <<<PHP
+\$node = \\App\\Models\\Node::query()->where("name", "app-dev-1")->firstOrFail();
+\$node->forceFill({$stateValue})->save();
+
+echo "restored";
+PHP;
+
+    $result = $topology->ssh(
+        'gateway',
+        sprintf(
+            'cd %s && php apps/gateway/artisan tinker --execute=%s',
+            escapeshellarg($checkout),
+            escapeshellarg($script),
+        ),
+        timeoutSeconds: 120,
+        allowFailure: true,
+    );
+
+    expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 }
