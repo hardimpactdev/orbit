@@ -26,6 +26,7 @@ use App\Services\Runtime\OrbitCaddyContainer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
@@ -132,6 +133,20 @@ function doctorRunnerUpdateProbeResult(array $overrides = []): RemoteShellResult
             'reboot_required' => false,
             'reboot_required_packages' => [],
             ...$overrides,
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 1,
+    );
+}
+
+function doctorRunnerManagedFileProbeResult(bool $exists, ?string $hash = null, ?string $mode = null): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'exists' => $exists,
+            'hash' => $hash,
+            'mode' => $mode,
         ], JSON_THROW_ON_ERROR),
         stderr: '',
         durationMs: 1,
@@ -2107,9 +2122,13 @@ TXT;
 
     it('keeps updates reboot drift after restore re-probes a completed config action', function (): void {
         $node = createDoctorRunnerUpdateGateway();
+        $updateConfig = new UnattendedUpgradesAptConfig;
         app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([
             doctorRunnerUpdateProbeResult(['auto_hash_ok' => false]),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            doctorRunnerManagedFileProbeResult(exists: true, hash: str_repeat('b', 64), mode: '0644'),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            doctorRunnerManagedFileProbeResult(exists: true, hash: $updateConfig->unattendedUpgradesSha256(), mode: '0644'),
             new RemoteShellResult(exitCode: 0, stdout: 'completed', stderr: '', durationMs: 1),
             doctorRunnerUpdateProbeResult(['reboot_required' => true]),
         ]));

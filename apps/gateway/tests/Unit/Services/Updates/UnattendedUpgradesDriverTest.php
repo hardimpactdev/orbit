@@ -171,6 +171,10 @@ it('reports unverifiable posture when the shell probe fails', function (): void 
 it('repairs configuration and runs unattended-upgrade during apply', function (): void {
     $shell = new UnattendedUpgradesDriverShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        managedFileProbeResult(exists: false),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        managedFileProbeResult(exists: true, hash: str_repeat('b', 64), mode: '0644'),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: 'completed', stderr: '', durationMs: 1),
     ]);
 
@@ -178,10 +182,14 @@ it('repairs configuration and runs unattended-upgrade during apply', function ()
 
     expect($result->status)->toBe('completed')
         ->and($result->driver)->toBe('unattended-upgrades')
-        ->and($shell->scripts)->toHaveCount(2)
+        ->and($shell->scripts)->toHaveCount(6)
         ->and($shell->scripts[0])->toContain('install -y -qq unattended-upgrades')
-        ->and($shell->scripts[1])->toBe('sudo unattended-upgrade')
-        ->and($shell->options[1])->toMatchArray([
+        ->and($shell->scripts[1])->toContain('/etc/apt/apt.conf.d/20auto-upgrades')
+        ->and($shell->scripts[2])->toContain('/etc/apt/apt.conf.d/20auto-upgrades')
+        ->and($shell->scripts[3])->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
+        ->and($shell->scripts[4])->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
+        ->and($shell->scripts[5])->toBe('sudo unattended-upgrade')
+        ->and($shell->options[5])->toMatchArray([
             'timeout' => 900,
             'throw' => false,
         ]);
@@ -220,6 +228,20 @@ function updateTarget(): UpdateTarget
         node: Node::factory()->make(['platform' => 'ubuntu_24-04']),
         platform: 'ubuntu_24-04',
         scope: 'managed-server-node',
+    );
+}
+
+function managedFileProbeResult(bool $exists, ?string $hash = null, ?string $mode = null): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'exists' => $exists,
+            'hash' => $hash,
+            'mode' => $mode,
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 1,
     );
 }
 

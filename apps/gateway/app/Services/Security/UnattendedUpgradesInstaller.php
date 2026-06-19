@@ -6,38 +6,77 @@ namespace App\Services\Security;
 
 use App\Contracts\RemoteShell;
 use App\Models\Node;
+use App\Services\Convergence\ManagedFile;
 use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
-final class UnattendedUpgradesInstaller implements SecurityInstaller
+final readonly class UnattendedUpgradesInstaller implements SecurityInstaller
 {
+    private UnattendedUpgradesAptConfig $config;
+
+    public function __construct(?UnattendedUpgradesAptConfig $config = null)
+    {
+        $this->config = $config ?? new UnattendedUpgradesAptConfig;
+    }
+
     public function installFor(Node $node, RemoteShell $shell): InstallReport
     {
-        $result = $shell->run($node, $this->script(), [
+        $result = $shell->run($node, $this->packageInstallScript(), [
             'timeout' => 900,
             'throw' => false,
         ]);
 
+        $details = [
+            'exit_code' => $result->exitCode,
+        ];
+
+        if (! $result->successful()) {
+            return new InstallReport(
+                successful: false,
+                summary: 'Failed to install unattended security upgrades.',
+                details: $details,
+            );
+        }
+
+        $managedFiles = [];
+
+        foreach ($this->managedFiles() as $managedFile) {
+            $plan = $managedFile->plan($managedFile->probe($node, $shell));
+            $applyResult = $managedFile->apply($node, $shell, $plan);
+            $managedFiles[] = [
+                'path' => $managedFile->path,
+                'status' => $applyResult->status->value,
+                'summary' => $applyResult->summary,
+            ];
+
+            if (! $applyResult->successful()) {
+                return new InstallReport(
+                    successful: false,
+                    summary: 'Failed to install unattended security upgrades.',
+                    details: [
+                        ...$details,
+                        'managed_files' => $managedFiles,
+                    ],
+                );
+            }
+        }
+
         return new InstallReport(
-            successful: $result->successful(),
-            summary: $result->successful()
-                ? 'Installed unattended security upgrades.'
-                : 'Failed to install unattended security upgrades.',
+            successful: true,
+            summary: 'Installed unattended security upgrades.',
             details: [
-                'exit_code' => $result->exitCode,
+                ...$details,
+                'managed_files' => $managedFiles,
             ],
         );
     }
 
     public function script(): string
     {
-        $config = new UnattendedUpgradesAptConfig;
-        $autoUpgrades = rtrim($config->autoUpgrades(), "\n");
-        $unattendedUpgrades = rtrim($config->unattendedUpgrades(), "\n");
+        $autoUpgrades = rtrim($this->config->autoUpgrades(), "\n");
+        $unattendedUpgrades = rtrim($this->config->unattendedUpgrades(), "\n");
 
         return <<<SH
-set -euo pipefail
-sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
+{$this->packageInstallScript()}
 sudo tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null <<'EOF'
 {$autoUpgrades}
 EOF
@@ -45,5 +84,31 @@ sudo tee /etc/apt/apt.conf.d/50unattended-upgrades > /dev/null <<'EOF'
 {$unattendedUpgrades}
 EOF
 SH;
+    }
+
+    private function packageInstallScript(): string
+    {
+        return <<<'SH'
+set -euo pipefail
+sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
+SH;
+    }
+
+    /**
+     * @return list<ManagedFile>
+     */
+    private function managedFiles(): array
+    {
+        return [
+            new ManagedFile(
+                path: '/etc/apt/apt.conf.d/20auto-upgrades',
+                content: $this->config->autoUpgrades(),
+            ),
+            new ManagedFile(
+                path: '/etc/apt/apt.conf.d/50unattended-upgrades',
+                content: $this->config->unattendedUpgrades(),
+            ),
+        ];
     }
 }

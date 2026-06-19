@@ -20,7 +20,13 @@ final class RecordingSecurityInstallerShell implements RemoteShell
     /** @var list<array{node: string, script: string, options: array<string, mixed>}> */
     public array $runs = [];
 
-    public function __construct(private readonly int $exitCode = 0) {}
+    /**
+     * @param  list<RemoteShellResult>  $results
+     */
+    public function __construct(
+        private readonly int $exitCode = 0,
+        private array $results = [],
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
@@ -29,6 +35,10 @@ final class RecordingSecurityInstallerShell implements RemoteShell
             'script' => $script,
             'options' => $options,
         ];
+
+        if ($this->results !== []) {
+            return array_shift($this->results);
+        }
 
         return new RemoteShellResult(
             exitCode: $this->exitCode,
@@ -101,14 +111,21 @@ describe('security installers', function (): void {
 
     it('installs unattended security upgrades without enabling automatic reboots', function (): void {
         $node = Node::factory()->create();
-        $shell = new RecordingSecurityInstallerShell;
+        $shell = new RecordingSecurityInstallerShell(results: [
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            securityManagedFileProbeResult(exists: false),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            securityManagedFileProbeResult(exists: false),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
 
         $report = app(UnattendedUpgradesInstaller::class)->installFor($node, $shell);
 
         expect($report->successful)->toBeTrue()
             ->and($shell->runs[0]['script'])->toContain('install -y -qq unattended-upgrades')
-            ->and($shell->runs[0]['script'])->toContain('APT::Periodic::Unattended-Upgrade "1"')
-            ->and($shell->runs[0]['script'])->toContain('Unattended-Upgrade::Automatic-Reboot "false"');
+            ->and($shell->runs[2]['script'])->toContain('/etc/apt/apt.conf.d/20auto-upgrades')
+            ->and($shell->runs[4]['script'])->toContain('/etc/apt/apt.conf.d/50unattended-upgrades')
+            ->and($report->details['managed_files'])->toHaveCount(2);
     });
 
     it('declares protected public SSH deny rules and applies them to the public interface', function (): void {
@@ -131,3 +148,17 @@ describe('security installers', function (): void {
             ->and($shell->runs[0]['script'])->not->toContain('ufw --force enable');
     });
 });
+
+function securityManagedFileProbeResult(bool $exists, ?string $hash = null, ?string $mode = null): RemoteShellResult
+{
+    return new RemoteShellResult(
+        exitCode: 0,
+        stdout: json_encode([
+            'exists' => $exists,
+            'hash' => $hash,
+            'mode' => $mode,
+        ], JSON_THROW_ON_ERROR),
+        stderr: '',
+        durationMs: 1,
+    );
+}

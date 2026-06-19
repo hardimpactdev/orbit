@@ -41,6 +41,40 @@ it('reports missing unattended-upgrades posture on an Incus app node from the ga
     }
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
+it('restores missing unattended-upgrades apt config on an Incus app node from the gateway', function (): void {
+    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
+        ->withCurrentCheckout(roles: ['gateway']);
+
+    try {
+        nodeUpdatesDoctorPrepareGatewayRecord($topology);
+        e2eRestartGatewayApi($topology, 'node-updates-doctor-restore');
+
+        $topology->ssh(
+            'dev',
+            'sudo rm -f /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades',
+            timeoutSeconds: 60,
+        );
+
+        $result = nodeUpdatesDoctorRun($topology, restore: true);
+        $payload = nodeUpdatesDoctorPayload($result->output());
+        $data = e2eJsonCommandData($payload);
+
+        expect($result->successful())->toBeTrue($result->output().$result->errorOutput())
+            ->and($data['doctor']['healthy'])->toBeTrue(json_encode($data, JSON_PRETTY_PRINT))
+            ->and($data['doctor']['actions'][0])->toMatchArray([
+                'family' => 'node',
+                'node' => 'app-dev-1',
+                'key' => 'node.updates',
+                'code' => 'node.updates_config_missing',
+                'status' => 'completed',
+            ]);
+
+        nodeUpdatesDoctorAssertExpectedAptConfig($topology);
+    } finally {
+        $topology->cleanup();
+    }
+})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+
 it('reports reboot-required update posture without attempting an automatic reboot', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
@@ -138,15 +172,35 @@ SH;
     expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 }
 
-function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure = false): ProcessResult
+function nodeUpdatesDoctorAssertExpectedAptConfig(E2ETopologyHarness $topology): void
+{
+    $config = new UnattendedUpgradesAptConfig;
+    $result = $topology->ssh(
+        'dev',
+        <<<'SH'
+auto_hash="$(sudo sha256sum /etc/apt/apt.conf.d/20auto-upgrades | awk '{print $1}')"
+unattended_hash="$(sudo sha256sum /etc/apt/apt.conf.d/50unattended-upgrades | awk '{print $1}')"
+printf '%s\n%s\n' "$auto_hash" "$unattended_hash"
+SH,
+        timeoutSeconds: 60,
+    );
+
+    expect(explode("\n", trim($result->output())))->toBe([
+        $config->autoUpgradesSha256(),
+        $config->unattendedUpgradesSha256(),
+    ]);
+}
+
+function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure = false, bool $restore = false): ProcessResult
 {
     return $topology->ssh(
         'gateway',
         sprintf(
-            'cd %s && orbit doctor --node=app-dev-1 --family=node --key=node.updates --json',
+            'cd %s && orbit doctor --node=app-dev-1 --family=node --key=node.updates%s --json',
             escapeshellarg($topology->checkout('gateway')),
+            $restore ? ' --restore' : '',
         ),
-        timeoutSeconds: 240,
+        timeoutSeconds: $restore ? 900 : 240,
         allowFailure: $allowFailure,
     );
 }
