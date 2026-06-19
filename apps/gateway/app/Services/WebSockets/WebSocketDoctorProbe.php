@@ -337,9 +337,11 @@ SH,
     private function redisProbe(Node $node): RemoteShellResult
     {
         // RemoteHostExecutor may inspect/control Docker and exec inside managed
-        // workload containers. The PHP below runs in the WebSocket runtime
-        // container, not on the host substrate.
+        // workload containers. The PHP below is fed to the WebSocket runtime
+        // container, not executed on the host substrate.
         $php = <<<'PHP'
+<?php
+
 $host = getenv('REDIS_HOST') ?: 'redis.orbit';
 $port = (int) (getenv('REDIS_PORT') ?: 6379);
 $errno = 0;
@@ -358,10 +360,13 @@ PHP;
             <<<'SH'
 # orbit-websocket-doctor:redis-probe
 set -eu
-docker exec %s php -r %s
+container=%s
+docker exec -i "$container" php <<'PHP'
+%s
+PHP
 SH,
             escapeshellarg($this->runtimeRenderer->containerName($node)),
-            escapeshellarg($php),
+            $php,
         ), 'websocket-redis-doctor-probe');
     }
 
