@@ -64,6 +64,22 @@ function assignNodesProbeGatewayRole(Node $node): void
     ]);
 }
 
+function createNodesProbeGatewayNode(): Node
+{
+    $node = Node::create([
+        'name' => 'gateway',
+        'host' => '10.0.0.2',
+        'orbit_path' => '/orbit',
+        'status' => 'active',
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    assignNodesProbeGatewayRole($node);
+
+    return $node;
+}
+
 describe('interface contract', function (): void {
     it('has key and label', function (): void {
         expect($this->probe->key())->toBe('node');
@@ -1102,12 +1118,14 @@ describe('adoption', function (): void {
     });
 
     it('snapshots compatible live WireGuard peer missing for adopt', function (): void {
+        createNodesProbeGatewayNode();
         Process::preventStrayProcesses();
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
@@ -1142,12 +1160,14 @@ describe('adoption', function (): void {
     });
 
     it('does not snapshot app host adoption when identity artifact role disagrees with assignments', function (): void {
+        createNodesProbeGatewayNode();
         Process::preventStrayProcesses();
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['role' => 'unknown', 'local_role' => 'unknown']), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
@@ -1194,12 +1214,14 @@ describe('adoption', function (): void {
     });
 
     it('does not snapshot unproven live WireGuard peer missing for adopt', function (): void {
+        createNodesProbeGatewayNode();
         Process::preventStrayProcesses();
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['name' => 'other']), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
@@ -1404,12 +1426,14 @@ describe('adoption', function (): void {
     });
 
     it('adopts compatible live WireGuard peer missing', function (): void {
+        createNodesProbeGatewayNode();
         Process::preventStrayProcesses();
         Process::fake([
             'sudo wg show wg-orbit allowed-ips' => Process::result(output: "app-public-key\t10.6.0.8/32\n"),
         ]);
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(), stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));

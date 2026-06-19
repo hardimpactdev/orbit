@@ -699,6 +699,7 @@ describe('NodeStoreController', function (): void {
         grantStoreNodeAccess($callerId, $gatewayId, ['node:new']);
 
         app()->instance(RemoteShell::class, new NodeStoreSequencedRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
                 'role' => 'app-dev',
@@ -709,6 +710,7 @@ describe('NodeStoreController', function (): void {
                 'registry_public_key' => null,
                 'interface_public_key' => 'app-public-key',
             ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: json_encode([
                 'name' => 'app-unknown-1',
                 'role' => 'app-dev',
