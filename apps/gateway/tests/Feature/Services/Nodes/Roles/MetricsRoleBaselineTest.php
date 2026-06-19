@@ -16,6 +16,8 @@ use App\Models\ProxyRoute;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\Roles\NodeRoleAssignmentService;
 use App\Services\Nodes\Roles\NodeRoleBaselineConverger;
+use App\Services\Processes\ProcessOwnerContext;
+use App\Services\Processes\SystemdUnitRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -276,10 +278,21 @@ it('renders metrics node processes after syncing role-derived node fields', func
     ]);
 
     app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
+    $process = Process::query()
+        ->where('node_id', $node->id)
+        ->where('name', 'node-exporter')
+        ->sole();
+    $context = new ProcessOwnerContext(
+        node: $node->refresh(),
+        app: null,
+        workspace: null,
+        owner: $node,
+    );
+    $unitContent = app(SystemdUnitRenderer::class)->render($node, $context->runtimeApp(), $process);
 
     expect($node->refresh()->tld)->toBeNull()
         ->and($this->metricsShell->scriptsForNode('gateway'))
-        ->toContain('Environment="APP_URL=https://gateway"')
+        ->toContain(base64_encode($unitContent))
         ->not->toContain('https://gateway.gateway');
 });
 
@@ -487,6 +500,14 @@ final class MetricsRoleBaselineRecordingShell implements RemoteShell
 
         if (str_contains($script, 'stream_get_contents(STDIN)')) {
             return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
+            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
         }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

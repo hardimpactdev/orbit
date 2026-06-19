@@ -11,6 +11,7 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process as OrbitProcess;
+use App\Services\Processes\SystemdUnitRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -38,7 +39,7 @@ it('renders and enacts systemd units for app process definitions', function (): 
     ]);
     $app->setRelation('node', $node);
 
-    OrbitProcess::factory()->forOwner($app)->create([
+    $process = OrbitProcess::factory()->forOwner($app)->create([
         'name' => 'vite',
         'command' => 'npm run dev -- --host=0.0.0.0',
         'restart_policy' => 'on_failure',
@@ -48,26 +49,26 @@ it('renders and enacts systemd units for app process definitions', function (): 
     ]);
 
     $remoteShell = new ProcessRuntimeRecordingRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: json_encode([
+            'exists' => false,
+            'hash' => null,
+            'enabled' => false,
+        ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
     $certificates = new ProcessRuntimeRecordingSiteCertificateInstaller;
+    $unitContent = app(SystemdUnitRenderer::class)->render($node, $app, $process);
 
     $warnings = makeEnsureRuntimeUnitsAction($remoteShell, $certificates)->handle($app);
 
     expect($warnings)->toBe([])
-        ->and($remoteShell->scripts)->toHaveCount(1)
-        ->and($remoteShell->scripts[0])->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null")
-        ->and($remoteShell->scripts[0])->toContain('[Unit]')
-        ->and($remoteShell->scripts[0])->toContain('Description=Orbit process orbit_docs_main_vite')
-        ->and($remoteShell->scripts[0])->toContain('WorkingDirectory=/home/orbit/apps/docs')
-        ->and($remoteShell->scripts[0])->toContain("ExecStart=/bin/bash -lc 'npm run dev -- --host=0.0.0.0'")
-        ->and($remoteShell->scripts[0])->toContain('Restart=on-failure')
-        ->and($remoteShell->scripts[0])->toContain('Environment="APP_URL=https://docs.test"')
-        ->and($remoteShell->scripts[0])->toContain('Environment="VITE_VALET_HOST=docs.test"')
-        ->and($remoteShell->scripts[0])->toContain('Environment="VITE_DEV_SERVER_KEY=/home/orbit/.config/orbit/certs/docs.test.key"')
-        ->and($remoteShell->scripts[0])->toContain('Environment="VITE_DEV_SERVER_CERT=/home/orbit/.config/orbit/certs/docs.test.crt"')
+        ->and($remoteShell->scripts)->toHaveCount(2)
+        ->and($remoteShell->scripts[0])->toContain('sudo test -f "$path"')
+        ->and($remoteShell->scripts[1])->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null")
+        ->and($remoteShell->scripts[1])->toContain(base64_encode($unitContent))
+        ->and($remoteShell->scripts[1])->not->toContain($unitContent)
         ->and($certificates->hosts)->toBe(['docs.test'])
-        ->and($remoteShell->scripts[0])->toContain("sudo systemctl enable 'orbit_docs_main_vite.service' >/dev/null");
+        ->and($remoteShell->scripts[1])->toContain("sudo systemctl enable 'orbit_docs_main_vite.service' >/dev/null");
 });
 
 it('reports process family warnings when systemd unit enactment fails after intent exists', function (): void {
@@ -94,6 +95,11 @@ it('reports process family warnings when systemd unit enactment fails after inte
     ]);
 
     $remoteShell = new ProcessRuntimeRecordingRemoteShell([
+        new RemoteShellResult(exitCode: 0, stdout: json_encode([
+            'exists' => false,
+            'hash' => null,
+            'enabled' => false,
+        ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'systemctl failed', durationMs: 1),
     ]);
 
@@ -105,7 +111,7 @@ it('reports process family warnings when systemd unit enactment fails after inte
             'family' => 'process',
             'next_command' => 'doctor --family=process --restore',
         ])
-        ->and($remoteShell->scripts)->toHaveCount(1);
+        ->and($remoteShell->scripts)->toHaveCount(2);
 });
 
 it('reports process.tls_certificate_missing when the site certificate installer throws and still continues to the next workspace context', function (): void {
@@ -243,6 +249,11 @@ describe('runtime dispatcher', function (): void {
         ]);
 
         $remoteShell = new ProcessRuntimeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
 

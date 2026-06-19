@@ -9,7 +9,9 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Workspace;
+use App\Services\Convergence\SystemdService;
 use App\Services\Processes\SystemdUnitRenderer;
+use Throwable;
 
 final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
 {
@@ -25,13 +27,27 @@ final readonly class SystemdProcessRuntimeDriver implements ProcessRuntimeDriver
 
     public function apply(Node $node, App $app, Process $process, ?Workspace $workspace = null, ?string $preApplyScript = null): bool
     {
-        $script = collect([
-            'set -euo pipefail',
-            $preApplyScript,
-            $this->renderer->installScript($node, $app, $process, $workspace),
-        ])->filter(fn (?string $script): bool => $script !== null && trim($script) !== '')->implode(PHP_EOL);
+        try {
+            if ($preApplyScript !== null && trim($preApplyScript) !== '') {
+                $preApplyResult = $this->remoteShell->run($node, $this->strictScript($preApplyScript), ['throw' => false]);
 
-        return $this->remoteShell->run($node, $script)->successful();
+                if (! $preApplyResult->successful()) {
+                    return false;
+                }
+            }
+
+            $runtimeUnit = $this->runtimeUnitName($app, $process, $workspace);
+            $service = new SystemdService(
+                unitName: $runtimeUnit,
+                content: $this->renderer->render($node, $app, $process, $workspace),
+            );
+            $probe = $service->probe($node, $this->remoteShell);
+            $plan = $service->plan($probe);
+
+            return $service->apply($node, $this->remoteShell, $plan)->successful();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function remove(Node $node, string $runtimeUnit): bool
@@ -95,5 +111,10 @@ SH,
             escapeshellarg($serviceName),
             escapeshellarg($unitPath),
         );
+    }
+
+    private function strictScript(string $script): string
+    {
+        return "set -euo pipefail\n{$script}";
     }
 }

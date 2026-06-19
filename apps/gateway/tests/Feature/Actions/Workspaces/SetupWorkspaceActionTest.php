@@ -691,6 +691,14 @@ final class SetupWorkspaceActionTestShell implements RemoteShell
         ];
         $this->scripts[] = $script;
 
+        if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
+            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+        }
+
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }
 }

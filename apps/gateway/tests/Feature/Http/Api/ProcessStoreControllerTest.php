@@ -334,7 +334,7 @@ describe('ProcessStoreController', function (): void {
             ->and($process->node_id)->toBe($node->id)
             ->and($process->tool)->toBe('opencode')
             ->and($process->runtime)->toBe(ProcessRuntime::Systemd)
-            ->and($remoteShell->scripts[0])->toContain("sudo systemctl enable 'opencode-server.service'");
+            ->and($remoteShell->scripts[1])->toContain("sudo systemctl enable 'opencode-server.service'");
     });
 
     it('creates node owned MySQL service processes from process definitions without tool rows', function (): void {
@@ -546,6 +546,14 @@ final class ProcessStoreRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         $this->scripts[] = $script;
+
+        if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
+            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+        }
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
     }

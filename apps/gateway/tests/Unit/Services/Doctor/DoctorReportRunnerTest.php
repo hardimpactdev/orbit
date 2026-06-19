@@ -1145,6 +1145,11 @@ TXT;
                 stderr: '',
                 durationMs: 1,
             ),
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
@@ -1166,7 +1171,8 @@ TXT;
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
-            ->and($shell->scripts[2])->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null");
+            ->and($shell->scripts[2])->toContain('sudo test -f "$path"')
+            ->and($shell->scripts[3])->toContain("sudo tee '/etc/systemd/system/orbit_docs_main_vite.service' >/dev/null");
     });
 
     it('restores missing process runtime units for the app named in the runtime unit', function (): void {
@@ -1212,6 +1218,11 @@ TXT;
                 stderr: '',
                 durationMs: 1,
             ),
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
@@ -1228,7 +1239,8 @@ TXT;
                 'status' => 'completed',
                 'details' => ['app' => 'blog', 'process' => 'vp-dev'],
             ])
-            ->and($shell->scripts[4])->toContain("sudo tee '/etc/systemd/system/orbit_blog_main_vp-dev.service' >/dev/null");
+            ->and($shell->scripts[4])->toContain('sudo test -f "$path"')
+            ->and($shell->scripts[5])->toContain("sudo tee '/etc/systemd/system/orbit_blog_main_vp-dev.service' >/dev/null");
     });
 
     it('restores missing node-owned process runtime units through restore mode family dispatch', function (): void {
@@ -1254,6 +1266,11 @@ TXT;
                 stderr: '',
                 durationMs: 1,
             ),
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'exists' => false,
+                'hash' => null,
+                'enabled' => false,
+            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
@@ -1279,7 +1296,8 @@ TXT;
                     'runtime_unit' => 'node-exporter',
                 ],
             ])
-            ->and($shell->scripts[2])->toContain("sudo tee '/etc/systemd/system/node-exporter.service' >/dev/null");
+            ->and($shell->scripts[2])->toContain('sudo test -f "$path"')
+            ->and($shell->scripts[3])->toContain("sudo tee '/etc/systemd/system/node-exporter.service' >/dev/null");
     });
 
     it('restores missing node-owned docker swarm process runtime units through restore mode family dispatch', function (): void {

@@ -248,6 +248,7 @@ it('manages a node owned systemd process through process commands on an Incus ap
     try {
         e2eRestartGatewayApi($topology, 'process-command-systemd');
         processCommandCleanupSystemdRuntime($topology, $runtimeUnit);
+        processCommandRemovePreparedRedis($topology);
 
         $add = $topology->ssh(
             'gateway',
@@ -357,6 +358,46 @@ it('manages a node owned systemd process through process commands on an Incus ap
         $inactive = $topology->ssh('dev', 'systemctl is-active '.escapeshellarg($serviceName).' || true', timeoutSeconds: 60);
 
         expect(trim($inactive->output()))->not->toBe('active');
+
+        $topology->ssh(
+            'dev',
+            'sudo rm -f '.escapeshellarg("/etc/systemd/system/{$serviceName}").' && sudo systemctl daemon-reload',
+            timeoutSeconds: 60,
+        );
+
+        $restore = $topology->ssh(
+            'gateway',
+            "cd {$checkout} && orbit doctor --node=app-dev-1 --family=process --key=process.runtime_unit_missing --restore --json",
+            timeoutSeconds: 180,
+            allowFailure: true,
+        );
+
+        if (! $restore->successful()) {
+            throw new RuntimeException(processCommandSystemdDiagnostics($topology, $serviceName, $restore->output().$restore->errorOutput()));
+        }
+
+        $restoreData = e2eJsonCommandData(e2eJsonCommandPayload($restore->output()));
+
+        expect($restoreData['doctor']['healthy'])->toBeTrue(json_encode($restoreData, JSON_PRETTY_PRINT))
+            ->and($restoreData['doctor']['summary'])->toMatchArray([
+                'fixed' => 1,
+                'skipped' => 0,
+            ])
+            ->and($restoreData['doctor']['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-dev-1',
+                'key' => 'process.runtime_unit_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+            ]);
+
+        $restored = $topology->ssh(
+            'dev',
+            'sudo test -f '.escapeshellarg("/etc/systemd/system/{$serviceName}").' && sudo systemctl is-enabled '.escapeshellarg($serviceName),
+            timeoutSeconds: 60,
+        );
+
+        expect(trim($restored->output()))->toBe('enabled');
 
         $remove = $topology->ssh(
             'gateway',
@@ -497,6 +538,33 @@ PHP;
         str_replace('__RUNTIME_UNIT__', str_replace("'", "\\'", $runtimeUnit), $script),
         allowFailure: true,
     );
+}
+
+function processCommandRemovePreparedRedis(E2ETopologyHarness $topology): void
+{
+    $checkout = escapeshellarg($topology->checkout('gateway'));
+
+    $topology->ssh(
+        'gateway',
+        "cd {$checkout} && orbit process:remove redis --node=app-dev-1 --force --json >/dev/null 2>&1 || true",
+        timeoutSeconds: 180,
+        allowFailure: true,
+    );
+
+    $topology->ssh(
+        'dev',
+        'docker service rm orbit-redis >/dev/null 2>&1 || true; docker rm -f orbit-redis >/dev/null 2>&1 || true',
+        timeoutSeconds: 120,
+        allowFailure: true,
+    );
+
+    $script = <<<'PHP'
+if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
+    $node->processes()->where('name', 'redis')->delete();
+}
+PHP;
+
+    processCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
 
 function processCommandSystemdDiagnostics(E2ETopologyHarness $topology, string $serviceName, string $commandOutput): string
