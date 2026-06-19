@@ -27,6 +27,62 @@ final readonly class ManagedFile
         $this->ensureMode($directoryMode, 'directory mode');
     }
 
+    /**
+     * @param  array<string, mixed>  $intent
+     */
+    public static function fromIntent(
+        array $intent,
+        string $defaultMode = '0644',
+        string $defaultDirectoryMode = '0755',
+        bool $sensitive = false,
+    ): self {
+        $path = $intent['path'] ?? null;
+        $declaredHash = $intent['hash'] ?? null;
+        $content = $intent['content'] ?? null;
+        $mode = $intent['mode'] ?? $defaultMode;
+        $directoryMode = $intent['directory_mode'] ?? $defaultDirectoryMode;
+
+        if (! is_string($path) || trim($path) === '') {
+            throw new InvalidArgumentException('Managed file path is required.');
+        }
+
+        if (! is_string($declaredHash) || trim($declaredHash) === '') {
+            throw new InvalidArgumentException('Managed file hash is required.');
+        }
+
+        $declaredHash = strtolower(trim($declaredHash));
+
+        if (preg_match('/^[a-f0-9]{64}$/', $declaredHash) !== 1) {
+            throw new InvalidArgumentException('Managed file hash must be a SHA-256 hex digest.');
+        }
+
+        if (! is_string($content)) {
+            throw new InvalidArgumentException('Managed file content is required.');
+        }
+
+        if (! is_string($mode) || trim($mode) === '') {
+            throw new InvalidArgumentException('Managed file mode is required.');
+        }
+
+        if (! is_string($directoryMode) || trim($directoryMode) === '') {
+            throw new InvalidArgumentException('Managed file directory mode is required.');
+        }
+
+        $file = new self(
+            path: $path,
+            content: $content,
+            mode: $mode,
+            directoryMode: $directoryMode,
+            sensitive: $sensitive,
+        );
+
+        if (! hash_equals($declaredHash, $file->hash())) {
+            throw new InvalidArgumentException('Managed file content hash does not match declared hash.');
+        }
+
+        return $file;
+    }
+
     public function probe(Node $node, RemoteShell $remoteShell): ManagedFileProbe
     {
         $result = $remoteShell->run($node, $this->probeScript(), ['throw' => false]);
@@ -95,7 +151,10 @@ final readonly class ManagedFile
             return new ManagedFilePlan(
                 status: ConvergenceStatus::Changed,
                 summary: "Update managed file {$this->path} mode.",
-                details: $this->details(['observed_mode' => $probe->mode]),
+                details: $this->details([
+                    'observed_hash' => $probe->hash,
+                    'observed_mode' => $probe->mode,
+                ]),
             );
         }
 

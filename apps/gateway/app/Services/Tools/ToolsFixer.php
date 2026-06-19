@@ -14,6 +14,7 @@ use App\Models\ProxyRoute;
 use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Proxy\ProxyRouteRenderer;
+use InvalidArgumentException;
 
 final readonly class ToolsFixer
 {
@@ -124,47 +125,29 @@ final readonly class ToolsFixer
     {
         $config = is_array($tool->config) ? $tool->config : [];
         $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
-        $path = $managedConfig['path'] ?? null;
-        $hash = $managedConfig['hash'] ?? null;
-        $content = $managedConfig['content'] ?? null;
 
-        if (! is_string($path) || $path === '' || ! str_starts_with($path, '/') || ! is_string($hash) || $hash === '' || ! is_string($content)) {
+        try {
+            return ManagedFile::fromIntent($managedConfig)->writeScript();
+        } catch (InvalidArgumentException) {
             return null;
         }
-
-        if (! hash_equals($hash, hash('sha256', $content))) {
-            return null;
-        }
-
-        return new ManagedFile(
-            path: $path,
-            content: $content,
-        )->writeScript();
     }
 
     private function secretRepairCommand(NodeTool $tool): ?string
     {
         $credentials = is_array($tool->credentials) ? $tool->credentials : [];
         $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
-        $path = $managedSecret['path'] ?? null;
-        $hash = $managedSecret['hash'] ?? null;
-        $content = $managedSecret['content'] ?? null;
 
-        if (! is_string($path) || $path === '' || ! str_starts_with($path, '/') || ! is_string($hash) || $hash === '' || ! is_string($content)) {
+        try {
+            return ManagedFile::fromIntent(
+                intent: $managedSecret,
+                defaultMode: '0600',
+                defaultDirectoryMode: '0700',
+                sensitive: true,
+            )->writeScript();
+        } catch (InvalidArgumentException) {
             return null;
         }
-
-        if (! hash_equals($hash, hash('sha256', $content))) {
-            return null;
-        }
-
-        return new ManagedFile(
-            path: $path,
-            content: $content,
-            mode: '0600',
-            directoryMode: '0700',
-            sensitive: true,
-        )->writeScript();
     }
 
     /**

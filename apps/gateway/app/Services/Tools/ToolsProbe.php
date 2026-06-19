@@ -5,18 +5,23 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\RemoteShell;
+use App\Data\Convergence\ManagedFilePlan;
+use App\Data\Convergence\ManagedFileProbe;
 use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
+use App\Enums\Convergence\ConvergenceStatus;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeRoleName;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Convergence\ManagedFile;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
+use InvalidArgumentException;
 use Throwable;
 
 final readonly class ToolsProbe
@@ -49,23 +54,19 @@ final readonly class ToolsProbe
         $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
 
         if (($metadata['probe'] ?? null) === 'docker_images') {
-            return $this->introspectDockerImages($tool, $metadata);
+            return $this->withManagedFileProbes($tool, $this->introspectDockerImages($tool, $metadata));
         }
 
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
         $container = $this->expectedContainerName($tool) ?? ($metadata['container'] ?? null);
-        $configPath = $this->managedConfigPath($tool);
-        $secretPath = $this->managedSecretPath($tool);
         $php = <<<'PHP'
 $payload = json_decode(stream_get_contents(STDIN), true);
 $binary = (string) ($payload['binary'] ?? '');
 $versionCommand = (string) ($payload['version_command'] ?? '');
 $service = (string) ($payload['service'] ?? '');
 $container = (string) ($payload['container'] ?? '');
-$configPath = (string) ($payload['config_path'] ?? '');
-$secretPath = (string) ($payload['secret_path'] ?? '');
 $path = str_contains($binary, '/')
     ? (is_executable($binary) ? $binary : '')
     : trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
@@ -114,16 +115,6 @@ if ($container !== '') {
     }
 }
 
-if ($configPath !== '') {
-    $configExists = is_file($configPath) ? '1' : '0';
-    $configHash = $configExists === '1' ? hash_file('sha256', $configPath) : '';
-}
-
-if ($secretPath !== '') {
-    $secretExists = is_file($secretPath) ? '1' : '0';
-    $secretHash = $secretExists === '1' ? hash_file('sha256', $secretPath) : '';
-}
-
 printf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", $path, $version, $state, $configExists, $configHash, $secretExists, $secretHash, $containerExists, $containerState, $containerSpecHash);
 PHP;
 
@@ -136,14 +127,12 @@ PHP;
                 'version_command' => is_string($versionCommand) ? $versionCommand : '',
                 'service' => is_string($service) ? $service : '',
                 'container' => is_string($container) ? $container : '',
-                'config_path' => $configPath ?? '',
-                'secret_path' => $secretPath ?? '',
             ], JSON_THROW_ON_ERROR),
         ]);
         $parts = explode("\t", trim($result->stdout), 10);
         $containerState = ($parts[8] ?? '') !== '' ? $parts[8] : null;
 
-        return new ProbeSnapshot([
+        return $this->withManagedFileProbes($tool, new ProbeSnapshot([
             $tool->name => [
                 'installed' => $result->successful(),
                 'path' => ($parts[0] ?? '') !== '' ? $parts[0] : null,
@@ -157,7 +146,7 @@ PHP;
                 'container_state' => $containerState,
                 'container_spec_hash' => ($parts[9] ?? '') !== '' ? $parts[9] : null,
             ],
-        ]);
+        ]));
     }
 
     /**
@@ -168,6 +157,7 @@ PHP;
     {
         $snapshots = [];
         $batch = [];
+        $batchedTools = [];
         $node = null;
 
         foreach ($tools as $tool) {
@@ -182,7 +172,7 @@ PHP;
             $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
 
             if (($metadata['probe'] ?? null) === 'docker_images') {
-                $snapshots[$tool->name] = $this->introspectDockerImages($tool, $metadata);
+                $snapshots[$tool->name] = $this->withManagedFileProbes($tool, $this->introspectDockerImages($tool, $metadata));
 
                 continue;
             }
@@ -199,9 +189,8 @@ PHP;
                 'version_command' => is_string($metadata['version_command'] ?? null) ? $metadata['version_command'] : '',
                 'service' => is_string($metadata['service'] ?? null) ? $metadata['service'] : '',
                 'container' => $this->expectedContainerName($tool) ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
-                'config_path' => $this->managedConfigPath($tool) ?? '',
-                'secret_path' => $this->managedSecretPath($tool) ?? '',
             ];
+            $batchedTools[$tool->name] = $tool;
         }
 
         if ($batch === [] || ! $node instanceof Node) {
@@ -221,18 +210,12 @@ foreach ($tools as $name => $tool) {
     $versionCommand = (string) ($tool['version_command'] ?? '');
     $service = (string) ($tool['service'] ?? '');
     $container = (string) ($tool['container'] ?? '');
-    $configPath = (string) ($tool['config_path'] ?? '');
-    $secretPath = (string) ($tool['secret_path'] ?? '');
     $path = str_contains($binary, '/')
         ? (is_executable($binary) ? $binary : '')
         : trim((string) shell_exec('command -v '.escapeshellarg($binary).' 2>/dev/null'));
 
     $version = '';
     $state = 'unknown';
-    $configExists = null;
-    $configHash = null;
-    $secretExists = null;
-    $secretHash = null;
     $containerExists = null;
     $containerState = null;
     $containerSpecHash = null;
@@ -267,26 +250,12 @@ foreach ($tools as $name => $tool) {
         }
     }
 
-    if ($path !== '' && $configPath !== '') {
-        $configExists = is_file($configPath);
-        $configHash = $configExists ? hash_file('sha256', $configPath) : null;
-    }
-
-    if ($path !== '' && $secretPath !== '') {
-        $secretExists = is_file($secretPath);
-        $secretHash = $secretExists ? hash_file('sha256', $secretPath) : null;
-    }
-
     echo json_encode([
         'name' => $name,
         'installed' => $path !== '',
         'path' => $path !== '' ? $path : null,
         'version' => $version !== '' ? $version : null,
         'state' => $containerState ?? ($state !== '' ? $state : null),
-        'config_exists' => $configExists,
-        'config_hash' => $configHash,
-        'secret_exists' => $secretExists,
-        'secret_hash' => $secretHash,
         'container_exists' => $containerExists,
         'container_state' => $containerState,
         'container_spec_hash' => $containerSpecHash,
@@ -327,6 +296,10 @@ PHP;
 
         foreach (array_keys($batch) as $toolName) {
             $snapshots[$toolName] ??= new ProbeSnapshot([]);
+        }
+
+        foreach ($batchedTools as $toolName => $tool) {
+            $snapshots[$toolName] = $this->withManagedFileProbes($tool, $snapshots[$toolName] ?? new ProbeSnapshot([]));
         }
 
         return $snapshots;
@@ -408,22 +381,50 @@ BASH;
      */
     private function checkRecordCompleteness(NodeTool $tool): array
     {
+        $issues = [];
+
         if (
             ! is_int($tool->node_id)
             || $tool->name === ''
             || ! in_array($tool->expected_state, self::ExpectedStates, true)
         ) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'tool.record_incomplete',
-                    kind: DriftKind::Missing,
-                    summary: "Tool record {$tool->name} is missing required fields.",
-                ),
-            ];
+            $issues[] = new DriftEntry(
+                family: $this->key(),
+                key: 'tool.record_incomplete',
+                kind: DriftKind::Missing,
+                summary: "Tool record {$tool->name} is missing required fields.",
+            );
         }
 
-        return [];
+        if (($reason = $this->managedConfigIntentError($tool)) !== null) {
+            $issues[] = new DriftEntry(
+                family: $this->key(),
+                key: 'tool.record_incomplete',
+                kind: DriftKind::Missing,
+                summary: "Tool {$tool->name} managed configuration intent is incomplete.",
+                detail: [
+                    'tool' => $tool->name,
+                    'field' => 'managed_config',
+                    'reason' => $reason,
+                ],
+            );
+        }
+
+        if (($reason = $this->managedSecretIntentError($tool)) !== null) {
+            $issues[] = new DriftEntry(
+                family: $this->key(),
+                key: 'tool.record_incomplete',
+                kind: DriftKind::Missing,
+                summary: "Tool {$tool->name} managed credential intent is incomplete.",
+                detail: [
+                    'tool' => $tool->name,
+                    'field' => 'managed_secret',
+                    'reason' => $reason,
+                ],
+            );
+        }
+
+        return $issues;
     }
 
     /**
@@ -633,10 +634,9 @@ BASH;
      */
     private function checkConfigState(NodeTool $tool, ProbeSnapshot $snapshot): array
     {
-        $path = $this->managedConfigPath($tool);
-        $expectedHash = $this->managedConfigHash($tool);
+        $file = $this->managedConfigFile($tool);
 
-        if ($path === null || $expectedHash === null) {
+        if (! $file instanceof ManagedFile) {
             return [];
         }
 
@@ -646,50 +646,128 @@ BASH;
             return [];
         }
 
-        if (($observed['config_exists'] ?? null) === false) {
-            return [
-                new DriftEntry(
-                    family: $this->key(),
-                    key: 'tool.config_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Tool {$tool->name} managed configuration is missing.",
-                    detail: [
-                        'tool' => $tool->name,
-                        'path' => $path,
-                    ],
-                ),
-            ];
-        }
+        $probe = $this->managedFileProbeFromSnapshot($observed, 'config');
 
-        $observedHash = is_string($observed['config_hash'] ?? null) ? $observed['config_hash'] : null;
-
-        if ($observedHash === null || hash_equals($expectedHash, $observedHash)) {
+        if (! $probe instanceof ManagedFileProbe) {
             return [];
         }
 
-        return [
-            new DriftEntry(
-                family: $this->key(),
-                key: 'tool.config_mismatch',
-                kind: DriftKind::Divergent,
-                summary: "Tool {$tool->name} managed configuration differs from gateway intent.",
-                detail: [
-                    'tool' => $tool->name,
-                    'path' => $path,
-                    'expected_hash' => $expectedHash,
-                    'observed_hash' => $observedHash,
-                ],
-            ),
-        ];
+        return $this->managedFileDriftFromPlan(
+            tool: $tool,
+            plan: $file->plan($probe),
+            probe: $probe,
+            missingKey: 'tool.config_missing',
+            mismatchKey: 'tool.config_mismatch',
+            probeFailedKey: 'tool.config_probe_failed',
+            label: 'managed configuration',
+        );
     }
 
-    private function managedConfigPath(NodeTool $tool): ?string
+    private function managedConfigFile(NodeTool $tool): ?ManagedFile
+    {
+        $intent = $this->managedConfigIntent($tool);
+
+        if ($intent === null) {
+            return null;
+        }
+
+        try {
+            return ManagedFile::fromIntent($intent);
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    private function managedConfigIntentError(NodeTool $tool): ?string
+    {
+        $intent = $this->managedConfigIntent($tool);
+
+        return $intent === null ? null : $this->managedFileIntentError($intent);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function managedConfigIntent(NodeTool $tool): ?array
     {
         $config = is_array($tool->config) ? $tool->config : [];
-        $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
-        $path = $managedConfig['path'] ?? null;
+        $managedConfig = $config['managed_config'] ?? null;
 
-        return is_string($path) && $path !== '' ? $path : null;
+        return is_array($managedConfig) ? $managedConfig : null;
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkCredentialState(NodeTool $tool, ProbeSnapshot $snapshot): array
+    {
+        $file = $this->managedSecretFile($tool);
+
+        if (! $file instanceof ManagedFile) {
+            return [];
+        }
+
+        $observed = $snapshot->get($tool->name);
+
+        if (($observed['installed'] ?? null) !== true) {
+            return [];
+        }
+
+        $probe = $this->managedFileProbeFromSnapshot($observed, 'secret');
+
+        if (! $probe instanceof ManagedFileProbe) {
+            return [];
+        }
+
+        return $this->managedFileDriftFromPlan(
+            tool: $tool,
+            plan: $file->plan($probe),
+            probe: $probe,
+            missingKey: 'tool.credentials_missing',
+            mismatchKey: 'tool.credentials_mismatch',
+            probeFailedKey: 'tool.credentials_probe_failed',
+            label: 'managed credential material',
+        );
+    }
+
+    private function managedSecretFile(NodeTool $tool): ?ManagedFile
+    {
+        $intent = $this->managedSecretIntent($tool);
+
+        if ($intent === null) {
+            return null;
+        }
+
+        try {
+            return ManagedFile::fromIntent(
+                intent: $intent,
+                defaultMode: '0600',
+                defaultDirectoryMode: '0700',
+                sensitive: true,
+            );
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    private function managedSecretIntentError(NodeTool $tool): ?string
+    {
+        $intent = $this->managedSecretIntent($tool);
+
+        return $intent === null
+            ? null
+            : $this->managedFileIntentError($intent, defaultMode: '0600', defaultDirectoryMode: '0700', sensitive: true);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function managedSecretIntent(NodeTool $tool): ?array
+    {
+        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
+        $managedSecret = $credentials['managed_secret'] ?? null;
+
+        return is_array($managedSecret) ? $managedSecret : null;
     }
 
     private function expectedContainerSpecHash(NodeTool $tool): ?string
@@ -719,86 +797,152 @@ BASH;
         return is_string($name) && $name !== '' ? $name : null;
     }
 
-    private function managedConfigHash(NodeTool $tool): ?string
+    private function withManagedFileProbes(NodeTool $tool, ProbeSnapshot $snapshot): ProbeSnapshot
     {
-        $config = is_array($tool->config) ? $tool->config : [];
-        $managedConfig = is_array($config['managed_config'] ?? null) ? $config['managed_config'] : [];
-        $hash = $managedConfig['hash'] ?? null;
+        $tool->loadMissing('node');
+        $observed = $snapshot->get($tool->name);
 
-        return is_string($hash) && $hash !== '' ? $hash : null;
+        if (! $tool->node instanceof Node || ($observed['installed'] ?? null) !== true) {
+            return $snapshot;
+        }
+
+        $remoteShell = $this->remoteShell ?? app(RemoteShell::class);
+
+        if (($file = $this->managedConfigFile($tool)) instanceof ManagedFile) {
+            $observed = [
+                ...$observed,
+                ...$this->managedFileProbeSnapshot('config', $file->probe($tool->node, $remoteShell)),
+            ];
+        }
+
+        if (($file = $this->managedSecretFile($tool)) instanceof ManagedFile) {
+            $observed = [
+                ...$observed,
+                ...$this->managedFileProbeSnapshot('secret', $file->probe($tool->node, $remoteShell)),
+            ];
+        }
+
+        return new ProbeSnapshot([
+            ...$snapshot->items,
+            $tool->name => $observed,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function managedFileProbeSnapshot(string $prefix, ManagedFileProbe $probe): array
+    {
+        return [
+            "{$prefix}_probe_reachable" => $probe->reachable,
+            "{$prefix}_exists" => $probe->exists,
+            "{$prefix}_hash" => $probe->hash,
+            "{$prefix}_mode" => $probe->mode,
+            "{$prefix}_probe_error" => $probe->error,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $observed
+     */
+    private function managedFileProbeFromSnapshot(array $observed, string $prefix): ?ManagedFileProbe
+    {
+        $reachable = $observed["{$prefix}_probe_reachable"] ?? null;
+
+        if (! is_bool($reachable)) {
+            return null;
+        }
+
+        return new ManagedFileProbe(
+            reachable: $reachable,
+            exists: ($observed["{$prefix}_exists"] ?? null) === true,
+            hash: is_string($observed["{$prefix}_hash"] ?? null) ? $observed["{$prefix}_hash"] : null,
+            mode: is_string($observed["{$prefix}_mode"] ?? null) ? $observed["{$prefix}_mode"] : null,
+            error: is_string($observed["{$prefix}_probe_error"] ?? null) ? $observed["{$prefix}_probe_error"] : null,
+        );
     }
 
     /**
      * @return list<DriftEntry>
      */
-    private function checkCredentialState(NodeTool $tool, ProbeSnapshot $snapshot): array
-    {
-        $path = $this->managedSecretPath($tool);
-        $expectedHash = $this->managedSecretHash($tool);
-
-        if ($path === null || $expectedHash === null) {
+    private function managedFileDriftFromPlan(
+        NodeTool $tool,
+        ManagedFilePlan $plan,
+        ManagedFileProbe $probe,
+        string $missingKey,
+        string $mismatchKey,
+        string $probeFailedKey,
+        string $label,
+    ): array {
+        if ($plan->status === ConvergenceStatus::Ok) {
             return [];
         }
 
-        $observed = $snapshot->get($tool->name);
+        $detail = [
+            'tool' => $tool->name,
+            ...$plan->details,
+        ];
 
-        if (($observed['installed'] ?? null) !== true) {
-            return [];
-        }
-
-        if (($observed['secret_exists'] ?? null) === false) {
+        if ($plan->status === ConvergenceStatus::Unreachable) {
             return [
                 new DriftEntry(
                     family: $this->key(),
-                    key: 'tool.credentials_missing',
-                    kind: DriftKind::Missing,
-                    summary: "Tool {$tool->name} managed credential material is missing.",
-                    detail: [
-                        'tool' => $tool->name,
-                        'path' => $path,
-                    ],
+                    key: $probeFailedKey,
+                    kind: DriftKind::Unverifiable,
+                    summary: "Tool {$tool->name} {$label} could not be inspected.",
+                    detail: $detail,
                 ),
             ];
         }
 
-        $observedHash = is_string($observed['secret_hash'] ?? null) ? $observed['secret_hash'] : null;
-
-        if ($observedHash === null || hash_equals($expectedHash, $observedHash)) {
+        if ($plan->status !== ConvergenceStatus::Changed) {
             return [];
+        }
+
+        if (! $probe->exists) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: $missingKey,
+                    kind: DriftKind::Missing,
+                    summary: "Tool {$tool->name} {$label} is missing.",
+                    detail: $detail,
+                ),
+            ];
         }
 
         return [
             new DriftEntry(
                 family: $this->key(),
-                key: 'tool.credentials_mismatch',
+                key: $mismatchKey,
                 kind: DriftKind::Divergent,
-                summary: "Tool {$tool->name} managed credential material differs from gateway intent.",
-                detail: [
-                    'tool' => $tool->name,
-                    'path' => $path,
-                    'expected_hash' => $expectedHash,
-                    'observed_hash' => $observedHash,
-                ],
+                summary: "Tool {$tool->name} {$label} differs from gateway intent.",
+                detail: $detail,
             ),
         ];
     }
 
-    private function managedSecretPath(NodeTool $tool): ?string
-    {
-        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
-        $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
-        $path = $managedSecret['path'] ?? null;
+    /**
+     * @param  array<string, mixed>  $intent
+     */
+    private function managedFileIntentError(
+        array $intent,
+        string $defaultMode = '0644',
+        string $defaultDirectoryMode = '0755',
+        bool $sensitive = false,
+    ): ?string {
+        try {
+            ManagedFile::fromIntent(
+                intent: $intent,
+                defaultMode: $defaultMode,
+                defaultDirectoryMode: $defaultDirectoryMode,
+                sensitive: $sensitive,
+            );
 
-        return is_string($path) && $path !== '' ? $path : null;
-    }
-
-    private function managedSecretHash(NodeTool $tool): ?string
-    {
-        $credentials = is_array($tool->credentials) ? $tool->credentials : [];
-        $managedSecret = is_array($credentials['managed_secret'] ?? null) ? $credentials['managed_secret'] : [];
-        $hash = $managedSecret['hash'] ?? null;
-
-        return is_string($hash) && $hash !== '' ? $hash : null;
+            return null;
+        } catch (InvalidArgumentException $exception) {
+            return $exception->getMessage();
+        }
     }
 
     /**

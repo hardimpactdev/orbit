@@ -81,8 +81,10 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |
 | `tool.config_mismatch` | Managed configuration exists but differs from gateway configuration. |
+| `tool.config_probe_failed` | Managed configuration could not be inspected reliably, so config drift is unverifiable for this run. |
 | `tool.credentials_missing` | Managed credential material required by the tool definition is absent. |
 | `tool.credentials_mismatch` | Managed credential metadata exists but differs from gateway configuration. |
+| `tool.credentials_probe_failed` | Managed credential material could not be inspected reliably, so credential drift is unverifiable for this run. |
 | `tool.unregistered_capability` | During an explicit adoption scope, a selected observed capability has no matching gateway tool row. |
 | `tool.dns_container_missing` | The `orbit-dns` container is not present on a gateway that should be serving DNS over WireGuard. |
 | `tool.dns_port_not_listening` | `orbit-dns` is running but nothing is listening on port 53 inside the wg-easy network namespace. |
@@ -102,6 +104,14 @@ for the runtime layout they probe.
 The four `tool.seaweedfs.*` codes are owned by the S3 role's SeaweedFS managed tool
 contract; they are detected by the `S3DoctorProbe` via container introspection
 over `RemoteHostExecutor` (SSH host substrate + Docker inspection).
+
+Managed config and secret rows are repairable only when gateway intent contains
+an absolute `path`, declared SHA-256 `hash`, and `content` whose hash matches
+that declaration. Optional `mode` and `directory_mode` fields are enforced
+through the same managed-file convergence resource used by restore. Incomplete
+or contradictory intent is reported as `tool.record_incomplete`; unreachable
+remote file probes are reported as the probe-failure codes above and are not
+treated as repairable mismatches.
 
 ## Tool Fix Map
 
@@ -132,7 +142,8 @@ credential repair logic.
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
-or `tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be created through
+`tool.config_probe_failed`, `tool.credentials_probe_failed`, or
+`tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be created through
 `tool:adopt` or re-provision; restore does not create tool rows).
 
 Tools without a safe repair path are reported with the required manual action.

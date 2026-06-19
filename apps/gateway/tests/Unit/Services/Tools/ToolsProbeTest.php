@@ -73,6 +73,20 @@ function toolsProbeAgentRouteSourceHash(Node $node, string $tool): string
     ]));
 }
 
+function toolsProbeCapabilityStdout(string $path, string $version = '', string $state = 'running'): string
+{
+    return implode("\t", [$path, $version, $state, '', '', '', '', '', '', ''])."\n";
+}
+
+function toolsProbeManagedFileStdout(bool $exists, ?string $hash, ?string $mode): string
+{
+    return json_encode([
+        'exists' => $exists,
+        'hash' => $hash,
+        'mode' => $mode,
+    ], JSON_THROW_ON_ERROR)."\n";
+}
+
 describe('ToolsProbe', function (): void {
     it('has key and label', function (): void {
         $probe = new ToolsProbe;
@@ -398,7 +412,9 @@ describe('ToolsProbe', function (): void {
             ]);
     });
 
-    it('detects missing managed config files when config intent declares a path and hash', function (): void {
+    it('passes managed config files when the managed file resource probe plans ok', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $hash = hash('sha256', $content);
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -406,19 +422,34 @@ describe('ToolsProbe', function (): void {
             'config' => [
                 'managed_config' => [
                     'path' => '/etc/orbit/dns.conf',
-                    'hash' => str_repeat('a', 64),
+                    'hash' => $hash,
+                    'content' => $content,
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/dns\t\trunning\t0\t\n"));
+        $shell = new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0644'), '', 1),
+        );
+        $probe = new ToolsProbe($shell);
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.config_missing')?->kind)->toBe(DriftKind::Missing);
+        expect($drift)->toBe([])
+            ->and($snapshot->get('dns'))->toMatchArray([
+                'config_exists' => true,
+                'config_hash' => $hash,
+                'config_mode' => '0644',
+            ])
+            ->and($shell->scripts)->toHaveCount(2)
+            ->and($shell->scripts[1])->toContain('sudo test -f "$path"')
+            ->and($shell->options[1])->toMatchArray(['throw' => false]);
     });
 
-    it('detects managed config hash mismatches', function (): void {
+    it('uses managed file resource probes when batch introspecting managed config', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $hash = hash('sha256', $content);
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -426,11 +457,91 @@ describe('ToolsProbe', function (): void {
             'config' => [
                 'managed_config' => [
                     'path' => '/etc/orbit/dns.conf',
-                    'hash' => str_repeat('a', 64),
+                    'hash' => $hash,
+                    'content' => $content,
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/dns\t\trunning\t1\t".str_repeat('b', 64)."\n"));
+        $shell = new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(
+                0,
+                json_encode([
+                    'name' => 'dns',
+                    'installed' => true,
+                    'path' => '/usr/bin/dns',
+                    'version' => null,
+                    'state' => 'running',
+                    'container_exists' => null,
+                    'container_state' => null,
+                    'container_spec_hash' => null,
+                ], JSON_THROW_ON_ERROR)."\n",
+                '',
+                1,
+            ),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0644'), '', 1),
+        );
+        $probe = new ToolsProbe($shell);
+
+        $snapshots = $probe->introspectMany([$tool]);
+
+        expect($snapshots['dns']->get('dns'))->toMatchArray([
+            'config_exists' => true,
+            'config_hash' => $hash,
+            'config_mode' => '0644',
+        ])
+            ->and($shell->scripts)->toHaveCount(2)
+            ->and($shell->scripts[1])->toContain('sudo test -f "$path"');
+    });
+
+    it('detects missing managed config files through the managed file resource plan', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $hash = hash('sha256', $content);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dns',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/orbit/dns.conf',
+                    'hash' => $hash,
+                    'content' => $content,
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(false, null, null), '', 1),
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.config_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.config_missing')?->detail)->toMatchArray([
+                'path' => '/etc/orbit/dns.conf',
+                'expected_hash' => $hash,
+            ]);
+    });
+
+    it('detects managed config hash mismatches through the managed file resource plan', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $hash = hash('sha256', $content);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dns',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/orbit/dns.conf',
+                    'hash' => $hash,
+                    'content' => $content,
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(true, str_repeat('b', 64), '0644'), '', 1),
+        ));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -438,32 +549,104 @@ describe('ToolsProbe', function (): void {
         expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)->toMatchArray([
                 'path' => '/etc/orbit/dns.conf',
-                'expected_hash' => str_repeat('a', 64),
+                'expected_hash' => $hash,
                 'observed_hash' => str_repeat('b', 64),
             ]);
     });
 
-    it('detects missing managed credential material when credential intent declares a path and hash', function (): void {
+    it('detects managed config mode mismatches through the managed file resource plan', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $hash = hash('sha256', $content);
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
-            'name' => 'opencode-server',
-            'credentials' => [
-                'managed_secret' => [
-                    'path' => '/home/orbit/.config/opencode-server/password',
-                    'hash' => str_repeat('a', 64),
+            'name' => 'dns',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/orbit/dns.conf',
+                    'hash' => $hash,
+                    'content' => $content,
+                    'mode' => '0640',
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/opencode-server\t\trunning\t\t\t0\t\n"));
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0600'), '', 1),
+        ));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.credentials_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)->toMatchArray([
+                'path' => '/etc/orbit/dns.conf',
+                'expected_hash' => $hash,
+                'observed_hash' => $hash,
+                'mode' => '0640',
+                'observed_mode' => '0600',
+            ]);
     });
 
-    it('detects managed credential hash mismatches', function (): void {
+    it('marks managed config probe failures as unverifiable instead of repairable mismatch', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $hash = hash('sha256', $content);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dns',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/orbit/dns.conf',
+                    'hash' => $hash,
+                    'content' => $content,
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/dns'), '', 1),
+            new RemoteShellResult(255, '', 'ssh: connection refused', 1),
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.config_probe_failed')?->kind)->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.config_mismatch'))->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.config_probe_failed')?->detail)->toMatchArray([
+                'path' => '/etc/orbit/dns.conf',
+                'error' => 'ssh: connection refused',
+            ]);
+    });
+
+    it('marks managed config intent incomplete when declared content cannot satisfy the managed file resource', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dns',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/orbit/dns.conf',
+                    'hash' => str_repeat('a', 64),
+                    'content' => "address=/test/10.6.0.2\n",
+                ],
+            ],
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([
+            'dns' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)->toMatchArray([
+                'tool' => 'dns',
+                'field' => 'managed_config',
+            ]);
+    });
+
+    it('detects missing managed credential material through the managed file resource plan', function (): void {
+        $secret = 'generated-password';
+        $hash = hash('sha256', $secret);
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -471,11 +654,46 @@ describe('ToolsProbe', function (): void {
             'credentials' => [
                 'managed_secret' => [
                     'path' => '/home/orbit/.config/opencode-server/password',
-                    'hash' => str_repeat('a', 64),
+                    'hash' => $hash,
+                    'content' => $secret,
                 ],
             ],
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/bin/opencode-server\t\trunning\t\t\t1\t".str_repeat('b', 64)."\n"));
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(false, null, null), '', 1),
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.credentials_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.credentials_missing')?->detail)->toMatchArray([
+                'path' => '/home/orbit/.config/opencode-server/password',
+                'expected_hash' => $hash,
+                'mode' => '0600',
+            ]);
+    });
+
+    it('detects managed credential hash mismatches through the managed file resource plan', function (): void {
+        $secret = 'generated-password';
+        $hash = hash('sha256', $secret);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => $hash,
+                    'content' => $secret,
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(true, str_repeat('b', 64), '0644'), '', 1),
+        ));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -483,8 +701,98 @@ describe('ToolsProbe', function (): void {
         expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)->toBe(DriftKind::Divergent)
             ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)->toMatchArray([
                 'path' => '/home/orbit/.config/opencode-server/password',
-                'expected_hash' => str_repeat('a', 64),
+                'expected_hash' => $hash,
                 'observed_hash' => str_repeat('b', 64),
+                'mode' => '0600',
+            ]);
+    });
+
+    it('detects managed credential mode mismatches through the managed file resource plan', function (): void {
+        $secret = 'generated-password';
+        $hash = hash('sha256', $secret);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => $hash,
+                    'content' => $secret,
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
+            new RemoteShellResult(0, toolsProbeManagedFileStdout(true, $hash, '0644'), '', 1),
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)->toMatchArray([
+                'path' => '/home/orbit/.config/opencode-server/password',
+                'expected_hash' => $hash,
+                'observed_hash' => $hash,
+                'mode' => '0600',
+                'observed_mode' => '0644',
+            ]);
+    });
+
+    it('marks managed credential probe failures as unverifiable instead of repairable mismatch', function (): void {
+        $secret = 'generated-password';
+        $hash = hash('sha256', $secret);
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => '/home/orbit/.config/opencode-server/password',
+                    'hash' => $hash,
+                    'content' => $secret,
+                ],
+            ],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(0, toolsProbeCapabilityStdout('/usr/bin/opencode-server'), '', 1),
+            new RemoteShellResult(255, '', 'ssh: connection refused', 1),
+        ));
+
+        $snapshot = $probe->introspect($tool);
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect(toolProbeIssue($drift, 'tool.credentials_probe_failed')?->kind)->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch'))->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.credentials_probe_failed')?->detail)->toMatchArray([
+                'path' => '/home/orbit/.config/opencode-server/password',
+                'error' => 'ssh: connection refused',
+            ]);
+    });
+
+    it('marks managed secret intent incomplete when it is not a valid managed file resource', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'opencode-server',
+            'credentials' => [
+                'managed_secret' => [
+                    'path' => 'relative/password',
+                    'hash' => str_repeat('a', 64),
+                    'content' => 'generated-password',
+                ],
+            ],
+        ]);
+
+        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([
+            'opencode-server' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)->toMatchArray([
+                'tool' => 'opencode-server',
+                'field' => 'managed_secret',
             ]);
     });
 
@@ -694,5 +1002,35 @@ final class RecordingToolsProbeRemoteShell implements RemoteShell
         $this->input = is_string($options['input'] ?? null) ? $options['input'] : '';
 
         return new RemoteShellResult(exitCode: $this->exitCode, stdout: $this->stdout, stderr: '', durationMs: 1);
+    }
+}
+
+final class QueuedToolsProbeRemoteShell implements RemoteShell
+{
+    /** @var list<string> */
+    public array $scripts = [];
+
+    /** @var list<array<string, mixed>> */
+    public array $options = [];
+
+    /**
+     * @var list<RemoteShellResult>
+     */
+    private array $results;
+
+    public function __construct(RemoteShellResult ...$results)
+    {
+        $this->results = $results;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->scripts[] = $script;
+        $this->options[] = $options;
+
+        return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected shell call', 1);
     }
 }

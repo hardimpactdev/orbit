@@ -105,6 +105,40 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/etc/orbit/dns.conf' >/dev/null");
     });
 
+    it('honors managed config mode intent when rewriting managed config', function (): void {
+        $content = "address=/test/10.6.0.2\n";
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dns',
+            'config' => [
+                'managed_config' => [
+                    'path' => '/etc/orbit/dns.conf',
+                    'hash' => hash('sha256', $content),
+                    'content' => $content,
+                    'mode' => '0640',
+                    'directory_mode' => '0750',
+                ],
+            ],
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.config_mismatch',
+            kind: DriftKind::Divergent,
+            summary: 'Tool dns managed configuration differs from gateway intent.',
+            detail: [
+                'tool' => 'dns',
+                'path' => '/etc/orbit/dns.conf',
+            ],
+        ));
+
+        expect($action)->not->toBeNull()
+            ->and($shell->scripts[0])->toContain("sudo install -d -m 0750 '/etc/orbit'")
+            ->and($shell->scripts[0])->toContain("sudo chmod 0640 '/etc/orbit/dns.conf'");
+    });
+
     it('does not repair managed config when content does not match declared hash', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $tool = NodeTool::factory()->create([
