@@ -50,11 +50,33 @@ final readonly class FirewallRuleProbe
     public function introspectNode(Node $node): ProbeSnapshot
     {
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $this->introspectionScript(), ['throw' => true]);
+
+        return $this->snapshotFromStdout($result->stdout);
+    }
+
+    /**
+     * @return array{0: ProbeSnapshot|null, 1: string|null}
+     */
+    public function tryIntrospectNode(Node $node, RemoteShell $remoteShell): array
+    {
+        $result = $remoteShell->run($node, $this->introspectionScript(), ['throw' => false]);
+
+        if (! $result->successful()) {
+            $error = trim($result->stderr) !== '' ? trim($result->stderr) : "UFW introspection exited with code {$result->exitCode}.";
+
+            return [null, $error];
+        }
+
+        return [$this->snapshotFromStdout($result->stdout), null];
+    }
+
+    private function snapshotFromStdout(string $stdout): ProbeSnapshot
+    {
         $items = [
             '__firewall_backend_inspected' => ['inspected' => true],
         ];
 
-        foreach (explode("\n", $result->stdout) as $line) {
+        foreach (explode("\n", $stdout) as $line) {
             $parsed = $this->parseUfwLine($line) ?? $this->parseUfwStoredRuleLine($line);
 
             if ($parsed === null) {
