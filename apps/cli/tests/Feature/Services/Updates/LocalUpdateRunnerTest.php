@@ -304,7 +304,7 @@ describe('LocalUpdateRunner', function (): void {
             ]);
     });
 
-    it('records the replace step as skipped when the versioned binary already exists', function (): void {
+    it('records the replace step as completed when the low-level move was skipped', function (): void {
         config()->set('app.version', '0.1.130');
         fakeRunnerLatest('0.1.131');
         fakeGateway(['gateway' => ['version' => '0.1.131']]);
@@ -312,10 +312,38 @@ describe('LocalUpdateRunner', function (): void {
         $updater = new RunnerFakeUpdater;
         $updater->replaceResult = ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => true];
 
-        $result = makeRunner($updater)->run();
+        $steps = [];
+        $result = makeRunner($updater)->run(function (string $step, string $status, ?string $message) use (&$steps): void {
+            $steps[] = [$step, $status, $message];
+        });
 
         expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($result->stepResults['replace'])->toBe('skipped');
+            ->and($result->stepResults['replace'])->toBe('completed')
+            ->and(collect($steps)->first(fn (array $step): bool => $step[0] === 'replace' && $step[1] === 'done'))
+            ->toBe(['replace', 'done', 'Done']);
+    });
+
+    it('stops at check as already installed on a later run after replacement completed', function (): void {
+        config()->set('app.version', '0.1.130');
+        fakeRunnerLatest('0.1.131');
+        fakeGateway(['gateway' => ['version' => '0.1.131']]);
+
+        $updater = new RunnerFakeUpdater;
+        $updater->replaceResult = ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => true];
+
+        $first = makeRunner($updater)->run();
+
+        expect($first->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($first->toVersion)->toBe('0.1.131');
+
+        config()->set('app.version', '0.1.131');
+
+        $updaterForSecondRun = new RunnerFakeUpdater;
+        $second = makeRunner($updaterForSecondRun)->run();
+
+        expect($second->status)->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
+            ->and($updaterForSecondRun->calls)->toBe([])
+            ->and($second->stepResults)->toBe(['check' => 'skipped']);
     });
 
     it('returns failed step metadata when the download fails', function (): void {
