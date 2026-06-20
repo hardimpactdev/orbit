@@ -199,27 +199,27 @@ final readonly class GatewayApiClient
     }
 
     /**
-     * @param  callable(): Response|PromiseInterface  $callback
+     * @param  callable(): (Response|PromiseInterface)  $callback
      */
     private function waitForResponseWithIdleTicks(callable $callback, CurlMultiHandler $handler): Response
     {
-        $result = $callback();
-
-        if ($result instanceof Response) {
-            return $result;
-        }
-
-        if ($result instanceof LazyPromise) {
-            $result->buildPromise();
-        }
-
-        while ($result->getState() === PromiseInterface::PENDING) {
-            $handler->tick();
-            ForkedFrameTicker::invokeIdleCallback();
-            usleep(ForkedFrameTicker::idleIntervalMicroseconds());
-        }
-
         try {
+            $result = $callback();
+
+            if ($result instanceof Response) {
+                return $result;
+            }
+
+            if ($result instanceof LazyPromise) {
+                $result->buildPromise();
+            }
+
+            while ($result->getState() === PromiseInterface::PENDING) {
+                $handler->tick();
+                ForkedFrameTicker::invokeIdleCallback();
+                usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+            }
+
             return $result->wait();
         } catch (ConnectionException $exception) {
             throw $this->classifyNetworkError($exception);
