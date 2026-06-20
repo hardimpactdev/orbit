@@ -8,6 +8,7 @@ use App\Services\Version\InstallMetadataStore;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use JsonException;
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Throwable;
 
 /**
@@ -253,10 +254,30 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     /**
      * @param  list<string>  $command
      */
-    private function runCommand(array $command, int $timeout): ProcessResult
+    private function runCommand(array $command, int $timeout, ?string $path = null): ProcessResult
     {
         try {
-            return Process::timeout($timeout)->run($command);
+            $pending = Process::timeout($timeout);
+
+            if ($path !== null) {
+                $pending->path($path);
+            }
+
+            $process = $pending->start($command);
+
+            while ($process->running()) {
+                if (ForkedFrameTicker::hasIdleCallback()) {
+                    ForkedFrameTicker::invokeIdleCallback();
+                }
+
+                usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+
+                if (method_exists($process, 'ensureNotTimedOut')) {
+                    $process->ensureNotTimedOut();
+                }
+            }
+
+            return $process->wait();
         } catch (Throwable $exception) {
             return Process::result(errorOutput: $exception->getMessage(), exitCode: 1);
         }
@@ -363,9 +384,11 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      */
     public function installDependencies(): array
     {
-        $result = Process::path($this->checkoutPathResolver->resolve())
-            ->timeout(120)
-            ->run(['docker', 'exec', 'orbit-gateway', 'composer', '--working-dir=apps/gateway', 'install', '--no-interaction']);
+        $result = $this->runCommand(
+            ['docker', 'exec', 'orbit-gateway', 'composer', '--working-dir=apps/gateway', 'install', '--no-interaction'],
+            120,
+            $this->checkoutPathResolver->resolve(),
+        );
 
         return [
             'successful' => $result->successful(),
@@ -379,9 +402,11 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      */
     public function runMigrations(): array
     {
-        $result = Process::path($this->checkoutPathResolver->resolve())
-            ->timeout(60)
-            ->run(['docker', 'exec', 'orbit-gateway', 'php', 'apps/gateway/artisan', 'migrate', '--force']);
+        $result = $this->runCommand(
+            ['docker', 'exec', 'orbit-gateway', 'php', 'apps/gateway/artisan', 'migrate', '--force'],
+            60,
+            $this->checkoutPathResolver->resolve(),
+        );
 
         return [
             'successful' => $result->successful(),

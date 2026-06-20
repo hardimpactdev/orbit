@@ -4,6 +4,24 @@ declare(strict_types=1);
 
 use Orbit\Core\Progress\ForkedFrameTicker;
 
+it('registers an idle callback for stream polling even when pcntl fork support exists', function (): void {
+    $tickCount = 0;
+    $ticker = new ForkedFrameTicker;
+    $ticker->start(function () use (&$tickCount): void {
+        $tickCount++;
+    });
+
+    expect(ForkedFrameTicker::hasIdleCallback())->toBeTrue();
+
+    ForkedFrameTicker::invokeIdleCallback();
+    ForkedFrameTicker::invokeIdleCallback();
+
+    $ticker->stop();
+
+    expect($tickCount)->toBe(2)
+        ->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
+});
+
 it('invokes tick callbacks in the parent process while work is blocked', function (): void {
     if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('pcntl_signal') || ! function_exists('pcntl_async_signals')) {
         $this->markTestSkipped('pcntl_fork, posix_kill, pcntl_signal, and pcntl_async_signals are required to observe parent-process ticker callbacks.');

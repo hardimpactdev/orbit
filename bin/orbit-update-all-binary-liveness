@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROUTER="$ROOT/apps/cli/tests/Support/update_all_gateway_liveness_router.php"
+BINARY="${ORBIT_BINARY:-${ORBIT_E2E_BINARY_PATH:-}}"
+SILENT_US="${ORBIT_UPDATE_ALL_LIVENESS_SILENT_US:-6000000}"
+TS="${TMPDIR:-/tmp}/orbit-update-all-binary-liveness.typescript"
+SERVER_OUT="$(mktemp "${TMPDIR:-/tmp}/orbit-update-all-liveness-server.XXXXXX")"
+PORT=""
+
+cleanup() {
+  if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+
+  if [[ "${ORBIT_KEEP_UPDATE_ALL_LIVENESS_ARTIFACTS:-0}" == "1" ]]; then
+    echo "DEBUG: kept typescript at $TS" >&2
+    echo "DEBUG: kept server log at $SERVER_OUT" >&2
+  else
+    rm -f "$TS" "$SERVER_OUT"
+  fi
+}
+trap cleanup EXIT
+
+if [[ $# -ge 1 ]]; then
+  BINARY="$1"
+fi
+
+if [[ -z "$BINARY" ]]; then
+  BINARY="$ROOT/apps/cli/builds/dist/mac/mac-arm"
+fi
+
+if [[ ! -x "$BINARY" ]]; then
+  echo "BLOCKER: orbit binary not executable at $BINARY" >&2
+  exit 2
+fi
+
+SCRIPT_BIN=""
+for candidate in /usr/bin/script /bin/script; do
+  if [[ -x "$candidate" ]]; then
+    SCRIPT_BIN="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$SCRIPT_BIN" ]]; then
+  echo "BLOCKER: script(1) not found" >&2
+  exit 2
+fi
+
+reserve_port() {
+  local socket
+  socket="$(mktemp -u "${TMPDIR:-/tmp}/orbit-liveness-port.XXXXXX")"
+  php -r '
+$socket = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr);
+if ($socket === false) {
+    fwrite(STDERR, "Unable to reserve port: {$errstr}\n");
+    exit(1);
+}
+echo stream_socket_get_name($socket, false);
+' | awk -F: '{print $NF}'
+}
+
+wait_for_server() {
+  local deadline=$((SECONDS + 10))
+
+  while (( SECONDS < deadline )); do
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+      echo "BLOCKER: fixture server exited early" >&2
+      cat "$SERVER_OUT" >&2 || true
+      exit 2
+    fi
+
+    if curl --silent --output /dev/null --max-time 1 --request POST "http://127.0.0.1:${PORT}/api/update/all/start" 2>/dev/null; then
+      return 0
+    fi
+
+    sleep 0.05
+  done
+
+  echo "BLOCKER: fixture server did not become reachable on port ${PORT}" >&2
+  cat "$SERVER_OUT" >&2 || true
+  exit 2
+}
+
+PORT="$(reserve_port)"
+export ORBIT_UPDATE_ALL_LIVENESS_SILENT_US="$SILENT_US"
+php "$ROUTER" "$PORT" >"$SERVER_OUT" 2>&1 &
+SERVER_PID=$!
+wait_for_server
+
+rm -f "$TS"
+
+wrapped_cmd=$(printf '%q ' "$BINARY" update:all --ansi)
+env_command=$(printf 'TERM=xterm-256color ORBIT_GATEWAY_URL=%q %s' "http://127.0.0.1:${PORT}" "$wrapped_cmd")
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  "$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$env_command" >/dev/null 2>&1 &
+else
+  "$SCRIPT_BIN" -q -c "$env_command" "$TS" >/dev/null 2>&1 &
+fi
+
+pid=$!
+observations=()
+saw_open=false
+saw_filled=false
+target_row=""
+row_identity_stable=true
+captured_while_running=false
+deadline=$((SECONDS + 20))
+
+while (( SECONDS < deadline )); do
+  if kill -0 "$pid" 2>/dev/null; then
+    still_running=true
+  else
+    still_running=false
+  fi
+
+  if [[ -f "$TS" ]]; then
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+
+      if [[ ! "$line" =~ ^row=([0-9]+)\|gateway\|Replacing\ cli\ binary\|(cyan-open|cyan-filled)$ ]]; then
+        continue
+      fi
+
+      row="${BASH_REMATCH[1]}"
+      spinner="${BASH_REMATCH[2]}"
+
+      if [[ -n "$target_row" && "$row" != "$target_row" ]]; then
+        row_identity_stable=false
+      fi
+
+      if [[ -z "$target_row" ]]; then
+        target_row="$row"
+      fi
+
+      observations+=("$line")
+
+      if [[ "$spinner" == "cyan-open" ]]; then
+        saw_open=true
+      fi
+
+      if [[ "$spinner" == "cyan-filled" ]]; then
+        saw_filled=true
+      fi
+    done < <(php "$ROOT/apps/cli/tests/Support/parse_update_all_liveness_transcript.php" "$TS")
+
+    if [[ "$still_running" == true && "$row_identity_stable" == true && "$saw_open" == true && "$saw_filled" == true ]]; then
+      captured_while_running=true
+      break
+    fi
+  fi
+
+  if [[ "$still_running" == false ]]; then
+    break
+  fi
+
+  sleep 0.05
+done
+
+if [[ "$still_running" == true ]]; then
+  kill "$pid" 2>/dev/null || true
+fi
+wait "$pid" 2>/dev/null || true
+
+if ((${#observations[@]} > 0)); then
+  distinct_states="$(printf '%s\n' "${observations[@]}" | awk -F'|' '{print $4}' | sort -u | tr '\n' ',' | sed 's/,$//')"
+else
+  distinct_states=""
+fi
+
+if [[ "$captured_while_running" != true ]]; then
+  echo "FAIL: gateway Replacing cli binary row did not alternate on a stable row while process was still running" >&2
+  echo "observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled" >&2
+  exit 1
+fi
+
+echo "PASS: gateway Replacing cli binary alternated on stable virtual-screen row ${target_row} while pid $pid was still running"
+echo "observations=${#observations[@]} target_row=${target_row} distinct_states=[${distinct_states}]"

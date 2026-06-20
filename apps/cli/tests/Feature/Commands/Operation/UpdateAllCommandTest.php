@@ -9,6 +9,7 @@ use App\Services\Updates\RunsLocalUpdate;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
+use Orbit\Core\Progress\VirtualTerminalScreen;
 
 beforeEach(function (): void {
     $this->localUpdater = new UpdateAllCommandFakeUpdater;
@@ -123,8 +124,9 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
     fclose($pipes[2]);
 
     $pendingTranscript = '';
-    $sawCircleWhileRunning = false;
-    $sawFilledWhileRunning = false;
+    $observedStates = [];
+    $targetRow = null;
+    $rowIdentityStable = true;
     $capturedWhileRunning = false;
     $deadline = microtime(true) + 15.0;
     $processPid = proc_get_status($process)['pid'] ?? null;
@@ -139,21 +141,25 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
 
             if ($stillRunning && is_readable($typescriptPath)) {
                 $capture = file_get_contents($typescriptPath) ?: '';
+                $observation = updateAllPendingPtySpinnerState($capture);
 
-                if (updateAllPendingPtyShowsSpinnerFrame($capture, '○')) {
-                    $sawCircleWhileRunning = true;
-                }
+                if ($observation !== null) {
+                    if ($targetRow !== null && $targetRow !== $observation['row']) {
+                        $rowIdentityStable = false;
+                    }
 
-                if (updateAllPendingPtyShowsSpinnerFrame($capture, '◉')) {
-                    $sawFilledWhileRunning = true;
-                }
+                    $targetRow ??= $observation['row'];
+                    $observedStates[$observation['spinner']] = true;
 
-                if ($sawCircleWhileRunning && $sawFilledWhileRunning) {
-                    $pendingTranscript = $capture;
-                    file_put_contents($pendingTranscriptPath, $pendingTranscript);
-                    $capturedWhileRunning = true;
+                    if ($rowIdentityStable
+                        && isset($observedStates[VirtualTerminalScreen::SPINNER_CYAN_OPEN])
+                        && isset($observedStates[VirtualTerminalScreen::SPINNER_CYAN_FILLED])) {
+                        $pendingTranscript = $capture;
+                        file_put_contents($pendingTranscriptPath, $pendingTranscript);
+                        $capturedWhileRunning = true;
 
-                    break;
+                        break;
+                    }
                 }
             }
 
@@ -175,10 +181,13 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
         @unlink($pendingTranscriptPath);
     }
 
-    expect($capturedWhileRunning)->toBeTrue('Expected both spinner frames in the PTY transcript while the delayed replace step was still running.')
-        ->and($pendingTranscript)->toContain("\e[36m○\e[39m")
-        ->and($pendingTranscript)->toContain("\e[36m◉\e[39m")
-        ->and($pendingTranscript)->toMatch('/\e\[36m[○◉]\e\[39m[^\n]*local\s+Replacing cli binary/u');
+    expect($capturedWhileRunning)->toBeTrue(sprintf(
+        'Expected both spinner frames on the same local Replacing cli binary virtual-screen row while the delayed replace step was still running; row=%s stable=%s states=[%s].',
+        $targetRow === null ? 'none' : (string) $targetRow,
+        $rowIdentityStable ? 'true' : 'false',
+        implode(',', array_keys($observedStates)),
+    ))
+        ->and($pendingTranscript)->not->toBe('');
 });
 
 it('aligns check-row settled status with node stage columns', function (): void {
@@ -720,12 +729,23 @@ it('returns gateway failure when the start response does not include an events u
         ->and($decoded['error']['code'])->toBe('gateway_unavailable');
 });
 
-function updateAllPendingPtyShowsSpinnerFrame(string $capture, string $frame): bool
+/**
+ * @return array{row: int, spinner: string}|null
+ */
+function updateAllPendingPtySpinnerState(string $capture): ?array
 {
-    return preg_match(
-        '/\e\[36m'.preg_quote($frame, '/').'\e\[39m[^\n]*local\s+Replacing cli binary/u',
-        $capture,
-    ) === 1;
+    $screen = new VirtualTerminalScreen;
+    $screen->feed($capture);
+    $row = $screen->rowsMatching('local', 'Replacing cli binary')[0] ?? null;
+
+    if ($row === null) {
+        return null;
+    }
+
+    return [
+        'row' => $row['row'],
+        'spinner' => $row['spinner'],
+    ];
 }
 
 function findPseudoTtyScriptBinary(): ?string
@@ -786,6 +806,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEventType;
+use Orbit\Core\Progress\VirtualTerminalScreen;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\StreamOutput;
 

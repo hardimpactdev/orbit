@@ -7,10 +7,12 @@ namespace App\Services;
 use App\Exceptions\GatewayApiException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventDecoder;
 use Orbit\Core\Progress\ProgressEventDecodingFailed;
 use Orbit\Core\Progress\ProgressEventType;
+use Orbit\Core\Progress\StreamIdleReader;
 use Psr\Http\Message\StreamInterface;
 
 class GatewayOperationEventStreamClient
@@ -55,9 +57,10 @@ class GatewayOperationEventStreamClient
     {
         $decoder = new ProgressEventDecoder;
         $frameBuffer = '';
+        $reader = new StreamIdleReader(ForkedFrameTicker::idleIntervalMicroseconds());
 
         while (! $stream->eof()) {
-            $chunk = $stream->read(self::ReadBytes);
+            $chunk = $reader->read($stream, self::ReadBytes);
 
             if ($chunk === '') {
                 continue;

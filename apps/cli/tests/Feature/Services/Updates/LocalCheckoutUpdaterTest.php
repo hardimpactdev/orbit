@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
+use Orbit\Core\Progress\ForkedFrameTicker;
 
 /**
  * Download a binary and then replace it through the split surface, returning the
@@ -135,6 +136,36 @@ describe('LocalCheckoutUpdater', function (): void {
 
         Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
             && $process->command === [$stagedBinary, '--version']);
+    });
+
+    it('ticks active progress while local update commands are still running', function (): void {
+        $ticks = 0;
+        $ticker = new ForkedFrameTicker(1_000);
+        $ticker->start(function () use (&$ticks): void {
+            $ticks++;
+        });
+
+        Process::fake(function (): mixed {
+            static $call = 0;
+            $call++;
+
+            return match ($call) {
+                1 => Process::describe()->runsFor(3)->exitCode(0),
+                3 => Process::result(output: 'orbit 1.2.3', exitCode: 0),
+                default => Process::result(output: '', exitCode: 0),
+            };
+        });
+        Process::preventStrayProcesses();
+
+        try {
+            $download = (new LocalCheckoutUpdater(new CheckoutPathResolver))->downloadBinary();
+
+            expect($download['successful'])->toBeTrue()
+                ->and($download['version'])->toBe('1.2.3')
+                ->and($ticks)->toBeGreaterThanOrEqual(3);
+        } finally {
+            $ticker->stop();
+        }
     });
 
     it('replaces the binary with a versioned file and relinks the host launcher', function (): void {

@@ -10,23 +10,47 @@ namespace Orbit\Core\Progress;
  */
 final class ForkedFrameTicker
 {
-    private const int DEFAULT_INTERVAL_US = 100_000;
+    public const int DEFAULT_INTERVAL_MICROSECONDS = 100_000;
+
+    /** @var (callable(): void)|null */
+    private static $idleCallback = null;
+
+    private static int $idleIntervalMicroseconds = self::DEFAULT_INTERVAL_MICROSECONDS;
 
     private ?int $pid = null;
 
+    private bool $usesIdleCallback = false;
+
     public function __construct(
-        private readonly int $intervalUs = self::DEFAULT_INTERVAL_US,
+        private readonly int $intervalUs = self::DEFAULT_INTERVAL_MICROSECONDS,
     ) {}
+
+    public static function hasIdleCallback(): bool
+    {
+        return self::$idleCallback !== null;
+    }
+
+    public static function idleIntervalMicroseconds(): int
+    {
+        return self::$idleIntervalMicroseconds;
+    }
+
+    public static function invokeIdleCallback(): void
+    {
+        if (self::$idleCallback !== null) {
+            (self::$idleCallback)();
+        }
+    }
 
     public function start(callable $onTick): void
     {
         $this->stop();
 
-        if (! function_exists('pcntl_fork')
-            || ! function_exists('posix_kill')
-            || ! function_exists('posix_getppid')
-            || ! function_exists('pcntl_async_signals')
-            || ! function_exists('pcntl_signal')) {
+        self::$idleIntervalMicroseconds = $this->intervalUs;
+        self::$idleCallback = $onTick;
+        $this->usesIdleCallback = true;
+
+        if (! $this->canFork()) {
             return;
         }
 
@@ -54,6 +78,11 @@ final class ForkedFrameTicker
 
     public function stop(): void
     {
+        if ($this->usesIdleCallback) {
+            self::$idleCallback = null;
+            $this->usesIdleCallback = false;
+        }
+
         if ($this->pid === null || ! function_exists('posix_kill')) {
             $this->pid = null;
 
@@ -76,5 +105,14 @@ final class ForkedFrameTicker
     public function __destruct()
     {
         $this->stop();
+    }
+
+    private function canFork(): bool
+    {
+        return function_exists('pcntl_fork')
+            && function_exists('posix_kill')
+            && function_exists('posix_getppid')
+            && function_exists('pcntl_async_signals')
+            && function_exists('pcntl_signal');
     }
 }
