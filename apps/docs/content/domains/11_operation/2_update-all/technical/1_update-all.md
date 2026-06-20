@@ -37,9 +37,11 @@ options are optional.
 1. Select the output renderer.
 2. Call the gateway to authorize gateway-admin authority and resolve selected
    non-local managed Orbit installations from active gateway node configuration.
-3. Submit a start request to the gateway. The gateway persists an operation row
-   and an immutable update plan keyed by `operation_run_id`, then launches a
-   one-shot runner from the target `orbit-gateway` image.
+3. Submit a start request to the gateway. The gateway persists an operation row,
+   returns the durable event stream URL promptly, and launches a one-shot runner.
+   When the request omits an inline manifest, the gateway defers release-manifest
+   resolution to the runner's `Checking for updates` step so the CLI can keep
+   visible progress while the latest version is resolved.
 4. Follow the operation event stream, reconnecting with `Last-Event-ID` when the
    gateway service is replaced.
 5. After the gateway phase succeeds, update the caller-local CLI as a fan-out
@@ -52,13 +54,29 @@ execution details live in the renderer contracts.
 
 ## Behavior Contract
 
+### Update plan persistence
+
+- The immutable update plan must exist before any update side effect begins
+  (gateway replacement, workload fan-out, or final verification).
+- When the start request includes an inline manifest, the gateway persists the
+  plan during the start request and returns it in the 202 envelope.
+- When the start request omits an inline manifest, the gateway returns the
+  event stream URL promptly and the runner resolves the latest release manifest
+  during the `Checking for updates` step, then persists the immutable plan before
+  `Checking fleet versions` or any later phase starts.
+- After the plan is persisted, the runner must read only that immutable plan for
+  the remainder of the run. It must not fetch or substitute a fresh manifest
+  during gateway, workload, or verification phases.
+
 ### Version check and fleet version probe
 
 - `update:all` runs a `Checking for updates` step first, resolving the latest
   available release version from the configured release source.
 - It then runs a `Checking fleet versions` step that probes each selected
-  installation's current orbit version (read-only `orbit --version` over
-  `RemoteShell`) and counts how many are behind the latest release.
+  installation's current orbit version (read-only `orbit --version --json` over
+  bounded-concurrency `RemoteShell`) and counts how many are behind the latest
+  release. Unparseable or failed version reads count as outdated so the UI never
+  appears stuck behind a silent node.
 - When every node is already on the latest release (0 outdated), the command
   short-circuits: the gateway/workload/verification phases are skipped entirely
   and the operation terminates with `Skipped: <version> is already installed on
@@ -105,13 +123,17 @@ The expected target shape per calling context:
   begin. Event payloads are redacted through the operation result boundary and
   must never contain secrets, raw command output containing secrets, private
   keys, release credentials, or operation tokens.
-- The gateway persists an immutable update plan keyed by `operation_run_id`.
-  The plan includes target version, gateway image registry/tag/digest,
-  manifest source, manifest version, manifest snapshot, CLI artifact URLs and
-  hashes, and required role image references. The runner must read this plan
-  and must not fetch a fresh manifest during the run.
-- The gateway launches the one-shot runner from the target
-  `orbit-gateway` image with the gateway config root and Docker socket mounted.
+- The immutable update plan is keyed by `operation_run_id` and includes target
+  version, gateway image registry/tag/digest, manifest source, manifest version,
+  manifest snapshot, CLI artifact URLs and hashes, and required role image
+  references. See [Update plan persistence](#update-plan-persistence) for when
+  the gateway versus the runner persists it.
+- The gateway launches the one-shot runner from the configured bootstrap
+  `orbit-gateway` image when the plan is deferred. If no explicit bootstrap
+  image is configured, it uses the currently running digest-pinned
+  `orbit_orbit-gateway` service image. When the plan is already known, the
+  runner launches from the target digest. In all cases, the gateway config root
+  and Docker socket are mounted.
   The runner survives replacement of the long-running `orbit-gateway` service
   and owns the rest of the fleet update.
 - Followers read events through the gateway SSE API. A follower may replay from
@@ -177,7 +199,7 @@ The expected target shape per calling context:
   through the node's `PATH` to a launcher other than the relinked one (a legacy
   install earlier in `PATH`) that points at a different binary, it relinks that
   launcher to the new binary too, so the node's `orbit` — and the fleet version
-  probe that reads `orbit --version` over `RemoteShell` — sees the new version
+  probe that reads `orbit --version --json` over `RemoteShell` — sees the new version
   instead of a stale shadowed one. Best-effort: an unwritable legacy path is
   left as-is rather than failing the node update.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway

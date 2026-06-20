@@ -14,6 +14,8 @@ final readonly class GatewaySwarmManager
 {
     public const string StackFile = 'orbit-gateway-stack.yml';
 
+    public const string DeployedGatewayService = 'orbit_'.GatewaySwarmStackRenderer::GatewayService;
+
     public const string LegacyNetworkMessage = 'Existing Docker network [orbit-network] is not an attachable Swarm overlay. Run the explicit Orbit network migration before enabling gateway Swarm services.';
 
     public function __construct(

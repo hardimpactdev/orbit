@@ -128,6 +128,25 @@ describe('OperationRunRecorder', function (): void {
             ->and($done->finished_at)->not->toBeNull();
     });
 
+    it('clears a queued result payload when finalizing as failed', function (): void {
+        $run = $this->recorder->queued(
+            operationId: (string) Str::uuid(),
+            lane: 'gateway',
+            operationType: 'update:all',
+            result: ['update_start_request' => ['target_version' => '9.9.9']],
+        );
+
+        $failed = $this->recorder->failed(
+            id: $run->id,
+            exitCode: 1,
+            error: ['code' => 'update_plan_invalid', 'message' => 'Release manifest download failed.'],
+        );
+
+        expect($failed->status)->toBe(OperationStatus::Failed)
+            ->and($failed->result)->toBeNull()
+            ->and($failed->error)->toMatchArray(['code' => 'update_plan_invalid']);
+    });
+
     it('finalizes a run as failed with error payload', function (): void {
         $run = $this->recorder->queued((string) Str::uuid(), 'host', internalCommand: 'internal:executor:verify');
 

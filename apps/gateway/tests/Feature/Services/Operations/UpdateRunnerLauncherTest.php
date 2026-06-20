@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Models\OperationRun;
+use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunnerLauncher;
@@ -20,6 +21,10 @@ beforeEach(function (): void {
     $this->configRoot = sys_get_temp_dir().'/orbit-update-runner-'.bin2hex(random_bytes(6));
 
     config()->set('orbit.paths.config_root', $this->configRoot);
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
 });
 
 it('launches the one shot runner from the persisted digest pinned gateway image', function (): void {
@@ -56,7 +61,8 @@ it('launches the one shot runner from the persisted digest pinned gateway image'
             ->toContain("'{$plan->gateway_image}'")
             ->toContain("'orbit:update-runner'")
             ->toContain("'--operation-run-id={$run->id}'")
-            ->not->toContain('--target-image');
+            ->not->toContain('--target-image')
+            ->not->toContain('docker service inspect');
 
         expect($containerArguments)
             ->toContain("'orbit:update-runner'")
@@ -70,15 +76,74 @@ it('launches the one shot runner from the persisted digest pinned gateway image'
     });
 });
 
-it('requires a persisted update plan before launching Docker', function (): void {
+it('launches the runner from the configured bootstrap gateway image when no plan exists yet', function (): void {
     $run = updateRunnerLaunchRun();
 
-    Process::fake();
+    Process::fake([
+        'docker run *' => Process::result(output: "runner\n"),
+    ]);
+
+    app(UpdateRunnerLauncher::class)->launch($run);
+
+    Process::assertRan(function ($process): bool {
+        expect((string) $process->command)->toContain(
+            'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        );
+
+        return true;
+    });
+});
+
+it('resolves the running gateway swarm service image when no plan or config override exists', function (): void {
+    config()->set('orbit.updates.gateway_image', null);
+
+    $run = updateRunnerLaunchRun();
+    $liveImage = 'ghcr.io/hardimpactdev/orbit-gateway:0.1.146@sha256:acf5560fef69663643d2ddebd79532e64dc82131eb5751055406d0c223804797';
+
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' '".GatewaySwarmManager::DeployedGatewayService."'" => Process::result(output: "{$liveImage}\n"),
+        'docker run *' => Process::result(output: "runner\n"),
+    ]);
+
+    app(UpdateRunnerLauncher::class)->launch($run);
+
+    Process::assertRan(function ($process) use ($liveImage): bool {
+        $command = (string) $process->command;
+
+        if (! str_starts_with($command, 'docker run')) {
+            return false;
+        }
+
+        expect($command)->toContain("'{$liveImage}'");
+
+        return true;
+    });
+});
+
+it('rejects a non digest pinned running gateway service image fallback', function (): void {
+    config()->set('orbit.updates.gateway_image', null);
+
+    $run = updateRunnerLaunchRun();
+
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' '".GatewaySwarmManager::DeployedGatewayService."'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:0.1.146\n"),
+    ]);
 
     expect(fn () => app(UpdateRunnerLauncher::class)->launch($run))
-        ->toThrow(RuntimeException::class, "Operation update plan for run [{$run->id}] was not found.");
+        ->toThrow(RuntimeException::class, 'Running gateway service image must be digest-pinned.');
+});
 
-    Process::assertNothingRan();
+it('fails loudly when neither config nor running gateway service image is available', function (): void {
+    config()->set('orbit.updates.gateway_image', null);
+
+    $run = updateRunnerLaunchRun();
+
+    Process::fake([
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' '".GatewaySwarmManager::DeployedGatewayService."'" => Process::result(exitCode: 1, errorOutput: "service not found\n"),
+    ]);
+
+    expect(fn () => app(UpdateRunnerLauncher::class)->launch($run))
+        ->toThrow(RuntimeException::class, 'could not be resolved');
 });
 
 it('fails with a useful message when Docker cannot start the runner', function (): void {

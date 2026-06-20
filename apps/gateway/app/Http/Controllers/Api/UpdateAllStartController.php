@@ -41,35 +41,43 @@ class UpdateAllStartController implements Loggable
     ): JsonResponse {
         $this->captureActivitySubject($request);
 
+        $startRequest = $this->startRequestPayload($request);
+        $hasInlineManifest = is_array($startRequest['manifest'] ?? null) && $startRequest['manifest'] !== [];
+
         $operationRun = $operationRuns->queued(
             operationId: (string) Str::uuid(),
             lane: 'gateway',
             operationType: 'update:all',
             callerNodeId: $this->activitySubject?->id,
+            result: $hasInlineManifest ? null : ['update_start_request' => $startRequest],
         );
         $this->activityOperationRun = $operationRun;
 
-        try {
-            $snapshot = $updatePlanBuilder->fromRequest($operationRun, $request);
-            $plan = $updatePlans->create($operationRun, $snapshot);
-        } catch (InvalidArgumentException|RuntimeException $exception) {
-            $this->activityOperationRun = $operationRuns->rejected($operationRun->id, [
-                'code' => 'update_plan_invalid',
-                'message' => $exception->getMessage(),
-            ]);
+        $plan = null;
 
-            return response()->json([
-                'error' => [
-                    'code' => 'validation_failed',
+        if ($hasInlineManifest) {
+            try {
+                $snapshot = $updatePlanBuilder->fromRequest($operationRun, $request);
+                $plan = $updatePlans->create($operationRun, $snapshot);
+            } catch (InvalidArgumentException|RuntimeException $exception) {
+                $this->activityOperationRun = $operationRuns->rejected($operationRun->id, [
+                    'code' => 'update_plan_invalid',
                     'message' => $exception->getMessage(),
-                    'meta' => [
-                        'reason' => 'update_plan_invalid',
-                    ],
-                ],
-            ], 422);
-        }
+                ]);
 
-        $this->activityUpdatePlan = $plan;
+                return response()->json([
+                    'error' => [
+                        'code' => 'validation_failed',
+                        'message' => $exception->getMessage(),
+                        'meta' => [
+                            'reason' => 'update_plan_invalid',
+                        ],
+                    ],
+                ], 422);
+            }
+
+            $this->activityUpdatePlan = $plan;
+        }
 
         $operationRuns->appendTree($operationRun->id, 'Update all', [
             ['key' => 'plan', 'label' => 'Resolve update plan'],
@@ -105,11 +113,13 @@ class UpdateAllStartController implements Loggable
 
         return response()->json([
             'success' => [
-                'data' => [
+                'data' => array_filter([
                     'operation_run' => $this->operationRunPayload($operationRun),
-                    'update_plan' => $this->updatePlanPayload($plan),
+                    'update_plan' => $plan instanceof OperationUpdatePlan
+                        ? $this->updatePlanPayload($plan)
+                        : null,
                     'events_url' => route('api.operations.events', ['operationRun' => $operationRun->id], false),
-                ],
+                ], fn (mixed $value): bool => $value !== null),
             ],
         ], 202);
     }
@@ -146,6 +156,22 @@ class UpdateAllStartController implements Loggable
     public function description(): ?string
     {
         return null;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function startRequestPayload(UpdateAllStartApiRequest $request): array
+    {
+        return array_filter([
+            'target_version' => $request->input('target_version'),
+            'manifest_source' => $request->input('manifest_source'),
+            'manifest_version' => $request->input('manifest_version'),
+            'manifest' => $request->input('manifest'),
+            'gateway_image' => $request->input('gateway_image'),
+            'cli_artifacts' => $request->input('cli_artifacts'),
+            'role_images' => $request->input('role_images'),
+        ], fn (mixed $value): bool => $value !== null);
     }
 
     private function captureActivitySubject(UpdateAllStartApiRequest $request): void

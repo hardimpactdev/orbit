@@ -6,9 +6,13 @@ namespace App\Services\Operations;
 
 use App\Contracts\RemoteShell;
 use App\Data\Operations\FleetVersionReport;
+use App\Data\RemoteShell\RemoteShellPoolJob;
+use App\Data\RemoteShell\RemoteShellPoolResult;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\RemoteShell\RemoteShellPool;
+use JsonException;
 
 /**
  * Probes the current Orbit version of the gateway and each selected workload
@@ -16,19 +20,22 @@ use App\Models\OperationUpdatePlan;
  *
  * The gateway version is read from the baked `app.version` config (the gateway
  * is the local target). Each workload node version is read remotely with
- * `orbit --version` through gateway-owned node execution, reusing the same
- * {@see RemoteShell} transport as {@see FleetUpdateVerifier}. A version that
- * cannot be read or parsed is reported as `null` and counts as outdated so the
- * node is still updated rather than silently skipped.
+ * `orbit --version --json` through gateway-owned node execution, reusing the
+ * same {@see RemoteShell} transport as {@see FleetUpdateVerifier}. A version
+ * that cannot be read or parsed is reported as `null` and counts as outdated so
+ * the node is still updated rather than silently skipped.
  */
 final readonly class FleetVersionProbe
 {
-    private const string VersionCommand = 'orbit --version';
+    private const string VersionCommand = 'orbit --version --json';
 
-    private const int VersionTimeoutSeconds = 30;
+    private const int VersionTimeoutSeconds = 10;
+
+    private const int DefaultConcurrency = 4;
 
     public function __construct(
         private RemoteShell $remoteShell,
+        private RemoteShellPool $remoteShellPool,
         private FleetUpdateTargetSelector $targets,
     ) {}
 
@@ -44,9 +51,8 @@ final readonly class FleetVersionProbe
             $outdated++;
         }
 
-        foreach ($this->targets->workloadNodes() as $node) {
-            $version = $this->nodeVersion($node, $operationRun);
-            $nodeVersions[$node->name] = $version;
+        foreach ($this->probeWorkloadNodeVersions($operationRun) as $nodeName => $version) {
+            $nodeVersions[$nodeName] = $version;
 
             if (! $this->isCurrent($version, $target)) {
                 $outdated++;
@@ -96,13 +102,83 @@ final readonly class FleetVersionProbe
         return $version !== null && version_compare($version, $target, '==');
     }
 
-    private function parseVersion(string $output): ?string
+    /**
+     * @return array<string, ?string>
+     */
+    private function probeWorkloadNodeVersions(OperationRun $operationRun): array
     {
-        if (preg_match('/(\d+\.\d+\.\d+(?:[A-Za-z0-9.+-]*)?)/', $output, $matches) !== 1) {
+        $nodes = $this->targets->workloadNodes();
+
+        if ($nodes->isEmpty()) {
+            return [];
+        }
+
+        $jobs = [];
+
+        foreach ($nodes as $node) {
+            $jobs[] = new RemoteShellPoolJob(
+                key: $node->name,
+                node: $node,
+                script: self::VersionCommand,
+                options: [
+                    'cwd' => $node->orbit_path,
+                    'timeout' => self::VersionTimeoutSeconds,
+                    'metadata' => [
+                        'ORBIT_OPERATION_ID' => $operationRun->id,
+                    ],
+                ],
+            );
+        }
+
+        $versions = [];
+
+        foreach ($this->remoteShellPool->run($jobs, $this->concurrency()) as $result) {
+            $versions[$result->key] = $this->versionFromPoolResult($result);
+        }
+
+        return $versions;
+    }
+
+    private function versionFromPoolResult(RemoteShellPoolResult $result): ?string
+    {
+        if ($result->exception !== null || $result->result === null || ! $result->result->successful()) {
             return null;
         }
 
-        return $this->normalize($matches[1]);
+        return $this->parseVersion($result->result->output());
+    }
+
+    private function parseVersion(string $output): ?string
+    {
+        try {
+            $decoded = json_decode($output, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        $success = $decoded['success'] ?? null;
+
+        if (! is_array($success)) {
+            return null;
+        }
+
+        $data = $success['data'] ?? null;
+
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $version = $data['version'] ?? null;
+
+        if (! is_string($version)) {
+            return null;
+        }
+
+        return $this->normalize($version);
     }
 
     private function normalize(string $version): ?string
@@ -114,5 +190,12 @@ final readonly class FleetVersionProbe
         }
 
         return $version;
+    }
+
+    private function concurrency(): int
+    {
+        $concurrency = (int) config('orbit.updates.fleet_version_probe_concurrency', self::DefaultConcurrency);
+
+        return max(1, $concurrency);
     }
 }

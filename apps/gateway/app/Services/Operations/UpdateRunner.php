@@ -23,6 +23,7 @@ final readonly class UpdateRunner
     public function __construct(
         private OperationRunRecorder $operationRuns,
         private OperationUpdatePlanStore $updatePlans,
+        private UpdatePlanBuilder $updatePlanBuilder,
         private UpdateLeaseManager $leases,
         private UpdateRunnerPipeline $pipeline,
         private FleetVersionProbe $fleetVersions,
@@ -32,6 +33,10 @@ final readonly class UpdateRunner
     public function start(string $operationRunId): OperationUpdatePlan
     {
         [$operationRun, $plan] = $this->loadRunnableContext($operationRunId);
+
+        if (! $plan instanceof OperationUpdatePlan) {
+            throw new RuntimeException("Operation update plan for run [{$operationRunId}] was not found.");
+        }
 
         $this->markStarted($operationRun, $plan);
 
@@ -51,11 +56,14 @@ final readonly class UpdateRunner
                 operationRun: $operationRun,
                 ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
                 ttlSeconds: $this->leaseTtlSeconds(),
-                callback: function () use ($operationRun, $plan, &$allCurrent): void {
-                    $this->markStarted($operationRun, $plan);
+                callback: function () use ($operationRun, &$plan, &$allCurrent): void {
+                    if ($plan instanceof OperationUpdatePlan) {
+                        $this->markStarted($operationRun, $plan);
+                    }
+
                     $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
 
-                    $report = $this->runCheckSteps($operationRun, $plan);
+                    [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
 
                     if ($report->outdatedCount === 0) {
                         // All-current short-circuit: skip gateway, workload, and verification phases.
@@ -119,9 +127,21 @@ final readonly class UpdateRunner
      * Returns the fleet version report so the caller can short-circuit when
      * nothing is outdated.
      */
-    private function runCheckSteps(OperationRun $operationRun, OperationUpdatePlan $plan): FleetVersionReport
+    /**
+     * @return array{0: OperationUpdatePlan, 1: FleetVersionReport}
+     */
+    private function runCheckSteps(OperationRun $operationRun, ?OperationUpdatePlan $plan): array
     {
         $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'running', 'Checking');
+
+        if (! $plan instanceof OperationUpdatePlan) {
+            $plan = $this->updatePlans->create(
+                $operationRun,
+                $this->updatePlanBuilder->fromStoredStartRequest($operationRun),
+            );
+            $this->markStarted($operationRun, $plan);
+        }
+
         $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'done', "Done: latest version is {$plan->target_version}");
 
         $this->operationRuns->appendStep($operationRun->id, 'check-fleet-versions', 'running', 'Checking');
@@ -141,7 +161,7 @@ final readonly class UpdateRunner
             $payloadExtras,
         );
 
-        return $report;
+        return [$plan, $report];
     }
 
     private function fleetVersionsMessage(int $outdatedCount, string $targetVersion): string
@@ -343,7 +363,7 @@ final readonly class UpdateRunner
     }
 
     /**
-     * @return array{0: OperationRun, 1: OperationUpdatePlan}
+     * @return array{0: OperationRun, 1: OperationUpdatePlan|null}
      */
     private function loadRunnableContext(string $operationRunId): array
     {
@@ -363,13 +383,7 @@ final readonly class UpdateRunner
             throw new RuntimeException("Operation run [{$operationRunId}] is already terminal.");
         }
 
-        $plan = $this->updatePlans->forOperationRun($operationRunId);
-
-        if (! $plan instanceof OperationUpdatePlan) {
-            throw new RuntimeException("Operation update plan for run [{$operationRunId}] was not found.");
-        }
-
-        return [$operationRun, $plan];
+        return [$operationRun, $this->updatePlans->forOperationRun($operationRunId)];
     }
 
     private function ownerToken(OperationRun $operationRun, string $resourceType, string $resourceKey): string

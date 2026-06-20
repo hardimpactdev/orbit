@@ -46,7 +46,7 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
 
     $updateScripts = array_values(array_filter(
         $remoteShell->calls,
-        fn (array $call): bool => $call['script'] !== 'orbit --version' && ! str_contains($call['script'], 'doctor'),
+        fn (array $call): bool => ! str_starts_with($call['script'], 'orbit --version') && ! str_contains($call['script'], 'doctor'),
     ));
 
     expect($gatewayUpdater->gatewayImages)->toBe([

@@ -33,6 +33,10 @@ beforeEach(function (): void {
 
     $this->configRoot = sys_get_temp_dir().'/orbit-update-all-start-'.bin2hex(random_bytes(6));
     config()->set('orbit.paths.config_root', $this->configRoot);
+    config()->set(
+        'orbit.updates.gateway_image',
+        'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+    );
 
     $this->gateway = createTestGatewayNode([
         'name' => 'gateway',
@@ -172,7 +176,7 @@ it('accepts configured local testing gateway image overrides when digest pinned'
         ->assertJsonPath('success.data.update_plan.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:testing@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
 });
 
-it('resolves the configured release manifest when the request omits an inline manifest', function (): void {
+it('returns the event stream before resolving a remote manifest when the request omits an inline manifest', function (): void {
     $manifest = updateAllStartManifest([
         'version' => '2.0.0',
         'images' => [
@@ -187,13 +191,30 @@ it('resolves the configured release manifest when the request omits an inline ma
     $response = updateAllStartRequest([]);
 
     $response->assertStatus(202)
-        ->assertJsonPath('success.data.update_plan.target_version', '2.0.0')
-        ->assertJsonPath('success.data.update_plan.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff');
+        ->assertJsonPath('success.data.operation_run.type', 'update:all')
+        ->assertJsonPath('success.data.operation_run.status', 'queued')
+        ->assertJsonMissingPath('success.data.update_plan');
 
     $operationRunId = $response->json('success.data.operation_run.id');
 
-    expect(OperationUpdatePlan::query()->where('operation_run_id', $operationRunId)->first()?->manifest_snapshot)
-        ->toBe($manifest);
+    expect($operationRunId)->toBeString()
+        ->and($response->json('success.data.events_url'))->toBe("/api/operations/{$operationRunId}/events")
+        ->and(OperationUpdatePlan::query()->count())->toBe(0)
+        ->and(OperationRun::query()->findOrFail($operationRunId)->result)->toMatchArray([
+            'update_start_request' => [],
+        ]);
+
+    Http::assertNothingSent();
+
+    Process::assertRan(function ($process): bool {
+        $command = (string) $process->command;
+
+        expect($command)->toContain(
+            'ghcr.io/hardimpactdev/orbit-gateway:current@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+        );
+
+        return true;
+    });
 });
 
 it('marks the operation failed when the one shot runner cannot be launched', function (): void {

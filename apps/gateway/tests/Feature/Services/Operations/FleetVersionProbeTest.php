@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Contracts\StartsRemoteShellProcesses;
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
@@ -11,7 +12,11 @@ use App\Services\Operations\FleetVersionProbe;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\RemoteShell\RemoteShellMetadata;
+use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Process\FakeInvokedProcess;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -43,8 +48,97 @@ it('probes the gateway and each workload node version and counts outdated nodes'
         ])
         ->and($report->outdatedCount)->toBe(1)
         ->and($report->allCurrent())->toBeFalse()
-        ->and($shell->scripts)->toBe(['orbit --version', 'orbit --version'])
+        ->and($shell->scripts)->toBe(['orbit --version --json', 'orbit --version --json'])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id]);
+});
+
+it('parses orbit --version --json success.data.version from each node', function (): void {
+    config()->set('app.version', '2.0.0');
+
+    $shell = new FleetVersionProbeFakeShell(versions: [
+        'agent-1' => '1.0.0',
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = fleetVersionProbeRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($report->nodeVersions['agent-1'])->toBe('1.0.0')
+        ->and($shell->scripts)->toBe(['orbit --version --json']);
+});
+
+it('treats malformed json, failed commands, and missing version fields as outdated', function (string $node, RemoteShellResult $result): void {
+    config()->set('app.version', '2.0.0');
+
+    app()->instance(RemoteShell::class, new FleetVersionProbeFakeShell(
+        versions: ['agent-1' => '2.0.0'],
+        failures: [$node => $result],
+    ));
+
+    $run = fleetVersionProbeRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($report->nodeVersions[$node])->toBeNull()
+        ->and($report->outdatedCount)->toBe(1);
+})->with([
+    'failed command' => [
+        'app-dev-1',
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'unreachable', durationMs: 5),
+    ],
+    'malformed json' => [
+        'app-dev-1',
+        new RemoteShellResult(exitCode: 0, stdout: 'not-json', stderr: '', durationMs: 5),
+    ],
+    'missing version field' => [
+        'app-dev-1',
+        new RemoteShellResult(exitCode: 0, stdout: json_encode(['success' => ['data' => []]], JSON_THROW_ON_ERROR), stderr: '', durationMs: 5),
+    ],
+]);
+
+it('runs node version probes concurrently through RemoteShellPool while preserving stable result order', function (): void {
+    config()->set('app.version', '2.0.0');
+    config()->set('orbit.updates.fleet_version_probe_concurrency', 2);
+
+    $shell = new FleetVersionProbeAsyncShell(versions: [
+        'agent-1' => '1.0.0',
+        'app-dev-1' => '2.0.0',
+        'app-prod-1' => '2.0.0',
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = fleetVersionProbeRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
+
+    $report = app(FleetVersionProbe::class)->probe($run, $plan);
+
+    expect($report->nodeVersions)->toBe([
+        'agent-1' => '1.0.0',
+        'app-dev-1' => '2.0.0',
+        'app-prod-1' => '2.0.0',
+    ])
+        ->and($shell->maxActiveProcesses)->toBeGreaterThan(1)
+        ->and($shell->runCalls)->toBe(0)
+        ->and($shell->scripts)->toBe([
+            'orbit --version --json',
+            'orbit --version --json',
+            'orbit --version --json',
+        ]);
 });
 
 it('counts the gateway as outdated when its baked version is behind the target', function (): void {
@@ -192,6 +286,174 @@ final class FleetVersionProbeFakeShell implements RemoteShell
 
         $version = $this->versions[$node->name] ?? '0.0.0';
 
-        return new RemoteShellResult(exitCode: 0, stdout: "Version       {$version}\nReleased at   18-06-2026\n", stderr: '', durationMs: 5);
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: fleetVersionProbeJsonStdout($version),
+            stderr: '',
+            durationMs: 5,
+        );
     }
+}
+
+final class FleetVersionProbeAsyncShell implements RemoteShell, StartsRemoteShellProcesses
+{
+    /**
+     * @var list<array{node: string, script: string, options: array<string, mixed>}>
+     */
+    public array $calls = [];
+
+    /**
+     * @var list<string>
+     */
+    public array $scripts = [];
+
+    public int $maxActiveProcesses = 0;
+
+    public int $runCalls = 0;
+
+    public int $activeProcesses = 0;
+
+    /**
+     * @param  array<string, string>  $versions
+     */
+    public function __construct(
+        private array $versions = [],
+    ) {}
+
+    #[Override]
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $this->runCalls++;
+        $this->calls[] = [
+            'node' => $node->name,
+            'script' => $script,
+            'options' => $options,
+        ];
+        $this->scripts[] = $script;
+
+        $version = $this->versions[$node->name] ?? '0.0.0';
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: fleetVersionProbeJsonStdout($version),
+            stderr: '',
+            durationMs: 1,
+        );
+    }
+
+    #[Override]
+    public function start(Node $node, string $script, array $options = []): InvokedProcess
+    {
+        $this->calls[] = [
+            'node' => $node->name,
+            'script' => $script,
+            'options' => $options,
+        ];
+        $this->scripts[] = $script;
+
+        $version = $this->versions[$node->name] ?? '0.0.0';
+        $this->activeProcesses++;
+        $this->maxActiveProcesses = max($this->maxActiveProcesses, $this->activeProcesses);
+
+        return new FleetVersionProbeTrackingInvokedProcess(
+            new FakeInvokedProcess(
+                command: $script,
+                process: Process::describe()
+                    ->output(fleetVersionProbeJsonStdout($version))
+                    ->exitCode(0),
+            ),
+            function (): void {
+                $this->activeProcesses--;
+            },
+        );
+    }
+}
+
+final class FleetVersionProbeTrackingInvokedProcess implements InvokedProcess
+{
+    private bool $finished = false;
+
+    public function __construct(
+        private readonly InvokedProcess $process,
+        private readonly Closure $onFinished,
+    ) {}
+
+    public function id(): ?int
+    {
+        return $this->process->id();
+    }
+
+    public function command(): string
+    {
+        return $this->process->command();
+    }
+
+    public function signal(int $signal): static
+    {
+        $this->process->signal($signal);
+
+        return $this;
+    }
+
+    public function running(): bool
+    {
+        return $this->process->running();
+    }
+
+    public function output(): string
+    {
+        return $this->process->output();
+    }
+
+    public function errorOutput(): string
+    {
+        return $this->process->errorOutput();
+    }
+
+    public function latestOutput(): string
+    {
+        return $this->process->latestOutput();
+    }
+
+    public function latestErrorOutput(): string
+    {
+        return $this->process->latestErrorOutput();
+    }
+
+    public function wait(?callable $output = null): ProcessResult
+    {
+        $result = $this->process->wait($output);
+        $this->markFinished();
+
+        return $result;
+    }
+
+    public function waitUntil(?callable $output = null): ProcessResult
+    {
+        $result = $this->process->waitUntil($output);
+        $this->markFinished();
+
+        return $result;
+    }
+
+    private function markFinished(): void
+    {
+        if ($this->finished) {
+            return;
+        }
+
+        ($this->onFinished)();
+        $this->finished = true;
+    }
+}
+
+function fleetVersionProbeJsonStdout(string $version): string
+{
+    return json_encode([
+        'success' => [
+            'data' => [
+                'version' => $version,
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
 }

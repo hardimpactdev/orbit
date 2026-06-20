@@ -225,15 +225,18 @@ final readonly class OperationRunRecorder
     ): OperationRun {
         $run = $this->findOrFail($id);
 
-        $run->forceFill(array_filter([
+        $attributes = array_filter([
             'status' => $status,
             'finished_at' => Carbon::now(),
             'exit_code' => $exitCode,
-            'result' => $result,
-            'error' => $error,
             'stdout_summary' => $stdoutSummary,
             'stderr_summary' => $stderrSummary,
-        ], fn (mixed $value): bool => $value !== null))->save();
+        ], fn (mixed $value): bool => $value !== null);
+
+        $attributes['result'] = $result;
+        $attributes['error'] = $error;
+
+        $run->forceFill($attributes)->save();
 
         return $run->refresh();
     }
