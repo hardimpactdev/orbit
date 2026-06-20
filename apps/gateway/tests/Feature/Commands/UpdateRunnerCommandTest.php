@@ -50,15 +50,15 @@ it('loads the immutable update plan and writes runner start events', function ()
         ]);
 });
 
-it('fails fast when the operation run has no persisted update plan', function (): void {
+it('fails fast when the operation run has no persisted update plan or deferred start payload', function (): void {
     $run = updateRunnerCommandRun();
 
     $this->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
-        ->expectsOutputToContain("Operation update plan for run [{$run->id}] was not found.")
+        ->expectsOutputToContain('Deferred update start request payload was not found on the operation run.')
         ->assertFailed();
 
-    expect($run->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and($run->events()->count())->toBe(0);
+    expect($run->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($run->events()->where('event_type', 'step')->count())->toBeGreaterThan(0);
 });
 
 it('fails fast when the operation run is already terminal', function (): void {

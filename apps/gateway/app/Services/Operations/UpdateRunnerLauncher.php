@@ -6,6 +6,8 @@ namespace App\Services\Operations;
 
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Gateway\GatewayImageReference;
+use App\Services\Gateway\GatewaySwarmManager;
 use App\Services\Gateway\GatewaySwarmStackRenderer;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\File;
@@ -22,23 +24,21 @@ final readonly class UpdateRunnerLauncher
 
     public function __construct(
         private OperationUpdatePlanStore $plans,
+        private GatewaySwarmManager $swarm,
     ) {}
 
     public function launch(OperationRun|string $operationRun): ProcessResult
     {
         $operationRunId = $this->operationRunId($operationRun);
         $plan = $this->plans->forOperationRun($operationRunId);
-
-        if (! $plan instanceof OperationUpdatePlan) {
-            throw new RuntimeException("Operation update plan for run [{$operationRunId}] was not found.");
-        }
+        $image = $this->runnerImage($plan);
 
         $configRoot = $this->configRoot();
         File::ensureDirectoryExists($configRoot, 0700);
 
         $result = Process::timeout(60)->run($this->dockerRunCommand(
             operationRunId: $operationRunId,
-            image: $plan->gateway_image,
+            image: $image,
             hostConfigRoot: $configRoot,
         ));
 
@@ -60,6 +60,43 @@ final readonly class UpdateRunnerLauncher
         }
 
         return $operationRunId;
+    }
+
+    private function runnerImage(?OperationUpdatePlan $plan): string
+    {
+        if ($plan instanceof OperationUpdatePlan) {
+            return $plan->gateway_image;
+        }
+
+        return $this->bootstrapGatewayImage();
+    }
+
+    private function bootstrapGatewayImage(): string
+    {
+        $configured = config('orbit.updates.gateway_image');
+
+        if (is_string($configured) && trim($configured) !== '') {
+            return $this->digestPinnedImage($configured, 'Orbit gateway bootstrap image');
+        }
+
+        $running = $this->swarm->serviceImage(GatewaySwarmManager::DeployedGatewayService);
+
+        if ($running === null) {
+            throw new RuntimeException('Orbit gateway bootstrap image is not configured and the running gateway service image could not be resolved.');
+        }
+
+        return $this->digestPinnedImage($running, 'Running gateway service image');
+    }
+
+    private function digestPinnedImage(string $image, string $label): string
+    {
+        $reference = GatewayImageReference::fromString($image);
+
+        if (! $reference->isDigestPinned()) {
+            throw new RuntimeException("{$label} must be digest-pinned.");
+        }
+
+        return $reference->canonical();
     }
 
     private function dockerRunCommand(string $operationRunId, string $image, string $hostConfigRoot): string

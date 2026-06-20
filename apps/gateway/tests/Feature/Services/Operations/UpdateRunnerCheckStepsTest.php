@@ -15,7 +15,9 @@ use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\UpdateRunnerPipeline;
 use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
@@ -107,6 +109,108 @@ it('short-circuits when the fleet-version probe finds 0 outdated nodes', functio
         ->and($keys)->not->toContain('gateway')
         ->and($keys)->not->toContain('workload-nodes')
         ->and($keys)->not->toContain('verification');
+});
+
+it('emits check-fleet-versions running before any node version probe call', function (): void {
+    config()->set('app.version', '2.0.0');
+
+    $shell = new CheckStepsOrderingShell(versions: [
+        'agent-1' => '1.0.0',
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+    app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
+
+    $run = checkStepsRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
+
+    app(UpdateRunner::class)->run($run->id);
+
+    expect($shell->probeStarted)->toBeTrue()
+        ->and($shell->probeStartedAfterFleetCheckRunning)->toBeTrue();
+});
+
+it('clears the deferred start payload from the operation result when manifest resolution fails', function (): void {
+    Http::fake([
+        'github.com/*' => Http::response('unavailable', 503),
+    ]);
+
+    app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
+
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+        result: ['update_start_request' => []],
+    );
+
+    expect(fn () => app(UpdateRunner::class)->run($run->id))
+        ->toThrow(RuntimeException::class);
+
+    $run->refresh();
+
+    expect($run->status)->toBe(OperationStatus::Failed)
+        ->and($run->result)->toBeNull()
+        ->and($run->error)->toMatchArray([
+            'code' => 'update_runner_failed',
+        ]);
+});
+
+it('resolves the release manifest during check-updates when no plan was persisted at start', function (): void {
+    config()->set('app.version', '2.0.0');
+
+    $manifest = [
+        'schema_version' => 1,
+        'version' => '2.0.0',
+        'source' => 'github-release',
+        'images' => [
+            'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ],
+        'cli_artifacts' => [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+                'sha256' => str_repeat('b', 64),
+            ],
+        ],
+        'role_images' => [
+            'orbit-caddy' => 'caddy:2-alpine',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:2.0.0@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+        ],
+    ];
+
+    Http::fake([
+        'github.com/*' => Http::response($manifest, 200),
+    ]);
+
+    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
+        'agent-1' => '2.0.0',
+    ]));
+    app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
+
+    $run = app(OperationRunRecorder::class)->queued(
+        operationId: (string) Str::uuid(),
+        lane: 'gateway',
+        operationType: 'update:all',
+        result: ['update_start_request' => []],
+    );
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    app(UpdateRunner::class)->run($run->id);
+
+    $plan = OperationUpdatePlan::query()->where('operation_run_id', $run->id)->first();
+
+    expect($plan)->not->toBeNull()
+        ->and($plan->target_version)->toBe('2.0.0')
+        ->and(checkStepsEvents($run))->toContain(
+            ['check-updates', 'running', 'Checking'],
+            ['check-updates', 'done', 'Done: latest version is 2.0.0'],
+            ['check-fleet-versions', 'running', 'Checking'],
+        );
+
+    Http::assertSentCount(1);
 });
 
 it('does not short-circuit when at least one node is outdated', function (): void {
@@ -250,6 +354,47 @@ final class CheckStepsFakeShell implements RemoteShell
 
         $version = $this->versions[$node->name] ?? '0.0.0';
 
-        return new RemoteShellResult(exitCode: 0, stdout: "Version       {$version}\n", stderr: '', durationMs: 5);
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(['success' => ['data' => ['version' => $version]]], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        );
+    }
+}
+
+final class CheckStepsOrderingShell implements RemoteShell
+{
+    public bool $probeStarted = false;
+
+    public bool $probeStartedAfterFleetCheckRunning = false;
+
+    /**
+     * @param  array<string, string>  $versions
+     */
+    public function __construct(
+        private array $versions = [],
+    ) {}
+
+    #[Override]
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if ($script === 'orbit --version --json') {
+            $this->probeStarted = true;
+            $this->probeStartedAfterFleetCheckRunning = OperationEvent::query()
+                ->where('event_type', 'step')
+                ->where('payload->key', 'check-fleet-versions')
+                ->where('payload->status', 'running')
+                ->exists();
+        }
+
+        $version = $this->versions[$node->name] ?? '0.0.0';
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: json_encode(['success' => ['data' => ['version' => $version]]], JSON_THROW_ON_ERROR),
+            stderr: '',
+            durationMs: 5,
+        );
     }
 }

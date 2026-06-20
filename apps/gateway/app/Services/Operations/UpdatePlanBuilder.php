@@ -17,6 +17,21 @@ class UpdatePlanBuilder
         private readonly ReleaseManifestResolver $releaseManifestResolver,
     ) {}
 
+    public function fromStoredStartRequest(OperationRun $operationRun): OperationUpdatePlanSnapshot
+    {
+        $result = $operationRun->result;
+        $startRequest = is_array($result) ? ($result['update_start_request'] ?? null) : null;
+
+        if (! is_array($startRequest)) {
+            throw new RuntimeException('Deferred update start request payload was not found on the operation run.');
+        }
+
+        return $this->fromRequest(
+            $operationRun,
+            Request::create('/api/update/all/start', 'POST', $startRequest),
+        );
+    }
+
     public function fromRequest(OperationRun $operationRun, Request $request): OperationUpdatePlanSnapshot
     {
         $manifest = $this->releaseManifest($request);
