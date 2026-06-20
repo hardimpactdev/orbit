@@ -13,14 +13,16 @@ use DateTimeZone;
 final class VersionCommand extends LocalOnlyCommand
 {
     #[\Override]
-    protected $signature = 'version {--json : Output JSON}';
+    protected $signature = 'version {--local : Read only local installed metadata without checking release sources} {--json : Output JSON}';
 
     #[\Override]
     protected $description = 'Show Orbit version and release metadata';
 
     public function handle(VersionInfoResolver $versions): int
     {
-        $info = $versions->resolve();
+        $info = $this->option('local')
+            ? $versions->resolveLocal()
+            : $versions->resolve();
 
         if ($this->wantsJson()) {
             return $this->renderSuccess($info->toArray());

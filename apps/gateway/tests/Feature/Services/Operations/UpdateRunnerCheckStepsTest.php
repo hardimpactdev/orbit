@@ -379,7 +379,7 @@ final class CheckStepsOrderingShell implements RemoteShell
     #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        if ($script === 'orbit --version --json') {
+        if ($script === 'orbit --version --local --json') {
             $this->probeStarted = true;
             $this->probeStartedAfterFleetCheckRunning = OperationEvent::query()
                 ->where('event_type', 'step')

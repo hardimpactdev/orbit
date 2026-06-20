@@ -64,6 +64,10 @@ execution details live in the renderer contracts.
   event stream URL promptly and the runner resolves the latest release manifest
   during the `Checking for updates` step, then persists the immutable plan before
   `Checking fleet versions` or any later phase starts.
+- The start POST response is sent before the durable update runner is launched.
+  This lets the CLI connect to the operation event stream before any runner-side
+  gateway restart can interrupt the start response. Runner launch failures after
+  the response are recorded as operation journal errors.
 - After the plan is persisted, the runner must read only that immutable plan for
   the remainder of the run. It must not fetch or substitute a fresh manifest
   during gateway, workload, or verification phases.
@@ -73,10 +77,10 @@ execution details live in the renderer contracts.
 - `update:all` runs a `Checking for updates` step first, resolving the latest
   available release version from the configured release source.
 - It then runs a `Checking fleet versions` step that probes each selected
-  installation's current orbit version (read-only `orbit --version --json` over
-  bounded-concurrency `RemoteShell`) and counts how many are behind the latest
-  release. Unparseable or failed version reads count as outdated so the UI never
-  appears stuck behind a silent node.
+  installation's current orbit version (read-only local-only
+  `orbit --version --local --json` over bounded-concurrency `RemoteShell`) and
+  counts how many are behind the latest release. Unparseable or failed version
+  reads count as outdated so the UI never appears stuck behind a silent node.
 - When every node is already on the latest release (0 outdated), the command
   short-circuits: the gateway/workload/verification phases are skipped entirely
   and the operation terminates with `Skipped: <version> is already installed on
@@ -198,10 +202,10 @@ The expected target shape per calling context:
 - The remote update reconciles a shadowing launcher: when `orbit` resolves
   through the node's `PATH` to a launcher other than the relinked one (a legacy
   install earlier in `PATH`) that points at a different binary, it relinks that
-  launcher to the new binary too, so the node's `orbit` — and the fleet version
-  probe that reads `orbit --version --json` over `RemoteShell` — sees the new version
-  instead of a stale shadowed one. Best-effort: an unwritable legacy path is
-  left as-is rather than failing the node update.
+  launcher to the new binary too, so the node's `orbit` and the fleet version
+  probe that reads `orbit --version --local --json` over `RemoteShell` see the
+  new version instead of a stale shadowed one. Best-effort: an unwritable
+  legacy path is left as-is rather than failing the node update.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts and required role image metadata.
 - Remote update execution is gateway-owned node execution through `RemoteShell`.

@@ -75,7 +75,7 @@ class FleetUpdateVerifier
     private function verifyWorkloadCli(OperationRun $operationRun): null
     {
         foreach ($this->targets->workloadNodes() as $node) {
-            $result = $this->remoteShell->run($node, 'orbit --version', [
+            $result = $this->remoteShell->run($node, 'orbit --version --local', [
                 'cwd' => $node->orbit_path,
                 'timeout' => 30,
                 'metadata' => [

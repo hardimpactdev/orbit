@@ -10,6 +10,7 @@ use App\Http\Middleware\RequireGrantPermission;
 use App\Http\Middleware\WireGuardIdentity;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -217,7 +218,7 @@ it('returns the event stream before resolving a remote manifest when the request
     });
 });
 
-it('marks the operation failed when the one shot runner cannot be launched', function (): void {
+it('returns the event stream before recording a deferred runner launch failure', function (): void {
     Process::fake([
         'docker run *' => Process::result(errorOutput: "docker denied\n", exitCode: 1),
     ]);
@@ -227,16 +228,27 @@ it('marks the operation failed when the one shot runner cannot be launched', fun
         'manifest' => updateAllStartManifest(),
     ]);
 
-    $response->assertStatus(500)
-        ->assertJsonPath('error.code', 'update_runner_launch_failed');
+    $response->assertStatus(202)
+        ->assertJsonPath('success.data.operation_run.type', 'update:all')
+        ->assertJsonPath('success.data.operation_run.status', 'queued');
 
-    $operationRunId = $response->json('error.meta.operation_run_id');
+    $operationRunId = $response->json('success.data.operation_run.id');
     $run = OperationRun::query()->findOrFail($operationRunId);
     $errorEvent = $run->events()->where('event_type', 'error')->firstOrFail();
+    $stepPayloads = $run->events()
+        ->where('event_type', 'step')
+        ->get()
+        ->map(fn (OperationEvent $event): array => $event->payload)
+        ->all();
 
     expect($run->status)->toBe(OperationStatus::Failed)
         ->and($run->error['code'])->toBe('update_runner_launch_failed')
         ->and($run->events()->pluck('event_type')->all())->toBe(['tree', 'step', 'step', 'error'])
+        ->and($stepPayloads)->toContain([
+            'key' => 'runner',
+            'status' => 'failed',
+            'message' => 'Update runner launch failed',
+        ])
         ->and($errorEvent->payload)->toMatchArray([
             'message' => 'Update runner launch failed',
             'exit_code' => 1,

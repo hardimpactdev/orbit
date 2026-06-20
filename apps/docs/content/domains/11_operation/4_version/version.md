@@ -13,7 +13,7 @@ mutate fleet configuration.
 Use this form:
 
 ```bash
-orbit version [--json]
+orbit version [--local] [--json]
 ```
 
 The root `orbit --version` and `orbit -V` forms render the same output.
@@ -24,11 +24,14 @@ The root `orbit --version` and `orbit -V` forms render the same output.
 orbit version
 orbit --version
 orbit --version --json
+orbit --version --local --json
 ```
 
 ## Arguments and options
 
 - `--json`: Output JSON.
+- `--local`: Skip public release lookups and return only local installed
+  metadata. This is mainly for internal fleet probes and verification paths.
 
 ## What Happens
 
@@ -36,6 +39,10 @@ orbit --version --json
 `hardimpactdev/orbit` release manifest assets on a best-effort basis, and reads
 local install metadata from the operator host. The GitHub Releases API is only a
 fallback when public manifest metadata is missing.
+
+With `--local`, the command does not contact public release sources. It reports
+the installed version and install timestamp, with release metadata fields set to
+unknown or `null`.
 
 Use it when you need to confirm the installed Orbit version before or after an
 update.

@@ -111,7 +111,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
     ])
         ->and($shell->updatedNodes())->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->scriptsFor('agent-1'))->toBe(['orbit --version --json', $shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptsFor('agent-1'))->toBe(['orbit --version --local --json', $shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
         ->and($shell->activeLeases)->toBe([
             'agent-1' => ['node:agent-1'],
             'app-dev-1' => ['node:app-dev-1'],
@@ -130,6 +130,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toContain('download_cli')
         ->toContain('install_cli')
         ->toContain('verify_cli')
+        ->toContain('"$BIN_PATH" --version --local')
         ->toContain('reconcile_launcher')
         ->toContain('command -v orbit')
         ->toContain('sudo -n ln -sfn')
@@ -182,7 +183,7 @@ it('skips a workload node already on the target version and runs no remote updat
         ],
     ])
         ->and($shell->updatedNodes())->toBe(['app-prod-1'])
-        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version --json'])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version --local --json'])
         ->and(workloadUpdaterStepMessages($run))->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
         )
@@ -205,7 +206,7 @@ it('runs orbit doctor after a node update and reports the issue count in the don
     expect($results[0]['status'])->toBe('completed')
         ->and($results[0]['doctor_issues'])->toBe(2)
         ->and($results[1]['doctor_issues'])->toBe(0)
-        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version --json', $shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version --local --json', $shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
         ->and(workloadUpdaterStepMessages($run))->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
             ['workload.app-prod-1', 'done', 'Workload node app-prod-1 updated'],
@@ -318,7 +319,7 @@ it('continues updating later workload nodes when one remote update fails', funct
     ])
         ->and($shell->updatedNodes())->toBe(['app-dev-1', 'app-prod-1'])
         ->and($shell->scriptsFor('app-dev-1'))->toHaveCount(2)
-        ->and($shell->scriptsFor('app-prod-1'))->toBe(['orbit --version --json', $shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptsFor('app-prod-1'))->toBe(['orbit --version --local --json', $shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
@@ -618,12 +619,16 @@ function workloadUpdaterSnapshot(
 
 function workloadUpdaterIsVersionProbe(string $script): bool
 {
-    return $script === 'orbit --version' || $script === 'orbit --version --json';
+    return in_array($script, [
+        'orbit --version',
+        'orbit --version --local',
+        'orbit --version --local --json',
+    ], true);
 }
 
 function workloadUpdaterVersionStdout(string $version, string $script): string
 {
-    if ($script === 'orbit --version --json') {
+    if ($script === 'orbit --version --local --json') {
         return json_encode([
             'success' => [
                 'data' => [
