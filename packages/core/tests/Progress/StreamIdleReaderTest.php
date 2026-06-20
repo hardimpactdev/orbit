@@ -193,7 +193,7 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toContain('event: keepalive')
+        expect($chunk)->toBe('e')
             ->and($tickCount)->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();
@@ -202,7 +202,7 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
     }
 });
 
-it('reads selected native streams without blocking the descriptor during the PSR read', function (): void {
+it('reads selected native streams directly instead of delegating to blocking PSR reads', function (): void {
     [$readable, $writable] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
 
     if ($readable === false || $writable === false) {
@@ -213,20 +213,20 @@ it('reads selected native streams without blocking the descriptor during the PSR
     stream_set_blocking($writable, true);
     fwrite($writable, "event: ready\n\n");
 
-    $blockedDuringRead = null;
+    $psrReadCalled = false;
     $inner = Utils::streamFor($readable);
-    $stream = new class($inner, $readable, function (bool $blocked) use (&$blockedDuringRead): void {
-        $blockedDuringRead = $blocked;
+    $stream = new class($inner, $readable, function () use (&$psrReadCalled): void {
+        $psrReadCalled = true;
     }) implements StreamInterface
     {
-        private readonly Closure $recordBlockingMode;
+        private readonly Closure $recordPsrRead;
 
         public function __construct(
             private readonly StreamInterface $inner,
             private $resource,
-            callable $recordBlockingMode,
+            callable $recordPsrRead,
         ) {
-            $this->recordBlockingMode = Closure::fromCallable($recordBlockingMode);
+            $this->recordPsrRead = Closure::fromCallable($recordPsrRead);
         }
 
         public function __toString(): string
@@ -291,10 +291,9 @@ it('reads selected native streams without blocking the descriptor during the PSR
 
         public function read(int $length): string
         {
-            $metadata = stream_get_meta_data($this->resource);
-            ($this->recordBlockingMode)(($metadata['blocked'] ?? false) === true);
+            ($this->recordPsrRead)();
 
-            return $this->inner->read($length);
+            throw new RuntimeException('The selected resource read should not delegate to the PSR stream.');
         }
 
         public function getContents(): string
@@ -323,8 +322,8 @@ it('reads selected native streams without blocking the descriptor during the PSR
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toContain('event: ready')
-            ->and($blockedDuringRead)->toBeFalse()
+        expect($chunk)->toBe('e')
+            ->and($psrReadCalled)->toBeFalse()
             ->and(stream_get_meta_data($readable)['blocked'])->toBeTrue();
     } finally {
         $ticker->stop();
