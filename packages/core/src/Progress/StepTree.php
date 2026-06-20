@@ -234,8 +234,18 @@ final class StepTree
         }
 
         if ($pid === 0) {
-            // @phpstan-ignore-next-line Intentional child-process spinner loop.
+            if (function_exists('pcntl_signal') && function_exists('pcntl_async_signals')) {
+                pcntl_async_signals(true);
+                pcntl_signal(SIGTERM, static function (): void {
+                    exit(0);
+                });
+            }
+
             while (true) {
+                if (posix_getppid() === 1) {
+                    exit(0);
+                }
+
                 usleep($this->frameIntervalUs);
                 $this->paintActive($indices, $total, $labels);
             }

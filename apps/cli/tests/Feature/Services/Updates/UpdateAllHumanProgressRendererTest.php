@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Services\Updates\UpdateAllHumanProgressRenderer;
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -402,6 +403,29 @@ it('throttles active row alternation to about 300ms on decorated output', functi
     expect(stripRendererAnsi($output->fetch()))->toContain('◉  Checking for updates');
 });
 
+it('alternates active row indicators from open to filled and back to open', function (): void {
+    $output = new BufferedOutput(decorated: true);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-updates',
+        'status' => 'running',
+        'message' => 'Checking',
+    ]);
+    stopUpdateAllHumanProgressTicker($renderer);
+
+    expect(stripRendererAnsi($output->fetch()))->toContain('○  Checking for updates');
+
+    rewindUpdateAllHumanProgressCadence($renderer);
+    $renderer->tick();
+    expect(stripRendererAnsi($output->fetch()))->toContain('◉  Checking for updates');
+
+    rewindUpdateAllHumanProgressCadence($renderer);
+    $renderer->tick();
+    expect(stripRendererAnsi($output->fetch()))->toContain('○  Checking for updates');
+});
+
 it('does not emit ansi spinner noise or duplicate rows in non-decorated output', function (): void {
     $output = new BufferedOutput(decorated: false);
     $renderer = new UpdateAllHumanProgressRenderer;
@@ -429,6 +453,13 @@ function stopUpdateAllHumanProgressTicker(UpdateAllHumanProgressRenderer $render
     $method = new ReflectionMethod(UpdateAllHumanProgressRenderer::class, 'stopTicker');
     $method->setAccessible(true);
     $method->invoke($renderer);
+}
+
+function rewindUpdateAllHumanProgressCadence(UpdateAllHumanProgressRenderer $renderer): void
+{
+    $property = new ReflectionProperty(UpdateAllHumanProgressRenderer::class, 'lastFrameAtUs');
+    $property->setAccessible(true);
+    $property->setValue($renderer, ((int) (microtime(true) * 1_000_000)) - ForkedFrameTicker::DEFAULT_INTERVAL_US);
 }
 
 function stripRendererAnsi(string $text): string
