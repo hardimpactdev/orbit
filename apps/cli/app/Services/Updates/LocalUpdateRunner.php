@@ -150,8 +150,8 @@ final readonly class LocalUpdateRunner
             );
         }
 
-        $stepResults[self::STEP_REPLACE] = $replace['skipped'] ? 'skipped' : 'completed';
-        $this->emit($onStep, self::STEP_REPLACE, $replace['skipped'] ? 'skip' : 'done', $replace['skipped'] ? 'Skipped' : 'Done');
+        $stepResults[self::STEP_REPLACE] = 'completed';
+        $this->emit($onStep, self::STEP_REPLACE, 'done', 'Done');
 
         $this->emit($onStep, self::STEP_DOCTOR, 'progress', 'Running');
         $doctor = $this->updater->runDoctor();

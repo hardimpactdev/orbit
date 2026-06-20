@@ -37,6 +37,8 @@ interface RunsLocalUpdate
      * install metadata. When the versioned binary is already present locally the
      * move is skipped (`skipped` is `true`) and the staged copy is discarded; the
      * relink and verify still run so the launcher always points at the version.
+     * The `skipped` flag is a low-level move optimization only — the public
+     * `orbit update` `Replacing binary` step always settles as `Done` on success.
      *
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */

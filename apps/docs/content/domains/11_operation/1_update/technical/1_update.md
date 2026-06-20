@@ -107,7 +107,8 @@ progress-tree row:
    away from the running binary.
 2. `Replacing binary` — move the verified binary to
    `<install-root>/bin/orbit-binary-<version>` and relink the host launcher.
-   Skipped when the versioned binary is already present locally.
+   When the versioned binary is already present locally the move is skipped at
+   the updater layer, but the public step still runs and settles as `Done`.
 3. `Running doctor` — run `orbit doctor` in verify mode for the local node.
 
 ### Doctor Verification

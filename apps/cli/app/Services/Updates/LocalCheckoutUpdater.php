@@ -142,7 +142,9 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      * it, verify the launcher, and write the install metadata. When the
      * versioned binary is already present the move is skipped and the staged copy
      * discarded, but the relink and verify still run so the launcher always
-     * points at the requested version.
+     * points at the requested version. The returned `skipped` flag is a
+     * low-level move optimization only — {@see LocalUpdateRunner} always reports
+     * the public `Replacing binary` step as `Done` on success.
      *
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */

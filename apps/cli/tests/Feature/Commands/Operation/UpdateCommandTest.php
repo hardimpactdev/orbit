@@ -315,6 +315,80 @@ describe('update', function (): void {
             ->and($output)->not->toContain('"error"');
     });
 
+    it('reports the replace step as completed in JSON when the low-level move was skipped', function (): void {
+        config()->set('app.version', '0.1.130');
+        fakeUpdateLatest('0.1.131');
+        fakeGateway(['gateway' => ['version' => '0.1.131']]);
+
+        $this->updater->replaceResult = [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'skipped' => true,
+        ];
+
+        [$exitCode, $output] = runCommand($this, 'update', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['update']['steps'])->toBe([
+                ['name' => 'check', 'status' => 'completed'],
+                ['name' => 'download', 'status' => 'completed'],
+                ['name' => 'replace', 'status' => 'completed'],
+                ['name' => 'doctor', 'status' => 'completed'],
+            ]);
+    });
+
+    it('settles Replacing binary as Done in human mode when the low-level move was skipped', function (): void {
+        config()->set('app.version', '0.1.130');
+        fakeUpdateLatest('0.1.131');
+        fakeGateway(['gateway' => ['version' => '0.1.131']]);
+
+        $this->updater->replaceResult = [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'skipped' => true,
+        ];
+
+        [$exitCode, $output] = runCommand($this, 'update');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Replacing binary')
+            ->and($output)->toMatch('/Replacing binary\s+Done\b/')
+            ->and($output)->not->toMatch('/Replacing binary\s+Skipped\b/');
+    });
+
+    it('stops at check as already installed on a later run after replacement completed', function (): void {
+        config()->set('app.version', '0.1.130');
+        fakeUpdateLatest('0.1.131');
+        fakeGateway(['gateway' => ['version' => '0.1.131']]);
+
+        $this->updater->replaceResult = [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'skipped' => true,
+        ];
+
+        [$firstExitCode] = runCommand($this, 'update');
+        expect($firstExitCode)->toBe(0);
+
+        config()->set('app.version', '0.1.131');
+        $this->updater = new UpdateCommandFakeUpdater;
+        app()->instance(RunsLocalUpdate::class, $this->updater);
+
+        [$secondExitCode, $secondOutput] = runCommand($this, 'update');
+
+        expect($secondExitCode)->toBe(0)
+            ->and($secondOutput)->toContain('Skipped: 0.1.131 is already installed')
+            ->and($secondOutput)->not->toContain('Downloading binary')
+            ->and($secondOutput)->not->toContain('Replacing binary')
+            ->and($secondOutput)->not->toContain('Running doctor')
+            ->and($this->updater->calls)->toBe([]);
+    });
+
     it('surfaces the doctor issue count without failing the update in JSON mode', function (): void {
         config()->set('app.version', '0.1.130');
         fakeUpdateLatest('0.1.131');
