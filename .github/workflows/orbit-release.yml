@@ -35,9 +35,11 @@ jobs:
 
       - name: Resolve release version
         id: version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          tag="${RELEASE_TAG:-${GITHUB_REF_NAME:-}}"
           version="${tag#v}"
           canonical_version="$(bin/orbit-version)"
 
