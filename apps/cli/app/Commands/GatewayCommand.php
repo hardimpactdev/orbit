@@ -40,6 +40,15 @@ abstract class GatewayCommand extends Command
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
+    protected function gatewayPostWithIdleTicks(string $path, array $payload = []): array
+    {
+        return $this->gateway()->postWithIdleTicks($path, $payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
     protected function gatewayPut(string $path, array $payload = []): array
     {
         return $this->gateway()->put($path, $payload);

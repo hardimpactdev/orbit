@@ -9,6 +9,7 @@ if ($argc < 2) {
 
 $port = (int) $argv[1];
 $silentDelayMicroseconds = (int) (getenv('ORBIT_UPDATE_ALL_LIVENESS_SILENT_US') ?: '6000000');
+$startDelayMicroseconds = (int) (getenv('ORBIT_UPDATE_ALL_LIVENESS_START_DELAY_US') ?: '0');
 $server = stream_socket_server("tcp://127.0.0.1:{$port}", $errno, $errstr);
 
 if ($server === false) {
@@ -38,6 +39,10 @@ while (! $eventsSent && ($connection = @stream_socket_accept($server, 30)) !== f
     $path = parse_url($target, PHP_URL_PATH) ?: '/';
 
     if ($method === 'POST' && $path === '/api/update/all/start') {
+        if ($startDelayMicroseconds > 0) {
+            usleep($startDelayMicroseconds);
+        }
+
         writeJson($connection, [
             'success' => [
                 'data' => [

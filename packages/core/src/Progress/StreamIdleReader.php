@@ -30,6 +30,10 @@ final readonly class StreamIdleReader
         }
 
         while (! $stream->eof()) {
+            if (! $this->isValidStreamResource($resource)) {
+                return '';
+            }
+
             $read = [$resource];
             $write = null;
             $except = null;
@@ -40,6 +44,8 @@ final readonly class StreamIdleReader
 
             try {
                 $ready = stream_select($read, $write, $except, $seconds, $microseconds);
+            } catch (\ValueError|\TypeError) {
+                return '';
             } finally {
                 restore_error_handler();
             }
@@ -81,6 +87,11 @@ final readonly class StreamIdleReader
         }
 
         return '';
+    }
+
+    private function isValidStreamResource(mixed $resource): bool
+    {
+        return is_resource($resource) && get_resource_type($resource) === 'stream';
     }
 
     private function resolvePhpStream(StreamInterface $stream): mixed

@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
+use GuzzleHttp\Handler\CurlMultiHandler;
+use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Promises\LazyPromise;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ForkedFrameTicker;
 
 /**
  * Per decision D2: the CLI never sends a bearer identity. Production gateway API identity
@@ -59,6 +63,23 @@ final readonly class GatewayApiClient
     {
         return $this->decode(
             $this->request(fn () => $this->pendingRequest()->post($this->path($path), $payload)),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function postWithIdleTicks(string $path, array $payload = []): array
+    {
+        if (! ForkedFrameTicker::hasIdleCallback()) {
+            return $this->post($path, $payload);
+        }
+
+        return $this->decode(
+            $this->requestWithIdleTicks(
+                fn (CurlMultiHandler $handler) => $this->pendingRequestForDispatch($handler)->post($this->path($path), $payload),
+            ),
         );
     }
 
@@ -165,6 +186,60 @@ final readonly class GatewayApiClient
         }
 
         return $response;
+    }
+
+    /**
+     * @param  callable(CurlMultiHandler): (Response|PromiseInterface)  $callback
+     */
+    private function requestWithIdleTicks(callable $callback): Response
+    {
+        $handler = new CurlMultiHandler;
+
+        return $this->finalizeResponse($this->waitForResponseWithIdleTicks(fn () => $callback($handler), $handler));
+    }
+
+    /**
+     * @param  callable(): Response|PromiseInterface  $callback
+     */
+    private function waitForResponseWithIdleTicks(callable $callback, CurlMultiHandler $handler): Response
+    {
+        $result = $callback();
+
+        if ($result instanceof Response) {
+            return $result;
+        }
+
+        if ($result instanceof LazyPromise) {
+            $result->buildPromise();
+        }
+
+        while ($result->getState() === PromiseInterface::PENDING) {
+            $handler->tick();
+            ForkedFrameTicker::invokeIdleCallback();
+            usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+        }
+
+        try {
+            return $result->wait();
+        } catch (ConnectionException $exception) {
+            throw $this->classifyNetworkError($exception);
+        }
+    }
+
+    private function finalizeResponse(Response $response): Response
+    {
+        if ($response->failed()) {
+            throw GatewayApiException::httpError($response->status(), $response->body());
+        }
+
+        return $response;
+    }
+
+    private function pendingRequestForDispatch(CurlMultiHandler $handler): PendingRequest
+    {
+        return $this->pendingRequest()
+            ->async()
+            ->setHandler($handler);
     }
 
     /**

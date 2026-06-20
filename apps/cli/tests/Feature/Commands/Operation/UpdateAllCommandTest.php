@@ -822,6 +822,7 @@ require '{$escapedCliRoot}/vendor/autoload.php';
 
 config()->set('orbit.gateway.url', 'https://gateway.test');
 config()->set('orbit.gateway.timeout', 30);
+config()->set('app.version', '0.0.0');
 \$app->forgetInstance(GatewayApiClient::class);
 \$app->forgetInstance(GatewayOperationEventStreamClient::class);
 \$app->forgetInstance(GatewayOperationFollower::class);

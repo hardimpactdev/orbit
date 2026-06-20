@@ -8,6 +8,7 @@ use App\Services\GatewayApiClient;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ForkedFrameTicker;
 
 describe('GatewayApiClient', function (): void {
     it('returns decoded arrays from get requests', function (): void {
@@ -23,6 +24,93 @@ describe('GatewayApiClient', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
             && str_starts_with($request->url(), 'https://gateway.test/api/me')
             && str_contains($request->url(), 'include=permissions'));
+    });
+
+    it('uses the stubbed blocking post path when the HTTP client is faked', function (): void {
+        Http::fake([
+            'https://gateway.test/api/update/all/start' => Http::response(['started' => true], 200),
+        ]);
+
+        $tickCount = 0;
+        $ticker = new ForkedFrameTicker(50_000);
+        $ticker->start(function () use (&$tickCount): void {
+            $tickCount++;
+        });
+
+        try {
+            $result = new GatewayApiClient('https://gateway.test', 30)
+                ->postWithIdleTicks('/api/update/all/start');
+
+            expect($result)->toBe(['started' => true]);
+        } finally {
+            $ticker->stop();
+        }
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/update/all/start');
+    });
+
+    it('invokes progress idle callbacks while waiting for a slow post response', function (): void {
+        $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+
+        if ($server === false) {
+            test()->markTestSkipped('stream_socket_server is required for delayed gateway post coverage.');
+        }
+
+        $address = stream_socket_get_name($server, false);
+        $port = (int) substr((string) $address, strrpos((string) $address, ':') + 1);
+
+        $serverPid = pcntl_fork();
+
+        if ($serverPid === -1) {
+            fclose($server);
+
+            test()->markTestSkipped('pcntl_fork is required for delayed gateway post coverage.');
+        }
+
+        if ($serverPid === 0) {
+            $connection = stream_socket_accept($server);
+
+            if (is_resource($connection)) {
+                while (! feof($connection)) {
+                    $chunk = fread($connection, 8192);
+
+                    if ($chunk === false || $chunk === '') {
+                        break;
+                    }
+
+                    if (str_contains($chunk, "\r\n\r\n")) {
+                        break;
+                    }
+                }
+
+                usleep(300_000);
+                $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
+                fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
+                fclose($connection);
+            }
+
+            fclose($server);
+            exit(0);
+        }
+
+        $tickCount = 0;
+        $ticker = new ForkedFrameTicker(50_000);
+        $ticker->start(function () use (&$tickCount): void {
+            $tickCount++;
+        });
+
+        try {
+            $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
+                ->postWithIdleTicks('/api/update/all/start');
+
+            expect($result)->toBe(['started' => true])
+                ->and($tickCount)->toBeGreaterThanOrEqual(2);
+        } finally {
+            $ticker->stop();
+            pcntl_waitpid($serverPid, $status);
+            fclose($server);
+        }
     });
 
     it('returns decoded arrays from post requests and sends JSON payloads', function (): void {

@@ -45,7 +45,7 @@ final class UpdateAllCommand extends GatewayCommand
         ]);
 
         try {
-            $response = $this->gatewayPost('/api/update/all/start');
+            $response = $this->gatewayPostWithIdleTicks('/api/update/all/start');
         } catch (GatewayApiException $exception) {
             $progress->gatewayFailed($this->output, $exception->getMessage());
             $progress->finishFailure($this->output);

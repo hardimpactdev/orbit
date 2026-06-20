@@ -5,11 +5,13 @@ declare(strict_types=1);
 use Orbit\Core\Progress\VirtualTerminalScreen;
 
 if ($argc < 2) {
-    fwrite(STDERR, "usage: parse_update_all_liveness_transcript.php <typescript-path>\n");
+    fwrite(STDERR, "usage: parse_update_all_liveness_transcript.php <typescript-path> [label] [message]\n");
     exit(1);
 }
 
 $transcriptPath = $argv[1];
+$label = $argv[2] ?? 'gateway';
+$message = $argv[3] ?? 'Replacing cli binary';
 $transcript = is_readable($transcriptPath) ? (file_get_contents($transcriptPath) ?: '') : '';
 
 if ($transcript === '') {
@@ -42,8 +44,8 @@ $lastObservation = null;
 foreach (repaintChunks($transcript) as $chunk) {
     foreach ($screen->feedAndCollectMatchingSpinnerStates(
         $chunk,
-        'gateway',
-        'Replacing cli binary',
+        $label,
+        $message,
         $lastObservation,
     ) as $observation) {
         echo sprintf(

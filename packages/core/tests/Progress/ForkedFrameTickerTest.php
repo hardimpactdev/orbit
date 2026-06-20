@@ -18,7 +18,7 @@ it('registers an idle callback for stream polling even when pcntl fork support e
 
     $ticker->stop();
 
-    expect($tickCount)->toBe(2)
+    expect($tickCount)->toBe(1)
         ->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
 });
 
@@ -47,4 +47,20 @@ it('invokes tick callbacks in the parent process while work is blocked', functio
 
     expect($tickCount)->toBeGreaterThanOrEqual(2)
         ->and(array_values(array_unique($callbackPids)))->toBe([$parentPid]);
+});
+
+it('throttles duplicate idle invocations within one interval window', function (): void {
+    $tickCount = 0;
+    $ticker = new ForkedFrameTicker(100_000);
+    $ticker->start(function () use (&$tickCount): void {
+        $tickCount++;
+    });
+
+    ForkedFrameTicker::invokeIdleCallback();
+    ForkedFrameTicker::invokeIdleCallback();
+    ForkedFrameTicker::invokeIdleCallback();
+
+    $ticker->stop();
+
+    expect($tickCount)->toBe(1);
 });

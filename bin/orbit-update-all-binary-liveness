@@ -3,11 +3,15 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ROUTER="$ROOT/apps/cli/tests/Support/update_all_gateway_liveness_router.php"
+PARSER="$ROOT/apps/cli/tests/Support/parse_update_all_liveness_transcript.php"
 BINARY="${ORBIT_BINARY:-${ORBIT_E2E_BINARY_PATH:-}}"
+MODE="${ORBIT_UPDATE_ALL_LIVENESS_MODE:-all}"
 SILENT_US="${ORBIT_UPDATE_ALL_LIVENESS_SILENT_US:-6000000}"
+START_DELAY_US="${ORBIT_UPDATE_ALL_LIVENESS_START_DELAY_US:-6000000}"
 TS="${TMPDIR:-/tmp}/orbit-update-all-binary-liveness.typescript"
 SERVER_OUT="$(mktemp "${TMPDIR:-/tmp}/orbit-update-all-liveness-server.XXXXXX")"
 PORT=""
+SERVER_PID=""
 
 cleanup() {
   if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -24,8 +28,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ $# -ge 1 ]]; then
+if [[ $# -ge 1 && "$1" != gateway-sse && "$1" != start-post && "$1" != all ]]; then
   BINARY="$1"
+  shift
+fi
+
+if [[ $# -ge 1 ]]; then
+  MODE="$1"
 fi
 
 if [[ -z "$BINARY" ]]; then
@@ -51,8 +60,6 @@ if [[ -z "$SCRIPT_BIN" ]]; then
 fi
 
 reserve_port() {
-  local socket
-  socket="$(mktemp -u "${TMPDIR:-/tmp}/orbit-liveness-port.XXXXXX")"
   php -r '
 $socket = stream_socket_server("tcp://127.0.0.1:0", $errno, $errstr);
 if ($socket === false) {
@@ -73,7 +80,7 @@ wait_for_server() {
       exit 2
     fi
 
-    if curl --silent --output /dev/null --max-time 1 --request POST "http://127.0.0.1:${PORT}/api/update/all/start" 2>/dev/null; then
+    if php -r 'exit(@fsockopen("127.0.0.1", (int) getenv("PORT"), $errno, $errstr, 1) === false ? 1 : 0);' 2>/dev/null; then
       return 0
     fi
 
@@ -85,98 +92,160 @@ wait_for_server() {
   exit 2
 }
 
-PORT="$(reserve_port)"
-export ORBIT_UPDATE_ALL_LIVENESS_SILENT_US="$SILENT_US"
-php "$ROUTER" "$PORT" >"$SERVER_OUT" 2>&1 &
-SERVER_PID=$!
-wait_for_server
+start_fixture_server() {
+  local silent_us="$1"
+  local start_delay_us="$2"
 
-rm -f "$TS"
+  PORT="$(reserve_port)"
+  export PORT
+  export ORBIT_UPDATE_ALL_LIVENESS_SILENT_US="$silent_us"
+  export ORBIT_UPDATE_ALL_LIVENESS_START_DELAY_US="$start_delay_us"
+  php "$ROUTER" "$PORT" >"$SERVER_OUT" 2>&1 &
+  SERVER_PID=$!
+  wait_for_server
+}
 
-wrapped_cmd=$(printf '%q ' "$BINARY" update:all --ansi)
-env_command=$(printf 'TERM=xterm-256color ORBIT_GATEWAY_URL=%q %s' "http://127.0.0.1:${PORT}" "$wrapped_cmd")
+run_liveness_mode() {
+  local mode="$1"
+  local label=""
+  local message=""
+  local silent_us="0"
+  local start_delay_us="0"
+  local row_pattern=""
+  local pass_message=""
 
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  "$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$env_command" >/dev/null 2>&1 &
-else
-  "$SCRIPT_BIN" -q -c "$env_command" "$TS" >/dev/null 2>&1 &
-fi
+  case "$mode" in
+    gateway-sse)
+      label="gateway"
+      message="Replacing cli binary"
+      silent_us="$SILENT_US"
+      start_delay_us="0"
+      row_pattern='^row=([0-9]+)\|gateway\|Replacing cli binary\|(cyan-open|cyan-filled)$'
+      pass_message="PASS: gateway Replacing cli binary alternated on stable virtual-screen row"
+      ;;
+    start-post)
+      label="Checking for updates"
+      message="Checking"
+      silent_us="0"
+      start_delay_us="$START_DELAY_US"
+      row_pattern='^row=([0-9]+)\|Checking for updates\|Checking\|(cyan-open|cyan-filled)$'
+      pass_message="PASS: Checking for updates alternated on stable virtual-screen row"
+      ;;
+    *)
+      echo "BLOCKER: unknown liveness mode '$mode'" >&2
+      exit 2
+      ;;
+  esac
 
-pid=$!
-observations=()
-saw_open=false
-saw_filled=false
-target_row=""
-row_identity_stable=true
-captured_while_running=false
-deadline=$((SECONDS + 20))
-
-while (( SECONDS < deadline )); do
-  if kill -0 "$pid" 2>/dev/null; then
-    still_running=true
-  else
-    still_running=false
+  if [[ -n "${SERVER_PID:-}" ]] && kill -0 "$SERVER_PID" 2>/dev/null; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+    SERVER_PID=""
   fi
 
-  if [[ -f "$TS" ]]; then
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
+  start_fixture_server "$silent_us" "$start_delay_us"
 
-      if [[ ! "$line" =~ ^row=([0-9]+)\|gateway\|Replacing\ cli\ binary\|(cyan-open|cyan-filled)$ ]]; then
-        continue
-      fi
+  rm -f "$TS"
 
-      row="${BASH_REMATCH[1]}"
-      spinner="${BASH_REMATCH[2]}"
+  wrapped_cmd=$(printf '%q ' "$BINARY" update:all --ansi)
+  env_command=$(printf 'TERM=xterm-256color ORBIT_GATEWAY_URL=%q %s' "http://127.0.0.1:${PORT}" "$wrapped_cmd")
 
-      if [[ -n "$target_row" && "$row" != "$target_row" ]]; then
-        row_identity_stable=false
-      fi
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    "$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$env_command" >/dev/null 2>&1 &
+  else
+    "$SCRIPT_BIN" -q -c "$env_command" "$TS" >/dev/null 2>&1 &
+  fi
 
-      if [[ -z "$target_row" ]]; then
-        target_row="$row"
-      fi
+  local pid=$!
+  local observations=()
+  local saw_open=false
+  local saw_filled=false
+  local target_row=""
+  local row_identity_stable=true
+  local captured_while_running=false
+  local still_running=true
+  local deadline=$((SECONDS + 20))
 
-      observations+=("$line")
+  while (( SECONDS < deadline )); do
+    if kill -0 "$pid" 2>/dev/null; then
+      still_running=true
+    else
+      still_running=false
+    fi
 
-      if [[ "$spinner" == "cyan-open" ]]; then
-        saw_open=true
-      fi
+    if [[ -f "$TS" ]]; then
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
 
-      if [[ "$spinner" == "cyan-filled" ]]; then
-        saw_filled=true
-      fi
-    done < <(php "$ROOT/apps/cli/tests/Support/parse_update_all_liveness_transcript.php" "$TS")
+        if [[ ! "$line" =~ $row_pattern ]]; then
+          continue
+        fi
+
+        local row="${BASH_REMATCH[1]}"
+        local spinner="${BASH_REMATCH[2]}"
+
+        if [[ -n "$target_row" && "$row" != "$target_row" ]]; then
+          row_identity_stable=false
+        fi
+
+        if [[ -z "$target_row" ]]; then
+          target_row="$row"
+        fi
+
+        observations+=("$line")
+
+        if [[ "$spinner" == "cyan-open" ]]; then
+          saw_open=true
+        fi
+
+        if [[ "$spinner" == "cyan-filled" ]]; then
+          saw_filled=true
+        fi
+      done < <(php "$PARSER" "$TS" "$label" "$message")
+    fi
 
     if [[ "$still_running" == true && "$row_identity_stable" == true && "$saw_open" == true && "$saw_filled" == true ]]; then
       captured_while_running=true
       break
     fi
+
+    if [[ "$still_running" == false ]]; then
+      break
+    fi
+
+    sleep 0.05
+  done
+
+  if [[ "$still_running" == true ]]; then
+    kill "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null || true
+
+  local distinct_states=""
+  if ((${#observations[@]} > 0)); then
+    distinct_states="$(printf '%s\n' "${observations[@]}" | awk -F'|' '{print $4}' | sort -u | tr '\n' ',' | sed 's/,$//')"
   fi
 
-  if [[ "$still_running" == false ]]; then
-    break
+  if [[ "$captured_while_running" != true ]]; then
+    echo "FAIL: ${mode} liveness row did not alternate on a stable row while process was still running" >&2
+    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled" >&2
+    return 1
   fi
 
-  sleep 0.05
-done
+  echo "${pass_message} ${target_row} while pid $pid was still running"
+  echo "mode=${mode} observations=${#observations[@]} target_row=${target_row} distinct_states=[${distinct_states}]"
+}
 
-if [[ "$still_running" == true ]]; then
-  kill "$pid" 2>/dev/null || true
-fi
-wait "$pid" 2>/dev/null || true
-
-if ((${#observations[@]} > 0)); then
-  distinct_states="$(printf '%s\n' "${observations[@]}" | awk -F'|' '{print $4}' | sort -u | tr '\n' ',' | sed 's/,$//')"
-else
-  distinct_states=""
-fi
-
-if [[ "$captured_while_running" != true ]]; then
-  echo "FAIL: gateway Replacing cli binary row did not alternate on a stable row while process was still running" >&2
-  echo "observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled" >&2
-  exit 1
-fi
-
-echo "PASS: gateway Replacing cli binary alternated on stable virtual-screen row ${target_row} while pid $pid was still running"
-echo "observations=${#observations[@]} target_row=${target_row} distinct_states=[${distinct_states}]"
+case "$MODE" in
+  gateway-sse|start-post)
+    run_liveness_mode "$MODE"
+    ;;
+  all)
+    run_liveness_mode gateway-sse
+    run_liveness_mode start-post
+    ;;
+  *)
+    echo "BLOCKER: unknown liveness mode '$MODE'" >&2
+    exit 2
+    ;;
+esac
