@@ -12,7 +12,7 @@ namespace Orbit\Core\Progress;
  */
 final class ForkedFrameTicker
 {
-    public const int DEFAULT_INTERVAL_MICROSECONDS = 100_000;
+    public const int DEFAULT_INTERVAL_MICROSECONDS = 300_000;
 
     public const int DEFAULT_INTERVAL_US = 300_000;
 
@@ -28,7 +28,7 @@ final class ForkedFrameTicker
     private bool $usesIdleCallback = false;
 
     public function __construct(
-        private readonly int $intervalUs = self::DEFAULT_INTERVAL_MICROSECONDS,
+        private readonly int $intervalUs = self::DEFAULT_INTERVAL_US,
     ) {}
 
     public static function hasIdleCallback(): bool
@@ -83,8 +83,15 @@ final class ForkedFrameTicker
         }
 
         if ($pid === 0) {
-            // @phpstan-ignore-next-line Child only wakes the parent spinner loop.
+            pcntl_signal(SIGTERM, static function (): void {
+                exit(0);
+            });
+
             while (true) {
+                if (posix_getppid() === 1) {
+                    exit(0);
+                }
+
                 usleep($this->intervalUs);
                 posix_kill(posix_getppid(), SIGUSR1);
             }

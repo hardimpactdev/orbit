@@ -30,7 +30,7 @@ final readonly class StreamIdleReader
         }
 
         while (! $stream->eof()) {
-            if (! $this->isValidStreamResource($resource)) {
+            if (! $this->isSelectableStreamResource($resource)) {
                 return '';
             }
 
@@ -45,7 +45,7 @@ final readonly class StreamIdleReader
             try {
                 $ready = stream_select($read, $write, $except, $seconds, $microseconds);
             } catch (\ValueError|\TypeError) {
-                return '';
+                return $this->readWithIdlePolling($stream, $maxBytes);
             } finally {
                 restore_error_handler();
             }
@@ -58,7 +58,7 @@ final readonly class StreamIdleReader
             }
 
             if ($ready > 0) {
-                $chunk = $stream->read($maxBytes);
+                $chunk = $this->readSelectedChunk($stream, $resource, $maxBytes);
 
                 if ($chunk !== '') {
                     return $chunk;
@@ -71,6 +71,26 @@ final readonly class StreamIdleReader
         }
 
         return '';
+    }
+
+    private function readSelectedChunk(StreamInterface $stream, mixed $resource, int $maxBytes): string
+    {
+        $restoreBlocking = false;
+
+        if ($this->isSelectableStreamResource($resource)) {
+            $metadata = stream_get_meta_data($resource);
+            $restoreBlocking = $metadata['blocked'];
+
+            stream_set_blocking($resource, false);
+        }
+
+        try {
+            return $stream->read($maxBytes);
+        } finally {
+            if ($restoreBlocking && is_resource($resource)) {
+                stream_set_blocking($resource, true);
+            }
+        }
     }
 
     private function readWithIdlePolling(StreamInterface $stream, int $maxBytes): string
@@ -89,9 +109,20 @@ final readonly class StreamIdleReader
         return '';
     }
 
-    private function isValidStreamResource(mixed $resource): bool
+    private function isSelectableStreamResource(mixed $resource): bool
     {
-        return is_resource($resource) && get_resource_type($resource) === 'stream';
+        if (! is_resource($resource) || get_resource_type($resource) !== 'stream') {
+            return false;
+        }
+
+        $metadata = stream_get_meta_data($resource);
+        $metadata += [
+            'wrapper_type' => null,
+            'stream_type' => null,
+        ];
+
+        return $metadata['wrapper_type'] !== 'user-space'
+            && $metadata['stream_type'] !== 'user-space';
     }
 
     private function resolvePhpStream(StreamInterface $stream): mixed
@@ -99,9 +130,17 @@ final readonly class StreamIdleReader
         $metadata = $stream->getMetadata();
 
         if (is_array($metadata)) {
-            $candidate = $metadata['stream'] ?? null;
+            if (! array_key_exists('stream', $metadata)) {
+                $candidate = null;
+            } else {
+                $candidate = $metadata['stream'];
+            }
 
-            if (is_resource($candidate) && get_resource_type($candidate) === 'stream') {
+            if ($this->isSelectableStreamResource($candidate)) {
+                return $candidate;
+            }
+
+            if (array_key_exists('stream', $metadata)) {
                 return $candidate;
             }
         }
@@ -109,7 +148,7 @@ final readonly class StreamIdleReader
         try {
             $resource = StreamWrapper::getResource($stream);
 
-            if (is_resource($resource) && get_resource_type($resource) === 'stream') {
+            if ($this->isSelectableStreamResource($resource)) {
                 return $resource;
             }
         } catch (\Throwable) {

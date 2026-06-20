@@ -209,6 +209,122 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
         ->and($cadence['cadence_ok'])->toBeTrue($cadence['reason'] ?? 'spinner cadence was invalid');
 });
 
+it('keeps update-all rows blinking while gateway start and event stream are quiet', function (): void {
+    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
+        $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
+    }
+
+    $scriptBinary = findPseudoTtyScriptBinary();
+
+    if ($scriptBinary === null) {
+        $this->markTestSkipped('The script(1) binary is required to allocate a pseudo-tty for live progress capture.');
+    }
+
+    $port = unusedUpdateAllGatewayLivenessPort();
+    $router = startUpdateAllGatewayLivenessRouter(
+        port: $port,
+        startDelayMicroseconds: 1_500_000,
+        silentDelayMicroseconds: 1_500_000,
+    );
+    $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
+    $typescriptPath = sys_get_temp_dir().'/orbit-update-all-gateway-pty-'.uniqid('', true).'.typescript';
+    $command = pseudoTtyWrappedCommand($scriptBinary, $typescriptPath, [
+        PHP_BINARY,
+        $captureScript,
+    ]);
+
+    $process = proc_open(
+        $command,
+        [
+            ['pipe', 'r'],
+            ['pipe', 'w'],
+            ['pipe', 'w'],
+        ],
+        $pipes,
+        base_path(),
+    );
+
+    if (! is_resource($process)) {
+        stopUpdateAllGatewayLivenessRouter($router);
+        @unlink($captureScript);
+        @unlink($typescriptPath);
+
+        throw new RuntimeException('Could not start the pseudo-tty update:all gateway liveness process.');
+    }
+
+    fclose($pipes[0]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    $checking = newUpdateAllPtyTargetState();
+    $gateway = newUpdateAllPtyTargetState();
+    $deadline = microtime(true) + 12.0;
+    $timedOut = true;
+
+    try {
+        while (microtime(true) < $deadline) {
+            $stillRunning = proc_get_status($process)['running'] ?? false;
+
+            clearstatcache(true, $typescriptPath);
+
+            if (is_readable($typescriptPath)) {
+                $capture = file_get_contents($typescriptPath) ?: '';
+                recordUpdateAllPtyTargetState(
+                    $checking,
+                    updateAllPtySpinnerState($capture, 'Checking for updates', 'Checking'),
+                    $capture,
+                );
+                recordUpdateAllPtyTargetState(
+                    $gateway,
+                    updateAllPtySpinnerState($capture, 'gateway', 'Replacing cli binary'),
+                    $capture,
+                );
+            }
+
+            if (! $stillRunning) {
+                $timedOut = false;
+
+                break;
+            }
+
+            usleep(10_000);
+        }
+    } finally {
+        if (proc_get_status($process)['running'] ?? false) {
+            proc_terminate($process);
+        }
+
+        proc_close($process);
+        stopUpdateAllGatewayLivenessRouter($router);
+
+        @unlink($captureScript);
+        @unlink($typescriptPath);
+    }
+
+    $checkingCadence = validateUpdateAllLivenessCadence($checking['cadence_state']['first_transition_us']);
+    $gatewayCadence = validateUpdateAllLivenessCadence($gateway['cadence_state']['first_transition_us']);
+
+    expect($timedOut)->toBeFalse('The pseudo-tty update:all gateway liveness command did not finish.')
+        ->and($checking['captured'])->toBeTrue(sprintf(
+            'Expected Checking for updates to alternate while the gateway start POST was delayed; row=%s stable=%s states=[%s] first_transition_us=%s.',
+            $checking['target_row'] === null ? 'none' : (string) $checking['target_row'],
+            $checking['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($checking['observed_states'])),
+            $checking['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checking['cadence_state']['first_transition_us'],
+        ))
+        ->and($checkingCadence['cadence_ok'])->toBeTrue($checkingCadence['reason'] ?? 'checking spinner cadence was invalid')
+        ->and($checking['cadence_state']['first_transition_us'])->toBeLessThan(900_000)
+        ->and($gateway['captured'])->toBeTrue(sprintf(
+            'Expected gateway to alternate while the event stream was quiet; row=%s stable=%s states=[%s] first_transition_us=%s.',
+            $gateway['target_row'] === null ? 'none' : (string) $gateway['target_row'],
+            $gateway['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($gateway['observed_states'])),
+            $gateway['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $gateway['cadence_state']['first_transition_us'],
+        ))
+        ->and($gatewayCadence['cadence_ok'])->toBeTrue($gatewayCadence['reason'] ?? 'gateway spinner cadence was invalid')
+        ->and($gateway['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
+});
+
 it('aligns check-row settled status with node stage columns', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
@@ -753,9 +869,17 @@ it('returns gateway failure when the start response does not include an events u
  */
 function updateAllPendingPtySpinnerState(string $capture): ?array
 {
+    return updateAllPtySpinnerState($capture, 'local', 'Replacing cli binary');
+}
+
+/**
+ * @return array{row: int, spinner: string}|null
+ */
+function updateAllPtySpinnerState(string $capture, string $label, ?string $status = null): ?array
+{
     $screen = new VirtualTerminalScreen;
     $screen->feed($capture);
-    $row = $screen->rowsMatching('local', 'Replacing cli binary')[0] ?? null;
+    $row = $screen->rowsMatching($label, $status)[0] ?? null;
 
     if ($row === null) {
         return null;
@@ -767,6 +891,69 @@ function updateAllPendingPtySpinnerState(string $capture): ?array
     ];
 }
 
+/**
+ * @return array{
+ *     target_row: int|null,
+ *     row_identity_stable: bool,
+ *     observed_states: array<string, bool>,
+ *     captured: bool,
+ *     transcript: string,
+ *     cadence_state: array{anchor_us: int|null, anchor_spinner: string|null, first_transition_us: int, last_spinner: string|null}
+ * }
+ */
+function newUpdateAllPtyTargetState(): array
+{
+    return [
+        'target_row' => null,
+        'row_identity_stable' => true,
+        'observed_states' => [],
+        'captured' => false,
+        'transcript' => '',
+        'cadence_state' => [
+            'anchor_us' => null,
+            'anchor_spinner' => null,
+            'first_transition_us' => -1,
+            'last_spinner' => null,
+        ],
+    ];
+}
+
+/**
+ * @param  array{
+ *     target_row: int|null,
+ *     row_identity_stable: bool,
+ *     observed_states: array<string, bool>,
+ *     captured: bool,
+ *     transcript: string,
+ *     cadence_state: array{anchor_us: int|null, anchor_spinner: string|null, first_transition_us: int, last_spinner: string|null}
+ * }  $state
+ * @param  array{row: int, spinner: string}|null  $observation
+ */
+function recordUpdateAllPtyTargetState(array &$state, ?array $observation, string $capture): void
+{
+    if ($observation === null || $state['captured']) {
+        return;
+    }
+
+    if ($state['target_row'] !== null && $state['target_row'] !== $observation['row']) {
+        $state['row_identity_stable'] = false;
+    }
+
+    $state['target_row'] ??= $observation['row'];
+    $state['observed_states'][$observation['spinner']] = true;
+
+    if ($state['row_identity_stable']) {
+        updateAllLivenessObserveSpinner($state['cadence_state'], $observation['spinner'], updateAllLivenessNowUs());
+    }
+
+    if ($state['row_identity_stable']
+        && isset($state['observed_states'][VirtualTerminalScreen::SPINNER_CYAN_OPEN])
+        && isset($state['observed_states'][VirtualTerminalScreen::SPINNER_CYAN_FILLED])) {
+        $state['captured'] = true;
+        $state['transcript'] = $capture;
+    }
+}
+
 function findPseudoTtyScriptBinary(): ?string
 {
     foreach (['/usr/bin/script', '/bin/script'] as $candidate) {
@@ -776,6 +963,105 @@ function findPseudoTtyScriptBinary(): ?string
     }
 
     return null;
+}
+
+function unusedUpdateAllGatewayLivenessPort(): int
+{
+    $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $error);
+
+    if (! is_resource($socket)) {
+        throw new RuntimeException("Unable to reserve an update:all gateway liveness port: {$error}");
+    }
+
+    $name = stream_socket_get_name($socket, false);
+    fclose($socket);
+
+    if (! is_string($name) || ! str_contains($name, ':')) {
+        throw new RuntimeException('Unable to determine the update:all gateway liveness port.');
+    }
+
+    return (int) substr(strrchr($name, ':'), 1);
+}
+
+/**
+ * @return array{process: resource, pipes: array<int, resource>}
+ */
+function startUpdateAllGatewayLivenessRouter(int $port, int $startDelayMicroseconds, int $silentDelayMicroseconds): array
+{
+    $environment = getenv();
+
+    if (! is_array($environment)) {
+        $environment = [];
+    }
+
+    $process = proc_open(
+        [
+            PHP_BINARY,
+            base_path('tests/Support/update_all_gateway_liveness_router.php'),
+            (string) $port,
+        ],
+        [
+            ['pipe', 'r'],
+            ['pipe', 'w'],
+            ['pipe', 'w'],
+        ],
+        $pipes,
+        base_path(),
+        array_merge($environment, [
+            'ORBIT_UPDATE_ALL_LIVENESS_START_DELAY_US' => (string) $startDelayMicroseconds,
+            'ORBIT_UPDATE_ALL_LIVENESS_SILENT_US' => (string) $silentDelayMicroseconds,
+        ]),
+    );
+
+    if (! is_resource($process)) {
+        throw new RuntimeException('Could not start the update:all gateway liveness router.');
+    }
+
+    fclose($pipes[0]);
+    waitForUpdateAllGatewayLivenessRouter($port);
+
+    return [
+        'process' => $process,
+        'pipes' => $pipes,
+    ];
+}
+
+/**
+ * @param  array{process: resource, pipes: array<int, resource>}  $router
+ */
+function stopUpdateAllGatewayLivenessRouter(array $router): void
+{
+    if (proc_get_status($router['process'])['running'] ?? false) {
+        proc_terminate($router['process']);
+    }
+
+    foreach ($router['pipes'] as $pipe) {
+        if (is_resource($pipe)) {
+            fclose($pipe);
+        }
+    }
+
+    proc_close($router['process']);
+}
+
+function waitForUpdateAllGatewayLivenessRouter(int $port): void
+{
+    $deadline = microtime(true) + 5.0;
+
+    while (microtime(true) < $deadline) {
+        $connection = @stream_socket_client("tcp://127.0.0.1:{$port}", $errno, $error, 0.1);
+
+        if (is_resource($connection)) {
+            fwrite($connection, "GET /ready HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+            fclose($connection);
+
+            return;
+        }
+
+        usleep(20_000);
+    }
+
+    throw new RuntimeException('Timed out waiting for the update:all gateway liveness router.');
 }
 
 /**
@@ -910,6 +1196,102 @@ Http::fake(['https://gateway.test/*' => Http::response(
             }
         }
 
+        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
+    }
+
+    public function runDoctor(): array
+    {
+        return ['issues' => 0];
+    }
+
+    public function installDependencies(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function runMigrations(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+});
+
+if (function_exists('stream_set_write_buffer') && defined('STDOUT') && is_resource(STDOUT)) {
+    stream_set_write_buffer(STDOUT, 0);
+}
+
+\$output = new StreamOutput(STDOUT, Symfony\Component\Console\Output\OutputInterface::VERBOSITY_NORMAL, true);
+
+exit(\$kernel->handle(new ArgvInput(['orbit', 'update:all']), \$output));
+
+PHP;
+
+    file_put_contents($captureScript, $source);
+
+    return $captureScript;
+}
+
+function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gatewayUrl): string
+{
+    $captureScript = tempnam(sys_get_temp_dir(), 'orbit-update-all-gateway-capture-');
+
+    if ($captureScript === false) {
+        throw new RuntimeException('Could not allocate the update:all gateway liveness capture script.');
+    }
+
+    $escapedCliRoot = addslashes($cliRoot);
+    $escapedGatewayUrl = addslashes($gatewayUrl);
+
+    $source = <<<PHP
+<?php
+
+declare(strict_types=1);
+
+use App\Services\GatewayApiClient;
+use App\Services\GatewayOperationEventStreamClient;
+use App\Services\GatewayOperationFollower;
+use App\Services\Updates\RunsLocalUpdate;
+use Illuminate\Contracts\Console\Kernel;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Output\StreamOutput;
+
+define('LARAVEL_START', microtime(true));
+
+require '{$escapedCliRoot}/vendor/autoload.php';
+
+/** @var \LaravelZero\Framework\Application \$app */
+\$app = require '{$escapedCliRoot}/bootstrap/app.php';
+/** @var Kernel \$kernel */
+\$kernel = \$app->make(Kernel::class);
+\$kernel->bootstrap();
+
+config()->set('orbit.gateway.url', '{$escapedGatewayUrl}');
+config()->set('orbit.gateway.timeout', 10);
+config()->set('orbit.gateway.operation_follow_reconnect_sleep_ms', 0);
+config()->set('app.version', '0.0.0');
+\$app->forgetInstance(GatewayApiClient::class);
+\$app->forgetInstance(GatewayOperationEventStreamClient::class);
+\$app->forgetInstance(GatewayOperationFollower::class);
+
+\$app->instance(RunsLocalUpdate::class, new class implements RunsLocalUpdate
+{
+    public function pullSource(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function downloadBinary(): array
+    {
+        return [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'staged_path' => '/tmp/staged-orbit',
+            'version' => '9.9.9',
+        ];
+    }
+
+    public function replaceBinary(string \$stagedPath, string \$version): array
+    {
         return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
     }
 

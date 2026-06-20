@@ -66,7 +66,6 @@ run_bg e2e_pint bash -lc 'cd apps/e2e && vendor/bin/pint "$@"' bash "${PINT_ARGS
 
 run_bg cli_pest bin/orbit-cli-pest --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
-run_bg core_pest bash -lc 'cd packages/core && vendor/bin/pest --compact'
 run_bg e2e_pest bash -lc 'cd apps/e2e && vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact'
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
@@ -99,9 +98,18 @@ CHECK_LABELS=(
 )
 
 for label in "${CHECK_LABELS[@]}"; do
+    if [ "$label" = core_pest ]; then
+        continue
+    fi
+
     pid_var="${label}_PID"
     wait "${!pid_var}" 2>/dev/null
 done
+
+# The core progress tests intentionally fork short-lived ticker children. Keep
+# this lane out of the background fan-out so unrelated Pest suites cannot
+# deliver process-group signals to the core Pest parent.
+( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )
 
 print_log() {
     local label="$1"
