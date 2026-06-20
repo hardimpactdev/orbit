@@ -28,6 +28,27 @@ it('uses the canonical spinner frame order for active streamed steps', function 
     ]);
 });
 
+it('alternates active streamed step frames across quiet ticks', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new StreamedStepTree($output);
+
+    $renderer->tree('Updating Orbit', [
+        [
+            'key' => 'check',
+            'label' => 'Checking for updates',
+            'doneLabel' => 'Checking for updates',
+        ],
+    ]);
+
+    $renderer->step('check', 'start');
+    $renderer->tick();
+    $renderer->tick();
+
+    preg_match_all('/[○◉]/u', $output->fetch(), $matches);
+
+    expect(array_values(array_unique($matches[0])))->toBe(['○', '◉']);
+});
+
 it('renders progress messages for active streamed steps', function (): void {
     $output = new BufferedOutput(decorated: false);
     $renderer = new StreamedStepTree($output);

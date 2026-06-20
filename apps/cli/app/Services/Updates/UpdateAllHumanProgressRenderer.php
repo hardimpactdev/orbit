@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Updates;
 
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -102,12 +103,32 @@ final class UpdateAllHumanProgressRenderer
 
     private ?string $targetVersion = null;
 
+    private ?OutputInterface $output = null;
+
+    private ?ForkedFrameTicker $ticker = null;
+
     public function begin(OutputInterface $output): void
     {
+        $this->output = $output;
         $this->registerTarget(self::ROW_CHECK_UPDATES);
         $this->registerTarget(self::ROW_CHECK_FLEET);
 
         $this->renderInitial($output);
+    }
+
+    public function tick(): void
+    {
+        if ($this->finished || ! $this->rendered || $this->output === null || ! $this->output->isDecorated()) {
+            return;
+        }
+
+        $this->frame++;
+
+        foreach ($this->order as $target) {
+            if (($this->rows[$target]['state'] ?? null) === self::STATE_ACTIVE) {
+                $this->repaintRow($this->output, $target);
+            }
+        }
     }
 
     public function gatewayStarting(OutputInterface $output): void
@@ -508,6 +529,7 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
+        $this->output = $output;
         $this->rows[$target] = [
             'state' => $state,
             'stage' => $stage,
@@ -515,6 +537,7 @@ final class UpdateAllHumanProgressRenderer
         ];
 
         $this->repaintRow($output, $target);
+        $this->syncTicker();
     }
 
     private function repaintRow(OutputInterface $output, string $target): void
@@ -548,6 +571,7 @@ final class UpdateAllHumanProgressRenderer
         }
 
         $this->finished = true;
+        $this->stopTicker();
 
         $line = $this->footerLine($footer, $success, $output->isDecorated());
 
@@ -607,10 +631,42 @@ final class UpdateAllHumanProgressRenderer
     private function activeIcon(bool $styled): string
     {
         if (! $styled) {
-            return $this->frame++ % 2 === 0 ? '○' : '◉';
+            return $this->frame % 2 === 0 ? '○' : '◉';
         }
 
-        return self::SPINNER_FRAMES[$this->frame++ % count(self::SPINNER_FRAMES)];
+        return self::SPINNER_FRAMES[$this->frame % count(self::SPINNER_FRAMES)];
+    }
+
+    private function syncTicker(): void
+    {
+        if ($this->finished || $this->output === null || ! $this->output->isDecorated()) {
+            $this->stopTicker();
+
+            return;
+        }
+
+        $hasActiveRow = array_any($this->order, fn ($target) => ($this->rows[$target]['state'] ?? null) === self::STATE_ACTIVE);
+
+        if (! $hasActiveRow) {
+            $this->stopTicker();
+
+            return;
+        }
+
+        $this->ticker ??= new ForkedFrameTicker;
+        $this->ticker->start(function (): void {
+            $this->tick();
+        });
+    }
+
+    private function stopTicker(): void
+    {
+        $this->ticker?->stop();
+    }
+
+    public function __destruct()
+    {
+        $this->stopTicker();
     }
 
     private function stageName(string $stage): string

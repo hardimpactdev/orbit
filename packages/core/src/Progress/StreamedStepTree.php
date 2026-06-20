@@ -37,7 +37,7 @@ final class StreamedStepTree
 
     private int $frame = 0;
 
-    private ?int $spinnerPid = null;
+    private ?ForkedFrameTicker $ticker = null;
 
     public function __construct(
         private readonly OutputInterface $output,
@@ -190,46 +190,19 @@ final class StreamedStepTree
 
     private function startSpinnerProcess(): void
     {
-        if (
-            ! $this->output->isDecorated()
-            || ! function_exists('pcntl_fork')
-            || ! function_exists('posix_kill')
-        ) {
+        if (! $this->output->isDecorated()) {
             return;
         }
 
-        $pid = pcntl_fork();
-
-        if ($pid === -1) {
-            return;
-        }
-
-        if ($pid === 0) {
-            // @phpstan-ignore-next-line Intentional child-process spinner loop.
-            while (true) {
-                usleep(300_000);
-                $this->tick();
-            }
-        }
-
-        $this->spinnerPid = $pid;
+        $this->ticker ??= new ForkedFrameTicker;
+        $this->ticker->start(function (): void {
+            $this->tick();
+        });
     }
 
     private function stopSpinnerProcess(): void
     {
-        if ($this->spinnerPid === null || ! function_exists('posix_kill')) {
-            $this->spinnerPid = null;
-
-            return;
-        }
-
-        posix_kill($this->spinnerPid, SIGTERM);
-
-        if (function_exists('pcntl_waitpid')) {
-            pcntl_waitpid($this->spinnerPid, $status);
-        }
-
-        $this->spinnerPid = null;
+        $this->ticker?->stop();
     }
 
     public function __destruct()
