@@ -2,6 +2,27 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerHost;
+use Illuminate\Contracts\Process\ProcessResult;
+use Illuminate\Support\Facades\Process;
+
+function dockerSocketGroupIdProcessFake(string $command, int $localGroupId = 999, ?int $remoteGroupId = null): ?ProcessResult
+{
+    $remoteGroupId ??= $localGroupId + 1;
+
+    if (str_starts_with($command, 'ssh -o BatchMode=yes')
+        && str_contains($command, DockerHost::remoteDockerSocketGroupIdCommand())) {
+        return Process::result(output: "{$remoteGroupId}\n");
+    }
+
+    if ($command === DockerHost::localDockerSocketGroupIdCommand()
+        || str_contains($command, 'for path in /var/run/docker.sock')) {
+        return Process::result(output: "{$localGroupId}\n");
+    }
+
+    return null;
+}
+
 /**
  * @param  list<string>  $additionalKeys
  * @param  array<string, string>  $values

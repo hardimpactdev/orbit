@@ -178,9 +178,13 @@ class LocalResolver implements ResolvesLocalDns
 
         File::put($this->configPath($tld), "address=/{$tld}/{$target}\n");
 
-        $resolverResult = Process::timeout(10)->run(
-            "sudo mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null'
-        );
+        $resolverWriteCommand = "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null';
+
+        try {
+            $resolverResult = Process::timeout(10)->run($resolverWriteCommand);
+        } catch (ProcessTimedOutException $exception) {
+            return ['status' => 'write_failed', 'changed' => false, 'error' => $this->formatTimeoutFailure($resolverWriteCommand, $exception)];
+        }
 
         if (! $resolverResult->successful()) {
             return ['status' => 'write_failed', 'changed' => false, 'error' => $resolverResult->errorOutput()];
@@ -215,7 +219,13 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         if ($hasResolver) {
-            $removeResult = Process::timeout(10)->run('sudo rm '.escapeshellarg("/etc/resolver/{$tld}"));
+            $removeCommand = 'sudo -n rm '.escapeshellarg("/etc/resolver/{$tld}");
+
+            try {
+                $removeResult = Process::timeout(10)->run($removeCommand);
+            } catch (ProcessTimedOutException $exception) {
+                return ['status' => 'write_failed', 'changed' => true, 'error' => $this->formatTimeoutFailure($removeCommand, $exception)];
+            }
 
             if (! $removeResult->successful()) {
                 return ['status' => 'write_failed', 'changed' => true, 'error' => $removeResult->errorOutput()];
@@ -246,8 +256,16 @@ class LocalResolver implements ResolvesLocalDns
             return ['changed' => false];
         }
 
-        $writeCommand = "sudo mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null';
-        $writeResult = Process::timeout(10)->run($writeCommand);
+        $writeCommand = "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null';
+
+        try {
+            $writeResult = Process::timeout(10)->run($writeCommand);
+        } catch (ProcessTimedOutException $exception) {
+            return [
+                'changed' => false,
+                'error' => $this->formatTimeoutFailure($writeCommand, $exception),
+            ];
+        }
 
         if (! $writeResult->successful()) {
             return [

@@ -283,9 +283,11 @@ final readonly class DockerTopologyBuilder
             ? ' --env '.escapeshellarg("ORBIT_GATEWAY_CONTAINER={$this->gatewayContainerName($container)}")
             : '';
 
+        // Prepared-image builds inherit DOCKER_HOST=ssh://... from e2e:prepare-docker-hosts.
+        // Resolve socket group membership on that same host, not the local NMBP shell.
         return sprintf(
             'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE %s --name %s --network %s%s --ip %s --volume %s --mount %s --mount %s --mount %s --mount %s --mount %s --env %s --env %s --env %s%s %s',
-            $this->dockerSocketGroupAddOption(),
+            DockerSocketGroupAdd::optionFor(DockerHost::fromCurrentDockerEnvironment($this->config)),
             escapeshellarg($container),
             escapeshellarg($network),
             $networkAlias,
@@ -321,11 +323,6 @@ final readonly class DockerTopologyBuilder
                 escapeshellarg($address),
             )),
         );
-    }
-
-    private function dockerSocketGroupAddOption(): string
-    {
-        return '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"';
     }
 
     public static function runtimeImage(): string

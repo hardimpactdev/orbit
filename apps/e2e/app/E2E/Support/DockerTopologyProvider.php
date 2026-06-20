@@ -515,7 +515,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 'container_names' => $this->managedContainerNames($name, $role),
                 'volume_names' => $this->managedVolumeNames($name),
                 'node_command' => implode(' && ', array_filter([
-                    $this->startContainerCommand($name, $network, $role, $ip, $image, $topologyMode, $sourcePath),
+                    $this->startContainerCommand($host, $name, $network, $role, $ip, $image, $topologyMode, $sourcePath),
                     $this->canonicalWireGuardAddressCommand($name, $role, $topologyMode),
                 ])),
                 'gateway_command' => $this->startsGatewaySibling($role)
@@ -587,7 +587,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
     }
 
-    private function startContainerCommand(string $name, string $network, string $role, string $ip, string $image, string $topologyMode, ?string $sourcePath): string
+    private function startContainerCommand(DockerHost $host, string $name, string $network, string $role, string $ip, string $image, string $topologyMode, ?string $sourcePath): string
     {
         $networkAlias = $topologyMode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
@@ -605,7 +605,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             escapeshellarg($network),
             $networkAlias,
             escapeshellarg($ip),
-            $this->dockerSocketGroupAddOption(),
+            DockerSocketGroupAdd::optionFor($host),
             escapeshellarg('/var/run/docker.sock:/var/run/docker.sock'),
             escapeshellarg($this->homeVolumeMount($name, 'orbit')),
             $sourceMount,
@@ -620,11 +620,6 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $gatewayContainerEnv,
             escapeshellarg($image),
         );
-    }
-
-    private function dockerSocketGroupAddOption(): string
-    {
-        return '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"';
     }
 
     private function canonicalWireGuardAddressCommand(string $name, string $role, string $topologyMode): ?string

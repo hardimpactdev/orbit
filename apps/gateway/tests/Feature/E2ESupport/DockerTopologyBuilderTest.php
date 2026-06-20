@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerSocketGroupAdd;
 use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\E2EConfig;
@@ -11,7 +13,13 @@ use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    DockerSocketGroupAdd::resetResolvedGroupIdsForTesting();
 });
+
+function dockerTopologyBuilderProcessFake(string $command): mixed
+{
+    return dockerSocketGroupIdProcessFake($command);
+}
 
 it('defines the Docker topology host PHP 8.5 CLI baseline without ad hoc helper CLIs', function (): void {
     $dockerfile = file_get_contents(repo_path('docker/e2e/topology/Dockerfile'));
@@ -57,6 +65,10 @@ it('starts Docker build topology client nodes with the host Docker socket and no
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -70,7 +82,8 @@ it('starts Docker build topology client nodes with the host Docker socket and no
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain('--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
+        ->toContain('--group-add 999')
+        ->not->toContain('$(stat')
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-etc-caddy,dst=/etc/caddy'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-prepared-build-operator-operator-etc-orbit,dst=/etc/orbit'")
@@ -107,11 +120,65 @@ it('starts Docker build topology client nodes with the host Docker socket and no
         && $process->timeout === 1200);
 });
 
+it('uses the remote docker build host socket gid when DOCKER_HOST is ssh://beast', function (): void {
+    $commands = [];
+    $previousDockerHost = getenv('DOCKER_HOST');
+    putenv('DOCKER_HOST=ssh://beast');
+
+    try {
+        Process::fake(function ($process) use (&$commands) {
+            $command = (string) $process->command;
+            $commands[] = $command;
+
+            if (($gidFake = dockerSocketGroupIdProcessFake($command, localGroupId: 999, remoteGroupId: 1000)) !== null) {
+                return $gidFake;
+            }
+
+            if (str_contains($command, 'ssh-keygen -t ed25519') || str_contains($command, 'id_ed25519.pub')) {
+                return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
+            }
+
+            return Process::result(output: str_starts_with($command, 'docker run -d ') ? "container-id\n" : '');
+        });
+
+        (new DockerTopologyBuilder(E2EConfig::fromEnvironment()))
+            ->build(E2ETopologyKind::Operator);
+
+        $dockerRun = collect($commands)->first(
+            fn (string $command): bool => str_starts_with($command, 'docker run -d ')
+                && str_contains($command, '--cap-add NET_ADMIN'),
+        );
+
+        expect($dockerRun)->toBeString()
+            ->and($dockerRun)->toContain('--group-add 1000')
+            ->and($dockerRun)->not->toContain('--group-add 999')
+            ->and($dockerRun)->not->toContain('$(stat');
+
+        Process::assertRan(fn ($process): bool => is_string($process->command)
+            && str_starts_with($process->command, 'ssh -o BatchMode=yes')
+            && str_contains($process->command, "'beast'")
+            && str_contains($process->command, DockerHost::remoteDockerSocketGroupIdCommand()));
+
+        Process::assertNotRan(fn ($process): bool => is_string($process->command)
+            && $process->command === DockerHost::localDockerSocketGroupIdCommand());
+    } finally {
+        if ($previousDockerHost === false) {
+            putenv('DOCKER_HOST');
+        } else {
+            putenv("DOCKER_HOST={$previousDockerHost}");
+        }
+    }
+});
+
 it('can bind a build-host Composer cache into Docker topology containers', function (): void {
     $commands = [];
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -139,6 +206,10 @@ it('uses the same lockfile keyed Composer cache volume across topology builds', 
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -171,6 +242,10 @@ it('retries docker build network allocation outside the orbit WireGuard subnet w
     $networkCreates = [];
 
     Process::fake(function ($process) use (&$networkCreates) {
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_starts_with($process->command, 'docker network create --subnet ')) {
             $networkCreates[] = $process->command;
 
@@ -195,7 +270,8 @@ it('retries docker build network allocation outside the orbit WireGuard subnet w
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker run -d --cap-add NET_ADMIN --cap-add NET_BIND_SERVICE')
-        && str_contains($process->command, '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
+        && str_contains($process->command, '--group-add 999')
+        && ! str_contains($process->command, '$(stat')
         && str_contains($process->command, "--name 'orbit-e2e-prepared-build-operator-operator'")
         && str_contains($process->command, "--ip '{$retryPlan->ipForRole('operator')}'"));
 });
@@ -205,6 +281,10 @@ it('syncs the current checkout into each Docker topology node before installing 
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -260,6 +340,10 @@ it('installs monorepo dependencies once and reuses them across Docker topology r
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -347,6 +431,10 @@ it('builds Docker checkout sync archives without gitignored local secrets', func
 
 it('fails clearly when the orbit gateway sibling image is missing during docker topology preparation', function (): void {
     Process::fake(function ($process) {
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if ($process->command === "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null") {
             return Process::result();
         }
@@ -368,6 +456,10 @@ it('builds Docker topology state through the host orbit launcher', function (): 
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -431,6 +523,10 @@ it('starts the build gateway scheduler before schedule doctor verification', fun
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -457,6 +553,10 @@ it('starts the build gateway scheduler before schedule doctor verification', fun
 
 it('tolerates Docker build gateway schedule doctor self-call authorization failure', function (): void {
     Process::fake(function ($process) {
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -486,6 +586,10 @@ it('keeps the build gateway container marked without starting services before mi
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -509,6 +613,10 @@ it('normalizes persisted gateway orbit state ownership before committing prepare
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -557,6 +665,10 @@ it('commits Docker build topology images from node image-layer state instead of 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -590,6 +702,10 @@ it('does not use host PHP or host Caddy paths while building Docker gateway topo
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -635,6 +751,10 @@ it('seeds appdev docker topology with database role and Redis process for downst
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -661,6 +781,10 @@ it('provisions Docker downstream role source images in parallel after the gatewa
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
@@ -713,6 +837,10 @@ it('bakes the Docker websocket role onto app-dev after app development Redis is 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
@@ -747,6 +875,7 @@ it('bakes the Docker websocket role onto app-dev after app development Redis is 
 
 it('builds operator_gateway prepared images through transient docker resources', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
@@ -824,6 +953,7 @@ it('builds operator_gateway prepared images through transient docker resources',
 
 it('seeds gateway to app node ssh access for remote shell feature tests', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
@@ -880,6 +1010,7 @@ it('seeds gateway to app node ssh access for remote shell feature tests', functi
 
 it('uses the configured instance prefix for transient resources but stable image tags', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
@@ -916,6 +1047,7 @@ it('uses the configured instance prefix for transient resources but stable image
 
 it('bakes dns alias topology registry data into stable role images', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
@@ -989,6 +1121,7 @@ it('bakes dns alias topology registry data into stable role images', function ()
 
 it('bakes app production ingress docker topology registry data without dev or agent roles', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
         "docker image inspect 'composer:2' >/dev/null" => Process::result(),
@@ -1074,6 +1207,10 @@ it('bakes prepared app production image with a colocated ingress role', function
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyBuilderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, 'ssh-keygen -t ed25519') || str_contains($process->command, 'id_ed25519.pub')) {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");

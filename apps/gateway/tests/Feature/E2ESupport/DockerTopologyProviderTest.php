@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\Support\DockerHost;
 use App\E2E\Support\DockerInstance;
+use App\E2E\Support\DockerSocketGroupAdd;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
@@ -18,6 +19,7 @@ use Illuminate\Support\Facades\Process;
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    DockerSocketGroupAdd::resetResolvedGroupIdsForTesting();
 
     putenv('ORBIT_E2E_DOCKER_TEST_RUNNERS=local:8:64,beast:8:64,sidecar1:8:64,sidecar2:8:64');
     putenv('ORBIT_E2E_DOCKER_SOURCE_PATH');
@@ -38,8 +40,12 @@ afterEach(function (): void {
     putenv('GITHUB_TOKEN');
 });
 
-function dockerTopologyProviderGatewayPublicKeyFake(string $command): mixed
+function dockerTopologyProviderProcessFake(string $command): mixed
 {
+    if (($socketGroupIdResult = dockerSocketGroupIdProcessFake($command)) !== null) {
+        return $socketGroupIdResult;
+    }
+
     if (str_contains($command, 'cat ~/.ssh/id_ed25519.pub')) {
         return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
     }
@@ -113,7 +119,7 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -128,7 +134,8 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
     $setup = implode("\n", $commands);
 
     expect($setup)
-        ->toContain('--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
+        ->toContain('--group-add 999')
+        ->not->toContain('$(stat')
         ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'")
         ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-var-lib-orbit,dst=/var/lib/orbit'")
@@ -149,6 +156,10 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
 
 it('marks Docker source-dev acquisitions with the mounted checkout path', function (): void {
     Process::fake(function ($process) {
+        if (($processFake = dockerTopologyProviderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
 
@@ -173,7 +184,7 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -266,7 +277,7 @@ it('falls back from namespaced docker role images to base images per role', func
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -541,7 +552,7 @@ it('uses the configured remote docker source path for source-mounted bind mounts
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -715,7 +726,7 @@ it('acquires an operator-gateway lease by launching containers from prepared ima
     Process::fake(function ($process) {
         $command = (string) $process->command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -755,7 +766,7 @@ it('prepares source mounted gateway state before seeding docker gateway records'
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -850,7 +861,7 @@ it('reuses image resolution from host selection when starting docker containers'
     Process::fake(function ($process) use (&$imageInspectCounts) {
         $command = (string) $process->command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -894,7 +905,7 @@ it('retries run-scoped docker subnets when Docker reports an overlap', function 
         Process::fake(function ($process) use (&$commands, $firstPlan, $retryPlan) {
             $command = (string) $process->command;
 
-            if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+            if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
                 return $publicKeyResult;
             }
             $commands[] = $command;
@@ -942,7 +953,7 @@ it('launches operator-gateway from the prepared base image', function (): void {
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1010,7 +1021,7 @@ it('launches app production ingress as a prod-node role', function (): void {
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1097,7 +1108,7 @@ it('seeds gateway registry rows for composed docker app roles in parallel at acq
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1180,7 +1191,7 @@ it('seeds dedicated ingress before app production references it at acquire time'
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1254,7 +1265,7 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1344,7 +1355,7 @@ it('authorizes the active docker gateway ssh key into gateway self ssh and compo
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1404,7 +1415,7 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1479,6 +1490,7 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
 
 it('uses the parallel worker token to create a non-overlapping docker network', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
@@ -1530,7 +1542,7 @@ it('leases docker host slots independently from the parallel worker token', func
         $command = (string) $process->command;
         $host = $process->environment['DOCKER_HOST'] ?? 'local';
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 
@@ -1605,6 +1617,7 @@ it('releases docker host slots during topology cleanup', function (): void {
     exec('rm -rf '.escapeshellarg($leaseDirectory));
 
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         '*command -v docker*' => Process::result(),
         '*docker info*' => Process::result(),
         '*docker image inspect*' => Process::result(),
@@ -1616,6 +1629,7 @@ it('releases docker host slots during topology cleanup', function (): void {
         '*docker rm -f*' => Process::result(),
         '*docker volume rm*' => Process::result(),
         '*docker network rm*' => Process::result(),
+        '*ssh -o BatchMode=yes -o ConnectTimeout=10*stat -c %g /var/run/docker.sock*' => Process::result(output: "1000\n"),
         '*ssh -o BatchMode=yes -o ConnectTimeout=10*' => Process::result(),
         '*rsync -az --delete*' => Process::result(),
     ]);
@@ -1652,6 +1666,10 @@ it('keeps the docker network until final cleanup across fresh resets', function 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
 
+        if (($processFake = dockerTopologyProviderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
+
         return Process::result(output: str_starts_with($process->command, 'docker run -d ') ? "container-id\n" : '');
     });
 
@@ -1671,6 +1689,10 @@ it('keeps the docker network until final cleanup across fresh resets', function 
 it('cleans containers and network when docker acquire fails partway through', function (): void {
     Process::fake(function ($process) {
         $command = $process->command;
+
+        if (($processFake = dockerTopologyProviderProcessFake((string) $command)) !== null) {
+            return $processFake;
+        }
 
         if (
             $command === 'command -v docker >/dev/null'
@@ -1711,6 +1733,10 @@ it('retains docker acquisition failures for diagnosis when requested', function 
     Process::fake(function ($process) use (&$commands) {
         $command = $process->command;
         $commands[] = $command;
+
+        if (($processFake = dockerTopologyProviderProcessFake((string) $command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($command, 'orbit:internal:bake-app-node app-dev-1')) {
             return Process::result(exitCode: 1, errorOutput: "bake failed\n");
@@ -1755,6 +1781,7 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
     ], function (): void {
         Process::fake([
+            '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
             'command -v docker >/dev/null' => Process::result(),
             'docker info >/dev/null' => Process::result(),
             "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
@@ -1777,7 +1804,8 @@ it('starts docker containers as a batch and rolls back when one start fails', fu
 
         Process::assertRan(fn ($process): bool => is_string($process->command)
             && str_contains($process->command, "docker run -d --name 'orbit-e2e-run123-gateway'")
-            && str_contains($process->command, '--group-add "$(stat -c %g /var/run/docker.sock 2>/dev/null || stat -f %g /var/run/docker.sock)"')
+            && str_contains($process->command, '--group-add 999')
+            && ! str_contains($process->command, '$(stat')
             && str_contains($process->command, "--volume '/var/run/docker.sock:/var/run/docker.sock'")
             && str_contains($process->command, "--env 'ORBIT_GATEWAY_CONTAINER=orbit-e2e-run123-gateway-orbit-gateway'")
             && str_contains($process->command, "'orbit-e2e:gateway_base'"));
@@ -1790,6 +1818,10 @@ it('starts docker containers sequentially by default to avoid ssh startup bursts
 
     Process::fake(function ($process) use (&$commands) {
         $commands[] = $process->command;
+
+        if (($processFake = dockerTopologyProviderProcessFake((string) $process->command)) !== null) {
+            return $processFake;
+        }
 
         if (str_contains($process->command, "docker run -d --name 'orbit-e2e-run123-operator'")) {
             return Process::result(exitCode: 1, errorOutput: "operator failed\n");
@@ -1808,6 +1840,7 @@ it('starts docker containers sequentially by default to avoid ssh startup bursts
 
 it('uses dns aliases and primes the gateway api in Docker topology runs', function (): void {
     Process::fake([
+        '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
         'command -v docker >/dev/null' => Process::result(),
         'docker info >/dev/null' => Process::result(),
         "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
@@ -1860,7 +1893,7 @@ it('maps parallel docker subnet peer ips back to canonical dns-alias identities'
         $command = (string) $process->command;
         $commands[] = $command;
 
-        if (($publicKeyResult = dockerTopologyProviderGatewayPublicKeyFake($command)) !== null) {
+        if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
             return $publicKeyResult;
         }
 

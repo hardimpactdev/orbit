@@ -162,7 +162,7 @@ describe(LocalResolver::class, function (): void {
         ]);
 
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'cat \'/etc/resolver/test\'');
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo tee \'/etc/resolver/test\' > /dev/null');
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null');
         Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
     });
 
@@ -272,7 +272,7 @@ describe(LocalResolver::class, function (): void {
 
         expect(File::exists("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf"))->toBeFalse();
 
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo rm \'/etc/resolver/test\'');
+        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo -n rm \'/etc/resolver/test\'');
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder');
     });
@@ -335,6 +335,121 @@ describe(LocalResolver::class, function (): void {
             ->and($result['error'])->toContain('exceeded the timeout')
             ->and($result['error'])->toContain('Running: false');
     });
+
+    it('returns write_failed when syncing the macOS system resolver exceeds the process timeout', function (): void {
+        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverContents: "nameserver 10.6.0.1\n", resolverWriteThrowsTimeout: true);
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        $result = $resolver->resolve('test', '192.168.1.150');
+
+        expect($result['status'])->toBe('write_failed')
+            ->and($result['changed'])->toBeFalse()
+            ->and($result['error'])->toContain('exceeded the timeout')
+            ->and($result['error'])->toContain('/etc/resolver/test');
+    });
+
+    it('returns write_failed when writing the macOS system resolver exceeds the process timeout', function (): void {
+        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverWriteThrowsTimeout: true);
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        $result = null;
+
+        expect(function () use ($resolver, &$result): void {
+            $result = $resolver->resolve('test', '192.168.1.150');
+        })->not->toThrow(ProcessTimedOutException::class);
+
+        expect($result['status'])->toBe('write_failed')
+            ->and($result['changed'])->toBeFalse()
+            ->and($result['error'])->toContain('Process timed out while running')
+            ->and($result['error'])->toContain('exceeded the timeout')
+            ->and($result['error'])->toContain('/etc/resolver/test');
+    });
+
+    it('returns write_failed when removing the macOS system resolver exceeds the process timeout', function (): void {
+        fakeLocalResolverProcesses($this, healthOutput: '127.0.0.1', resolverRemoveThrowsTimeout: true);
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        $result = null;
+
+        expect(function () use ($resolver, &$result): void {
+            $result = $resolver->reset('test');
+        })->not->toThrow(ProcessTimedOutException::class);
+
+        expect($result['status'])->toBe('write_failed')
+            ->and($result['changed'])->toBeTrue()
+            ->and($result['error'])->toContain('Process timed out while running')
+            ->and($result['error'])->toContain('exceeded the timeout')
+            ->and($result['error'])->toContain('/etc/resolver/test');
+    });
+
+    it('returns write_failed when syncing the macOS system resolver lacks cached sudo credentials', function (): void {
+        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverContents: "nameserver 10.6.0.1\n", resolverWriteFailsNoninteractive: true);
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        $result = null;
+
+        expect(function () use ($resolver, &$result): void {
+            $result = $resolver->resolve('test', '192.168.1.150');
+        })->not->toThrow(ProcessTimedOutException::class);
+
+        expect($result['status'])->toBe('write_failed')
+            ->and($result['changed'])->toBeFalse()
+            ->and($result['error'])->toContain('sudo: a password is required');
+    });
+
+    it('returns write_failed when writing the macOS system resolver lacks cached sudo credentials', function (): void {
+        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverWriteFailsNoninteractive: true);
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        $result = null;
+
+        expect(function () use ($resolver, &$result): void {
+            $result = $resolver->resolve('test', '192.168.1.150');
+        })->not->toThrow(ProcessTimedOutException::class);
+
+        expect($result['status'])->toBe('write_failed')
+            ->and($result['changed'])->toBeFalse()
+            ->and($result['error'])->toContain('sudo: a password is required');
+    });
+
+    it('returns write_failed when removing the macOS system resolver lacks cached sudo credentials', function (): void {
+        fakeLocalResolverProcesses($this, healthOutput: '127.0.0.1', resolverRemoveFailsNoninteractive: true);
+        writeCurrentMasterDnsmasqConfig($this);
+        File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
+        File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
+
+        $resolver = new LocalResolver;
+        $resolver->setPlatform('macos');
+
+        $result = null;
+
+        expect(function () use ($resolver, &$result): void {
+            $result = $resolver->reset('test');
+        })->not->toThrow(ProcessTimedOutException::class);
+
+        expect($result['status'])->toBe('write_failed')
+            ->and($result['changed'])->toBeTrue()
+            ->and($result['error'])->toContain('sudo: a password is required');
+    });
 });
 
 function fakeSuccessfulLocalResolverProcesses(object $test, string $target, ?string $resolverContents = "nameserver 127.0.0.1\n"): void
@@ -361,10 +476,14 @@ function fakeLocalResolverProcesses(
     int $healthExitCode = 0,
     bool $healthThrowsTimeout = false,
     ?string $resolverContents = "nameserver 127.0.0.1\n",
+    bool $resolverWriteThrowsTimeout = false,
+    bool $resolverRemoveThrowsTimeout = false,
+    bool $resolverWriteFailsNoninteractive = false,
+    bool $resolverRemoveFailsNoninteractive = false,
 ): void {
     $healthOutputs = is_array($healthOutput) ? array_values($healthOutput) : [$healthOutput];
 
-    Process::fake(function (PendingProcess $process) use ($test, &$healthOutputs, $healthErrorOutput, $healthExitCode, $healthThrowsTimeout, $resolverContents) {
+    Process::fake(function (PendingProcess $process) use ($test, &$healthOutputs, $healthErrorOutput, $healthExitCode, $healthThrowsTimeout, $resolverContents, $resolverWriteThrowsTimeout, $resolverRemoveThrowsTimeout, $resolverWriteFailsNoninteractive, $resolverRemoveFailsNoninteractive) {
         $command = $process->command;
 
         if ($command === 'brew --prefix') {
@@ -383,11 +502,27 @@ function fakeLocalResolverProcesses(
             return Process::result('', '', 0);
         }
 
-        if ($command === 'sudo mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo tee \'/etc/resolver/test\' > /dev/null') {
+        if ($command === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null') {
+            if ($resolverWriteThrowsTimeout) {
+                throw fakeProcessTimedOutException($command);
+            }
+
+            if ($resolverWriteFailsNoninteractive) {
+                return Process::result('', 'sudo: a password is required', 1);
+            }
+
             return Process::result('', '', 0);
         }
 
-        if ($command === 'sudo rm \'/etc/resolver/test\'') {
+        if ($command === 'sudo -n rm \'/etc/resolver/test\'') {
+            if ($resolverRemoveThrowsTimeout) {
+                throw fakeProcessTimedOutException($command);
+            }
+
+            if ($resolverRemoveFailsNoninteractive) {
+                return Process::result('', 'sudo: a password is required', 1);
+            }
+
             return Process::result('', '', 0);
         }
 

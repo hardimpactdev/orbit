@@ -135,6 +135,50 @@ describe('dns:resolve-tld', function (): void {
                     'resolver_backend' => 'dnsmasq',
                 ]);
         });
+
+        it('returns valid JSON write failure when resolver write_failed includes a timeout error', function (): void {
+            $this->resolver->resolveResult = [
+                'status' => 'write_failed',
+                'changed' => false,
+                'error' => 'Process timed out while running sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null. Error: The process exceeded the timeout of 10 seconds.',
+            ];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '192.168.1.150', '--json' => true]);
+
+            expect($output)->not->toBeEmpty()
+                ->and(json_decode($output, true))->not->toBeNull();
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(1)
+                ->and($decoded)->toHaveKey('error')
+                ->and($decoded['error']['code'])->toBe('local_resolver_write_failed')
+                ->and($decoded['error']['message'])->toBe('Failed to update local DNS resolver configuration.')
+                ->and($decoded['error']['meta']['tld'])->toBe('test')
+                ->and($decoded['error']['meta']['resolver_backend'])->toBe('dnsmasq');
+        });
+
+        it('returns valid JSON write failure when resolver write_failed lacks cached sudo credentials', function (): void {
+            $this->resolver->resolveResult = [
+                'status' => 'write_failed',
+                'changed' => false,
+                'error' => 'sudo: a password is required',
+            ];
+
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '192.168.1.150', '--json' => true]);
+
+            expect($output)->not->toBeEmpty()
+                ->and(json_decode($output, true))->not->toBeNull();
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)->toBe(1)
+                ->and($decoded)->toHaveKey('error')
+                ->and($decoded['error']['code'])->toBe('local_resolver_write_failed')
+                ->and($decoded['error']['message'])->toBe('Failed to update local DNS resolver configuration.')
+                ->and($decoded['error']['meta']['tld'])->toBe('test')
+                ->and($decoded['error']['meta']['resolver_backend'])->toBe('dnsmasq');
+        });
     });
 
     describe('reset sub-action', function (): void {
