@@ -64,6 +64,16 @@ function assignNodesProbeGatewayRole(Node $node): void
     ]);
 }
 
+function assignNodesProbeAgentRole(Node $node, array $settings = ['tld' => 'agent']): void
+{
+    NodeRoleAssignment::factory()->create([
+        'node_id' => $node->id,
+        'role' => 'agent',
+        'status' => 'active',
+        'settings' => $settings,
+    ]);
+}
+
 function createNodesProbeGatewayNode(): Node
 {
     $node = Node::create([
@@ -545,6 +555,41 @@ describe('external service stubs', function (): void {
         ]);
     });
 
+    it('detects unreachable agent nodes over SSH', function (): void {
+        $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 255,
+                stdout: '',
+                stderr: 'ssh: connect to host 10.6.0.11 port 22: Connection timed out',
+                durationMs: 1,
+            ),
+        ]));
+
+        $node = Node::create([
+            'name' => 'agent',
+            'host' => '10.6.0.11',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.11',
+            'tld' => 'agent',
+        ]);
+        assignNodesProbeAgentRole($node);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.11/32']);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $ssh = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable'));
+
+        expect($ssh)->toHaveCount(1);
+        expect($ssh[0]->kind)->toBe(DriftKind::Unverifiable);
+        expect($ssh[0]->summary)->toBe('Gateway cannot reach node agent over SSH.');
+        expect($ssh[0]->detail)->toBe([
+            'exit_code' => 255,
+            'output' => 'ssh: connect to host 10.6.0.11 port 22: Connection timed out',
+        ]);
+    });
+
     it('skips SSH reachability for non-app nodes', function (): void {
         $remoteShell = new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
@@ -559,6 +604,35 @@ describe('external service stubs', function (): void {
             'platform' => 'ubuntu_24-04',
             'wireguard_address' => '10.6.0.1',
         ]);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');
+
+        expect($ssh)->toHaveCount(0);
+        expect($remoteShell->scripts)->toHaveCount(1);
+        expect($remoteShell->scripts[0])->toContain('"runtime_user"');
+    });
+
+    it('skips SSH reachability for database nodes', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 255, stdout: '', stderr: 'should not run', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'database',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.3',
+        ]);
+        NodeRoleAssignment::factory()->create([
+            'node_id' => $node->id,
+            'role' => 'database',
+            'status' => 'active',
+        ]);
+        WireGuardPeer::factory()->create(['node_id' => $node->id, 'allowed_ips' => '10.6.0.3/32']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
         $ssh = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.ssh_unreachable');

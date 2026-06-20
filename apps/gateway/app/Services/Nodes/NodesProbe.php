@@ -159,6 +159,14 @@ final readonly class NodesProbe
             || $node->hasActiveRole(NodeRoleName::AppProduction->value);
     }
 
+    private function nodeRequiresGatewaySshReachability(Node $node): bool
+    {
+        $roles = app(NodeRoleAssignments::class);
+
+        return $roles->nodeHasActiveAppHostRole($node)
+            || $roles->nodeHasActiveAgentRole($node);
+    }
+
     /**
      * @return list<DriftEntry>
      */
@@ -767,7 +775,7 @@ final readonly class NodesProbe
     {
         if (
             ! $node->isActive()
-            || ! app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)
+            || ! $this->nodeRequiresGatewaySshReachability($node)
             || $this->nodeIsMissingRequiredRecordFields($node)
         ) {
             return [];
@@ -783,7 +791,7 @@ final readonly class NodesProbe
                     family: $this->key(),
                     key: 'node.ssh_unreachable',
                     kind: DriftKind::Unverifiable,
-                    summary: "Gateway cannot reach app node {$node->name} over SSH: {$e->getMessage()}",
+                    summary: "Gateway cannot reach node {$node->name} over SSH: {$e->getMessage()}",
                     detail: [
                         'exception' => $e::class,
                         'message' => $e->getMessage(),
@@ -798,7 +806,7 @@ final readonly class NodesProbe
                     family: $this->key(),
                     key: 'node.ssh_unreachable',
                     kind: DriftKind::Unverifiable,
-                    summary: "Gateway cannot reach app node {$node->name} over SSH.",
+                    summary: "Gateway cannot reach node {$node->name} over SSH.",
                     detail: [
                         'exit_code' => $result->exitCode,
                         'output' => trim($result->output()),
