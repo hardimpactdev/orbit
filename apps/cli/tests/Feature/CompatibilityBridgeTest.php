@@ -65,6 +65,8 @@ describe('native command option normalization', function (): void {
             ->toBe(['orbit', 'version'])
             ->and(normalizeNativeCommandArgv(['orbit', '--version', '--json']))
             ->toBe(['orbit', 'version', '--json'])
+            ->and(normalizeNativeCommandArgv(['orbit', '--version', '--local', '--json']))
+            ->toBe(['orbit', 'version', '--local', '--json'])
             ->and(normalizeNativeCommandArgv(['orbit', '--json', '--version']))
             ->toBe(['orbit', 'version', '--json'])
             ->and(normalizeNativeCommandArgv(['orbit', '-V']))

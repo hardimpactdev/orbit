@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit version [--json]
+orbit version [--local] [--json]
 ```
 
 The root `orbit --version` and `orbit -V` forms are normalized to this command
@@ -31,6 +31,7 @@ options are optional.
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer. |
+| `local` | `--local` | Optional. | Never. | `false`. | Skips public release metadata lookups and returns only local installed metadata. |
 
 Root `--version` and `-V` invocations are normalized to the first-party
 `version` command so Orbit can render release and install metadata. When a real
@@ -47,13 +48,16 @@ available.
   `https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json`.
   If that manifest is unavailable or malformed, fall back to the GitHub
   Releases API on a best-effort basis. The command uses a short timeout and
-  treats network, response, or schema failures as missing metadata.
+  treats network, response, or schema failures as missing metadata. When
+  `--local` is present, release source lookups are skipped and `latest_version`
+  is `null`.
 - `released_at` is the publish timestamp for the installed version. If the
   latest manifest is the installed version, reuse the latest manifest
   timestamp. Otherwise, fetch the installed version manifest at
   `https://github.com/hardimpactdev/orbit/releases/download/v<version>/orbit-release-manifest.json`.
   If the manifest lookup cannot provide the timestamp, fall back to the GitHub
-  Releases API on a best-effort basis.
+  Releases API on a best-effort basis. When `--local` is present, this lookup is
+  skipped and `released_at` is `null`.
 - `installed_at` is read from `ORBIT_INSTALL_METADATA_PATH` when set, or
   `$HOME/.config/orbit/install.json` by default, only when the metadata version
   matches the installed version. If no matching metadata exists, fall back to
@@ -114,7 +118,7 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/cli/tests/Feature/Commands/Operation/VersionCommandTest.php` | Human output, update annotation, JSON metadata, and release lookup failure behavior. |
+| `apps/cli/tests/Feature/Commands/Operation/VersionCommandTest.php` | Human output, update annotation, JSON metadata, local-only metadata, and release lookup failure behavior. |
 | `apps/cli/tests/Feature/CompatibilityBridgeTest.php` | Root `--version` and `-V` normalization to the first-party command. |
 | `apps/cli/tests/Feature/Services/Updates/LocalCheckoutUpdaterTest.php` | Local update writes install metadata after relinking and verifying the host launcher. |
 | `apps/gateway/tests/Feature/InstallOrbitLauncherTest.php` | Installer writes install metadata after the binary verifies. |

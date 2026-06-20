@@ -46,6 +46,19 @@ final readonly class VersionInfoResolver
         );
     }
 
+    public function resolveLocal(): VersionInfo
+    {
+        $version = $this->currentVersion();
+
+        return new VersionInfo(
+            version: $version,
+            latestVersion: null,
+            updateAvailable: false,
+            releasedAt: null,
+            installedAt: $this->installMetadata->installedAtFor($version),
+        );
+    }
+
     /**
      * @return array{version: string, published_at: string|null}|null
      */

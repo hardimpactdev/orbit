@@ -24,7 +24,7 @@ it('checks for the relocated gateway artisan when probing Orbit installs', funct
         ->andReturn($result);
     $instance->shouldReceive('exec')
         ->once()
-        ->with("sudo -iu orbit bash -lc 'orbit --version >/dev/null'")
+        ->with("sudo -iu orbit bash -lc 'orbit --version --local >/dev/null'")
         ->andReturn($result);
 
     E2ENodeProbe::assertOrbitInstalled($instance);

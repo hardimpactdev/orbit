@@ -261,7 +261,7 @@ final readonly class WorkloadNodeUpdater
             '        ;;',
             'esac',
             'echo verify_cli',
-            '"$BIN_PATH" --version',
+            '"$BIN_PATH" --version --local',
         ];
 
         if ($roleImages !== []) {
@@ -274,7 +274,7 @@ final readonly class WorkloadNodeUpdater
         }
 
         $lines[] = 'echo verify';
-        $lines[] = '"$BIN_PATH" --version';
+        $lines[] = '"$BIN_PATH" --version --local';
 
         return implode("\n", $lines);
     }

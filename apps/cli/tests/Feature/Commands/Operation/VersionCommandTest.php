@@ -104,6 +104,36 @@ describe('version', function (): void {
             ]);
     });
 
+    it('returns local JSON version metadata without checking release sources', function (): void {
+        file_put_contents($this->installMetadataPath, json_encode([
+            'schema_version' => 1,
+            'version' => '0.1.105',
+            'installed_at' => '2026-06-17T10:54:00+00:00',
+        ], JSON_THROW_ON_ERROR));
+
+        Http::fake([
+            '*' => Http::response([], 500),
+        ]);
+
+        [$exitCode, $output] = runCommand($this, 'version', [
+            '--json' => true,
+            '--local' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data'])->toBe([
+                'version' => '0.1.105',
+                'latest_version' => null,
+                'update_available' => false,
+                'released_at' => null,
+                'installed_at' => '2026-06-17T10:54:00+00:00',
+            ]);
+
+        Http::assertNothingSent();
+    });
+
     it('does not fail when release lookups are unavailable', function (): void {
         file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,

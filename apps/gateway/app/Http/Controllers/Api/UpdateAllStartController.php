@@ -88,28 +88,7 @@ class UpdateAllStartController implements Loggable
         ]);
         $operationRuns->appendStep($operationRun->id, 'plan', 'done', 'Update plan persisted');
 
-        try {
-            $updateRunnerLauncher->launch($operationRun);
-        } catch (RuntimeException $exception) {
-            $operationRuns->appendStep($operationRun->id, 'plan', 'failed', 'Update runner launch failed');
-            $operationRuns->appendError($operationRun->id, 'Update runner launch failed', 1, [
-                'reason' => 'update_runner_launch_failed',
-            ]);
-            $this->activityOperationRun = $operationRuns->failed($operationRun->id, error: [
-                'code' => 'update_runner_launch_failed',
-                'message' => $exception->getMessage(),
-            ]);
-
-            return response()->json([
-                'error' => [
-                    'code' => 'update_runner_launch_failed',
-                    'message' => $exception->getMessage(),
-                    'meta' => [
-                        'operation_run_id' => $operationRun->id,
-                    ],
-                ],
-            ], 500);
-        }
+        $this->launchRunnerAfterResponse($operationRun, $operationRuns, $updateRunnerLauncher);
 
         return response()->json([
             'success' => [
@@ -122,6 +101,27 @@ class UpdateAllStartController implements Loggable
                 ], fn (mixed $value): bool => $value !== null),
             ],
         ], 202);
+    }
+
+    private function launchRunnerAfterResponse(
+        OperationRun $operationRun,
+        OperationRunRecorder $operationRuns,
+        UpdateRunnerLauncher $updateRunnerLauncher,
+    ): void {
+        app()->terminating(function () use ($operationRun, $operationRuns, $updateRunnerLauncher): void {
+            try {
+                $updateRunnerLauncher->launch($operationRun);
+            } catch (RuntimeException $exception) {
+                $operationRuns->appendStep($operationRun->id, 'runner', 'failed', 'Update runner launch failed');
+                $operationRuns->appendError($operationRun->id, 'Update runner launch failed', 1, [
+                    'reason' => 'update_runner_launch_failed',
+                ]);
+                $this->activityOperationRun = $operationRuns->failed($operationRun->id, error: [
+                    'code' => 'update_runner_launch_failed',
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        });
     }
 
     public function effect(): ActivityLogType

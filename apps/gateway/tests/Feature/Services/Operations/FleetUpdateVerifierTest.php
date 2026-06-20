@@ -48,12 +48,12 @@ it('verifies gateway scheduler workload CLI and required role images', function 
     expect($shell->calls)->toHaveCount(7)
         ->and($shell->calls[0])->toMatchArray([
             'node' => 'agent-1',
-            'script' => 'orbit --version',
+            'script' => 'orbit --version --local',
         ])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and($shell->calls[3])->toMatchArray([
             'node' => 'ingress-1',
-            'script' => 'orbit --version',
+            'script' => 'orbit --version --local',
         ])
         ->and($shell->calls[6]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and(array_column($shell->calls, 'node'))->toBe([
@@ -77,7 +77,7 @@ it('fails when workload CLI verification fails', function (): void {
     ]);
 
     app()->instance(RemoteShell::class, new FleetVerifierFakeShell(failScriptsContaining: [
-        'orbit --version' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit missing', durationMs: 10),
+        'orbit --version --local' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit missing', durationMs: 10),
     ]));
 
     $run = fleetVerifierRun();
@@ -169,7 +169,7 @@ it('emits terminal success only after runner verification passes', function (): 
 
 it('emits terminal failure when runner verification fails', function (): void {
     app()->instance(RemoteShell::class, new FleetVerifierFakeShell(failScriptsContaining: [
-        'orbit --version' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit missing', durationMs: 10),
+        'orbit --version --local' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit missing', durationMs: 10),
     ]));
 
     $run = fleetVerifierRun();

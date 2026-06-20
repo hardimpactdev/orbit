@@ -19,15 +19,16 @@ use JsonException;
  * node for the `update:all` fleet version check.
  *
  * The gateway version is read from the baked `app.version` config (the gateway
- * is the local target). Each workload node version is read remotely with
- * `orbit --version --json` through gateway-owned node execution, reusing the
- * same {@see RemoteShell} transport as {@see FleetUpdateVerifier}. A version
+ * is the local target). Each workload node version is read remotely with the
+ * local-only `orbit --version --local --json` path through gateway-owned node
+ * execution, reusing the same {@see RemoteShell} transport as
+ * {@see FleetUpdateVerifier}. A version
  * that cannot be read or parsed is reported as `null` and counts as outdated so
  * the node is still updated rather than silently skipped.
  */
 final readonly class FleetVersionProbe
 {
-    private const string VersionCommand = 'orbit --version --json';
+    private const string VersionCommand = 'orbit --version --local --json';
 
     private const int VersionTimeoutSeconds = 10;
 

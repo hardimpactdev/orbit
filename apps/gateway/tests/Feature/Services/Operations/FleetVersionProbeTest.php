@@ -48,11 +48,11 @@ it('probes the gateway and each workload node version and counts outdated nodes'
         ])
         ->and($report->outdatedCount)->toBe(1)
         ->and($report->allCurrent())->toBeFalse()
-        ->and($shell->scripts)->toBe(['orbit --version --json', 'orbit --version --json'])
+        ->and($shell->scripts)->toBe(['orbit --version --local --json', 'orbit --version --local --json'])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id]);
 });
 
-it('parses orbit --version --json success.data.version from each node', function (): void {
+it('parses orbit --version --local --json success.data.version from each node', function (): void {
     config()->set('app.version', '2.0.0');
 
     $shell = new FleetVersionProbeFakeShell(versions: [
@@ -69,7 +69,7 @@ it('parses orbit --version --json success.data.version from each node', function
     $report = app(FleetVersionProbe::class)->probe($run, $plan);
 
     expect($report->nodeVersions['agent-1'])->toBe('1.0.0')
-        ->and($shell->scripts)->toBe(['orbit --version --json']);
+        ->and($shell->scripts)->toBe(['orbit --version --local --json']);
 });
 
 it('treats malformed json, failed commands, and missing version fields as outdated', function (string $node, RemoteShellResult $result): void {
@@ -135,9 +135,9 @@ it('runs node version probes concurrently through RemoteShellPool while preservi
         ->and($shell->maxActiveProcesses)->toBeGreaterThan(1)
         ->and($shell->runCalls)->toBe(0)
         ->and($shell->scripts)->toBe([
-            'orbit --version --json',
-            'orbit --version --json',
-            'orbit --version --json',
+            'orbit --version --local --json',
+            'orbit --version --local --json',
+            'orbit --version --local --json',
         ]);
 });
 
