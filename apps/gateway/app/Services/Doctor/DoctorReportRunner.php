@@ -216,16 +216,25 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
+     * @param  (callable(Node, 'running'|'done'): void)|null  $onNodeProgress
      * @return array<string, mixed>
      */
-    public function probeFleet(array $families = [], ?string $key = null): array
+    public function probeFleet(array $families = [], ?string $key = null, ?callable $onNodeProgress = null): array
     {
         $targets = $this->fleetTargetsForFamilies($families);
         $issues = [];
         $nodes = [];
 
         foreach ($targets as $node) {
+            if ($onNodeProgress !== null) {
+                $onNodeProgress($node, 'running');
+            }
+
             $report = $this->probe($node, families: $families, key: $key);
+
+            if ($onNodeProgress !== null) {
+                $onNodeProgress($node, 'done');
+            }
             $reportIssues = is_array($report['issues'] ?? null) ? $report['issues'] : [];
             $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
             $reportScope = is_array($report['scope'] ?? null) ? $report['scope'] : [];

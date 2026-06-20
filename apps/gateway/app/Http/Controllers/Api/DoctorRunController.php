@@ -176,15 +176,17 @@ final class DoctorRunController implements Loggable
                 ->values()
                 ->all());
 
-            foreach ($targets as $node) {
-                $events->stepEvent($node->name, 'running', "Checking {$node->name}");
-            }
-
-            $doctor = $runner->probeFleet(families: $families, key: $key);
-
-            foreach ($targets as $node) {
-                $events->stepEvent($node->name, 'done', "{$node->name} checked");
-            }
+            $doctor = $runner->probeFleet(
+                families: $families,
+                key: $key,
+                onNodeProgress: function (Node $node, string $phase) use ($events): void {
+                    $events->stepEvent(
+                        $node->name,
+                        $phase,
+                        $phase === 'running' ? "Checking {$node->name}" : "{$node->name} checked",
+                    );
+                },
+            );
 
             if (($doctor['healthy'] ?? false) === true) {
                 $events->complete(0, [
