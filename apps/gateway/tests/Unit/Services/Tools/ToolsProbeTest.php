@@ -127,6 +127,26 @@ describe('ToolsProbe', function (): void {
             ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
     });
 
+    it('allows managed caddy on active agent nodes', function (): void {
+        $node = createToolsProbeAgentNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t0\tmissing\t\n",
+        ));
+
+        $drift = $probe->diff($tool, $probe->introspect($tool));
+
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.container_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
     it('allows metrics node exporter on ingress nodes', function (): void {
         $node = Node::factory()->ingress()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'node-exporter']);

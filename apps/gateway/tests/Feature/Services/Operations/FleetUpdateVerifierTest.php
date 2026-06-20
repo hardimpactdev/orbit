@@ -45,7 +45,7 @@ it('verifies gateway scheduler workload CLI and required role images', function 
 
     app(FleetUpdateVerifier::class)->verify($run, $plan);
 
-    expect($shell->calls)->toHaveCount(6)
+    expect($shell->calls)->toHaveCount(7)
         ->and($shell->calls[0])->toMatchArray([
             'node' => 'agent-1',
             'script' => 'orbit --version',
@@ -55,17 +55,19 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'node' => 'ingress-1',
             'script' => 'orbit --version',
         ])
-        ->and($shell->calls[5]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->calls[6]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
         ->and(array_column($shell->calls, 'node'))->toBe([
             'agent-1',
             'app-dev-1',
             'database-1',
             'ingress-1',
+            'agent-1',
             'app-dev-1',
             'ingress-1',
         ])
         ->and($shell->calls[4]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
-        ->and($shell->calls[5]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
+        ->and($shell->calls[5]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
+        ->and($shell->calls[6]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
 });
 
 it('fails when workload CLI verification fails', function (): void {

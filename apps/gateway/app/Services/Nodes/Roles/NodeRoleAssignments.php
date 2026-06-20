@@ -243,14 +243,15 @@ class NodeRoleAssignments
     /**
      * Roles whose baseline provisions an orbit-caddy container on the node.
      * Mirrors {@see ManagesNodeToolBaseline::defaultOrbitCaddyContainer()}:
-     * gateway, app-host, and router nodes get a private/default spec; ingress
-     * nodes get the public-ingress spec.
+     * gateway, app-host, router, and agent nodes get a private/default spec;
+     * ingress nodes get the public-ingress spec.
      */
     public function nodeHostsOrbitCaddy(Node $node): bool
     {
         return $this->nodeCanServeGatewayOrAppHostWorkloads($node)
             || $this->nodeCanServeRouter($node)
-            || $this->nodeCanServeIngress($node);
+            || $this->nodeCanServeIngress($node)
+            || $this->nodeHasActiveAgentRole($node);
     }
 
     public function nodeCanHostManagedTools(Node $node): bool
