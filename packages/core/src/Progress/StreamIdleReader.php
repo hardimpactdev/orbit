@@ -13,6 +13,8 @@ use Psr\Http\Message\StreamInterface;
  */
 final readonly class StreamIdleReader
 {
+    private const int SELECTED_RESOURCE_READ_BYTES = 1;
+
     public function __construct(
         private int $idleIntervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS,
     ) {}
@@ -58,7 +60,7 @@ final readonly class StreamIdleReader
             }
 
             if ($ready > 0) {
-                $chunk = $this->readSelectedChunk($stream, $resource, $maxBytes);
+                $chunk = $this->readSelectedChunk($resource, $maxBytes);
 
                 if ($chunk !== '') {
                     return $chunk;
@@ -73,19 +75,24 @@ final readonly class StreamIdleReader
         return '';
     }
 
-    private function readSelectedChunk(StreamInterface $stream, mixed $resource, int $maxBytes): string
+    private function readSelectedChunk(mixed $resource, int $maxBytes): string
     {
-        $restoreBlocking = false;
-
-        if ($this->isSelectableStreamResource($resource)) {
-            $metadata = stream_get_meta_data($resource);
-            $restoreBlocking = $metadata['blocked'];
-
-            stream_set_blocking($resource, false);
+        if ($maxBytes <= 0 || ! $this->isSelectableStreamResource($resource)) {
+            return '';
         }
 
+        $restoreBlocking = false;
+        $metadata = stream_get_meta_data($resource);
+        $restoreBlocking = $metadata['blocked'];
+
+        stream_set_blocking($resource, false);
+
         try {
-            return $stream->read($maxBytes);
+            // TLS streams can block trying to fill a large fread() length after
+            // readiness. A one-byte resource read returns only available data.
+            $chunk = fread($resource, min($maxBytes, self::SELECTED_RESOURCE_READ_BYTES));
+
+            return $chunk === false ? '' : $chunk;
         } finally {
             if ($restoreBlocking && is_resource($resource)) {
                 stream_set_blocking($resource, true);
