@@ -108,6 +108,19 @@ final class UpdateAllHumanProgressRenderer
 
     private ?ForkedFrameTicker $ticker = null;
 
+    private bool $gatewayPhaseComplete = false;
+
+    private bool $gatewayPhaseFailed = false;
+
+    private bool $fanOutTargetsRevealed = false;
+
+    /**
+     * Workload row names in the order received from `update_targets`.
+     *
+     * @var list<string>
+     */
+    private array $revealedWorkloadOrder = [];
+
     public function begin(OutputInterface $output): void
     {
         $this->output = $output;
@@ -159,7 +172,8 @@ final class UpdateAllHumanProgressRenderer
 
     public function gatewayFailed(OutputInterface $output, string $message = ''): void
     {
-        $this->ensureTarget($output, 'gateway');
+        $this->revealFanOutTargetsOnce($output, ['gateway', 'local']);
+        $this->gatewayPhaseFailed = true;
         $this->setRow($output, 'gateway', self::STATE_FAILED, self::STAGE_FAILED, $message);
     }
 
@@ -180,7 +194,7 @@ final class UpdateAllHumanProgressRenderer
         $status = $this->frameString($payload, 'status');
         $message = $this->frameString($payload, 'message');
 
-        if ($key !== null && $this->applyKeyedStep($output, $key, $status, $message)) {
+        if ($key !== null && $this->applyKeyedStep($output, $key, $status, $message, $payload)) {
             return;
         }
 
@@ -201,7 +215,10 @@ final class UpdateAllHumanProgressRenderer
      * `Checking` in-progress message and only differ by key). Returns true when
      * the key was handled.
      */
-    private function applyKeyedStep(OutputInterface $output, string $key, ?string $status, ?string $message): bool
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function applyKeyedStep(OutputInterface $output, string $key, ?string $status, ?string $message, array $payload = []): bool
     {
         if ($key === self::ROW_CHECK_UPDATES || $key === self::ROW_CHECK_FLEET) {
             $this->ensureTarget($output, $key);
@@ -213,6 +230,10 @@ final class UpdateAllHumanProgressRenderer
 
                 $this->setRow($output, $key, self::STATE_DONE, self::STAGE_SETTLED, $message ?? '');
 
+                if ($key === self::ROW_CHECK_FLEET && $this->hasOutdatedNodes($message)) {
+                    $this->revealFanOutTargetsOnce($output, $this->updateTargetsFromPayload($payload));
+                }
+
                 return true;
             }
 
@@ -222,7 +243,7 @@ final class UpdateAllHumanProgressRenderer
                 return true;
             }
 
-            $this->setRow($output, $key, self::STATE_ACTIVE, self::STAGE_CHECKING);
+            $this->setRow($output, $key, self::STATE_ACTIVE, self::STAGE_CHECKING, $message ?? 'Checking');
 
             return true;
         }
@@ -231,12 +252,14 @@ final class UpdateAllHumanProgressRenderer
             $this->ensureTarget($output, 'gateway');
 
             if ($status === 'done') {
-                $this->setRow($output, 'gateway', self::STATE_DONE, self::STAGE_DONE);
+                $this->gatewayPhaseComplete = true;
+                $this->setRow($output, 'gateway', self::STATE_DONE, self::STAGE_DONE, $this->nodeDoctorSuffix($message));
 
                 return true;
             }
 
             if ($status === 'fail') {
+                $this->gatewayPhaseFailed = true;
                 $this->setRow($output, 'gateway', self::STATE_FAILED, self::STAGE_FAILED, $message ?? '');
 
                 return true;
@@ -257,6 +280,12 @@ final class UpdateAllHumanProgressRenderer
         if (str_starts_with($key, 'workload.')) {
             $node = $this->normalizeTarget(substr($key, strlen('workload.')));
             $this->ensureTarget($output, $node);
+
+            if (! $this->gatewayPhaseComplete) {
+                $this->setRow($output, $node, self::STATE_WAITING, self::STAGE_WAITING, 'Waiting');
+
+                return true;
+            }
 
             if ($status === 'done') {
                 if ($message !== null && str_contains($message, 'skipped: already up to date')) {
@@ -479,13 +508,193 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $this->order[] = $target;
+        $insertAt = $this->resolveInsertIndex($target);
+        array_splice($this->order, $insertAt, 0, [$target]);
         $this->rows[$target] = [
             'state' => self::STATE_WAITING,
             'stage' => self::STAGE_WAITING,
             'message' => '',
         ];
         $this->targetWidth = max($this->targetWidth, strlen($this->displayName($target)));
+    }
+
+    private function resolveInsertIndex(string $target): int
+    {
+        if ($target === self::ROW_CHECK_UPDATES) {
+            return 0;
+        }
+
+        if ($target === self::ROW_CHECK_FLEET) {
+            return min(1, count($this->order));
+        }
+
+        if ($target === 'gateway') {
+            return $this->indexAfterCheckRows();
+        }
+
+        if ($target === 'local') {
+            $gatewayIndex = array_search('gateway', $this->order, true);
+
+            return $gatewayIndex === false
+                ? $this->indexAfterCheckRows()
+                : $gatewayIndex + 1;
+        }
+
+        if ($this->isWorkloadTarget($target)) {
+            if ($this->revealedWorkloadOrder !== []) {
+                return $this->workloadInsertIndex($target);
+            }
+
+            foreach (array_reverse($this->order, true) as $index => $existingTarget) {
+                if ($this->isWorkloadTarget($existingTarget)) {
+                    return $index + 1;
+                }
+            }
+
+            return $this->indexAfterLocal();
+        }
+
+        return count($this->order);
+    }
+
+    private function workloadInsertIndex(string $target): int
+    {
+        $orderIndex = array_search($target, $this->revealedWorkloadOrder, true);
+
+        if ($orderIndex === false) {
+            foreach (array_reverse($this->order, true) as $index => $existingTarget) {
+                if ($this->isWorkloadTarget($existingTarget)) {
+                    return $index + 1;
+                }
+            }
+
+            return $this->indexAfterLocal();
+        }
+
+        $insertAt = $this->indexAfterLocal();
+
+        for ($i = 0; $i < $orderIndex; $i++) {
+            $precedingTarget = $this->revealedWorkloadOrder[$i];
+            $precedingIndex = array_search($precedingTarget, $this->order, true);
+
+            if ($precedingIndex !== false) {
+                $insertAt = $precedingIndex + 1;
+            }
+        }
+
+        return $insertAt;
+    }
+
+    private function indexAfterCheckRows(): int
+    {
+        $checkRowCount = 0;
+
+        foreach ($this->order as $existingTarget) {
+            if ($this->isCheckTarget($existingTarget)) {
+                $checkRowCount++;
+            }
+        }
+
+        return $checkRowCount;
+    }
+
+    private function indexAfterLocal(): int
+    {
+        $localIndex = array_search('local', $this->order, true);
+
+        if ($localIndex !== false) {
+            return $localIndex + 1;
+        }
+
+        $gatewayIndex = array_search('gateway', $this->order, true);
+
+        return $gatewayIndex === false
+            ? $this->indexAfterCheckRows()
+            : $gatewayIndex + 1;
+    }
+
+    /**
+     * @param  list<string>  $updateTargets
+     */
+    private function revealFanOutTargetsOnce(OutputInterface $output, array $updateTargets = []): void
+    {
+        if ($this->fanOutTargetsRevealed) {
+            return;
+        }
+
+        $this->fanOutTargetsRevealed = true;
+        $this->revealedWorkloadOrder = [];
+
+        foreach ($updateTargets as $target) {
+            if ($this->isCheckTarget($target)) {
+                continue;
+            }
+
+            $target = $this->normalizeTarget($target);
+
+            if ($target === 'unknown') {
+                continue;
+            }
+
+            $this->ensureTarget($output, $target);
+
+            if ($this->isWorkloadTarget($target)) {
+                $this->revealedWorkloadOrder[] = $target;
+            }
+
+            if ($target === 'local' || $this->isWorkloadTarget($target)) {
+                $this->setRow($output, $target, self::STATE_WAITING, self::STAGE_WAITING, 'Waiting');
+            }
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    private function updateTargetsFromPayload(array $payload): array
+    {
+        $targets = $payload['update_targets'] ?? [];
+
+        if (! is_array($targets)) {
+            return [];
+        }
+
+        $normalized = [];
+
+        foreach ($targets as $target) {
+            if (! is_string($target)) {
+                continue;
+            }
+
+            $target = $this->normalizeTarget($target);
+
+            if ($target === 'unknown' || $this->isCheckTarget($target)) {
+                continue;
+            }
+
+            $normalized[] = $target;
+        }
+
+        return $normalized;
+    }
+
+    private function hasOutdatedNodes(?string $message): bool
+    {
+        return $message !== null
+            && preg_match('/Done: \d+ outdated /', $message) === 1;
+    }
+
+    private function isCheckTarget(string $target): bool
+    {
+        return $target === self::ROW_CHECK_UPDATES || $target === self::ROW_CHECK_FLEET;
+    }
+
+    private function isWorkloadTarget(string $target): bool
+    {
+        return ! $this->isCheckTarget($target)
+            && $target !== 'gateway'
+            && $target !== 'local';
     }
 
     private function displayName(string $target): string
@@ -558,6 +767,14 @@ final class UpdateAllHumanProgressRenderer
             'stage' => $stage,
             'message' => $message,
         ];
+
+        if ($target === 'gateway' && $state === self::STATE_DONE) {
+            $this->gatewayPhaseComplete = true;
+        }
+
+        if ($target === 'gateway' && $state === self::STATE_FAILED) {
+            $this->gatewayPhaseFailed = true;
+        }
 
         if (! $output->isDecorated() && $this->shouldSkipNonDecoratedRepaint($previousState, $previousStage, $state, $stage, $message)) {
             $this->syncTicker();
@@ -644,7 +861,13 @@ final class UpdateAllHumanProgressRenderer
             default => $this->decorate('  ○  '.$label, self::DIM, $styled),
         };
 
-        if ($row['message'] !== '') {
+        if ($row['state'] === self::STATE_WAITING
+            && ($target === 'local' || $this->isWorkloadTarget($target))
+            && $row['message'] === 'Waiting') {
+            $line .= '  '.$this->decorate('Waiting', self::DIM, $styled);
+        }
+
+        if ($row['message'] !== '' && ! ($row['state'] === self::STATE_WAITING && $row['message'] === 'Waiting')) {
             $separator = $stage === '' ? '  ' : ' ';
             $line .= $separator.$this->decorate($row['message'], $row['state'] === self::STATE_FAILED ? self::RED : self::DIM, $styled);
         }

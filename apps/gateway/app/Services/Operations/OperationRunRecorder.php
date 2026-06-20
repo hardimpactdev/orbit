@@ -171,10 +171,17 @@ final readonly class OperationRunRecorder
 
     /**
      * @param  array<string, mixed>  $metadata
+     * @param  array<string, mixed>  $payloadExtras
      */
-    public function appendStep(string $operationRunId, string $key, string $status, ?string $message = null, array $metadata = []): OperationEvent
-    {
-        return $this->events->step($operationRunId, $key, $status, $message, $metadata);
+    public function appendStep(
+        string $operationRunId,
+        string $key,
+        string $status,
+        ?string $message = null,
+        array $metadata = [],
+        array $payloadExtras = [],
+    ): OperationEvent {
+        return $this->events->step($operationRunId, $key, $status, $message, $metadata, $payloadExtras);
     }
 
     /**

@@ -131,6 +131,69 @@ function fakeNoGatewayConfig(string $configPath): void
     app()->forgetInstance(GatewayStreamClient::class);
 }
 
+function assertProgressTreeSpacerContract(string $text): bool
+{
+    $lines = array_values(array_filter(explode("\n", rtrim($text, "\n")), static fn (string $line): bool => trim($line) !== ''));
+
+    if ($lines === [] || ! str_contains($lines[0], 'Updating Orbit nodes')) {
+        return false;
+    }
+
+    $rowCount = 0;
+
+    for ($index = 1; $index < count($lines); $index++) {
+        if (! str_contains($lines[$index], '│')) {
+            return false;
+        }
+
+        $index++;
+
+        if ($index >= count($lines)) {
+            return false;
+        }
+
+        if (str_contains($lines[$index], '└')) {
+            return $rowCount > 0;
+        }
+
+        $rowCount++;
+    }
+
+    return false;
+}
+
+function progressRowPosition(string $text, string $target): int|false
+{
+    $text = preg_replace('/\e\[[0-9;?]*[a-zA-Z]/', '', $text) ?? $text;
+    $pattern = '/^\s+\S+\s+'.preg_quote($target, '/').'\b/m';
+
+    if (preg_match($pattern, $text, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+        return false;
+    }
+
+    return $matches[0][1];
+}
+
+/**
+ * @param  list<string>  $targets
+ */
+function assertProgressTargetOrder(string $text, array $targets): void
+{
+    $positions = [];
+
+    foreach ($targets as $target) {
+        $position = progressRowPosition($text, $target);
+
+        expect($position)->not->toBeFalse("Expected progress row for {$target}");
+
+        $positions[] = $position;
+    }
+
+    for ($index = 1, $max = count($positions); $index < $max; $index++) {
+        expect($positions[$index])->toBeGreaterThan($positions[$index - 1]);
+    }
+}
+
 /**
  * Run an Artisan command and return [exitCode, output].
  *

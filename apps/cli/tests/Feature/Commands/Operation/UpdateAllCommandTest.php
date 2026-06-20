@@ -185,10 +185,9 @@ it('aligns check-row settled status with node stage columns', function (): void 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
@@ -201,7 +200,6 @@ it('aligns check-row settled status with node stage columns', function (): void 
     foreach ([
         ['Done: latest version is 1.2.3', 'Done:'],
         ['Done: 1 outdated node found', 'Done:'],
-        ['gateway', 'Replacing'],
         ['beast', 'Replacing'],
         ['local', 'Replacing'],
     ] as [$needle, $statusNeedle]) {
@@ -240,7 +238,7 @@ it('renders every workload node from the gateway stream fixture', function (): v
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 3 outdated nodes found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 3 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast', 'cache']]],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
@@ -262,7 +260,7 @@ it('rejects the legacy final-only node summary shape in human mode', function ()
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
@@ -288,7 +286,7 @@ it('renders update-all target progress in human mode', function (): void {
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Downloading 1.2.3 assets']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Updating gateway app']],
@@ -322,8 +320,8 @@ it('renders update-all target progress in human mode', function (): void {
         ->and($output)->toContain('│')
         // No preamble local row before gateway
         ->and($output)->not->toMatch('/local\s+Updating CLI/')
-        ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
-        ->and($output)->not->toMatch('/Checking fleet versions\s+Checking\b/')
+        ->and($output)->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)->toMatch('/Checking fleet versions\s+Checking\b/')
         ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
         ->and($output)->toMatch('/Checking fleet versions\s+Done: 2 outdated nodes found/')
         ->and($output)->toMatch('/gateway\s+Downloading 1\.2\.3 assets/')
@@ -331,7 +329,7 @@ it('renders update-all target progress in human mode', function (): void {
         ->and($output)->toMatch('/gateway\s+Replacing cli binary/')
         ->and($output)->toMatch('/gateway\s+Running doctor/')
         ->and($output)->toMatch('/gateway\s+Done/')
-        ->and($output)->not->toContain('Waiting')
+        ->and($output)->toMatch('/local\s+Waiting\b/')
         ->and($output)->toMatch('/agent\s+Done \(2 issues\)/')
         ->and($output)->toMatch('/beast\s+Skipped: already up to date/')
         ->and($output)->toMatch('/local\s+Done/')
@@ -366,14 +364,15 @@ it('renders all-current short-circuit footer when 0 outdated nodes', function ()
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('Updating Orbit nodes')
         ->and($output)->toContain('│')
-        ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
-        ->and($output)->not->toMatch('/Checking fleet versions\s+Checking\b/')
+        ->and($output)->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)->toMatch('/Checking fleet versions\s+Checking\b/')
         ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
         ->and($output)->toMatch('/Checking fleet versions\s+Done: all nodes running on 1.2.3/')
         // No gateway/local/workload rows appear
         ->and($output)->not->toMatch('/gateway\s+/')
         ->and($output)->not->toMatch('/local\s+/')
-        ->and($output)->not->toContain('Waiting')
+        ->and($output)->not->toMatch('/\bagent\s+/')
+        ->and($output)->not->toMatch('/\bbeast\s+/')
         ->and($output)->toContain('Skipped: 1.2.3 is already installed on all nodes');
 });
 
@@ -381,7 +380,8 @@ it('renders per-node sub-stages for workload nodes', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Running doctor']],
@@ -400,13 +400,156 @@ it('renders per-node sub-stages for workload nodes', function (): void {
         ->and($output)->toMatch('/beast\s+Done/');
 });
 
+it('renders the initial idle tree with a spacer before every row and the footer', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toMatch('/Updating Orbit nodes.*│.*Checking for updates.*│.*Checking fleet versions.*│.*Working\.\.\./s');
+});
+
+it('reveals fan-out rows after outdated fleet check before any gateway step in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'beast', 'agent']]],
+        ['type' => ProgressEventType::Error, 'payload' => ['message' => 'Update aborted']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toMatch('/local\s+Waiting\b/')
+        ->and($output)->toMatch('/beast\s+Waiting\b/')
+        ->and($output)->toMatch('/agent\s+Waiting\b/')
+        ->and($output)->not->toMatch('/gateway\s+Downloading/')
+        ->and($output)->not->toMatch('/gateway\s+Done/');
+
+    assertProgressTargetOrder($output, ['gateway', 'local', 'beast', 'agent']);
+});
+
+it('keeps workload rows on Waiting while the gateway row is active in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'fail', 'message' => 'Gateway health failed']],
+        ['type' => ProgressEventType::Error, 'payload' => ['message' => 'Gateway health failed']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toMatch('/gateway\s+Replacing cli binary/')
+        ->and($output)->toMatch('/local\s+Waiting\b/')
+        ->and($output)->toMatch('/beast\s+Waiting\b/')
+        ->and($output)->not->toMatch('/beast\s+Downloading 1\.2\.3/');
+});
+
+it('shows parallel fan-out rows with distinct active sub-stages in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toMatch('/agent\s+Downloading 1\.2\.3/')
+        ->and($output)->toMatch('/beast\s+Replacing cli binary/');
+});
+
+it('renders every settled fan-out node row after workloads finish out of order in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'beast', 'agent']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toMatch('/gateway\s+Done/')
+        ->and($output)->toMatch('/local\s+Done/')
+        ->and($output)->toMatch('/agent\s+Done/')
+        ->and($output)->toMatch('/beast\s+Done/');
+
+    assertProgressTargetOrder($output, ['gateway', 'local', 'beast', 'agent']);
+});
+
+it('renders the Updating Orbit nodes title in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Updating Orbit nodes');
+});
+
+it('keeps fan-out rows on Waiting and fails the footer when the gateway row fails in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'fail', 'message' => 'Gateway health failed']],
+        ['type' => ProgressEventType::Error, 'payload' => ['message' => 'Gateway health failed']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toMatch('/gateway\s+Failed\b.*Gateway health failed/')
+        ->and($output)->toMatch('/local\s+Waiting\b/')
+        ->and($output)->toMatch('/beast\s+Waiting\b/')
+        ->and($output)->not->toMatch('/beast\s+Downloading 1\.2\.3/')
+        ->and($output)->toContain('Failed')
+        ->and($this->localUpdater->calls)->toBe([]);
+});
+
+it('succeeds with a success footer when only doctor issue counts are reported', function (): void {
+    $this->localUpdater->doctorIssues = 2;
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated (4 issues)']],
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toMatch('/beast\s+Done \(4 issues\)/')
+        ->and($output)->toMatch('/local\s+Done \(2 issues\)/')
+        ->and($output)->toContain('Success: All nodes are running on version 1.2.3');
+});
+
 it('settles the local fan-out node to Done with the issue count when the local doctor reports drift', function (): void {
     $this->localUpdater->doctorIssues = 2;
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
@@ -445,7 +588,7 @@ it('renders the local fan-out node as skipped when the caller is already on the 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
@@ -685,7 +828,7 @@ Http::fake(['https://gateway.test/*' => Http::response(
     {
         foreach ([
             ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
             ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
             ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
         ] as \$event) {

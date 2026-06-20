@@ -30,4 +30,18 @@ final readonly class FleetVersionReport
     {
         return $this->outdatedCount === 0;
     }
+
+    /**
+     * Stable human-progress row targets for an outdated fleet check: gateway,
+     * local, then selected workload node names in selector order.
+     *
+     * @return list<string>
+     */
+    public function progressUpdateTargets(): array
+    {
+        return array_merge(
+            ['gateway', 'local'],
+            array_keys($this->nodeVersions),
+        );
+    }
 }

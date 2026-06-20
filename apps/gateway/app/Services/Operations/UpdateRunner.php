@@ -128,11 +128,17 @@ final readonly class UpdateRunner
 
         $report = $this->fleetVersions->probe($operationRun, $plan);
 
+        $payloadExtras = $report->outdatedCount > 0
+            ? ['update_targets' => $report->progressUpdateTargets()]
+            : [];
+
         $this->operationRuns->appendStep(
             $operationRun->id,
             'check-fleet-versions',
             'done',
             $this->fleetVersionsMessage($report->outdatedCount, $plan->target_version),
+            [],
+            $payloadExtras,
         );
 
         return $report;

@@ -46,6 +46,10 @@ it('emits the two check steps before the gateway phase and reports outdated node
         ['check-fleet-versions', 'done', 'Done: 1 outdated node found'],
     );
 
+    $fleetDonePayload = checkStepsFleetDonePayload($run);
+
+    expect($fleetDonePayload['update_targets'] ?? null)->toBe(['gateway', 'local', 'agent-1', 'app-dev-1']);
+
     $keys = array_map(fn (array $step): string => $step[0], $steps);
     $checkUpdatesIndex = array_search('check-updates', $keys, true);
     $checkFleetIndex = array_search('check-fleet-versions', $keys, true);
@@ -74,6 +78,8 @@ it('reports all nodes current when the gateway and every workload node match the
     expect(checkStepsEvents($run))->toContain(
         ['check-fleet-versions', 'done', 'Done: all nodes running on 2.0.0'],
     );
+
+    expect(checkStepsFleetDonePayload($run))->not->toHaveKey('update_targets');
 });
 
 it('short-circuits when the fleet-version probe finds 0 outdated nodes', function (): void {
@@ -149,6 +155,22 @@ function checkStepsEvents(OperationRun $run): array
             $event->payload['message'] ?? null,
         ])
         ->all();
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function checkStepsFleetDonePayload(OperationRun $run): array
+{
+    $event = $run->events()
+        ->where('event_type', 'step')
+        ->get()
+        ->first(fn (OperationEvent $event): bool => ($event->payload['key'] ?? null) === 'check-fleet-versions'
+            && ($event->payload['status'] ?? null) === 'done');
+
+    expect($event)->not->toBeNull();
+
+    return $event->payload;
 }
 
 function checkStepsSnapshot(string $targetVersion): OperationUpdatePlanSnapshot

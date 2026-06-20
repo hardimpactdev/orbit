@@ -64,9 +64,16 @@ final readonly class OperationEventRecorder
 
     /**
      * @param  array<string, mixed>  $metadata
+     * @param  array<string, mixed>  $payloadExtras
      */
-    public function step(OperationRun|string $operationRun, string $key, string $status, ?string $message = null, array $metadata = []): OperationEvent
-    {
+    public function step(
+        OperationRun|string $operationRun,
+        string $key,
+        string $status,
+        ?string $message = null,
+        array $metadata = [],
+        array $payloadExtras = [],
+    ): OperationEvent {
         $payload = [
             'key' => $key,
             'status' => $status,
@@ -74,6 +81,10 @@ final readonly class OperationEventRecorder
 
         if ($message !== null) {
             $payload['message'] = $message;
+        }
+
+        if ($payloadExtras !== []) {
+            $payload = array_merge($payload, $payloadExtras);
         }
 
         return $this->append($operationRun, 'step', $payload, $metadata);

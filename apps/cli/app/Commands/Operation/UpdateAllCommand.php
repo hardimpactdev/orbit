@@ -41,6 +41,7 @@ final class UpdateAllCommand extends GatewayCommand
         $progress->applyEvent($this->output, ProgressEventType::Step, [
             'key' => 'check-updates',
             'status' => 'running',
+            'message' => 'Checking',
         ]);
 
         try {
