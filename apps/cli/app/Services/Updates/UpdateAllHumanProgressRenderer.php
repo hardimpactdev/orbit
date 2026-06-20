@@ -110,8 +110,6 @@ final class UpdateAllHumanProgressRenderer
 
     private bool $gatewayPhaseComplete = false;
 
-    private bool $gatewayPhaseFailed = false;
-
     private bool $fanOutTargetsRevealed = false;
 
     /**
@@ -173,7 +171,6 @@ final class UpdateAllHumanProgressRenderer
     public function gatewayFailed(OutputInterface $output, string $message = ''): void
     {
         $this->revealFanOutTargetsOnce($output, ['gateway', 'local']);
-        $this->gatewayPhaseFailed = true;
         $this->setRow($output, 'gateway', self::STATE_FAILED, self::STAGE_FAILED, $message);
     }
 
@@ -259,7 +256,6 @@ final class UpdateAllHumanProgressRenderer
             }
 
             if ($status === 'fail') {
-                $this->gatewayPhaseFailed = true;
                 $this->setRow($output, 'gateway', self::STATE_FAILED, self::STAGE_FAILED, $message ?? '');
 
                 return true;
@@ -770,10 +766,6 @@ final class UpdateAllHumanProgressRenderer
 
         if ($target === 'gateway' && $state === self::STATE_DONE) {
             $this->gatewayPhaseComplete = true;
-        }
-
-        if ($target === 'gateway' && $state === self::STATE_FAILED) {
-            $this->gatewayPhaseFailed = true;
         }
 
         if (! $output->isDecorated() && $this->shouldSkipNonDecoratedRepaint($previousState, $previousStage, $state, $stage, $message)) {
