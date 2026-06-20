@@ -158,6 +158,22 @@ describe('update', function (): void {
             ->and($output)->not->toContain('"success"');
     });
 
+    it('rejects the legacy final-only progress shape in human mode', function (): void {
+        config()->set('app.version', '0.1.130');
+        fakeUpdateLatest('0.1.131');
+        fakeGateway(['gateway' => ['version' => '0.1.131']]);
+
+        [$exitCode, $output] = runCommand($this, 'update');
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('│')
+            ->and($output)->toContain('Checking for updates')
+            ->and($output)->toContain('└')
+            ->and($output)->toContain('Success: Updated from 0.1.130 to 0.1.131')
+            ->and($output)->not->toContain('Download binary completed')
+            ->and($output)->not->toMatch('/^Updated local Orbit checkout\.$/m');
+    });
+
     it('returns a JSON skip envelope when already on the latest release', function (): void {
         config()->set('app.version', '0.1.131');
         fakeUpdateLatest('0.1.131');
