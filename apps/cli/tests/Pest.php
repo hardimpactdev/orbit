@@ -13,6 +13,7 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
+use Symfony\Component\Console\Output\StreamOutput;
 use Tests\TestCase;
 
 pest()->extend(TestCase::class)->in('.');
@@ -144,6 +145,42 @@ function runCommand(object $test, string $command, array $params = []): array
     $exitCode = $test->artisan($command, $params);
 
     return [$exitCode, trim(app(Kernel::class)->output())];
+}
+
+/**
+ * Run an Artisan command against decorated stdout so forked progress tickers
+ * remain visible through output buffering.
+ *
+ * @param  array<string, mixed>  $params
+ * @return array{int, string}
+ */
+function runDecoratedCommand(object $test, string $command, array $params = []): array
+{
+    $test->mockConsoleOutput = false;
+    app()->offsetUnset(OutputStyle::class);
+
+    $capturePath = tempnam(sys_get_temp_dir(), 'orbit-cli-progress-');
+
+    if ($capturePath === false) {
+        throw new RuntimeException('Could not allocate a temporary file for decorated command output.');
+    }
+
+    $handle = fopen($capturePath, 'ab');
+
+    if ($handle === false) {
+        @unlink($capturePath);
+
+        throw new RuntimeException('Could not open the temporary decorated command output file.');
+    }
+
+    $output = new StreamOutput($handle, decorated: true);
+    $exitCode = app(Kernel::class)->call($command, $params, $output);
+    fclose($handle);
+
+    $captured = (string) file_get_contents($capturePath);
+    @unlink($capturePath);
+
+    return [$exitCode, $captured];
 }
 
 function restoreHostCwd(string|false $previousHostCwd): void

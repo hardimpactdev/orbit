@@ -38,6 +38,10 @@ final class UpdateAllCommand extends GatewayCommand
         UpdateAllHumanProgressRenderer $progress,
     ): int {
         $progress->begin($this->output);
+        $progress->applyEvent($this->output, ProgressEventType::Step, [
+            'key' => 'check-updates',
+            'status' => 'running',
+        ]);
 
         try {
             $response = $this->gatewayPost('/api/update/all/start');

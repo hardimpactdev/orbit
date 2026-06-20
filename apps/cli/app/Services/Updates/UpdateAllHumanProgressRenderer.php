@@ -529,6 +529,9 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
+        $previousState = $this->rows[$target]['state'];
+        $previousStage = $this->rows[$target]['stage'];
+
         $this->output = $output;
         $this->rows[$target] = [
             'state' => $state,
@@ -536,8 +539,28 @@ final class UpdateAllHumanProgressRenderer
             'message' => $message,
         ];
 
+        if (! $output->isDecorated() && $this->shouldSkipNonDecoratedRepaint($previousState, $previousStage, $state, $stage, $message)) {
+            $this->syncTicker();
+
+            return;
+        }
+
         $this->repaintRow($output, $target);
         $this->syncTicker();
+    }
+
+    private function shouldSkipNonDecoratedRepaint(
+        string $previousState,
+        string $previousStage,
+        string $state,
+        string $stage,
+        string $message,
+    ): bool {
+        return $previousState === self::STATE_WAITING
+            && $previousStage === self::STAGE_WAITING
+            && $state === self::STATE_ACTIVE
+            && $stage === self::STAGE_CHECKING
+            && $message === '';
     }
 
     private function repaintRow(OutputInterface $output, string $target): void

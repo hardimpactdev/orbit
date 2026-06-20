@@ -79,6 +79,50 @@ it('reports partial failure in json mode when the local update fails after the g
         ->and($decoded['error']['message'])->toBe('Failed to update local Orbit checkout.');
 });
 
+it('blinks the checking-for-updates row through the command path during a quiet gateway start', function (): void {
+    if (! function_exists('pcntl_fork')) {
+        $this->markTestSkipped('pcntl is required to observe forked progress ticks.');
+    }
+
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    config()->set('orbit.gateway.timeout', 30);
+    app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayOperationEventStreamClient::class);
+    app()->forgetInstance(GatewayOperationFollower::class);
+
+    Http::fake(function (Request $request) {
+        if ($request->url() === 'https://gateway.test/api/update/all/start') {
+            usleep(800_000);
+
+            return Http::response(fakeUpdateAllStartEnvelope(), 200);
+        }
+
+        return Http::response('not found', 404);
+    });
+
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: all nodes running on 1.2.3']],
+        ['type' => ProgressEventType::Complete, 'payload' => [
+            'status' => 'skipped',
+            'target_version' => '1.2.3',
+            'manifest_version' => '1.2.3',
+            'skipped' => true,
+        ]],
+    ]));
+
+    [$exitCode, $output] = runDecoratedCommand($this, 'update:all');
+
+    preg_match_all('/\e\[36m[○◉]\e\[39m/u', $output, $matches);
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Checking for updates')
+        ->and(array_values(array_unique($matches[0])))->toBe([
+            "\e[36m○\e[39m",
+            "\e[36m◉\e[39m",
+        ]);
+});
+
 it('renders initial check rows before gateway stream events arrive', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
