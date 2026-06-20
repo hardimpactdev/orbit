@@ -375,6 +375,33 @@ it('treats doctor issue counts as non-fatal row results with a success footer', 
         ->and($text)->toContain('Success: All nodes are running on version 1.2.3');
 });
 
+it('throttles active row alternation to about 300ms on decorated output', function (): void {
+    $output = new BufferedOutput(decorated: true);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-updates',
+        'status' => 'running',
+        'message' => 'Checking',
+    ]);
+    stopUpdateAllHumanProgressTicker($renderer);
+
+    expect(stripRendererAnsi($output->fetch()))->toContain('○  Checking for updates');
+
+    $renderer->tick();
+    expect(stripRendererAnsi($output->fetch()))->toBe('');
+
+    usleep(100_000);
+    $renderer->tick();
+    expect(stripRendererAnsi($output->fetch()))->toBe('');
+
+    usleep(250_000);
+    $renderer->tick();
+
+    expect(stripRendererAnsi($output->fetch()))->toContain('◉  Checking for updates');
+});
+
 it('does not emit ansi spinner noise or duplicate rows in non-decorated output', function (): void {
     $output = new BufferedOutput(decorated: false);
     $renderer = new UpdateAllHumanProgressRenderer;
@@ -396,6 +423,18 @@ it('does not emit ansi spinner noise or duplicate rows in non-decorated output',
 
     expect($text)->not->toMatch('/\e\[/');
 });
+
+function stopUpdateAllHumanProgressTicker(UpdateAllHumanProgressRenderer $renderer): void
+{
+    $method = new ReflectionMethod(UpdateAllHumanProgressRenderer::class, 'stopTicker');
+    $method->setAccessible(true);
+    $method->invoke($renderer);
+}
+
+function stripRendererAnsi(string $text): string
+{
+    return preg_replace('/\e\[[0-9;]*m/', '', $text) ?? $text;
+}
 
 function findRendererProgressLine(string $text, string $needle, ?string $statusNeedle = null): ?string
 {

@@ -18,17 +18,43 @@ it('uses the canonical spinner frame order for active streamed steps', function 
     ]);
 
     $renderer->step('setup', 'start');
+
+    expect($output->fetch())->toContain('○  Run workspace setup steps');
+
     $renderer->tick();
 
-    preg_match_all('/[○◉]\s+Run workspace setup steps/u', $output->fetch(), $matches);
+    expect($output->fetch())->toBe('');
 
-    expect(array_slice($matches[0], -2))->toBe([
-        '○  Run workspace setup steps',
-        '◉  Run workspace setup steps',
-    ]);
+    usleep(350_000);
+    $renderer->tick();
+
+    expect($output->fetch())->toContain('◉  Run workspace setup steps');
 });
 
-it('alternates active streamed step frames across quiet ticks', function (): void {
+it('paints the initial active frame immediately when a new step starts right after the previous one completes', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new StreamedStepTree($output);
+
+    $renderer->tree('Deploying', [
+        ['key' => 'first', 'label' => 'Pull image', 'doneLabel' => 'Pulled image'],
+        ['key' => 'second', 'label' => 'Start container', 'doneLabel' => 'Started container'],
+    ]);
+
+    $renderer->step('first', 'start');
+    $output->fetch();
+
+    usleep(100_000);
+    $renderer->tick();
+
+    $renderer->step('first', 'done');
+    $output->fetch();
+
+    $renderer->step('second', 'start');
+
+    expect($output->fetch())->toContain('○  Start container');
+});
+
+it('throttles active streamed step alternation to about 300ms', function (): void {
     $output = new BufferedOutput(decorated: false);
     $renderer = new StreamedStepTree($output);
 
@@ -41,12 +67,20 @@ it('alternates active streamed step frames across quiet ticks', function (): voi
     ]);
 
     $renderer->step('check', 'start');
+
+    expect($output->fetch())->toContain('○  Checking for updates');
+
     $renderer->tick();
+    expect($output->fetch())->toBe('');
+
+    usleep(100_000);
+    $renderer->tick();
+    expect($output->fetch())->toBe('');
+
+    usleep(250_000);
     $renderer->tick();
 
-    preg_match_all('/[○◉]/u', $output->fetch(), $matches);
-
-    expect(array_values(array_unique($matches[0])))->toBe(['○', '◉']);
+    expect($output->fetch())->toContain('◉  Checking for updates');
 });
 
 it('renders progress messages for active streamed steps', function (): void {
@@ -86,7 +120,13 @@ it('animates active streamed steps while the parent process is blocked', functio
     ]);
 
     $renderer->step('check', 'start');
-    usleep(700_000);
+
+    $deadline = microtime(true) + 0.7;
+
+    while (microtime(true) < $deadline) {
+        usleep(50_000);
+    }
+
     $renderer->step('check', 'done');
     $renderer->finish('Success');
 

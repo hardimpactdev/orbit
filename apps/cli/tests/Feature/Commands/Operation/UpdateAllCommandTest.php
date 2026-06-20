@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\VirtualTerminalScreen;
 
+require_once dirname(__DIR__, 3).'/Support/update_all_liveness_cadence.php';
+
 beforeEach(function (): void {
     $this->localUpdater = new UpdateAllCommandFakeUpdater;
 
@@ -128,6 +130,12 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
     $targetRow = null;
     $rowIdentityStable = true;
     $capturedWhileRunning = false;
+    $cadenceState = [
+        'anchor_us' => null,
+        'anchor_spinner' => null,
+        'first_transition_us' => -1,
+        'last_spinner' => null,
+    ];
     $deadline = microtime(true) + 15.0;
     $processPid = proc_get_status($process)['pid'] ?? null;
 
@@ -142,6 +150,7 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
             if ($stillRunning && is_readable($typescriptPath)) {
                 $capture = file_get_contents($typescriptPath) ?: '';
                 $observation = updateAllPendingPtySpinnerState($capture);
+                $nowUs = updateAllLivenessNowUs();
 
                 if ($observation !== null) {
                     if ($targetRow !== null && $targetRow !== $observation['row']) {
@@ -150,6 +159,10 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
 
                     $targetRow ??= $observation['row'];
                     $observedStates[$observation['spinner']] = true;
+
+                    if ($rowIdentityStable) {
+                        updateAllLivenessObserveSpinner($cadenceState, $observation['spinner'], $nowUs);
+                    }
 
                     if ($rowIdentityStable
                         && isset($observedStates[VirtualTerminalScreen::SPINNER_CYAN_OPEN])
@@ -181,13 +194,19 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
         @unlink($pendingTranscriptPath);
     }
 
+    $cadence = validateUpdateAllLivenessCadence($cadenceState['first_transition_us']);
+
     expect($capturedWhileRunning)->toBeTrue(sprintf(
-        'Expected both spinner frames on the same local Replacing cli binary virtual-screen row while the delayed replace step was still running; row=%s stable=%s states=[%s].',
+        'Expected both spinner frames on the same local Replacing cli binary virtual-screen row while the delayed replace step was still running; row=%s stable=%s states=[%s] first_transition_us=%s cadence_ok=%s.',
         $targetRow === null ? 'none' : (string) $targetRow,
         $rowIdentityStable ? 'true' : 'false',
         implode(',', array_keys($observedStates)),
+        $cadenceState['first_transition_us'] < 0 ? 'none' : (string) $cadenceState['first_transition_us'],
+        $cadence['cadence_ok'] ? 'true' : 'false',
     ))
-        ->and($pendingTranscript)->not->toBe('');
+        ->and($pendingTranscript)->not->toBe('')
+        ->and($cadenceState['first_transition_us'])->toBeGreaterThanOrEqual(250_000)
+        ->and($cadence['cadence_ok'])->toBeTrue($cadence['reason'] ?? 'spinner cadence was invalid');
 });
 
 it('aligns check-row settled status with node stage columns', function (): void {

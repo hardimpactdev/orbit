@@ -98,6 +98,8 @@ final class UpdateAllHumanProgressRenderer
 
     private int $frame = 0;
 
+    private int $lastFrameAtUs = 0;
+
     private bool $rendered = false;
 
     private bool $finished = false;
@@ -134,6 +136,13 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
+        $nowUs = (int) (microtime(true) * 1_000_000);
+
+        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < ForkedFrameTicker::DEFAULT_INTERVAL_US) {
+            return;
+        }
+
+        $this->lastFrameAtUs = $nowUs;
         $this->frame++;
 
         foreach ($this->order as $target) {
@@ -766,6 +775,11 @@ final class UpdateAllHumanProgressRenderer
 
         if ($target === 'gateway' && $state === self::STATE_DONE) {
             $this->gatewayPhaseComplete = true;
+        }
+
+        if ($state === self::STATE_ACTIVE && $previousState !== self::STATE_ACTIVE) {
+            $this->frame = 0;
+            $this->lastFrameAtUs = (int) (microtime(true) * 1_000_000);
         }
 
         if (! $output->isDecorated() && $this->shouldSkipNonDecoratedRepaint($previousState, $previousStage, $state, $stage, $message)) {

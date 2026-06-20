@@ -37,6 +37,8 @@ final class StreamedStepTree
 
     private int $frame = 0;
 
+    private int $lastFrameAtUs = 0;
+
     private ?ForkedFrameTicker $ticker = null;
 
     public function __construct(
@@ -104,11 +106,19 @@ final class StreamedStepTree
             return;
         }
 
+        $nowUs = (int) (microtime(true) * 1_000_000);
+
+        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < ForkedFrameTicker::DEFAULT_INTERVAL_US) {
+            return;
+        }
+
         $index = $this->indexByKey[$this->activeKey] ?? null;
 
         if ($index === null) {
             return;
         }
+
+        $this->lastFrameAtUs = $nowUs;
 
         $step = $this->steps[$index];
         $frames = SpinnerTreeRenderer::spinnerFrames();
@@ -158,6 +168,7 @@ final class StreamedStepTree
             $index,
             $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth, $message),
         );
+        $this->lastFrameAtUs = (int) (microtime(true) * 1_000_000);
         $this->frame++;
         $this->startSpinnerProcess();
     }
@@ -169,6 +180,7 @@ final class StreamedStepTree
         $this->activeKey = $key;
         $this->activeMessage = '';
         $this->frame = 0;
+        $this->lastFrameAtUs = 0;
         $this->tick();
         $this->startSpinnerProcess();
     }

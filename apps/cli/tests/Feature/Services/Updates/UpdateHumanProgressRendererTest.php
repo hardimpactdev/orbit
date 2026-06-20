@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Services\Updates\LocalUpdateRunner;
 use App\Services\Updates\UpdateHumanProgressRenderer;
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\StreamedStepTree;
 use Symfony\Component\Console\Output\BufferedOutput;
 
@@ -20,7 +21,8 @@ it('alternates the active checking row icon across quiet ticks while waiting for
     /** @var StreamedStepTree $streamedTree */
     $streamedTree = $treeProperty->getValue($renderer);
 
-    $streamedTree->tick();
+    stopStreamedStepTreeTicker($streamedTree);
+    advanceStreamedStepTreePastCadence($streamedTree);
     $streamedTree->tick();
 
     preg_match_all('/\e\[36m[○◉]\e\[39m/u', $output->fetch(), $matches);
@@ -43,3 +45,18 @@ it('renders the initial single-step tree with vertical spacers before runner eve
         ->toContain('○  Checking for updates')
         ->toContain('Working...');
 });
+
+function stopStreamedStepTreeTicker(StreamedStepTree $tree): void
+{
+    $method = new ReflectionMethod(StreamedStepTree::class, 'stopSpinnerProcess');
+    $method->setAccessible(true);
+    $method->invoke($tree);
+}
+
+function advanceStreamedStepTreePastCadence(StreamedStepTree $tree): void
+{
+    $property = new ReflectionProperty(StreamedStepTree::class, 'lastFrameAtUs');
+    $property->setAccessible(true);
+    $nowUs = (int) (microtime(true) * 1_000_000);
+    $property->setValue($tree, $nowUs - ForkedFrameTicker::DEFAULT_INTERVAL_US);
+}

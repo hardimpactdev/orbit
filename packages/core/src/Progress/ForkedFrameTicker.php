@@ -14,6 +14,8 @@ final class ForkedFrameTicker
 {
     public const int DEFAULT_INTERVAL_MICROSECONDS = 100_000;
 
+    public const int DEFAULT_INTERVAL_US = 300_000;
+
     /** @var (callable(): void)|null */
     private static $idleCallback = null;
 

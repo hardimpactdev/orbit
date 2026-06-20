@@ -65,7 +65,9 @@ it('alternates the check-updates spinner while the start POST is delayed', funct
 
     expect($combined)->toContain('PASS:')
         ->toContain('Checking for updates')
-        ->toMatch('/distinct_states=\[(cyan-open,cyan-filled|cyan-filled,cyan-open)\]/');
+        ->toMatch('/distinct_states=\[(cyan-open,cyan-filled|cyan-filled,cyan-open)\]/')
+        ->toMatch('/first_transition_us=\d+/')
+        ->toContain('cadence_ok=true');
 });
 
 it('alternates the gateway spinner on the virtual screen during a silent SSE gap', function (): void {
@@ -122,5 +124,7 @@ it('alternates the gateway spinner on the virtual screen during a silent SSE gap
     );
 
     expect($combined)->toContain('PASS:')
-        ->toMatch('/distinct_states=\[(cyan-open,cyan-filled|cyan-filled,cyan-open)\]/');
+        ->toMatch('/distinct_states=\[(cyan-open,cyan-filled|cyan-filled,cyan-open)\]/')
+        ->toMatch('/first_transition_us=\d+/')
+        ->toContain('cadence_ok=true');
 });

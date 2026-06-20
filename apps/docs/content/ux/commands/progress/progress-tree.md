@@ -34,8 +34,8 @@ These rules govern all uses of the progress tree in Orbit commands.
   list and the lifecycle for any labels that change at runtime.
 - The full tree renders immediately after input resolution, with all steps
   in idle `○` state, before any side effects start.
-- Only the currently active step animates `○`/`◉`. Completed steps show
-  `●` (green success, red failure, orange warning/skip).
+- Only the currently active step animates `○`/`◉` on a simple 300ms cadence.
+  Completed steps show `●` (green success, red failure, orange warning/skip).
 - Idle rows are dimmed. Active rows and completed rows keep full-strength
   label text; dim text is reserved for waiting rows and secondary skip or
   warning messages.
