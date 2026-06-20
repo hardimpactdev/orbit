@@ -7,6 +7,7 @@ namespace App\Services\Updates;
 use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Output\StreamOutput;
 
 final class UpdateAllHumanProgressRenderer
 {
@@ -118,7 +119,7 @@ final class UpdateAllHumanProgressRenderer
 
     public function tick(): void
     {
-        if ($this->finished || ! $this->rendered || $this->output === null || ! $this->output->isDecorated()) {
+        if ($this->finished || ! $this->rendered || $this->output === null || ! $this->outputSupportsLiveRepaint()) {
             return;
         }
 
@@ -128,6 +129,25 @@ final class UpdateAllHumanProgressRenderer
             if (($this->rows[$target]['state'] ?? null) === self::STATE_ACTIVE) {
                 $this->repaintRow($this->output, $target);
             }
+        }
+
+        $this->flushProgressOutput();
+    }
+
+    private function flushProgressOutput(): void
+    {
+        if ($this->output === null) {
+            return;
+        }
+
+        if (method_exists($this->output, 'flush')) {
+            $this->output->flush();
+
+            return;
+        }
+
+        if (function_exists('fflush') && defined('STDOUT')) {
+            @fflush(STDOUT);
         }
     }
 
@@ -575,9 +595,10 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $line = $this->rowLine($target, $output->isDecorated());
+        $styled = $this->outputSupportsLiveRepaint($output);
+        $line = $this->rowLine($target, $styled);
 
-        if (! $output->isDecorated()) {
+        if (! $styled) {
             $output->writeln($line);
 
             return;
@@ -624,7 +645,8 @@ final class UpdateAllHumanProgressRenderer
         };
 
         if ($row['message'] !== '') {
-            $line .= ' '.$this->decorate($row['message'], $row['state'] === self::STATE_FAILED ? self::RED : self::DIM, $styled);
+            $separator = $stage === '' ? '  ' : ' ';
+            $line .= $separator.$this->decorate($row['message'], $row['state'] === self::STATE_FAILED ? self::RED : self::DIM, $styled);
         }
 
         return $styled ? $line : $this->stripAnsi($line);
@@ -662,7 +684,7 @@ final class UpdateAllHumanProgressRenderer
 
     private function syncTicker(): void
     {
-        if ($this->finished || $this->output === null || ! $this->output->isDecorated()) {
+        if ($this->finished || $this->output === null || ! $this->outputSupportsLiveRepaint()) {
             $this->stopTicker();
 
             return;
@@ -680,6 +702,42 @@ final class UpdateAllHumanProgressRenderer
         $this->ticker->start(function (): void {
             $this->tick();
         });
+    }
+
+    private function outputSupportsLiveRepaint(?OutputInterface $output = null): bool
+    {
+        $output ??= $this->output;
+
+        if ($output === null) {
+            return false;
+        }
+
+        $stream = $this->resolveRepaintStream($output);
+
+        if (is_resource($stream)
+            && function_exists('posix_isatty')
+            && posix_isatty($stream)) {
+            return true;
+        }
+
+        return $output->isDecorated();
+    }
+
+    private function resolveRepaintStream(OutputInterface $output): mixed
+    {
+        if ($output instanceof StreamOutput) {
+            return $output->getStream();
+        }
+
+        if (method_exists($output, 'getOutput')) {
+            $underlying = $output->getOutput();
+
+            if ($underlying instanceof OutputInterface) {
+                return $this->resolveRepaintStream($underlying);
+            }
+        }
+
+        return null;
     }
 
     private function stopTicker(): void

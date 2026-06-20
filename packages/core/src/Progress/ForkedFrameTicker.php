@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Orbit\Core\Progress;
 
 /**
- * Forks a child process that invokes a callback on a fixed interval so the parent
- * can keep blocking on slow I/O while the active progress row keeps animating.
+ * Forks a child process that signals the parent on a fixed interval so tick
+ * callbacks run in the parent while it blocks on slow I/O.
  */
 final class ForkedFrameTicker
 {
-    private const int DEFAULT_INTERVAL_US = 300_000;
+    private const int DEFAULT_INTERVAL_US = 100_000;
 
     private ?int $pid = null;
 
@@ -22,9 +22,18 @@ final class ForkedFrameTicker
     {
         $this->stop();
 
-        if (! function_exists('pcntl_fork') || ! function_exists('posix_kill')) {
+        if (! function_exists('pcntl_fork')
+            || ! function_exists('posix_kill')
+            || ! function_exists('posix_getppid')
+            || ! function_exists('pcntl_async_signals')
+            || ! function_exists('pcntl_signal')) {
             return;
         }
+
+        pcntl_async_signals(true);
+        pcntl_signal(SIGUSR1, function () use ($onTick): void {
+            $onTick();
+        });
 
         $pid = pcntl_fork();
 
@@ -33,10 +42,10 @@ final class ForkedFrameTicker
         }
 
         if ($pid === 0) {
-            // @phpstan-ignore-next-line Intentional child-process spinner loop.
+            // @phpstan-ignore-next-line Child only wakes the parent spinner loop.
             while (true) {
                 usleep($this->intervalUs);
-                $onTick();
+                posix_kill(posix_getppid(), SIGUSR1);
             }
         }
 
@@ -55,6 +64,10 @@ final class ForkedFrameTicker
 
         if (function_exists('pcntl_waitpid')) {
             pcntl_waitpid($this->pid, $status);
+        }
+
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGUSR1, SIG_DFL);
         }
 
         $this->pid = null;

@@ -14,7 +14,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * events as they arrive: {@see self::tree()} to paint the idle tree, then
  * {@see self::step()} with `start`/`done`/`fail`/`skip`/progress statuses, and
  * {@see self::finish()} for the footer. The active row animates between events
- * via a forked ticker, so the operator sees motion while the main process
+ * via a parent-process signal ticker, so the operator sees motion while the main process
  * blocks reading the next frame.
  */
 final class StreamedStepTree
@@ -62,8 +62,9 @@ final class StreamedStepTree
         }
 
         $this->labelWidth = $this->computeLabelWidth($this->steps);
-        $this->tree = new SpinnerTreeRenderer($this->output->isDecorated());
-        $this->summary = new LifecycleSummaryRenderer($this->output->isDecorated());
+        $styled = LiveRepaintOutput::supports($this->output);
+        $this->tree = new SpinnerTreeRenderer($styled);
+        $this->summary = new LifecycleSummaryRenderer($styled);
 
         $this->tree->renderFrame(
             $this->output,
@@ -190,7 +191,7 @@ final class StreamedStepTree
 
     private function startSpinnerProcess(): void
     {
-        if (! $this->output->isDecorated()) {
+        if (! LiveRepaintOutput::supports($this->output)) {
             return;
         }
 

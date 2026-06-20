@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CLI_ROOT="$ROOT/apps/cli"
+TS="${TMPDIR:-/tmp}/orbit-update-all-pty-smoke.typescript"
+CAP="$(mktemp "${TMPDIR:-/tmp}/orbit-update-all-capture.XXXXXX")"
+DELAY=6000000
+
+cleanup() {
+  rm -f "$CAP" "$TS" "${TS}.pending"
+}
+trap cleanup EXIT
+
+php "$CLI_ROOT/tests/Support/generate_update_all_pty_capture.php" "$CLI_ROOT" "$DELAY" "$CAP"
+
+SCRIPT_BIN=""
+for candidate in /usr/bin/script /bin/script; do
+  if [[ -x "$candidate" ]]; then
+    SCRIPT_BIN="$candidate"
+    break
+  fi
+done
+
+if [[ -z "$SCRIPT_BIN" ]]; then
+  echo "BLOCKER: script(1) not found" >&2
+  exit 2
+fi
+
+rm -f "$TS"
+
+"$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$(printf '%q ' "$(command -v php)" "$CAP")" >/dev/null 2>&1 &
+pid=$!
+
+saw_circle_while_running=false
+saw_filled_while_running=false
+captured_while_running=false
+deadline=$((SECONDS + 15))
+
+while (( SECONDS < deadline )); do
+  if kill -0 "$pid" 2>/dev/null; then
+    still_running=true
+  else
+    still_running=false
+  fi
+
+  if [[ "$still_running" == true && -f "$TS" ]]; then
+    capture="$(cat "$TS")"
+    if [[ "$capture" =~ $'\e[36m○\e[39m'[^$'\n']*local[[:space:]]+Replacing[[:space:]]cli[[:space:]]binary ]]; then
+      saw_circle_while_running=true
+    fi
+    if [[ "$capture" =~ $'\e[36m◉\e[39m'[^$'\n']*local[[:space:]]+Replacing[[:space:]]cli[[:space:]]binary ]]; then
+      saw_filled_while_running=true
+    fi
+
+    if [[ "$saw_circle_while_running" == true && "$saw_filled_while_running" == true ]]; then
+      cp "$TS" "${TS}.pending"
+      captured_while_running=true
+      echo "PASS: sampled pending transcript while pid $pid still running"
+      break
+    fi
+  fi
+
+  if [[ "$still_running" == false ]]; then
+    break
+  fi
+
+  sleep 0.01
+done
+
+if [[ "$still_running" == true ]]; then
+  kill "$pid" 2>/dev/null || true
+fi
+wait "$pid" 2>/dev/null || true
+
+if [[ "$captured_while_running" != true ]]; then
+  echo "FAIL: did not capture both spinner frames while process was still running (saw_circle=$saw_circle_while_running saw_filled=$saw_filled_while_running)" >&2
+  exit 1
+fi

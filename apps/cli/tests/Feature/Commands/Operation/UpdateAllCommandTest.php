@@ -79,48 +79,141 @@ it('reports partial failure in json mode when the local update fails after the g
         ->and($decoded['error']['message'])->toBe('Failed to update local Orbit checkout.');
 });
 
-it('blinks the checking-for-updates row through the command path during a quiet gateway start', function (): void {
-    if (! function_exists('pcntl_fork')) {
-        $this->markTestSkipped('pcntl is required to observe forked progress ticks.');
+it('captures alternating local-row spinner frames from a pseudo-tty before replace completes', function (): void {
+    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
+        $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
     }
 
-    config()->set('orbit.gateway.url', 'https://gateway.test');
-    config()->set('orbit.gateway.timeout', 30);
-    app()->forgetInstance(GatewayApiClient::class);
-    app()->forgetInstance(GatewayOperationEventStreamClient::class);
-    app()->forgetInstance(GatewayOperationFollower::class);
+    $scriptBinary = findPseudoTtyScriptBinary();
 
-    Http::fake(function (Request $request) {
-        if ($request->url() === 'https://gateway.test/api/update/all/start') {
-            usleep(800_000);
+    if ($scriptBinary === null) {
+        $this->markTestSkipped('The script(1) binary is required to allocate a pseudo-tty for live progress capture.');
+    }
 
-            return Http::response(fakeUpdateAllStartEnvelope(), 200);
+    $captureScript = writeUpdateAllLivenessCaptureScript(base_path(), 6_000_000);
+    $typescriptPath = sys_get_temp_dir().'/orbit-update-all-pty-'.uniqid('', true).'.typescript';
+    $pendingTranscriptPath = sys_get_temp_dir().'/orbit-update-all-pending-'.uniqid('', true).'.typescript';
+
+    $command = pseudoTtyWrappedCommand($scriptBinary, $typescriptPath, [
+        PHP_BINARY,
+        $captureScript,
+    ]);
+
+    $process = proc_open(
+        $command,
+        [
+            ['pipe', 'r'],
+            ['pipe', 'w'],
+            ['pipe', 'w'],
+        ],
+        $pipes,
+        base_path(),
+    );
+
+    if (! is_resource($process)) {
+        @unlink($captureScript);
+        @unlink($typescriptPath);
+        @unlink($pendingTranscriptPath);
+
+        throw new RuntimeException('Could not start the pseudo-tty update:all capture process.');
+    }
+
+    fclose($pipes[0]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    $pendingTranscript = '';
+    $sawCircleWhileRunning = false;
+    $sawFilledWhileRunning = false;
+    $capturedWhileRunning = false;
+    $deadline = microtime(true) + 15.0;
+    $processPid = proc_get_status($process)['pid'] ?? null;
+
+    try {
+        while (microtime(true) < $deadline) {
+            $stillRunning = is_int($processPid)
+                && function_exists('posix_kill')
+                && posix_kill($processPid, 0);
+
+            clearstatcache(true, $typescriptPath);
+
+            if ($stillRunning && is_readable($typescriptPath)) {
+                $capture = file_get_contents($typescriptPath) ?: '';
+
+                if (updateAllPendingPtyShowsSpinnerFrame($capture, '○')) {
+                    $sawCircleWhileRunning = true;
+                }
+
+                if (updateAllPendingPtyShowsSpinnerFrame($capture, '◉')) {
+                    $sawFilledWhileRunning = true;
+                }
+
+                if ($sawCircleWhileRunning && $sawFilledWhileRunning) {
+                    $pendingTranscript = $capture;
+                    file_put_contents($pendingTranscriptPath, $pendingTranscript);
+                    $capturedWhileRunning = true;
+
+                    break;
+                }
+            }
+
+            if (! $stillRunning) {
+                break;
+            }
+
+            usleep(10_000);
+        }
+    } finally {
+        if (proc_get_status($process)['running'] ?? false) {
+            proc_terminate($process);
         }
 
-        return Http::response('not found', 404);
-    });
+        proc_close($process);
 
+        @unlink($captureScript);
+        @unlink($typescriptPath);
+        @unlink($pendingTranscriptPath);
+    }
+
+    expect($capturedWhileRunning)->toBeTrue('Expected both spinner frames in the PTY transcript while the delayed replace step was still running.')
+        ->and($pendingTranscript)->toContain("\e[36m○\e[39m")
+        ->and($pendingTranscript)->toContain("\e[36m◉\e[39m")
+        ->and($pendingTranscript)->toMatch('/\e\[36m[○◉]\e\[39m[^\n]*local\s+Replacing cli binary/u');
+});
+
+it('aligns check-row settled status with node stage columns', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: all nodes running on 1.2.3']],
-        ['type' => ProgressEventType::Complete, 'payload' => [
-            'status' => 'skipped',
-            'target_version' => '1.2.3',
-            'manifest_version' => '1.2.3',
-            'skipped' => true,
-        ]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
-    [$exitCode, $output] = runDecoratedCommand($this, 'update:all');
+    [$exitCode, $output] = runCommand($this, 'update:all');
 
-    preg_match_all('/\e\[36m[○◉]\e\[39m/u', $output, $matches);
+    $lines = array_values(array_filter(explode("\n", stripDecoratedLines($output))));
+    $columns = [];
+
+    foreach ([
+        ['Done: latest version is 1.2.3', 'Done:'],
+        ['Done: 1 outdated node found', 'Done:'],
+        ['gateway', 'Replacing'],
+        ['beast', 'Replacing'],
+        ['local', 'Replacing'],
+    ] as [$needle, $statusNeedle]) {
+        $line = findStrippedProgressLine($lines, $needle, $statusNeedle);
+
+        expect($line)->not->toBeNull();
+
+        $columns[] = strpos($line, $statusNeedle);
+    }
 
     expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Checking for updates')
-        ->and(array_values(array_unique($matches[0])))->toBe([
-            "\e[36m○\e[39m",
-            "\e[36m◉\e[39m",
-        ]);
+        ->and(array_values(array_unique($columns)))->toHaveCount(1);
 });
 
 it('renders initial check rows before gateway stream events arrive', function (): void {
@@ -484,6 +577,221 @@ it('returns gateway failure when the start response does not include an events u
         ->and($decoded['error']['code'])->toBe('gateway_unavailable');
 });
 
+function updateAllPendingPtyShowsSpinnerFrame(string $capture, string $frame): bool
+{
+    return preg_match(
+        '/\e\[36m'.preg_quote($frame, '/').'\e\[39m[^\n]*local\s+Replacing cli binary/u',
+        $capture,
+    ) === 1;
+}
+
+function findPseudoTtyScriptBinary(): ?string
+{
+    foreach (['/usr/bin/script', '/bin/script'] as $candidate) {
+        if (is_executable($candidate)) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param  list<string>  $command
+ * @return list<string>
+ */
+function pseudoTtyWrappedCommand(string $scriptBinary, string $typescriptPath, array $command): array
+{
+    $shellCommand = implode(' ', array_map(static fn (string $part): string => escapeshellarg($part), $command));
+
+    if (PHP_OS_FAMILY === 'Darwin') {
+        // -F is required on macOS so in-place repaints flush into the typescript
+        // file while the wrapped command is still running.
+        return [$scriptBinary, '-q', '-F', $typescriptPath, '/bin/sh', '-c', $shellCommand];
+    }
+
+    return [
+        $scriptBinary,
+        '-q',
+        '-c',
+        $shellCommand,
+        $typescriptPath,
+    ];
+}
+
+function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayMicroseconds): string
+{
+    $captureScript = tempnam(sys_get_temp_dir(), 'orbit-update-all-capture-');
+
+    if ($captureScript === false) {
+        throw new RuntimeException('Could not allocate the update:all liveness capture script.');
+    }
+
+    $escapedCliRoot = addslashes($cliRoot);
+    $delay = max(0, $replaceDelayMicroseconds);
+
+    $source = <<<PHP
+<?php
+
+declare(strict_types=1);
+
+use App\Services\GatewayApiClient;
+use App\Services\GatewayOperationEventStreamClient;
+use App\Services\GatewayOperationFollower;
+use App\Services\Updates\RunsLocalUpdate;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Http;
+use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Core\Progress\ProgressEventType;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Output\StreamOutput;
+
+define('LARAVEL_START', microtime(true));
+
+require '{$escapedCliRoot}/vendor/autoload.php';
+
+/** @var \LaravelZero\Framework\Application \$app */
+\$app = require '{$escapedCliRoot}/bootstrap/app.php';
+/** @var Kernel \$kernel */
+\$kernel = \$app->make(Kernel::class);
+\$kernel->bootstrap();
+
+config()->set('orbit.gateway.url', 'https://gateway.test');
+config()->set('orbit.gateway.timeout', 30);
+\$app->forgetInstance(GatewayApiClient::class);
+\$app->forgetInstance(GatewayOperationEventStreamClient::class);
+\$app->forgetInstance(GatewayOperationFollower::class);
+
+Http::fake(['https://gateway.test/*' => Http::response(
+    JsonEnvelope::success([
+        'operation_run' => ['id' => 'run-1', 'type' => 'update:all', 'status' => 'queued'],
+        'update_plan' => [
+            'target_version' => '1.2.3',
+            'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', 64),
+            'manifest_source' => 'github-release',
+            'manifest_version' => '1.2.3',
+        ],
+        'events_url' => '/api/operations/run-1/events',
+    ]),
+    200,
+)]);
+
+\$app->instance(GatewayOperationFollower::class, new class extends GatewayOperationFollower
+{
+    public function __construct() {}
+
+    /** @param  callable(ProgressEventType, array<string, mixed>): void  \$onEvent */
+    public function follow(string \$eventsUrl, callable \$onEvent): array
+    {
+        foreach ([
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found']],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+            ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
+        ] as \$event) {
+            \$onEvent(\$event['type'], \$event['payload']);
+        }
+
+        return ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']];
+    }
+});
+
+\$app->instance(RunsLocalUpdate::class, new class({$delay}) implements RunsLocalUpdate
+{
+    public function __construct(private int \$replaceDelayMicroseconds) {}
+
+    public function pullSource(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function downloadBinary(): array
+    {
+        return [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'staged_path' => '/tmp/staged-orbit',
+            'version' => '1.2.3',
+        ];
+    }
+
+    public function replaceBinary(string \$stagedPath, string \$version): array
+    {
+        if (\$this->replaceDelayMicroseconds > 0) {
+            \$deadline = hrtime(true) + (\$this->replaceDelayMicroseconds * 1000);
+
+            while (hrtime(true) < \$deadline) {
+                usleep(50_000);
+            }
+        }
+
+        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
+    }
+
+    public function runDoctor(): array
+    {
+        return ['issues' => 0];
+    }
+
+    public function installDependencies(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+
+    public function runMigrations(): array
+    {
+        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+    }
+});
+
+if (function_exists('stream_set_write_buffer') && defined('STDOUT') && is_resource(STDOUT)) {
+    stream_set_write_buffer(STDOUT, 0);
+}
+
+\$output = new StreamOutput(STDOUT, Symfony\Component\Console\Output\OutputInterface::VERBOSITY_NORMAL, true);
+
+exit(\$kernel->handle(new ArgvInput(['orbit', 'update:all']), \$output));
+
+PHP;
+
+    file_put_contents($captureScript, $source);
+
+    return $captureScript;
+}
+
+function stripDecoratedLines(string $output): string
+{
+    $lines = explode("\n", preg_replace('/\e\[[0-9;?]*[a-zA-Z]/', '', $output) ?? $output);
+
+    return implode("\n", array_map(
+        static fn (string $line): string => preg_replace('/^  [○◉●]  /', '', $line) ?? $line,
+        $lines,
+    ));
+}
+
+/**
+ * @param  list<string>  $lines
+ */
+function findStrippedProgressLine(array $lines, string $needle, ?string $statusNeedle = null): ?string
+{
+    $found = null;
+
+    foreach ($lines as $line) {
+        if (! str_contains($line, $needle)) {
+            continue;
+        }
+
+        if ($statusNeedle !== null && ! str_contains($line, $statusNeedle)) {
+            continue;
+        }
+
+        $found = $line;
+    }
+
+    return $found;
+}
+
 /**
  * @return array<string, mixed>
  */
@@ -556,6 +864,8 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
 
     public ?int $doctorIssues = 0;
 
+    public int $replaceDelayMicroseconds = 0;
+
     /**
      * @var array<string, mixed>
      */
@@ -593,6 +903,14 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
     public function replaceBinary(string $stagedPath, string $version): array
     {
         $this->calls[] = 'replace';
+
+        if ($this->replaceDelayMicroseconds > 0) {
+            $deadline = hrtime(true) + ($this->replaceDelayMicroseconds * 1000);
+
+            while (hrtime(true) < $deadline) {
+                usleep(50_000);
+            }
+        }
 
         return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
     }
