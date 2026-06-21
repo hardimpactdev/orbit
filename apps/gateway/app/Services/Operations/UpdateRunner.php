@@ -56,7 +56,7 @@ final readonly class UpdateRunner
 
             [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
 
-            if ($report->outdatedCount === 0) {
+            if ($report->outdatedCount === 0 && ! $plan->usesTopologyCandidateManifest()) {
                 // All-current short-circuit: skip gateway, workload, and verification phases.
                 $allCurrent = true;
             } else {
@@ -155,7 +155,7 @@ final readonly class UpdateRunner
 
         $report = $this->fleetVersions->probe($operationRun, $plan);
 
-        $payloadExtras = $report->outdatedCount > 0
+        $payloadExtras = $this->shouldRunUpdatePhases($plan, $report)
             ? ['update_targets' => $report->progressUpdateTargets()]
             : [];
 
@@ -163,7 +163,7 @@ final readonly class UpdateRunner
             $operationRun->id,
             'check-fleet-versions',
             'done',
-            $this->fleetVersionsMessage($report->outdatedCount, $plan->target_version),
+            $this->fleetVersionsMessage($report, $plan),
             [],
             $payloadExtras,
         );
@@ -171,15 +171,24 @@ final readonly class UpdateRunner
         return [$plan, $report];
     }
 
-    private function fleetVersionsMessage(int $outdatedCount, string $targetVersion): string
+    private function shouldRunUpdatePhases(OperationUpdatePlan $plan, FleetVersionReport $report): bool
     {
-        if ($outdatedCount === 0) {
-            return "Done: all nodes running on {$targetVersion}";
+        return $report->outdatedCount > 0 || $plan->usesTopologyCandidateManifest();
+    }
+
+    private function fleetVersionsMessage(FleetVersionReport $report, OperationUpdatePlan $plan): string
+    {
+        if ($report->outdatedCount === 0) {
+            if ($plan->usesTopologyCandidateManifest()) {
+                return "Done: release candidate assets will be reapplied to {$plan->target_version}";
+            }
+
+            return "Done: all nodes running on {$plan->target_version}";
         }
 
-        $noun = $outdatedCount === 1 ? 'node' : 'nodes';
+        $noun = $report->outdatedCount === 1 ? 'node' : 'nodes';
 
-        return "Done: {$outdatedCount} outdated {$noun} found";
+        return "Done: {$report->outdatedCount} outdated {$noun} found";
     }
 
     private function updateGateway(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -247,7 +256,9 @@ final readonly class UpdateRunner
         $result = [
             'status' => $allCurrent ? 'skipped' : 'succeeded',
             'target_version' => $plan->target_version,
+            'manifest_source' => $plan->manifest_source,
             'manifest_version' => $plan->manifest_version,
+            ...($plan->usesTopologyCandidateManifest() ? ['cli_artifacts' => $plan->cli_artifacts] : []),
             ...($allCurrent ? ['skipped' => true] : []),
         ];
 

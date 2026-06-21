@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Data\Operations\OperationUpdatePlanSnapshot;
+use App\Data\Operations\ReleaseManifest;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -66,6 +67,11 @@ class OperationUpdatePlan extends Model
     public function operationRun(): BelongsTo
     {
         return $this->belongsTo(OperationRun::class);
+    }
+
+    public function usesTopologyCandidateManifest(): bool
+    {
+        return $this->manifest_source === ReleaseManifest::SourceTopologyCandidate;
     }
 
     public function toSnapshot(): OperationUpdatePlanSnapshot

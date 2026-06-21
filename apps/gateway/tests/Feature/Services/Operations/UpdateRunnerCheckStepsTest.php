@@ -111,6 +111,41 @@ it('short-circuits when the fleet-version probe finds 0 outdated nodes', functio
         ->and($keys)->not->toContain('verification');
 });
 
+it('does not short-circuit topology candidate manifests even when the fleet versions match', function (): void {
+    config()->set('app.version', '2.0.0');
+
+    $pipeline = new CheckStepsNoopPipeline;
+    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
+        'agent-1' => '2.0.0',
+    ]));
+    app()->instance(UpdateRunnerPipeline::class, $pipeline);
+
+    $run = checkStepsRun();
+    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
+    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+
+    app(OperationUpdatePlanStore::class)->create(
+        $run,
+        checkStepsSnapshot('2.0.0', manifestSource: 'topology-candidate'),
+    );
+
+    app(UpdateRunner::class)->run($run->id);
+
+    $keys = array_map(fn (array $step): string => $step[0], checkStepsEvents($run));
+
+    expect($pipeline->gatewayUpdateCalled)->toBeTrue()
+        ->and($pipeline->workloadsUpdateCalled)->toBeTrue()
+        ->and($pipeline->fleetVerifyCalled)->toBeTrue()
+        ->and($keys)->toContain('gateway')
+        ->and($keys)->toContain('workload-nodes')
+        ->and($keys)->toContain('verification')
+        ->and(checkStepsEvents($run))->toContain(
+            ['check-fleet-versions', 'done', 'Done: release candidate assets will be reapplied to 2.0.0'],
+        )
+        ->and(checkStepsFleetDonePayload($run)['update_targets'] ?? null)->toBe(['gateway', 'local', 'agent-1'])
+        ->and($run->refresh()->result['cli_artifacts']['linux-amd64']['url'] ?? null)->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64');
+});
+
 it('emits check-fleet-versions running before any node version probe call', function (): void {
     config()->set('app.version', '2.0.0');
 
@@ -277,13 +312,15 @@ function checkStepsFleetDonePayload(OperationRun $run): array
     return $event->payload;
 }
 
-function checkStepsSnapshot(string $targetVersion): OperationUpdatePlanSnapshot
+function checkStepsSnapshot(string $targetVersion, string $manifestSource = 'github-release'): OperationUpdatePlanSnapshot
 {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:'.$targetVersion.'@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     $cliArtifacts = [
         'linux-amd64' => [
-            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v'.$targetVersion.'/orbit-linux-amd64',
+            'url' => $manifestSource === 'topology-candidate'
+                ? 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64'
+                : 'https://github.com/hardimpactdev/orbit/releases/download/v'.$targetVersion.'/orbit-linux-amd64',
             'sha256' => str_repeat('b', 64),
         ],
     ];
@@ -295,11 +332,12 @@ function checkStepsSnapshot(string $targetVersion): OperationUpdatePlanSnapshot
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
         gatewayImage: $gatewayImage,
-        manifestSource: 'github-release',
+        manifestSource: $manifestSource,
         manifestVersion: $targetVersion,
         manifestSnapshot: [
             'version' => $targetVersion,
-            'source' => 'github-release',
+            'source' => $manifestSource,
+            ...($manifestSource === 'topology-candidate' ? ['build_id' => 'candidate-build'] : []),
             'images' => ['gateway' => $gatewayImage],
             'cli_artifacts' => $cliArtifacts,
             'role_images' => $roleImages,

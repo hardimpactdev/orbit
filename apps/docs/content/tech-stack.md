@@ -129,12 +129,17 @@ extensions the CLI requires (`pdo_sqlite`, `openssl`, `curl`, `mbstring`,
 `tokenizer`, `ctype`, `filter`, `fileinfo`, `json`, `phar`, `zlib`); no host
 PHP is required to run it. Release binaries are wrapped from a compressed PHAR
 built from a no-dev CLI dependency install. Orbit releases are versioned from
-the monorepo root `VERSION` file: a matching `v<VERSION>` tag on
-`hardimpactdev/orbit` publishes the `hardimpactdev/orbit-core`,
-`hardimpactdev/orbit-cli`, and `hardimpactdev/orbit-gateway` split package
-repositories, the CLI binary release assets, the
-`ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and the release
-manifest consumed by fleet updates. Source-dev Docker and Incus topologies may point
+the monorepo root `VERSION` file, but GitHub publication is a promotion step,
+not the build step. Release candidates are built once, exposed through a
+topology-reachable `topology-candidate` manifest, and proven with
+`orbit update:all` before a `v<VERSION>` GitHub release exists. After live
+acceptance, the exact tested CLI binaries, digest-pinned
+`ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
+`github-release` manifest are attached to the `hardimpactdev/orbit` release; the
+GitHub release workflow verifies those promoted assets and publishes the
+`hardimpactdev/orbit-core`, `hardimpactdev/orbit-cli`, and
+`hardimpactdev/orbit-gateway` split package repositories without rebuilding the
+tested binaries or image. Source-dev Docker and Incus topologies may point
 `/usr/local/bin/orbit` directly at `<source>/apps/cli/orbit` and bind-mount or
 copy the worktree for fast iteration. Artifact-prod topologies use the native
 CLI binary plus production images and validate the actual release artifacts.
@@ -539,7 +544,9 @@ Other DNS/CDN providers can be added as extension points without changing core O
 ### Installation
 
 Production gateway installs run the `orbit-gateway` image pulled or loaded by
-digest from the release manifest. The Orbit CLI is a prebuilt native binary
+digest from the resolved release manifest. That manifest may be a
+topology-reachable release candidate during live acceptance or the public GitHub
+release manifest after promotion. The Orbit CLI is a prebuilt native binary
 downloaded by the installer for production installs. Source-mounted Docker and
 Incus topologies are the source-dev development and E2E lanes; artifact-prod
 topologies use built CLI binaries and production images.

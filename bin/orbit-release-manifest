@@ -10,6 +10,8 @@ $options = getopt('', [
     'gateway-digest::',
     'repository::',
     'source::',
+    'build-id::',
+    'asset-base-url::',
     'output::',
     'cli-artifact:',
     'role-image:',
@@ -20,11 +22,14 @@ try {
     $releasedAt = optional_released_at(optional_string($options, 'released-at', ''));
     $repository = optional_string($options, 'repository', 'hardimpactdev/orbit');
     $source = optional_string($options, 'source', 'github-release');
+    $buildId = optional_string($options, 'build-id', '');
+    $assetBaseUrl = optional_string($options, 'asset-base-url', '');
+    assert_source($source, $buildId, $assetBaseUrl);
     $gatewayImage = gateway_image(
         image: required_string($options, 'gateway-image'),
         digest: optional_string($options, 'gateway-digest', ''),
     );
-    $cliArtifacts = cli_artifacts(repeated_values($options, 'cli-artifact'), $repository, $version);
+    $cliArtifacts = cli_artifacts(repeated_values($options, 'cli-artifact'), $repository, $version, $assetBaseUrl);
     $roleImages = role_images(repeated_values($options, 'role-image'));
 
     $manifest = [
@@ -34,6 +39,10 @@ try {
 
     if ($releasedAt !== null) {
         $manifest['released_at'] = $releasedAt;
+    }
+
+    if ($buildId !== '') {
+        $manifest['build_id'] = $buildId;
     }
 
     $manifest += [
@@ -144,6 +153,25 @@ function optional_released_at(string $value): ?string
     return $timestamp->setTimezone(new DateTimeZone('UTC'))->format(DateTimeInterface::ATOM);
 }
 
+function assert_source(string $source, string $buildId, string $assetBaseUrl): void
+{
+    if (! in_array($source, ['github-release', 'topology-candidate'], true)) {
+        fail("Release manifest source [{$source}] is not supported.");
+    }
+
+    if ($source !== 'topology-candidate') {
+        return;
+    }
+
+    if ($buildId === '') {
+        fail('Topology candidate release manifests require --build-id.');
+    }
+
+    if ($assetBaseUrl === '') {
+        fail('Topology candidate release manifests require --asset-base-url.');
+    }
+}
+
 function gateway_image(string $image, string $digest): string
 {
     $image = trim($image);
@@ -182,7 +210,7 @@ function assert_digest(string $digest, string $label): void
  * @param  list<string>  $values
  * @return array<string, array{url: string, sha256: string}>
  */
-function cli_artifacts(array $values, string $repository, string $version): array
+function cli_artifacts(array $values, string $repository, string $version, string $assetBaseUrl): array
 {
     if ($values === []) {
         fail('At least one --cli-artifact option is required.');
@@ -202,6 +230,7 @@ function cli_artifacts(array $values, string $repository, string $version): arra
             fail("CLI artifact file not found: {$path}");
         }
 
+        $asset = trim($asset);
         $sha256 = hash_file('sha256', $path);
 
         if (! is_string($sha256)) {
@@ -209,7 +238,7 @@ function cli_artifacts(array $values, string $repository, string $version): arra
         }
 
         $artifacts[trim($platform)] = [
-            'url' => "https://github.com/{$repository}/releases/download/{$tag}/".trim($asset),
+            'url' => artifact_url($asset, $repository, $tag, $assetBaseUrl),
             'sha256' => $sha256,
         ];
     }
@@ -217,6 +246,15 @@ function cli_artifacts(array $values, string $repository, string $version): arra
     ksort($artifacts);
 
     return $artifacts;
+}
+
+function artifact_url(string $asset, string $repository, string $tag, string $assetBaseUrl): string
+{
+    if ($assetBaseUrl !== '') {
+        return rtrim($assetBaseUrl, '/')."/{$asset}";
+    }
+
+    return "https://github.com/{$repository}/releases/download/{$tag}/{$asset}";
 }
 
 /**

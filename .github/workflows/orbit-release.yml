@@ -6,7 +6,7 @@ on:
 
 permissions:
   contents: write
-  packages: write
+  packages: read
 
 env:
   REGISTRY: ghcr.io
@@ -30,9 +30,6 @@ jobs:
           extensions: pdo_sqlite, sqlite3, curl, openssl, mbstring, tokenizer, ctype, filter, fileinfo, phar, zlib
           tools: composer
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Resolve release version
         id: version
         env:
@@ -55,6 +52,128 @@ jobs:
 
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "value=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Download prebuilt release assets
+        id: assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset_dir="$RUNNER_TEMP/orbit-release-assets"
+          mkdir -p "$asset_dir"
+
+          gh release download "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern orbit-linux-x64 \
+            --pattern orbit-macos-arm64 \
+            --pattern orbit-release-manifest.json \
+            --dir "$asset_dir"
+
+          test -s "$asset_dir/orbit-linux-x64"
+          test -s "$asset_dir/orbit-macos-arm64"
+          test -s "$asset_dir/orbit-release-manifest.json"
+
+          echo "dir=${asset_dir}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify promoted release manifest
+        id: manifest
+        env:
+          ASSET_DIR: ${{ steps.assets.outputs.dir }}
+          VERSION: ${{ steps.version.outputs.value }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          php <<'PHP'
+          <?php
+
+          declare(strict_types=1);
+
+          $assetDir = getenv('ASSET_DIR') ?: '';
+          $version = getenv('VERSION') ?: '';
+          $repository = getenv('GITHUB_REPOSITORY') ?: '';
+          $manifestPath = "{$assetDir}/orbit-release-manifest.json";
+
+          $manifest = json_decode((string) file_get_contents($manifestPath), true, flags: JSON_THROW_ON_ERROR);
+
+          if (! is_array($manifest)) {
+              fail('Release manifest must be a JSON object.');
+          }
+
+          if (($manifest['version'] ?? null) !== $version) {
+              fail("Release manifest version does not match {$version}.");
+          }
+
+          if (($manifest['source'] ?? null) !== 'github-release') {
+              fail('Release manifest source must be github-release after promotion.');
+          }
+
+          $gateway = $manifest['images']['gateway'] ?? null;
+
+          if (! is_string($gateway) || ! str_starts_with($gateway, "ghcr.io/hardimpactdev/orbit-gateway:{$version}@sha256:")) {
+              fail('Release manifest gateway image must be the promoted digest-pinned ghcr.io/hardimpactdev/orbit-gateway image.');
+          }
+
+          $expectedArtifacts = [
+              'linux-amd64' => 'orbit-linux-x64',
+              'darwin-arm64' => 'orbit-macos-arm64',
+          ];
+
+          foreach ($expectedArtifacts as $platform => $asset) {
+              $artifact = $manifest['cli_artifacts'][$platform] ?? null;
+
+              if (! is_array($artifact)) {
+                  fail("Release manifest missing CLI artifact {$platform}.");
+              }
+
+              $expectedUrl = "https://github.com/{$repository}/releases/download/v{$version}/{$asset}";
+
+              if (($artifact['url'] ?? null) !== $expectedUrl) {
+                  fail("Release manifest {$platform} URL must point at {$expectedUrl}.");
+              }
+
+              $actualHash = hash_file('sha256', "{$assetDir}/{$asset}");
+
+              if (! is_string($actualHash) || ($artifact['sha256'] ?? null) !== $actualHash) {
+                  fail("Release manifest {$platform} sha256 does not match the promoted asset.");
+              }
+          }
+
+          file_put_contents(getenv('GITHUB_OUTPUT'), "gateway_ref={$gateway}\n", FILE_APPEND);
+
+          function fail(string $message): never
+          {
+              fwrite(STDERR, "{$message}\n");
+
+              exit(1);
+          }
+          PHP
+
+      - name: Verify promoted gateway image is pullable
+        env:
+          GATEWAY_REF: ${{ steps.manifest.outputs.gateway_ref }}
+        run: |
+          set -euo pipefail
+          docker_config="$(mktemp -d)"
+          trap 'rm -rf "$docker_config"' EXIT
+
+          DOCKER_CONFIG="$docker_config" docker pull "$GATEWAY_REF"
+
+      - name: Verify promoted gateway image bakes the release version
+        env:
+          GATEWAY_REF: ${{ steps.manifest.outputs.gateway_ref }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          baked="$(docker run --rm --entrypoint cat "$GATEWAY_REF" /srv/orbit/VERSION || true)"
+          if [ "$baked" != "$VERSION" ]; then
+            echo "Gateway image /srv/orbit/VERSION is [$baked], expected [$VERSION] (gateway-version regression)." >&2
+            exit 1
+          fi
+
+          echo "Gateway image bakes version ${VERSION} at /srv/orbit/VERSION."
 
       - name: Publish split package repositories
         env:
@@ -99,113 +218,3 @@ jobs:
           else
             echo "Packagist credentials not configured; skipping hardimpactdev/orbit-core API update."
           fi
-
-      - name: Install CLI dependencies
-        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --optimize-autoloader
-
-      - name: Build macOS arm64 binary
-        run: bin/orbit-build-cli-binary mac arm "${{ steps.version.outputs.value }}"
-
-      - name: Build Ubuntu x86_64 binary
-        run: bin/orbit-build-cli-binary linux x64 "${{ steps.version.outputs.value }}"
-
-      - name: Log in to GHCR
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login "$REGISTRY" -u "${{ github.actor }}" --password-stdin
-
-      - name: Build and push gateway image
-        id: gateway_image
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
-        run: |
-          set -euo pipefail
-          metadata_file="$RUNNER_TEMP/orbit-gateway-image-metadata.json"
-          image="${REGISTRY}/${IMAGE_NAME}"
-
-          test -f docker/orbit-gateway/Dockerfile.dockerignore
-
-          docker buildx build \
-            --file docker/orbit-gateway/Dockerfile \
-            --tag "${image}:${VERSION}" \
-            --tag "${image}:latest" \
-            --metadata-file "$metadata_file" \
-            --push \
-            .
-
-          digest="$(jq -r '."containerimage.digest" // empty' "$metadata_file")"
-
-          if [ -z "$digest" ]; then
-            echo "Gateway image digest was not captured." >&2
-            exit 1
-          fi
-
-          echo "image=${image}:${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
-
-      - name: Verify gateway image is publicly pullable
-        env:
-          GATEWAY_IMAGE: ${{ steps.gateway_image.outputs.image }}
-          GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
-        run: |
-          set -euo pipefail
-          docker_config="$(mktemp -d)"
-          trap 'rm -rf "$docker_config"' EXIT
-
-          DOCKER_CONFIG="$docker_config" docker pull "${GATEWAY_IMAGE}@${GATEWAY_DIGEST}"
-
-      - name: Verify gateway image bakes the release version
-        env:
-          GATEWAY_IMAGE: ${{ steps.gateway_image.outputs.image }}
-          GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
-          VERSION: ${{ steps.version.outputs.value }}
-        run: |
-          set -euo pipefail
-          ref="${GATEWAY_IMAGE}@${GATEWAY_DIGEST}"
-
-          # config('app.version') resolves dirname(__DIR__, 3)/VERSION, which is
-          # /srv/orbit/VERSION inside the image. If the Dockerfile stops baking
-          # that file the gateway falls back to reporting 0.0.0, so assert the
-          # exact path the gateway config reads.
-          baked="$(docker run --rm --entrypoint cat "$ref" /srv/orbit/VERSION || true)"
-          if [ "$baked" != "$VERSION" ]; then
-            echo "Gateway image /srv/orbit/VERSION is [$baked], expected [$VERSION] (gateway-version regression)." >&2
-            exit 1
-          fi
-
-          echo "Gateway image bakes version ${VERSION} at /srv/orbit/VERSION."
-
-      - name: Generate release manifest
-        env:
-          VERSION: ${{ steps.version.outputs.value }}
-          RELEASED_AT: ${{ github.event.release.published_at }}
-          GATEWAY_IMAGE: ${{ steps.gateway_image.outputs.image }}
-          GATEWAY_DIGEST: ${{ steps.gateway_image.outputs.digest }}
-        run: |
-          set -euo pipefail
-          cp apps/cli/builds/dist/linux/linux-x64 orbit-linux-x64
-          cp apps/cli/builds/dist/mac/mac-arm orbit-macos-arm64
-
-          bin/orbit-release-manifest \
-            --version="${VERSION}" \
-            --released-at="${RELEASED_AT}" \
-            --gateway-image="${GATEWAY_IMAGE}" \
-            --gateway-digest="${GATEWAY_DIGEST}" \
-            --repository="${GITHUB_REPOSITORY}" \
-            --cli-artifact="linux-amd64=orbit-linux-x64=orbit-linux-x64" \
-            --cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64" \
-            --role-image="orbit-caddy=caddy:2-alpine" \
-            --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${VERSION}" \
-            --output="orbit-release-manifest.json"
-
-      - name: Upload GitHub Release assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          set -euo pipefail
-
-          gh release upload "$TAG" \
-            orbit-linux-x64 \
-            orbit-macos-arm64 \
-            orbit-release-manifest.json \
-            --clobber

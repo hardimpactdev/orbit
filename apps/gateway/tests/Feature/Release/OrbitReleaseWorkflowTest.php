@@ -3,17 +3,24 @@
 declare(strict_types=1);
 use Symfony\Component\Process\Process;
 
-it('publishes cli artifacts gateway image and release manifest on GitHub releases', function (): void {
+it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub releases', function (): void {
     $workflow = file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
 
     expect($workflow)
         ->toContain('name: Orbit Release')
         ->toContain('types: [published]')
-        ->toContain('packages: write')
         ->toContain('contents: write')
         ->toContain('bin/orbit-version')
         ->toContain('Release tag')
         ->toContain('does not match VERSION')
+        ->toContain('Download prebuilt release assets')
+        ->toContain('gh release download "$TAG"')
+        ->toContain('Verify promoted release manifest')
+        ->toContain('source')
+        ->toContain('github-release')
+        ->toContain('hash_file')
+        ->toContain('Verify promoted gateway image is pullable')
+        ->toContain('Verify promoted gateway image bakes the release version')
         ->toContain('bin/orbit-prepare-release-package --package="$package"')
         ->toContain('publish_split core hardimpactdev/orbit-core')
         ->toContain('publish_split cli hardimpactdev/orbit-cli')
@@ -26,21 +33,20 @@ it('publishes cli artifacts gateway image and release manifest on GitHub release
         ->toContain('PACKAGIST_TOKEN')
         ->toContain('ghcr.io')
         ->toContain('hardimpactdev/orbit-gateway')
-        ->toContain('docker buildx build')
-        ->toContain('--push')
-        ->toContain('--metadata-file')
-        ->toContain('containerimage.digest')
-        ->toContain('bin/orbit-build-cli-binary mac arm')
-        ->toContain('bin/orbit-build-cli-binary linux x64')
-        ->toContain('bin/orbit-release-manifest')
         ->toContain('orbit-release-manifest.json')
-        ->toContain('gh release upload')
         ->toContain('orbit-linux-x64')
         ->toContain('orbit-macos-arm64')
-        ->toContain('cp apps/cli/builds/dist/linux/linux-x64 orbit-linux-x64')
-        ->toContain('cp apps/cli/builds/dist/mac/mac-arm orbit-macos-arm64')
-        ->toContain('--cli-artifact="linux-amd64=orbit-linux-x64=orbit-linux-x64"')
-        ->toContain('--cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64"')
+        ->not->toContain('docker buildx build')
+        ->not->toContain('--push')
+        ->not->toContain('--metadata-file')
+        ->not->toContain('containerimage.digest')
+        ->not->toContain('bin/orbit-build-cli-binary mac arm')
+        ->not->toContain('bin/orbit-build-cli-binary linux x64')
+        ->not->toContain('bin/orbit-release-manifest')
+        ->not->toContain('gh release upload')
+        ->not->toContain('--clobber')
+        ->not->toContain('cp apps/cli/builds/dist/linux/linux-x64 orbit-linux-x64')
+        ->not->toContain('cp apps/cli/builds/dist/mac/mac-arm orbit-macos-arm64')
         ->not->toContain("sed -n \"s/.*'version' =>")
         ->not->toContain('#orbit-linux-x64')
         ->not->toContain('#orbit-macos-arm64')
@@ -67,8 +73,8 @@ it('builds cli binary workflows through the shared no-dev compressed phar helper
     expect($releaseWorkflow)
         ->toContain('zlib')
         ->toContain('bin/orbit-version')
-        ->toContain('bin/orbit-build-cli-binary mac arm')
-        ->toContain('bin/orbit-build-cli-binary linux x64')
+        ->not->toContain('bin/orbit-build-cli-binary mac arm')
+        ->not->toContain('bin/orbit-build-cli-binary linux x64')
         ->not->toContain("sed -n \"s/.*'version' =>")
         ->not->toContain('php orbit app:build orbit.phar')
         ->not->toContain('vendor/bin/phpacker build mac arm')
@@ -134,8 +140,8 @@ it('documents the compressed phar runtime extension contract', function (): void
     }
 });
 
-it('keeps gateway image build hygiene covered by dockerignore in release workflow context', function (): void {
-    $workflow = file_get_contents(repo_path('.github/workflows/orbit-release.yml'));
+it('keeps gateway image build hygiene covered by dockerignore in the gateway image workflow', function (): void {
+    $workflow = file_get_contents(repo_path('.github/workflows/orbit-gateway-image.yml'));
     $dockerignore = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
 
     expect($workflow)

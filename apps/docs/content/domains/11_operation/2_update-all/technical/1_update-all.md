@@ -64,6 +64,10 @@ execution details live in the renderer contracts.
   event stream URL promptly and the runner resolves the latest release manifest
   during the `Checking for updates` step, then persists the immutable plan before
   `Checking fleet versions` or any later phase starts.
+- Release manifests may come from the public `github-release` source or a
+  topology-reachable `topology-candidate` source. The manifest source is part of
+  the immutable plan and terminal operation result because candidate manifests
+  intentionally reapply assets even when the semantic version already matches.
 - The start POST response is sent before the durable update runner is launched.
   This lets the CLI connect to the operation event stream before any runner-side
   gateway restart can interrupt the start response. Runner launch failures after
@@ -88,6 +92,12 @@ execution details live in the renderer contracts.
 - A node already on the latest release is skipped (it renders
   `Skipped: already up to date`) and runs no download. Only outdated nodes run
   the update script.
+- The all-current short-circuit and per-node already-current skip apply to
+  finalized `github-release` manifests only. A `topology-candidate` manifest
+  must reapply gateway, caller-local, and workload artifacts from the persisted
+  candidate snapshot even when the fleet-version probe reports 0 outdated nodes.
+  The check row renders candidate reapply intent and includes the same update
+  target list as an outdated run.
 - Each updated node advances through per-node sub-stages: `Downloading <v>` →
   `Replacing cli binary` → `Running doctor`. The gateway node additionally runs
   `Updating gateway app` after download and before `Replacing cli binary`. Each
@@ -189,6 +199,10 @@ The expected target shape per calling context:
   four targets at a time. Production artifact targets run the binary-update path.
   Source-dev targets keep `/usr/local/bin/orbit` pointed at
   `<source>/apps/cli/orbit`.
+- For `topology-candidate` manifests, the caller-local and workload binary
+  update paths bypass semantic-version skips and download the CLI artifact from
+  the candidate source. This prevents a new same-version candidate build from
+  being treated as already installed.
 - Each updated installation emits per-node sub-stages through the operation
   journal: `Downloading <v>` → `Replacing cli binary` → `Running doctor` → `Done`
   for local/workload nodes; `Downloading <v> assets` → `Updating gateway app` →

@@ -16,6 +16,8 @@ final class UpdateAllCommand extends GatewayCommand
 {
     use StreamsGatewayProgress;
 
+    private const string TopologyCandidateManifestSource = 'topology-candidate';
+
     #[\Override]
     protected $signature = 'update:all {--json : Output JSON}';
 
@@ -97,6 +99,8 @@ final class UpdateAllCommand extends GatewayCommand
 
         $targetVersion = $this->terminalTargetVersion($terminal['payload']);
         $allCurrent = $this->terminalAllCurrent($terminal['payload']);
+        $reapplyLocal = $this->terminalUsesTopologyCandidateManifest($terminal['payload']);
+        $candidateBinaryUrl = $this->terminalCandidateBinaryUrl($terminal['payload']);
 
         // All-current short-circuit: skip local update; nothing was outdated.
         if ($allCurrent) {
@@ -106,7 +110,7 @@ final class UpdateAllCommand extends GatewayCommand
         }
 
         // Gateway phase succeeded — run local update as a fan-out target.
-        $this->runLocalFanOut($localUpdater, $progress, $targetVersion);
+        $this->runLocalFanOut($localUpdater, $progress, $targetVersion, $reapplyLocal, $candidateBinaryUrl);
 
         $progress->finishSuccess($this->output, $targetVersion);
 
@@ -156,12 +160,16 @@ final class UpdateAllCommand extends GatewayCommand
 
         // Local already on the target: skip its download and output the gateway
         // terminal frame directly (mirrors the human-mode local skip).
-        if ($this->localIsCurrent($this->terminalTargetVersion($terminal['payload']))) {
+        if (! $this->terminalUsesTopologyCandidateManifest($terminal['payload'])
+            && $this->localIsCurrent($this->terminalTargetVersion($terminal['payload']))) {
             return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
         }
 
         // Gateway phase succeeded — run local update as a fan-out target.
-        $download = $localUpdater->downloadBinary();
+        $download = $this->withBinaryUrl(
+            $this->terminalCandidateBinaryUrl($terminal['payload']),
+            fn (): array => $localUpdater->downloadBinary(),
+        );
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
             return $this->renderFailure(
@@ -199,10 +207,12 @@ final class UpdateAllCommand extends GatewayCommand
         RunsLocalUpdate $localUpdater,
         UpdateAllHumanProgressRenderer $progress,
         ?string $targetVersion,
+        bool $reapplyLocal,
+        ?string $candidateBinaryUrl,
     ): void {
         // Skip the download when the caller-local CLI is already on the target
         // (mirrors the per-node skip; the gateway-first gate is already met).
-        if ($this->localIsCurrent($targetVersion)) {
+        if (! $reapplyLocal && $this->localIsCurrent($targetVersion)) {
             $progress->localNodeSkipped($this->output);
 
             return;
@@ -210,7 +220,7 @@ final class UpdateAllCommand extends GatewayCommand
 
         $progress->localNodeSubStep($this->output, 'downloading', $targetVersion ?? '');
 
-        $download = $localUpdater->downloadBinary();
+        $download = $this->withBinaryUrl($candidateBinaryUrl, fn (): array => $localUpdater->downloadBinary());
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
             $progress->localNodeFailed($this->output, $download['output']);
@@ -303,6 +313,87 @@ final class UpdateAllCommand extends GatewayCommand
         $skipped = $data['skipped'] ?? $payload['skipped'] ?? false;
 
         return $skipped === true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function terminalUsesTopologyCandidateManifest(array $payload): bool
+    {
+        return $this->frameString($this->frameData($payload), 'manifest_source')
+            === self::TopologyCandidateManifestSource
+            || $this->frameString($payload, 'manifest_source') === self::TopologyCandidateManifestSource;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function terminalCandidateBinaryUrl(array $payload): ?string
+    {
+        if (! $this->terminalUsesTopologyCandidateManifest($payload)) {
+            return null;
+        }
+
+        $platform = $this->localCliPlatform();
+
+        if ($platform === null) {
+            return null;
+        }
+
+        $data = $this->frameData($payload);
+        $artifacts = $this->frameArray($data, 'cli_artifacts') ?? $this->frameArray($payload, 'cli_artifacts') ?? [];
+        $artifact = $artifacts[$platform] ?? null;
+        $url = is_array($artifact) ? ($artifact['url'] ?? null) : null;
+
+        if (! is_string($url)) {
+            return null;
+        }
+
+        $url = trim($url);
+
+        return $url === '' ? null : $url;
+    }
+
+    private function localCliPlatform(): ?string
+    {
+        $os = php_uname('s');
+        $machine = php_uname('m');
+
+        if (str_starts_with($os, 'Darwin') && $machine === 'arm64') {
+            return 'darwin-arm64';
+        }
+
+        if (str_starts_with($os, 'Linux') && $machine === 'x86_64') {
+            return 'linux-amd64';
+        }
+
+        return null;
+    }
+
+    /**
+     * @template TReturn
+     *
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    private function withBinaryUrl(?string $binaryUrl, callable $callback): mixed
+    {
+        if ($binaryUrl === null) {
+            return $callback();
+        }
+
+        $previous = getenv('ORBIT_BINARY_URL');
+        putenv("ORBIT_BINARY_URL={$binaryUrl}");
+
+        try {
+            return $callback();
+        } finally {
+            if ($previous === false) {
+                putenv('ORBIT_BINARY_URL');
+            } else {
+                putenv("ORBIT_BINARY_URL={$previous}");
+            }
+        }
     }
 
     /**

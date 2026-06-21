@@ -190,6 +190,47 @@ it('skips a workload node already on the target version and runs no remote updat
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
+it('reapplies topology candidate artifacts to workload nodes already on the target version', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(versions: [
+        'app-dev-1' => '2.0.0',
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    $plan = app(OperationUpdatePlanStore::class)->create(
+        $run,
+        workloadUpdaterSnapshot(
+            targetVersion: '2.0.0',
+            manifestSource: 'topology-candidate',
+            cliArtifacts: [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-x64',
+                    'sha256' => str_repeat('e', 64),
+                ],
+            ],
+        ),
+    );
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)->toMatchArray([
+        [
+            'target' => 'app-dev-1',
+            'node' => 'app-dev-1',
+            'role' => 'app-dev',
+            'status' => 'completed',
+            'doctor_issues' => 0,
+        ],
+    ])
+        ->and($shell->updatedNodes())->toBe(['app-dev-1'])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptFor('app-dev-1'))->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-x64')
+        ->and(workloadUpdaterStepMessages($run))->not->toContain(
+            ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
+        );
+});
+
 it('runs orbit doctor after a node update and reports the issue count in the done message', function (): void {
     $shell = new WorkloadUpdaterFakeShell(
         doctorIssues: ['app-dev-1' => 2, 'app-prod-1' => 0],
@@ -584,6 +625,7 @@ final class WorkloadUpdaterFailIfCalledFleetVerifier extends FleetUpdateVerifier
 function workloadUpdaterSnapshot(
     string $targetVersion = '1.2.3',
     string $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    string $manifestSource = 'github-release',
     array $cliArtifacts = [],
     array $roleImages = [],
 ): OperationUpdatePlanSnapshot {
@@ -601,11 +643,12 @@ function workloadUpdaterSnapshot(
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
         gatewayImage: $gatewayImage,
-        manifestSource: 'github-release',
+        manifestSource: $manifestSource,
         manifestVersion: $targetVersion,
         manifestSnapshot: [
             'version' => $targetVersion,
-            'source' => 'github-release',
+            'source' => $manifestSource,
+            ...($manifestSource === 'topology-candidate' ? ['build_id' => 'candidate-build'] : []),
             'images' => [
                 'gateway' => $gatewayImage,
             ],

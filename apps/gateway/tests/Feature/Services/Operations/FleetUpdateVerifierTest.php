@@ -161,6 +161,7 @@ it('emits terminal success only after runner verification passes', function (): 
             'exit_code' => 0,
             'data' => [
                 'target_version' => '1.2.3',
+                'manifest_source' => 'github-release',
                 'manifest_version' => '1.2.3',
                 'status' => 'succeeded',
             ],

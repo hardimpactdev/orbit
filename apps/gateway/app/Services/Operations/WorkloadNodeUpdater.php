@@ -113,7 +113,8 @@ final readonly class WorkloadNodeUpdater
      */
     private function runRemoteUpdate(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
-        if ($this->fleetVersions->isCurrent($this->fleetVersions->nodeVersion($node, $operationRun), $plan->target_version)) {
+        if (! $plan->usesTopologyCandidateManifest()
+            && $this->fleetVersions->isCurrent($this->fleetVersions->nodeVersion($node, $operationRun), $plan->target_version)) {
             return [
                 ...$this->targetPayload($node),
                 'status' => 'skipped',

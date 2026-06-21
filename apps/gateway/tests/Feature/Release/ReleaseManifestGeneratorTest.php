@@ -63,6 +63,58 @@ it('generates a release manifest with gateway digest cli hashes and role image m
     }
 });
 
+it('generates a topology candidate manifest with candidate asset urls and build identity', function (): void {
+    $root = sys_get_temp_dir().'/orbit-candidate-manifest-'.bin2hex(random_bytes(6));
+    $linux = "{$root}/orbit-linux-x64";
+    $mac = "{$root}/orbit-macos-arm64";
+    $output = "{$root}/orbit-release-manifest.json";
+
+    mkdir($root, 0700, true);
+    file_put_contents($linux, 'candidate-linux-binary');
+    file_put_contents($mac, 'candidate-mac-binary');
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/orbit-release-manifest'),
+            '--version=1.2.3',
+            '--source=topology-candidate',
+            '--build-id=2026-06-21T120000Z-abc123',
+            '--asset-base-url=https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123',
+            '--gateway-image=ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('c', 64),
+            "--cli-artifact=linux-amd64=orbit-linux-x64={$linux}",
+            "--cli-artifact=darwin-arm64=orbit-macos-arm64={$mac}",
+            '--role-image=orbit-caddy=caddy:2-alpine',
+            '--role-image=orbit-websocket=hardimpact/orbit-reverb:1.2.3',
+            "--output={$output}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $manifest = json_decode(file_get_contents($output), true);
+
+        expect($manifest)->toMatchArray([
+            'schema_version' => 1,
+            'version' => '1.2.3',
+            'source' => 'topology-candidate',
+            'build_id' => '2026-06-21T120000Z-abc123',
+            'cli_artifacts' => [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-linux-x64',
+                    'sha256' => hash_file('sha256', $linux),
+                ],
+                'darwin-arm64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-macos-arm64',
+                    'sha256' => hash_file('sha256', $mac),
+                ],
+            ],
+        ]);
+    } finally {
+        (new Process(['rm', '-rf', $root]))->run();
+    }
+});
+
 it('rejects gateway images that cannot be pinned to a digest', function (): void {
     $process = new Process([
         PHP_BINARY,

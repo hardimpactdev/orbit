@@ -50,6 +50,8 @@ jobs:
           short_sha="${GITHUB_SHA::12}"
           output_mode="--load"
 
+          test -f docker/orbit-gateway/Dockerfile.dockerignore
+
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             output_mode="--push"
           fi

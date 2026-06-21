@@ -11,6 +11,15 @@ final readonly class ReleaseManifest
 {
     private const int SupportedSchemaVersion = 1;
 
+    public const string SourceGitHubRelease = 'github-release';
+
+    public const string SourceTopologyCandidate = 'topology-candidate';
+
+    private const array SupportedSources = [
+        self::SourceGitHubRelease,
+        self::SourceTopologyCandidate,
+    ];
+
     /**
      * @param  array<string, array{url: string, sha256: string}>  $cliArtifacts
      * @param  array<string, string>  $roleImages
@@ -20,6 +29,7 @@ final readonly class ReleaseManifest
         public int $schemaVersion,
         public string $version,
         public string $source,
+        public ?string $buildId,
         public string $gatewayImage,
         public array $cliArtifacts,
         public array $roleImages,
@@ -44,9 +54,14 @@ final readonly class ReleaseManifest
 
         $version = self::stringValue($manifest, 'version', 'version');
         $source = self::stringValue($manifest, 'source', 'source');
+        $buildId = self::optionalStringValue($manifest, 'build_id', 'build id');
 
-        if ($source !== 'github-release') {
+        if (! in_array($source, self::SupportedSources, true)) {
             throw new RuntimeException("Release manifest source [{$source}] is not supported.");
+        }
+
+        if ($source === self::SourceTopologyCandidate && $buildId === null) {
+            throw new RuntimeException('Release manifest topology candidate build id must be a non-empty string.');
         }
 
         $images = self::arrayValue($manifest, 'images', 'images');
@@ -60,6 +75,7 @@ final readonly class ReleaseManifest
             schemaVersion: $schemaVersion,
             version: $version,
             source: $source,
+            buildId: $buildId,
             gatewayImage: GatewayImageReference::fromString($gatewayImage)->canonical(),
             cliArtifacts: $cliArtifacts,
             roleImages: $roleImages,
@@ -94,6 +110,24 @@ final readonly class ReleaseManifest
     private static function stringValue(array $data, string $key, string $label): string
     {
         $value = $data[$key] ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            throw new RuntimeException("Release manifest {$label} must be a non-empty string.");
+        }
+
+        return trim($value);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private static function optionalStringValue(array $data, string $key, string $label): ?string
+    {
+        if (! array_key_exists($key, $data)) {
+            return null;
+        }
+
+        $value = $data[$key];
 
         if (! is_string($value) || trim($value) === '') {
             throw new RuntimeException("Release manifest {$label} must be a non-empty string.");

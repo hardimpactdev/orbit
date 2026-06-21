@@ -52,6 +52,29 @@ it('reads validates and exposes a release manifest from a file url', function ()
     }
 });
 
+it('accepts topology candidate manifests with a build identity', function (): void {
+    Http::fake([
+        'artifacts.orbit/*' => Http::response(releaseManifestResolverFixture([
+            'source' => 'topology-candidate',
+            'build_id' => '2026-06-21T120000Z-abc123',
+            'cli_artifacts' => [
+                'linux-amd64' => [
+                    'url' => 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-linux-x64',
+                    'sha256' => str_repeat('b', 64),
+                ],
+            ],
+        ]), 200),
+    ]);
+
+    config()->set('orbit.updates.release_manifest_url', 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-release-manifest.json');
+
+    $manifest = app(ReleaseManifestResolver::class)->resolve();
+
+    expect($manifest->source)->toBe('topology-candidate')
+        ->and($manifest->snapshot()['build_id'])->toBe('2026-06-21T120000Z-abc123')
+        ->and($manifest->cliArtifacts['linux-amd64']['url'])->toBe('https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-linux-x64');
+});
+
 it('rejects malformed manifest json', function (): void {
     Http::fake([
         'github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response('{nope', 200),

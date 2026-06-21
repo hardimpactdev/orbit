@@ -999,6 +999,31 @@ it('renders the local fan-out node as skipped when the caller is already on the 
         ->and($output)->toMatch('/local\s+Skipped: already up to date/');
 });
 
+it('runs the local fan-out for topology candidate manifests when the caller is already on the target version', function (): void {
+    config()->set('app.version', '1.2.3');
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: release candidate assets will be reapplied to 1.2.3', 'update_targets' => ['gateway', 'local', 'beast']]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        ['type' => ProgressEventType::Complete, 'payload' => [
+            'status' => 'succeeded',
+            'target_version' => '1.2.3',
+            'manifest_source' => 'topology-candidate',
+            'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+        ]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($this->localUpdater->calls)->toBe(['download', 'replace', 'doctor'])
+        ->and($this->localUpdater->binaryUrls[0] ?? '')->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-')
+        ->and($output)->toMatch('/local\s+Done/')
+        ->and($output)->not->toMatch('/local\s+Skipped: already up to date/');
+});
+
 it('skips the local download in json mode when the caller is already on the target version', function (): void {
     config()->set('app.version', '1.2.3');
 
@@ -1011,6 +1036,29 @@ it('skips the local download in json mode when the caller is already on the targ
 
     expect($exitCode)->toBe(0)
         ->and($this->localUpdater->calls)->toBe([]);
+});
+
+it('runs the local download in json mode for topology candidate manifests when the caller is already on the target version', function (): void {
+    config()->set('app.version', '1.2.3');
+
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Complete, 'payload' => [
+            'exit_code' => 0,
+            'data' => [
+                'updates' => [],
+                'target_version' => '1.2.3',
+                'manifest_source' => 'topology-candidate',
+                'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+            ],
+        ]],
+    ]));
+
+    [$exitCode] = runCommand($this, 'update:all', ['--json' => true]);
+
+    expect($exitCode)->toBe(0)
+        ->and($this->localUpdater->calls)->toBe(['download', 'replace', 'doctor'])
+        ->and($this->localUpdater->binaryUrls[0] ?? '')->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-');
 });
 
 it('returns failure exit code and json output for terminal operation errors', function (): void {
@@ -1652,6 +1700,23 @@ function fakeUpdateAllStartEnvelope(): array
     ]);
 }
 
+/**
+ * @return array<string, array{url: string, sha256: string}>
+ */
+function updateAllCommandCandidateCliArtifacts(): array
+{
+    return [
+        'linux-amd64' => [
+            'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-x64',
+            'sha256' => str_repeat('b', 64),
+        ],
+        'darwin-arm64' => [
+            'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-macos-arm64',
+            'sha256' => str_repeat('c', 64),
+        ],
+    ];
+}
+
 class UpdateAllCommandFakeFollower extends GatewayOperationFollower
 {
     /**
@@ -1703,6 +1768,11 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
 
     public ?int $doctorIssues = 0;
 
+    /**
+     * @var list<string|null>
+     */
+    public array $binaryUrls = [];
+
     public int $replaceDelayMicroseconds = 0;
 
     /**
@@ -1731,6 +1801,8 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
     public function downloadBinary(): array
     {
         $this->calls[] = 'download';
+        $binaryUrl = getenv('ORBIT_BINARY_URL');
+        $this->binaryUrls[] = $binaryUrl === false ? null : $binaryUrl;
 
         /** @var array{successful: bool, exit_code: int, output: string, staged_path: string|null, version: string|null} */
         return $this->results['download'];

@@ -27,11 +27,13 @@ final readonly class OperationUpdatePlanSnapshot
         $this->assertDigestPinnedGatewayImage($this->gatewayImage);
         $this->assertNonEmptyString($this->manifestSource, 'manifest source');
         $this->assertNonEmptyString($this->manifestVersion, 'manifest version');
+        $this->assertSupportedManifestSource();
 
         if ($this->manifestSnapshot === []) {
             throw new RuntimeException('Update plan manifest snapshot cannot be empty.');
         }
 
+        $this->assertTopologyCandidateManifestSnapshot();
         $this->assertCliArtifacts($this->cliArtifacts);
         $this->assertRoleImages($this->roleImages);
     }
@@ -89,6 +91,30 @@ final readonly class OperationUpdatePlanSnapshot
 
         if (! $reference->isDigestPinned()) {
             throw new RuntimeException('Update plan gateway image must be digest-pinned.');
+        }
+    }
+
+    private function assertSupportedManifestSource(): void
+    {
+        if (! in_array($this->manifestSource, [
+            ReleaseManifest::SourceGitHubRelease,
+            ReleaseManifest::SourceTopologyCandidate,
+        ], true)) {
+            throw new RuntimeException("Update plan manifest source [{$this->manifestSource}] is not supported.");
+        }
+    }
+
+    private function assertTopologyCandidateManifestSnapshot(): void
+    {
+        if ($this->manifestSource !== ReleaseManifest::SourceTopologyCandidate) {
+            return;
+        }
+
+        $source = $this->manifestSnapshot['source'] ?? null;
+        $buildId = $this->manifestSnapshot['build_id'] ?? null;
+
+        if ($source !== ReleaseManifest::SourceTopologyCandidate || ! is_string($buildId) || trim($buildId) === '') {
+            throw new RuntimeException('Update plan topology candidate manifest snapshot must include a topology candidate source and build id.');
         }
     }
 

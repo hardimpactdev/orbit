@@ -5,8 +5,9 @@
 Update the gateway, the local Orbit CLI, and every managed Orbit installation
 selected for a fleet update.
 
-This is the fleet update command. It is useful after a new Orbit release lands
-and the operator needs all Orbit-capable nodes to run the same version. It
+This is the fleet update command. It is useful after a new Orbit release lands,
+or while validating a release candidate from a topology-reachable manifest,
+when the operator needs all Orbit-capable nodes to run the same asset set. It
 updates Orbit installations only; it does not deploy apps or repair drift.
 
 ## Usage
@@ -43,9 +44,13 @@ orbit update:all --json
    image is configured. Inline-manifest starts use the target digest from the
    persisted plan. The runner resolves and persists the immutable plan during
    `Checking for updates` when needed, then probes fleet versions before any
-   update side effects. If every selected installation is already current, it
-   skips the gateway, local, workload, and verification phases. After the plan
-   exists, the runner uses only that immutable snapshot for the rest of the run.
+   update side effects. If every selected installation is already current for a
+   finalized GitHub release manifest, it skips the gateway, local, workload, and
+   verification phases. A `topology-candidate` manifest is different: it
+   reapplies the candidate assets even when every node already reports the
+   target version, so repeated same-version release candidates can be live
+   tested before GitHub publication. After the plan exists, the runner uses only
+   that immutable snapshot for the rest of the run.
 4. When outdated installations exist, the runner updates the gateway first as
    the fleet version ceiling, then fans out to the caller-local CLI and selected
    workload nodes. Production installs update the native CLI binary artifact;
@@ -105,8 +110,11 @@ the exact shape.
 - Each selected workload installation has a writable Orbit install root and a
   host `orbit` launcher or an equivalent Orbit CLI entry point local to the node.
 - Production artifact update targets require a reachable release source for the
-  CLI binary plus permission to write the binary and update the user-local
-  launcher link.
+  CLI binary. During release-candidate acceptance this can be a
+  topology-reachable artifact source referenced by the configured
+  `ORBIT_RELEASE_MANIFEST_URL`; after promotion it is the public GitHub release
+  manifest. Targets also need permission to write the binary and update the
+  user-local launcher link.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.

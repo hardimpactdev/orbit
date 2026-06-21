@@ -140,6 +140,29 @@ it('rejects gateway images that are not digest pinned', function (): void {
         ->toThrow(RuntimeException::class, 'digest-pinned');
 });
 
+it('rejects unsupported update plan manifest sources', function (): void {
+    expect(fn () => operationUpdatePlanSnapshot(manifestSource: 'mirror'))
+        ->toThrow(RuntimeException::class, 'manifest source [mirror] is not supported');
+});
+
+it('requires topology candidate update plans to carry the candidate manifest build id', function (): void {
+    expect(fn () => operationUpdatePlanSnapshot(manifestSource: 'topology-candidate'))
+        ->toThrow(RuntimeException::class, 'topology candidate manifest snapshot');
+});
+
+it('accepts topology candidate update plans with a captured candidate manifest build id', function (): void {
+    $snapshot = operationUpdatePlanSnapshot(
+        manifestSource: 'topology-candidate',
+        manifestOverrides: [
+            'source' => 'topology-candidate',
+            'build_id' => 'candidate-20260621',
+        ],
+    );
+
+    expect($snapshot->manifestSource)->toBe('topology-candidate')
+        ->and($snapshot->manifestSnapshot['build_id'])->toBe('candidate-20260621');
+});
+
 function operationUpdatePlanRun(): OperationRun
 {
     return app(OperationRunRecorder::class)->queued(
