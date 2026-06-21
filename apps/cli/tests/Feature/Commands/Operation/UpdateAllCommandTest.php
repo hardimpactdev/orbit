@@ -1073,18 +1073,10 @@ function pseudoTtyWrappedCommand(string $scriptBinary, string $typescriptPath, a
     $shellCommand = implode(' ', array_map(static fn (string $part): string => escapeshellarg($part), $command));
 
     if (PHP_OS_FAMILY === 'Darwin') {
-        // -F is required on macOS so in-place repaints flush into the typescript
-        // file while the wrapped command is still running.
         return [$scriptBinary, '-q', '-F', $typescriptPath, '/bin/sh', '-c', $shellCommand];
     }
 
-    return [
-        $scriptBinary,
-        '-q',
-        '-c',
-        $shellCommand,
-        $typescriptPath,
-    ];
+    return [$scriptBinary, '-q', '-f', '-c', $shellCommand, $typescriptPath];
 }
 
 function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayMicroseconds): string

@@ -29,13 +29,18 @@ afterEach(function (): void {
     remove_directory($this->manifestDirectory);
 });
 
+function incusCommandRemoteHostFixture(): string
+{
+    return strtolower((string) gethostname()) === 'beast' ? 'sidecar1' : 'beast';
+}
+
 /**
  * @return array{host: string, run_id: string, ssh_key_path: string, gateway_ip: string, instances: array<string, string>, checkouts: array<string, string>}
  */
 function fakeIncusPreparedTopology(string $runId = 'dev-abc123'): array
 {
     return [
-        'host' => 'beast',
+        'host' => incusCommandRemoteHostFixture(),
         'run_id' => $runId,
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$runId}/id_ed25519",
         'gateway_ip' => '10.6.0.2',
@@ -59,12 +64,12 @@ function incusDevTopologyCommandWith(callable $prepare): void
     app()->instance(E2EDevTopologyCommand::class, $command);
 }
 
-function incusReleaseConfig(string $host = 'beast'): E2EConfig
+function incusReleaseConfig(?string $host = null): E2EConfig
 {
     return new E2EConfig(
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
-        host: $host,
+        host: $host ?? incusCommandRemoteHostFixture(),
         sourceImage: 'images:ubuntu/26.04',
         baseImage: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
@@ -260,13 +265,15 @@ function incusLiveCommandWith(ArrayObject $log, ?LiveIncusLocalMachine $localMac
 /**
  * @param  array<string, string>  $checkouts
  */
-function writeIncusRetainedManifest(string $directory, string $id, array $checkouts = ['operator' => '/home/orbit/orbit-current']): void
+function writeIncusRetainedManifest(string $directory, string $id, array $checkouts = ['operator' => '/home/orbit/orbit-current'], ?string $host = null): void
 {
+    $host ??= incusCommandRemoteHostFixture();
+
     (new E2EDevTopologyManifestStore($directory))->write([
         'id' => $id,
         'kind' => 'operator_gateway_app-dev',
         'provider' => 'incus',
-        'host' => 'beast',
+        'host' => $host,
         'run_id' => $id,
         'ssh_key_path' => "/tmp/orbit-e2e-topology-{$id}/id_ed25519",
         'gateway_ip' => '10.6.0.2',
@@ -516,7 +523,9 @@ it('rejects dry-run live mode because no operator identity can be minted', funct
 });
 
 it('syncs the current checkout to a retained Incus topology by id', function (): void {
-    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $host = incusCommandRemoteHostFixture();
+
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123', host: $host);
 
     $commands = [];
 
@@ -541,7 +550,7 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->and($sync['id'])->toBe('dev-abc123')
         ->and($sync['kind'])->toBe('operator_gateway_app-dev')
         ->and($sync['provider'])->toBe('incus')
-        ->and($sync['host'])->toBe('beast')
+        ->and($sync['host'])->toBe($host)
         ->and($sync['source_path'])->toContain('-incus-')
         ->and($sync['checkouts']['operator'])->toBe('/home/orbit/orbit-current')
         ->and($sync['runtime_checkouts']['operator'])->toBe('/home/orbit/orbit-current')
@@ -549,7 +558,7 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
         ->and($sync['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
         ->and($commandsOutput)
         ->toContain('rsync -az --delete')
-        ->toContain("'beast:{$sync['source_path']}/'")
+        ->toContain("'{$host}:{$sync['source_path']}/'")
         ->toContain('incus exec')
         ->toContain('orbit-e2e-dev-abc123-operator')
         ->toContain('sudo -u')
@@ -609,7 +618,9 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
 });
 
 it('prints a human retained Incus sync summary', function (): void {
-    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123');
+    $host = incusCommandRemoteHostFixture();
+
+    writeIncusRetainedManifest($this->manifestDirectory, 'dev-abc123', host: $host);
 
     Process::fake(fn () => Process::result());
 
@@ -618,7 +629,7 @@ it('prints a human retained Incus sync summary', function (): void {
         '--id' => 'dev-abc123',
     ])
         ->expectsOutputToContain('Synced retained Incus topology [dev-abc123].')
-        ->expectsOutputToContain('Host: beast')
+        ->expectsOutputToContain("Host: {$host}")
         ->expectsOutputToContain('Source path:')
         ->expectsOutputToContain('Mounted checkouts:')
         ->expectsOutputToContain('- operator: /home/orbit/orbit-current')

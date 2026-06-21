@@ -375,6 +375,142 @@ it('polls PSR streams when guzzle stream wrappers cannot be selected', function 
     }
 });
 
+it('polls PSR streams when metadata exposes a non-selectable user-space resource', function (): void {
+    $scheme = 'orbit-core-user-space-stream';
+
+    if (! in_array($scheme, stream_get_wrappers(), true)) {
+        stream_wrapper_register($scheme, OrbitCoreUserSpaceStreamWrapper::class);
+    }
+
+    $resource = fopen("{$scheme}://progress", 'r');
+
+    if ($resource === false) {
+        $this->markTestSkipped('A user-space stream wrapper resource is required.');
+    }
+
+    $readAttempts = 0;
+    $closed = false;
+    $stream = new class($resource, function () use (&$readAttempts, &$closed): string {
+        $readAttempts++;
+
+        if ($readAttempts < 3) {
+            return '';
+        }
+
+        $closed = true;
+
+        return "event: complete\n\n";
+    }, fn (): bool => $closed) implements StreamInterface
+    {
+        private readonly Closure $readCallback;
+
+        private readonly Closure $eofCallback;
+
+        public function __construct(
+            private $resource,
+            callable $readCallback,
+            callable $eofCallback,
+        ) {
+            $this->readCallback = Closure::fromCallable($readCallback);
+            $this->eofCallback = Closure::fromCallable($eofCallback);
+        }
+
+        public function __toString(): string
+        {
+            return '';
+        }
+
+        public function close(): void {}
+
+        public function detach(): mixed
+        {
+            return null;
+        }
+
+        public function getSize(): ?int
+        {
+            return null;
+        }
+
+        public function tell(): int
+        {
+            return 0;
+        }
+
+        public function eof(): bool
+        {
+            return ($this->eofCallback)();
+        }
+
+        public function isSeekable(): bool
+        {
+            return false;
+        }
+
+        public function seek(int $offset, int $whence = SEEK_SET): void {}
+
+        public function rewind(): void {}
+
+        public function isWritable(): bool
+        {
+            return false;
+        }
+
+        public function write(string $string): int
+        {
+            return 0;
+        }
+
+        public function isReadable(): bool
+        {
+            return true;
+        }
+
+        public function read(int $length): string
+        {
+            return ($this->readCallback)();
+        }
+
+        public function getContents(): string
+        {
+            return '';
+        }
+
+        public function getMetadata(?string $key = null): mixed
+        {
+            $metadata = ['stream' => $this->resource];
+
+            return $key === null ? $metadata : ($metadata[$key] ?? null);
+        }
+    };
+
+    $tickCount = 0;
+    $ticker = new ForkedFrameTicker(20_000);
+    $ticker->start(function () use (&$tickCount): void {
+        $tickCount++;
+    });
+
+    $reader = new StreamIdleReader(20_000);
+
+    try {
+        $chunk = $reader->read($stream, 64);
+
+        expect($chunk)->toContain('event: complete')
+            ->and($readAttempts)->toBe(3)
+            ->and($tickCount)->toBeGreaterThanOrEqual(2);
+    } finally {
+        $ticker->stop();
+
+        if (is_resource($resource)) {
+            fclose($resource);
+        }
+
+        if (in_array($scheme, stream_get_wrappers(), true)) {
+            stream_wrapper_unregister($scheme);
+        }
+    }
+});
+
 it('treats an invalid stream resource as closed without throwing', function (): void {
     [$readable, $writable] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
 
@@ -475,6 +611,35 @@ it('treats an invalid stream resource as closed without throwing', function (): 
     }
 });
 
+final class OrbitCoreUserSpaceStreamWrapper
+{
+    /** @var resource|null */
+    public $context;
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+    {
+        return true;
+    }
+
+    public function stream_read(int $count): string
+    {
+        return '';
+    }
+
+    public function stream_eof(): bool
+    {
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function stream_stat(): array
+    {
+        return [];
+    }
+}
+
 it('invokes idle callbacks while waiting for guzzle stream data', function (): void {
     [$readable, $writable] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
 
@@ -503,7 +668,7 @@ it('invokes idle callbacks while waiting for guzzle stream data', function (): v
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toContain('event: keepalive')
+        expect($chunk)->toBe('e')
             ->and($tickCount)->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();

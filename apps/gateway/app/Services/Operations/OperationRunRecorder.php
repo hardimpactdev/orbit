@@ -185,6 +185,15 @@ final readonly class OperationRunRecorder
     }
 
     /**
+     * @param  list<array{key: string, status: string, message?: string|null, metadata?: array<string, mixed>, payloadExtras?: array<string, mixed>}>  $steps
+     * @return list<OperationEvent>
+     */
+    public function appendSteps(string $operationRunId, array $steps): array
+    {
+        return $this->events->steps($operationRunId, $steps);
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $metadata
      */

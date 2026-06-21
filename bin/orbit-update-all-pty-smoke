@@ -29,7 +29,11 @@ fi
 
 rm -f "$TS"
 
-"$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$(printf '%q ' "$(command -v php)" "$CAP")" >/dev/null 2>&1 &
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  "$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$(printf '%q ' "$(command -v php)" "$CAP")" >/dev/null 2>&1 &
+else
+  "$SCRIPT_BIN" -q -f -c "$(printf '%q ' "$(command -v php)" "$CAP")" "$TS" >/dev/null 2>&1 &
+fi
 pid=$!
 
 saw_circle_while_running=false

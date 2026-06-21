@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Core\Progress;
 
+use GuzzleHttp\Psr7\Stream;
 use GuzzleHttp\Psr7\StreamWrapper;
 use Psr\Http\Message\StreamInterface;
 
@@ -32,8 +33,12 @@ final readonly class StreamIdleReader
         }
 
         while (! $stream->eof()) {
-            if (! $this->isSelectableStreamResource($resource)) {
+            if (! $this->isStreamResource($resource)) {
                 return '';
+            }
+
+            if (! $this->isSelectableStreamResource($resource)) {
+                return $this->readWithIdlePolling($stream, $maxBytes);
             }
 
             $read = [$resource];
@@ -118,7 +123,7 @@ final readonly class StreamIdleReader
 
     private function isSelectableStreamResource(mixed $resource): bool
     {
-        if (! is_resource($resource) || get_resource_type($resource) !== 'stream') {
+        if (! $this->isStreamResource($resource)) {
             return false;
         }
 
@@ -130,6 +135,11 @@ final readonly class StreamIdleReader
 
         return $metadata['wrapper_type'] !== 'user-space'
             && $metadata['stream_type'] !== 'user-space';
+    }
+
+    private function isStreamResource(mixed $resource): bool
+    {
+        return is_resource($resource) && get_resource_type($resource) === 'stream';
     }
 
     private function resolvePhpStream(StreamInterface $stream): mixed
@@ -152,6 +162,12 @@ final readonly class StreamIdleReader
             }
         }
 
+        $resource = $this->resolveGuzzleNativeStream($stream);
+
+        if ($this->isSelectableStreamResource($resource)) {
+            return $resource;
+        }
+
         try {
             $resource = StreamWrapper::getResource($stream);
 
@@ -163,5 +179,22 @@ final readonly class StreamIdleReader
         }
 
         return null;
+    }
+
+    private function resolveGuzzleNativeStream(StreamInterface $stream): mixed
+    {
+        if (! $stream instanceof Stream) {
+            return null;
+        }
+
+        try {
+            // Guzzle metadata can omit the native resource; StreamWrapper can
+            // expose a user-space wrapper that is unsafe for stream_select().
+            $property = new \ReflectionProperty($stream, 'stream');
+
+            return $property->getValue($stream);
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

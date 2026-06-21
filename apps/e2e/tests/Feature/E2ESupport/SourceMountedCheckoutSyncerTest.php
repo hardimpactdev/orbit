@@ -5,9 +5,15 @@ declare(strict_types=1);
 use App\E2E\Support\SourceMountedCheckoutSyncer;
 use Illuminate\Support\Facades\Process;
 
+function sourceSyncRemoteHostFixture(): string
+{
+    return strtolower((string) gethostname()) === 'beast' ? 'sidecar1' : 'beast';
+}
+
 it('syncs the initiating worktree to a generated remote path without dependency directories', function (): void {
     $previousTestToken = getenv('TEST_TOKEN');
     putenv('TEST_TOKEN');
+    $host = sourceSyncRemoteHostFixture();
 
     $commands = [];
     Process::fake(function ($process) use (&$commands) {
@@ -25,7 +31,7 @@ it('syncs the initiating worktree to a generated remote path without dependency 
     });
 
     try {
-        $path = (new SourceMountedCheckoutSyncer)->sync('beast', 'docker');
+        $path = (new SourceMountedCheckoutSyncer)->sync($host, 'docker');
         $commandsOutput = implode("\n", $commands);
         $ownershipRepairOffset = strpos($commandsOutput, 'ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"');
         $rsyncOffset = strpos($commandsOutput, 'rsync -az --delete');
@@ -43,7 +49,7 @@ it('syncs the initiating worktree to a generated remote path without dependency 
             ->toContain('chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work')
             ->toContain('rsync -az --delete')
             ->toContain(escapeshellarg(repo_path().'/'))
-            ->toContain("'beast:{$path}/'")
+            ->toContain("'{$host}:{$path}/'")
             ->toContain("--exclude '/apps/gateway/vendor'")
             ->toContain("--exclude '/apps/cli/.env'")
             ->toContain("--exclude '/apps/cli/vendor'")
@@ -157,6 +163,7 @@ it('passes GitHub auth to remote dependency hydration through SSH input', functi
 
 it('isolates generated remote source paths by provider and parallel worker', function (): void {
     $previousTestToken = getenv('TEST_TOKEN');
+    $host = sourceSyncRemoteHostFixture();
 
     Process::fake(fn () => Process::result());
 
@@ -165,11 +172,11 @@ it('isolates generated remote source paths by provider and parallel worker', fun
 
         $syncer = new SourceMountedCheckoutSyncer;
 
-        expect($syncer->sync('beast', 'docker'))
+        expect($syncer->sync($host, 'docker'))
             ->toContain('-docker-worker-3-')
-            ->and($syncer->sync('beast', 'incus'))
+            ->and($syncer->sync($host, 'incus'))
             ->toContain('-incus-worker-3-')
-            ->not->toBe($syncer->sync('beast', 'docker'));
+            ->not->toBe($syncer->sync($host, 'docker'));
     } finally {
         if (is_string($previousTestToken)) {
             putenv("TEST_TOKEN={$previousTestToken}");
@@ -210,7 +217,7 @@ it('guards the ownership repair chown behind a foreign-owner probe', function ()
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    (new SourceMountedCheckoutSyncer)->sync(sourceSyncRemoteHostFixture(), 'incus');
 
     $commandsOutput = implode("\n", $commands);
 
@@ -229,7 +236,7 @@ it('itemizes rsync changes so unchanged syncs can skip maintenance work', functi
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    (new SourceMountedCheckoutSyncer)->sync(sourceSyncRemoteHostFixture(), 'incus');
 
     expect(implode("\n", $commands))->toContain('rsync -az --delete --itemize-changes');
 });
@@ -245,7 +252,7 @@ it('skips permission normalization when rsync reports no changes', function (): 
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    (new SourceMountedCheckoutSyncer)->sync(sourceSyncRemoteHostFixture(), 'incus');
 
     expect(implode("\n", $commands))
         ->not->toContain('find . -type d -exec chmod a+rx {} +')
@@ -268,7 +275,7 @@ it('normalizes permissions when rsync reports changed files', function (): void 
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    (new SourceMountedCheckoutSyncer)->sync(sourceSyncRemoteHostFixture(), 'incus');
 
     expect(implode("\n", $commands))
         ->toContain('find . -type d -exec chmod a+rx {} +')

@@ -37,6 +37,34 @@ it('appends ordered durable operation events', function (): void {
         ->toBe(['tree', 'step', 'complete']);
 });
 
+it('appends adjacent operation events in one durable batch', function (): void {
+    $events = $this->recorder->appendMany($this->run, [
+        [
+            'event_type' => 'step',
+            'payload' => [
+                'key' => 'check-updates',
+                'status' => 'done',
+                'message' => 'Done: latest version is 2.0.0',
+            ],
+        ],
+        [
+            'event_type' => 'step',
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'running',
+                'message' => 'Checking',
+            ],
+        ],
+    ]);
+
+    expect($events)->toHaveCount(2)
+        ->and($events[0])->toBeInstanceOf(OperationEvent::class)
+        ->and($events[0]->sequence)->toBe(1)
+        ->and($events[1]->sequence)->toBe(2)
+        ->and($this->run->events()->orderBy('sequence')->get()->pluck('payload.key')->all())
+        ->toBe(['check-updates', 'check-fleet-versions']);
+});
+
 it('appends terminal error events with metadata', function (): void {
     $event = $this->recorder->error(
         $this->run,

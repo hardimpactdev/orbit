@@ -16,6 +16,10 @@ final class ForkedFrameTicker
 
     public const int DEFAULT_INTERVAL_US = 300_000;
 
+    private const int STOP_WAIT_MICROSECONDS = 500_000;
+
+    private const int STOP_POLL_MICROSECONDS = 10_000;
+
     /** @var (callable(): void)|null */
     private static $idleCallback = null;
 
@@ -114,11 +118,7 @@ final class ForkedFrameTicker
             return;
         }
 
-        posix_kill($this->pid, SIGTERM);
-
-        if (function_exists('pcntl_waitpid')) {
-            pcntl_waitpid($this->pid, $status);
-        }
+        $this->stopChildProcess($this->pid);
 
         if (function_exists('pcntl_signal')) {
             pcntl_signal(SIGUSR1, SIG_DFL);
@@ -130,6 +130,30 @@ final class ForkedFrameTicker
     public function __destruct()
     {
         $this->stop();
+    }
+
+    private function stopChildProcess(int $pid): void
+    {
+        posix_kill($pid, SIGTERM);
+
+        if (! function_exists('pcntl_waitpid')) {
+            return;
+        }
+
+        $deadline = microtime(true) + (self::STOP_WAIT_MICROSECONDS / 1_000_000);
+
+        do {
+            $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+            if ($result === $pid || $result === -1) {
+                return;
+            }
+
+            usleep(self::STOP_POLL_MICROSECONDS);
+        } while (microtime(true) < $deadline);
+
+        posix_kill($pid, SIGKILL);
+        pcntl_waitpid($pid, $status);
     }
 
     private function canFork(): bool

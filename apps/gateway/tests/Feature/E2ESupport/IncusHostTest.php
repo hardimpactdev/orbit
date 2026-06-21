@@ -19,12 +19,17 @@ afterEach(function (): void {
     m::close();
 });
 
-function incusHostTestConfig(string $incusStoragePool = '', string $host = 'beast'): E2EConfig
+function incusHostRemoteTestHost(): string
+{
+    return strtolower((string) gethostname()) === 'beast' ? 'sidecar1' : 'beast';
+}
+
+function incusHostTestConfig(string $incusStoragePool = '', ?string $host = null): E2EConfig
 {
     return new E2EConfig(
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
-        host: $host,
+        host: $host ?? incusHostRemoteTestHost(),
         sourceImage: 'images:ubuntu/26.04',
         baseImage: 'orbit-base-ubuntu-26.04-runtime',
         bootstrapUser: 'provisioner',
@@ -128,8 +133,9 @@ it('uses incus snapshot restore and supports stateful restore', function (): voi
 });
 
 it('validates an explicit remote source path before using it for Incus mounts', function (): void {
+    $hostName = incusHostRemoteTestHost();
     $commands = [];
-    $host = recordingIncusHost(incusHostTestConfig(host: 'beast'), $commands);
+    $host = recordingIncusHost(incusHostTestConfig(host: $hostName), $commands);
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_INCUS_SOURCE_PATH' => '/srv/orbit-source',
@@ -141,7 +147,8 @@ it('validates an explicit remote source path before using it for Incus mounts', 
 });
 
 it('fails clearly when an explicit Incus source path is not visible on the host', function (): void {
-    $host = new class(incusHostTestConfig(host: 'beast')) extends IncusHost
+    $hostName = incusHostRemoteTestHost();
+    $host = new class(incusHostTestConfig(host: $hostName)) extends IncusHost
     {
         public function run(string $command, ?int $timeoutSeconds = null): ProcessResult
         {
@@ -151,9 +158,9 @@ it('fails clearly when an explicit Incus source path is not visible on the host'
 
     withE2EConfigEnvironment([
         'ORBIT_E2E_INCUS_SOURCE_PATH' => '/missing/orbit-source',
-    ], function () use ($host): void {
+    ], function () use ($host, $hostName): void {
         expect(fn () => $host->sourcePath())
-            ->toThrow(RuntimeException::class, 'Configured Incus source path [/missing/orbit-source] is not visible on host [beast]');
+            ->toThrow(RuntimeException::class, "Configured Incus source path [/missing/orbit-source] is not visible on host [{$hostName}]");
     });
 });
 
@@ -432,8 +439,9 @@ it('allows remote checkout archive copies to use ssh agent identities', function
     });
     Process::preventStrayProcesses();
 
+    $hostName = incusHostRemoteTestHost();
     $commands = [];
-    $host = recordingIncusHost(incusHostTestConfig(host: 'beast'), $commands);
+    $host = recordingIncusHost(incusHostTestConfig(host: $hostName), $commands);
     $instance = new IncusInstance($host, 'orbit-template-operator');
 
     try {
@@ -444,7 +452,7 @@ it('allows remote checkout archive copies to use ssh agent identities', function
 
     expect($scpCommand)->toContain('scp -o BatchMode=yes')
         ->and($scpCommand)->not->toContain('IdentitiesOnly=yes')
-        ->and($scpCommand)->toContain("'beast':")
+        ->and($scpCommand)->toContain("'{$hostName}':")
         ->and($commands[0])->toContain("incus file push '/tmp/orbit-current-transfer-")
         ->and($commands[1])->toContain("rm -f '/tmp/orbit-current-transfer-");
 });

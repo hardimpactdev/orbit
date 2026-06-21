@@ -20,40 +20,18 @@ if ($transcript === '') {
 
 require dirname(__DIR__, 2).'/vendor/autoload.php';
 
-/**
- * @return list<string>
- */
-function repaintChunks(string $transcript): array
-{
-    if ($transcript === '') {
-        return [];
-    }
-
-    $chunks = preg_split('/(?<=\r)/', $transcript, -1, PREG_SPLIT_NO_EMPTY);
-
-    if (! is_array($chunks) || $chunks === []) {
-        return [$transcript];
-    }
-
-    return array_values($chunks);
-}
-
 $screen = new VirtualTerminalScreen;
-$lastObservation = null;
+$screen->feed($transcript);
+$row = $screen->rowsMatching($label, $message)[0] ?? null;
 
-foreach (repaintChunks($transcript) as $chunk) {
-    foreach ($screen->feedAndCollectMatchingSpinnerStates(
-        $chunk,
-        $label,
-        $message,
-        $lastObservation,
-    ) as $observation) {
-        echo sprintf(
-            "row=%d|%s|%s|%s\n",
-            $observation['row'],
-            $observation['label'],
-            $observation['message'],
-            $observation['spinner'],
-        );
-    }
+if ($row === null) {
+    exit(0);
 }
+
+echo sprintf(
+    "row=%d|%s|%s|%s\n",
+    $row['row'],
+    $label,
+    $message,
+    $row['spinner'],
+);

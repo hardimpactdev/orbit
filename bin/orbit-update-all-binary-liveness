@@ -85,7 +85,7 @@ wait_for_server() {
       return 0
     fi
 
-    sleep 0.05
+    sleep 0.01
   done
 
   echo "BLOCKER: fixture server did not become reachable on port ${PORT}" >&2
@@ -154,7 +154,7 @@ run_liveness_mode() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     "$SCRIPT_BIN" -q -F "$TS" /bin/sh -c "$env_command" >/dev/null 2>&1 &
   else
-    "$SCRIPT_BIN" -q -c "$env_command" "$TS" >/dev/null 2>&1 &
+    "$SCRIPT_BIN" -q -f -c "$env_command" "$TS" >/dev/null 2>&1 &
   fi
 
   now_us() {
