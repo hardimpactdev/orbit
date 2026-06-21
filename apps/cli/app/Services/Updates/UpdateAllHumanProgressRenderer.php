@@ -114,6 +114,8 @@ final class UpdateAllHumanProgressRenderer
 
     private bool $fanOutTargetsRevealed = false;
 
+    private ?string $pendingCheckUpdatesDoneMessage = null;
+
     /**
      * Workload row names in the order received from `update_targets`.
      *
@@ -237,6 +239,16 @@ final class UpdateAllHumanProgressRenderer
             if ($status === 'done') {
                 if ($key === self::ROW_CHECK_UPDATES) {
                     $this->targetVersion = $this->targetVersionFromMessage($message);
+
+                    if ($this->shouldHoldCheckUpdatesActiveUntilFleetEvent()) {
+                        $this->pendingCheckUpdatesDoneMessage = $message ?? '';
+
+                        return true;
+                    }
+                }
+
+                if ($key === self::ROW_CHECK_FLEET) {
+                    $this->flushPendingCheckUpdatesDone($output);
                 }
 
                 $this->setRow($output, $key, self::STATE_DONE, self::STAGE_SETTLED, $message ?? '');
@@ -249,9 +261,17 @@ final class UpdateAllHumanProgressRenderer
             }
 
             if ($status === 'fail') {
+                if ($key === self::ROW_CHECK_FLEET) {
+                    $this->flushPendingCheckUpdatesDone($output);
+                }
+
                 $this->setRow($output, $key, self::STATE_FAILED, self::STAGE_SETTLED, $message ?? 'Failed');
 
                 return true;
+            }
+
+            if ($key === self::ROW_CHECK_FLEET) {
+                $this->flushPendingCheckUpdatesDone($output);
             }
 
             $this->setRow($output, $key, self::STATE_ACTIVE, self::STAGE_CHECKING, $message ?? 'Checking');
@@ -404,6 +424,8 @@ final class UpdateAllHumanProgressRenderer
 
     public function finishSuccess(OutputInterface $output, ?string $targetVersion = null, bool $allCurrent = false): void
     {
+        $this->flushPendingCheckUpdatesDone($output);
+
         foreach ($this->order as $target) {
             $state = $this->rows[$target]['state'] ?? self::STATE_WAITING;
 
@@ -435,6 +457,8 @@ final class UpdateAllHumanProgressRenderer
 
     public function finishFailure(OutputInterface $output): void
     {
+        $this->flushPendingCheckUpdatesDone($output);
+
         $this->finish($output, 'Failed', success: false);
     }
 
@@ -693,6 +717,25 @@ final class UpdateAllHumanProgressRenderer
     {
         return $message !== null
             && preg_match('/Done: \d+ outdated /', $message) === 1;
+    }
+
+    private function shouldHoldCheckUpdatesActiveUntilFleetEvent(): bool
+    {
+        return $this->pendingCheckUpdatesDoneMessage === null
+            && ($this->rows[self::ROW_CHECK_UPDATES]['state'] ?? null) === self::STATE_ACTIVE
+            && ($this->rows[self::ROW_CHECK_FLEET]['state'] ?? null) === self::STATE_WAITING;
+    }
+
+    private function flushPendingCheckUpdatesDone(OutputInterface $output): void
+    {
+        if ($this->pendingCheckUpdatesDoneMessage === null) {
+            return;
+        }
+
+        $message = $this->pendingCheckUpdatesDoneMessage;
+        $this->pendingCheckUpdatesDoneMessage = null;
+
+        $this->setRow($output, self::ROW_CHECK_UPDATES, self::STATE_DONE, self::STAGE_SETTLED, $message);
     }
 
     private function isCheckTarget(string $target): bool

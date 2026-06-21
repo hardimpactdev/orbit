@@ -426,6 +426,47 @@ it('alternates active row indicators from open to filled and back to open', func
     expect(stripRendererAnsi($output->fetch()))->toContain('○  Checking for updates');
 });
 
+it('keeps the update check row blinking after its done event until the fleet check becomes active', function (): void {
+    $output = new BufferedOutput(decorated: true);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-updates',
+        'status' => 'running',
+        'message' => 'Checking',
+    ]);
+    stopUpdateAllHumanProgressTicker($renderer);
+    $output->fetch();
+
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-updates',
+        'status' => 'done',
+        'message' => 'Done: latest version is 1.2.3',
+    ]);
+    $output->fetch();
+
+    rewindUpdateAllHumanProgressCadence($renderer);
+    $renderer->tick();
+    expect(stripRendererAnsi($output->fetch()))->toMatch('/◉\s+Checking for updates\s+Checking/');
+
+    rewindUpdateAllHumanProgressCadence($renderer);
+    $renderer->tick();
+    expect(stripRendererAnsi($output->fetch()))->toMatch('/○\s+Checking for updates\s+Checking/');
+
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-fleet-versions',
+        'status' => 'running',
+        'message' => 'Checking',
+    ]);
+
+    $text = stripRendererAnsi($output->fetch());
+
+    expect($text)
+        ->toMatch('/●\s+Checking for updates\s+Done: latest version is 1\.2\.3/')
+        ->toMatch('/○\s+Checking fleet versions\s+Checking/');
+});
+
 it('does not emit ansi spinner noise or duplicate rows in non-decorated output', function (): void {
     $output = new BufferedOutput(decorated: false);
     $renderer = new UpdateAllHumanProgressRenderer;

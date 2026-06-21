@@ -421,6 +421,116 @@ it('keeps the check-updates row blinking while the gateway start request is pend
         ->and($checkUpdates['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
 });
 
+it('keeps the check-updates row blinking after its done event until the fleet check event arrives', function (): void {
+    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
+        $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
+    }
+
+    $scriptBinary = findPseudoTtyScriptBinary();
+
+    if ($scriptBinary === null) {
+        $this->markTestSkipped('The script(1) binary is required to allocate a pseudo-tty for live progress capture.');
+    }
+
+    $port = unusedUpdateAllGatewayLivenessPort();
+    $router = startUpdateAllGatewayLivenessRouter(
+        port: $port,
+        startDelayMicroseconds: 0,
+        silentDelayMicroseconds: 1_500_000,
+        fleetStartDelayMicroseconds: 4_000_000,
+    );
+    $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
+    $typescriptPath = sys_get_temp_dir().'/orbit-update-all-handoff-pty-'.uniqid('', true).'.typescript';
+    $command = pseudoTtyWrappedCommand($scriptBinary, $typescriptPath, [
+        PHP_BINARY,
+        $captureScript,
+    ]);
+
+    $process = proc_open(
+        $command,
+        [
+            ['pipe', 'r'],
+            ['pipe', 'w'],
+            ['pipe', 'w'],
+        ],
+        $pipes,
+        base_path(),
+    );
+
+    if (! is_resource($process)) {
+        stopUpdateAllGatewayLivenessRouter($router);
+        @unlink($captureScript);
+        @unlink($typescriptPath);
+
+        throw new RuntimeException('Could not start the pseudo-tty update:all handoff liveness process.');
+    }
+
+    fclose($pipes[0]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    $checkUpdates = newUpdateAllPtyTargetState();
+    $deadline = microtime(true) + 15.0;
+    $timedOut = true;
+    $latestCapture = '';
+
+    try {
+        while (microtime(true) < $deadline) {
+            $stillRunning = proc_get_status($process)['running'] ?? false;
+
+            clearstatcache(true, $typescriptPath);
+
+            if ($stillRunning && is_readable($typescriptPath)) {
+                $capture = file_get_contents($typescriptPath) ?: '';
+                $latestCapture = $capture;
+                recordUpdateAllPtyTargetState(
+                    $checkUpdates,
+                    updateAllPtySpinnerState($capture, 'Checking for updates', 'Checking'),
+                    $capture,
+                );
+            }
+
+            if ($checkUpdates['captured'] || ! $stillRunning) {
+                $timedOut = false;
+
+                break;
+            }
+
+            usleep(10_000);
+        }
+    } finally {
+        if (proc_get_status($process)['running'] ?? false) {
+            proc_terminate($process);
+        }
+
+        proc_close($process);
+        stopUpdateAllGatewayLivenessRouter($router);
+
+        @unlink($captureScript);
+        @unlink($typescriptPath);
+    }
+
+    $checkUpdatesCadence = validateUpdateAllLivenessCadence($checkUpdates['cadence_state']['first_transition_us']);
+    $latestScreen = new VirtualTerminalScreen;
+    $latestScreen->feed($latestCapture);
+    $latestScreenText = implode("\n", $latestScreen->lines());
+
+    expect($timedOut)->toBeFalse(sprintf(
+        "The pseudo-tty update:all handoff liveness capture did not complete before the deadline.\nLatest screen:\n%s",
+        $latestScreenText,
+    ))
+        ->and($checkUpdates['captured'])->toBeTrue(sprintf(
+            "Expected Checking for updates to keep alternating after its done event while the fleet check event was pending; row=%s stable=%s states=[%s] first_transition_us=%s.\nLatest screen:\n%s",
+            $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
+            $checkUpdates['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($checkUpdates['observed_states'])),
+            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            $latestScreenText,
+        ))
+        ->and($checkUpdatesCadence['cadence_ok'])->toBeTrue($checkUpdatesCadence['reason'] ?? 'check-updates handoff spinner cadence was invalid')
+        ->and($checkUpdates['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
+});
+
 it('does not mark the fleet check row active before gateway progress events arrive', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
@@ -1098,8 +1208,12 @@ function unusedUpdateAllGatewayLivenessPort(): int
 /**
  * @return array{process: resource, pipes: array<int, resource>}
  */
-function startUpdateAllGatewayLivenessRouter(int $port, int $startDelayMicroseconds, int $silentDelayMicroseconds): array
-{
+function startUpdateAllGatewayLivenessRouter(
+    int $port,
+    int $startDelayMicroseconds,
+    int $silentDelayMicroseconds,
+    int $fleetStartDelayMicroseconds = 100_000,
+): array {
     $environment = getenv();
 
     if (! is_array($environment)) {
@@ -1122,6 +1236,7 @@ function startUpdateAllGatewayLivenessRouter(int $port, int $startDelayMicroseco
         array_merge($environment, [
             'ORBIT_UPDATE_ALL_LIVENESS_START_DELAY_US' => (string) $startDelayMicroseconds,
             'ORBIT_UPDATE_ALL_LIVENESS_SILENT_US' => (string) $silentDelayMicroseconds,
+            'ORBIT_UPDATE_ALL_LIVENESS_FLEET_START_DELAY_US' => (string) $fleetStartDelayMicroseconds,
         ]),
     );
 
