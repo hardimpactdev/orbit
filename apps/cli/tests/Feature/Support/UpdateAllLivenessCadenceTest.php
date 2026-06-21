@@ -25,6 +25,9 @@ it('records the first stable-row transition from polling observations', function
         'anchor_spinner' => null,
         'first_transition_us' => -1,
         'last_spinner' => null,
+        'last_transition_us' => null,
+        'max_transition_gap_us' => 0,
+        'transition_count' => 0,
     ];
 
     $anchorUs = 1_000_000_000;
@@ -34,5 +37,7 @@ it('records the first stable-row transition from polling observations', function
     $result = validateUpdateAllLivenessCadence($state['first_transition_us']);
 
     expect($result['cadence_ok'])->toBeTrue()
-        ->and($state['first_transition_us'])->toBe(300_000);
+        ->and($state['first_transition_us'])->toBe(300_000)
+        ->and($state['transition_count'])->toBe(1)
+        ->and($state['max_transition_gap_us'])->toBe(300_000);
 });

@@ -85,9 +85,7 @@ final readonly class StreamIdleReader
             return '';
         }
 
-        $restoreBlocking = false;
-        $metadata = stream_get_meta_data($resource);
-        $restoreBlocking = $metadata['blocked'];
+        $restoreBlocking = $this->isBlockingStream($resource);
 
         stream_set_blocking($resource, false);
 
@@ -102,6 +100,13 @@ final readonly class StreamIdleReader
                 stream_set_blocking($resource, true);
             }
         }
+    }
+
+    private function isBlockingStream(mixed $resource): bool
+    {
+        $metadata = stream_get_meta_data($resource) + ['blocked' => false];
+
+        return $metadata['blocked'] === true;
     }
 
     private function readWithIdlePolling(StreamInterface $stream, int $maxBytes): string

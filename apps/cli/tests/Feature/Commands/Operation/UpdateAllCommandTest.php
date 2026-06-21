@@ -135,6 +135,9 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
         'anchor_spinner' => null,
         'first_transition_us' => -1,
         'last_spinner' => null,
+        'last_transition_us' => null,
+        'max_transition_gap_us' => 0,
+        'transition_count' => 0,
     ];
     $deadline = microtime(true) + 15.0;
     $processPid = proc_get_status($process)['pid'] ?? null;
@@ -339,7 +342,7 @@ it('keeps the check-updates row blinking while the gateway start request is pend
     $port = unusedUpdateAllGatewayLivenessPort();
     $router = startUpdateAllGatewayLivenessRouter(
         port: $port,
-        startDelayMicroseconds: 1_500_000,
+        startDelayMicroseconds: 2_500_000,
         silentDelayMicroseconds: 0,
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
@@ -374,10 +377,12 @@ it('keeps the check-updates row blinking while the gateway start request is pend
 
     $checkUpdates = newUpdateAllPtyTargetState();
     $deadline = microtime(true) + 8.0;
+    $capturedContinuousBlinkWhilePending = false;
 
     try {
         while (microtime(true) < $deadline) {
             $stillRunning = proc_get_status($process)['running'] ?? false;
+            $nowUs = updateAllLivenessNowUs();
 
             clearstatcache(true, $typescriptPath);
 
@@ -387,10 +392,23 @@ it('keeps the check-updates row blinking while the gateway start request is pend
                     $checkUpdates,
                     updateAllPtySpinnerState($capture, 'Checking for updates', 'Checking'),
                     $capture,
+                    continueAfterCaptured: true,
                 );
             }
 
-            if ($checkUpdates['captured'] || ! $stillRunning) {
+            $observedForUs = is_int($checkUpdates['cadence_state']['anchor_us'])
+                ? $nowUs - $checkUpdates['cadence_state']['anchor_us']
+                : 0;
+
+            if ($stillRunning
+                && $observedForUs >= 2_000_000
+                && $checkUpdates['cadence_state']['transition_count'] >= 4) {
+                $capturedContinuousBlinkWhilePending = true;
+
+                break;
+            }
+
+            if (! $stillRunning) {
                 break;
             }
 
@@ -410,13 +428,42 @@ it('keeps the check-updates row blinking while the gateway start request is pend
 
     $checkUpdatesCadence = validateUpdateAllLivenessCadence($checkUpdates['cadence_state']['first_transition_us']);
 
-    expect($checkUpdates['captured'])->toBeTrue(sprintf(
-        'Expected Checking for updates to alternate while the gateway start request was pending; row=%s stable=%s states=[%s] first_transition_us=%s.',
+    expect($capturedContinuousBlinkWhilePending)->toBeTrue(sprintf(
+        'Expected continuous Checking for updates blinking while the gateway start request was still pending; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
         $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
         $checkUpdates['row_identity_stable'] ? 'true' : 'false',
         implode(',', array_keys($checkUpdates['observed_states'])),
         $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+        (string) $checkUpdates['cadence_state']['transition_count'],
+        (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
     ))
+        ->and($checkUpdates['captured'])->toBeTrue(sprintf(
+            'Expected Checking for updates to alternate while the gateway start request was pending; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
+            $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
+            $checkUpdates['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($checkUpdates['observed_states'])),
+            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            (string) $checkUpdates['cadence_state']['transition_count'],
+            (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
+        ))
+        ->and($checkUpdates['cadence_state']['transition_count'])->toBeGreaterThanOrEqual(4, sprintf(
+            'Expected Checking for updates to keep alternating through the delayed start request; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
+            $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
+            $checkUpdates['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($checkUpdates['observed_states'])),
+            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            (string) $checkUpdates['cadence_state']['transition_count'],
+            (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
+        ))
+        ->and($checkUpdates['cadence_state']['max_transition_gap_us'])->toBeLessThan(900_000, sprintf(
+            'Expected Checking for updates transition gaps below 900ms; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
+            $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
+            $checkUpdates['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($checkUpdates['observed_states'])),
+            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            (string) $checkUpdates['cadence_state']['transition_count'],
+            (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
+        ))
         ->and($checkUpdatesCadence['cadence_ok'])->toBeTrue($checkUpdatesCadence['reason'] ?? 'check-updates spinner cadence was invalid')
         ->and($checkUpdates['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
 });
@@ -1105,7 +1152,15 @@ function updateAllPtySpinnerState(string $capture, string $label, ?string $statu
  *     observed_states: array<string, bool>,
  *     captured: bool,
  *     transcript: string,
- *     cadence_state: array{anchor_us: int|null, anchor_spinner: string|null, first_transition_us: int, last_spinner: string|null}
+ *     cadence_state: array{
+ *         anchor_us: int|null,
+ *         anchor_spinner: string|null,
+ *         first_transition_us: int,
+ *         last_spinner: string|null,
+ *         last_transition_us: int|null,
+ *         max_transition_gap_us: int,
+ *         transition_count: int
+ *     }
  * }
  */
 function newUpdateAllPtyTargetState(): array
@@ -1121,6 +1176,9 @@ function newUpdateAllPtyTargetState(): array
             'anchor_spinner' => null,
             'first_transition_us' => -1,
             'last_spinner' => null,
+            'last_transition_us' => null,
+            'max_transition_gap_us' => 0,
+            'transition_count' => 0,
         ],
     ];
 }
@@ -1132,13 +1190,21 @@ function newUpdateAllPtyTargetState(): array
  *     observed_states: array<string, bool>,
  *     captured: bool,
  *     transcript: string,
- *     cadence_state: array{anchor_us: int|null, anchor_spinner: string|null, first_transition_us: int, last_spinner: string|null}
+ *     cadence_state: array{
+ *         anchor_us: int|null,
+ *         anchor_spinner: string|null,
+ *         first_transition_us: int,
+ *         last_spinner: string|null,
+ *         last_transition_us: int|null,
+ *         max_transition_gap_us: int,
+ *         transition_count: int
+ *     }
  * }  $state
  * @param  array{row: int, spinner: string}|null  $observation
  */
-function recordUpdateAllPtyTargetState(array &$state, ?array $observation, string $capture): void
+function recordUpdateAllPtyTargetState(array &$state, ?array $observation, string $capture, bool $continueAfterCaptured = false): void
 {
-    if ($observation === null || $state['captured']) {
+    if ($observation === null || ($state['captured'] && ! $continueAfterCaptured)) {
         return;
     }
 

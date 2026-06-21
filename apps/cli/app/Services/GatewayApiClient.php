@@ -13,6 +13,7 @@ use Illuminate\Http\Client\Promises\LazyPromise;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ForkedFrameTicker;
+use Throwable;
 
 /**
  * Per decision D2: the CLI never sends a bearer identity. Production gateway API identity
@@ -25,6 +26,8 @@ use Orbit\Core\Progress\ForkedFrameTicker;
  */
 final readonly class GatewayApiClient
 {
+    private const int CurlMultiSelectTimeoutSeconds = 0;
+
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
@@ -193,7 +196,9 @@ final readonly class GatewayApiClient
      */
     private function requestWithIdleTicks(callable $callback): Response
     {
-        $handler = new CurlMultiHandler;
+        $handler = new CurlMultiHandler([
+            'select_timeout' => self::CurlMultiSelectTimeoutSeconds,
+        ]);
 
         return $this->finalizeResponse($this->waitForResponseWithIdleTicks(fn () => $callback($handler), $handler));
     }
@@ -211,16 +216,36 @@ final readonly class GatewayApiClient
             }
 
             if ($result instanceof LazyPromise) {
-                $result->buildPromise();
+                $result = $result->buildPromise();
             }
 
-            while ($result->getState() === PromiseInterface::PENDING) {
-                $handler->tick();
+            $response = null;
+            $rejection = null;
+
+            $result->then(
+                function (Response $resolved) use (&$response): void {
+                    $response = $resolved;
+                },
+                function (mixed $reason) use (&$rejection): void {
+                    $rejection = $reason;
+                },
+            );
+
+            while ($response === null && $rejection === null) {
                 ForkedFrameTicker::invokeIdleCallback();
+                $handler->tick();
                 usleep(ForkedFrameTicker::idleIntervalMicroseconds());
             }
 
-            return $result->wait();
+            if ($rejection instanceof Throwable) {
+                throw $rejection;
+            }
+
+            if (! $response instanceof Response) {
+                throw new GatewayApiException('Gateway request did not return a response.');
+            }
+
+            return $response;
         } catch (ConnectionException $exception) {
             throw $this->classifyNetworkError($exception);
         }

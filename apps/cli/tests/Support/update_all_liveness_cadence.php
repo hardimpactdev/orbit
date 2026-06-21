@@ -21,7 +21,15 @@ function updateAllLivenessNowUs(): int
 }
 
 /**
- * @param  array{anchor_us: int|null, anchor_spinner: string|null, first_transition_us: int, last_spinner: string|null}  $state
+ * @param  array{
+ *     anchor_us: int|null,
+ *     anchor_spinner: string|null,
+ *     first_transition_us: int,
+ *     last_spinner: string|null,
+ *     last_transition_us: int|null,
+ *     max_transition_gap_us: int,
+ *     transition_count: int
+ * }  $state
  */
 function updateAllLivenessObserveSpinner(array &$state, string $spinner, int $nowUs): void
 {
@@ -35,6 +43,16 @@ function updateAllLivenessObserveSpinner(array &$state, string $spinner, int $no
 
     if ($spinner !== $state['anchor_spinner'] && $state['first_transition_us'] < 0) {
         $state['first_transition_us'] = $nowUs - $state['anchor_us'];
+    }
+
+    if ($spinner !== $state['last_spinner']) {
+        $gapUs = $state['last_transition_us'] === null
+            ? $nowUs - $state['anchor_us']
+            : $nowUs - $state['last_transition_us'];
+
+        $state['transition_count']++;
+        $state['last_transition_us'] = $nowUs;
+        $state['max_transition_gap_us'] = max($state['max_transition_gap_us'], $gapUs);
     }
 
     $state['last_spinner'] = $spinner;
