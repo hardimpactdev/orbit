@@ -165,21 +165,21 @@ from acquisition time; reacquire before verifying later edits.
 
 ## Host pool
 
-The recommended local topology is to run Docker containers on `sidecar1`,
-`sidecar2`, `mini`, and the local Docker daemon. Incus runs on `beast` first.
-Beast may also be listed in the Docker runner pool as Docker-only overflow
-capacity when it is listed in `ORBIT_E2E_EXCLUSIVE_HOSTS`. The Docker plus
-Incus aggregate removes Beast from the Docker plan because Beast is the selected
-Incus host; standalone Docker runs may lease Beast when no Incus lease is
-active.
+The recommended local topology is to run Docker containers on `sidecar1` and
+`sidecar2`. Incus runs on `beast` first. Beast may also be listed in the Docker
+runner pool as Docker-only overflow capacity when it is listed in
+`ORBIT_E2E_EXCLUSIVE_HOSTS`. The Docker plus Incus aggregate removes Beast from
+the Docker plan because Beast is the selected Incus host; standalone Docker
+runs may lease Beast when no Incus lease is active.
 
 ```bash
-ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28,mini:4:28,local:4:28,beast:4:28 \
+ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:4:28,sidecar2:4:28,beast:4:28 \
 composer test:e2e:docker
 ```
 
 The normal local pool derives up to the run-scoped subnet cap. Each listed host
-contributes up to four Docker slots before capacity balancing. The mapping is a
+contributes up to its listed Docker slots before capacity balancing. The
+mapping is a
 blocking lease pool, not a worker-number map: a worker takes the first free
 Docker slot, waits when all slots are busy, and releases its slot during
 topology cleanup.
