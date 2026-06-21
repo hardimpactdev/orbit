@@ -17,10 +17,6 @@ final class LiveRepaintOutput
             if (function_exists('stream_isatty') && stream_isatty($stream)) {
                 return true;
             }
-
-            if (function_exists('posix_isatty') && posix_isatty($stream)) {
-                return true;
-            }
         }
 
         return $output->isDecorated();
