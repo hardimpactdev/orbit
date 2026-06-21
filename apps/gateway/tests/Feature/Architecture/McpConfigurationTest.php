@@ -21,5 +21,6 @@ it('points Codex Laravel Boost MCP at the relocated gateway artisan', function (
 
     expect($config)
         ->toContain('args = ["apps/gateway/artisan", "boost:mcp"]')
-        ->not->toContain('args = ["artisan", "boost:mcp"]');
+        ->not->toContain('args = ["artisan", "boost:mcp"]')
+        ->not->toContain('cwd = ".."');
 });
