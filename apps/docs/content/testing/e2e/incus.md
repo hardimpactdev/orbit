@@ -179,6 +179,33 @@ prepared topology before trusting Incus feature-lane timings:
 composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
 ```
 
+## Cleanup hygiene
+
+Use the Incus reaper for interrupted prepared-feature runs before deleting
+resources by hand:
+
+```bash
+composer e2e:reap-incus
+composer e2e:reap-incus -- --force
+```
+
+The default scope is intentionally limited to ephemeral instances whose name
+matches `ORBIT_E2E_INSTANCE_PREFIX`. Broader host hygiene is opt-in:
+
+```bash
+composer e2e:reap-incus -- --scope=networks,templates,images,tmp
+composer e2e:reap-incus -- --scope=all --older-than=1d
+```
+
+`--scope=networks` prunes unused generated worker networks,
+`--scope=templates` prunes known obsolete template families such as unsuffixed,
+`prepared`, `projected`, and dated `e2e-smoke` templates,
+`--scope=images` prunes expired `orbit-blank-ubuntu-*` image aliases, and
+`--scope=tmp` prunes stale Orbit E2E scratch paths under `/tmp`. Shared
+`orbit-template-*-base` templates and branch-specific current templates are
+reported as skipped rather than deleted. Every destructive scope still requires
+`--force`; without it the command is inventory-only.
+
 Branch-specific Incus artifacts use the same role suffix model as Docker:
 `orbit-template-<role>-<slug>` plus `clean-<source-topology>-<slug>`. Missing
 branch role artifacts fall back to the matching `base` template and snapshot, so

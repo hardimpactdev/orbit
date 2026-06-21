@@ -26,6 +26,10 @@ composer test:e2e:provision
 
 # Explicit artifact planning/preparation
 composer e2e:ensure-artifacts
+
+# Stale provider resource inventory and cleanup
+composer e2e:reap-docker
+composer e2e:reap-incus
 ```
 
 Run feature E2E backed by prepared topologies before any provider
