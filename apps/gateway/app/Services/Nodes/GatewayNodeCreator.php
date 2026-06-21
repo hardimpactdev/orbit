@@ -235,7 +235,7 @@ final class GatewayNodeCreator
         if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()) {
             return $this->failCommand(
                 code: 'node.incompatible',
-                message: "Development TLD '{$inputs['tld']}' is already assigned to another node.",
+                message: "Node TLD '{$inputs['tld']}' is already assigned to another node.",
                 meta: [
                     'field' => 'tld',
                     'value' => $inputs['tld'],
@@ -947,7 +947,7 @@ SH;
             ],
             'node' => [
                 'name' => $gateway->name,
-                'tld' => null,
+                'tld' => $gateway->tld,
                 'platform' => $gateway->platform ?? 'unknown',
                 'addresses' => [
                     'wireguard' => $gateway->wireguard_address,
@@ -1024,10 +1024,23 @@ SH;
             );
         }
 
+        $tld = $this->resolveDefaultNodeTld($name, $existing instanceof Node ? $existing->tld : null);
+
+        if ($tld === null) {
+            return $this->failCommand(
+                code: 'validation_failed',
+                message: 'A unique node TLD could not be assigned during enrollment.',
+                meta: [
+                    'field' => 'tld',
+                    'name' => $name,
+                ],
+            );
+        }
+
         $node = Node::query()->updateOrCreate(
             ['name' => $name],
             [
-                'tld' => null,
+                'tld' => $tld,
                 'platform' => 'unknown',
                 'host' => $wireguardAddress,
                 'wireguard_address' => $wireguardAddress,
@@ -1063,7 +1076,7 @@ SH;
             ],
             'node' => [
                 'name' => $name,
-                'tld' => null,
+                'tld' => $tld,
                 'platform' => 'unknown',
                 'addresses' => [
                     'wireguard' => $wireguardAddress,
@@ -1137,7 +1150,7 @@ SH;
         if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()) {
             return $this->failCommand(
                 code: 'node.incompatible',
-                message: "Development TLD '{$inputs['tld']}' is already assigned to another node.",
+                message: "Node TLD '{$inputs['tld']}' is already assigned to another node.",
                 meta: [
                     'field' => 'tld',
                     'value' => $inputs['tld'],
@@ -2089,30 +2102,18 @@ SCRIPT,
 
         $tld = $this->stringOption('tld');
 
-        if (in_array(NodeRoleName::Agent->value, $roles, true) && $tld === null) {
-            $tld = 'agent';
+        $nodeName = $this->resolveName();
+
+        if ($tld === null && is_string($nodeName) && $nodeName !== '') {
+            $tld = $this->resolveDefaultNodeTld($nodeName);
         }
 
-        if (in_array(NodeRoleName::AppDevelopment->value, $roles, true) && $tld === null && $this->isInteractiveInput()) {
-            $tld = trim(text(
-                label: 'Development TLD',
-                required: true,
-                validate: fn (string $value): ?string => $this->isValidTld(trim($value))
-                    ? null
-                    : 'TLD must be a lowercase DNS label without a leading dot.',
-            ));
+        if ($tld === null) {
+            return $this->validationFailed('tld', 'Every node requires a unique TLD.');
         }
 
-        if (array_intersect($roles, [NodeRoleName::AppDevelopment->value, NodeRoleName::Database->value, NodeRoleName::Agent->value]) !== []) {
-            if ($tld === null) {
-                return $this->validationFailed('tld', 'App development, database, and agent nodes require a TLD.');
-            }
-
-            if (! $this->isValidTld($tld)) {
-                return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
-            }
-        } elseif ($tld !== null) {
-            return $this->validationFailed('tld', 'Only app-dev, database, and agent use a TLD.');
+        if (! $this->isValidTld($tld)) {
+            return $this->validationFailed('tld', 'TLD must be a lowercase DNS label without a leading dot.');
         }
 
         $analyticsDatabaseNodes = $this->resolveAnalyticsDatabaseNodes($roles);
@@ -2857,6 +2858,28 @@ SCRIPT,
     private function isValidTld(string $tld): bool
     {
         return (bool) preg_match('/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/', $tld);
+    }
+
+    private function resolveDefaultNodeTld(string $name, ?string $existingTld = null): ?string
+    {
+        if (is_string($existingTld) && trim($existingTld) !== '') {
+            return trim($existingTld);
+        }
+
+        $candidate = strtolower(trim($name));
+
+        if ($candidate === '' || ! $this->isValidTld($candidate)) {
+            return null;
+        }
+
+        if (Node::query()
+            ->where('tld', $candidate)
+            ->where('status', NodeStatus::Active->value)
+            ->exists()) {
+            return null;
+        }
+
+        return $candidate;
     }
 
     private function isValidHost(string $host): bool

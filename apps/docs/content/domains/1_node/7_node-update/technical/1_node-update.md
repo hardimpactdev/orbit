@@ -36,7 +36,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
 | `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs; use `--gateway-endpoint` for that. |
-| `tld` | `--tld` | Optional. | Target carries neither an active `app-dev` nor an active `agent` role assignment. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
+| `tld` | `--tld` | Optional. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
 | `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
 | `public_ipv6` | `--public-ipv6` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv6 metadata. |
@@ -55,7 +55,7 @@ metadata is valid only for gateway and nodes. Concretely:
 | Field | Valid target roles | Forbidden when |
 | --- | --- | --- |
 | `--host` | `gateway`, workload-role-bearing nodes | Operator-identity target with no host metadata. |
-| `--tld` | nodes with an active `app-dev` or `agent` role assignment | Gateway targets, operator-identity targets, and nodes without an `app-dev` or `agent` assignment. |
+| `--tld` | every active node | Never. |
 | `--gateway-endpoint` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv4` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv6` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
@@ -67,16 +67,13 @@ IPv6 metadata is supported on `gateway` and workload-role-bearing nodes; the
 gateway endpoint used in WireGuard peer configs lives on a separate field and is
 not updated by `--public-ipv4` or `--public-ipv6`.
 
-`node:update --tld` updates the node-level `tld` for nodes carrying an active
-`app-dev` or `agent` role assignment. The `tld` is a shared node-level field
-(at most one per node); changing it triggers baseline convergence for every
-active role assignment that depends on it. Changing a node's roles is a
-role-assignment change outside `node:update`; use
+`node:update --tld` updates the mandatory node-level `tld` for any active node.
+The `tld` is a shared node-level field (at most one per node); changing it
+triggers gateway DNS reconciliation and baseline convergence for every active
+role assignment that depends on it, such as `app-dev` or `agent`. Changing a
+node's roles is a role-assignment change outside `node:update`; use
 [`node role:remove`](../../14_node-role-remove/node-role-remove.md) and
-[`node role:add`](../../12_node-role-add/node-role-add.md). Gateway and
-operator-identity targets, and nodes without an `app-dev` or `agent`
-assignment, fail with `node.field_role_incompatible`, `meta.field=tld`, and the
-target role in metadata.
+[`node role:add`](../../12_node-role-add/node-role-add.md).
 
 `node:update --gateway-endpoint` updates the gateway endpoint stored for the
 target node. For nodes with workload roles, Orbit updates the WireGuard endpoint
@@ -107,9 +104,6 @@ gateway-owned side effects.
    - If `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6` is
      present and the target is an operator-identity node, fail before side
      effects with `node.field_role_incompatible`.
-   - If `--tld` is present and the target carries neither an active `app-dev`
-     nor an active `agent` role assignment, fail before side effects with
-     `node.field_role_incompatible` and `meta.field=tld`.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
      the duplicated field name. Symfony last-wins is not accepted.
@@ -227,8 +221,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Field role-incompatible | A field is supplied for a target role assignment that does not support it. | Failure |
 | TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
 
-Examples: host/public-IP fields for an operator-identity node, or `--tld` for
-gateway, operator-identity, or non-`app-dev`/`agent` targets.
+Examples: `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6`
+for an operator-identity node.
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
@@ -264,8 +258,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateCommandTest.php` | Command contract: updating fields, role-conditional validation, TLD success/failure paths, no-op success with empty `changed`, node-not-found failure, client forwarding, artifact re-applying reporting, and warning payload for partial-success drift. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateOnOperatorNodeContractTest.php` | Operator-node caller: HTTPS/WireGuard forwarding, `tld` payloads, TLD role rejection for non-`app-dev`/`agent` targets, structured errors, unconfigured caller failures, grant authorization failures, no SSH-to-gateway path. |
-| `apps/gateway/tests/Feature/Commands/Nodes/NodeUpdateNonInteractiveInputModeTest.php` | Non-interactive input mode: missing required input, `--json` no-prompt behavior, TLD rejection for targets without an `app-dev` or `agent` assignment, `app-dev` and `agent` TLD success, duplicate TLD conflict, and invalid TLD syntax. |
+| `apps/gateway/tests/Feature/Http/Api/NodeUpdateControllerTest.php` | API forwarding and gateway-local updates: `tld` payloads for gateway, operator, app-dev, app-prod, and agent targets; structured errors; duplicate TLD conflict; and invalid TLD syntax. |
 
 Input-mode-specific test mapping lives in:
 

@@ -126,11 +126,16 @@ because DNS mappings for the node family changed.
 Rendered by `DnsmasqConfigBuilder::build(Collection $nodes): string`. The
 output is deterministic and contains:
 
-- One `address=/{tld}/{wireguard_address}` line per node that carries an
-  active `app-dev` or `agent` role assignment and has both `tld` and
-  `wireguard_address` set. Nodes missing either field, or carrying no
-  TLD-supporting active role, are skipped.
+- One `address=/{tld}/{wireguard_address}` line per active node with both
+  `tld` and `wireguard_address` set. Nodes missing either field are skipped.
+  Wildcard TLD mappings continue to serve `app-dev` and `agent` development
+  hostnames such as `*.test`.
+- One `address=/orbit.{tld}/{wireguard_address}` node-host line per resolvable
+  node, except when `tld` is `orbit` (that name would collide with router-owned
+  `.orbit` private service routes such as `websocket.orbit`).
 - Optional `local=/{tld}/` companions per TLD.
+- Router-owned `.orbit` private service routes continue to emit
+  `address=/orbit/{router_wireguard_address}` and `local=/orbit/`.
 - `no-resolv` + upstream resolvers (`server=1.1.1.1`, `server=8.8.8.8`).
 - `conf-dir=/etc/dnsmasq.d/,*.conf` (preserves operator drop-ins, if any).
 - `log-queries` + `log-facility=-`.

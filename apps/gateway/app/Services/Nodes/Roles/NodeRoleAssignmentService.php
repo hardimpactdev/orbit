@@ -290,6 +290,9 @@ class NodeRoleAssignmentService
         } elseif ($database instanceof NodeRoleAssignment) {
             $nodeTld = is_string($node->tld) ? trim($node->tld) : '';
             $tld = $nodeTld !== '' ? $nodeTld : null;
+        } else {
+            $nodeTld = is_string($node->tld) ? trim($node->tld) : '';
+            $tld = $nodeTld !== '' ? $nodeTld : null;
         }
 
         $node->forceFill(['tld' => $tld])->save();
@@ -435,6 +438,6 @@ class NodeRoleAssignmentService
             return;
         }
 
-        throw new InvalidArgumentException("Development TLD '{$tld}' is already assigned to another node.");
+        throw new InvalidArgumentException("Node TLD '{$tld}' is already assigned to another node.");
     }
 }

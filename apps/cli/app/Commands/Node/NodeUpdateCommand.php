@@ -17,7 +17,7 @@ final class NodeUpdateCommand extends GatewayCommand
     protected $signature = 'node:update
         {name? : Node name to update}
         {--host= : New SSH/bootstrap endpoint}
-        {--tld= : Development TLD for app-dev role assignments}
+        {--tld= : Node TLD}
         {--gateway-endpoint= : WireGuard endpoint host this node should use to reach the gateway}
         {--public-ipv4= : Public IPv4 address metadata}
         {--public-ipv6= : Public IPv6 address metadata}

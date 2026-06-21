@@ -36,7 +36,7 @@ This command follows the shared
 | `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, `analytics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `operator_name` | `--operator-name` | `--template=gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `tld` | `--tld` | `app-dev`, `app-development`, `database`, or `agent` template/path. | Client identity, gateway bootstrap, or `app-prod`. | `agent` for agent role nodes. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. Database TLDs are node labels and do not create development DNS mappings. |
+| `tld` | `--tld` | Never required when `node_new.name` is a valid unique DNS label. | Client identity and gateway bootstrap (defaults apply). | `node_new.name` for hosted roles and client enrollment; `gateway` for gateway bootstrap. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. Wildcard development DNS mappings apply only when an `app-dev` or `agent` role consumes the TLD. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
@@ -204,8 +204,8 @@ Caller-path behavior is split out into:
   store `settings.data_path`, and `analytics` assignments store
   `settings.postgres_node_id` and `settings.clickhouse_node_id`. `database`
   and `metrics` assignments use empty settings. The
-  `app-dev`, `database`, and `agent` paths require the node-level `tld` field,
-  not a role-assignment setting.
+  every active node requires the node-level `tld` field, not a role-assignment
+  setting. Role features consume that node-level value when they need DNS.
 - `app-prod` placement must be explicit. The command's public and
   companion contracts own the exact prompt, placement choices, and failure
   shape for missing ingress.

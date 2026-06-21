@@ -33,6 +33,33 @@ it('emits one address line per node with both tld and wireguard address', functi
         ->and($config)->toContain('local=/app-1.test/');
 });
 
+it('emits concrete orbit node-host records for active nodes with tld and wireguard address', function (): void {
+    $nodes = new Collection([
+        new Node(['name' => 'mini', 'tld' => 'mini', 'wireguard_address' => '10.6.0.8']),
+        new Node(['name' => 'app-1', 'tld' => 'test', 'wireguard_address' => '10.6.0.7']),
+    ]);
+
+    $config = (new DnsmasqConfigBuilder)->build($nodes);
+
+    expect($config)->toContain('address=/orbit.mini/10.6.0.8')
+        ->and($config)->toContain('address=/orbit.test/10.6.0.7');
+});
+
+it('skips orbit node-host records that would collide with router-owned orbit service routes', function (): void {
+    $router = new Node(['name' => 'gateway', 'tld' => 'orbit', 'wireguard_address' => '10.6.0.2']);
+    $route = new ProxyRoute([
+        'domain' => 'websocket.orbit',
+        'owner_type' => 'router',
+        'kind' => 'proxy',
+    ]);
+    $route->setRelation('node', $router);
+
+    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$route]));
+
+    expect($config)->toContain('address=/orbit/10.6.0.2')
+        ->and($config)->not->toContain('address=/orbit.orbit/10.6.0.2');
+});
+
 it('emits router-owned orbit service routes as an orbit tld mapping to the router wireguard address', function (): void {
     $router = new Node(['name' => 'gateway', 'tld' => null, 'wireguard_address' => '10.6.0.2']);
     $route = new ProxyRoute([

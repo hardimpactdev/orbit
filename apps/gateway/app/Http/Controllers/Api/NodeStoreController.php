@@ -334,7 +334,7 @@ final readonly class NodeStoreController implements Loggable
             'template' => $this->requestString('template'),
             'operator' => request()->boolean('operator'),
             'roles' => request('roles'),
-            'tld' => $this->requestString('tld'),
+            'tld' => $this->requestString('tld') ?? $this->createdNodeTld(),
             'redis_node' => $this->requestString('redis_node'),
             'postgres_node' => $this->requestString('postgres_node'),
             'clickhouse_node' => $this->requestString('clickhouse_node'),
@@ -348,6 +348,17 @@ final readonly class NodeStoreController implements Loggable
     public function activityLogProperties(): array
     {
         return $this->properties();
+    }
+
+    private function createdNodeTld(): ?string
+    {
+        $subject = $this->subject();
+
+        if (! $subject instanceof Node) {
+            return null;
+        }
+
+        return is_string($subject->tld) && $subject->tld !== '' ? $subject->tld : null;
     }
 
     public function description(): ?string

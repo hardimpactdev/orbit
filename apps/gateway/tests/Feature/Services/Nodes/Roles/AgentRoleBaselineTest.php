@@ -256,7 +256,7 @@ describe('agent role tld uniqueness', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
+            ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
 
         expect($node->roleAssignments()->where('role', 'agent')->exists())->toBeFalse();
     });
@@ -280,7 +280,7 @@ describe('agent role tld uniqueness', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'agent']))
-            ->toThrow(InvalidArgumentException::class, "Development TLD 'agent' is already assigned to another node.");
+            ->toThrow(InvalidArgumentException::class, "Node TLD 'agent' is already assigned to another node.");
 
         expect($node->roleAssignments()->where('role', 'agent')->exists())->toBeFalse();
     });
@@ -304,7 +304,7 @@ describe('agent role tld uniqueness', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, NodeRoleName::AppDevelopment->value, ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
+            ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
 
         expect($node->roleAssignments()->where('role', NodeRoleName::AppDevelopment->value)->exists())->toBeFalse();
     });

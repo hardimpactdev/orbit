@@ -118,12 +118,15 @@ Each term below has a precise meaning in the node command family.
   gateway intent to node reality. Public commands and renderers should describe
   this as setup during `node:new` and restore during doctor repair, not expose
   the service name.
-- **Node TLD:** Node-level setting required by the `app-dev` and
-  `agent` roles. A node holds at most one `tld` value at a time; roles that
-  depend on it read and write the same node-level field. Default `agent` when
-  selected through interactive `node:new --template=agent`. Drives the DNS mapping
-  the gateway owns for that TLD and the agent tool internal HTTPS hostnames
-  such as `openclaw.agent` and `hermes.agent`.
+- **Node TLD:** Mandatory node-level identity for every active Orbit node.
+  A node holds at most one unique `tld` value at a time; `node:new` assigns a
+  default from the node name when omitted. Role features such as `app-dev` and
+  `agent` consume the same field for wildcard development DNS mappings and
+  agent tool internal HTTPS hostnames such as `openclaw.agent` and `hermes.agent`.
+  Gateway VPN DNS also publishes `orbit.<node-tld>` to the node's WireGuard
+  address. The reserved private service TLD `.orbit` stays router-owned; node
+  TLD `orbit` is skipped for `orbit.orbit` node-host records to avoid colliding
+  with service routes like `websocket.orbit`.
 - **Agent role baseline:** Code-defined desired state for a node with the
   `agent` role: `orbit-caddy`, WireGuard/node identity and trust material, the
   shared unprivileged `agent` runtime user, and any role-specific runtime
@@ -178,10 +181,10 @@ require, read, and write.
 | `vpn` | `public_endpoint`, `wireguard_cidr`, `wireguard_port`, `dns_ip` | — |
 | `router` | — | — |
 | `app-dev` | — | `tld` |
-| `app-prod` | `ingress_node_id` | — |
-| `database` | — | — |
-| `gateway` | — | — |
-| `agent` | — | `tld` (default `agent` during interactive `node:new` setup) |
+| `app-prod` | `ingress_node_id` | `tld` |
+| `database` | — | `tld` |
+| `gateway` | — | `tld` |
+| `agent` | — | `tld` |
 | `ingress` | — | — |
 | `websocket` | `redis_node_id` | — |
 | `s3` | `data_path` | — |
@@ -484,8 +487,8 @@ node-family desired state, but they are not the public `dns:*` command surface.
   gateway-coupled `vpn` role in v1.
 - **Agent DNS mapping owned by the gateway:** Same node-family gateway
   configuration and resolver reality as the mapping that `app-dev`
-  uses, but derived from an active `agent` role assignment's `tld` setting
-  (default `agent`). Routes agent tool internal HTTPS hostnames such as
+  uses, but derived from an active `agent` role assignment's `tld` setting.
+  Routes agent tool internal HTTPS hostnames such as
   `openclaw.agent` and `hermes.agent` to the node's WireGuard address.
 - **Development DNS configuration model:** Derived from the active
   `app-dev` role assignment. A mapping exists only when that assignment

@@ -48,8 +48,9 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   `node:new --template=gateway --host=<host>` seeds that endpoint only during
   first-gateway bootstrap before peer configs have been issued;
   `node:update --host` is later node metadata.
-- `--tld=<tld>`: development/agent TLD. Valid only for nodes carrying an active
-  `app-dev` or `agent` role assignment.
+- `--tld=<tld>`: mandatory node TLD. Valid for every active node, including
+  gateway, operator, and role-less targets. Role features such as `app-dev` and
+  `agent` consume the same field for wildcard development DNS mappings.
 - `--gateway-endpoint=<endpoint>`: WireGuard endpoint host this node should use
   to reach the gateway. Valid for `gateway` and workload-role-bearing nodes.
   Forbidden on operator-identity nodes. Use this for private-network endpoints
@@ -92,11 +93,11 @@ that are directly affected by the changed metadata.
 - Re-applies node-owned host artifacts when a changed setting has node-side
   effects. Re-applying unchanged configuration is owned by
   [`doctor --family=node --restore`](../node-doctor.md), not `node:update`.
-- Changes a node's TLD when `--tld` is supplied. `--tld` is valid only for
-  nodes carrying an active `app-dev` or `agent` role assignment; gateway
-  targets, operator-identity targets, and nodes without an `app-dev` or `agent`
-  assignment are rejected before side effects. Broader drift repair after a TLD
-  change belongs to [`doctor --family=node --restore`](../node-doctor.md).
+- Changes a node's mandatory TLD when `--tld` is supplied. `--tld` is valid for
+  every active node. Gateway VPN DNS reconciles `orbit.<node-tld>` node-host
+  records.
+  Broader drift repair after a TLD change belongs to
+  [`doctor --family=node --restore`](../node-doctor.md).
 - Reconciles the active `vpn` role DNS runtime when `tld` or
   `wireguard_address` actually change for a node. In v1 this materializes the
   desired DNS mappings and policy owned by the gateway onto the

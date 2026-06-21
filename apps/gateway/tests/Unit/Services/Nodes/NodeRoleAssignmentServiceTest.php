@@ -95,7 +95,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
+            ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
 
         expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeFalse();
     });
@@ -126,7 +126,7 @@ describe('node role assignment service', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'test']))
-            ->toThrow(InvalidArgumentException::class, "Development TLD 'test' is already assigned to another node.");
+            ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
 
         expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
             ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
@@ -157,7 +157,20 @@ describe('node role assignment service', function (): void {
 
         $node->refresh();
 
-        expect($node->tld)->toBeNull();
+        expect($node->tld)->toBe('test');
+    });
+
+    it('preserves node tld when the last role assignment is removed', function (): void {
+        $node = Node::factory()->create([
+            'platform' => 'ubuntu',
+            'tld' => 'mini',
+            'wireguard_address' => '10.6.0.8',
+        ]);
+
+        app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'mini']);
+        app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
+
+        expect($node->fresh()->tld)->toBe('mini');
     });
 
     it('preserves a fresh database node tld when the model instance is stale', function (): void {

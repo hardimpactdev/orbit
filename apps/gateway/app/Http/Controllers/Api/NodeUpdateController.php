@@ -83,7 +83,7 @@ final class NodeUpdateController implements Loggable
         ) {
             return $this->error(
                 code: 'node.tld_in_use',
-                message: "Development TLD '{$providedFields['tld']}' is already assigned to another node.",
+                message: "Node TLD '{$providedFields['tld']}' is already assigned to another node.",
                 meta: [
                     'field' => 'tld',
                     'value' => $providedFields['tld'],
@@ -160,12 +160,6 @@ final class NodeUpdateController implements Loggable
 
         if (isset($providedFields['host']) && $node->isOperator()) {
             return ['field' => 'host', 'role' => $role];
-        }
-
-        if (isset($providedFields['tld'])) {
-            if (! $node->hasActiveRole('app-dev') && ! $node->hasActiveRole('agent')) {
-                return ['field' => 'tld', 'role' => $role];
-            }
         }
 
         if (isset($providedFields['gateway_endpoint']) && $node->isOperator()) {

@@ -448,19 +448,17 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.meta.role', 'operator');
     });
 
-    it('returns validation error for role-incompatible fields', function (): void {
+    it('updates the tld for a gateway node', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
 
-        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['tld' => 'orbital'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.field_role_incompatible')
-            ->assertJsonPath('error.message', "The field 'tld' is not valid for node 'gateway-1' (role: gateway).")
-            ->assertJsonPath('error.meta.field', 'tld')
-            ->assertJsonPath('error.meta.name', 'gateway-1')
-            ->assertJsonPath('error.meta.role', 'gateway');
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['tld']);
+
+        expect(DB::table('nodes')->where('name', 'gateway-1')->value('tld'))->toBe('orbital');
     });
 
     it('returns not found for missing nodes', function (): void {
@@ -518,17 +516,37 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('error.meta.value', 'Invalid_TLD!');
     });
 
-    it('rejects tld on a production app node as role-incompatible', function (): void {
+    it('updates the tld for a role-less operator node', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
-        createApiUpdateNode(role: 'app-prod');
+        DB::table('nodes')->insert(apiUpdateNodeRow([
+            'name' => 'mini',
+            'host' => '10.6.0.8',
+            'wireguard_address' => '10.6.0.8',
+            'tld' => null,
+        ]));
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson('/api/nodes/mini', ['tld' => 'mini'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
-            ->assertJsonPath('error.code', 'node.field_role_incompatible')
-            ->assertJsonPath('error.meta.field', 'tld');
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['tld']);
+
+        expect(DB::table('nodes')->where('name', 'mini')->value('tld'))->toBe('mini');
+    });
+
+    it('updates the tld for a production app node', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['tld' => null], 'app-prod');
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'prod'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['tld']);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('tld'))->toBe('prod');
     });
 
     it('rejects tld already assigned to another active node', function (): void {

@@ -247,10 +247,9 @@ These rules apply to all node commands and define the invariants the family enfo
   `node:permissions` and `--remove` require an existing grant and fail with
   `node.grant_not_found` otherwise.
 - Role-assignment settings live on the role assignment when they are
-  role-specific. `tld` is a shared node-level field that both `app-dev`
-  and `agent` require, so it lives on the node row and a node holds at most
-  one `tld` value at a time (the `agent` default during interactive `node:new`
-  is `agent`). `vpn` stores `public_endpoint`, `wireguard_cidr`,
+  role-specific. `tld` is a shared node-level field required by every active
+  node, so it lives on the node row and a node holds at most one `tld` value at
+  a time. `vpn` stores `public_endpoint`, `wireguard_cidr`,
   `wireguard_port`, and `dns_ip` as role-assignment settings.
   `app-prod` stores `ingress_node_id`; `websocket` stores
   `redis_node_id`, which points at the `database` role node whose managed Redis
@@ -544,8 +543,8 @@ Use these commands to update, remove, or configure node settings after initial p
 
 Use these commands to inspect and mutate the role assignments on an existing node.
 Role assignment settings are changed through the command that owns the setting.
-The node-level `tld` (a shared field required by the `app-dev` and `agent`
-roles, at most one per node) is changed through
+The node-level `tld` (mandatory and unique for every active node, at most one
+per node) is changed through
 [`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
 11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)

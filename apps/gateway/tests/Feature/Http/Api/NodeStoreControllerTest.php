@@ -336,17 +336,16 @@ describe('NodeStoreController', function (): void {
                 'name' => 'app-dev-1',
                 'roles' => ['app-dev'],
                 'host' => '192.0.2.20',
-                'tld' => 'test',
             ]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.node.name', 'app-dev-1')
-            ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.test');
+            ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.app-dev-1');
 
         $node = DB::table('nodes')->where('name', 'app-dev-1')->first();
 
         expect($node)->not->toBeNull()
-            ->and($node->tld)->toBe('test')
+            ->and($node->tld)->toBe('app-dev-1')
             ->and($node->wireguard_address)->toBe('10.6.0.4');
 
         expect(NodeRoleAssignment::query()
@@ -381,7 +380,7 @@ describe('NodeStoreController', function (): void {
         expect($entry->subject?->name)->toBe('app-dev-1');
         expect($entry->properties->get('name'))->toBe('app-dev-1');
         expect($entry->properties->get('roles'))->toBe(['app-dev']);
-        expect($entry->properties->get('tld'))->toBe('test');
+        expect($entry->properties->get('tld'))->toBe('app-dev-1');
 
         Process::assertRan(fn ($process): bool => ! str_contains($process->command, '--role=')
             && str_contains($process->command, '--source-archive='));

@@ -56,11 +56,9 @@ Forwarded payload example for a development app TLD update:
 }
 ```
 
-The operator CLI does not resolve the target row locally. If a forwarded
-`node_update.tld` targets a gateway, client, or node without an active
-`app-dev` or `agent` role assignment, the gateway rejects the request before
-gateway-owned side effects with `node.field_role_incompatible`,
-`meta.field=tld`, and the target role in metadata.
+The operator CLI does not resolve the target row locally. Forwarded
+`node_update.tld` updates are validated on the gateway for syntax and
+uniqueness among active node TLDs before gateway-owned side effects.
 
 ## Self-Update
 

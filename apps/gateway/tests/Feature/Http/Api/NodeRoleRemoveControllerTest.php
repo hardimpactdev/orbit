@@ -221,7 +221,7 @@ describe('NodeRoleRemoveController', function (): void {
         expect($node->roleAssignments()->where('role', 'gateway')->exists())->toBeTrue();
     });
 
-    it('clears app role state when the final app role is removed', function (): void {
+    it('clears app role state but preserves node identity when the final app role is removed', function (): void {
         $callerId = createNodeRoleRemoveCaller();
         createNodeRoleRemoveGateway();
 
@@ -255,7 +255,7 @@ describe('NodeRoleRemoveController', function (): void {
         $node->refresh();
 
         expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeFalse()
-            ->and($node->tld)->toBeNull()
+            ->and($node->tld)->toBe('test')
             ->and(NodeAccess::query()
                 ->where('consumer_node_id', $node->id)
                 ->where('serving_node_id', $node->id)

@@ -35,6 +35,10 @@ final class DnsmasqConfigBuilder
             $address = (string) $node->wireguard_address;
             $lines[] = "address=/{$tld}/{$address}";
             $lines[] = "local=/{$tld}/";
+
+            if ($this->shouldEmitOrbitNodeHostRecord($tld)) {
+                $lines[] = "address=/orbit.{$tld}/{$address}";
+            }
         }
 
         $orbitRouters = $routes
@@ -113,5 +117,10 @@ final class DnsmasqConfigBuilder
         $address = $node->wireguard_address;
 
         return is_string($address) && $address !== '';
+    }
+
+    private function shouldEmitOrbitNodeHostRecord(string $tld): bool
+    {
+        return $tld !== 'orbit';
     }
 }

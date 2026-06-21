@@ -80,9 +80,9 @@ orbit node:new agent-1 --roles=agent --host=192.0.2.10 --grant-to=all --grant-to
   (a client with no configured gateway running gateway bootstrap via
   `--template=gateway`). Defaults to the normalized local short hostname.
   Forbidden outside first-gateway bootstrap.
-- `--tld`: required for the `app-development` template and for `app-dev`.
-  Used by `agent` as the agent TLD (default `agent`). Must be a single
-  lowercase DNS label without a leading dot.
+- `--tld`: optional node TLD. Defaults from the node name when omitted.
+  Agent and development role features consume the node TLD for their DNS
+  mappings. Must be a single lowercase DNS label without a leading dot.
 - `--user`: Bootstrap SSH user for provisioning. Defaults to `root`, but
   users from cloud images, such as `ubuntu`, remain valid. This value is only
   used for the first SSH path that creates or verifies Orbit's managed user.
@@ -221,7 +221,7 @@ Requires `--host`, `--postgres-node`, and `--clickhouse-node`.
 
 Provisions an isolated agent host with the exclusive `agent` role assignment.
 
-Requires `--host`. `--tld` is optional; the default is `agent`.
+Requires `--host`. `--tld` is optional; the default is the node name.
 
 **Explicit `--roles` composition**
 

@@ -290,7 +290,7 @@ it('renders metrics node processes after syncing role-derived node fields', func
     );
     $unitContent = app(SystemdUnitRenderer::class)->render($node, $context->runtimeApp(), $process);
 
-    expect($node->refresh()->tld)->toBeNull()
+    expect($node->refresh()->tld)->toBe('gateway')
         ->and($this->metricsShell->scriptsForNode('gateway'))
         ->toContain(base64_encode($unitContent))
         ->not->toContain('https://gateway.gateway');

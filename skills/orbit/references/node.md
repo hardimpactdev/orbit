@@ -24,7 +24,7 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--roles` |  -  | Comma-separated canonical public roles: `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`. |
 | `--host` |  -  | SSH/bootstrap endpoint. Required for gateway bootstrap and host-capable workload roles. Forbidden for client identities with no roles. |
 | `--operator-name` | local short hostname | First-gateway bootstrap only  -  the initiating client identity's name. |
-| `--tld` |  -  | Node TLD (no leading dot). Required for `app-dev`, `database`, and `agent` paths; database TLDs are node labels and do not create development DNS mappings. |
+| `--tld` | node name | Mandatory node TLD (no leading dot). Defaults from `name` when omitted. Wildcard development DNS mappings apply when `app-dev` or `agent` consumes the TLD. |
 | `--user` | `root` | Bootstrap-only SSH user; the managed steady-state user is created during provisioning. |
 | `--gateway-endpoint` | gateway public endpoint | WireGuard endpoint this node should use to reach the gateway. Useful for nodes in the same private provider network. |
 | `--ingress` |  -  | Active ingress node for private `app-prod` placement. |
@@ -95,10 +95,10 @@ orbit node:update [<name>] [--host=<host>] [--tld=<tld>]
 WireGuard peer and rewrites the peer config Orbit stores for that node. It does
 not restart the node's WireGuard interface.
 
-`--tld` applies to nodes carrying active `app-dev`, `database`, or `agent`
-roles. Setting it on an ineligible target fails with
-`node.field_role_incompatible`. Setting it to a TLD already in use by another
-active node fails with `node.tld_in_use`.
+`--tld` updates the mandatory node-level TLD for any active node, including
+gateway and operator targets. Setting it to a TLD already in use by another
+active node fails with `node.tld_in_use`. Gateway VPN DNS publishes
+`orbit.<node-tld>` to the node's WireGuard address.
 
 ## `orbit node:remove [name]`
 
