@@ -338,6 +338,116 @@ it('reads selected native streams directly instead of delegating to blocking PSR
     }
 });
 
+it('invokes idle callbacks when selected native streams yield empty chunks', function (): void {
+    [$readable, $writable] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+    if ($readable === false || $writable === false) {
+        $this->markTestSkipped('stream_socket_pair is required to simulate empty selected reads.');
+    }
+
+    stream_set_blocking($readable, true);
+    stream_set_blocking($writable, true);
+    fclose($writable);
+
+    $stream = new class($readable) implements StreamInterface
+    {
+        private int $eofChecks = 0;
+
+        public function __construct(private $resource) {}
+
+        public function __toString(): string
+        {
+            return '';
+        }
+
+        public function close(): void {}
+
+        public function detach()
+        {
+            return null;
+        }
+
+        public function getSize(): ?int
+        {
+            return null;
+        }
+
+        public function tell(): int
+        {
+            return 0;
+        }
+
+        public function eof(): bool
+        {
+            $this->eofChecks++;
+
+            return $this->eofChecks > 4;
+        }
+
+        public function isSeekable(): bool
+        {
+            return false;
+        }
+
+        public function seek(int $offset, int $whence = SEEK_SET): void {}
+
+        public function rewind(): void {}
+
+        public function isWritable(): bool
+        {
+            return false;
+        }
+
+        public function write(string $string): int
+        {
+            return 0;
+        }
+
+        public function isReadable(): bool
+        {
+            return true;
+        }
+
+        public function read(int $length): string
+        {
+            throw new RuntimeException('The selected resource read should not delegate to the PSR stream.');
+        }
+
+        public function getContents(): string
+        {
+            return '';
+        }
+
+        public function getMetadata(?string $key = null)
+        {
+            $metadata = ['stream' => $this->resource];
+
+            return $key === null ? $metadata : ($metadata[$key] ?? null);
+        }
+    };
+
+    $tickCount = 0;
+    $ticker = new ForkedFrameTicker(20_000);
+    $ticker->start(function () use (&$tickCount): void {
+        $tickCount++;
+    });
+
+    $reader = new StreamIdleReader(20_000);
+
+    try {
+        $chunk = $reader->read($stream, 64);
+
+        expect($chunk)->toBe('')
+            ->and($tickCount)->toBeGreaterThanOrEqual(2);
+    } finally {
+        $ticker->stop();
+
+        if (is_resource($readable)) {
+            fclose($readable);
+        }
+    }
+});
+
 it('polls PSR streams when guzzle stream wrappers cannot be selected', function (): void {
     $readAttempts = 0;
     $closed = false;

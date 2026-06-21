@@ -67,6 +67,9 @@ final readonly class StreamIdleReader
                     return $chunk;
                 }
 
+                ForkedFrameTicker::invokeIdleCallback();
+                usleep($this->idleIntervalMicroseconds);
+
                 continue;
             }
 
