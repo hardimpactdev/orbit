@@ -249,6 +249,32 @@ it('derives docker worker counts from configured runner slots', function (): voi
     });
 });
 
+it('reserves selected Incus hosts out of aggregate docker dry-run plans', function (): void {
+    withE2EEnvironment([], [
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,beast:4:28,local:4:28',
+        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
+    ], function (): void {
+        $exitCode = Artisan::call('e2e:test', [
+            '--dry-run' => true,
+            '--json' => true,
+            '--lanes' => 'all',
+        ]);
+        $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+        $dockerLane = $payload['success']['data']['lanes'][0];
+        $incusLane = $payload['success']['data']['lanes'][1];
+
+        expect($exitCode)->toBe(0)
+            ->and($dockerLane['lane'])->toBe('docker')
+            ->and($dockerLane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:28,local:4:28')
+            ->and($dockerLane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('8')
+            ->and($dockerLane['command'])->toContain('--processes=8')
+            ->and($incusLane['lane'])->toBe('incus')
+            ->and($incusLane['environment']['ORBIT_E2E_TOPOLOGY_PROVIDER'])->toBe('incus');
+    });
+});
+
 it('caps docker worker counts at the run-scoped subnet allocator capacity', function (): void {
     withE2EEnvironment([], [
         'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:5:35,sidecar2:5:35,nmbp:5:35,beast:5:35',
@@ -718,7 +744,7 @@ it('documents explicit docker container caps for every configured host', functio
         })
         ->all();
 
-    expect($example['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:28,sidecar2:4:28')
+    expect($example['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:28,sidecar2:4:28,mini:4:28,local:4:28,beast:4:28')
         ->and($example)->not->toHaveKey('ORBIT_E2E_PARALLEL_PROCESSES')
         ->and($example)->not->toHaveKeys([
             'ORBIT_E2E_DOCKER_HOSTS',
