@@ -148,7 +148,7 @@ run_liveness_mode() {
 
   rm -f "$TS"
 
-  wrapped_cmd=$(printf '%q ' "$BINARY" update:all --ansi)
+  wrapped_cmd=$(printf '%q ' "$BINARY" update:all)
   env_command=$(printf 'TERM=xterm-256color ORBIT_GATEWAY_URL=%q %s' "http://127.0.0.1:${PORT}" "$wrapped_cmd")
 
   if [[ "$(uname -s)" == "Darwin" ]]; then

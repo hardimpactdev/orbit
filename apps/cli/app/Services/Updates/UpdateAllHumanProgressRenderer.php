@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Updates;
 
 use Orbit\Core\Progress\ForkedFrameTicker;
+use Orbit\Core\Progress\LiveRepaintOutput;
 use Orbit\Core\Progress\ProgressEventType;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Output\StreamOutput;
 
 final class UpdateAllHumanProgressRenderer
 {
@@ -1037,36 +1037,7 @@ final class UpdateAllHumanProgressRenderer
     {
         $output ??= $this->output;
 
-        if ($output === null) {
-            return false;
-        }
-
-        $stream = $this->resolveRepaintStream($output);
-
-        if (is_resource($stream)
-            && function_exists('posix_isatty')
-            && posix_isatty($stream)) {
-            return true;
-        }
-
-        return $output->isDecorated();
-    }
-
-    private function resolveRepaintStream(OutputInterface $output): mixed
-    {
-        if ($output instanceof StreamOutput) {
-            return $output->getStream();
-        }
-
-        if (method_exists($output, 'getOutput')) {
-            $underlying = $output->getOutput();
-
-            if ($underlying instanceof OutputInterface) {
-                return $this->resolveRepaintStream($underlying);
-            }
-        }
-
-        return null;
+        return $output !== null && LiveRepaintOutput::supports($output);
     }
 
     private function stopTicker(): void

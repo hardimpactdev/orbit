@@ -13,10 +13,14 @@ final class LiveRepaintOutput
     {
         $stream = self::resolveStream($output);
 
-        if (is_resource($stream)
-            && function_exists('posix_isatty')
-            && posix_isatty($stream)) {
-            return true;
+        if (is_resource($stream)) {
+            if (function_exists('stream_isatty') && stream_isatty($stream)) {
+                return true;
+            }
+
+            if (function_exists('posix_isatty') && posix_isatty($stream)) {
+                return true;
+            }
         }
 
         return $output->isDecorated();
