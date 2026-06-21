@@ -3,11 +3,14 @@
 declare(strict_types=1);
 
 use App\Data\Operations\OperationUpdatePlanSnapshot;
+use App\Exceptions\UpdateLeaseConflict;
+use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
+use App\Services\Operations\UpdateLeaseManager;
 use App\Services\Operations\UpdateRunner;
 use App\Services\Operations\UpdateRunnerPipeline;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,6 +35,98 @@ it('holds the fleet lease across gateway workload and verification phases', func
     ])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0)
         ->and($run->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('reports the conflicting operation caller node when the fleet lease is already held', function (): void {
+    config()->set('app.version', '1.0.0');
+
+    $run = updateRunnerLeaseRun();
+    $caller = Node::factory()->create(['name' => 'ingress']);
+    $otherRun = updateRunnerLeaseRun(callerNodeId: $caller->id);
+
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerLeaseSnapshot());
+    $conflictingLease = app(UpdateLeaseManager::class)->acquire(
+        resourceType: 'fleet',
+        resourceKey: 'update-all',
+        operationRun: $otherRun,
+        ownerToken: 'other-owner',
+        ttlSeconds: 300,
+    );
+
+    expect(fn () => app(UpdateRunner::class)->run($run->id))
+        ->toThrow(UpdateLeaseConflict::class);
+
+    $error = $run->events()
+        ->where('event_type', 'error')
+        ->firstOrFail();
+    $eventMarkers = $run->events()
+        ->get()
+        ->map(fn ($event): string => $event->event_type === 'step'
+            ? "{$event->payload['key']}:{$event->payload['status']}"
+            : $event->event_type)
+        ->all();
+
+    expect($run->refresh()->error)->toMatchArray([
+        'code' => 'update_lease_conflict',
+        'data' => [
+            'resource' => 'fleet:update-all',
+            'resource_type' => 'fleet',
+            'resource_key' => 'update-all',
+            'lease_id' => $conflictingLease->id,
+            'conflicting_operation_id' => $otherRun->id,
+            'conflicting_node' => 'ingress',
+            'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+        ],
+    ])
+        ->and($error->payload)->toMatchArray([
+            'exit_code' => 1,
+            'data' => [
+                'code' => 'update_lease_conflict',
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'lease_id' => $conflictingLease->id,
+                'conflicting_operation_id' => $otherRun->id,
+                'conflicting_node' => 'ingress',
+                'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+            ],
+        ]);
+
+    expect($eventMarkers)->toContain('check-updates:done', 'check-fleet-versions:done', 'error')
+        ->and(array_search('check-fleet-versions:done', $eventMarkers, true))
+        ->toBeLessThan(array_search('error', $eventMarkers, true));
+});
+
+it('omits conflicting_node when the conflicting operation has no caller node', function (): void {
+    config()->set('app.version', '1.0.0');
+
+    $run = updateRunnerLeaseRun();
+    $otherRun = updateRunnerLeaseRun(callerNodeId: null);
+
+    app(OperationUpdatePlanStore::class)->create($run, updateRunnerLeaseSnapshot());
+    $conflictingLease = app(UpdateLeaseManager::class)->acquire(
+        resourceType: 'fleet',
+        resourceKey: 'update-all',
+        operationRun: $otherRun,
+        ownerToken: 'other-owner',
+        ttlSeconds: 300,
+    );
+
+    expect(fn () => app(UpdateRunner::class)->run($run->id))
+        ->toThrow(UpdateLeaseConflict::class);
+
+    expect($run->refresh()->error)->toMatchArray([
+        'code' => 'update_lease_conflict',
+        'data' => [
+            'resource' => 'fleet:update-all',
+            'resource_type' => 'fleet',
+            'resource_key' => 'update-all',
+            'lease_id' => $conflictingLease->id,
+            'conflicting_operation_id' => $otherRun->id,
+            'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+        ],
+    ])
+        ->and($run->error['data'])->not->toHaveKey('conflicting_node');
 });
 
 it('releases fleet gateway and scheduler leases when the gateway phase fails', function (): void {
@@ -85,12 +180,13 @@ it('keeps the fleet lease through verification failure and releases it afterward
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
-function updateRunnerLeaseRun(): OperationRun
+function updateRunnerLeaseRun(?int $callerNodeId = null): OperationRun
 {
     return app(OperationRunRecorder::class)->queued(
         operationId: (string) Str::uuid(),
         lane: 'gateway',
         operationType: 'update:all',
+        callerNodeId: $callerNodeId,
     );
 }
 

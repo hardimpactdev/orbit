@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Services\Updates\UpdateAllHumanProgressRenderer;
 use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
+use Orbit\Core\Progress\VirtualTerminalScreen;
 use Symfony\Component\Console\Output\BufferedOutput;
 
 it('renders begin on non-decorated output with one check row and footer last', function (): void {
@@ -213,6 +214,76 @@ it('reveals local as Waiting while the gateway row is active', function (): void
         ->and($text)->toMatch('/local\s+Waiting\b/')
         ->and($text)->toMatch('/agent\s+Waiting\b/')
         ->and($text)->toMatch('/beast\s+Waiting\b/');
+});
+
+it('fails the gateway row for a fleet lease conflict without revealing local waiting rows', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-updates',
+        'status' => 'done',
+        'message' => 'Done: latest version is 1.2.3',
+    ]);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-fleet-versions',
+        'status' => 'done',
+        'message' => 'Done: 2 outdated nodes found',
+    ]);
+    $renderer->fleetLeaseConflictFailed($output, 'Failed: update:all is still being performed by ingress');
+    $renderer->finishFailure($output);
+
+    $text = $output->fetch();
+
+    expect($text)->toMatch('/gateway\s+Failed: update:all is still being performed by ingress/')
+        ->and($text)->not->toMatch('/local\s+Waiting/')
+        ->and($text)->not->toMatch('/\bbeast\s+Waiting/')
+        ->and($text)->toContain('Failed');
+});
+
+it('strips revealed fan-out rows when a fleet lease conflict fails after an outdated fleet check', function (): void {
+    $output = new BufferedOutput(decorated: false);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-fleet-versions',
+        'status' => 'done',
+        'message' => 'Done: 2 outdated nodes found',
+        'update_targets' => ['gateway', 'local', 'beast'],
+    ]);
+    $renderer->fleetLeaseConflictFailed($output, 'Failed: update:all is still being performed by ingress');
+    $renderer->finishFailure($output);
+
+    $order = new ReflectionProperty(UpdateAllHumanProgressRenderer::class, 'order');
+    $order->setAccessible(true);
+
+    expect($order->getValue($renderer))->toBe(['check-updates', 'check-fleet-versions', 'gateway']);
+});
+
+it('clears revealed fan-out rows from a decorated fleet lease conflict screen', function (): void {
+    $output = new BufferedOutput(decorated: true);
+    $renderer = new UpdateAllHumanProgressRenderer;
+
+    $renderer->begin($output);
+    $renderer->applyEvent($output, ProgressEventType::Step, [
+        'key' => 'check-fleet-versions',
+        'status' => 'done',
+        'message' => 'Done: 2 outdated nodes found',
+        'update_targets' => ['gateway', 'local', 'beast'],
+    ]);
+    $renderer->fleetLeaseConflictFailed($output, 'Failed: update:all is still being performed by ingress');
+    $renderer->finishFailure($output);
+
+    $screen = new VirtualTerminalScreen;
+    $screen->feed($output->fetch());
+    $text = implode("\n", $screen->lines());
+
+    expect($text)->toContain('gateway')
+        ->and($text)->toContain('Failed: update:all is still being performed by ingress')
+        ->and($text)->not->toContain('local')
+        ->and($text)->not->toContain('beast');
 });
 
 it('keeps local and workload rows on Waiting when the gateway row fails', function (): void {

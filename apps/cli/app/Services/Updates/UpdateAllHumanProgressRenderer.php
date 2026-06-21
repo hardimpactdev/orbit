@@ -188,6 +188,67 @@ final class UpdateAllHumanProgressRenderer
         $this->setRow($output, 'gateway', self::STATE_FAILED, self::STAGE_FAILED, $message);
     }
 
+    public function fleetLeaseConflictFailed(OutputInterface $output, string $message): void
+    {
+        $previousRowCount = count($this->order);
+
+        $this->stripFanOutTargets();
+        $this->registerTarget('gateway');
+
+        $this->output = $output;
+        $this->rows['gateway'] = [
+            'state' => self::STATE_FAILED,
+            'stage' => self::STAGE_WAITING,
+            'message' => $message,
+        ];
+
+        if ($this->rendered && $this->outputSupportsLiveRepaint($output)) {
+            $this->rerenderTree($output, $previousRowCount);
+            $this->syncTicker();
+
+            return;
+        }
+
+        $this->repaintRow($output, 'gateway');
+        $this->syncTicker();
+    }
+
+    private function stripFanOutTargets(): void
+    {
+        $removed = [];
+
+        foreach ($this->order as $target) {
+            if ($target === 'local' || $this->isWorkloadTarget($target)) {
+                $removed[] = $target;
+            }
+        }
+
+        if ($removed === []) {
+            return;
+        }
+
+        foreach ($removed as $target) {
+            unset($this->rows[$target]);
+        }
+
+        $this->order = array_values(array_filter(
+            $this->order,
+            fn (string $target): bool => ! in_array($target, $removed, true),
+        ));
+        $this->recalculateTargetWidth();
+        $this->fanOutTargetsRevealed = false;
+        $this->revealedWorkloadOrder = [];
+    }
+
+    private function recalculateTargetWidth(): void
+    {
+        $this->targetWidth = 0;
+
+        foreach ($this->order as $target) {
+            $this->targetWidth = max($this->targetWidth, strlen($this->displayName($target)));
+        }
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -718,6 +779,42 @@ final class UpdateAllHumanProgressRenderer
 
     private function renderInitial(OutputInterface $output): void
     {
+        $this->writeTree($output, 'Working...', success: null);
+
+        if ($output->isDecorated()) {
+            $output->write("\e[?25l");
+        }
+
+        $this->rendered = true;
+    }
+
+    private function rerenderTree(OutputInterface $output, int $previousRowCount): void
+    {
+        if (! $this->rendered) {
+            return;
+        }
+
+        $lineCount = (2 * $previousRowCount) + 3;
+
+        $output->write("\e[{$lineCount}A");
+
+        for ($line = 0; $line < $lineCount; $line++) {
+            $output->write("\e[2K\r");
+
+            if ($line < $lineCount - 1) {
+                $output->write("\e[1B");
+            }
+        }
+
+        if ($lineCount > 1) {
+            $output->write("\e[".($lineCount - 1)."A\r");
+        }
+
+        $this->writeTree($output, 'Working...', success: null);
+    }
+
+    private function writeTree(OutputInterface $output, string $footer, ?bool $success): void
+    {
         $output->writeln($this->titleLine($output->isDecorated()));
 
         foreach ($this->order as $target) {
@@ -726,13 +823,7 @@ final class UpdateAllHumanProgressRenderer
         }
 
         $output->writeln($this->spacerLine($output->isDecorated()));
-        $output->writeln($this->footerLine('Working...', success: null, styled: $output->isDecorated()));
-
-        if ($output->isDecorated()) {
-            $output->write("\e[?25l");
-        }
-
-        $this->rendered = true;
+        $output->writeln($this->footerLine($footer, $success, $output->isDecorated()));
     }
 
     private function renderExtension(OutputInterface $output, string $target, bool $widthChanged): void

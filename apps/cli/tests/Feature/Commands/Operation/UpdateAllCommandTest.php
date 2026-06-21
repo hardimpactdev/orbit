@@ -758,6 +758,101 @@ it('renders the Updating Orbit nodes title in human mode', function (): void {
         ->and($output)->toContain('Updating Orbit nodes');
 });
 
+it('reports fleet lease conflicts in json mode with the gateway terminal frame', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Error, 'payload' => [
+            'exit_code' => 1,
+            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+            'data' => [
+                'code' => 'update_lease_conflict',
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'conflicting_operation_id' => 'other-run',
+                'expires_at' => '2026-06-21T12:00:00+00:00',
+            ],
+        ]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
+
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect($exitCode)->toBe(1)
+        ->and($decoded)->toBe([
+            'event' => 'error',
+            'data' => [
+                'exit_code' => 1,
+                'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+                'data' => [
+                    'code' => 'update_lease_conflict',
+                    'resource' => 'fleet:update-all',
+                    'resource_type' => 'fleet',
+                    'resource_key' => 'update-all',
+                    'conflicting_operation_id' => 'other-run',
+                    'expires_at' => '2026-06-21T12:00:00+00:00',
+                ],
+            ],
+        ]);
+});
+
+it('renders a friendly fleet lease conflict without local waiting rows in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found']],
+        ['type' => ProgressEventType::Error, 'payload' => [
+            'exit_code' => 1,
+            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+            'data' => [
+                'code' => 'update_lease_conflict',
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'conflicting_operation_id' => 'other-run',
+                'conflicting_node' => 'ingress',
+                'expires_at' => '2026-06-21T12:00:00+00:00',
+            ],
+        ]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toMatch('/gateway\s+Failed: update:all is still being performed by ingress/')
+        ->and($output)->not->toContain('already leased')
+        ->and($output)->not->toMatch('/local\s+Waiting/')
+        ->and($output)->not->toMatch('/\bbeast\s+Waiting/')
+        ->and($output)->toContain('Failed')
+        ->and($this->localUpdater->calls)->toBe([]);
+});
+
+it('falls back to another node when fleet lease conflict data omits conflicting_node in human mode', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: all nodes running on 1.2.3']],
+        ['type' => ProgressEventType::Error, 'payload' => [
+            'exit_code' => 1,
+            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+            'data' => [
+                'code' => 'update_lease_conflict',
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'conflicting_operation_id' => 'other-run',
+                'expires_at' => '2026-06-21T12:00:00+00:00',
+            ],
+        ]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(1)
+        ->and($output)->toMatch('/gateway\s+Failed: update:all is still being performed by another node/');
+});
+
 it('keeps fan-out rows on Waiting and fails the footer when the gateway row fails in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([

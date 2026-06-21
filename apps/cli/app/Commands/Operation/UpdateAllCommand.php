@@ -80,6 +80,15 @@ final class UpdateAllCommand extends GatewayCommand
         }
 
         if ($terminal['type'] === ProgressEventType::Error) {
+            $leaseConflictMessage = $this->humanOperationLeaseConflictMessage($terminal['payload']);
+
+            if ($leaseConflictMessage !== null) {
+                $progress->fleetLeaseConflictFailed($this->output, $leaseConflictMessage);
+                $progress->finishFailure($this->output);
+
+                return self::FAILURE;
+            }
+
             $progress->gatewayFailed($this->output, $this->operationErrorMessage($terminal['payload']));
             $progress->finishFailure($this->output);
 
@@ -306,6 +315,29 @@ final class UpdateAllCommand extends GatewayCommand
         return $this->frameString($data, 'message')
             ?? $this->frameString($payload, 'message')
             ?? 'Gateway progress stream failed.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function humanOperationLeaseConflictMessage(array $payload): ?string
+    {
+        $data = $this->frameData($payload);
+        $code = $this->frameString($data, 'code') ?? $this->frameString($payload, 'code');
+
+        if ($code !== 'update_lease_conflict') {
+            return null;
+        }
+
+        $resourceType = $this->frameString($data, 'resource_type');
+
+        if (! in_array($resourceType, ['fleet', 'gateway', 'scheduler'], true)) {
+            return null;
+        }
+
+        $nodeName = $this->frameString($data, 'conflicting_node') ?? 'another node';
+
+        return "Failed: update:all is still being performed by {$nodeName}";
     }
 
     /**

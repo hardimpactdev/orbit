@@ -50,63 +50,61 @@ final readonly class UpdateRunner
         $allCurrent = false;
 
         try {
-            $this->leases->withLease(
-                resourceType: 'fleet',
-                resourceKey: self::FleetResourceKey,
-                operationRun: $operationRun,
-                ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
-                ttlSeconds: $this->leaseTtlSeconds(),
-                callback: function () use ($operationRun, &$plan, &$allCurrent): void {
-                    if ($plan instanceof OperationUpdatePlan) {
-                        $this->markStarted($operationRun, $plan);
-                    }
+            if ($plan instanceof OperationUpdatePlan) {
+                $this->markStarted($operationRun, $plan);
+            }
 
-                    $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
+            [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
 
-                    [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
+            if ($report->outdatedCount === 0) {
+                // All-current short-circuit: skip gateway, workload, and verification phases.
+                $allCurrent = true;
+            } else {
+                $this->leases->withLease(
+                    resourceType: 'fleet',
+                    resourceKey: self::FleetResourceKey,
+                    operationRun: $operationRun,
+                    ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
+                    ttlSeconds: $this->leaseTtlSeconds(),
+                    callback: function () use ($operationRun, $plan): void {
+                        $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
 
-                    if ($report->outdatedCount === 0) {
-                        // All-current short-circuit: skip gateway, workload, and verification phases.
-                        $allCurrent = true;
+                        $this->runPhase(
+                            $operationRun,
+                            'gateway',
+                            'Updating gateway services',
+                            'Gateway services updated',
+                            function () use ($operationRun, $plan): null {
+                                $this->updateGateway($operationRun, $plan);
 
-                        return;
-                    }
+                                return null;
+                            },
+                        );
+                        $this->runPhase(
+                            $operationRun,
+                            'workload-nodes',
+                            'Updating workload nodes',
+                            'Workload nodes updated',
+                            function () use ($operationRun, $plan): null {
+                                $this->pipeline->updateWorkloads($operationRun, $plan);
 
-                    $this->runPhase(
-                        $operationRun,
-                        'gateway',
-                        'Updating gateway services',
-                        'Gateway services updated',
-                        function () use ($operationRun, $plan): null {
-                            $this->updateGateway($operationRun, $plan);
+                                return null;
+                            },
+                        );
+                        $this->runPhase(
+                            $operationRun,
+                            'verification',
+                            'Verifying fleet update',
+                            'Fleet update verified',
+                            function () use ($operationRun, $plan): null {
+                                $this->pipeline->verifyFleet($operationRun, $plan);
 
-                            return null;
-                        },
-                    );
-                    $this->runPhase(
-                        $operationRun,
-                        'workload-nodes',
-                        'Updating workload nodes',
-                        'Workload nodes updated',
-                        function () use ($operationRun, $plan): null {
-                            $this->pipeline->updateWorkloads($operationRun, $plan);
-
-                            return null;
-                        },
-                    );
-                    $this->runPhase(
-                        $operationRun,
-                        'verification',
-                        'Verifying fleet update',
-                        'Fleet update verified',
-                        function () use ($operationRun, $plan): null {
-                            $this->pipeline->verifyFleet($operationRun, $plan);
-
-                            return null;
-                        },
-                    );
-                },
-            );
+                                return null;
+                            },
+                        );
+                    },
+                );
+            }
         } catch (Throwable $exception) {
             $this->markFailed($operationRun, $exception);
 
@@ -342,14 +340,15 @@ final readonly class UpdateRunner
             return [
                 'code' => $exception->resourceType === 'node' ? 'update.node_locked' : 'update_lease_conflict',
                 'message' => $exception->getMessage(),
-                'data' => [
+                'data' => array_filter([
                     'resource' => "{$exception->resourceType}:{$exception->resourceKey}",
                     'resource_type' => $exception->resourceType,
                     'resource_key' => $exception->resourceKey,
                     'lease_id' => $exception->leaseId,
                     'conflicting_operation_id' => $exception->operationRunId,
                     'expires_at' => $exception->expiresAt->toIso8601String(),
-                ],
+                    'conflicting_node' => $this->conflictingLeaseCallerNode($exception->operationRunId),
+                ], fn (mixed $value): bool => $value !== null),
             ];
         }
 
@@ -410,5 +409,22 @@ final readonly class UpdateRunner
         $ttlSeconds = (int) config('orbit.updates.lease_ttl_seconds', 300);
 
         return max(1, $ttlSeconds);
+    }
+
+    private function conflictingLeaseCallerNode(string $operationRunId): ?string
+    {
+        $nodeName = OperationRun::query()
+            ->with('callerNode')
+            ->find($operationRunId)
+            ?->callerNode
+            ?->name;
+
+        if (! is_string($nodeName)) {
+            return null;
+        }
+
+        $nodeName = trim($nodeName);
+
+        return $nodeName === '' ? null : $nodeName;
     }
 }

@@ -123,11 +123,11 @@ it('emits terminal success only after runner verification passes', function (): 
     expect($run->status)->toBe(OperationStatus::Succeeded)
         ->and(fleetVerifierStepEvents($run))->toBe([
             ['runner', 'running'],
-            ['lease.fleet', 'done'],
             ['check-updates', 'running'],
             ['check-updates', 'done'],
             ['check-fleet-versions', 'running'],
             ['check-fleet-versions', 'done'],
+            ['lease.fleet', 'done'],
             ['gateway', 'running'],
             ['lease.gateway', 'done'],
             ['scheduler.stop', 'running'],

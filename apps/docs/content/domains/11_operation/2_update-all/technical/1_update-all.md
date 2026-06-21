@@ -148,8 +148,9 @@ The expected target shape per calling context:
 
 - Every update entry point that mutates fleet state must acquire an expiring
   update lease before side effects.
-- The runner holds the `fleet:update-all` lease for the entire run: gateway
-  replacement, scheduler update, workload node updates, and final verification.
+- After the read-only check steps settle and update work is required, the runner
+  holds the `fleet:update-all` lease across gateway replacement, scheduler
+  update, workload node updates, and final verification.
 - Gateway and scheduler leases are scoped to the gateway phase.
 - Node leases are scoped per workload node fan-out task.
 - Lease acquisition must map active-lease conflicts, including
