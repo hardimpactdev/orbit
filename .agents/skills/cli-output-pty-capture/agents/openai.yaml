@@ -1,0 +1,4 @@
+interface:
+  display_name: "CLI PTY Capture"
+  short_description: "Record and time terminal output frames"
+  default_prompt: "Use $cli-output-pty-capture to prove whether this CLI output keeps repainting under a real PTY."
