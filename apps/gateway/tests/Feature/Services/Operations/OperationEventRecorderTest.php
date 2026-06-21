@@ -55,6 +55,36 @@ it('appends terminal error events with metadata', function (): void {
         ->and($event->metadata)->toMatchArray(['phase' => 'gateway']);
 });
 
+it('appends multiple step events in one ordered batch', function (): void {
+    $events = $this->recorder->steps($this->run, [
+        [
+            'key' => 'check-updates',
+            'status' => 'done',
+            'message' => 'Done: latest version is 1.2.3',
+        ],
+        [
+            'key' => 'check-fleet-versions',
+            'status' => 'running',
+            'message' => 'Checking',
+        ],
+    ]);
+
+    expect($events)->toHaveCount(2)
+        ->and($events[0]->sequence)->toBe(1)
+        ->and($events[1]->sequence)->toBe(2)
+        ->and($events[0]->payload)->toMatchArray([
+            'key' => 'check-updates',
+            'status' => 'done',
+            'message' => 'Done: latest version is 1.2.3',
+        ])
+        ->and($events[1]->payload)->toMatchArray([
+            'key' => 'check-fleet-versions',
+            'status' => 'running',
+            'message' => 'Checking',
+        ])
+        ->and($this->run->events()->orderBy('sequence')->pluck('sequence')->all())->toBe([1, 2]);
+});
+
 it('rejects event payloads with forbidden secret keys before writing rows', function (): void {
     expect(fn () => $this->recorder->append($this->run, 'step', [
         'key' => 'gateway',

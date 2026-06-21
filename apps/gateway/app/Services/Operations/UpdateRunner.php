@@ -142,9 +142,18 @@ final readonly class UpdateRunner
             $this->markStarted($operationRun, $plan);
         }
 
-        $this->operationRuns->appendStep($operationRun->id, 'check-updates', 'done', "Done: latest version is {$plan->target_version}");
-
-        $this->operationRuns->appendStep($operationRun->id, 'check-fleet-versions', 'running', 'Checking');
+        $this->operationRuns->appendSteps($operationRun->id, [
+            [
+                'key' => 'check-updates',
+                'status' => 'done',
+                'message' => "Done: latest version is {$plan->target_version}",
+            ],
+            [
+                'key' => 'check-fleet-versions',
+                'status' => 'running',
+                'message' => 'Checking',
+            ],
+        ]);
 
         $report = $this->fleetVersions->probe($operationRun, $plan);
 

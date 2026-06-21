@@ -91,6 +91,76 @@ final readonly class OperationEventRecorder
     }
 
     /**
+     * @param  list<array{
+     *     key: string,
+     *     status: string,
+     *     message?: string|null,
+     *     metadata?: array<string, mixed>,
+     *     payload_extras?: array<string, mixed>
+     * }>  $steps
+     * @return list<OperationEvent>
+     */
+    public function steps(OperationRun|string $operationRun, array $steps): array
+    {
+        $records = [];
+
+        foreach ($steps as $step) {
+            $payload = [
+                'key' => $step['key'],
+                'status' => $step['status'],
+            ];
+
+            if (array_key_exists('message', $step) && $step['message'] !== null) {
+                $payload['message'] = $step['message'];
+            }
+
+            $payloadExtras = $step['payload_extras'] ?? [];
+
+            if ($payloadExtras !== []) {
+                $payload = array_merge($payload, $payloadExtras);
+            }
+
+            $metadata = $step['metadata'] ?? [];
+
+            $this->redaction->assertSafe([
+                'payload' => $payload,
+                'metadata' => $metadata,
+            ], 'progress');
+
+            $records[] = [
+                'event_type' => 'step',
+                'payload' => $payload,
+                'metadata' => $metadata,
+            ];
+        }
+
+        return DB::transaction(function () use ($operationRun, $records): array {
+            $operationRun = $this->findOrFail($operationRun);
+
+            $sequence = (int) OperationEvent::query()
+                ->where('operation_run_id', $operationRun->id)
+                ->lockForUpdate()
+                ->max('sequence') + 1;
+
+            $events = [];
+
+            foreach ($records as $record) {
+                $events[] = OperationEvent::query()->create([
+                    'operation_run_id' => $operationRun->id,
+                    'sequence' => $sequence,
+                    'event_type' => $record['event_type'],
+                    'payload' => $record['payload'],
+                    'metadata' => $record['metadata'] === [] ? null : $record['metadata'],
+                ]);
+
+                $sequence++;
+            }
+
+            return $events;
+        });
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $metadata
      */

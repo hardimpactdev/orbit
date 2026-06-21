@@ -10,7 +10,6 @@ if ($argc < 2) {
 $port = (int) $argv[1];
 $silentDelayMicroseconds = (int) (getenv('ORBIT_UPDATE_ALL_LIVENESS_SILENT_US') ?: '6000000');
 $startDelayMicroseconds = (int) (getenv('ORBIT_UPDATE_ALL_LIVENESS_START_DELAY_US') ?: '0');
-$fleetStartDelayMicroseconds = (int) (getenv('ORBIT_UPDATE_ALL_LIVENESS_FLEET_START_DELAY_US') ?: '100000');
 $server = stream_socket_server("tcp://127.0.0.1:{$port}", $errno, $errstr);
 
 if ($server === false) {
@@ -86,11 +85,7 @@ while (! $eventsSent && ($connection = @stream_socket_accept($server, 30)) !== f
             'status' => 'done',
             'message' => 'Done: latest version is 9.9.9',
         ]);
-
-        if ($fleetStartDelayMicroseconds > 0) {
-            usleep($fleetStartDelayMicroseconds);
-        }
-
+        usleep(100_000);
         emitSse($connection, 3, 'step', [
             'key' => 'check-fleet-versions',
             'status' => 'running',
