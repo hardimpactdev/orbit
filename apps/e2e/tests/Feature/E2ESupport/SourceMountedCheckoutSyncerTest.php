@@ -221,6 +221,30 @@ it('guards the ownership repair chown behind a foreign-owner probe', function ()
         ->toBeLessThan(strpos($commandsOutput, 'chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work'));
 });
 
+it('bounds source sync lock waits and records the remote lock owner', function (): void {
+    $commands = [];
+    Process::fake(function ($process) use (&$commands) {
+        $commands[] = (string) $process->command;
+
+        return Process::result();
+    });
+
+    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+
+    $commandsOutput = implode("\n", $commands);
+
+    expect($commandsOutput)
+        ->toContain('max_wait=30')
+        ->toContain('legacy_stale_after=60')
+        ->toContain('owner_pid="$(cat "$lock/pid"')
+        ->toContain('kill -0 "$owner_pid"')
+        ->toContain('"$$" > "$lock/pid"')
+        ->toContain('hostname > "$lock/host"')
+        ->toContain('Timed out waiting ${max_wait}s for source sync lock $lock')
+        ->not->toContain('-ge 900')
+        ->not->toContain('-gt 1800');
+});
+
 it('itemizes rsync changes so unchanged syncs can skip maintenance work', function (): void {
     $commands = [];
     Process::fake(function ($process) use (&$commands) {

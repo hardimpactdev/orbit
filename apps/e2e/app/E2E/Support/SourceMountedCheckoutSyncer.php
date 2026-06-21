@@ -26,6 +26,12 @@ final readonly class SourceMountedCheckoutSyncer
 
     private const int SyncTimeoutSeconds = 1200;
 
+    private const int LockWaitSeconds = 30;
+
+    private const int LegacyLockStaleSeconds = 60;
+
+    private const int LockAcquireTimeoutSeconds = self::LockWaitSeconds + 15;
+
     public function sync(string $host, string $provider, ?E2EPhaseTimer $timer = null): string
     {
         $targetPath = $this->sourcePath($host, $provider);
@@ -166,22 +172,33 @@ final readonly class SourceMountedCheckoutSyncer
         $command = implode("\n", [
             'target='.escapeshellarg($targetPath),
             'lock='.escapeshellarg($lockPath),
+            'max_wait='.self::LockWaitSeconds,
+            'legacy_stale_after='.self::LegacyLockStaleSeconds,
             'mkdir -p "$target"',
             'attempt=0',
             'while ! mkdir "$lock" 2>/dev/null; do',
-            '  if [ -f "$lock/created_at" ]; then',
+            '  now="$(date +%s)"',
+            '  if [ -f "$lock/pid" ]; then',
+            '    owner_pid="$(cat "$lock/pid" 2>/dev/null || printf "")"',
+            '    owner_host="$(cat "$lock/host" 2>/dev/null || printf "")"',
+            '    current_host="$(hostname)"',
+            '    case "$owner_pid" in ""|*[!0-9]*) owner_pid="";; esac',
+            '    if [ -n "$owner_pid" ] && [ "$owner_host" = "$current_host" ] && ! kill -0 "$owner_pid" 2>/dev/null; then rm -rf "$lock"; continue; fi',
+            '  elif [ -f "$lock/created_at" ]; then',
             '    created_at="$(cat "$lock/created_at" 2>/dev/null || printf 0)"',
-            '    now="$(date +%s)"',
-            '    if [ "$((now - created_at))" -gt 1800 ]; then rm -rf "$lock"; continue; fi',
+            '    case "$created_at" in ""|*[!0-9]*) created_at=0;; esac',
+            '    if [ "$((now - created_at))" -gt "$legacy_stale_after" ]; then rm -rf "$lock"; continue; fi',
             '  fi',
             '  attempt="$((attempt + 1))"',
-            '  if [ "$attempt" -ge 900 ]; then echo "Timed out waiting for source sync lock $lock" >&2; exit 1; fi',
+            '  if [ "$attempt" -ge "$max_wait" ]; then echo "Timed out waiting ${max_wait}s for source sync lock $lock" >&2; exit 1; fi',
             '  sleep 1',
             'done',
             'date +%s > "$lock/created_at"',
+            'printf \'%s\n\' "$$" > "$lock/pid"',
+            'hostname > "$lock/host"',
         ]);
 
-        $this->mustRun($this->sshCommand($host, $command), "Could not acquire source checkout sync lock on {$host}:{$targetPath}", timeoutSeconds: 1000);
+        $this->mustRun($this->sshCommand($host, $command), "Could not acquire source checkout sync lock on {$host}:{$targetPath}", timeoutSeconds: self::LockAcquireTimeoutSeconds);
     }
 
     private function releaseLock(string $host, string $targetPath): void
