@@ -177,6 +177,11 @@ final class UpdateAllHumanProgressRenderer
         $this->setRow($output, 'gateway', self::STATE_ACTIVE, self::STAGE_STARTING_OPERATION);
     }
 
+    public function checkingForUpdates(OutputInterface $output): void
+    {
+        $this->setRow($output, self::ROW_CHECK_UPDATES, self::STATE_ACTIVE, self::STAGE_CHECKING, 'Checking');
+    }
+
     public function gatewayFailed(OutputInterface $output, string $message = ''): void
     {
         $this->revealFanOutTargetsOnce($output, ['gateway', 'local']);

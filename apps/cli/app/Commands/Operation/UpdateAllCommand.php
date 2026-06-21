@@ -38,6 +38,7 @@ final class UpdateAllCommand extends GatewayCommand
         UpdateAllHumanProgressRenderer $progress,
     ): int {
         $progress->begin($this->output);
+        $progress->checkingForUpdates($this->output);
 
         try {
             $response = $this->gatewayPostWithIdleTicks('/api/update/all/start');
