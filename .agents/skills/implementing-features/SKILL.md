@@ -1,14 +1,19 @@
 ---
 name: implementing-features
-description: Use when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff through Grok implementation sub-agents.
+description: Use when the user says to implement a crystallized Orbit feature or bug fix, or when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff through Grok implementation sub-agents.
 ---
 
 # Implementing Features
 
 ## Overview
 
-Implement a scoped Orbit change from a clear handoff or Solo todo by acting as
-the Codex orchestrator for Grok implementation sub-agents. Documentation updates
+Implement a scoped Orbit change from a crystallized discussion, handoff, or Solo
+todo by acting as the Codex orchestrator for Grok implementation sub-agents.
+Crystallization happens before this skill is triggered: the feature or bug fix
+has already been discussed into a concrete product contract, scope, and
+verification expectation. This skill starts when the user explicitly moves from
+discussion to execution with wording such as `let's implement`, `start
+implementation`, or an equivalent implementation request. Documentation updates
 and project Orbit skill updates are implementation work here, alongside tests
 and code.
 
@@ -32,6 +37,8 @@ primary implementer. Use Grok sub-agents for implementation work.
 
 Responsibilities:
 
+- Create and own the Codex goal for the crystallized implementation when the
+  user explicitly starts implementation from the current thread.
 - Prepare and own the dedicated Orbit worktree.
 - Read the handoff, docs, and existing code enough to define clear Grok tasks.
 - Spawn one Grok worker by default. Spawn multiple Grok workers only for
@@ -301,63 +308,77 @@ moving on to durable E2E.
 
 ## Workflow
 
-1. Set up the workspace with `bin/orbit-prepare-worktree`.
-2. Read the handoff, `AGENTS.md`, `apps/docs/content/product-decisions.md`,
+1. Confirm the request is moving an already-crystallized feature or bug fix into
+   implementation. Use the crystallized discussion, handoff, or Solo todo as
+   the concrete implementation handoff. Create a Codex goal for the
+   implementation and proceed as orchestrator. Do not route through retired
+   orchestration skills.
+2. Set up the workspace with `bin/orbit-prepare-worktree`.
+3. Read the handoff, `AGENTS.md`, `apps/docs/content/product-decisions.md`,
    relevant product docs under `apps/docs/content/**`, and relevant session
    context under `docs/superpowers/**`.
-3. Confirm owned files or domains and existing dirty work before editing.
-4. Decide the Grok delegation plan. Use one Grok worker unless the feature has
+4. Confirm owned files or domains and existing dirty work before editing.
+5. Decide the Grok delegation plan. Use one Grok worker unless the feature has
    disjoint slices with explicit file/domain ownership and merge order.
-5. Spawn the Grok worker(s) with the worktree path, handoff, owned scope,
+6. Spawn the Grok worker(s) with the worktree path, handoff, owned scope,
    documentation authority, TDD requirement, focused verification, and the rule
    that Grok must not merge to `main` or clean up the worktree.
-6. Monitor Grok, inspect diffs, and send correction prompts until the
+7. Monitor Grok, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit.
-7. Align documentation inside this worktree when the handoff identifies missing
+8. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Prefer sending documentation corrections back through
    the Grok worker that owns the related behavior.
-8. Check whether the project-owned Orbit skill under `skills/orbit/**` is
+9. Check whether the project-owned Orbit skill under `skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-9. Ensure the Grok implementation followed TDD (see Test-Driven Development
+10. Ensure the Grok implementation followed TDD (see Test-Driven Development
    below): failing Pest tests first, then implementation.
-10. Keep the smallest working vertical slice that makes the tests pass.
-11. For CLI command behavior, run the retained ingress VM Solo-terminal gate
+11. Keep the smallest working vertical slice that makes the tests pass.
+12. For CLI command behavior, run the retained ingress VM Solo-terminal gate
     from this worktree before durable E2E. Do not start the E2E test work until
     the changed command has been exercised successfully on the retained ingress
-    VM, or until the blocker is explicit.
-12. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+    VM and the user has confirmed the observed CLI behavior is correct, or
+    until the blocker is explicit.
+13. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-13. Run focused in-memory and prepared-topology feature verification.
-14. Run artifact-backed feature verification when production artifact behavior
+14. Run focused in-memory and prepared-topology feature verification. For
+    non-CLI behavior, proceed to the relevant E2E lane once code and focused
+    tests are ready; no retained CLI confirmation gate applies.
+15. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
-15. Run provider provision gates only as final/nightly substrate verification
+16. Run provider provision gates only as final/nightly substrate verification
     when installer, host mutation, image, binary, or topology-preparation
     behavior changed. Docker provision is only for Docker artifact/image or
     Docker topology-preparer changes; do not run it as a generic post-`composer
     test:e2e` gate.
-16. If PHP changed, run:
+17. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-17. Before reporting completion, run the project quality gate:
+18. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-18. Commit the verified worktree changes on the worktree branch.
-19. Merge the branch back into `main` from the primary `~/orbit` checkout,
+19. Commit the verified worktree changes on the worktree branch.
+20. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
+21. If release was explicitly agreed or specifically discussed as part of the
+    crystallized scope, run the release flow after merge. Capture live topology
+    `doctor` status before publishing a release, run `orbit update:all` after
+    the release artifacts are accepted, run `doctor` again, compare the before
+    and after results, and either fix regressions immediately or record scoped
+    follow-up tasks for intentional migration work.
 
 ## Test-Driven Development
 

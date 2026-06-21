@@ -27,6 +27,9 @@ manifests.
 - `orbit update:all` is the acceptance path. It updates the operator CLI,
   gateway service, scheduler service, and selected workload node CLIs from the
   published manifest.
+- Live topology doctor status is the release safety baseline. Capture it before
+  publishing a new release so post-`update:all` doctor output can be compared
+  against known pre-existing drift.
 - No release may be published without E2E proof that the release candidate
   artifacts are functional. The proof must apply to the target version and
   commit being released, not an older branch, previous artifact set, or stale
@@ -65,7 +68,11 @@ manifests.
    composer quality-check
    ```
 
-7. Merge the worktree branch back to `main`, push `main`, then publish the
+7. Capture live topology doctor status before publishing. Record the exact
+   command, timestamp, target topology, and result summary in the release
+   report. Existing drift does not necessarily block the release, but it must be
+   known before `update:all` so new regressions are visible.
+8. Merge the worktree branch back to `main`, push `main`, then publish the
    monorepo GitHub release. The release workflow runs on the
    `release.published` event, so a tag push alone is not enough:
 
@@ -75,8 +82,8 @@ manifests.
    gh release create "v${version}" --target main --title "Orbit v${version}" --notes "Orbit ${version}."
    ```
 
-8. Watch the `Orbit Release` workflow until it succeeds.
-9. Verify public artifacts without authentication:
+9. Watch the `Orbit Release` workflow until it succeeds.
+10. Verify public artifacts without authentication:
 
    ```bash
    version="$(bin/orbit-version)"
@@ -88,18 +95,26 @@ manifests.
    DOCKER_CONFIG="$tmp" docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"
    ```
 
-10. Run the live fleet acceptance from the operator node:
+11. Run the live fleet acceptance from the operator node:
 
    ```bash
    orbit update:all
+   orbit doctor
    orbit node:list
    ```
 
-11. Confirm:
+12. Confirm:
     - gateway service image is `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>`;
     - scheduler service image matches gateway;
     - every selected workload node reports `Orbit <VERSION>`;
+    - post-update `orbit doctor` output has no new regressions compared with the
+      pre-release baseline;
     - `orbit node:list` succeeds after the update.
+
+13. If doctor output changed after `update:all`, classify the delta before
+    accepting the release. Fix release-caused regressions immediately when
+    feasible. For intentional or pre-existing live-topology migration work,
+    create scoped follow-up tasks with the before/after doctor evidence.
 
 The release is not eligible to publish until release-candidate E2E proof passes.
 It is not complete until the GitHub workflow and live fleet acceptance both
