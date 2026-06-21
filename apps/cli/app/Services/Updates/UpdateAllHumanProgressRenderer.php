@@ -927,7 +927,11 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $this->ticker ??= new ForkedFrameTicker;
+        if ($this->ticker !== null) {
+            return;
+        }
+
+        $this->ticker = new ForkedFrameTicker;
         $this->ticker->start(function (): void {
             $this->tick();
         });
@@ -972,6 +976,7 @@ final class UpdateAllHumanProgressRenderer
     private function stopTicker(): void
     {
         $this->ticker?->stop();
+        $this->ticker = null;
     }
 
     public function __destruct()

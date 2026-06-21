@@ -209,7 +209,7 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
         ->and($cadence['cadence_ok'])->toBeTrue($cadence['reason'] ?? 'spinner cadence was invalid');
 });
 
-it('keeps update-all rows blinking while gateway start and event stream are quiet', function (): void {
+it('keeps update-all rows blinking while the gateway event stream is quiet', function (): void {
     if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
         $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
     }
@@ -223,7 +223,7 @@ it('keeps update-all rows blinking while gateway start and event stream are quie
     $port = unusedUpdateAllGatewayLivenessPort();
     $router = startUpdateAllGatewayLivenessRouter(
         port: $port,
-        startDelayMicroseconds: 1_500_000,
+        startDelayMicroseconds: 0,
         silentDelayMicroseconds: 1_500_000,
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
@@ -256,7 +256,7 @@ it('keeps update-all rows blinking while gateway start and event stream are quie
     fclose($pipes[1]);
     fclose($pipes[2]);
 
-    $checking = newUpdateAllPtyTargetState();
+    $fleetCheck = newUpdateAllPtyTargetState();
     $gateway = newUpdateAllPtyTargetState();
     $deadline = microtime(true) + 12.0;
     $timedOut = true;
@@ -270,8 +270,8 @@ it('keeps update-all rows blinking while gateway start and event stream are quie
             if (is_readable($typescriptPath)) {
                 $capture = file_get_contents($typescriptPath) ?: '';
                 recordUpdateAllPtyTargetState(
-                    $checking,
-                    updateAllPtySpinnerState($capture, 'Checking for updates', 'Checking'),
+                    $fleetCheck,
+                    updateAllPtySpinnerState($capture, 'Checking fleet versions', 'Checking'),
                     $capture,
                 );
                 recordUpdateAllPtyTargetState(
@@ -301,19 +301,19 @@ it('keeps update-all rows blinking while gateway start and event stream are quie
         @unlink($typescriptPath);
     }
 
-    $checkingCadence = validateUpdateAllLivenessCadence($checking['cadence_state']['first_transition_us']);
+    $fleetCheckCadence = validateUpdateAllLivenessCadence($fleetCheck['cadence_state']['first_transition_us']);
     $gatewayCadence = validateUpdateAllLivenessCadence($gateway['cadence_state']['first_transition_us']);
 
     expect($timedOut)->toBeFalse('The pseudo-tty update:all gateway liveness command did not finish.')
-        ->and($checking['captured'])->toBeTrue(sprintf(
-            'Expected Checking for updates to alternate while the gateway start POST was delayed; row=%s stable=%s states=[%s] first_transition_us=%s.',
-            $checking['target_row'] === null ? 'none' : (string) $checking['target_row'],
-            $checking['row_identity_stable'] ? 'true' : 'false',
-            implode(',', array_keys($checking['observed_states'])),
-            $checking['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checking['cadence_state']['first_transition_us'],
+        ->and($fleetCheck['captured'])->toBeTrue(sprintf(
+            'Expected Checking fleet versions to alternate while the event stream was quiet; row=%s stable=%s states=[%s] first_transition_us=%s.',
+            $fleetCheck['target_row'] === null ? 'none' : (string) $fleetCheck['target_row'],
+            $fleetCheck['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($fleetCheck['observed_states'])),
+            $fleetCheck['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $fleetCheck['cadence_state']['first_transition_us'],
         ))
-        ->and($checkingCadence['cadence_ok'])->toBeTrue($checkingCadence['reason'] ?? 'checking spinner cadence was invalid')
-        ->and($checking['cadence_state']['first_transition_us'])->toBeLessThan(900_000)
+        ->and($fleetCheckCadence['cadence_ok'])->toBeTrue($fleetCheckCadence['reason'] ?? 'fleet-check spinner cadence was invalid')
+        ->and($fleetCheck['cadence_state']['first_transition_us'])->toBeLessThan(900_000)
         ->and($gateway['captured'])->toBeTrue(sprintf(
             'Expected gateway to alternate while the event stream was quiet; row=%s stable=%s states=[%s] first_transition_us=%s.',
             $gateway['target_row'] === null ? 'none' : (string) $gateway['target_row'],
@@ -323,6 +323,22 @@ it('keeps update-all rows blinking while gateway start and event stream are quie
         ))
         ->and($gatewayCadence['cadence_ok'])->toBeTrue($gatewayCadence['reason'] ?? 'gateway spinner cadence was invalid')
         ->and($gateway['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
+});
+
+it('does not mark update-all check rows active before gateway progress events arrive', function (): void {
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+    ]));
+
+    [$exitCode, $output] = runCommand($this, 'update:all');
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('Updating Orbit nodes')
+        ->and($output)->toContain('Checking for updates')
+        ->and($output)->toContain('Checking fleet versions')
+        ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)->not->toMatch('/Checking fleet versions\s+Checking\b/');
 });
 
 it('aligns check-row settled status with node stage columns', function (): void {

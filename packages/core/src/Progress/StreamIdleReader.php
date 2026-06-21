@@ -6,6 +6,7 @@ namespace Orbit\Core\Progress;
 
 use GuzzleHttp\Psr7\StreamWrapper;
 use Psr\Http\Message\StreamInterface;
+use ReflectionObject;
 
 /**
  * Reads blocking HTTP/SSE streams with timed idle polls so progress tickers can
@@ -152,12 +153,46 @@ final readonly class StreamIdleReader
             }
         }
 
+        $resource = $this->resourceFromKnownPsrStream($stream);
+
+        if ($this->isSelectableStreamResource($resource)) {
+            return $resource;
+        }
+
         try {
             $resource = StreamWrapper::getResource($stream);
 
             if ($this->isSelectableStreamResource($resource)) {
                 return $resource;
             }
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return null;
+    }
+
+    private function resourceFromKnownPsrStream(StreamInterface $stream): mixed
+    {
+        try {
+            $reflection = new ReflectionObject($stream);
+
+            do {
+                if (! $reflection->hasProperty('stream')) {
+                    $reflection = $reflection->getParentClass() ?: null;
+
+                    continue;
+                }
+
+                $property = $reflection->getProperty('stream');
+                $resource = $property->getValue($stream);
+
+                if (is_resource($resource)) {
+                    return $resource;
+                }
+
+                $reflection = $reflection->getParentClass() ?: null;
+            } while ($reflection !== null);
         } catch (\Throwable) {
             return null;
         }

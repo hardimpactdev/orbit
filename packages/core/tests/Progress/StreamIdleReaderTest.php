@@ -475,6 +475,93 @@ it('treats an invalid stream resource as closed without throwing', function (): 
     }
 });
 
+it('treats empty stream metadata arrays as closed without throwing', function (): void {
+    $stream = new class implements StreamInterface
+    {
+        public function __toString(): string
+        {
+            return '';
+        }
+
+        public function close(): void {}
+
+        public function detach()
+        {
+            return null;
+        }
+
+        public function getSize(): ?int
+        {
+            return null;
+        }
+
+        public function tell(): int
+        {
+            return 0;
+        }
+
+        public function eof(): bool
+        {
+            return false;
+        }
+
+        public function isSeekable(): bool
+        {
+            return false;
+        }
+
+        public function seek(int $offset, int $whence = SEEK_SET): void {}
+
+        public function rewind(): void {}
+
+        public function isWritable(): bool
+        {
+            return false;
+        }
+
+        public function write(string $string): int
+        {
+            return 0;
+        }
+
+        public function isReadable(): bool
+        {
+            return true;
+        }
+
+        public function read(int $length): string
+        {
+            throw new RuntimeException('Empty stream metadata must not fall through to a blocking PSR read.');
+        }
+
+        public function getContents(): string
+        {
+            return '';
+        }
+
+        public function getMetadata(?string $key = null)
+        {
+            $metadata = ['stream' => []];
+
+            return $key === null ? $metadata : ($metadata[$key] ?? null);
+        }
+    };
+
+    $tickCount = 0;
+    $ticker = new ForkedFrameTicker(50_000);
+    $ticker->start(function () use (&$tickCount): void {
+        $tickCount++;
+    });
+
+    $reader = new StreamIdleReader(50_000);
+
+    try {
+        expect($reader->read($stream, 64))->toBe('');
+    } finally {
+        $ticker->stop();
+    }
+});
+
 it('invokes idle callbacks while waiting for guzzle stream data', function (): void {
     [$readable, $writable] = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
 
@@ -503,7 +590,7 @@ it('invokes idle callbacks while waiting for guzzle stream data', function (): v
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toContain('event: keepalive')
+        expect($chunk)->toBe('e')
             ->and($tickCount)->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();

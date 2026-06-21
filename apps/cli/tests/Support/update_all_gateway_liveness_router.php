@@ -76,18 +76,34 @@ while (! $eventsSent && ($connection = @stream_socket_accept($server, 30)) !== f
 
         emitSse($connection, 1, 'step', [
             'key' => 'check-updates',
+            'status' => 'running',
+            'message' => 'Checking',
+        ]);
+        usleep(100_000);
+        emitSse($connection, 2, 'step', [
+            'key' => 'check-updates',
             'status' => 'done',
             'message' => 'Done: latest version is 9.9.9',
         ]);
         usleep(100_000);
-        emitSse($connection, 2, 'step', [
+        emitSse($connection, 3, 'step', [
+            'key' => 'check-fleet-versions',
+            'status' => 'running',
+            'message' => 'Checking',
+        ]);
+
+        if ($silentDelayMicroseconds > 0) {
+            usleep($silentDelayMicroseconds);
+        }
+
+        emitSse($connection, 4, 'step', [
             'key' => 'check-fleet-versions',
             'status' => 'done',
             'message' => 'Done: 1 outdated node found',
             'update_targets' => ['gateway', 'local'],
         ]);
         usleep(100_000);
-        emitSse($connection, 3, 'step', [
+        emitSse($connection, 5, 'step', [
             'key' => 'gateway',
             'status' => 'running',
             'message' => 'Replacing cli binary',
@@ -97,12 +113,12 @@ while (! $eventsSent && ($connection = @stream_socket_accept($server, 30)) !== f
             usleep($silentDelayMicroseconds);
         }
 
-        emitSse($connection, 4, 'step', [
+        emitSse($connection, 6, 'step', [
             'key' => 'gateway',
             'status' => 'done',
             'message' => 'Gateway services updated',
         ]);
-        emitSse($connection, 5, 'complete', [
+        emitSse($connection, 7, 'complete', [
             'status' => 'succeeded',
             'target_version' => '9.9.9',
             'skipped' => true,

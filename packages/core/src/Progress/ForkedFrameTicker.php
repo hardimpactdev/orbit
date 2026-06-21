@@ -16,6 +16,8 @@ final class ForkedFrameTicker
 
     public const int DEFAULT_INTERVAL_US = 300_000;
 
+    private const int STOP_TIMEOUT_MICROSECONDS = 500_000;
+
     /** @var (callable(): void)|null */
     private static $idleCallback = null;
 
@@ -83,17 +85,25 @@ final class ForkedFrameTicker
         }
 
         if ($pid === 0) {
+            pcntl_async_signals(true);
             pcntl_signal(SIGTERM, static function (): void {
                 exit(0);
             });
 
             while (true) {
-                if (posix_getppid() === 1) {
+                $parentPid = posix_getppid();
+
+                if ($parentPid === 1) {
                     exit(0);
                 }
 
                 usleep($this->intervalUs);
-                posix_kill(posix_getppid(), SIGUSR1);
+
+                $parentPid = posix_getppid();
+
+                if ($parentPid === 1 || ! posix_kill($parentPid, SIGUSR1)) {
+                    exit(0);
+                }
             }
         }
 
@@ -108,23 +118,40 @@ final class ForkedFrameTicker
             $this->usesIdleCallback = false;
         }
 
-        if ($this->pid === null || ! function_exists('posix_kill')) {
+        $pid = $this->pid;
+        $this->pid = null;
+
+        if ($pid === null || ! function_exists('posix_kill')) {
             $this->pid = null;
 
             return;
         }
 
-        posix_kill($this->pid, SIGTERM);
+        posix_kill($pid, SIGTERM);
 
         if (function_exists('pcntl_waitpid')) {
-            pcntl_waitpid($this->pid, $status);
+            $deadline = hrtime(true) + (self::STOP_TIMEOUT_MICROSECONDS * 1000);
+            $result = 0;
+
+            do {
+                $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+                if ($result === $pid || $result === -1) {
+                    break;
+                }
+
+                usleep(10_000);
+            } while (hrtime(true) < $deadline);
+
+            if ($result === 0 && defined('SIGKILL')) {
+                posix_kill($pid, SIGKILL);
+                pcntl_waitpid($pid, $status, WNOHANG);
+            }
         }
 
         if (function_exists('pcntl_signal')) {
             pcntl_signal(SIGUSR1, SIG_DFL);
         }
-
-        $this->pid = null;
     }
 
     public function __destruct()

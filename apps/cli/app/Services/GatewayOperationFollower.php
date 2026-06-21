@@ -6,6 +6,7 @@ namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\GatewayApiFailureKind;
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 use RuntimeException;
 
@@ -97,6 +98,15 @@ class GatewayOperationFollower
             return;
         }
 
-        usleep($this->reconnectSleepMs * 1000);
+        $remainingMicroseconds = $this->reconnectSleepMs * 1000;
+
+        while ($remainingMicroseconds > 0) {
+            ForkedFrameTicker::invokeIdleCallback();
+
+            $sleepMicroseconds = min($remainingMicroseconds, ForkedFrameTicker::idleIntervalMicroseconds());
+            usleep($sleepMicroseconds);
+
+            $remainingMicroseconds -= $sleepMicroseconds;
+        }
     }
 }
