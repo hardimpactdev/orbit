@@ -251,7 +251,7 @@ it('derives docker worker counts from configured runner slots', function (): voi
 
 it('reserves selected Incus hosts out of aggregate docker dry-run plans', function (): void {
     withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,beast:4:28,local:4:28',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,sidecar2:4:28,mini:4:28,local:4:28,beast:4:28',
         'ORBIT_E2E_INCUS_HOSTS' => 'beast',
         'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:12',
         'ORBIT_E2E_INCUS_PARALLEL_PROCESSES' => '2',
@@ -267,9 +267,9 @@ it('reserves selected Incus hosts out of aggregate docker dry-run plans', functi
 
         expect($exitCode)->toBe(0)
             ->and($dockerLane['lane'])->toBe('docker')
-            ->and($dockerLane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:28,local:4:28')
-            ->and($dockerLane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('8')
-            ->and($dockerLane['command'])->toContain('--processes=8')
+            ->and($dockerLane['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'])->toBe('sidecar1:4:28,sidecar2:4:28,mini:4:28,local:4:28')
+            ->and($dockerLane['environment']['ORBIT_E2E_PARALLEL_PROCESSES'])->toBe('16')
+            ->and($dockerLane['command'])->toContain('--processes=16')
             ->and($incusLane['lane'])->toBe('incus')
             ->and($incusLane['environment']['ORBIT_E2E_TOPOLOGY_PROVIDER'])->toBe('incus');
     });

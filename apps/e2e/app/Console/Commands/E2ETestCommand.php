@@ -99,9 +99,7 @@ class E2ETestCommand extends Command
                 passThroughArguments: $passThroughArguments,
             );
 
-            if ((bool) $this->option('dry-run')) {
-                $plans = $this->reserveSelectedIncusHostsOutOfDockerDryRunPlan($plans);
-            }
+            $plans = $this->reserveSelectedIncusHostsOutOfDockerPlan($plans);
         } catch (\InvalidArgumentException $exception) {
             return $this->failCommand($exception->getMessage());
         }
@@ -491,9 +489,10 @@ class E2ETestCommand extends Command
 
     /**
      * @param  list<string>  $testFiles
+     * @param  array<string, true>  $excludedHosts
      * @return array{host_slots: array<string, int>, processes: int}|null
      */
-    private function dockerCapacityPlan(E2EConfig $config, array $testFiles, int $requestedProcesses): ?array
+    private function dockerCapacityPlan(E2EConfig $config, array $testFiles, int $requestedProcesses, array $excludedHosts = []): ?array
     {
         if ($config->dockerHostSlots === []) {
             return null;
@@ -503,6 +502,10 @@ class E2ETestCommand extends Command
         $hostSlots = [];
 
         foreach ($config->dockerHostSlots as $host => $slots) {
+            if (isset($excludedHosts[strtolower($host)])) {
+                continue;
+            }
+
             $capacitySlots = intdiv($config->dockerMaxContainersForHost($host), $containersPerWorker);
 
             if ($capacitySlots < 1) {
@@ -1027,7 +1030,7 @@ class E2ETestCommand extends Command
      * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
      * @return array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>
      */
-    private function reserveSelectedIncusHostsOutOfDockerDryRunPlan(array $plans): array
+    private function reserveSelectedIncusHostsOutOfDockerPlan(array $plans): array
     {
         if (! isset($plans['docker'], $plans['incus'])) {
             return $plans;
@@ -1039,29 +1042,31 @@ class E2ETestCommand extends Command
             return $plans;
         }
 
-        return $this->withPlanEnvironment($plans['docker'], function () use ($plans, $reservedHosts): array {
-            $config = E2EConfig::fromEnvironment();
-            $hostSlots = [];
+        $config = E2EConfig::fromEnvironment();
+        $capacity = $this->dockerCapacityPlan(
+            config: $config,
+            testFiles: $plans['docker']['test_files'] ?? [],
+            requestedProcesses: $this->dockerRequestedProcessCount($config),
+            excludedHosts: $reservedHosts,
+        );
 
-            foreach ($config->dockerHostSlots as $host => $slots) {
-                if (isset($reservedHosts[strtolower($host)])) {
-                    continue;
-                }
-
-                $hostSlots[$host] = $slots;
-            }
-
-            if ($hostSlots === $config->dockerHostSlots) {
-                return $plans;
-            }
-
-            $processes = array_sum($hostSlots);
-            $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners($hostSlots, $config);
-            $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $processes;
-            $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $processes);
-
+        if ($capacity === null) {
             return $plans;
-        });
+        }
+
+        if (! (bool) $this->option('dry-run')) {
+            foreach ($config->dockerHostSlots as $host => $_slots) {
+                if (isset($reservedHosts[strtolower($host)])) {
+                    $this->line('E2E Docker runner ['.strtolower($host).'] ignored: reserved for selected Incus lane');
+                }
+            }
+        }
+
+        $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners($capacity['host_slots'], $config);
+        $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $capacity['processes'];
+        $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $capacity['processes']);
+
+        return $plans;
     }
 
     /**
