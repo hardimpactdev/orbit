@@ -25,6 +25,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
 use App\Services\Apps\AppsProbe;
@@ -36,6 +37,7 @@ use App\Services\Firewall\FirewallRuleProbe;
 use App\Services\Nodes\NodeConverger;
 use App\Services\Nodes\NodesProbe;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
@@ -51,6 +53,7 @@ use App\Services\Tools\ToolsFixer;
 use App\Services\Tools\ToolsProbe;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -1269,6 +1272,7 @@ final readonly class DoctorReportRunner
         }
 
         try {
+            $this->refreshManagedFrankenPhpProcessIntent($process);
             $warnings = app(EnsureAppProcessRuntimeUnits::class)->handle($app);
         } catch (\Throwable $e) {
             return [
@@ -1313,6 +1317,30 @@ final readonly class DoctorReportRunner
                 'process' => $process->name,
             ],
         ];
+    }
+
+    private function refreshManagedFrankenPhpProcessIntent(Process $process): void
+    {
+        $process->loadMissing('owner');
+
+        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+        $hashLabel = $config['container_spec_hash_label'] ?? null;
+
+        if (! is_string($hashLabel) || trim($hashLabel) === '') {
+            return;
+        }
+
+        $ensureFrankenPhpRuntimeProcess = app(EnsureFrankenPhpRuntimeProcess::class);
+
+        if ($hashLabel === AppRuntimeContainer::SpecHashLabel && $process->owner instanceof App) {
+            $ensureFrankenPhpRuntimeProcess->forApp($process->owner);
+
+            return;
+        }
+
+        if ($hashLabel === WorkspaceRuntimeContainer::SpecHashLabel && $process->owner instanceof Workspace) {
+            $ensureFrankenPhpRuntimeProcess->forWorkspace($process->owner);
+        }
     }
 
     /**

@@ -576,7 +576,9 @@ SH,
     {
         $spec = $this->managedCaddyContainerSpec($node);
         $containerName = $this->caddyContainerNameFromSpec($spec);
-        $reloadCommand = CaddyTool::reloadCommand($containerName);
+        $reloadCommand = $spec === null
+            ? CaddyTool::reloadCommand($containerName)
+            : CaddyTool::reloadWithRetryCommand($containerName);
 
         if ($spec === null) {
             return $reloadCommand;

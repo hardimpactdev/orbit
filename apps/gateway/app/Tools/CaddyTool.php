@@ -39,6 +39,26 @@ final class CaddyTool extends BaseTool
         return 'docker exec '.escapeshellarg($container).' caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019';
     }
 
+    public static function reloadWithRetryCommand(string $container = 'orbit-caddy', int $attempts = 20): string
+    {
+        $attempts = max(1, $attempts);
+
+        return sprintf(
+            <<<'SH'
+orbit_caddy_reload_attempt=1
+until %s; do
+    if [ "$orbit_caddy_reload_attempt" -ge %d ]; then
+        exit 1
+    fi
+    orbit_caddy_reload_attempt=$((orbit_caddy_reload_attempt + 1))
+    sleep 0.25
+done
+SH,
+            self::reloadCommand($container),
+            $attempts,
+        );
+    }
+
     public function updateScript(array $config = []): string
     {
         $container = $this->container($config);

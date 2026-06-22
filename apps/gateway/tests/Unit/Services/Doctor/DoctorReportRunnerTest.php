@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -17,12 +18,16 @@ use App\Models\ProxyRoute;
 use App\Models\SchedulerState;
 use App\Models\WireGuardPeer;
 use App\Models\Workspace;
+use App\Services\Apps\AppRuntimeContainer;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Dns\DnsmasqConfigBuilder;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
 use App\Services\Nodes\DevelopmentDnsMappingProbe;
 use App\Services\Runtime\OrbitCaddyContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
@@ -1256,6 +1261,113 @@ TXT;
             ])
             ->and($shell->scripts[4])->toContain('sudo test -f "$path"')
             ->and($shell->scripts[5])->toContain("sudo tee '/etc/systemd/system/orbit_blog_main_vp-dev.service' >/dev/null");
+    });
+
+    it('refreshes stale managed FrankenPHP app process intent during process restore', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+            'runtime_kind' => AppRuntimeKind::Php,
+        ]);
+        $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
+        $process = \App\Models\Process::factory()->forOwner($app)->create([
+            'name' => 'frankenphp-docs',
+            'command' => 'frankenphp',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'container_name' => 'orbit-app-docs',
+                'container_spec_hash' => 'stale',
+                'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+            ],
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $expectedHash]],
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => ['app' => 'docs', 'process' => 'frankenphp-docs'],
+            ])
+            ->and($process->refresh()->runtime_config)->toMatchArray([
+                'container_name' => 'orbit-app-docs',
+                'container_spec_hash' => $expectedHash,
+                'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+                'php_ini_path' => '/etc/orbit/apps/docs.ini',
+            ]);
+    });
+
+    it('refreshes stale managed FrankenPHP workspace process intent during process restore', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+            'runtime_kind' => AppRuntimeKind::Php,
+        ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create([
+            'name' => 'feature-a',
+            'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
+            'php_version' => '8.5',
+        ]);
+        $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
+        $process = \App\Models\Process::factory()->forOwner($workspace)->create([
+            'name' => 'frankenphp-docs-feature-a',
+            'command' => 'frankenphp',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'container_name' => 'orbit-ws-docs-feature-a',
+                'container_spec_hash' => 'stale',
+                'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
+            ],
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: json_encode([
+                'State' => ['Status' => 'running'],
+                'Config' => ['Labels' => [WorkspaceRuntimeContainer::SpecHashLabel => $expectedHash]],
+            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['process']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'process',
+                'node' => 'app-1',
+                'key' => 'process.runtime_unit_mismatch',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => ['app' => 'docs', 'process' => 'frankenphp-docs-feature-a'],
+            ])
+            ->and($process->refresh()->runtime_config)->toMatchArray([
+                'container_name' => 'orbit-ws-docs-feature-a',
+                'container_spec_hash' => $expectedHash,
+                'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
+                'php_ini_path' => '/etc/orbit/workspaces/docs-feature-a.ini',
+            ]);
     });
 
     it('restores missing node-owned process runtime units through restore mode family dispatch', function (): void {

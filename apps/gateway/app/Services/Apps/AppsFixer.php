@@ -10,6 +10,7 @@ use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use RuntimeException;
 
 final readonly class AppsFixer
@@ -19,6 +20,7 @@ final readonly class AppsFixer
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private AppRuntimeUser $appRuntimeUser,
+        private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
     ) {}
 
     /**
@@ -115,6 +117,7 @@ final readonly class AppsFixer
             return null;
         }
 
+        $this->ensureFrankenPhpRuntimeProcess->forApp($app);
         $container = $this->appRuntimeContainerRenderer->render($app);
         $this->appRuntimeContainerManager->apply($node, $container);
 
@@ -142,6 +145,7 @@ final readonly class AppsFixer
             return null;
         }
 
+        $this->ensureFrankenPhpRuntimeProcess->forApp($app);
         $container = $this->appRuntimeContainerRenderer->render($app);
         $this->appRuntimeContainerManager->writeRuntimeConfigFile($node, $container);
 

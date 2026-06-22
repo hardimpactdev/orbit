@@ -7,16 +7,21 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\Node;
+use App\Models\Process as OrbitProcess;
+use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeUser;
 use App\Services\Apps\AppsFixer;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
+use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -46,11 +51,17 @@ final class AppsFixerRecordingRemoteShell implements RemoteShell
 
 function buildAppsFixer(RemoteShell $shell): AppsFixer
 {
+    $appRuntimeContainerRenderer = new AppRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames);
+
     return new AppsFixer(
         $shell,
-        new AppRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
+        $appRuntimeContainerRenderer,
         new AppRuntimeContainerManager($shell, new DockerCommandBuilder),
         new AppRuntimeUser,
+        new EnsureFrankenPhpRuntimeProcess(
+            $appRuntimeContainerRenderer,
+            new WorkspaceRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
+        ),
     );
 }
 
@@ -95,6 +106,53 @@ it('re-applies a missing FrankenPHP runtime container via the manager', function
     ])
         ->and($result['details']['container'])->toBe('orbit-app-docs')
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker run -d') && str_contains($script, "'orbit-app-docs'")))->toBeTrue();
+});
+
+it('refreshes the managed FrankenPHP process intent when re-applying an app runtime container', function (): void {
+    $node = appsFixerNode();
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/home/orbit/apps/docs',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $process = OrbitProcess::factory()->forOwner($app)->create([
+        'name' => 'frankenphp-docs',
+        'command' => 'frankenphp',
+        'runtime' => ProcessRuntime::Docker,
+        'runtime_config' => [
+            'container_name' => 'orbit-app-docs',
+            'container_spec_hash' => 'stale',
+            'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+        ],
+    ]);
+    $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
+
+    $shell = new AppsFixerRecordingRemoteShell(
+        // network inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        // container inspect: absent
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        // image inspect ok
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        // create script
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    $result = buildAppsFixer($shell)->fix($app, new DriftEntry(
+        family: 'app',
+        key: 'app.runtime_container_missing',
+        kind: DriftKind::Missing,
+        summary: 'missing',
+    ));
+
+    expect($result['status'])->toBe('completed')
+        ->and($process->refresh()->runtime_config)->toMatchArray([
+            'container_name' => 'orbit-app-docs',
+            'container_spec_hash' => $expectedHash,
+            'container_spec_hash_label' => AppRuntimeContainer::SpecHashLabel,
+            'php_ini_path' => '/etc/orbit/apps/docs.ini',
+        ]);
 });
 
 it('re-applies a mismatched FrankenPHP runtime container by removing and recreating it', function (): void {
