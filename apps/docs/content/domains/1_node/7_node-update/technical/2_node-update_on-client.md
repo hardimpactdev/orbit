@@ -37,7 +37,9 @@ The forwarded request includes:
 
 - `node_update.name`;
 - `node_update.host` when present;
+- `node_update.user` when present;
 - `node_update.tld` when present;
+- `node_update.gateway_endpoint` when present;
 - `node_update.public_ipv4` when present;
 - `node_update.public_ipv6` when present;
 - the selected output renderer;
@@ -56,9 +58,9 @@ Forwarded payload example for a development app TLD update:
 }
 ```
 
-The operator CLI does not resolve the target row locally. Forwarded
-`node_update.tld` updates are validated on the gateway for syntax and
-uniqueness among active node TLDs before gateway-owned side effects.
+The operator CLI does not resolve the target row locally. Forwarded field
+updates are validated on the gateway for syntax, uniqueness, and
+role-conditional eligibility before gateway-owned side effects.
 
 ## Self-Update
 
@@ -92,7 +94,7 @@ This node is not authorized for 'node:update' on '<target>'.
 - Fail before side effects when `node_update.name` is missing, invalid, or no
   supported field flags are provided in non-interactive mode.
 - Preserve gateway-owned `node.field_role_incompatible` errors for forwarded
-  `node_update.tld` requests against non-app targets.
+  requests whose target role does not support the supplied field.
 
 ## Test Mapping
 

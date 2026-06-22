@@ -174,6 +174,10 @@ final class NodeUpdateController implements Loggable
             return ['field' => 'public_ipv6', 'role' => $role];
         }
 
+        if (isset($providedFields['user']) && $node->hasActiveRole('gateway')) {
+            return ['field' => 'user', 'role' => $role];
+        }
+
         return null;
     }
 
@@ -187,6 +191,10 @@ final class NodeUpdateController implements Loggable
 
         if (isset($providedFields['host']) && $providedFields['host'] !== $node->host) {
             $changes['host'] = $providedFields['host'];
+        }
+
+        if (isset($providedFields['user']) && $providedFields['user'] !== $node->user) {
+            $changes['user'] = $providedFields['user'];
         }
 
         if (isset($providedFields['tld']) && $providedFields['tld'] !== $node->tld) {

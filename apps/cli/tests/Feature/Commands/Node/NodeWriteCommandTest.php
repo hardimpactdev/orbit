@@ -286,13 +286,14 @@ describe('node write commands', function (): void {
     it('puts node:update payloads to the typed gateway API', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'name' => 'app-1',
-            'changed' => ['host', 'tld', 'gateway_endpoint'],
+            'changed' => ['host', 'user', 'tld', 'gateway_endpoint'],
             'action' => 'updated',
         ]));
 
         [$exitCode, $output] = runCommand($this, 'node:update', [
             'name' => 'app-1',
             '--host' => '192.0.2.21',
+            '--user' => 'nckrtl',
             '--tld' => 'dev',
             '--gateway-endpoint' => '10.3.0.2',
             '--json' => true,
@@ -303,6 +304,7 @@ describe('node write commands', function (): void {
         Http::assertSent(fn (Request $request): bool => $request->method() === 'PUT'
             && str_contains($request->url(), '/api/nodes/app-1')
             && $request['host'] === '192.0.2.21'
+            && $request['user'] === 'nckrtl'
             && $request['tld'] === 'dev'
             && $request['gateway_endpoint'] === '10.3.0.2'
             && ! isset($request['environment']));

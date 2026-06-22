@@ -126,7 +126,7 @@ final readonly class WorkloadNodeUpdater
             $operationRun->id,
             $this->eventKey($node),
             'running',
-            "Downloading {$plan->target_version}",
+            "Installing CLI {$plan->target_version}",
         );
 
         $script = $this->remoteUpdateScript($operationRun, $plan, $node);
@@ -151,7 +151,7 @@ final readonly class WorkloadNodeUpdater
             $operationRun->id,
             $this->eventKey($node),
             'running',
-            'Replacing cli binary',
+            'Recording installed CLI',
         );
 
         $this->recordInstalledCli($operationRun, $plan, $node);

@@ -23,6 +23,7 @@ class UpdateNodeApiRequest extends FormRequest
     {
         return [
             'host' => ['sometimes', 'string', 'filled', 'max:255'],
+            'user' => ['sometimes', 'string', 'filled', 'max:255'],
             'tld' => ['sometimes', 'string', 'filled', 'regex:/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/'],
             'gateway_endpoint' => ['sometimes', 'string', 'filled', 'max:253', $this->validGatewayEndpoint(...)],
             'public_ipv4' => ['sometimes', 'string', 'filled', 'ipv4'],
@@ -35,7 +36,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if ($this->hasAny(['host', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6', 'role', 'environment'])) {
+            if ($this->hasAny(['host', 'user', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6', 'role', 'environment'])) {
                 return;
             }
 
@@ -49,7 +50,7 @@ class UpdateNodeApiRequest extends FormRequest
     public function updateFields(): array
     {
         /** @var array<string, string> $fields */
-        $fields = $this->safe()->only(['host', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6']);
+        $fields = $this->safe()->only(['host', 'user', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6']);
 
         return $fields;
     }

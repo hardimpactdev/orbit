@@ -128,15 +128,18 @@ final class DoctorRunController implements Loggable
                 $renderedFamilies,
             ));
 
-            foreach ($renderedFamilies as $family) {
-                $events->stepEvent($family, 'running', "Checking {$family}");
-            }
-
-            $doctor = $runner->probe($target, families: $families, key: $key);
-
-            foreach ($renderedFamilies as $family) {
-                $events->stepEvent($family, 'done', "{$family} checked");
-            }
+            $doctor = $runner->probe(
+                $target,
+                families: $families,
+                key: $key,
+                onFamilyProgress: function (string $family, string $phase) use ($events): void {
+                    $events->stepEvent(
+                        $family,
+                        $phase,
+                        $phase === 'running' ? "Checking {$family}" : "{$family} checked",
+                    );
+                },
+            );
 
             if (($doctor['healthy'] ?? false) === true) {
                 $events->complete(0, [

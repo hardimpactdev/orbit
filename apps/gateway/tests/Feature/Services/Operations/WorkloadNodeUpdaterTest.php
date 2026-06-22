@@ -282,7 +282,7 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         );
 });
 
-it('emits per-node sub-steps: downloading, replacing cli binary, running doctor, done', function (): void {
+it('emits per-node sub-steps: installing cli, recording metadata, running doctor, done', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
 
@@ -295,8 +295,8 @@ it('emits per-node sub-steps: downloading, replacing cli binary, running doctor,
     $messages = workloadUpdaterStepMessages($run);
 
     expect($messages)->toContain(
-        ['workload.app-dev-1', 'running', 'Downloading 2.0.0'],
-        ['workload.app-dev-1', 'running', 'Replacing cli binary'],
+        ['workload.app-dev-1', 'running', 'Installing CLI 2.0.0'],
+        ['workload.app-dev-1', 'running', 'Recording installed CLI'],
         ['workload.app-dev-1', 'running', 'Running doctor'],
         ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
     );
@@ -310,8 +310,8 @@ it('emits per-node sub-steps: downloading, replacing cli binary, running doctor,
     $statuses = array_column($nodeMessages, 1);
     $texts = array_column($nodeMessages, 2);
 
-    $downloadIndex = array_search('Downloading 2.0.0', $texts, true);
-    $replaceIndex = array_search('Replacing cli binary', $texts, true);
+    $downloadIndex = array_search('Installing CLI 2.0.0', $texts, true);
+    $replaceIndex = array_search('Recording installed CLI', $texts, true);
     $doctorIndex = array_search('Running doctor', $texts, true);
     $doneIndex = array_search('done', $statuses, true);
 

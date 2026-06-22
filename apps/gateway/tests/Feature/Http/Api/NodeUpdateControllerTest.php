@@ -198,6 +198,43 @@ describe('NodeUpdateController', function (): void {
             ->and($reenactor->changed)->toBe(['gateway_endpoint']);
     });
 
+    it('updates the ssh user for a workload node', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        createApiUpdateNode(['user' => 'orbit']);
+
+        $response = putUpdateNodeJson('/api/nodes/app-1', [
+            'user' => 'nckrtl',
+        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['user']);
+
+        expect(DB::table('nodes')->where('name', 'app-1')->value('user'))->toBe('nckrtl');
+    });
+
+    it('updates the ssh user for a roleless operator node', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+        DB::table('nodes')->insert(apiUpdateNodeRow([
+            'name' => 'beast',
+            'host' => '10.6.0.7',
+            'wireguard_address' => '10.6.0.7',
+            'user' => 'orbit',
+        ]));
+
+        $response = putUpdateNodeJson('/api/nodes/beast', [
+            'user' => 'nckrtl',
+        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.changed', ['user']);
+
+        expect(DB::table('nodes')->where('name', 'beast')->value('user'))->toBe('nckrtl');
+    });
+
     it('logs activity for a successful node update write', function (): void {
         $callerId = createUpdateCallerNode();
         $gatewayId = createUpdateGatewayNode();
@@ -459,6 +496,22 @@ describe('NodeUpdateController', function (): void {
             ->assertJsonPath('success.data.changed', ['tld']);
 
         expect(DB::table('nodes')->where('name', 'gateway-1')->value('tld'))->toBe('orbital');
+    });
+
+    it('rejects ssh user updates for gateway nodes', function (): void {
+        $callerId = createUpdateCallerNode();
+        $gatewayId = createUpdateGatewayNode();
+        grantUpdateGatewayAccess($callerId, $gatewayId);
+
+        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['user' => 'nckrtl'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.field_role_incompatible')
+            ->assertJsonPath('error.meta.field', 'user')
+            ->assertJsonPath('error.meta.name', 'gateway-1')
+            ->assertJsonPath('error.meta.role', 'gateway');
+
+        expect(DB::table('nodes')->where('name', 'gateway-1')->value('user'))->not->toBe('nckrtl');
     });
 
     it('returns not found for missing nodes', function (): void {
