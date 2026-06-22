@@ -15,6 +15,7 @@ class Kernel extends BaseKernel
         'docs',
         'migrate',
         'orbit-scheduler',
+        'orbit:release-candidate:activate',
         'schedule:clear-cache',
         'schedule:finish',
         'schedule:interrupt',

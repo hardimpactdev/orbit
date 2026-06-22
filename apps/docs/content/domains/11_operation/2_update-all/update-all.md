@@ -9,6 +9,10 @@ This is the fleet update command. It is useful after a new Orbit release lands,
 or while validating a release candidate from a topology-reachable manifest,
 when the operator needs all Orbit-capable nodes to run the same asset set. It
 updates Orbit installations only; it does not deploy apps or repair drift.
+For release-candidate rehearsal, the gateway's configured release manifest URL
+may point at a stable artifact channel, such as
+`channels/live-test/orbit-release-manifest.json`; each run snapshots the
+manifest that channel resolves to during `Checking for updates`.
 
 ## Usage
 
@@ -49,8 +53,9 @@ orbit update:all --json
    desired manifest artifacts, it skips the gateway, local, workload, and
    verification phases. A `topology-candidate` manifest updates when its desired
    artifact hash or digest differs, even if the semantic version is unchanged.
-   After the plan exists, the runner uses only that immutable snapshot for the
-   rest of the run.
+   If the configured manifest URL is a stable candidate channel, the channel is
+   resolved only for this plan. After the plan exists, the runner uses only that
+   immutable snapshot for the rest of the run.
 4. When outdated installations exist, the runner updates the gateway first as
    the fleet version ceiling, then fans out to the caller-local CLI and selected
    workload nodes. Production installs update the native CLI binary artifact;

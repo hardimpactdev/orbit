@@ -127,10 +127,11 @@ These rules order the lanes above into a development workflow:
 - Binary/runtime artifact verification is a separate release-candidate lane that
   runs after source-mounted lanes pass. It builds the native CLI binary and
   Docker runtime image, publishes a `topology-candidate` manifest to a
-  topology-reachable artifact source, and catches packaging and installer
-  regressions before GitHub release publication. Live release-candidate
-  acceptance runs `update:all` against that candidate manifest; GitHub release
-  creation is only the promotion of the exact tested assets.
+  topology-reachable artifact source, activates the desired manifest on a stable
+  candidate channel, and catches packaging and installer regressions before
+  GitHub release publication. Live release-candidate acceptance runs
+  `update:all` against that candidate channel; GitHub release creation is only
+  the promotion of the exact tested assets.
 - Provisioning proves installer and `node:new` provisioning behavior after the
   prepared-topology feature lane is green. It is a final substrate/artifact
   gate, not the inner development loop and not a precondition for

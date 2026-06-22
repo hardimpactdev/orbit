@@ -68,6 +68,11 @@ execution details live in the renderer contracts.
   topology-reachable `topology-candidate` source. The manifest source is part of
   the immutable plan and terminal operation result so release-candidate
   acceptance can use a non-GitHub artifact source before promotion.
+- For release-candidate rehearsal, the configured release manifest URL may be a
+  stable artifact channel such as
+  `channels/live-test/orbit-release-manifest.json`. The channel object is only a
+  manifest discovery location; the runner snapshots the resolved manifest
+  content into the immutable plan before any side effects begin.
 - The start POST response is sent before the durable update runner is launched.
   This lets the CLI connect to the operation event stream before any runner-side
   gateway restart can interrupt the start response. Runner launch failures after

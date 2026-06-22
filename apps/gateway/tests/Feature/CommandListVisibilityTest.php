@@ -317,6 +317,7 @@ it('shows gateway service and maintenance commands in the command list', functio
         'docs',
         'librarian:lint',
         'orbit-scheduler',
+        'orbit:release-candidate:activate',
         'orbit:internal:bake-app-node',
         'orbit:internal:bootstrap-gateway-local',
         'orbit:internal:node-register',

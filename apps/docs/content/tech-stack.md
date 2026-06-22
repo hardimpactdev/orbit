@@ -131,9 +131,13 @@ PHP is required to run it. Release binaries are wrapped from a compressed PHAR
 built from a no-dev CLI dependency install. Orbit releases are versioned from
 the monorepo root `VERSION` file, but GitHub publication is a promotion step,
 not the build step. Release candidates are built once, exposed through a
-topology-reachable `topology-candidate` manifest, and proven with
-`orbit update:all` before a `v<VERSION>` GitHub release exists. After live
-acceptance, the exact tested CLI binaries, digest-pinned
+topology-reachable `topology-candidate` manifest, activated on a stable artifact
+channel such as `channels/live-test/orbit-release-manifest.json`, and proven
+with `orbit update:all` before a `v<VERSION>` GitHub release exists. Candidate
+assets remain immutable under `candidates/<BUILD_ID>/`; activation only updates
+the channel manifest so a live-test gateway can keep one
+`ORBIT_RELEASE_MANIFEST_URL`. After live acceptance, the exact tested CLI
+binaries, digest-pinned
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
 `github-release` manifest are attached to the `hardimpactdev/orbit` release; the
 GitHub release workflow verifies those promoted assets and publishes the
