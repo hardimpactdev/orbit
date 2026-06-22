@@ -234,9 +234,13 @@ The expected target shape per calling context:
   per-node sub-stage (`Running doctor`). This is verification only; a non-zero
   issue count is surfaced per node but does not by itself fail the node's update.
 - Production workload updates install the binary into the node user's Orbit
-  install root. When the host launcher parent directory is not writable, the
-  remote update may use non-interactive `sudo -n` only to relink the system
-  launcher to that user-owned binary; it must fail rather than prompt.
+  install root. When the host launcher is system-wide under `/usr/local/bin/`,
+  the remote update also publishes the binary to a shared root-owned executable
+  path under `/usr/local/lib/orbit/` and links the system launcher there, so
+  unprivileged role users can execute the CLI without traversing the node
+  user's home directory. The remote update may use non-interactive `sudo -n`
+  only for the shared copy and symlink replacement; it must fail rather than
+  prompt.
 - Production workload updates verify the downloaded binary hash before install
   and verify the installed binary hash after relinking the launcher. The gateway
   writes `installed_cli` for that node only after the remote replacement command

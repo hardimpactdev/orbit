@@ -406,7 +406,9 @@ BASH);
 
     it('links the downloaded Orbit CLI binary as the host orbit command', function (): void {
         expect($this->installer)
-            ->toContain('ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
+            ->toContain('link_target="$TARGET_DIR/bin/orbit-binary"')
+            ->toContain('ln -sf "$link_target" "$LINK_PATH"')
+            ->toContain('/usr/local/lib/orbit/%s-binary')
             ->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"')
             ->not->toContain('ln -sf "$TARGET_DIR/apps/cli/orbit" "$LINK_PATH"');
     });

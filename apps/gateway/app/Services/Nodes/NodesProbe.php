@@ -465,6 +465,26 @@ final readonly class NodesProbe
                         ],
                     );
                 }
+
+                if ($result->successful()) {
+                    $cliResult = $this->remoteShell->run($node, $this->agentOrbitCliCommand(), [
+                        'timeout' => 10,
+                        'throw' => false,
+                    ]);
+
+                    if (! $cliResult->successful()) {
+                        $drift[] = new DriftEntry(
+                            family: $this->key(),
+                            key: 'node.role_baseline_mismatch',
+                            kind: DriftKind::Divergent,
+                            summary: "Role baseline for '{$assignment->role}' on node {$node->name} does not let the agent runtime user execute the Orbit CLI.",
+                            detail: [
+                                'role' => $assignment->role,
+                                'component' => 'agent_orbit_cli',
+                            ],
+                        );
+                    }
+                }
             } catch (Throwable) {
                 // If SSH fails, skip the agent user check rather than reporting
                 // an unverifiable drift. SSH reachability is its own check.
@@ -1506,5 +1526,10 @@ final readonly class NodesProbe
     private function updateTargetFactory(): UpdateTargetFactory
     {
         return $this->updateTargetFactory ?? app(UpdateTargetFactory::class);
+    }
+
+    private function agentOrbitCliCommand(): string
+    {
+        return 'sudo -u agent -H /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version --local >/dev/null 2>&1';
     }
 }

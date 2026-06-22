@@ -43,6 +43,14 @@ Each term below has a precise meaning in the node command family.
 - **Orbit launcher:** Host `orbit` wrapper installed in the user's path. It
   only resolves the repo root and execs the CLI source entrypoint.
   Production installs still use the native Orbit CLI binary artifact.
+
+  When a managed production node exposes a system-wide launcher such as
+  `/usr/local/bin/orbit`, that launcher resolves to a shared root-owned
+  executable under `/usr/local/lib/orbit/`. It must not point at a binary inside
+  a private runtime user's home directory. Unprivileged role runtimes such as
+  the `agent` user must be able to execute `orbit --version --local` without
+  gaining access to `/home/orbit`.
+
   Source-mounted Docker and Incus topologies are development and E2E lanes;
   there, `/usr/local/bin/orbit` points directly at `<source>/apps/cli/orbit`,
   the source entrypoint initializes `ORBIT_HOST_CWD` when absent and preserves

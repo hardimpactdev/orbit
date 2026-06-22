@@ -58,9 +58,19 @@ describe('install-orbit prebuilt CLI binary download contract', function (): voi
     it('links the downloaded binary at the host orbit path and confirms it runs via --version', function (): void {
         expect($this->installer)
             ->toContain('run mkdir -p "$link_dir"')
-            ->toContain('run ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
-            ->toContain('ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
+            ->toContain('link_target="$TARGET_DIR/bin/orbit-binary"')
+            ->toContain('run ln -sf "$link_target" "$LINK_PATH"')
+            ->toContain('sudo_run ln -sf "$link_target" "$LINK_PATH"')
             ->toContain('"$LINK_PATH" --version');
+    });
+
+    it('publishes system orbit launchers through a shared executable binary outside private homes', function (): void {
+        expect($this->installer)
+            ->toContain('link_uses_shared_binary')
+            ->toContain('/usr/local/bin/*')
+            ->toContain("printf '/usr/local/lib/orbit/%s-binary\\n' \"\$link_name\"")
+            ->toContain('sudo_run install -d -m 0755 "$(dirname "$link_target")"')
+            ->toContain('sudo_run install -m 0755 "$TARGET_DIR/bin/orbit-binary" "$link_target"');
     });
 
     it('keeps Python and the standalone SQLite CLI out of Orbit helper prerequisites', function (): void {

@@ -99,7 +99,9 @@ it('supports binary-only app node provisioning without a gateway source archive'
         ->toContain('[ "$NODE_KIND" = "app" ] && [ -n "$BINARY" ]')
         ->toContain('install_orbit_binary_only "$user" "$target_dir"')
         ->toContain('sudo_run install -m 0755 -o "$user" -g "$user" "$BINARY" "$binary_dest"')
-        ->toContain('sudo_run ln -sf "$binary_dest" /usr/local/bin/orbit')
+        ->toContain('local shared_binary_dest="/usr/local/lib/orbit/orbit-binary"')
+        ->toContain('sudo_run install -m 0755 "$BINARY" "$shared_binary_dest"')
+        ->toContain('sudo_run ln -sf "$shared_binary_dest" /usr/local/bin/orbit')
         ->toContain('if ! uses_binary_only_app_artifact; then')
         ->toContain('[ -n "$SOURCE_ARCHIVE" ] || fail validation_failed "--source-archive is required"');
 });

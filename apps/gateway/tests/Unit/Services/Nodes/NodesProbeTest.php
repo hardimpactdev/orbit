@@ -558,6 +558,7 @@ describe('external service stubs', function (): void {
     it('detects unreachable agent nodes over SSH', function (): void {
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(
                 exitCode: 255,
                 stdout: '',
@@ -1711,6 +1712,46 @@ describe('agent role baseline', function (): void {
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects an agent runtime user that cannot execute the Orbit CLI', function (): void {
+        $remoteShell = new NodesProbeRecordingRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 126, stdout: '', stderr: 'Permission denied', durationMs: 1),
+        ]);
+        $probe = new NodesProbe(remoteShell: $remoteShell);
+
+        $node = Node::create([
+            'name' => 'agent-1',
+            'host' => '10.0.0.1',
+            'orbit_path' => '/orbit',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+            'wireguard_address' => '10.6.0.5',
+            'tld' => 'agent',
+        ]);
+        $node->roleAssignments()->create([
+            'role' => 'agent',
+            'status' => 'active',
+            'settings' => ['tld' => 'agent'],
+        ]);
+        File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
+        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
+            '# orbit-managed=node-development-dns',
+            '# node=agent-1',
+            '# bind-scope=orbit_network',
+            'address=/agent/10.6.0.5',
+            '',
+        ]));
+        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
+
+        $drift = $probe->diff($node, new ProbeSnapshot([]));
+        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'agent_orbit_cli'));
+
+        expect($baseline)->toHaveCount(1);
+        expect($baseline[0]->kind)->toBe(DriftKind::Divergent);
+        expect($remoteShell->scripts[1])->toContain('sudo -u agent -H');
+        expect($remoteShell->scripts[1])->toContain('/usr/local/bin/orbit --version --local');
     });
 
     it('passes when agent DNS mapping is correct', function (): void {
