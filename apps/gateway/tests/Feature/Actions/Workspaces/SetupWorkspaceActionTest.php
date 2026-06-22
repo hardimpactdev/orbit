@@ -135,9 +135,9 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
     expect($runScript)
         ->toContain('docker run -d')
         ->and($runScript)->toContain("'orbit-ws-demo-feature-a'")
-        ->and($runScript)->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($runScript)->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($runScript)->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")))->toBeTrue()
+        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")))->toBeTrue()
         ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeFalse();
 
     expectWorkspaceFrankenPhpRuntimeProcess($workspace);

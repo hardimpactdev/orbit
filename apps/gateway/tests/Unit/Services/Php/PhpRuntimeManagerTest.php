@@ -37,7 +37,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['dunglas/frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => null,
         ],
@@ -52,7 +52,7 @@ it('frankenphp selects app runtime from approved image facts', function (): void
             'target' => 'app',
             'app' => 'docs',
             'version' => '8.5',
-            'image' => 'dunglas/frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
         ]);
 });
 
@@ -62,7 +62,7 @@ it('frankenphp exposes available image facts in runtime views', function (): voi
         'node_id' => $node->id,
         'name' => 'php',
         'config' => [
-            'images' => ['dunglas/frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => '8.5',
         ],
@@ -93,7 +93,7 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
         'node_id' => $imageNode->id,
         'name' => 'php',
         'config' => [
-            'images' => ['dunglas/frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => null,
         ],
@@ -122,8 +122,8 @@ it('rejects CLI PHP selection for versions other than 8.5', function (): void {
         'name' => 'php',
         'config' => [
             'images' => [
-                'dunglas/frankenphp:1-php8.5-bookworm',
-                'dunglas/frankenphp:1-php8.4-bookworm',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm',
             ],
             'versions' => ['8.5', '8.4'],
             'cli_version' => '8.5',
@@ -157,7 +157,7 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
         'node_id' => $imageNode->id,
         'name' => 'php',
         'config' => [
-            'images' => ['dunglas/frankenphp:1-php8.5-bookworm'],
+            'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
             'versions' => [],
             'cli_version' => null,
         ],
@@ -189,7 +189,7 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
             'images' => [
                 'php:8.5-fpm-bookworm',
                 'php:8.5-cli-bookworm',
-                'dunglas/frankenphp:1-php8.5-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-alpine',
             ],
             'versions' => ['8.5'],
             'cli_version' => '8.5',
@@ -207,11 +207,11 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
             'reason' => 'not_installed',
             'node' => 'app-1',
             'version' => '8.5',
-            'image' => 'dunglas/frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
             'rejected_images' => [
                 'php:8.5-fpm-bookworm',
                 'php:8.5-cli-bookworm',
-                'dunglas/frankenphp:1-php8.5-alpine',
+                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-alpine',
             ],
         ]);
 });
@@ -236,7 +236,7 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
             'field' => 'version',
             'reason' => 'not_installed',
             'version' => '8.5',
-            'image' => 'dunglas/frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
         ]);
 });
 
@@ -261,6 +261,6 @@ it('frankenphp rejects workspace inheritance when inherited app version lacks ap
             'field' => 'version',
             'reason' => 'not_installed',
             'version' => '8.5',
-            'image' => 'dunglas/frankenphp:1-php8.5-bookworm',
+            'image' => 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
         ]);
 });

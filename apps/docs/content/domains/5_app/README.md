@@ -197,7 +197,7 @@ App-instance renderers return this shape under `success.data.instance`, or under
   "runtime": {
     "runtime_kind": "php",
     "php_version": "8.5",
-    "frankenphp_image": "dunglas/frankenphp:1-php8.5",
+    "frankenphp_image": "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm",
     "mode": "classic",
     "configured_mounts": [],
     "required_php_extensions": ["intl", "redis"]

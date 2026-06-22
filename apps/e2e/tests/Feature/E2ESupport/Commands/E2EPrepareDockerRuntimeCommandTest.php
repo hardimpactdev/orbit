@@ -18,9 +18,9 @@ it('documents docker runtime image preparation without force', function (): void
         ->expectsOutputToContain('orbit-reverb:current')
         ->expectsOutputToContain('Orbit CLI binary artifact')
         ->expectsOutputToContain('caddy:2-alpine')
-        ->expectsOutputToContain('dunglas/frankenphp:1-php8.5-bookworm')
-        ->expectsOutputToContain('dunglas/frankenphp:1-php8.4-bookworm')
-        ->expectsOutputToContain('dunglas/frankenphp:1-php8.3-bookworm')
+        ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+        ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm')
+        ->expectsOutputToContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm')
         ->expectsOutputToContain('composer:2')
         ->expectsOutputToContain('Dry run')
         ->assertExitCode(0);
@@ -43,9 +43,9 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         ->expectsOutputToContain('Built orbit-reverb:current.')
         ->expectsOutputToContain('Prepared Orbit CLI binary artifact')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
-        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.5-bookworm.')
-        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.4-bookworm.')
-        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.3-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm.')
         ->expectsOutputToContain('Pulled composer:2.')
         ->assertSuccessful();
 
@@ -78,15 +78,15 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'dunglas/frankenphp:1-php8.5-bookworm'"));
+        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'"));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'dunglas/frankenphp:1-php8.4-bookworm'"));
+        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'"));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'dunglas/frankenphp:1-php8.3-bookworm'"));
+        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'"));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
@@ -164,9 +164,9 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
 
     $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
-        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.5-bookworm.')
-        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.4-bookworm.')
-        ->expectsOutputToContain('Pulled dunglas/frankenphp:1-php8.3-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm.')
+        ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm.')
         ->expectsOutputToContain('Pulled composer:2.')
         ->assertSuccessful();
 
@@ -176,15 +176,15 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'dunglas/frankenphp:1-php8.5-bookworm'"));
+        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'"));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'dunglas/frankenphp:1-php8.4-bookworm'"));
+        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'"));
 
     Process::assertRan(fn ($process): bool => is_string($process->command)
         && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'dunglas/frankenphp:1-php8.3-bookworm'"));
+        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'"));
 });
 
 it('keeps the Docker topology runtime image source-less without a baked orbit launcher', function (): void {

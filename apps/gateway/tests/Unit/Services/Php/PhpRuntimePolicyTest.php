@@ -12,7 +12,7 @@ it('frankenphp creates a shared classic runtime policy with approved image and p
     $runtime = new PhpRuntimePolicy(new PhpRuntimeCatalog)->forVersion('8.5');
 
     expect($runtime->phpVersion)->toBe('8.5')
-        ->and($runtime->image)->toBe('dunglas/frankenphp:1-php8.5-bookworm')
+        ->and($runtime->image)->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and($runtime->mode)->toBe('classic')
         ->and($runtime->phpIni)->toMatchArray([
             'opcache.enable' => '1',

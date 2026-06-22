@@ -30,9 +30,9 @@ These rules define what PHP runtime commands own and how they operate.
   does not imply that every tool receives a top-level command family.
 - `php:*` owns version selection, not runtime image build or host package
   installation.
-- The PHP runtime catalog resolves supported PHP versions to the official
-  FrankenPHP image family built on Debian/glibc:
-  `dunglas/frankenphp:1-php<version>-bookworm`. Host PHP, PHP-FPM, CLI-only PHP
+- The PHP runtime catalog resolves supported PHP versions to the Orbit-owned
+  FrankenPHP image family built on upstream Debian/glibc FrankenPHP:
+  `ghcr.io/hardimpactdev/orbit-frankenphp:1-php<version>-bookworm`. Host PHP, PHP-FPM, CLI-only PHP
   images, and Alpine/musl FrankenPHP variants are not supported fallback
   runtimes for app or workspace containers.
 - The app and workspace families own applying the selected PHP image to their

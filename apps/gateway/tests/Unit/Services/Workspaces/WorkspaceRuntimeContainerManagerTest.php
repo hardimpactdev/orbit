@@ -110,11 +110,11 @@ it('creates the orbit network, writes php.ini, and runs the workspace runtime co
     expect($scripts[0])->toContain('docker network inspect')
         ->and($scripts[1])->toContain('docker network create')
         ->and($scripts[2])->toContain('docker container inspect')
-        ->and($scripts[3])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($scripts[3])->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($scripts[4])->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
         ->and($scripts[4])->toContain('docker run -d')
         ->and($scripts[4])->toContain("'orbit-ws-demo-feature-a'")
-        ->and($scripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'");
+        ->and($scripts[4])->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'");
 });
 
 it('creates the app-dev packages bind mount source before running the workspace runtime container', function (): void {
@@ -192,7 +192,7 @@ it('rejects unsafe app-dev packages bind mount sources before running the worksp
     [$workspace, $node] = workspaceAndNodeForManagerTest();
     $container = new WorkspaceRuntimeContainer(
         name: 'orbit-ws-demo-feature-a',
-        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: $workspace->app->name,
@@ -400,7 +400,7 @@ it('throws WorkspaceRuntimeImageUnavailableException when the selected FrankenPH
     $shell = new WorkspaceRuntimeRecordingShell(
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: dunglas/frankenphp:1-php8.5-bookworm', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm', durationMs: 1),
     );
 
     expect(fn () => (new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container))

@@ -122,10 +122,10 @@ it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini
     expect($drift)->toBe([])
         ->and($runtimeScripts[0])->toContain('docker network inspect')
         ->and($runtimeScripts[2])->toContain('docker container inspect')
-        ->and($runtimeScripts[3])->toContain("docker image inspect 'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($runtimeScripts[3])->toContain("docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($runtimeScripts[4])->toContain('docker run -d')
         ->and($runtimeScripts[4])->toContain("'orbit-app-docs'")
-        ->and($runtimeScripts[4])->toContain("'dunglas/frankenphp:1-php8.5-bookworm'")
+        ->and($runtimeScripts[4])->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
         ->and($runtimeScripts[4])->toContain("'/etc/orbit/apps/docs.ini'")
         ->and(base64DecodedPhpIni($runtimeScripts[4]))->toContain('opcache.enable=1')
         ->and(base64DecodedPhpIni($runtimeScripts[4]))->toContain('realpath_cache_size=4096K');
@@ -271,7 +271,7 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
         // container inspect: absent
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
         // image inspect: definite "No such image" — image not on node
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: dunglas/frankenphp:1-php8.5-bookworm', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm', durationMs: 1),
     );
     app()->instance(RemoteShell::class, $shell);
 
@@ -286,7 +286,7 @@ it('returns app.php_version_unavailable when the selected FrankenPHP image is mi
     expect($phpUnavailable)->not->toBeNull()
         ->and($phpUnavailable['family'])->toBe('app')
         ->and($phpUnavailable['next_command'])->toBe('doctor --family=app --restore')
-        ->and($phpUnavailable['message'])->toContain('dunglas/frankenphp:1-php8.5-bookworm')
+        ->and($phpUnavailable['message'])->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and(ProxyRoute::query()->where('app_id', $app->id)->exists())->toBeTrue();
 });
 
@@ -356,7 +356,7 @@ it('returns app.php_version_unavailable when the image is pruned out from under 
         // image inspect: "No such image" — image pruned out from under an
         // otherwise existing container. Must surface as php_version_unavailable
         // rather than collapsing into runtime_container_missing/mismatch.
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: dunglas/frankenphp:1-php8.5-bookworm', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such image: ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm', durationMs: 1),
     );
     app()->instance(RemoteShell::class, $shell);
 

@@ -58,8 +58,8 @@ describe('PHP runtime API controllers', function (): void {
             'config' => [
                 'versions' => ['8.5', '8.4'],
                 'images' => [
-                    'dunglas/frankenphp:1-php8.5-bookworm',
-                    'dunglas/frankenphp:1-php8.4-bookworm',
+                    'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+                    'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm',
                 ],
                 'cli_version' => '8.5',
             ],

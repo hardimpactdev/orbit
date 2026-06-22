@@ -139,7 +139,11 @@ it('builds the reusable superset topology from the base image', function (): voi
         expect($versionResult->successful())->toBeTrue(
             "orbit --version failed: {$versionResult->output()}{$versionResult->errorOutput()}"
         );
-        expect($versionResult->output())->toContain('0.1.0');
+
+        $version = trim((string) file_get_contents(repo_path('VERSION')));
+
+        expect($version)->not->toBeEmpty('Could not parse version from VERSION');
+        expect($versionResult->output())->toContain($version);
 
         // Assert `orbit list` boots the full embedded runtime and loads the
         // entire command registry on the real Ubuntu VM. This exercises the

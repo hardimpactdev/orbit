@@ -55,7 +55,7 @@ it('renders a FrankenPHP workspace runtime container for a PHP workspace with de
     $mountTargets = array_column($container->mounts(), 'target');
 
     expect($container->name())->toBe('orbit-ws-demo-feature-a')
-        ->and($container->image())->toBe('dunglas/frankenphp:1-php8.5-bookworm')
+        ->and($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->restartPolicy())->toBe('unless-stopped')
         ->and($container->networkAliases())->toContain('orbit-ws-demo-feature-a')
@@ -160,7 +160,7 @@ it('uses the workspace php_version override when set', function (): void {
 
     $container = workspaceRendererForTest()->render($workspace);
 
-    expect($container->image())->toBe('dunglas/frankenphp:1-php8.4-bookworm');
+    expect($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
 });
 
 it('inherits the app php_version when workspace php_version is null', function (): void {
@@ -168,7 +168,7 @@ it('inherits the app php_version when workspace php_version is null', function (
 
     $container = workspaceRendererForTest()->render($workspace);
 
-    expect($container->image())->toBe('dunglas/frankenphp:1-php8.4-bookworm');
+    expect($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
 });
 
 it('uses the approved glibc-based FrankenPHP image family rather than alpine/musl', function (): void {

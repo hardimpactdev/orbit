@@ -58,7 +58,7 @@ it('renders a docker process container for a main app PHP process with determini
 
     expect($container)->toBeInstanceOf(ProcessDockerContainer::class)
         ->and($container->name())->toBe('orbit_docs_main_queue')
-        ->and($container->image())->toBe('dunglas/frankenphp:1-php8.5-bookworm')
+        ->and($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->workingDirectory())->toBe(ProcessDockerContainer::SourceTarget)
         ->and($container->command())->toBe('php artisan queue:work')
@@ -240,7 +240,7 @@ it('renders the process command through an in-container shell so the command str
     // named "php artisan queue:work --sleep=3", which does not exist.
     expect($command)->toContain("--workdir '/app'")
         ->and($command)->toContain("--entrypoint 'sh'")
-        ->and($command)->toMatch("/'dunglas\\/frankenphp:[^']+' '-lc' 'php artisan queue:work --sleep=3'/");
+        ->and($command)->toMatch("/'ghcr\\.io\\/hardimpactdev\\/orbit-frankenphp:[^']+' '-lc' 'php artisan queue:work --sleep=3'/");
 });
 
 it('emits docker create (not docker run -d) when the manager builds the idle creation script', function (): void {

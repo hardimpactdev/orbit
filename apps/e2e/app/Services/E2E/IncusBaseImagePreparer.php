@@ -51,11 +51,18 @@ class IncusBaseImagePreparer
             $publicKey = $this->createRemoteSshKey($remotePrivateKey, $runId);
 
             $packages = $this->readPackageList($options->depsScriptPath, '--all');
+            $frankenPhpImageArchive = "{$remoteWorkDir}/frankenphp-1-php8.5-bookworm.tar";
+
+            $this->stageRemoteDockerImageArchive(
+                (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT),
+                $frankenPhpImageArchive,
+            );
 
             $this->launchBaseInstance($instanceName, $options);
             $tempInstance = $instanceName;
 
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
+            $this->pushRemoteFileToInstance($frankenPhpImageArchive, $instanceName, '/var/tmp/frankenphp-1-php8.5-bookworm.tar');
             $this->bootstrapBaseInstance($instanceName, $options, $publicKey, $packages);
             $this->waitForAgent($instanceName, $options->timeoutSeconds);
             $ipv4 = $this->waitForIpv4($instanceName, $options->timeoutSeconds);
@@ -137,6 +144,42 @@ class IncusBaseImagePreparer
         }
 
         return $publicKey;
+    }
+
+    private function stageRemoteDockerImageArchive(string $image, string $archive): void
+    {
+        $quotedImage = escapeshellarg($image);
+        $quotedArchive = escapeshellarg($archive);
+
+        $result = $this->host->run(sprintf(
+            <<<'BASH'
+if ! docker image inspect %1$s >/dev/null 2>&1; then
+    docker pull %1$s
+fi
+docker image inspect %1$s >/dev/null
+docker save %1$s -o %2$s
+chmod 0644 %2$s
+BASH,
+            $quotedImage,
+            $quotedArchive,
+        ), timeoutSeconds: 900);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not stage {$image} archive on Incus host: {$result->errorOutput()}");
+        }
+    }
+
+    private function pushRemoteFileToInstance(string $remotePath, string $instanceName, string $guestPath): void
+    {
+        $result = $this->host->run(sprintf(
+            'incus file push %s %s',
+            escapeshellarg($remotePath),
+            escapeshellarg("{$instanceName}{$guestPath}"),
+        ), timeoutSeconds: 300);
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not push {$remotePath} into [{$instanceName}]: {$result->errorOutput()}");
+        }
     }
 
     /**
@@ -301,10 +344,13 @@ systemctl enable orbit-e2e-docker-swarm-init.service
 docker info --format "{{.Swarm.LocalNodeState}}" | grep -qx active || docker swarm init --advertise-addr 127.0.0.1 >/dev/null 2>&1 || true
 
 docker --version >/dev/null
-for image in {$caddyImage} {$frankenPhpImage} {$wgEasyImage}; do
+for image in {$caddyImage} {$wgEasyImage}; do
     docker pull "\$image"
     docker image inspect "\$image" >/dev/null
 done
+docker load -i /var/tmp/frankenphp-1-php8.5-bookworm.tar
+docker image inspect {$frankenPhpImage} >/dev/null
+rm -f /var/tmp/frankenphp-1-php8.5-bookworm.tar
 
 cat > /tmp/orbit-e2e-source-gateway-artisan.Dockerfile <<'DOCKERFILE'
 FROM {$frankenPhpDockerfileImage}

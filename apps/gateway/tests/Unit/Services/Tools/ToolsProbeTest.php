@@ -266,7 +266,7 @@ describe('ToolsProbe', function (): void {
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php']);
         $shell = new RecordingToolsProbeRemoteShell(
             exitCode: 0,
-            stdout: "dunglas/frankenphp:1-php8.5-bookworm\n",
+            stdout: "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm\n",
         );
         $probe = new ToolsProbe($shell);
 
@@ -274,11 +274,11 @@ describe('ToolsProbe', function (): void {
 
         expect($shell->script)->toContain('docker image inspect')
             ->not->toContain('command -v php')
-            ->and($shell->input)->toContain('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($shell->input)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
             ->and($snapshot->get('php'))->toMatchArray([
                 'installed' => true,
                 'version' => '8.5',
-                'images' => ['dunglas/frankenphp:1-php8.5-bookworm'],
+                'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
             ])
             ->and($probe->diff($tool, $snapshot))->toBe([]);
     });

@@ -557,7 +557,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
 
         expect($issue)->not->toBeNull()
             ->and($issue['detail']['php_version'])->toBe('8.5')
-            ->and($issue['detail']['expected_image'])->toBe('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($issue['detail']['expected_image'])->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
             ->and(collect($report['issues'])->pluck('key')->all())->not->toContain('app.runtime_container_missing')
             ->and(collect($report['issues'])->pluck('key')->all())->not->toContain('app.runtime_container_mismatch');
     });

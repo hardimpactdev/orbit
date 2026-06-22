@@ -74,7 +74,7 @@ Options:
   --dnsmasq-image-archive=PATH Load 4km3/dnsmasq:latest from this Docker
                                image archive for gateway DNS bootstrap.
   --frankenphp-image-archive=PATH
-                               Load dunglas/frankenphp:1-php8.5-bookworm from
+                               Load ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm from
                                this Docker image archive before falling back
                                to Docker Hub.
   --wg-easy-image-archive=PATH Load ghcr.io/wg-easy/wg-easy:15 from this Docker
@@ -574,21 +574,21 @@ ensure_dnsmasq_image() {
 }
 
 ensure_frankenphp_image() {
-    if docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm" >/dev/null 2>&1; then
+    if docker_cli image inspect "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm" >/dev/null 2>&1; then
         return
     fi
 
     if [ -n "$FRANKENPHP_IMAGE_ARCHIVE" ]; then
         run docker_cli load -i "$FRANKENPHP_IMAGE_ARCHIVE"
 
-        if docker_cli image inspect "dunglas/frankenphp:1-php8.5-bookworm" >/dev/null 2>&1; then
+        if docker_cli image inspect "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm" >/dev/null 2>&1; then
             return
         fi
 
-        fail validation_failed "frankenphp image archive did not load dunglas/frankenphp:1-php8.5-bookworm: $FRANKENPHP_IMAGE_ARCHIVE"
+        fail validation_failed "frankenphp image archive did not load ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm: $FRANKENPHP_IMAGE_ARCHIVE"
     fi
 
-    run docker_cli pull "dunglas/frankenphp:1-php8.5-bookworm"
+    run docker_cli pull "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm"
 }
 
 ensure_wg_easy_image() {

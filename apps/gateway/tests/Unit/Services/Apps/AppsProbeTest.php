@@ -221,7 +221,7 @@ describe('PHP runtime reality', function (): void {
 
         expect($entry?->kind)->toBe(DriftKind::Missing)
             ->and($entry?->detail['php_version'] ?? null)->toBe('8.5')
-            ->and($entry?->detail['expected_image'] ?? null)->toBe('dunglas/frankenphp:1-php8.5-bookworm')
+            ->and($entry?->detail['expected_image'] ?? null)->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
             ->and(issue($drift, 'app.runtime_container_missing'))->toBeNull()
             ->and(issue($drift, 'app.runtime_container_mismatch'))->toBeNull();
     });

@@ -55,7 +55,7 @@ Optional:
                                install-orbit for gateway DNS bootstrap.
   --frankenphp-image-archive=PATH
                                Local Docker image archive for
-                               dunglas/frankenphp:1-php8.5-bookworm. If given,
+                               ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm. If given,
                                forwarded to install-orbit for app runtime
                                bootstrap.
   --wg-easy-image-archive=PATH Local Docker image archive for

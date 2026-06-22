@@ -89,6 +89,25 @@ it('packages the Reverb runtime as a self-contained image', function (): void {
         ->not->toContain('!apps/gateway/**');
 });
 
+it('builds the managed FrankenPHP runtime images from upstream with Orbit baseline extensions', function (): void {
+    $dockerfile = file_get_contents(repo_path('docker/orbit-frankenphp/Dockerfile'));
+
+    expect($dockerfile)
+        ->toContain('ARG PHP_VERSION=8.5')
+        ->toContain('FROM dunglas/frankenphp:1-php${PHP_VERSION}-bookworm')
+        ->toContain('RUN install-php-extensions')
+        ->toContain('bcmath')
+        ->toContain('exif')
+        ->toContain('gd')
+        ->toContain('intl')
+        ->toContain('pcntl')
+        ->toContain('pdo_mysql')
+        ->toContain('pdo_pgsql')
+        ->toContain('redis')
+        ->toContain('sockets')
+        ->toContain('zip');
+});
+
 it('runs FrankenPHP on the internal gateway port and exposes a local health probe', function (): void {
     $caddyfile = file_get_contents(repo_path('docker/orbit-gateway/Caddyfile'));
     $entrypoint = file_get_contents(repo_path('docker/orbit-gateway/entrypoint.sh'));

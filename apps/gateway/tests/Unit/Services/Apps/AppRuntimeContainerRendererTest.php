@@ -43,7 +43,7 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
     $mountTargets = array_column($container->mounts(), 'target');
 
     expect($container->name())->toBe('orbit-app-docs')
-        ->and($container->image())->toBe('dunglas/frankenphp:1-php8.5-bookworm')
+        ->and($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
         ->and($container->network())->toBe('orbit-network')
         ->and($container->restartPolicy())->toBe('unless-stopped')
         ->and($container->networkAliases())->toContain('orbit-app-docs')
@@ -171,7 +171,7 @@ it('renders the selected PHP image when php_version differs', function (): void 
 
     $container = rendererForTest()->render($app);
 
-    expect($container->image())->toBe('dunglas/frankenphp:1-php8.4-bookworm');
+    expect($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
 });
 
 it('uses the approved glibc-based FrankenPHP image family rather than alpine/musl', function (): void {

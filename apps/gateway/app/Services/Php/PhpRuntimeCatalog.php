@@ -13,7 +13,7 @@ final readonly class PhpRuntimeCatalog
 
     public const string DEFAULT = '8.5';
 
-    public const string IMAGE_REPOSITORY = 'dunglas/frankenphp';
+    public const string IMAGE_REPOSITORY = 'ghcr.io/hardimpactdev/orbit-frankenphp';
 
     public const string IMAGE_MAJOR = '1';
 

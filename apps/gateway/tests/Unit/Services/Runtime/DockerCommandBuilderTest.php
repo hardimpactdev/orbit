@@ -56,7 +56,7 @@ it('quotes docker mount fields containing csv separators and quotes', function (
 it('emits numeric docker users for app runtime containers', function (): void {
     $container = new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -83,7 +83,7 @@ it('emits numeric docker users for app runtime containers', function (): void {
 it('rejects non-numeric docker users for app runtime containers', function (): void {
     $container = new AppRuntimeContainer(
         name: 'orbit-app-docs',
-        image: 'dunglas/frankenphp:1-php8.5-bookworm',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
         network: 'orbit-network',
         restartPolicy: 'unless-stopped',
         appSlug: 'docs',
@@ -175,7 +175,7 @@ it('uses the managed target node namespace without aliases for Docker E2E proces
     try {
         $process = new ProcessDockerContainer(
             name: 'orbit_docs_main_queue',
-            image: 'dunglas/frankenphp:1-php8.5-bookworm',
+            image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
             network: 'orbit-network',
             restartPolicy: 'no',
             appSlug: 'docs',
