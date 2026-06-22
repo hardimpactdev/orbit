@@ -1236,11 +1236,36 @@ BASH;
                     ),
                 ];
             }
+
+            $cliResult = $this->remoteShell->run($tool->node, $this->agentOrbitCliCommand(), [
+                'timeout' => 10,
+                'throw' => false,
+            ]);
+
+            if (! $cliResult->successful()) {
+                return [
+                    new DriftEntry(
+                        family: $this->key(),
+                        key: 'tool.agent_orbit_cli_inaccessible',
+                        kind: DriftKind::Divergent,
+                        summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
+                        detail: [
+                            'tool' => $tool->name,
+                            'node' => $tool->node->name,
+                        ],
+                    ),
+                ];
+            }
         } catch (Throwable) {
             return [];
         }
 
         return [];
+    }
+
+    private function agentOrbitCliCommand(): string
+    {
+        return 'sudo -u agent -H /usr/bin/env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version --local >/dev/null 2>&1';
     }
 
     private function agentTldForNode(Node $node): ?string

@@ -1059,6 +1059,26 @@ describe('ToolsProbe', function (): void {
 
         expect(toolProbeIssue($drift, 'tool.agent_user_missing')?->kind)->toBe(DriftKind::Missing);
     });
+
+    it('detects an agent user that cannot execute the Orbit CLI for agent tools', function (): void {
+        $node = createToolsProbeAgentNode();
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'openclaw',
+            'expected_state' => 'installed',
+            'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
+        ]);
+        $probe = new ToolsProbe(new QueuedToolsProbeRemoteShell(
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 126, stdout: '', stderr: 'Permission denied', durationMs: 1),
+        ));
+
+        $drift = $probe->diff($tool, new ProbeSnapshot([
+            'openclaw' => ['installed' => true],
+        ]));
+
+        expect(toolProbeIssue($drift, 'tool.agent_orbit_cli_inaccessible')?->kind)->toBe(DriftKind::Divergent);
+    });
 });
 
 final class ToolsProbeRemoteShell implements RemoteShell

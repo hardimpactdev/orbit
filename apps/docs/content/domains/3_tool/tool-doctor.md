@@ -92,6 +92,7 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | `tool.dns_config_drift` | The on-disk `dnsmasq.conf` differs from what the gateway would emit from the current `node.tld` and `node.wireguard_address` of active nodes, including node-host records and role-consumed wildcard mappings. |
 | `tool.agent_route_missing` | An installed agent tool with a declared internal proxy route has no tool-owned route under the active agent role TLD. |
 | `tool.agent_user_missing` | An agent tool is installed on a node whose `agent` user is absent or not configured as the tool's runtime user. |
+| `tool.agent_orbit_cli_inaccessible` | An agent tool is installed on a node whose `agent` runtime user cannot execute `/usr/local/bin/orbit --version --local`. |
 | `tool.agent_credentials_missing` | An agent tool declares credentials but no managed credential material is present on the node tool row. |
 | `tool.seaweedfs.row_missing` | No `seaweedfs` tool row exists on an active `s3` role node. Not auto-fixable; requires manual tool adoption or re-provision. |
 | `tool.seaweedfs.credentials_missing` | The `seaweedfs` tool row exists but lacks service-level credentials (`credentials['fields']['access_key_id']` / `secret_access_key`). |
@@ -143,9 +144,10 @@ credential repair logic.
 
 `doctor --restore` does not handle `tool.record_incomplete`, `tool.node_invalid`,
 `tool.definition_missing`, `tool.unsupported_on_node`, `tool.unregistered_capability`,
-`tool.config_probe_failed`, `tool.credentials_probe_failed`, or
-`tool.seaweedfs.row_missing` (the `seaweedfs` tool row must be created through
-`tool:adopt` or re-provision; restore does not create tool rows).
+`tool.config_probe_failed`, `tool.credentials_probe_failed`,
+`tool.agent_orbit_cli_inaccessible`, or `tool.seaweedfs.row_missing` (the
+`seaweedfs` tool row must be created through `tool:adopt` or re-provision;
+restore does not create tool rows).
 
 Tools without a safe repair path are reported with the required manual action.
 Tool doctor never creates apps, workspaces, processes, schedules, custom proxy

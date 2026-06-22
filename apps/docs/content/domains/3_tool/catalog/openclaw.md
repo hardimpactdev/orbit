@@ -66,8 +66,9 @@ and has no ingress baseline.
 OpenClaw is a first-party autonomous agent tool. Orbit installs it for the
 shared unprivileged `agent` user, never as the privileged `orbit` maintenance
 user. `tool:update openclaw` runs OpenClaw's native update path through the
-Orbit-managed binary. It does not implicitly restart related runtime
-processes.
+Orbit-managed binary. The agent runtime must be able to execute
+`/usr/local/bin/orbit --version --local` without sudo or traversal access to
+`/home/orbit`. It does not implicitly restart related runtime processes.
 
 `tool:update openclaw` from the node itself requires `tool:update` on the
 self-grant. `tool:install openclaw`, `tool:remove openclaw`,

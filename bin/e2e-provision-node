@@ -450,10 +450,13 @@ install_orbit_binary_only() {
     local user="$1"
     local target_dir="$2"
     local binary_dest="${target_dir}/bin/orbit-binary"
+    local shared_binary_dest="/usr/local/lib/orbit/orbit-binary"
 
     sudo_run install -d -m 0755 -o "$user" -g "$user" "${target_dir}/bin"
     sudo_run install -m 0755 -o "$user" -g "$user" "$BINARY" "$binary_dest"
-    sudo_run ln -sf "$binary_dest" /usr/local/bin/orbit
+    sudo_run install -d -m 0755 /usr/local/lib/orbit
+    sudo_run install -m 0755 "$BINARY" "$shared_binary_dest"
+    sudo_run ln -sf "$shared_binary_dest" /usr/local/bin/orbit
     sudo_run runuser -u "$user" -- env \
         "HOME=/home/${user}" \
         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \

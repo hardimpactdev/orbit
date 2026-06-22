@@ -63,9 +63,13 @@ fields and does not prompt.
 - For production installs, download to `<install-root>/bin/orbit-binary`
   where `<install-root>` is `ORBIT_INSTALL_PATH` when set, or `$HOME/orbit`
   by default.
-- After a production download, relink the host `orbit` launcher: `ln -sf
-  <install-root>/bin/orbit-binary <link-path>` where `<link-path>` is
-  `ORBIT_BIN_PATH` when set, or `$HOME/.local/bin/orbit` by default.
+- After a production download, relink the host `orbit` launcher. User-local
+  launchers point at `<install-root>/bin/orbit-binary`, where `<install-root>`
+  is `ORBIT_INSTALL_PATH` when set or `$HOME/orbit` by default. System
+  launchers under `/usr/local/bin/` first publish the binary to a shared
+  root-owned executable path under `/usr/local/lib/orbit/`, then point the
+  launcher there so unprivileged role users can execute the CLI even when the
+  node user's home directory is private.
 - Reconcile a shadowing launcher: when `orbit` resolves through `PATH` to a
   different launcher than the relinked one (a legacy install earlier in `PATH`)
   and that launcher points at a different binary, relink it to the new binary

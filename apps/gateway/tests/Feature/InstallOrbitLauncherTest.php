@@ -10,7 +10,9 @@ describe('install-orbit always-cli launcher contract', function (): void {
         $installer = File::get(repo_path('bin/install-orbit'));
 
         expect($installer)
-            ->toContain('ln -sf "$TARGET_DIR/bin/orbit-binary" "$LINK_PATH"')
+            ->toContain('link_target="$TARGET_DIR/bin/orbit-binary"')
+            ->toContain('ln -sf "$link_target" "$LINK_PATH"')
+            ->toContain('/usr/local/lib/orbit/%s-binary')
             ->not->toContain('ln -sf "$TARGET_DIR/apps/cli/orbit" "$LINK_PATH"')
             ->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
     });
