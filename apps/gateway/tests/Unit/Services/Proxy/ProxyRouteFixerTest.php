@@ -65,7 +65,16 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('repairs Orbit-managed TLS before restoring the metrics router route', function (): void {
-        $router = Node::factory()->router()->create(['name' => 'gateway']);
+        $router = Node::factory()->router()->create([
+            'name' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $router->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.2')->spec()],
+        ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $router->id,
             'domain' => 'metrics.orbit',
@@ -107,6 +116,9 @@ describe('ProxyRouteFixer', function (): void {
             ->and($shell->scripts[0])->toContain(base64_encode('fake-cert-for-metrics.orbit'))
             ->and($shell->scripts[0])->toContain(base64_encode('fake-key-for-metrics.orbit'))
             ->and($shell->scripts[1])->toContain('/etc/caddy/sites/metrics.orbit.caddy')
+            ->and($shell->scripts[1])->toContain('/run/php')
+            ->and($shell->scripts[1])->toContain('expected_hash=')
+            ->and($shell->scripts[1])->toContain("docker start 'orbit-caddy'")
             ->and($caddySite)->toContain('tls /etc/orbit/certs/metrics.orbit.crt /etc/orbit/certs/metrics.orbit.key')
             ->and($caddySite)->toContain('reverse_proxy http://gateway.metrics.orbit:3000')
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
@@ -563,7 +575,16 @@ describe('ProxyRouteFixer', function (): void {
     });
 
     it('starts the orbit-caddy container on the serving node when proxy.caddy_container_down is reported', function (): void {
-        $node = createTestAppHostNode(['name' => 'app-1']);
+        $node = createTestAppHostNode([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => OrbitCaddyContainer::forPrivateNode('10.6.0.21')->spec()],
+        ]);
         $shell = new ProxyFixerRecordingRemoteShell;
 
         $action = (new ProxyRouteFixer($shell, new ProxyRouteRenderer, new ProxyFixerFakeCa, new SiteCertificateInstallerFake))->fixCaddyContainer(
@@ -584,6 +605,8 @@ describe('ProxyRouteFixer', function (): void {
             'status' => 'completed',
         ])
             ->and($shell->nodes[0]->is($node))->toBeTrue()
+            ->and($shell->scripts[0])->toContain('/run/php')
+            ->and($shell->scripts[0])->toContain('expected_hash=')
             ->and($shell->scripts[0])->toContain("docker start 'orbit-caddy'")
             ->and($shell->scripts[0])->not->toContain('systemctl')
             ->and($shell->scripts[0])->not->toContain('caddy.service');

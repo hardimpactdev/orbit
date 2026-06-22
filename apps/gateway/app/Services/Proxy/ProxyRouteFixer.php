@@ -450,7 +450,7 @@ SH,
         $caddyName = $this->caddyContainerName($node);
 
         if ($entry->key === 'proxy.caddy_container_down') {
-            $script = 'docker start '.escapeshellarg($caddyName);
+            $script = $this->caddyStartCommand($node);
 
             $this->remoteShell->run($node, $script, ['throw' => true]);
 
@@ -574,12 +574,38 @@ SH,
 
     private function caddyReloadCommand(Node $node): string
     {
-        return CaddyTool::reloadCommand($this->caddyContainerName($node));
+        $spec = $this->managedCaddyContainerSpec($node);
+        $containerName = $this->caddyContainerNameFromSpec($spec);
+        $reloadCommand = CaddyTool::reloadCommand($containerName);
+
+        if ($spec === null) {
+            return $reloadCommand;
+        }
+
+        return (new CaddyTool)->updateScript(['container' => $spec])."\n".$reloadCommand;
+    }
+
+    private function caddyStartCommand(Node $node): string
+    {
+        $spec = $this->managedCaddyContainerSpec($node);
+
+        if ($spec === null) {
+            return 'docker start '.escapeshellarg($this->caddyContainerNameFromSpec(null));
+        }
+
+        return (new CaddyTool)->updateScript(['container' => $spec]);
     }
 
     private function caddyContainerName(Node $node): string
     {
-        $spec = $this->managedCaddyContainerSpec($node);
+        return $this->caddyContainerNameFromSpec($this->managedCaddyContainerSpec($node));
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $spec
+     */
+    private function caddyContainerNameFromSpec(?array $spec): string
+    {
         $name = $spec['name'] ?? null;
 
         if (is_string($name) && $name !== '') {
