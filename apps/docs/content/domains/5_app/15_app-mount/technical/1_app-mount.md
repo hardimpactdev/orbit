@@ -86,8 +86,9 @@ validation failures, and `403` for permission denials.
 4. **Read-only default.** New mounts default to `read_only=true`; callers must
    pass `--read-write` or `read_only=false` to make them writable.
 5. **Reserved target protection.** Custom mounts cannot target `/app`,
-   `/packages`, `/data`, `/config`, the managed PHP ini target, or the app
-   source mirror target.
+   `/packages`, `/data`, `/config`, the managed PHP ini target, the app
+   source mirror target, or the internal ephemeral FrankenPHP XDG root
+   `/tmp/orbit-frankenphp`.
 6. **Home-source boundary.** Custom sources must live below the owning node
    user's home and must not point at the home root or credential-bearing home
    paths.

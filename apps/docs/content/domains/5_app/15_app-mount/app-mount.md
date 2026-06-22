@@ -77,7 +77,8 @@ boundary.
   rejected.
 - `target` must be absolute and must not collide with Orbit-reserved runtime
   targets: `/app`, `/packages`, `/data`, `/config`, the managed PHP ini target,
-  or the app source mirror target.
+  the app source mirror target, or the internal ephemeral FrankenPHP XDG root
+  `/tmp/orbit-frankenphp`.
 - Mounts default to read-only; use `--read-write` only when the container must
   write to the mounted path.
 

@@ -180,6 +180,14 @@ describe('AppRuntimeMountController', function (): void {
             'source' => '/home/nckrtl/packages',
             'target' => '/packages',
         ], 'target_reserved'],
+        'reserved xdg root' => [[
+            'source' => '/home/nckrtl/packages',
+            'target' => '/tmp/orbit-frankenphp',
+        ], 'target_reserved'],
+        'reserved xdg child' => [[
+            'source' => '/home/nckrtl/packages',
+            'target' => '/tmp/orbit-frankenphp/data/cache',
+        ], 'target_reserved'],
     ]);
 
     it('rejects configurable runtime mounts for static apps and app-prod apps in the first slice', function (array $nodeState, array $appState, string $reason): void {

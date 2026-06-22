@@ -311,6 +311,14 @@ executor artifact runs in the native CLI binary's embedded PHP; source-mounted
 Docker/Incus development and E2E nodes invoke `<source>/apps/cli/orbit`. Host
 PHP and PHP-FPM are not app/workspace runtime fallbacks.
 
+App and workspace FrankenPHP containers are private HTTP backends behind
+`orbit-caddy`, not durable Caddy storage owners. Their Caddy/FrankenPHP XDG
+homes are container-local and ephemeral: `XDG_CONFIG_HOME` is
+`/tmp/orbit-frankenphp/config`, and `XDG_DATA_HOME` is
+`/tmp/orbit-frankenphp/data`. Orbit does not mount these paths from the app or
+workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`; the only durable
+Caddy state in Orbit belongs to `orbit-caddy` under `/var/lib/orbit/caddy`.
+
 On `app-dev` nodes, PHP app and workspace FrankenPHP containers also mount the
 owning node user's conventional packages directory from
 `/home/<node-user>/packages` to `/packages`. This dev-only mount lets Composer
@@ -329,9 +337,10 @@ intent through `app:mount`. These mounts are rendered into the app runtime
 container and inherited by workspace runtime containers for that app. Sources
 must be explicit safe paths under `/home/<node-user>/`, sensitive home paths are
 rejected, reserved runtime targets such as `/app`, `/packages`, `/data`, and
-`/config` are blocked, and mounts default to read-only. This keeps package
-symlink support configurable without reintroducing PHP-FPM or mounting the
-entire host home directory by default.
+`/config` are blocked, the internal ephemeral XDG root
+`/tmp/orbit-frankenphp` is blocked, and mounts default to read-only. This keeps
+package symlink support configurable without reintroducing PHP-FPM or mounting
+the entire host home directory by default.
 
 Production public HTTP traffic enters the fleet through an active
 `ingress` role. `app-prod` nodes are production runtime backends:

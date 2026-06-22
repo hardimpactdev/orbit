@@ -52,6 +52,7 @@ it('renders a FrankenPHP workspace runtime container for a PHP workspace with de
     $workspace = makePhpWorkspace();
 
     $container = workspaceRendererForTest()->render($workspace);
+    $mountTargets = array_column($container->mounts(), 'target');
 
     expect($container->name())->toBe('orbit-ws-demo-feature-a')
         ->and($container->image())->toBe('dunglas/frankenphp:1-php8.5-bookworm')
@@ -63,6 +64,12 @@ it('renders a FrankenPHP workspace runtime container for a PHP workspace with de
             'source' => '/home/orbit/apps/demo/.worktrees/feature-a',
             'target' => '/app',
             'read_only' => false,
+        ])
+        ->and($mountTargets)->not->toContain('/data')
+        ->and($mountTargets)->not->toContain('/config')
+        ->and($container->environment())->toMatchArray([
+            'XDG_CONFIG_HOME' => '/tmp/orbit-frankenphp/config',
+            'XDG_DATA_HOME' => '/tmp/orbit-frankenphp/data',
         ]);
 });
 
@@ -341,7 +348,11 @@ it('exposes the document-root env on the rendered docker run command so the conf
     $command = (new DockerCommandBuilder)->runDetached($container);
 
     expect($command)->toContain("--env 'SERVER_NAME=:80'")
-        ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'");
+        ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
+        ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
+        ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
+        ->and($command)->not->toContain('target=/data')
+        ->and($command)->not->toContain('target=/config');
 });
 
 it('exposes labels with the spec hash so the manager can detect drift', function (): void {

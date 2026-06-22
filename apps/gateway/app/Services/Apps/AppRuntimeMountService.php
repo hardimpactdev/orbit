@@ -267,6 +267,7 @@ final readonly class AppRuntimeMountService
             AppRuntimeContainer::SourceTarget,
             AppRuntimeContainer::PhpIniMountTarget,
             AppDevelopmentPackagesMount::Target,
+            AppRuntimeContainerRenderer::XdgRoot,
             '/config',
             '/data',
         ];

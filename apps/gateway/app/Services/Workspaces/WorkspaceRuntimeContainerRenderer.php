@@ -8,6 +8,7 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Workspace;
 use App\Services\Apps\AppDevelopmentPackagesMount;
+use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeMountService;
 use App\Services\Apps\FrankenPhpRuntimeConfigRenderer;
 use App\Services\Php\PhpRuntimePolicy;
@@ -124,6 +125,8 @@ final readonly class WorkspaceRuntimeContainerRenderer
         $environment = [
             'SERVER_NAME' => ':80',
             'SERVER_ROOT' => $this->documentRootInContainer($app),
+            'XDG_CONFIG_HOME' => AppRuntimeContainerRenderer::XdgConfigHome,
+            'XDG_DATA_HOME' => AppRuntimeContainerRenderer::XdgDataHome,
             'ORBIT_APP' => $app->name,
             'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
             'ORBIT_WORKSPACE' => $workspace->name,

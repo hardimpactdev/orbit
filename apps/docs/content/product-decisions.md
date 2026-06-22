@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-22 — App and workspace FrankenPHP runtimes keep Caddy/FrankenPHP XDG state ephemeral inside the container at `/tmp/orbit-frankenphp`; only `orbit-caddy` owns durable Caddy storage under `/var/lib/orbit/caddy`, and app/workspace checkouts, `~/.config/orbit`, and `/var/lib/orbit` must not store per-runtime XDG state.
 - 2026-06-22 — Managed production nodes that expose a system-wide Orbit launcher such as `/usr/local/bin/orbit` must point it at a shared root-owned executable outside private runtime homes. The node user's install-root copy remains the update record, but agent tools and other unprivileged runtimes must be able to execute the system launcher without gaining `orbit` user access.
 - 2026-06-22 — Codex App project registration uses the operator tool category for catalog UX: roleless active nodes opt into gateway SSH through `node:manage`, `codex-app` targets OS-supported non-gateway nodes over WireGuard SSH, and Codex App is not an Agent IDE adapter.
 - 2026-06-22 — Tool command targeting is node-wide except the gateway: explicit tool targets may be any active visible non-gateway node, tool definitions declare supported operating systems, and roles may include baseline tools without being the general eligibility gate for user-directed tool commands.

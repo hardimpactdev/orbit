@@ -40,6 +40,7 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
     $app = makePhpApp();
 
     $container = rendererForTest()->render($app);
+    $mountTargets = array_column($container->mounts(), 'target');
 
     expect($container->name())->toBe('orbit-app-docs')
         ->and($container->image())->toBe('dunglas/frankenphp:1-php8.5-bookworm')
@@ -57,19 +58,21 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
             'target' => '/home/orbit/apps/docs',
             'read_only' => false,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($mountTargets)->not->toContain('/data')
+        ->and($mountTargets)->not->toContain('/config')
+        ->and($container->mounts())->not->toContain([
             'source' => '/home/orbit/apps/docs/.orbit/frankenphp/data',
             'target' => '/data',
             'read_only' => false,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())->not->toContain([
             'source' => '/home/orbit/apps/docs/.orbit/frankenphp/config',
             'target' => '/config',
             'read_only' => false,
         ])
         ->and($container->environment())->toMatchArray([
-            'XDG_CONFIG_HOME' => '/config',
-            'XDG_DATA_HOME' => '/data',
+            'XDG_CONFIG_HOME' => '/tmp/orbit-frankenphp/config',
+            'XDG_DATA_HOME' => '/tmp/orbit-frankenphp/data',
         ]);
 });
 
@@ -311,6 +314,11 @@ it('exposes the document-root env on the rendered docker run command so the conf
 
     expect($command)->toContain("--env 'SERVER_NAME=:8080'")
         ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
+        ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
+        ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
+        ->and($command)->not->toContain('/home/orbit/apps/docs/.orbit/frankenphp')
+        ->and($command)->not->toContain('target=/data')
+        ->and($command)->not->toContain('target=/config')
         ->and($command)->not->toContain(' --publish ');
 });
 

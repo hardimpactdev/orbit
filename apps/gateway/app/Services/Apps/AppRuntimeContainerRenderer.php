@@ -14,6 +14,12 @@ final readonly class AppRuntimeContainerRenderer
 {
     public const int InternalPort = 8080;
 
+    public const string XdgConfigHome = '/tmp/orbit-frankenphp/config';
+
+    public const string XdgDataHome = '/tmp/orbit-frankenphp/data';
+
+    public const string XdgRoot = '/tmp/orbit-frankenphp';
+
     /**
      * Canonical name of the Laravel Octane FrankenPHP worker file. Generated
      * by `php artisan octane:install --server=frankenphp` and resolved
@@ -60,16 +66,6 @@ final readonly class AppRuntimeContainerRenderer
                 'source' => $this->phpIniHostPath($app),
                 'target' => AppRuntimeContainer::PhpIniMountTarget,
                 'read_only' => true,
-            ],
-            [
-                'source' => "{$sourcePath}/.orbit/frankenphp/data",
-                'target' => '/data',
-                'read_only' => false,
-            ],
-            [
-                'source' => "{$sourcePath}/.orbit/frankenphp/config",
-                'target' => '/config',
-                'read_only' => false,
             ],
         ];
 
@@ -121,8 +117,8 @@ final readonly class AppRuntimeContainerRenderer
         $environment = [
             'SERVER_NAME' => ':'.self::InternalPort,
             'SERVER_ROOT' => $this->documentRootInContainer($app),
-            'XDG_CONFIG_HOME' => '/config',
-            'XDG_DATA_HOME' => '/data',
+            'XDG_CONFIG_HOME' => self::XdgConfigHome,
+            'XDG_DATA_HOME' => self::XdgDataHome,
             'ORBIT_APP' => $app->name,
             'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
             'ORBIT_PHP_VERSION' => $app->php_version,

@@ -379,7 +379,6 @@ SH,
         $phpIniHostPath = $this->findPhpIniMountSource($container);
         $phpIniDirectory = dirname($phpIniHostPath);
         $phpIniContent = $container->phpIniContent();
-        $runtimeStateScript = $this->renderRuntimeStateDirectoryScript($container);
         $packagesMountScript = $this->renderPackagesMountDirectoryScript($container);
         $configuredMountScript = $this->renderConfiguredMountDirectoryScript($container);
 
@@ -390,53 +389,13 @@ sudo install -d -m 0755 %s
 printf %%s %s | base64 -d | sudo tee %s >/dev/null
 %s
 %s
-%s
 SH,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
             escapeshellarg($phpIniHostPath),
-            $runtimeStateScript,
             $packagesMountScript,
             $configuredMountScript,
         );
-    }
-
-    private function renderRuntimeStateDirectoryScript(AppRuntimeContainer $container): string
-    {
-        $sources = [];
-
-        foreach ($container->mounts() as $mount) {
-            if (! in_array($mount['target'], ['/config', '/data'], true)) {
-                continue;
-            }
-
-            if ($mount['read_only']) {
-                continue;
-            }
-
-            $sources[] = $mount['source'];
-        }
-
-        $sources = array_values(array_unique($sources));
-
-        if ($sources === []) {
-            return '';
-        }
-
-        $lines = array_map(
-            fn (string $source): string => 'sudo install -d -m 0775 '.escapeshellarg($source),
-            $sources,
-        );
-
-        $dockerUser = $container->dockerUser();
-
-        if ($dockerUser !== null && $dockerUser !== '') {
-            foreach ($sources as $source) {
-                $lines[] = 'sudo chown '.escapeshellarg($dockerUser).' '.escapeshellarg($source);
-            }
-        }
-
-        return implode("\n", $lines);
     }
 
     private function renderPackagesMountDirectoryScript(AppRuntimeContainer $container): string
