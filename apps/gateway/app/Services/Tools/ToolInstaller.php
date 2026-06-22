@@ -55,15 +55,19 @@ final readonly class ToolInstaller
             return ToolRegistryFailure::unsupportedAction($tool, 'install');
         }
 
-        $requiredRole = $this->catalog->requiredNodeRole($tool);
-        $targetNode = $this->resolveTargetNode($node, $app, $requiredRole);
+        $targetNode = $this->resolveTargetNode($node, $app);
 
         if ($targetNode instanceof ToolRegistryFailure) {
             return $targetNode;
         }
 
-        if ($requiredRole !== null && ! $targetNode->hasActiveRole($requiredRole)) {
-            return ToolRegistryFailure::nodeRoleRequired($tool, $targetNode->name, $requiredRole);
+        if (! $this->catalog->supportsNode($tool, $targetNode)) {
+            return ToolRegistryFailure::unsupportedOnNode(
+                tool: $tool,
+                node: $targetNode->name,
+                platform: $targetNode->platform,
+                supportedOperatingSystems: $this->catalog->supportedOperatingSystems($tool),
+            );
         }
 
         if ($runtime !== null) {
@@ -366,39 +370,23 @@ final readonly class ToolInstaller
         return $this->githubTokenResolver->token();
     }
 
-    private function resolveTargetNode(?string $node, ?string $app, ?string $requiredRole): Node|ToolRegistryFailure
+    private function resolveTargetNode(?string $node, ?string $app): Node|ToolRegistryFailure
     {
         $validation = $this->registry->validateFilters($node, $app);
-        $canResolveExplicitRequiredRoleNode = $this->canResolveExplicitRequiredRoleNode($validation, $node, $app, $requiredRole);
 
-        if ($validation instanceof ToolRegistryFailure && ! $canResolveExplicitRequiredRoleNode) {
+        if ($validation instanceof ToolRegistryFailure) {
             return $validation;
         }
 
         if ($node !== null) {
-            if ($requiredRole !== null) {
-                $resolved = Node::query()
-                    ->where('name', $node)
-                    ->where('status', NodeStatus::Active->value)
-                    ->first();
-
-                if ($resolved instanceof Node) {
-                    return $resolved;
-                }
-            }
-
             $resolved = Node::query()
                 ->where('name', $node)
-                ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
+                ->whereNotIn('id', $this->gatewayNodeIds())
                 ->where('status', NodeStatus::Active->value)
                 ->first();
 
             if ($resolved instanceof Node) {
                 return $resolved;
-            }
-
-            if ($canResolveExplicitRequiredRoleNode && $validation instanceof ToolRegistryFailure) {
-                return $validation;
             }
         }
 
@@ -423,18 +411,14 @@ final readonly class ToolInstaller
         );
     }
 
-    private function canResolveExplicitRequiredRoleNode(
-        ?ToolRegistryFailure $validation,
-        ?string $node,
-        ?string $app,
-        ?string $requiredRole,
-    ): bool {
-        if ($requiredRole === null || $node === null || $app !== null) {
-            return false;
-        }
-
-        return $validation instanceof ToolRegistryFailure
-            && $validation->code === 'validation_failed'
-            && ($validation->meta['field'] ?? null) === 'node';
+    /**
+     * @return list<int>
+     */
+    private function gatewayNodeIds(): array
+    {
+        return $this->nodeRoleAssignments->activeGatewayNodeQuery()
+            ->pluck('id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
     }
 }

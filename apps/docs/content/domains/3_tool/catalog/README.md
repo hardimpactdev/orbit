@@ -105,15 +105,18 @@ remains documented for compatibility until it is removed or migrated.
 2. [`mailpit`](mailpit.md)
 3. [`reverb`](reverb.md)
 
-### Agent IDE servers and autonomous agent tools
+### Agent IDE servers, operator tools, and autonomous agent tools
 
-These installable tools support agent IDE sessions and first-party
-autonomous agents that run under the `agent` role.
+These installable tools support agent IDE sessions, operator application
+configuration, and first-party autonomous agents. Explicit tool targeting is
+constrained by the selected tool's supported operating systems, not by role
+membership.
 
 4. [`polyscope-server`](polyscope-server.md)
 5. [`opencode-server`](opencode-server.md)
 6. [`openclaw`](openclaw.md)
 7. [`hermes`](hermes.md)
+8. [`codex-app`](codex-app.md)
 
 ## File Contract
 

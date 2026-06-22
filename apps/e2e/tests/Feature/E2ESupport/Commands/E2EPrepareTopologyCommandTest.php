@@ -565,7 +565,9 @@ it('builds the gateway artifact image on the Incus host', function (): void {
         ->toContain('rsync -a --delete')
         ->toContain('docker build -f docker/orbit-gateway/Dockerfile')
         ->toContain('docker save')
-        ->toContain('docker/orbit-gateway/Dockerfile');
+        ->toContain('docker/orbit-gateway/Dockerfile')
+        ->toContain('bin/install-orbit')
+        ->toContain('VERSION');
 });
 
 it('--branch uses git archive instead of tar', function (): void {

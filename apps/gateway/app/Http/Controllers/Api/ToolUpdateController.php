@@ -39,7 +39,7 @@ final class ToolUpdateController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller, false, 'tool:update');
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, true, 'tool:update');
 
         $isAgentSelfWithPermission = $this->isAgentSelfWithUpdatePermission($caller);
 
@@ -47,7 +47,7 @@ final class ToolUpdateController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds, allowAnyActiveNode: true, tool: $tool);
 
         if ($target instanceof JsonResponse) {
             $agentSelfBypass = $this->agentSelfUpdateBypass($request, $caller, $tool);

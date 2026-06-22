@@ -16,6 +16,9 @@ authority](../architecture.md#gateway-implicit-authority).
 | `activity:show` | `activity:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `agent-ide:message` | `agent-ide:message` | resolved app or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved app/workspace when available |
 | `app:agent-ide` | `app:agent` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app:codex add` | `app:codex` | app owning node and selected Codex App target node | `app:write` and `app:*` imply `app:codex`; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
+| `app:codex list` | `app:codex` | selected Codex App target node | `app:write` and `app:*` imply `app:codex`; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus selected node |
+| `app:codex remove` | `app:codex` | app owning node and selected Codex App target node | `app:write` and `app:*` imply `app:codex`; target node must be active visible non-gateway and supported by `codex-app` OS metadata | `authorization_failed` | Standard missing-permission meta plus `app` and selected node |
 | `app:list` | `app:read` | app owning node per returned row | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta when a requested filter resolves to no visible node |
 | `app:new` | `app:new` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:prune` | `app:prune` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
@@ -74,6 +77,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `node:default` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
 | `node:grant` | `node:grant` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `node:list` | `node:read` | gateway, filtered by visible node grants | Row-level filtering applies | `authorization_failed` | Standard missing-permission meta only for requested unavailable targets |
+| `node:manage` | authenticated active roleless self | authenticated caller's own node | No grant check; gateway nodes and role-bearing nodes are rejected by eligibility | `node.not_operator` | `reason=not_roleless_operator`, `node=<caller>` |
 | `node:new` | `node:new`; gateway-admin escalation accepted | gateway | First-gateway bootstrap is pre-grants | `authorization_failed` | Standard missing-permission meta |
 | `node:permissions` read mode | `node:read` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `node:permissions` write modes | `node:permissions` | gateway | None | `authorization_failed` | Standard missing-permission meta |
@@ -170,6 +174,8 @@ These commands require a gateway call and a known WireGuard peer identity, but
 do not require a permission check:
 
 - `profile`
+- `node:manage` when the authenticated identity is an active roleless operator
+  node managing itself.
 
 ### Gateway-Host Rejection
 

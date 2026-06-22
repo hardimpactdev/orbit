@@ -23,7 +23,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Supported tool name.` |
-| `node` | `--node` | When no `--app`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | `Visible node slug.` |
+| `node` | `--node` | When no `--app`, local `node:default`, or interactive target selection resolves a target. | `Never.` | `node:default` if set; otherwise interactive selection in TTY mode. | Visible active non-gateway node slug; selected tool must support the node operating system. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `version` | `--tool-version` | Optional. | `Never.` | Tool-defined latest supported version when applicable. | Specific version supported by the selected tool definition. |
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | Expected capability state: installed or running. This does not start a process. |
@@ -39,10 +39,9 @@ and `expected_version` remain `tool:update` inputs and are rejected here.
 
 - Verifies the tool supports managed installation on the target node.
 - Resolves the requested expected version before any gateway row or node artifact is written.
-- For role baseline tools, verifies the target node already has the
-  required active role. `tool:install seaweedfs` requires an active `s3` role and
-  reconverges the SeaweedFS role baseline instead of creating a standalone
-  object-storage service.
+- Verifies the target node is active, visible, not the gateway, and supported
+  by the selected tool definition's operating system metadata before writing
+  gateway rows or node artifacts.
 - Requires an explicit target source: `--node`, `--app`, local `node:default`,
   or interactive target selection. Non-interactive mode without a target source
   fails with `validation_failed`.
@@ -96,7 +95,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | --- | --- | --- |
 | Tool not found | The selected tool row or tool definition cannot be resolved. | `error.code=tool.not_found` |
 | Unsupported tool action | The selected tool definition does not support this command's action. | `error.code=tool.unsupported_action` |
-| Required role missing | The selected role baseline tool requires an active role that the target node does not have, such as `seaweedfs` requiring `s3`. | `error.code=validation_failed`; `error.meta.field=node`; `error.meta.required_role=<role>` |
+| Unsupported node OS | The selected tool definition does not support the target node operating system. | `error.code=tool.unsupported_on_node`; `error.meta.supported_operating_systems=<values>` |
 | Unsupported status value | `--status` is not `installed` or `running`. | `error.code=validation_failed`; `error.meta.field=status`; `error.meta.reason=unsupported_value` |
 | Missing target source | Non-interactive input provides no `--node`, `--app`, or local `node:default`. | `error.code=validation_failed`; `error.meta.fields=["target"]` |
 | Unsupported runtime field | API input includes `runtime`. Tools do not own runtime lifecycle. | `error.code=validation_failed`; `error.meta.field=runtime`; `error.meta.reason=unsupported_field` |

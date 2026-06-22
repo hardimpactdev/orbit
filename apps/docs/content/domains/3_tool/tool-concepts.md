@@ -22,22 +22,26 @@ These terms define the core vocabulary used across tool command contracts and th
   [`catalog/`](catalog/README.md). Tool slugs outside the catalog are
   unsupported and fail validation.
 - **Tool definition:** Per-tool catalog entry that declares the tool's support
-  model, role and platform eligibility, managed artifacts, service endpoints,
-  credential behavior, and supported tool actions.
+  model, supported operating systems, managed artifacts, service endpoints,
+  credential behavior, and supported tool actions. Tools installed
+  automatically by roles also declare baseline role metadata.
 - Service process definitions belong to the process family. Service version,
   runtime, endpoint, credentials, lifecycle, and logs belong to the process row
   produced from the definition, not to a tool row.
 - **Tool category:** Catalog-declared classification for a tool, such as
   `always`, `runtime`, `database`, `cache`, `development`, `communication`,
-  `infrastructure`, `storage`, `observability`, or `agent`. Used by
-  authorization and routing rules.
+  `infrastructure`, `storage`, `observability`, `agent`, or `operator`. Used
+  for catalog grouping and category-specific behavior when that category
+  declares it.
 - **Storage tool category:** Tool category `storage`. Tools in this category
   back object-storage services owned by a role and expose service credentials
   and WireGuard-private endpoints through their catalog entry.
 - **Agent tool category:** Tool category `agent`. Tools in this category are
-  first-party autonomous agent runtimes (`openclaw`, `hermes`) that require
-  the `agent` node role and run as the shared unprivileged
-  `agent` user.
+  first-party autonomous agent runtimes that may have agent-user,
+  agent-route, and agent-credential behavior.
+- **Operator tool category:** Tool category `operator`. Tools in this category
+  configure local applications used by operators. The category is UX/catalog
+  metadata, not a node-role constraint.
 - **Tool row:** Gateway-owned record of expected state for one tool on one
   node, including expected capability state, expected version when tracked,
   install paths, and probe and repair settings.
@@ -58,10 +62,17 @@ These terms describe how Orbit relates to each tool in the catalog.
 - **Observational tool:** Tool whose presence and state Orbit observes but does
   not own.
 - **Role baseline tool:** Tool materialized as a tool row during node
-  provisioning so doctor has one gateway-owned source of truth per node.
+  provisioning so doctor has one gateway-owned source of truth per node. Role
+  baseline metadata controls automatic provisioning, not the general explicit
+  target eligibility gate for user-directed `tool:*` commands.
+- **Supported operating systems:** Tool-definition metadata that limits which
+  node platforms may run a tool. Explicit `--node` tool commands may target any
+  active visible non-gateway node when the selected tool supports that node's
+  operating system.
 - **Agent tool:** Installable tool in the `agent` category. Requires the
-  `agent` role on the node, runs as the shared unprivileged
-  `agent` user, and uses the backend declared by its catalog entry.
+  selected node's operating system to be supported, runs as the shared
+  unprivileged `agent` user when the backend uses an agent runtime, and uses
+  the backend declared by its catalog entry.
 - **Agent tool internal route:** Tool-owned proxy route under the agent
   role TLD, such as `https://openclaw.agent`. Reachable only over the
   Orbit/WireGuard network.

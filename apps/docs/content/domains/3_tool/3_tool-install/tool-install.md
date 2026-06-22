@@ -52,7 +52,7 @@ Run this command to bootstrap a supported tool on the target node and record gat
 
 1. Resolves the target node and tool definition.
 2. Resolves the requested tool version when one is supplied.
-3. Verifies the tool is supported for the target node role and platform.
+3. Verifies the tool is supported for the target node operating system.
 4. Creates or updates the gateway tool row for the node.
 5. Generates managed credentials when the selected tool declares a credential
    contract.

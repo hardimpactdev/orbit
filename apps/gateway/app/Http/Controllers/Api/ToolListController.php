@@ -29,18 +29,21 @@ final readonly class ToolListController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller, includeMetricsExporterNodes: true);
+        $defaultVisibleNodeIds = $this->visibleToolNodeIds($caller, includeMetricsExporterNodes: true);
+        $targetVisibleNodeIds = $this->visibleToolNodeIds($caller, allowAnyActiveNode: true, includeMetricsExporterNodes: true);
+        $node = $request->query('node');
+        $app = $request->query('app');
+        $hasExplicitTarget = (is_string($node) && $node !== '') || (is_string($app) && $app !== '');
+        $authorizationNodeIds = $hasExplicitTarget ? $targetVisibleNodeIds : $defaultVisibleNodeIds;
 
-        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
+        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $authorizationNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the tool registry.');
         }
 
-        $node = $request->query('node');
-        $app = $request->query('app');
         $nodeFilter = null;
 
         if (is_string($node) && $node !== '') {
-            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds, includeMetricsExporterNodes: true);
+            $nodeFilter = $this->resolveNodeFilter($node, $caller, $targetVisibleNodeIds, allowAnyActiveNode: true, includeMetricsExporterNodes: true);
 
             if (! $nodeFilter instanceof Node) {
                 return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
@@ -48,7 +51,7 @@ final readonly class ToolListController implements Loggable
         }
 
         if (is_string($app) && $app !== '') {
-            $appNode = $this->resolveAppNodeFilter($app, $caller, $visibleNodeIds);
+            $appNode = $this->resolveAppNodeFilter($app, $caller, $targetVisibleNodeIds);
 
             if (! $appNode instanceof Node) {
                 return $this->validationFailed('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name or domain.");
@@ -61,7 +64,7 @@ final readonly class ToolListController implements Loggable
             $nodeFilter = $appNode;
         }
 
-        $tools = $this->fetchTools($visibleNodeIds, $nodeFilter);
+        $tools = $this->fetchTools($nodeFilter instanceof Node ? $targetVisibleNodeIds : $defaultVisibleNodeIds, $nodeFilter);
 
         return response()->json([
             'success' => [

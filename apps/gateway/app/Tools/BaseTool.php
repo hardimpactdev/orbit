@@ -21,6 +21,14 @@ abstract class BaseTool implements ToolDefinition
     /**
      * @return list<string>
      */
+    public function supportedOperatingSystems(): array
+    {
+        return ['linux'];
+    }
+
+    /**
+     * @return list<string>
+     */
     public function capabilities(): array
     {
         return [];

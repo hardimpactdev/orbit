@@ -117,6 +117,62 @@ describe('tool API target authorization', function (): void {
         expect(DB::table('node_access')->count())->toBe(1);
     });
 
+    it('allows explicit active visible roleless nodes when the selected tool supports the node OS', function (): void {
+        $caller = createToolTargetAuthCaller();
+        $operatorNode = Node::factory()->operator()->create([
+            'name' => 'mini',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        grantToolTargetAuthAccess($caller, $operatorNode);
+
+        NodeTool::factory()->create([
+            'node_id' => $operatorNode->id,
+            'name' => 'openclaw',
+            'credentials' => [
+                'fields' => [
+                    'password' => 'operator-secret',
+                ],
+            ],
+        ]);
+
+        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
+            'node' => 'mini',
+        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.credentials.node', 'mini')
+            ->assertJsonPath('success.data.credentials.fields.password', 'operator-secret');
+    });
+
+    it('rejects the gateway as an explicit tool target', function (): void {
+        $caller = createToolTargetAuthCaller();
+        $gateway = createTestGatewayNode([
+            'name' => 'gateway-1',
+            'status' => 'active',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        grantToolTargetAuthAccess($caller, $gateway);
+
+        NodeTool::factory()->create([
+            'node_id' => $gateway->id,
+            'name' => 'openclaw',
+            'credentials' => [
+                'fields' => [
+                    'password' => 'gateway-secret',
+                ],
+            ],
+        ]);
+
+        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
+            'node' => 'gateway-1',
+        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.reason', 'gateway_not_tool_eligible');
+    });
+
     it('rejects credentials when the grant only allows reading tools', function (): void {
         $caller = createToolTargetAuthCaller();
         $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);

@@ -585,12 +585,14 @@ Source: [Tool Concepts](domains/3_tool/tool-concepts.md).
 - **Tool category**
 - **Storage tool category**
 - **Agent tool category**
+- **Operator tool category**
 - **Tool row**
 - **Required baseline tool**
 - **Installable tool**
 - **Managed tool**
 - **Observational tool**
 - **Role baseline tool**
+- **Supported operating systems**
 - **Agent tool**
 - **Agent tool internal route**
 - **Agent tool credentials**

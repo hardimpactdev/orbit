@@ -58,6 +58,7 @@ use App\Services\Workspaces\WorkspaceSourceDriverResolver;
 use App\Support\LocalPlatform;
 use App\Support\Streaming\NullProgressReporter;
 use App\Tools\CaddyTool;
+use App\Tools\CodexAppTool;
 use App\Tools\ComposerTool;
 use App\Tools\DnsTool;
 use App\Tools\DockerTool;
@@ -155,6 +156,7 @@ class AppServiceProvider extends ServiceProvider
             $app->make(OpenClawTool::class),
             $app->make(HermesTool::class),
             $app->make(LaravelInstallerTool::class),
+            $app->make(CodexAppTool::class),
         ]));
         $this->app->singleton(UpdateDriverRegistry::class, fn ($app): UpdateDriverRegistry => new UpdateDriverRegistry([
             $app->make(UnattendedUpgradesDriver::class),

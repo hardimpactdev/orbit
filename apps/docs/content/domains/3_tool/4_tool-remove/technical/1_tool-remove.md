@@ -23,14 +23,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `tool` | `argument` | `Always.` | `Never.` | `None.` | `Registered tool name.` |
-| `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | `Visible app-role slug.` |
+| `node` | `--node` or local `node:default` | Required when `app` is absent. | `Never.` | `node:default` if set. | Visible active non-gateway node slug; selected tool must support the node operating system. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `force` | `--force` | Required for non-JSON non-interactive destructive consent. | `Never.` | `false` | Explicit destructive consent. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer and implies destructive consent. |
 
 At least one target source is required: explicit `--node`, explicit `--app`,
 local `node:default`, or interactive target selection. `tool:remove` must not
-fall back to the only visible tool node in non-interactive mode.
+fall back to the only visible non-gateway node in non-interactive mode.
 
 ## Input Mode Contracts
 

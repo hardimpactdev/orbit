@@ -29,13 +29,13 @@ final class ToolCredentialsController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller, false, 'tool:credentials');
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, true, 'tool:credentials');
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds);
+        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds, allowAnyActiveNode: true, tool: $tool);
 
         if ($target instanceof JsonResponse) {
             return $target;

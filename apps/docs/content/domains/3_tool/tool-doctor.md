@@ -47,7 +47,8 @@ The tools probe reads gateway tool rows and checks these layers:
    known tool definition, expected capability state, managed flag, and
    definition-specific required fields.
 2. **Node eligibility:** the node reference resolves to a visible active node
-   whose role and platform support the selected tool definition.
+   that is not the gateway. The selected tool definition must support the node
+   operating system.
 3. **Capability presence:** the expected package, binary, container, service, or
    observational capability is present when the row expects it to exist.
 4. **Version state:** the observed version matches gateway expected version when
@@ -74,9 +75,9 @@ Each code below identifies a specific kind of drift the tool probe can detect.
 | Code | Detected when |
 | --- | --- |
 | `tool.record_incomplete` | A selected gateway tool row lacks node, name, expected state, managed flag, or definition-specific required fields. |
-| `tool.node_invalid` | The tool row points at a missing, unauthorized, inactive, or role-incompatible node. |
+| `tool.node_invalid` | The tool row points at a missing, unauthorized, inactive, or gateway node. |
 | `tool.definition_missing` | The tool row references a tool name that is not present in Orbit's tool catalog. |
-| `tool.unsupported_on_node` | The tool definition exists but does not support the selected node role or platform. |
+| `tool.unsupported_on_node` | The tool definition exists but does not support the selected node operating system. |
 | `tool.capability_missing` | The expected package, binary, container, service, or observational capability is absent. |
 | `tool.version_mismatch` | The observed version differs from gateway expected version. |
 | `tool.config_missing` | Managed configuration required by the tool definition is absent. |

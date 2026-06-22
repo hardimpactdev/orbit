@@ -47,13 +47,13 @@ final class ToolShowController implements Loggable
             ], 400);
         }
 
-        $visibleNodeIds = $this->visibleToolNodeIds($caller);
+        $visibleNodeIds = $this->visibleToolNodeIds($caller, true);
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
             return $this->authorizationFailed('This node is not authorized to read the tool registry.');
         }
 
-        $targetNode = $this->resolveTargetNode($request, $caller, $visibleNodeIds);
+        $targetNode = $this->resolveTargetNode($request, $caller, $visibleNodeIds, $tool);
 
         if ($targetNode instanceof JsonResponse) {
             return $targetNode;
@@ -97,16 +97,33 @@ final class ToolShowController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function resolveTargetNode(Request $request, Node $caller, array $visibleNodeIds): Node|JsonResponse
+    private function resolveTargetNode(Request $request, Node $caller, array $visibleNodeIds, string $tool): Node|JsonResponse
     {
         $node = $request->query('node');
         $app = $request->query('app');
 
         if (is_string($node) && $node !== '') {
-            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds);
+            $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds, allowAnyActiveNode: true);
 
             if (! $nodeFilter instanceof Node) {
                 return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
+            }
+
+            $catalog = app(ToolCatalog::class);
+
+            if (! $catalog->supportsNode($tool, $nodeFilter)) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'tool.unsupported_on_node',
+                        'message' => "Tool '{$tool}' does not support node '{$nodeFilter->name}' platform.",
+                        'meta' => [
+                            'tool' => $tool,
+                            'node' => $nodeFilter->name,
+                            'platform' => $nodeFilter->platform,
+                            'supported_operating_systems' => $catalog->supportedOperatingSystems($tool),
+                        ],
+                    ],
+                ], 422);
             }
         }
 
@@ -119,6 +136,23 @@ final class ToolShowController implements Loggable
 
             if (isset($nodeFilter) && $nodeFilter->id !== $appNode->id) {
                 return $this->validationFailed('app', $app, "Invalid value for --app: '{$app}'. App is not owned by the selected node.");
+            }
+
+            $catalog = app(ToolCatalog::class);
+
+            if (! $catalog->supportsNode($tool, $appNode)) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'tool.unsupported_on_node',
+                        'message' => "Tool '{$tool}' does not support node '{$appNode->name}' platform.",
+                        'meta' => [
+                            'tool' => $tool,
+                            'node' => $appNode->name,
+                            'platform' => $appNode->platform,
+                            'supported_operating_systems' => $catalog->supportedOperatingSystems($tool),
+                        ],
+                    ],
+                ], 422);
             }
 
             return $appNode;

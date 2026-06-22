@@ -418,6 +418,32 @@ class E2EPrepareTopologyCommand extends Command
             }
         }
 
+        foreach (['bin/install-orbit', 'VERSION'] as $path) {
+            $label = str_replace('/', '-', $path);
+            $parent = dirname($path);
+
+            if ($parent !== '.') {
+                $mkdirParent = $timer->measure(
+                    "gateway-artifacts.push.context-parent.{$label}",
+                    fn (): ProcessResult => $host->run('mkdir -p '.escapeshellarg("{$remoteBuildContext}/{$parent}"), timeoutSeconds: 30),
+                );
+
+                if (! $mkdirParent->successful()) {
+                    throw new RuntimeException("Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}");
+                }
+            }
+
+            $copy = $timer->measure("gateway-artifacts.push.context-copy.{$label}", fn (): ProcessResult => Process::timeout(120)->run(sprintf(
+                'scp -q %s %s',
+                escapeshellarg(repo_path($path)),
+                escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}"),
+            )));
+
+            if (! $copy->successful()) {
+                throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");
+            }
+        }
+
         $gatewayImage = DockerTopologyProvider::gatewayImage();
         $build = $timer->measure('gateway-artifacts.push.image-build', fn (): ProcessResult => $host->run(sprintf(
             <<<'BASH'

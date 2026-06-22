@@ -81,6 +81,10 @@ These rules govern all app family commands.
   selection and backend pools, and the `analytics` role owns the Plausible CE
   runtime. V1 does not inject scripts, provision Plausible sites, or expose the
   Plausible dashboard publicly.
+- Apps may be registered in Codex App on an eligible operator node through
+  `app:codex`. The command edits only Codex App's config file on the target
+  node and applies Codex App's URL callback; it does not configure the app's
+  agent IDE adapter.
 - Production deployment pipeline definitions currently remain app-owned for
   compatibility. The product direction is for deployment steps, runs, logs, and
   latest deployment status to move to app instances so `app:deploy` can be
@@ -261,6 +265,7 @@ The following commands are available in the `app` family.
 18. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
 19. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
 20. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
+21. [`orbit app:codex add|remove|list [app]`](21_app-codex/app-codex.md)
 
 ## Related
 

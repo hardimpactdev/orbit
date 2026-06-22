@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Tools;
 
 use App\Contracts\ToolDefinition;
+use App\Models\Node;
+use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class ToolCatalog
 {
@@ -131,6 +133,48 @@ final readonly class ToolCatalog
     public function category(string $tool): ?string
     {
         return $this->definition($tool)?->category();
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function supportedOperatingSystems(string $tool): array
+    {
+        return $this->definition($tool)?->supportedOperatingSystems() ?? [];
+    }
+
+    public function supportsNode(string $tool, Node $node): bool
+    {
+        if (! $node->isActive()) {
+            return false;
+        }
+
+        if (app(NodeRoleAssignments::class)->nodeIsGateway($node)) {
+            return false;
+        }
+
+        $operatingSystem = $this->operatingSystemForPlatform($node->platform);
+
+        if ($operatingSystem === null) {
+            return false;
+        }
+
+        return in_array($operatingSystem, $this->supportedOperatingSystems($tool), true);
+    }
+
+    public function operatingSystemForPlatform(?string $platform): ?string
+    {
+        if (! is_string($platform) || trim($platform) === '') {
+            return 'linux';
+        }
+
+        $family = strtolower(explode('_', trim($platform), 2)[0]);
+
+        return match ($family) {
+            'darwin', 'macos' => 'macos',
+            'debian', 'linux', 'ubuntu' => 'linux',
+            default => null,
+        };
     }
 
     /**

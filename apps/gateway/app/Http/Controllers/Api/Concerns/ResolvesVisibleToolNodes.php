@@ -10,6 +10,7 @@ use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Tools\AgentToolAuthorizer;
+use App\Services\Tools\ToolCatalog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,6 +34,8 @@ trait ResolvesVisibleToolNodes
 
             if (! $allowAnyActiveNode) {
                 $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
+            } else {
+                $query->whereNotIn('id', $this->gatewayNodeIds());
             }
 
             return $query->pluck('id')->all();
@@ -45,6 +48,8 @@ trait ResolvesVisibleToolNodes
 
         if (! $allowAnyActiveNode) {
             $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
+        } else {
+            $query->whereNotIn('id', $this->gatewayNodeIds());
         }
 
         $visibleNodeIds = [];
@@ -68,6 +73,7 @@ trait ResolvesVisibleToolNodes
         array $visibleNodeIds,
         bool $allowOnlyVisibleFallback = true,
         bool $allowAnyActiveNode = false,
+        ?string $tool = null,
     ): array|JsonResponse {
         $node = $this->toolTargetString($request, 'node');
         $app = $this->toolTargetString($request, 'app');
@@ -78,6 +84,10 @@ trait ResolvesVisibleToolNodes
 
             if (! $nodeFilter instanceof Node) {
                 return $this->toolTargetFailure($node, 'node', $caller, $visibleNodeIds, $allowAnyActiveNode);
+            }
+
+            if ($this->shouldRejectUnsupportedToolNode($tool, $nodeFilter)) {
+                return $this->toolTargetUnsupportedNode((string) $tool, $nodeFilter);
             }
         }
 
@@ -90,6 +100,10 @@ trait ResolvesVisibleToolNodes
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
                 return $this->toolTargetValidationFailed('app', $app, "Invalid value for --app: '{$app}'. App is not owned by the selected node.");
+            }
+
+            if ($this->shouldRejectUnsupportedToolNode($tool, $appNode)) {
+                return $this->toolTargetUnsupportedNode((string) $tool, $appNode);
             }
 
             $nodeFilter = $appNode;
@@ -142,6 +156,8 @@ trait ResolvesVisibleToolNodes
 
         if (! $allowAnyActiveNode) {
             $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
+        } else {
+            $query->whereNotIn('id', $this->gatewayNodeIds());
         }
 
         return $query->first();
@@ -207,6 +223,15 @@ trait ResolvesVisibleToolNodes
         array $visibleNodeIds,
         bool $allowAnyActiveNode = false,
     ): JsonResponse {
+        if ($field === 'node' && $this->gatewayToolTargetExists($value)) {
+            return $this->toolTargetValidationFailed(
+                field: 'node',
+                value: $value,
+                message: "Invalid value for --node: '{$value}'. Gateway nodes are not tool targets.",
+                meta: ['reason' => 'gateway_not_tool_eligible'],
+            );
+        }
+
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $this->toolTargetExists($field, $value, $visibleNodeIds, $allowAnyActiveNode)) {
             return $this->toolTargetAuthorizationFailed("This node is not authorized to manage tools for the selected {$field}.", [
                 $field => $value,
@@ -233,6 +258,8 @@ trait ResolvesVisibleToolNodes
 
             if (! $allowAnyActiveNode) {
                 $query->whereIn('id', $this->nodeRoleAssignments()->activeToolHostNodeIds());
+            } else {
+                $query->whereNotIn('id', $this->gatewayNodeIds());
             }
 
             return $query->exists();
@@ -287,6 +314,24 @@ trait ResolvesVisibleToolNodes
         return app(NodeRoleAssignments::class);
     }
 
+    /**
+     * @return list<int>
+     */
+    private function gatewayNodeIds(): array
+    {
+        return $this->nodeRoleAssignments()->activeGatewayNodeQuery()
+            ->pluck('id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
+    }
+
+    private function gatewayToolTargetExists(string $node): bool
+    {
+        return $this->nodeRoleAssignments()->activeGatewayNodeQuery()
+            ->where('name', $node)
+            ->exists();
+    }
+
     private function isAgentSelf(Node $caller, ?string $targetNodeName): bool
     {
         if ($targetNodeName === null) {
@@ -334,7 +379,7 @@ trait ResolvesVisibleToolNodes
         ], 403);
     }
 
-    private function toolTargetValidationFailed(string $field, string $value, string $message): JsonResponse
+    private function toolTargetValidationFailed(string $field, string $value, string $message, array $meta = []): JsonResponse
     {
         return response()->json([
             'error' => [
@@ -343,8 +388,40 @@ trait ResolvesVisibleToolNodes
                 'meta' => [
                     'field' => $field,
                     'value' => $value,
+                    ...$meta,
                 ],
             ],
         ], 422);
+    }
+
+    private function toolTargetUnsupportedNode(string $tool, Node $node): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => 'tool.unsupported_on_node',
+                'message' => "Tool '{$tool}' does not support node '{$node->name}' platform.",
+                'meta' => [
+                    'tool' => $tool,
+                    'node' => $node->name,
+                    'platform' => $node->platform,
+                    'supported_operating_systems' => app(ToolCatalog::class)->supportedOperatingSystems($tool),
+                ],
+            ],
+        ], 422);
+    }
+
+    private function shouldRejectUnsupportedToolNode(?string $tool, Node $node): bool
+    {
+        if ($tool === null) {
+            return false;
+        }
+
+        $catalog = app(ToolCatalog::class);
+
+        if (! $catalog->supports($tool)) {
+            return false;
+        }
+
+        return ! $catalog->supportsNode($tool, $node);
     }
 }

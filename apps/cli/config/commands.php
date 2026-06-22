@@ -10,6 +10,7 @@ use App\Commands\App\AppAgentIdeCommand;
 use App\Commands\App\AppAnalyticsDisableCommand;
 use App\Commands\App\AppAnalyticsEnableCommand;
 use App\Commands\App\AppAnalyticsShowCommand;
+use App\Commands\App\AppCodexCommand;
 use App\Commands\App\AppEnvCommand;
 use App\Commands\App\AppInstanceCommand;
 use App\Commands\App\AppListCommand;
@@ -76,6 +77,7 @@ use App\Commands\Node\NodeAgentIdeCommand;
 use App\Commands\Node\NodeDefaultCommand;
 use App\Commands\Node\NodeGrantCommand;
 use App\Commands\Node\NodeListCommand;
+use App\Commands\Node\NodeManageCommand;
 use App\Commands\Node\NodeNewCommand;
 use App\Commands\Node\NodePermissionsCommand;
 use App\Commands\Node\NodeRemoveCommand;
@@ -169,6 +171,7 @@ return [
         AppAnalyticsDisableCommand::class,
         AppAnalyticsEnableCommand::class,
         AppAnalyticsShowCommand::class,
+        AppCodexCommand::class,
         AppEnvCommand::class,
         AppInstanceCommand::class,
         AppListCommand::class,
@@ -230,6 +233,7 @@ return [
         NodeDefaultCommand::class,
         NodeGrantCommand::class,
         NodeListCommand::class,
+        NodeManageCommand::class,
         NodeNewCommand::class,
         NodePermissionsCommand::class,
         NodeRemoveCommand::class,

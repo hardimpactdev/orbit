@@ -1794,20 +1794,18 @@ SCRIPT,
 
     private function gatewaySshPublicKey(): string|int
     {
-        $publicKey = Process::timeout(30)->run('ssh-keygen -y -f ~/.ssh/id_ed25519');
-
-        if ($publicKey->successful() && trim($publicKey->output()) !== '') {
-            return trim($publicKey->output());
+        try {
+            return app(GatewayManagementSshKey::class)->publicKey();
+        } catch (RuntimeException $exception) {
+            return $this->failCommand(
+                code: 'node.provisioning_incomplete',
+                message: 'Gateway SSH identity is not available for steady-state access.',
+                meta: [
+                    'step' => 'steady_state_ssh_authorization',
+                    'error' => $exception->getMessage(),
+                ],
+            );
         }
-
-        return $this->failCommand(
-            code: 'node.provisioning_incomplete',
-            message: 'Gateway SSH identity is not available for steady-state access.',
-            meta: [
-                'step' => 'steady_state_ssh_authorization',
-                'error' => trim($publicKey->errorOutput()) ?: trim($publicKey->output()) ?: null,
-            ],
-        );
     }
 
     private function controlWireGuardConfig(

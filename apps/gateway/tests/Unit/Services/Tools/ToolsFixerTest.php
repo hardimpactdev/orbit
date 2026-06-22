@@ -707,6 +707,11 @@ final class ToolsFixerAgentToolDefinition implements ToolDefinition
         return null;
     }
 
+    public function supportedOperatingSystems(): array
+    {
+        return ['linux'];
+    }
+
     public function installScript(array $config = []): ?string
     {
         return null;

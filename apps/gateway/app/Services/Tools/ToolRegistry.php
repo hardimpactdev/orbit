@@ -27,7 +27,10 @@ final readonly class ToolRegistry
 
         return NodeTool::query()
             ->with('node')
-            ->whereHas('node', fn (Builder $query): Builder => $this->visibleToolNodeQuery($query))
+            ->when(
+                ! ($targetNode instanceof Node),
+                fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $this->visibleManagedToolNodeQuery($query)),
+            )
             ->when($targetNode instanceof Node, fn (Builder $query): Builder => $query->where('node_id', $targetNode->id))
             ->get()
             ->sort(fn (NodeTool $first, NodeTool $second): int => [
@@ -151,7 +154,7 @@ final readonly class ToolRegistry
 
         return Node::query()
             ->where('name', $node)
-            ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
+            ->whereNotIn('id', $this->gatewayNodeIds())
             ->where('status', NodeStatus::Active->value)
             ->first();
     }
@@ -198,10 +201,21 @@ final readonly class ToolRegistry
         return $model->node;
     }
 
-    private function visibleToolNodeQuery(Builder $query): Builder
+    private function visibleManagedToolNodeQuery(Builder $query): Builder
     {
         return $query
             ->whereIn('id', $this->nodeRoleAssignments->activeToolHostNodeIds())
             ->where('status', NodeStatus::Active->value);
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function gatewayNodeIds(): array
+    {
+        return $this->nodeRoleAssignments->activeGatewayNodeQuery()
+            ->pluck('id')
+            ->map(fn (mixed $nodeId): int => (int) $nodeId)
+            ->all();
     }
 }

@@ -8,6 +8,7 @@ use App\Services\Processes\ProcessServiceDefinitionRegistry;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Tools\CaddyTool;
+use App\Tools\CodexAppTool;
 use App\Tools\GhTool;
 use App\Tools\HermesTool;
 use App\Tools\OpenCodeServerTool;
@@ -27,6 +28,17 @@ describe('tool catalog definitions', function (): void {
 
         expect($catalog->definition('polyscope-server'))
             ->toBeInstanceOf(PolyscopeServerTool::class);
+    });
+
+    it('catalogs Codex App as a macOS operator tool', function (): void {
+        $catalog = app(ToolCatalog::class);
+
+        expect($catalog->definition('codex-app'))->toBeInstanceOf(CodexAppTool::class)
+            ->and($catalog->category('codex-app'))->toBe('operator')
+            ->and($catalog->requiredNodeRole('codex-app'))->toBeNull()
+            ->and($catalog->supportedOperatingSystems('codex-app'))->toBe(['macos'])
+            ->and($catalog->hasCapability('codex-app', 'install'))->toBeFalse()
+            ->and($catalog->hasCapability('codex-app', 'remove'))->toBeFalse();
     });
 
     it('catalogs gh as an app-role runtime tool, not a fleet-wide always tool', function (): void {

@@ -161,16 +161,14 @@ describe('tool command shared contract', function (): void {
             ->and($registry->validateFilters(app: 'docs-contract'))->toBeNull();
 
         $invalidNode = $registry->validateFilters(node: 'missing-node');
-        $unassignedNodeFailure = $registry->validateFilters(node: $unassignedNode->name);
+        $unassignedNodeFilter = $registry->validateFilters(node: $unassignedNode->name);
         $invalidApp = $registry->validateFilters(app: 'missing-app');
         $conflictingApp = $registry->validateFilters(node: $firstNode->name, app: 'docs-contract');
 
         expect($invalidNode)->toBeInstanceOf(ToolRegistryFailure::class)
             ->and($invalidNode->code)->toBe('validation_failed')
             ->and($invalidNode->meta)->toMatchArray(['field' => 'node', 'value' => 'missing-node'])
-            ->and($unassignedNodeFailure)->toBeInstanceOf(ToolRegistryFailure::class)
-            ->and($unassignedNodeFailure->code)->toBe('validation_failed')
-            ->and($unassignedNodeFailure->meta)->toMatchArray(['field' => 'node', 'value' => 'app-contract-unassigned'])
+            ->and($unassignedNodeFilter)->toBeNull()
             ->and($invalidApp)->toBeInstanceOf(ToolRegistryFailure::class)
             ->and($invalidApp->code)->toBe('validation_failed')
             ->and($invalidApp->meta)->toMatchArray(['field' => 'app', 'value' => 'missing-app'])

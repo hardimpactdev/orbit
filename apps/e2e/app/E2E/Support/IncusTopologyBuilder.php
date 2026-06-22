@@ -489,12 +489,17 @@ class IncusTopologyBuilder
         }
 
         if ($target === E2ETopologyKind::OperatorGatewayAppdevAppprodIngress) {
-            return [
-                E2ETopologyKind::Operator,
-                E2ETopologyKind::OperatorGateway,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
-            ];
+            return $this->remoteGatewayArtifactBundleDir !== null
+                ? [
+                    E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                    E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+                ]
+                : [
+                    E2ETopologyKind::Operator,
+                    E2ETopologyKind::OperatorGateway,
+                    E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                    E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+                ];
         }
 
         if ($target === E2ETopologyKind::OperatorGatewayAppdevWebsocket
@@ -851,7 +856,10 @@ class IncusTopologyBuilder
         $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodIngress;
         $instances = $this->startTemplateRoles(['operator', 'gateway', 'dev', 'prod'], $key, $kind);
 
-        $this->timer->measure('prepared-ingress.gateway.bundle-overlay', fn () => $this->applyBundleOverlay($instances['gateway'], 'gateway', $key));
+        if ($this->remoteBundleDir !== null) {
+            $this->timer->measure('prepared-ingress.gateway.bundle-overlay', fn () => $this->applyBundleOverlay($instances['gateway'], 'gateway', $key));
+        }
+
         $this->timer->measure('prepared-ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('prepared-ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-dedicated-ingress'));
         $this->timer->measure('prepared-ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
@@ -1889,6 +1897,9 @@ prepare_role() {
     record_timing "$role" orbit-binary "$phase_start"
     phase_start="$(now_ms)"
     authorize_ssh "$name" "$user"
+    if [ "$binary_user" != "$user" ]; then
+        authorize_ssh "$name" "$binary_user"
+    fi
     if [ "$role" = "operator" ]; then
         install_private_key "$name" "$user"
     fi
@@ -2130,10 +2141,11 @@ wait_for_agent() {
 
 authorize_ssh() {
     local name="$1"
+    local user="$2"
 
-    incus exec "$name" -- sh -lc "install -d -m 700 -o ${bootstrap_user} -g ${bootstrap_user} /home/${bootstrap_user}/.ssh"
-    incus file push "$public_key_path" "${name}/home/${bootstrap_user}/.ssh/authorized_keys"
-    incus exec "$name" -- sh -lc "chown ${bootstrap_user}:${bootstrap_user} /home/${bootstrap_user}/.ssh/authorized_keys && chmod 600 /home/${bootstrap_user}/.ssh/authorized_keys && usermod -p '*' ${bootstrap_user} && (systemctl start ssh || systemctl start sshd || true)"
+    incus exec "$name" -- sh -lc "install -d -m 700 -o ${user} -g ${user} /home/${user}/.ssh"
+    incus file push "$public_key_path" "${name}/home/${user}/.ssh/authorized_keys"
+    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/authorized_keys && chmod 600 /home/${user}/.ssh/authorized_keys && usermod -p '*' ${user} && (systemctl start ssh || systemctl start sshd || true)"
 }
 
 instance_ipv4() {
@@ -2145,20 +2157,21 @@ instance_ipv4() {
 
 wait_for_ssh() {
     local name="$1"
+    local user="$2"
     local deadline=$((SECONDS + timeout_seconds))
     local ipv4=''
 
     while [ "$SECONDS" -lt "$deadline" ]; do
         ipv4="$(instance_ipv4 "$name")"
 
-        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${bootstrap_user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
+        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
             return 0
         fi
 
         sleep 3
     done
 
-    echo "SSH never became ready on ${name}." >&2
+    echo "SSH never became ready on ${name} for ${user}." >&2
     return 1
 }
 
@@ -2226,10 +2239,13 @@ prepare_role() {
         record_timing "$role" orbit-binary "$phase_start"
     fi
     phase_start="$(now_ms)"
-    authorize_ssh "$name"
+    authorize_ssh "$name" "$bootstrap_user"
+    if [ "$bootstrap_user" != "orbit" ]; then
+        authorize_ssh "$name" "orbit"
+    fi
     record_timing "$role" ssh-authorize "$phase_start"
     phase_start="$(now_ms)"
-    wait_for_ssh "$name"
+    wait_for_ssh "$name" "$bootstrap_user"
     record_timing "$role" ssh-ready "$phase_start"
 }
 

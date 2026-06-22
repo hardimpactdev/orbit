@@ -15,6 +15,11 @@ interface ToolDefinition
     /**
      * @return list<string>
      */
+    public function supportedOperatingSystems(): array;
+
+    /**
+     * @return list<string>
+     */
     public function capabilities(): array;
 
     public function installScript(array $config = []): ?string;

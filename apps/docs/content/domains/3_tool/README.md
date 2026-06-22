@@ -21,7 +21,8 @@ These rules govern what the tool command family owns and what it may not touch.
   included only when a command explicitly requests live inspection or when
   doctor runs.
 - Tool definitions may declare capability versions, install scripts,
-  reconfiguration scripts, credentials, probe metadata, and repair commands.
+  reconfiguration scripts, credentials, probe metadata, supported operating
+  systems, and repair commands.
 - `tool:update` changes expected version configuration or updates a managed
   host capability. It does not change process runtime, process version, or any
   runnable service instance.
@@ -86,15 +87,18 @@ tool-specific contracts live in [`catalog/`](catalog/README.md).
 | [`opencode-server`](catalog/opencode-server.md) | OpenCode Server | Node-owned `systemd` process with `tool=opencode` | Installable and removable by Orbit | `development` | install, remove, reconfigure, password reset, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`openclaw`](catalog/openclaw.md) | OpenClaw | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
 | [`hermes`](catalog/hermes.md) | Hermes | Docker-managed runtime as `agent` | Installable and removable by Orbit | `agent` | install, remove, update, credentials, service endpoint, fix, adopt; lifecycle and logs through `process:*` |
+| [`codex-app`](catalog/codex-app.md) | Codex App | macOS Codex App configuration file and URL callback | App-facing project-registration bridge for Codex App on macOS | `operator` | `app:codex` add, remove, list; config presence probe |
 
 Required baseline tools are expected to exist as part of node provisioning or
 host bootstrap. `tool:install` does not create those tools from scratch unless
 a future tool definition explicitly changes their support model. Role baseline
-tools, such as `seaweedfs`, are materialized by their owning role and may only be
-installed or reconverged through `tool:*` when the target node already has the
-required active role. Installable tools are provisioned by
-`tool:install`, removed by `tool:remove`, and verified by
-`doctor --family=tool`.
+tools, such as `seaweedfs`, are installed automatically by their owning role.
+User-directed `tool:*` commands with an explicit target may target an active
+visible node unless that node is the gateway. The selected tool definition must
+support the target node operating system; role membership is not the general
+eligibility gate.
+Installable tools are provisioned by `tool:install`, removed by `tool:remove`,
+and verified by `doctor --family=tool`.
 
 The `dns` tool is the runtime capability behind the VPN-facing DNS substrate;
 its container, port, and config lifecycle are verified by `doctor --family=tool`.

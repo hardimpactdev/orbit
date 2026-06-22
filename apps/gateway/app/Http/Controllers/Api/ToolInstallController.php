@@ -41,7 +41,7 @@ final class ToolInstallController implements Loggable
             return $this->authorizationFailed('Peer identity unknown.');
         }
 
-        $allowAnyActiveNode = $catalog->requiredNodeRole($tool) !== null;
+        $allowAnyActiveNode = true;
         $visibleNodeIds = $this->visibleToolNodeIds($caller, $allowAnyActiveNode, 'tool:install');
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === []) {
@@ -59,6 +59,7 @@ final class ToolInstallController implements Loggable
             $caller,
             $visibleNodeIds,
             allowAnyActiveNode: $allowAnyActiveNode,
+            tool: $tool,
         );
 
         if ($target instanceof JsonResponse) {
@@ -201,7 +202,7 @@ final class ToolInstallController implements Loggable
         $status = match ($failure->code) {
             'tool.not_found' => 404,
             'authorization_failed' => 403,
-            'validation_failed' => 422,
+            'validation_failed', 'tool.unsupported_on_node' => 422,
             default => 400,
         };
 

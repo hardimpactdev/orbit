@@ -308,6 +308,14 @@ Node transport has different rules before and after bootstrap:
 - CLI callers use HTTPS over WireGuard to communicate with the gateway after
   local gateway configuration. This lets clients and CLI clients on nodes
   operate without owning fleet state.
+- A roleless active operator node can opt into gateway-owned SSH management by
+  running `orbit node:manage` locally. The command does not add a role or a
+  managed flag.
+- `node:manage` installs the gateway management public key into the current
+  local user's `~/.ssh/authorized_keys`, persists `node.user` and
+  `node.platform`, pins the node SSH host key by `node.wireguard_address`, and
+  verifies that the gateway can reach the node over SSH at that WireGuard
+  address.
 - VPN-role runtime administration is the exception: `vpn-client:*` and
   `vpn-web-ui:*` commands run against the active `vpn` role runtime, so in v1 a
   client initiating them needs SSH access to the gateway-coupled host over
@@ -538,6 +546,7 @@ Use these commands to update, remove, or configure node settings after initial p
 8. [`orbit node:remove [name]`](8_node-remove/node-remove.md)
 9. [`orbit node:default [name]`](9_node-default/node-default.md)
 10. [`orbit node:agent-ide [name] [agent_ide]`](10_node-agent-ide/node-agent-ide.md)
+11. [`orbit node:manage`](16_node-manage/node-manage.md)
 
 ### Role assignments
 
@@ -547,6 +556,6 @@ The node-level `tld` (mandatory and unique for every active node, at most one
 per node) is changed through
 [`orbit node:update [name] --tld=...`](7_node-update/node-update.md).
 
-11. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)
-12. [`orbit node role:add [node] [role]`](12_node-role-add/node-role-add.md)
-13. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)
+12. [`orbit node role:list [node]`](11_node-role-list/node-role-list.md)
+13. [`orbit node role:add [node] [role]`](12_node-role-add/node-role-add.md)
+14. [`orbit node role:remove [node] [role]`](14_node-role-remove/node-role-remove.md)

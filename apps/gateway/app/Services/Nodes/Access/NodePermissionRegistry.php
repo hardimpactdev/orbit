@@ -29,6 +29,7 @@ final class NodePermissionRegistry
 
             // App
             'app:*',
+            'app:codex',
             'app:credentials',
             'app:list',
             'app:show',
@@ -198,6 +199,7 @@ final class NodePermissionRegistry
         return [
             'activity:read' => ['activity:list', 'activity:show'],
             'app:read' => ['app:list', 'app:show'],
+            'app:write' => ['app:codex'],
             'database:query:write' => ['database:query'],
             'database:read' => ['database:list', 'database:show', 'database:tables', 'database:schema', 'database:describe'],
             'database:write' => ['database:add', 'database:update', 'database:remove', 'database:attach', 'database:detach'],
