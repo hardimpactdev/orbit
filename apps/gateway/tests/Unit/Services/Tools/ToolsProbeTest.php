@@ -13,8 +13,12 @@ use App\Models\ProxyRoute;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Runtime\OrbitContainerNames;
+use App\Services\Tools\ToolCatalog;
+use App\Services\Tools\ToolDefinitionRegistry;
 use App\Services\Tools\ToolsProbe;
+use App\Tools\BaseTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Process;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -595,6 +599,46 @@ describe('ToolsProbe', function (): void {
             ]);
     });
 
+    it('preserves empty service fields when batch probing container-backed tools', function (): void {
+        $node = createToolsProbeAppHostNode();
+        $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'caddy',
+            'expected_state' => 'installed',
+            'config' => ['container' => $container->spec()],
+        ]);
+        $catalog = new ToolCatalog(new ToolDefinitionRegistry([
+            new class extends BaseTool
+            {
+                public function slug(): string
+                {
+                    return 'caddy';
+                }
+
+                public function probeMetadata(): array
+                {
+                    return [
+                        'binary' => 'sh',
+                        'container' => 'orbit-caddy',
+                    ];
+                }
+            },
+        ]));
+        $probe = new ToolsProbe(new ExecutingToolsProbeRemoteShell, $catalog);
+
+        $snapshot = $probe->introspectMany([$tool])['caddy'];
+        $drift = $probe->diff($tool, $snapshot);
+
+        expect($snapshot->get('caddy'))->toMatchArray([
+            'installed' => true,
+            'container_exists' => false,
+            'container_state' => 'missing',
+        ])
+            ->and(toolProbeIssue($drift, 'tool.container_missing')?->kind)->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.capability_missing'))->toBeNull();
+    });
+
     it('detects missing managed config files through the managed file resource plan', function (): void {
         $content = "address=/test/10.6.0.2\n";
         $hash = hash('sha256', $content);
@@ -1134,5 +1178,23 @@ final class QueuedToolsProbeRemoteShell implements RemoteShell
         $this->options[] = $options;
 
         return array_shift($this->results) ?? new RemoteShellResult(1, '', 'unexpected shell call', 1);
+    }
+}
+
+final class ExecutingToolsProbeRemoteShell implements RemoteShell
+{
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        $result = Process::run($script);
+
+        return new RemoteShellResult(
+            exitCode: $result->exitCode(),
+            stdout: $result->output(),
+            stderr: $result->errorOutput(),
+            durationMs: 1,
+        );
     }
 }

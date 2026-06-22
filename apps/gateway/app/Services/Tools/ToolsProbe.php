@@ -275,15 +275,18 @@ SH;
      */
     private function batchedToolCapabilityProbeScript(array $batch): string
     {
-        $rows = [];
+        $cases = [];
+        $names = [];
 
         foreach ($batch as $name => $tool) {
-            $rows[] = implode("\t", [
-                $name,
-                (string) ($tool['binary'] ?? ''),
-                $tool['version_command'],
-                $tool['service'],
-                $tool['container'],
+            $names[] = $name;
+            $cases[] = implode("\n", [
+                '        '.escapeshellarg($name).')',
+                '            binary='.escapeshellarg((string) ($tool['binary'] ?? '')),
+                '            version_command='.escapeshellarg($tool['version_command']),
+                '            service='.escapeshellarg($tool['service']),
+                '            container='.escapeshellarg($tool['container']),
+                '            ;;',
             ]);
         }
 
@@ -303,10 +306,22 @@ json_string_or_null() {
     fi
 }
 
-while IFS='	' read -r name binary version_command service container; do
+while IFS= read -r name; do
     if [ -z "$name" ]; then
         continue
     fi
+
+    binary=''
+    version_command=''
+    service=''
+    container=''
+
+    case "$name" in
+__CASES__
+        *)
+            continue
+            ;;
+    esac
 
     path=''
     version=''
@@ -377,11 +392,14 @@ while IFS='	' read -r name binary version_command service container; do
         "$(json_string_or_null "$container_state")" \
         "$(json_string_or_null "$container_spec_hash")"
 done <<'ORBIT_TOOLS'
-__ROWS__
+__NAMES__
 ORBIT_TOOLS
 SH;
 
-        return str_replace('__ROWS__', implode("\n", $rows), $script);
+        return strtr($script, [
+            '__CASES__' => implode("\n", $cases),
+            '__NAMES__' => implode("\n", $names),
+        ]);
     }
 
     /**
