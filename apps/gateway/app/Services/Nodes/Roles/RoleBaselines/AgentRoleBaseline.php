@@ -72,6 +72,15 @@ class AgentRoleBaseline implements RoleBaseline
 
         $shell->run($node, 'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent', ['throw' => true]);
         $shell->run($node, 'sudo passwd -l agent >/dev/null 2>&1 || true', ['throw' => true]);
+        $shell->run($node, <<<'SH'
+if ! command -v setfacl >/dev/null 2>&1; then
+    sudo apt-get update >/dev/null
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y acl >/dev/null
+fi
+
+sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin
+sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary
+SH, ['throw' => true]);
     }
 
     private function isValidTld(string $tld): bool

@@ -130,11 +130,14 @@ describe('agent role baseline', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect($shell->calls)->toHaveCount(2)
+        expect($shell->calls)->toHaveCount(3)
             ->and($shell->calls[0]['script'])->toBe('id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent')
             ->and($shell->calls[0]['options'])->toBe(['throw' => true])
             ->and($shell->calls[1]['script'])->toBe('sudo passwd -l agent >/dev/null 2>&1 || true')
-            ->and($shell->calls[1]['options'])->toBe(['throw' => true]);
+            ->and($shell->calls[1]['options'])->toBe(['throw' => true])
+            ->and($shell->calls[2]['script'])->toContain('sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin')
+            ->and($shell->calls[2]['script'])->toContain('sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary')
+            ->and($shell->calls[2]['options'])->toBe(['throw' => true]);
     });
 
     it('rejects agent convergence without a wireguard address', function (): void {
