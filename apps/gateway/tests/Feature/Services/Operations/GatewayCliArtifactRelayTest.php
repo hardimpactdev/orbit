@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Operations\GatewayCliArtifactRelay;
@@ -49,6 +50,29 @@ it('stages a manifest CLI artifact and serves it through the gateway endpoint', 
     $response->assertOk();
     expect(File::get($response->baseResponse->getFile()->getPathname()))->toBe($binary);
     Http::assertSentCount(1);
+});
+
+it('uses the registered gateway address when the configured artifact base url is local only', function (): void {
+    config()->set('app.url', 'http://localhost');
+    config()->set('orbit.updates.artifact_base_url', 'http://localhost');
+
+    Node::factory()->gateway()->create([
+        'host' => 'gateway.internal',
+        'wireguard_address' => '10.6.0.2',
+    ]);
+
+    $binary = 'orbit-linux-binary';
+    $sha256 = hash('sha256', $binary);
+    $run = gatewayCliArtifactRelayRun();
+    $plan = gatewayCliArtifactRelayPlan($run, $sha256);
+
+    Http::fake([
+        'https://artifacts.example/orbit-linux-amd64' => Http::response($binary, 200),
+    ]);
+
+    $artifact = app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64');
+
+    expect($artifact['url'])->toStartWith("https://10.6.0.2/api/update/artifacts/{$run->id}/cli/linux-amd64?token=");
 });
 
 it('rejects gateway artifact downloads with an invalid token', function (): void {

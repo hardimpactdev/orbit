@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use Illuminate\Support\Facades\File;
@@ -13,6 +14,10 @@ use RuntimeException;
 
 class GatewayCliArtifactRelay
 {
+    public function __construct(
+        private readonly ?FleetUpdateTargetSelector $targets = null,
+    ) {}
+
     /**
      * @return array{url: string, sha256: string, source_url: string}
      */
@@ -141,10 +146,86 @@ class GatewayCliArtifactRelay
 
     private function downloadUrl(OperationRun $operationRun, string $platform, string $sha256): string
     {
-        $baseUrl = rtrim((string) config('orbit.updates.artifact_base_url', config('app.url')), '/');
+        $baseUrl = $this->downloadBaseUrl();
         $token = $this->token($operationRun, $platform, $sha256);
 
         return "{$baseUrl}/api/update/artifacts/{$operationRun->id}/cli/{$platform}?token={$token}";
+    }
+
+    private function downloadBaseUrl(): string
+    {
+        $configuredBaseUrl = trim((string) config('orbit.updates.artifact_base_url', ''));
+
+        if ($configuredBaseUrl !== '' && ! $this->isLocalOnlyBaseUrl($configuredBaseUrl)) {
+            return rtrim($configuredBaseUrl, '/');
+        }
+
+        $gatewayBaseUrl = $this->gatewayBaseUrl();
+
+        if ($gatewayBaseUrl !== null) {
+            return $gatewayBaseUrl;
+        }
+
+        if ($configuredBaseUrl !== '') {
+            return rtrim($configuredBaseUrl, '/');
+        }
+
+        return rtrim((string) config('app.url', 'http://localhost'), '/');
+    }
+
+    private function gatewayBaseUrl(): ?string
+    {
+        $gateway = $this->targets()->gatewayNode();
+
+        if (! $gateway instanceof Node) {
+            return null;
+        }
+
+        foreach ([$gateway->wireguard_address, $gateway->gateway_endpoint, $gateway->host] as $candidate) {
+            $url = $this->gatewayUrlCandidate($candidate);
+
+            if ($url !== null) {
+                return $url;
+            }
+        }
+
+        return null;
+    }
+
+    private function gatewayUrlCandidate(?string $candidate): ?string
+    {
+        $candidate = trim((string) $candidate);
+
+        if ($candidate === '') {
+            return null;
+        }
+
+        if (str_contains($candidate, '://')) {
+            return rtrim($candidate, '/');
+        }
+
+        if (filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+            $candidate = "[{$candidate}]";
+        }
+
+        return "https://{$candidate}";
+    }
+
+    private function isLocalOnlyBaseUrl(string $url): bool
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+
+        if (! is_string($host) || $host === '') {
+            $host = $url;
+        }
+
+        $host = strtolower(trim($host, "[] \t\n\r\0\x0B"));
+
+        return $host === 'localhost'
+            || $host === '0.0.0.0'
+            || $host === '::1'
+            || $host === 'host.docker.internal'
+            || str_starts_with($host, '127.');
     }
 
     private function tokenMatches(OperationRun $operationRun, string $platform, string $sha256, ?string $token): bool
@@ -209,5 +290,10 @@ class GatewayCliArtifactRelay
     private function downloadTimeoutSeconds(): int
     {
         return max(1, (int) config('orbit.updates.artifact_download_timeout_seconds', 60));
+    }
+
+    private function targets(): FleetUpdateTargetSelector
+    {
+        return $this->targets ?? app(FleetUpdateTargetSelector::class);
     }
 }
