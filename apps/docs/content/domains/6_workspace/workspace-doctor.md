@@ -53,9 +53,11 @@ The workspaces probe reads gateway workspace records and checks these layers:
    policy. Generic worktrees must stay inside `<app path>/.worktrees/...`.
    Adapter-owned sources such as PolyScope may live outside the parent app
    path when the workspace row records the owning adapter metadata.
-4. **PHP runtime:** the effective workspace PHP image can serve the workspace
-   runtime on the owning node, and the workspace FrankenPHP container endpoint
-   matches gateway workspace configuration.
+4. **PHP runtime:** active workspaces have an effective PHP image that can serve
+   the workspace runtime on the owning node, and their workspace FrankenPHP
+   container endpoint matches gateway workspace configuration. Workspaces still
+   in `expected`, `setup-pending`, or `setting_up` lifecycle states do not
+   require runtime containers or image availability yet.
 5. **Runtime artifacts:** workspace runtime configuration and managed
    filesystem ownership match gateway workspace configuration.
 6. **Development workspace security:** workspace runtime isolation is checked
@@ -84,7 +86,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.path_missing` | The configured workspace path does not exist on the parent app's node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
 | `workspace.path_outside_policy` | A generic workspace path resolves outside the parent app's workspace policy. Adapter-owned paths are checked against their adapter metadata instead of the generic app-root policy. |
-| `workspace.php_version_unavailable` | The effective workspace PHP version cannot serve the workspace runtime on the owning node. |
+| `workspace.php_version_unavailable` | An active workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.runtime_container_missing` | The workspace runtime container or endpoint is absent. |
 | `workspace.runtime_container_mismatch` | The workspace runtime container or endpoint differs from gateway workspace configuration. |
 | `workspace.runtime_config_missing` | Managed workspace runtime configuration required by Orbit is absent. |

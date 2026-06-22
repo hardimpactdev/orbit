@@ -348,6 +348,10 @@ final readonly class WorkspacesProbe
             return [];
         }
 
+        if ($workspace->lifecycle_status !== WorkspaceLifecycleStatus::Active) {
+            return [];
+        }
+
         if (! $this->phpRuntimeCatalog()->supports($workspace->effectivePhpVersion())) {
             return [
                 new DriftEntry(

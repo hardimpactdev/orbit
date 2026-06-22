@@ -166,6 +166,7 @@ describe('PHP runtime reality', function (): void {
         $workspace = workspaceFor($app, [
             'name' => 'feature',
             'php_version' => null,
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
 
         $snapshot = new ProbeSnapshot([
@@ -182,7 +183,10 @@ describe('PHP runtime reality', function (): void {
 
     it('does not report PHP version unavailable when path is missing', function (): void {
         $app = workspaceableApp(['php_version' => '8.5']);
-        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
 
         $snapshot = new ProbeSnapshot([
             'feature' => [
@@ -198,7 +202,10 @@ describe('PHP runtime reality', function (): void {
 
     it('does not report PHP runtime drift before the workspace path exists', function (): void {
         $app = workspaceableApp();
-        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
 
         $snapshot = new ProbeSnapshot([
             'feature' => [
@@ -211,6 +218,30 @@ describe('PHP runtime reality', function (): void {
 
         expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
     });
+
+    it('does not report PHP runtime drift before a workspace is active', function (WorkspaceLifecycleStatus $lifecycleStatus): void {
+        $app = workspaceableApp(['php_version' => '7.4']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'php_version' => null,
+            'lifecycle_status' => $lifecycleStatus,
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => true,
+                'runtime_image_available' => false,
+                'runtime_image_probe_failed' => false,
+                'container_exists' => false,
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
+    })->with([
+        WorkspaceLifecycleStatus::Expected,
+        WorkspaceLifecycleStatus::SetupPending,
+        WorkspaceLifecycleStatus::SettingUp,
+    ]);
 
     it('detects missing PHP workspace runtime containers', function (): void {
         $app = workspaceableApp();
