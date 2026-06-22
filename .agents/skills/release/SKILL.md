@@ -93,11 +93,32 @@ manifests.
    candidate_prefix="candidates/${build_id}"
    candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 
-   # The gateway app must have ORBIT_ARTIFACTS_* configured, or the shell must
-   # export those values before running bin/orbit-gateway-artisan.
+   # Release worktrees do not copy ignored env files. Source the primary
+   # checkout's local release env into this shell before Laravel reads
+   # apps/gateway config. The env must include ORBIT_ARTIFACTS_BASE_URL and
+   # either ORBIT_ARTIFACTS_* keys or the S3_UPCLOUD_* fallback keys.
+   primary_checkout="${ORBIT_PRIMARY_CHECKOUT:-${HOME}/orbit}"
+   primary_env="${ORBIT_RELEASE_ENV_FILE:-${primary_checkout}/.env}"
+   if [ -f "$primary_env" ]; then
+     set -a
+     source "$primary_env"
+     set +a
+   fi
+
    artifact_base_url="$(bin/orbit-gateway-artisan tinker --execute='echo rtrim((string) config("orbit.artifacts.base_url"), "/");')"
    if [ -z "$artifact_base_url" ]; then
      echo "ORBIT_ARTIFACTS_BASE_URL is required for candidate artifact publishing." >&2
+     exit 1
+   fi
+
+   artifact_disk_ready="$(bin/orbit-gateway-artisan tinker --execute='echo collect([
+       config("filesystems.disks.orbit-artifacts.key"),
+       config("filesystems.disks.orbit-artifacts.secret"),
+       config("filesystems.disks.orbit-artifacts.bucket"),
+       config("filesystems.disks.orbit-artifacts.endpoint"),
+   ])->every(fn ($value) => filled($value)) ? "yes" : "no";')"
+   if [ "$artifact_disk_ready" != "yes" ]; then
+     echo "orbit-artifacts disk config is incomplete; check ORBIT_ARTIFACTS_* or S3_UPCLOUD_* env values." >&2
      exit 1
    fi
 
