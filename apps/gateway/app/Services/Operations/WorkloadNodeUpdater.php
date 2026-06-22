@@ -240,7 +240,7 @@ final readonly class WorkloadNodeUpdater
             'INSTALL_ROOT="${ORBIT_INSTALL_PATH:-'.$installRoot.'}"',
             'BIN_PATH="${ORBIT_BIN_PATH:-/usr/local/bin/orbit}"',
             'echo download_cli',
-            'curl -fsSL '.$this->quote($artifact['url']).' -o "$tmp/orbit"',
+            'curl -fksSL '.$this->quote($artifact['url']).' -o "$tmp/orbit"',
             "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$tmp/orbit" | sha256sum -c -',
             'echo install_cli',
             'install -d "$INSTALL_ROOT/bin"',

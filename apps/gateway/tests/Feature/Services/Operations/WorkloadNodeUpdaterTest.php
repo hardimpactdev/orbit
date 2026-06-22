@@ -134,6 +134,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
 
     expect($shell->scriptFor('app-dev-1'))
         ->toContain('download_cli')
+        ->toContain('curl -fksSL')
         ->toContain('install_cli')
         ->toContain('verify_cli')
         ->toContain('sha256sum -c -')
