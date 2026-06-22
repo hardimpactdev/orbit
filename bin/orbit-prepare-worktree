@@ -167,9 +167,15 @@ else
     run git worktree add -b "$branch" "$worktree_path" "$base_ref"
 fi
 
-step "Linking E2E environment"
+step "Linking local environment"
 common_git_dir="$(git -C "$worktree_path" rev-parse --path-format=absolute --git-common-dir)"
 main_checkout="$(dirname "$common_git_dir")"
+if [ -f "${main_checkout}/.env" ] && [ ! -e "${worktree_path}/.env" ]; then
+    run ln -s "${main_checkout}/.env" "${worktree_path}/.env"
+else
+    printf 'skip .env link: source missing or target exists\n'
+fi
+
 if [ -f "${main_checkout}/.env.e2e" ] && [ ! -e "${worktree_path}/.env.e2e" ]; then
     run ln -s "${main_checkout}/.env.e2e" "${worktree_path}/.env.e2e"
 else

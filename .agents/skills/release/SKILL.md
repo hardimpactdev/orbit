@@ -93,12 +93,20 @@ manifests.
    candidate_prefix="candidates/${build_id}"
    candidate_channel="${ORBIT_RELEASE_CANDIDATE_CHANNEL:-live-test}"
 
-   # Release worktrees do not copy ignored env files. Source the primary
-   # checkout's local release env into this shell before Laravel reads
-   # apps/gateway config. The env must include ORBIT_ARTIFACTS_BASE_URL and
-   # either ORBIT_ARTIFACTS_* keys or the S3_UPCLOUD_* fallback keys.
+   # Prepared worktrees symlink the primary checkout's root .env. Source that
+   # local release env into this shell before Laravel reads apps/gateway config.
+   # The env must include ORBIT_ARTIFACTS_BASE_URL and either ORBIT_ARTIFACTS_*
+   # keys or the S3_UPCLOUD_* fallback keys.
    primary_checkout="${ORBIT_PRIMARY_CHECKOUT:-${HOME}/orbit}"
-   primary_env="${ORBIT_RELEASE_ENV_FILE:-${primary_checkout}/.env}"
+   primary_env="${ORBIT_RELEASE_ENV_FILE:-}"
+   if [ -z "$primary_env" ]; then
+     if [ -f ".env" ]; then
+       primary_env=".env"
+     else
+       primary_env="${primary_checkout}/.env"
+     fi
+   fi
+
    if [ -f "$primary_env" ]; then
      set -a
      source "$primary_env"
