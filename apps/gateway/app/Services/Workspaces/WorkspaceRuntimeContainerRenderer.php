@@ -60,6 +60,11 @@ final readonly class WorkspaceRuntimeContainerRenderer
                 'read_only' => false,
             ],
             [
+                'source' => $sourcePath,
+                'target' => $sourcePath,
+                'read_only' => false,
+            ],
+            [
                 'source' => $this->phpIniHostPath($workspace),
                 'target' => WorkspaceRuntimeContainer::PhpIniMountTarget,
                 'read_only' => true,

@@ -65,6 +65,11 @@ it('renders a FrankenPHP workspace runtime container for a PHP workspace with de
             'target' => '/app',
             'read_only' => false,
         ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/orbit/apps/demo/.worktrees/feature-a',
+            'target' => '/home/orbit/apps/demo/.worktrees/feature-a',
+            'read_only' => false,
+        ])
         ->and($mountTargets)->not->toContain('/data')
         ->and($mountTargets)->not->toContain('/config')
         ->and($container->environment())->toMatchArray([

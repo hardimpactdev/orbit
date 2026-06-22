@@ -30,9 +30,15 @@ The terms below define the core identity vocabulary for the workspace family.
   container. Workspaces whose parent app is on an `app-dev` node receive the
   same dev-only packages mount as app runtimes:
   `/home/<node-user>/packages` on the owning node appears at `/packages` in the
-  container. Workspaces also inherit configurable app runtime mounts managed
-  through `app:mount`; the workspace family does not own separate runtime mount
-  intent. Workspace FrankenPHP XDG state is ephemeral inside the container under
+  container.
+
+  The workspace source is mounted both at `/app` and at its original absolute
+  path on the owning node. That keeps source-local absolute paths, such as
+  SQLite database files, available inside the runtime container.
+
+  Workspaces also inherit configurable app runtime mounts managed through
+  `app:mount`; the workspace family does not own separate runtime mount intent.
+  Workspace FrankenPHP XDG state is ephemeral inside the container under
   `/tmp/orbit-frankenphp`, matching app runtimes, and is not stored in the
   workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`.
 
