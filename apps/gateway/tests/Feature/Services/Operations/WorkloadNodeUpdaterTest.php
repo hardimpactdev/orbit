@@ -282,6 +282,37 @@ it('runs orbit doctor after a node update and reports the issue count in the don
         );
 });
 
+it('keeps a workload update completed when advisory node doctor fails', function (): void {
+    $shell = new WorkloadUpdaterFakeShell(
+        doctorFailures: ['app-dev-1' => new RuntimeException('doctor timed out')],
+    );
+    app()->instance(RemoteShell::class, $shell);
+
+    $run = workloadUpdaterRun();
+    Node::factory()->appDev()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'linux',
+        'orbit_path' => '/opt/orbit-app-dev',
+    ]);
+    $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
+
+    $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
+
+    expect($results)->toMatchArray([
+        [
+            'target' => 'app-dev-1',
+            'node' => 'app-dev-1',
+            'role' => 'app-dev',
+            'status' => 'completed',
+            'doctor_issues' => null,
+        ],
+    ])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and(workloadUpdaterStepMessages($run))->toContain(
+            ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
+        );
+});
+
 it('emits per-node sub-steps: installing cli, recording metadata, running doctor, done', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
@@ -782,11 +813,13 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
      * @param  array<string, RemoteShellResult>  $failures  Keyed by node name; applied to the remote update script call.
      * @param  array<string, string>  $versions  Probed version output keyed by node name (defaults to the target).
      * @param  array<string, int>  $doctorIssues  Per-node doctor issue counts keyed by node name.
+     * @param  array<string, Throwable>  $doctorFailures  Per-node doctor exceptions keyed by node name.
      */
     public function __construct(
         private array $failures = [],
         private array $versions = [],
         private array $doctorIssues = [],
+        private array $doctorFailures = [],
         private string $defaultVersion = '0.0.0',
     ) {}
 
@@ -813,6 +846,10 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
         }
 
         if (str_contains($script, 'doctor')) {
+            if (isset($this->doctorFailures[$node->name])) {
+                throw $this->doctorFailures[$node->name];
+            }
+
             $issues = $this->doctorIssues[$node->name] ?? 0;
 
             return new RemoteShellResult(

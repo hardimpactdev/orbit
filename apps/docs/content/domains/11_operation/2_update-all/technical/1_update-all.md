@@ -114,6 +114,9 @@ execution details live in the renderer contracts.
   the active sub-stage in the node row.
 - Each updated node runs a post-update `orbit doctor` verify (`Running doctor`
   sub-stage); the issue count is surfaced in the node result and is non-fatal.
+  If that advisory doctor check cannot return a parseable count, the node
+  remains completed with `doctor_issues: null`; the release gate is still the
+  separate fleet doctor that runs after updates.
 - The gateway is the fleet version ceiling: it updates first, before any
   workload node is updated, so no node is ever taken past the gateway's version.
 
@@ -233,6 +236,9 @@ The expected target shape per calling context:
 - Each updated installation runs `orbit doctor` in verify mode as the final
   per-node sub-stage (`Running doctor`). This is verification only; a non-zero
   issue count is surfaced per node but does not by itself fail the node's update.
+  If the advisory doctor check fails, times out, or returns unparseable output,
+  the update still records the node as completed with an unknown doctor issue
+  count. Operators run the normal post-update fleet doctor for release gating.
 - Production workload updates install the binary into the node user's Orbit
   install root. When the host launcher is system-wide under `/usr/local/bin/`,
   the remote update also publishes the binary to a shared root-owned executable
@@ -355,5 +361,6 @@ Primary existing test owners:
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllStartControllerTest.php` | Gateway start API contract: authorization, durable operation creation, and attempt activity logging via route middleware. |
 | `apps/gateway/tests/Feature/Http/Api/UpdateAllControllerTest.php` | Gateway operation read/event API contract for durable fleet updates. |
 | `apps/gateway/tests/Unit/Http/Gateway/UpdateAllGatewayStreamClientTest.php` | Gateway event-stream client behavior, including reconnect handling. |
+| `apps/gateway/tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php` | Workload node update fan-out, per-node doctor issue counts, advisory doctor failures, candidate artifact updates, and installed artifact tracking. |
 | `apps/gateway/tests/Feature/Services/Operations/UpdateRunnerActivityTest.php` | Durable runner outcome activity entries for completed and failed fleet updates, including best-effort logging-failure handling. |
 | `apps/e2e/tests/Feature/Commands/UpdateAllDurableOperationTest.php` | Integrated durable fleet update from an operator through gateway event replay. |

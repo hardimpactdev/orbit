@@ -49,6 +49,7 @@ describe('source path reality', function (): void {
             ->create([
                 'name' => 'feature',
                 'path' => "{$app->path}/.worktrees/feature",
+                'lifecycle_status' => WorkspaceLifecycleStatus::Active,
             ]);
         $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
 
@@ -213,7 +214,10 @@ describe('PHP runtime reality', function (): void {
 
     it('detects missing PHP workspace runtime containers', function (): void {
         $app = workspaceableApp();
-        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
 
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
@@ -231,7 +235,10 @@ describe('PHP runtime reality', function (): void {
 
     it('detects stopped PHP workspace runtime containers', function (): void {
         $app = workspaceableApp();
-        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
 
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
@@ -249,7 +256,10 @@ describe('PHP runtime reality', function (): void {
 
     it('detects mismatched PHP workspace runtime containers', function (): void {
         $app = workspaceableApp();
-        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
         $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
 
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
@@ -270,7 +280,10 @@ describe('PHP runtime reality', function (): void {
 
     it('does not report PHP workspace runtime container drift before the image is available', function (): void {
         $app = workspaceableApp();
-        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
+        ]);
 
         $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
@@ -283,6 +296,31 @@ describe('PHP runtime reality', function (): void {
 
         expect(issue($drift, 'workspace.runtime_container_missing'))->toBeNull();
     });
+
+    it('does not require PHP workspace runtime containers before a workspace is active', function (WorkspaceLifecycleStatus $lifecycleStatus): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, [
+            'name' => 'feature',
+            'lifecycle_status' => $lifecycleStatus,
+        ]);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => true,
+                'runtime_image_available' => true,
+                'runtime_image_probe_failed' => false,
+                'container_exists' => false,
+                'container_running' => false,
+                'container_name' => 'orbit-ws-docs-feature',
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.runtime_container_missing'))->toBeNull();
+    })->with([
+        WorkspaceLifecycleStatus::Expected,
+        WorkspaceLifecycleStatus::SetupPending,
+        WorkspaceLifecycleStatus::SettingUp,
+    ]);
 });
 
 describe('workspace security reality', function (): void {

@@ -7,6 +7,7 @@ use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
+use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -1331,6 +1332,7 @@ TXT;
             'name' => 'feature-a',
             'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
             'php_version' => '8.5',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
         $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
         $process = \App\Models\Process::factory()->forOwner($workspace)->create([
@@ -1386,6 +1388,7 @@ TXT;
             'name' => 'feature-a',
             'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
             'php_version' => '8.5',
+            'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
         $shell = new DoctorReportRunnerRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "feature-a\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n", stderr: '', durationMs: 1),
@@ -1397,9 +1400,10 @@ TXT;
         app()->instance(RemoteShell::class, $shell);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
+        $action = collect($report['actions'])->first();
 
         expect($report['healthy'])->toBeTrue()
-            ->and($report['actions'][0])->toMatchArray([
+            ->and($action)->toMatchArray([
                 'family' => 'workspace',
                 'node' => 'app-1',
                 'key' => 'workspace.runtime_container_missing',

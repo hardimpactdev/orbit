@@ -9,6 +9,7 @@ use App\Data\Doctor\DriftEntry;
 use App\Data\Doctor\ProbeSnapshot;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\DriftKind;
+use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
@@ -45,7 +46,11 @@ final readonly class WorkspacesProbe
 
         $runtimeContainer = null;
 
-        if ($workspace->app->runtime_kind === AppRuntimeKind::Php && $this->phpRuntimeCatalog()->supports((string) $workspace->effectivePhpVersion())) {
+        if (
+            $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active
+            && $workspace->app->runtime_kind === AppRuntimeKind::Php
+            && $this->phpRuntimeCatalog()->supports((string) $workspace->effectivePhpVersion())
+        ) {
             $runtimeContainer = $this->workspaceRuntimeContainerRenderer()->render($workspace);
         }
 
@@ -246,6 +251,10 @@ final readonly class WorkspacesProbe
         $workspace->loadMissing('app.node');
 
         if (! $workspace->app instanceof App || $workspace->app->runtime_kind !== AppRuntimeKind::Php) {
+            return [];
+        }
+
+        if ($workspace->lifecycle_status !== WorkspaceLifecycleStatus::Active) {
             return [];
         }
 

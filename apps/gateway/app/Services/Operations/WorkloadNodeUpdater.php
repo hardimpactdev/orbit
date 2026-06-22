@@ -178,13 +178,17 @@ final readonly class WorkloadNodeUpdater
      */
     private function runNodeDoctor(OperationRun $operationRun, Node $node): ?int
     {
-        $result = $this->remoteShell->run($node, self::DoctorCommand, [
-            'cwd' => $node->orbit_path,
-            'timeout' => self::DoctorTimeoutSeconds,
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => $operationRun->id,
-            ],
-        ]);
+        try {
+            $result = $this->remoteShell->run($node, self::DoctorCommand, [
+                'cwd' => $node->orbit_path,
+                'timeout' => self::DoctorTimeoutSeconds,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => $operationRun->id,
+                ],
+            ]);
+        } catch (Throwable) {
+            return null;
+        }
 
         return $this->doctorIssuesFromOutput($result->output());
     }
