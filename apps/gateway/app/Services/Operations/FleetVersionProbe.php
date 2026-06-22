@@ -4,39 +4,20 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
-use App\Contracts\RemoteShell;
 use App\Data\Operations\FleetVersionReport;
-use App\Data\RemoteShell\RemoteShellPoolJob;
-use App\Data\RemoteShell\RemoteShellPoolResult;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
-use App\Services\RemoteShell\RemoteShellPool;
-use JsonException;
+use App\Services\Gateway\GatewayImageReference;
+use RuntimeException;
 
 /**
- * Probes the current Orbit version of the gateway and each selected workload
- * node for the `update:all` fleet version check.
- *
- * The gateway version is read from the baked `app.version` config (the gateway
- * is the local target). Each workload node version is read remotely with the
- * local-only `orbit --version --local --json` path through gateway-owned node
- * execution, reusing the same {@see RemoteShell} transport as
- * {@see FleetUpdateVerifier}. A version
- * that cannot be read or parsed is reported as `null` and counts as outdated so
- * the node is still updated rather than silently skipped.
+ * Resolves the installed Orbit artifact identity for the gateway and selected
+ * workload nodes without shelling into each node during the check phase.
  */
 final readonly class FleetVersionProbe
 {
-    private const string VersionCommand = 'orbit --version --local --json';
-
-    private const int VersionTimeoutSeconds = 10;
-
-    private const int DefaultConcurrency = 4;
-
     public function __construct(
-        private RemoteShell $remoteShell,
-        private RemoteShellPool $remoteShellPool,
         private FleetUpdateTargetSelector $targets,
     ) {}
 
@@ -48,14 +29,14 @@ final readonly class FleetVersionProbe
         $nodeVersions = [];
         $outdated = 0;
 
-        if (! $this->isCurrent($gatewayVersion, $target)) {
+        if ($this->gatewayNeedsUpdate($plan)) {
             $outdated++;
         }
 
-        foreach ($this->probeWorkloadNodeVersions($operationRun) as $nodeName => $version) {
-            $nodeVersions[$nodeName] = $version;
+        foreach ($this->targets->workloadNodes() as $node) {
+            $nodeVersions[$node->name] = $this->nodeVersion($node, $operationRun);
 
-            if (! $this->isCurrent($version, $target)) {
+            if ($this->nodeNeedsCliUpdate($node, $plan)) {
                 $outdated++;
             }
         }
@@ -69,33 +50,27 @@ final readonly class FleetVersionProbe
     }
 
     /**
-     * Resolve the gateway's currently running Orbit version, or `null` when it
-     * is unknown (the placeholder `0.0.0`).
+     * Resolve the gateway's currently tracked Orbit version, or `null` when it
+     * is unknown. Gateways without a node record fall back to the baked app
+     * version so local test and bootstrap contexts can still short-circuit.
      */
     public function gatewayVersion(): ?string
     {
+        $gatewayNode = $this->targets->gatewayNode();
+
+        if ($gatewayNode instanceof Node) {
+            return $this->normalize((string) $gatewayNode->installed_gateway_image?->version);
+        }
+
         return $this->normalize((string) config('app.version', '0.0.0'));
     }
 
     /**
-     * Resolve a workload node's current Orbit version, or `null` when it cannot
-     * be read or parsed.
+     * Resolve a workload node's current tracked Orbit version.
      */
     public function nodeVersion(Node $node, OperationRun $operationRun): ?string
     {
-        $result = $this->remoteShell->run($node, self::VersionCommand, [
-            'cwd' => $node->orbit_path,
-            'timeout' => self::VersionTimeoutSeconds,
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => $operationRun->id,
-            ],
-        ]);
-
-        if (! $result->successful()) {
-            return null;
-        }
-
-        return $this->parseVersion($result->output());
+        return $this->normalize((string) $node->installed_cli?->version);
     }
 
     public function isCurrent(?string $version, string $target): bool
@@ -103,83 +78,82 @@ final readonly class FleetVersionProbe
         return $version !== null && version_compare($version, $target, '==');
     }
 
+    public function gatewayNeedsUpdate(OperationUpdatePlan $plan): bool
+    {
+        $gatewayNode = $this->targets->gatewayNode();
+
+        if (! $gatewayNode instanceof Node) {
+            return ! $this->isCurrent($this->gatewayVersion(), $plan->target_version);
+        }
+
+        $installed = $gatewayNode->installed_gateway_image;
+
+        if ($installed === null) {
+            return true;
+        }
+
+        $targetImage = GatewayImageReference::fromString($plan->gateway_image);
+
+        return ! $installed->matches(
+            version: $plan->target_version,
+            image: $targetImage->canonical(),
+            digest: $targetImage->digest(),
+        );
+    }
+
+    public function nodeNeedsCliUpdate(Node $node, OperationUpdatePlan $plan): bool
+    {
+        $installed = $node->installed_cli;
+
+        if ($installed === null) {
+            return true;
+        }
+
+        $artifact = $this->cliArtifact($plan, $this->platformKey($node));
+
+        return ! $installed->matches(
+            version: $plan->target_version,
+            platform: $artifact['platform'],
+            sha256: $artifact['sha256'],
+        );
+    }
+
+    private function platformKey(Node $node): string
+    {
+        $platform = strtolower(trim((string) $node->platform));
+
+        if (str_contains($platform, 'arm64') || str_contains($platform, 'aarch64')) {
+            return 'linux-arm64';
+        }
+
+        if ($platform === ''
+            || str_contains($platform, 'linux')
+            || str_contains($platform, 'ubuntu')
+            || str_contains($platform, 'debian')
+            || str_contains($platform, 'amd64')
+            || str_contains($platform, 'x86_64')
+            || str_contains($platform, 'x64')) {
+            return 'linux-amd64';
+        }
+
+        throw new RuntimeException("Unsupported workload update platform [{$node->platform}] for node [{$node->name}].");
+    }
+
     /**
-     * @return array<string, ?string>
+     * @return array{platform: string, sha256: string}
      */
-    private function probeWorkloadNodeVersions(OperationRun $operationRun): array
+    private function cliArtifact(OperationUpdatePlan $plan, string $platform): array
     {
-        $nodes = $this->targets->workloadNodes();
+        $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-        if ($nodes->isEmpty()) {
-            return [];
+        if (! is_array($artifact) || ! is_string($artifact['sha256'] ?? null)) {
+            throw new RuntimeException("Update plan does not contain a CLI artifact for platform [{$platform}].");
         }
 
-        $jobs = [];
-
-        foreach ($nodes as $node) {
-            $jobs[] = new RemoteShellPoolJob(
-                key: $node->name,
-                node: $node,
-                script: self::VersionCommand,
-                options: [
-                    'cwd' => $node->orbit_path,
-                    'timeout' => self::VersionTimeoutSeconds,
-                    'metadata' => [
-                        'ORBIT_OPERATION_ID' => $operationRun->id,
-                    ],
-                ],
-            );
-        }
-
-        $versions = [];
-
-        foreach ($this->remoteShellPool->run($jobs, $this->concurrency()) as $result) {
-            $versions[$result->key] = $this->versionFromPoolResult($result);
-        }
-
-        return $versions;
-    }
-
-    private function versionFromPoolResult(RemoteShellPoolResult $result): ?string
-    {
-        if ($result->exception !== null || $result->result === null || ! $result->result->successful()) {
-            return null;
-        }
-
-        return $this->parseVersion($result->result->output());
-    }
-
-    private function parseVersion(string $output): ?string
-    {
-        try {
-            $decoded = json_decode($output, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return null;
-        }
-
-        if (! is_array($decoded)) {
-            return null;
-        }
-
-        $success = $decoded['success'] ?? null;
-
-        if (! is_array($success)) {
-            return null;
-        }
-
-        $data = $success['data'] ?? null;
-
-        if (! is_array($data)) {
-            return null;
-        }
-
-        $version = $data['version'] ?? null;
-
-        if (! is_string($version)) {
-            return null;
-        }
-
-        return $this->normalize($version);
+        return [
+            'platform' => $platform,
+            'sha256' => strtolower($artifact['sha256']),
+        ];
     }
 
     private function normalize(string $version): ?string
@@ -191,12 +165,5 @@ final readonly class FleetVersionProbe
         }
 
         return $version;
-    }
-
-    private function concurrency(): int
-    {
-        $concurrency = (int) config('orbit.updates.fleet_version_probe_concurrency', self::DefaultConcurrency);
-
-        return max(1, $concurrency);
     }
 }

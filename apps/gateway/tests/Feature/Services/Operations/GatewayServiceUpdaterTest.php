@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
@@ -24,6 +25,7 @@ it('updates gateway and scheduler services to the plan image after in-process mi
     $plan = gatewayServiceUpdaterPlan($run);
     $previousImage = gatewayServiceUpdaterPreviousImage();
     $operations = [];
+    $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1']);
 
     Artisan::shouldReceive('call')
         ->once()
@@ -66,6 +68,10 @@ it('updates gateway and scheduler services to the plan image after in-process mi
         ->where('operation_run_id', $run->id)
         ->where('event_type', 'error')
         ->exists())->toBeFalse();
+
+    expect($gateway->fresh()->installed_gateway_image?->image)->toBe($plan->gateway_image)
+        ->and($gateway->fresh()->installed_gateway_image?->digest)->toBe('sha256:'.str_repeat('a', 64))
+        ->and($gateway->fresh()->installed_gateway_image?->operationRunId)->toBe($run->id);
 });
 
 it('restores the scheduler previous image and replica when gateway migrations fail', function (): void {

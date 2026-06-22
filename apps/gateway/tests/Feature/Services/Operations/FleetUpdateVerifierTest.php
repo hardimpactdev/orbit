@@ -7,8 +7,10 @@ use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationRun;
+use App\Models\OperationUpdatePlan;
 use App\Services\Operations\FleetUpdateVerificationFailed;
 use App\Services\Operations\FleetUpdateVerifier;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunner;
@@ -23,6 +25,39 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
+    {
+        /**
+         * @return array{url: string, sha256: string, source_url: string}
+         */
+        #[Override]
+        public function artifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): array
+        {
+            $artifact = $plan->cli_artifacts[$platform] ?? null;
+
+            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+                throw new RuntimeException("Missing test artifact for [{$platform}].");
+            }
+
+            return [
+                'url' => "http://gateway.test/artifacts/{$platform}",
+                'sha256' => $artifact['sha256'],
+                'source_url' => $artifact['url'],
+            ];
+        }
+
+        #[Override]
+        public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
+        {
+            //
+        }
+
+        #[Override]
+        public function cleanup(OperationRun $operationRun): void
+        {
+            //
+        }
+    });
 });
 
 it('verifies gateway scheduler workload CLI and required role images', function (): void {
@@ -128,6 +163,8 @@ it('emits terminal success only after runner verification passes', function (): 
             ['check-fleet-versions', 'running'],
             ['check-fleet-versions', 'done'],
             ['lease.fleet', 'done'],
+            ['cli-artifacts', 'running'],
+            ['cli-artifacts', 'done'],
             ['gateway', 'running'],
             ['lease.gateway', 'done'],
             ['scheduler.stop', 'running'],

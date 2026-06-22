@@ -43,14 +43,14 @@ orbit update:all --json
    digest-pinned `orbit_orbit-gateway` service image when no explicit bootstrap
    image is configured. Inline-manifest starts use the target digest from the
    persisted plan. The runner resolves and persists the immutable plan during
-   `Checking for updates` when needed, then probes fleet versions before any
-   update side effects. If every selected installation is already current for a
-   finalized GitHub release manifest, it skips the gateway, local, workload, and
-   verification phases. A `topology-candidate` manifest is different: it
-   reapplies the candidate assets even when every node already reports the
-   target version, so repeated same-version release candidates can be live
-   tested before GitHub publication. After the plan exists, the runner uses only
-   that immutable snapshot for the rest of the run.
+   `Checking for updates` when needed, then compares the desired artifact
+   identity against the gateway database before any update side effects. If the
+   tracked gateway image digest and workload CLI hashes already match the
+   desired manifest artifacts, it skips the gateway, local, workload, and
+   verification phases. A `topology-candidate` manifest updates when its desired
+   artifact hash or digest differs, even if the semantic version is unchanged.
+   After the plan exists, the runner uses only that immutable snapshot for the
+   rest of the run.
 4. When outdated installations exist, the runner updates the gateway first as
    the fleet version ceiling, then fans out to the caller-local CLI and selected
    workload nodes. Production installs update the native CLI binary artifact;
@@ -109,12 +109,11 @@ the exact shape.
   image with the Docker socket and gateway config root mounted.
 - Each selected workload installation has a writable Orbit install root and a
   host `orbit` launcher or an equivalent Orbit CLI entry point local to the node.
-- Production artifact update targets require a reachable release source for the
-  CLI binary. During release-candidate acceptance this can be a
-  topology-reachable artifact source referenced by the configured
-  `ORBIT_RELEASE_MANIFEST_URL`; after promotion it is the public GitHub release
-  manifest. Targets also need permission to write the binary and update the
-  user-local launcher link.
+- The gateway requires access to the release or candidate CLI artifact source
+  referenced by the resolved manifest. Workload targets download CLI binaries
+  from the gateway's per-operation artifact endpoint, not directly from GitHub
+  or the candidate source. Targets also need permission to write the binary and
+  update the user-local launcher link.
 - Gateway update targets require Docker Engine/CLI, Docker Swarm, the
   digest-pinned `orbit-gateway` image or `ORBIT_GATEWAY_IMAGE_ARCHIVE`, the
   gateway config root, and Orbit CA/certificate material.

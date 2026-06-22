@@ -289,6 +289,53 @@ describe('LocalCheckoutUpdater', function (): void {
             && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
     });
 
+    it('skips the move when the existing versioned binary has identical bytes', function (): void {
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
+        $stagedBinary = $this->binaryDest.'.download.identical';
+
+        file_put_contents($versionedBinary, 'candidate binary');
+        file_put_contents($stagedBinary, 'candidate binary');
+
+        Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $replace = (new LocalCheckoutUpdater(new CheckoutPathResolver))->replaceBinary($stagedBinary, '1.2.3');
+
+        expect($replace['successful'])->toBeTrue()
+            ->and($replace['skipped'])->toBeTrue()
+            ->and(file_exists($stagedBinary))->toBeFalse();
+
+        Process::assertNotRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && ($process->command[0] ?? null) === 'mv'
+            && ($process->command[1] ?? null) === '-f'
+            && ($process->command[3] ?? null) === $versionedBinary);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
+    });
+
+    it('overwrites an existing versioned binary when a same-version candidate differs', function (): void {
+        $versionedBinary = $this->installRoot.'/bin/orbit-binary-1.2.3';
+        $stagedBinary = $this->binaryDest.'.download.candidate';
+
+        file_put_contents($versionedBinary, 'released binary');
+        file_put_contents($stagedBinary, 'candidate binary');
+
+        Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
+        Process::preventStrayProcesses();
+
+        $replace = (new LocalCheckoutUpdater(new CheckoutPathResolver))->replaceBinary($stagedBinary, '1.2.3');
+
+        expect($replace['successful'])->toBeTrue()
+            ->and($replace['skipped'])->toBeFalse();
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['mv', '-f', $stagedBinary, $versionedBinary]);
+
+        Process::assertRan(fn (PendingProcess $process): bool => is_array($process->command)
+            && $process->command === ['ln', '-sfn', $versionedBinary, $this->linkPath]);
+    });
+
     it('writes install metadata after relinking the host launcher', function (): void {
         Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();

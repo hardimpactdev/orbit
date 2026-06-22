@@ -34,9 +34,11 @@ interface RunsLocalUpdate
      * Move the verified staged binary to
      * `<install-root>/bin/orbit-binary-<version>`, relink the host launcher to
      * it, verify the relinked launcher responds to `--version`, and write the
-     * install metadata. When the versioned binary is already present locally the
-     * move is skipped (`skipped` is `true`) and the staged copy is discarded; the
-     * relink and verify still run so the launcher always points at the version.
+     * install metadata. When the versioned binary is already present locally
+     * with identical bytes the move is skipped (`skipped` is `true`) and the
+     * staged copy is discarded; same-version candidate binaries with different
+     * bytes overwrite the existing versioned file. The relink and verify still
+     * run so the launcher always points at the version.
      * The `skipped` flag is a low-level move optimization only — the public
      * `orbit update` `Replacing binary` step always settles as `Done` on success.
      *

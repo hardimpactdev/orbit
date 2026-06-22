@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Exceptions\UpdateLeaseConflict;
@@ -13,6 +14,7 @@ use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
 use App\Services\Operations\FleetUpdateVerifier;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
@@ -26,6 +28,10 @@ use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(GatewayCliArtifactRelay::class, new WorkloadUpdaterFakeArtifactRelay);
+});
 
 it('updates active non-gateway managed nodes from the persisted manifest snapshot', function (): void {
     $shell = new WorkloadUpdaterFakeShell;
@@ -111,7 +117,7 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
     ])
         ->and($shell->updatedNodes())->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
         ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->scriptsFor('agent-1'))->toBe(['orbit --version --local --json', $shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptsFor('agent-1'))->toBe([$shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
         ->and($shell->activeLeases)->toBe([
             'agent-1' => ['node:agent-1'],
             'app-dev-1' => ['node:app-dev-1'],
@@ -130,12 +136,14 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toContain('download_cli')
         ->toContain('install_cli')
         ->toContain('verify_cli')
+        ->toContain('sha256sum -c -')
         ->toContain('"$BIN_PATH" --version --local')
         ->toContain('reconcile_launcher')
         ->toContain('command -v orbit')
         ->toContain('sudo -n ln -sfn')
         ->toContain('pull_required_images')
-        ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64')
+        ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
+        ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64')
         ->toContain(str_repeat('e', 64))
         ->toContain("docker pull 'caddy:2.9-alpine'")
         ->not->toContain('orbit-websocket:2.0.0');
@@ -151,17 +159,27 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
     expect($shell->scriptFor('ingress-1'))
         ->toContain("docker pull 'caddy:2.9-alpine'")
         ->not->toContain('orbit-websocket:2.0.0');
+
+    $installedCli = $appDev->fresh()->installed_cli;
+
+    expect($installedCli)
+        ->toBeInstanceOf(InstalledCliArtifact::class)
+        ->and($installedCli?->version)->toBe('2.0.0')
+        ->and($installedCli?->sha256)->toBe(str_repeat('e', 64))
+        ->and($installedCli?->source)->toBe('github-release')
+        ->and($installedCli?->artifactUrl)->toBe('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64');
 });
 
 it('skips a workload node already on the target version and runs no remote update', function (): void {
-    $shell = new WorkloadUpdaterFakeShell(versions: [
-        'app-dev-1' => '2.0.0',
-        'app-prod-1' => '1.0.0',
-    ]);
+    $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'linux',
+        'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
+    ]);
     Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
@@ -183,21 +201,23 @@ it('skips a workload node already on the target version and runs no remote updat
         ],
     ])
         ->and($shell->updatedNodes())->toBe(['app-prod-1'])
-        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version --local --json'])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe([])
         ->and(workloadUpdaterStepMessages($run))->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
         )
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
-it('reapplies topology candidate artifacts to workload nodes already on the target version', function (): void {
-    $shell = new WorkloadUpdaterFakeShell(versions: [
-        'app-dev-1' => '2.0.0',
-    ]);
+it('updates topology candidate artifacts with the same version when the CLI hash differs', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    $node = Node::factory()->appDev()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'linux',
+        'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0', sha256: str_repeat('c', 64)),
+    ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
         workloadUpdaterSnapshot(
@@ -225,10 +245,12 @@ it('reapplies topology candidate artifacts to workload nodes already on the targ
     ])
         ->and($shell->updatedNodes())->toBe(['app-dev-1'])
         ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
-        ->and($shell->scriptFor('app-dev-1'))->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-x64')
+        ->and($shell->scriptFor('app-dev-1'))->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
         ->and(workloadUpdaterStepMessages($run))->not->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
-        );
+        )
+        ->and($node->fresh()->installed_cli?->source)->toBe('topology-candidate')
+        ->and($node->fresh()->installed_cli?->buildId)->toBe('candidate-build');
 });
 
 it('runs orbit doctor after a node update and reports the issue count in the done message', function (): void {
@@ -247,7 +269,7 @@ it('runs orbit doctor after a node update and reports the issue count in the don
     expect($results[0]['status'])->toBe('completed')
         ->and($results[0]['doctor_issues'])->toBe(2)
         ->and($results[1]['doctor_issues'])->toBe(0)
-        ->and($shell->scriptsFor('app-dev-1'))->toBe(['orbit --version --local --json', $shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
         ->and(workloadUpdaterStepMessages($run))->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
             ['workload.app-prod-1', 'done', 'Workload node app-prod-1 updated'],
@@ -292,12 +314,16 @@ it('emits per-node sub-steps: downloading, replacing cli binary, running doctor,
         ->and($doctorIndex)->toBeLessThan($doneIndex);
 });
 
-it('emits skipped sub-step (no download/replace/doctor) for a node already on target', function (): void {
-    $shell = new WorkloadUpdaterFakeShell(versions: ['app-dev-1' => '2.0.0']);
+it('emits skipped sub-step (no download/replace/doctor) for a node already on the desired CLI artifact', function (): void {
+    $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
+    Node::factory()->appDev()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'linux',
+        'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
+    ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -359,8 +385,8 @@ it('continues updating later workload nodes when one remote update fails', funct
         ],
     ])
         ->and($shell->updatedNodes())->toBe(['app-dev-1', 'app-prod-1'])
-        ->and($shell->scriptsFor('app-dev-1'))->toHaveCount(2)
-        ->and($shell->scriptsFor('app-prod-1'))->toBe(['orbit --version --local --json', $shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptsFor('app-dev-1'))->toHaveCount(1)
+        ->and($shell->scriptsFor('app-prod-1'))->toBe([$shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
         ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
 });
 
@@ -528,9 +554,7 @@ it('fails the update operation when a workload node lease is already held', func
 it('is invoked by the default update runner pipeline while the fleet lease is active', function (): void {
     config()->set('app.version', '2.0.0');
 
-    $shell = new WorkloadUpdaterFakeShell(versions: [
-        'app-dev-1' => '1.0.0',
-    ]);
+    $shell = new WorkloadUpdaterFakeShell;
     app()->instance(RemoteShell::class, $shell);
     app()->instance(GatewayServiceUpdater::class, new WorkloadUpdaterNoopGatewayUpdater);
     app()->instance(FleetUpdateVerifier::class, new WorkloadUpdaterNoopFleetVerifier);
@@ -542,7 +566,7 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
     app(UpdateRunner::class)->run($run->id);
 
     expect($shell->updatedNodes())->toBe(['app-dev-1'])
-        ->and($shell->versionProbeCallsFor('app-dev-1'))->toBe(2)
+        ->and($shell->versionProbeCallsFor('app-dev-1'))->toBe(0)
         ->and($shell->updateScriptCallsFor('app-dev-1'))->toBe(1)
         ->and($shell->activeLeases)->toBe([
             'app-dev-1' => ['fleet:update-all', 'node:app-dev-1'],
@@ -658,6 +682,56 @@ function workloadUpdaterSnapshot(
         cliArtifacts: $cliArtifacts,
         roleImages: $roleImages,
     );
+}
+
+function workloadUpdaterInstalledCliArtifact(
+    string $version = '1.2.3',
+    string $sha256 = '',
+): InstalledCliArtifact {
+    return InstalledCliArtifact::record(
+        version: $version,
+        platform: 'linux-amd64',
+        sha256: $sha256 !== '' ? $sha256 : str_repeat('b', 64),
+        source: 'github-release',
+        buildId: null,
+        artifactUrl: "https://github.com/hardimpactdev/orbit/releases/download/v{$version}/orbit-linux-amd64",
+        installedPath: '/home/orbit/orbit/bin/orbit-binary',
+        operationRunId: (string) Str::uuid(),
+    );
+}
+
+final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
+{
+    /**
+     * @return array{url: string, sha256: string, source_url: string}
+     */
+    #[Override]
+    public function artifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): array
+    {
+        $artifact = $plan->cli_artifacts[$platform] ?? null;
+
+        if (! is_array($artifact) || ! is_string($artifact['sha256'] ?? null) || ! is_string($artifact['url'] ?? null)) {
+            throw new RuntimeException("Missing test artifact for [{$platform}].");
+        }
+
+        return [
+            'url' => "http://gateway.test/api/update/artifacts/{$operationRun->id}/cli/{$platform}?token=fake",
+            'sha256' => $artifact['sha256'],
+            'source_url' => $artifact['url'],
+        ];
+    }
+
+    #[Override]
+    public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        //
+    }
+
+    #[Override]
+    public function cleanup(OperationRun $operationRun): void
+    {
+        //
+    }
 }
 
 function workloadUpdaterIsVersionProbe(string $script): bool

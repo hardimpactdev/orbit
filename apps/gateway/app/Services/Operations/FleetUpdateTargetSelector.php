@@ -31,4 +31,23 @@ final readonly class FleetUpdateTargetSelector
             ->orderBy('name')
             ->get();
     }
+
+    public function gatewayNode(): ?Node
+    {
+        $gatewayIds = $this->roles->activeNodeIdsForRole(NodeRoleName::Gateway->value);
+
+        if ($gatewayIds === []) {
+            return null;
+        }
+
+        /** @var Node|null $node */
+        $node = Node::query()
+            ->where('status', NodeStatus::Active->value)
+            ->whereIn('id', $gatewayIds)
+            ->with('roleAssignments')
+            ->orderBy('name')
+            ->first();
+
+        return $node;
+    }
 }

@@ -141,11 +141,14 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      * Move the verified staged binary to
      * `<install-root>/bin/orbit-binary-<version>`, relink the host launcher to
      * it, verify the launcher, and write the install metadata. When the
-     * versioned binary is already present the move is skipped and the staged copy
-     * discarded, but the relink and verify still run so the launcher always
-     * points at the requested version. The returned `skipped` flag is a
-     * low-level move optimization only — {@see LocalUpdateRunner} always reports
-     * the public `Replacing binary` step as `Done` on success.
+     * versioned binary is already present with identical bytes the move is
+     * skipped and the staged copy discarded, but the relink and verify still run
+     * so the launcher always points at the requested version. Same-version
+     * release candidates may carry different bytes, so an existing versioned
+     * binary is overwritten when the downloaded artifact differs. The returned
+     * `skipped` flag is a low-level move optimization only —
+     * {@see LocalUpdateRunner} always reports the public `Replacing binary`
+     * step as `Done` on success.
      *
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */
@@ -157,7 +160,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         $skipped = false;
 
         try {
-            if (is_file($versionedBinary)) {
+            if ($this->versionedBinaryMatches($versionedBinary, $stagedPath)) {
                 $this->discard($stagedPath);
                 $skipped = true;
             } else {
@@ -377,6 +380,19 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         }
 
         return "{$installRoot}/bin/orbit-binary-{$safeVersion}";
+    }
+
+    private function versionedBinaryMatches(string $versionedBinary, string $stagedPath): bool
+    {
+        if (! is_file($versionedBinary)) {
+            return false;
+        }
+
+        if (! is_file($stagedPath)) {
+            return true;
+        }
+
+        return hash_file('sha256', $versionedBinary) === hash_file('sha256', $stagedPath);
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Models\UpdateLease;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateLeaseManager;
@@ -18,6 +19,42 @@ use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
+    {
+        /**
+         * @return array{url: string, sha256: string, source_url: string}
+         */
+        #[Override]
+        public function artifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): array
+        {
+            $artifact = $plan->cli_artifacts[$platform] ?? null;
+
+            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+                throw new RuntimeException("Missing test artifact for [{$platform}].");
+            }
+
+            return [
+                'url' => "http://gateway.test/artifacts/{$platform}",
+                'sha256' => $artifact['sha256'],
+                'source_url' => $artifact['url'],
+            ];
+        }
+
+        #[Override]
+        public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
+        {
+            //
+        }
+
+        #[Override]
+        public function cleanup(OperationRun $operationRun): void
+        {
+            //
+        }
+    });
+});
 
 it('holds the fleet lease across gateway workload and verification phases', function (): void {
     $collector = new UpdateRunnerLeaseCollector;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Operations;
 
 use App\Contracts\RemoteShell;
+use App\Data\Nodes\InstalledCliArtifact;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Nodes\NodeRoleName;
 use App\Exceptions\UpdateLeaseConflict;
@@ -29,6 +30,7 @@ final readonly class WorkloadNodeUpdater
         private OperationRunRecorder $operationRuns,
         private FleetUpdateTargetSelector $targets,
         private FleetVersionProbe $fleetVersions,
+        private GatewayCliArtifactRelay $artifactRelay,
     ) {}
 
     /**
@@ -113,8 +115,7 @@ final readonly class WorkloadNodeUpdater
      */
     private function runRemoteUpdate(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
-        if (! $plan->usesTopologyCandidateManifest()
-            && $this->fleetVersions->isCurrent($this->fleetVersions->nodeVersion($node, $operationRun), $plan->target_version)) {
+        if (! $this->fleetVersions->nodeNeedsCliUpdate($node, $plan)) {
             return [
                 ...$this->targetPayload($node),
                 'status' => 'skipped',
@@ -128,7 +129,7 @@ final readonly class WorkloadNodeUpdater
             "Downloading {$plan->target_version}",
         );
 
-        $script = $this->remoteUpdateScript($plan, $node);
+        $script = $this->remoteUpdateScript($operationRun, $plan, $node);
         $result = $this->remoteShell->run($node, $script, [
             'cwd' => $node->orbit_path,
             'timeout' => 300,
@@ -152,6 +153,8 @@ final readonly class WorkloadNodeUpdater
             'running',
             'Replacing cli binary',
         );
+
+        $this->recordInstalledCli($operationRun, $plan, $node);
 
         $this->operationRuns->appendStep(
             $operationRun->id,
@@ -224,9 +227,9 @@ final readonly class WorkloadNodeUpdater
         return "Workload node {$node->name} updated ({$issues} {$noun})";
     }
 
-    private function remoteUpdateScript(OperationUpdatePlan $plan, Node $node): string
+    private function remoteUpdateScript(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): string
     {
-        $artifact = $this->cliArtifact($plan, $node);
+        $artifact = $this->cliArtifact($operationRun, $plan, $node);
         $installRoot = rtrim($node->orbit_path, '/') ?: '/home/orbit/orbit';
         $roleImages = $this->requiredRoleImages($plan, $node);
 
@@ -262,6 +265,9 @@ final readonly class WorkloadNodeUpdater
             '        ;;',
             'esac',
             'echo verify_cli',
+            "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$INSTALL_ROOT/bin/orbit-binary" | sha256sum -c -',
+            'resolved_binary="$(readlink -f "$BIN_PATH" 2>/dev/null || printf %s "$BIN_PATH")"',
+            "printf '%s  %s\n' ".$this->quote($artifact['sha256']).' "$resolved_binary" | sha256sum -c -',
             '"$BIN_PATH" --version --local',
         ];
 
@@ -280,10 +286,7 @@ final readonly class WorkloadNodeUpdater
         return implode("\n", $lines);
     }
 
-    /**
-     * @return array{url: string, sha256: string}
-     */
-    private function cliArtifact(OperationUpdatePlan $plan, Node $node): array
+    private function recordInstalledCli(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): void
     {
         $platform = $this->platformKey($node);
         $artifact = $plan->cli_artifacts[$platform] ?? null;
@@ -292,10 +295,30 @@ final readonly class WorkloadNodeUpdater
             throw new RuntimeException("Update plan does not contain a CLI artifact for platform [{$platform}].");
         }
 
-        return [
-            'url' => $artifact['url'],
-            'sha256' => $artifact['sha256'],
-        ];
+        $installRoot = rtrim($node->orbit_path, '/') ?: '/home/orbit/orbit';
+
+        $node->forceFill([
+            'installed_cli' => InstalledCliArtifact::record(
+                version: $plan->target_version,
+                platform: $platform,
+                sha256: $artifact['sha256'],
+                source: $plan->manifest_source,
+                buildId: $this->manifestBuildId($plan),
+                artifactUrl: $artifact['url'],
+                installedPath: "{$installRoot}/bin/orbit-binary",
+                operationRunId: $operationRun->id,
+            ),
+        ])->save();
+    }
+
+    /**
+     * @return array{url: string, sha256: string, source_url: string}
+     */
+    private function cliArtifact(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
+    {
+        $platform = $this->platformKey($node);
+
+        return $this->artifactRelay->artifactFor($operationRun, $plan, $platform);
     }
 
     private function platformKey(Node $node): string
@@ -335,6 +358,13 @@ final readonly class WorkloadNodeUpdater
         }
 
         return array_values(array_unique($images));
+    }
+
+    private function manifestBuildId(OperationUpdatePlan $plan): ?string
+    {
+        $buildId = $plan->manifest_snapshot['build_id'] ?? null;
+
+        return is_string($buildId) && $buildId !== '' ? $buildId : null;
     }
 
     /**

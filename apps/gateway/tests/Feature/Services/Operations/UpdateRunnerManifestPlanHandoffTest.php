@@ -8,6 +8,7 @@ use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Operations\FleetUpdateVerifier;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
@@ -19,6 +20,42 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
+    {
+        /**
+         * @return array{url: string, sha256: string, source_url: string}
+         */
+        #[Override]
+        public function artifactFor(OperationRun $operationRun, OperationUpdatePlan $plan, string $platform): array
+        {
+            $artifact = $plan->cli_artifacts[$platform] ?? null;
+
+            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+                throw new RuntimeException("Missing test artifact for [{$platform}].");
+            }
+
+            return [
+                'url' => "http://gateway.test/artifacts/{$platform}",
+                'sha256' => $artifact['sha256'],
+                'source_url' => $artifact['url'],
+            ];
+        }
+
+        #[Override]
+        public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
+        {
+            //
+        }
+
+        #[Override]
+        public function cleanup(OperationRun $operationRun): void
+        {
+            //
+        }
+    });
+});
 
 it('hands the manifest backed plan to gateway and workload update phases exactly once', function (): void {
     $manifest = updateRunnerManifestPlanHandoffManifest();
@@ -55,7 +92,8 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
         ->and($gatewayUpdater->manifestSnapshots)->toBe([$manifest])
         ->and($updateScripts)->toHaveCount(1)
         ->and($updateScripts[0]['script'])
-        ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64')
+        ->toContain('http://gateway.test/artifacts/linux-amd64')
+        ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64')
         ->toContain(str_repeat('e', 64))
         ->toContain("docker pull 'caddy:2.9-alpine'");
 

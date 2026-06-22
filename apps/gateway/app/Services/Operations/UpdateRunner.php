@@ -28,6 +28,7 @@ final readonly class UpdateRunner
         private UpdateRunnerPipeline $pipeline,
         private FleetVersionProbe $fleetVersions,
         private ActivityLogger $activityLogger,
+        private GatewayCliArtifactRelay $cliArtifacts,
     ) {}
 
     public function start(string $operationRunId): OperationUpdatePlan
@@ -48,6 +49,7 @@ final readonly class UpdateRunner
         [$operationRun, $plan] = $this->loadRunnableContext($operationRunId);
 
         $allCurrent = false;
+        $stagedArtifacts = false;
 
         try {
             if ($plan instanceof OperationUpdatePlan) {
@@ -56,7 +58,7 @@ final readonly class UpdateRunner
 
             [$plan, $report] = $this->runCheckSteps($operationRun, $plan);
 
-            if ($report->outdatedCount === 0 && ! $plan->usesTopologyCandidateManifest()) {
+            if ($report->outdatedCount === 0) {
                 // All-current short-circuit: skip gateway, workload, and verification phases.
                 $allCurrent = true;
             } else {
@@ -69,6 +71,18 @@ final readonly class UpdateRunner
                     callback: function () use ($operationRun, $plan): void {
                         $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
 
+                        $this->runPhase(
+                            $operationRun,
+                            'cli-artifacts',
+                            'Staging CLI artifacts on gateway',
+                            'CLI artifacts staged on gateway',
+                            function () use ($operationRun, $plan, &$stagedArtifacts): null {
+                                $stagedArtifacts = true;
+                                $this->cliArtifacts->stage($operationRun, $plan);
+
+                                return null;
+                            },
+                        );
                         $this->runPhase(
                             $operationRun,
                             'gateway',
@@ -107,11 +121,13 @@ final readonly class UpdateRunner
             }
         } catch (Throwable $exception) {
             $this->markFailed($operationRun, $exception);
+            $this->cleanupStagedArtifacts($operationRun, $stagedArtifacts);
 
             throw $exception;
         }
 
         $this->markSucceeded($operationRun, $plan, $allCurrent);
+        $this->cleanupStagedArtifacts($operationRun, $stagedArtifacts);
 
         return $plan;
     }
@@ -173,16 +189,12 @@ final readonly class UpdateRunner
 
     private function shouldRunUpdatePhases(OperationUpdatePlan $plan, FleetVersionReport $report): bool
     {
-        return $report->outdatedCount > 0 || $plan->usesTopologyCandidateManifest();
+        return $report->outdatedCount > 0;
     }
 
     private function fleetVersionsMessage(FleetVersionReport $report, OperationUpdatePlan $plan): string
     {
         if ($report->outdatedCount === 0) {
-            if ($plan->usesTopologyCandidateManifest()) {
-                return "Done: release candidate assets will be reapplied to {$plan->target_version}";
-            }
-
             return "Done: all nodes running on {$plan->target_version}";
         }
 
@@ -299,6 +311,19 @@ final readonly class UpdateRunner
             );
         } catch (Throwable) {
             // Activity logging is best-effort; failure must not change the runner result.
+        }
+    }
+
+    private function cleanupStagedArtifacts(OperationRun $operationRun, bool $stagedArtifacts): void
+    {
+        if (! $stagedArtifacts) {
+            return;
+        }
+
+        try {
+            $this->cliArtifacts->cleanup($operationRun);
+        } catch (Throwable) {
+            // Artifact cleanup is best-effort; the TTL cleanup handles leftovers.
         }
     }
 

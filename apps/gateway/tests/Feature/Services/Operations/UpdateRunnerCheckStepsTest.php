@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Nodes\InstalledCliArtifact;
+use App\Data\Nodes\InstalledGatewayImage;
 use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\Node;
 use App\Models\OperationEvent;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
 use App\Services\Operations\UpdateRunner;
@@ -21,19 +24,29 @@ use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
 
-it('emits the two check steps before the gateway phase and reports outdated nodes', function (): void {
-    config()->set('app.version', '2.0.0');
+beforeEach(function (): void {
+    app()->instance(GatewayCliArtifactRelay::class, new CheckStepsFakeArtifactRelay);
+});
 
-    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
-        'agent-1' => '1.0.0',
-        'app-dev-1' => '2.0.0',
-    ]));
+it('emits the two check steps before the gateway phase and reports outdated nodes', function (): void {
     app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
-    Node::factory()->appDev()->create(['name' => 'app-dev-1', 'platform' => 'linux']);
-    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    Node::factory()->agent()->create([
+        'name' => 'agent-1',
+        'platform' => 'ubuntu_24-04',
+        'installed_cli' => checkStepsInstalledCliArtifact(sha256: str_repeat('c', 64)),
+    ]);
+    Node::factory()->appDev()->create([
+        'name' => 'app-dev-1',
+        'platform' => 'linux',
+        'installed_cli' => checkStepsInstalledCliArtifact(),
+    ]);
+    Node::factory()->gateway()->create([
+        'name' => 'gateway-1',
+        'platform' => 'debian_12',
+        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+    ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
 
@@ -62,16 +75,19 @@ it('emits the two check steps before the gateway phase and reports outdated node
 });
 
 it('reports all nodes current when the gateway and every workload node match the target', function (): void {
-    config()->set('app.version', '2.0.0');
-
-    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
-        'agent-1' => '2.0.0',
-    ]));
     app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
-    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    Node::factory()->agent()->create([
+        'name' => 'agent-1',
+        'platform' => 'ubuntu_24-04',
+        'installed_cli' => checkStepsInstalledCliArtifact(),
+    ]);
+    Node::factory()->gateway()->create([
+        'name' => 'gateway-1',
+        'platform' => 'debian_12',
+        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+    ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
 
@@ -85,17 +101,20 @@ it('reports all nodes current when the gateway and every workload node match the
 });
 
 it('short-circuits when the fleet-version probe finds 0 outdated nodes', function (): void {
-    config()->set('app.version', '2.0.0');
-
     $pipeline = new CheckStepsNoopPipeline;
-    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
-        'agent-1' => '2.0.0',
-    ]));
     app()->instance(UpdateRunnerPipeline::class, $pipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
-    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    Node::factory()->agent()->create([
+        'name' => 'agent-1',
+        'platform' => 'ubuntu_24-04',
+        'installed_cli' => checkStepsInstalledCliArtifact(),
+    ]);
+    Node::factory()->gateway()->create([
+        'name' => 'gateway-1',
+        'platform' => 'debian_12',
+        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+    ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
 
@@ -111,18 +130,21 @@ it('short-circuits when the fleet-version probe finds 0 outdated nodes', functio
         ->and($keys)->not->toContain('verification');
 });
 
-it('does not short-circuit topology candidate manifests even when the fleet versions match', function (): void {
-    config()->set('app.version', '2.0.0');
-
+it('does not short-circuit topology candidate manifests when the candidate CLI hash differs', function (): void {
     $pipeline = new CheckStepsNoopPipeline;
-    app()->instance(RemoteShell::class, new CheckStepsFakeShell(versions: [
-        'agent-1' => '2.0.0',
-    ]));
     app()->instance(UpdateRunnerPipeline::class, $pipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
-    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
+    Node::factory()->agent()->create([
+        'name' => 'agent-1',
+        'platform' => 'ubuntu_24-04',
+        'installed_cli' => checkStepsInstalledCliArtifact(sha256: str_repeat('c', 64)),
+    ]);
+    Node::factory()->gateway()->create([
+        'name' => 'gateway-1',
+        'platform' => 'debian_12',
+        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+    ]);
 
     app(OperationUpdatePlanStore::class)->create(
         $run,
@@ -140,31 +162,10 @@ it('does not short-circuit topology candidate manifests even when the fleet vers
         ->and($keys)->toContain('workload-nodes')
         ->and($keys)->toContain('verification')
         ->and(checkStepsEvents($run))->toContain(
-            ['check-fleet-versions', 'done', 'Done: release candidate assets will be reapplied to 2.0.0'],
+            ['check-fleet-versions', 'done', 'Done: 1 outdated node found'],
         )
         ->and(checkStepsFleetDonePayload($run)['update_targets'] ?? null)->toBe(['gateway', 'local', 'agent-1'])
         ->and($run->refresh()->result['cli_artifacts']['linux-amd64']['url'] ?? null)->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64');
-});
-
-it('emits check-fleet-versions running before any node version probe call', function (): void {
-    config()->set('app.version', '2.0.0');
-
-    $shell = new CheckStepsOrderingShell(versions: [
-        'agent-1' => '1.0.0',
-    ]);
-    app()->instance(RemoteShell::class, $shell);
-    app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
-
-    $run = checkStepsRun();
-    Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
-    Node::factory()->gateway()->create(['name' => 'gateway-1', 'platform' => 'debian_12']);
-
-    app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
-
-    app(UpdateRunner::class)->run($run->id);
-
-    expect($shell->probeStarted)->toBeTrue()
-        ->and($shell->probeStartedAfterFleetCheckRunning)->toBeTrue();
 });
 
 it('clears the deferred start payload from the operation result when manifest resolution fails', function (): void {
@@ -345,6 +346,49 @@ function checkStepsSnapshot(string $targetVersion, string $manifestSource = 'git
         cliArtifacts: $cliArtifacts,
         roleImages: $roleImages,
     );
+}
+
+function checkStepsInstalledCliArtifact(string $sha256 = ''): InstalledCliArtifact
+{
+    return InstalledCliArtifact::record(
+        version: '2.0.0',
+        platform: 'linux-amd64',
+        sha256: $sha256 !== '' ? $sha256 : str_repeat('b', 64),
+        source: 'github-release',
+        buildId: null,
+        artifactUrl: 'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+        installedPath: '/home/orbit/orbit/bin/orbit-binary',
+        operationRunId: (string) Str::uuid(),
+    );
+}
+
+function checkStepsInstalledGatewayImage(): InstalledGatewayImage
+{
+    $digest = 'sha256:'.str_repeat('a', 64);
+
+    return InstalledGatewayImage::record(
+        version: '2.0.0',
+        image: "ghcr.io/hardimpactdev/orbit-gateway:2.0.0@{$digest}",
+        digest: $digest,
+        source: 'github-release',
+        buildId: null,
+        operationRunId: (string) Str::uuid(),
+    );
+}
+
+final class CheckStepsFakeArtifactRelay extends GatewayCliArtifactRelay
+{
+    #[Override]
+    public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
+    {
+        //
+    }
+
+    #[Override]
+    public function cleanup(OperationRun $operationRun): void
+    {
+        //
+    }
 }
 
 final class CheckStepsNoopPipeline extends UpdateRunnerPipeline

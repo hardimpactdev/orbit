@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Casts\Nodes\InstalledCliArtifactCast;
+use App\Casts\Nodes\InstalledGatewayImageCast;
+use App\Data\Nodes\InstalledCliArtifact;
+use App\Data\Nodes\InstalledGatewayImage;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
 use Illuminate\Database\Eloquent\Collection;
@@ -26,6 +30,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $public_ipv4
  * @property string|null $public_ipv6
  * @property array<string, mixed>|null $agent_ide_config
+ * @property InstalledCliArtifact|null $installed_cli
+ * @property InstalledGatewayImage|null $installed_gateway_image
  * @property string|null $host_key_type
  * @property string|null $host_key_fingerprint
  * @property string|null $host_key_public
@@ -56,6 +62,8 @@ class Node extends Model
         'public_ipv4',
         'public_ipv6',
         'agent_ide_config',
+        'installed_cli',
+        'installed_gateway_image',
         'host_key_type',
         'host_key_fingerprint',
         'host_key_public',
@@ -71,6 +79,8 @@ class Node extends Model
     {
         return [
             'agent_ide_config' => 'array',
+            'installed_cli' => InstalledCliArtifactCast::class,
+            'installed_gateway_image' => InstalledGatewayImageCast::class,
             'host_key_pinned_at' => 'datetime',
             'status' => NodeStatus::class,
         ];

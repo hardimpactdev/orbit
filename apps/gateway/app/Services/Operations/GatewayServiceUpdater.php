@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Operations;
 
+use App\Data\Nodes\InstalledGatewayImage;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Gateway\GatewayImageReference;
@@ -26,6 +27,7 @@ class GatewayServiceUpdater
     public function __construct(
         private readonly ?GatewaySwarmManager $swarm = null,
         private readonly ?OperationRunRecorder $operationRuns = null,
+        private readonly ?FleetUpdateTargetSelector $targets = null,
     ) {}
 
     public function update(OperationRun $operationRun, OperationUpdatePlan $plan): void
@@ -65,6 +67,8 @@ class GatewayServiceUpdater
                 'orbit-scheduler service running',
                 fn (): null => $this->updateAndStartScheduler($targetImage),
             );
+
+            $this->recordInstalledGatewayImage($operationRun, $plan, $targetImage);
         } catch (Throwable $throwable) {
             if ($schedulerWasStopped) {
                 $this->recoverScheduler($operationRun, $previousSchedulerImage, $throwable);
@@ -198,6 +202,33 @@ class GatewayServiceUpdater
         ]);
     }
 
+    private function recordInstalledGatewayImage(OperationRun $operationRun, OperationUpdatePlan $plan, GatewayImageReference $targetImage): void
+    {
+        $gatewayNode = $this->targets()->gatewayNode();
+
+        if ($gatewayNode === null) {
+            return;
+        }
+
+        $gatewayNode->forceFill([
+            'installed_gateway_image' => InstalledGatewayImage::record(
+                version: $plan->target_version,
+                image: $targetImage->canonical(),
+                digest: $targetImage->digest(),
+                source: $plan->manifest_source,
+                buildId: $this->manifestBuildId($plan),
+                operationRunId: $operationRun->id,
+            ),
+        ])->save();
+    }
+
+    private function manifestBuildId(OperationUpdatePlan $plan): ?string
+    {
+        $buildId = $plan->manifest_snapshot['build_id'] ?? null;
+
+        return is_string($buildId) && $buildId !== '' ? $buildId : null;
+    }
+
     private function schedulerRecoveryCommand(?string $previousSchedulerImage): string
     {
         $scaleCommand = 'docker service scale --detach=true '.escapeshellarg(self::SchedulerService.'=1');
@@ -221,5 +252,10 @@ class GatewayServiceUpdater
     private function operationRuns(): OperationRunRecorder
     {
         return $this->operationRuns ?? app(OperationRunRecorder::class);
+    }
+
+    private function targets(): FleetUpdateTargetSelector
+    {
+        return $this->targets ?? app(FleetUpdateTargetSelector::class);
     }
 }

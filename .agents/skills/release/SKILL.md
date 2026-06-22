@@ -19,8 +19,19 @@ manifests.
   - `hardimpactdev/orbit-cli` from `apps/cli`
   - `hardimpactdev/orbit-gateway` from `apps/gateway`
 - Release artifacts are built once as release candidates and exposed through a
-  topology-reachable `topology-candidate` manifest. GitHub publication promotes
-  those exact tested assets; it does not rebuild them.
+  topology-reachable `topology-candidate` manifest. Candidate CLI binaries and
+  manifests live in the central artifact store on the Laravel
+  `orbit-artifacts` disk, under immutable `candidates/<BUILD_ID>/` paths.
+  Candidate gateway images are pushed to GHCR package tags such as
+  `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>-candidate-<BUILD_ID>` and are
+  always digest-pinned in the manifest.
+- GitHub publication promotes those exact tested assets; it does not rebuild
+  CLI binaries or gateway images. The accepted gateway image digest is promoted
+  to the final `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` package tag
+  before the GitHub release is published.
+- GitHub release tags and release assets are created only after live candidate
+  acceptance and explicit human approval to publish. A successful candidate
+  `update:all` is not by itself approval to create a GitHub release.
 - The GitHub Actions release workflow must verify the promoted
   `orbit-linux-x64`, `orbit-macos-arm64`, `orbit-release-manifest.json`, and
   digest-pinned `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image, then
@@ -64,36 +75,83 @@ manifests.
    being shipped. Use `composer e2e:ensure-artifacts` only to prepare missing
    artifacts; artifact preparation output is not proof by itself.
 
-6. Build the release candidate assets once and generate a candidate manifest
-   that points at the topology-reachable asset source:
+6. Build and publish the release candidate artifacts once. Use the central
+   artifact store for files and GHCR for the gateway image. Do not use S3
+   image tarballs as the normal gateway image path; Docker Swarm must consume an
+   OCI registry reference.
 
    ```bash
    version="$(bin/orbit-version)"
    build_id="$(date -u +%Y%m%dT%H%M%SZ)-$(git rev-parse --short HEAD)"
+   candidate_tag="${version}-candidate-${build_id}"
+   candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${candidate_tag}"
+   candidate_dir="$(mktemp -d)"
+   candidate_prefix="candidates/${build_id}"
+
+   # The gateway app must have ORBIT_ARTIFACTS_* configured, or the shell must
+   # export those values before running bin/orbit-gateway-artisan.
+   artifact_base_url="$(bin/orbit-gateway-artisan tinker --execute='echo rtrim((string) config("orbit.artifacts.base_url"), "/");')"
+   if [ -z "$artifact_base_url" ]; then
+     echo "ORBIT_ARTIFACTS_BASE_URL is required for candidate artifact publishing." >&2
+     exit 1
+   fi
+
+   candidate_asset_base_url="${artifact_base_url}/${candidate_prefix}"
 
    bin/orbit-build-cli-binary mac arm "$version"
    bin/orbit-build-cli-binary linux x64 "$version"
 
-   # Build and publish/load the gateway image, then capture its sha256 digest.
-   # The manifest must use the digest-pinned gateway image actually tested.
+   cp apps/cli/builds/dist/linux/linux-x64 "${candidate_dir}/orbit-linux-x64"
+   cp apps/cli/builds/dist/mac/mac-arm "${candidate_dir}/orbit-macos-arm64"
+
+   docker buildx build \
+     --platform linux/amd64 \
+     -f docker/orbit-gateway/Dockerfile \
+     --tag "$candidate_image" \
+     --load \
+     .
+
+   gh auth status -h github.com
+   gh auth token | docker login ghcr.io -u "$(gh api user -q .login)" --password-stdin
+   docker push "$candidate_image" | tee "${candidate_dir}/gateway-image-push.log"
+   gateway_digest="$(awk '/digest: sha256:/ { print $3 }' "${candidate_dir}/gateway-image-push.log" | tail -1)"
+   if [ -z "$gateway_digest" ]; then
+     echo "Failed to capture the pushed gateway image digest." >&2
+     exit 1
+   fi
 
    bin/orbit-release-manifest \
      --version="$version" \
      --source=topology-candidate \
      --build-id="$build_id" \
-     --asset-base-url="https://<topology-artifact-host>/releases/candidates/${build_id}" \
-     --gateway-image="ghcr.io/hardimpactdev/orbit-gateway:${version}" \
-     --gateway-digest="sha256:<tested-digest>" \
-     --cli-artifact="linux-amd64=orbit-linux-x64=apps/cli/builds/dist/linux/linux-x64" \
-     --cli-artifact="darwin-arm64=orbit-macos-arm64=apps/cli/builds/dist/mac/mac-arm" \
+     --asset-base-url="$candidate_asset_base_url" \
+     --gateway-image="$candidate_image" \
+     --gateway-digest="$gateway_digest" \
+     --cli-artifact="linux-amd64=orbit-linux-x64=${candidate_dir}/orbit-linux-x64" \
+     --cli-artifact="darwin-arm64=orbit-macos-arm64=${candidate_dir}/orbit-macos-arm64" \
      --role-image="orbit-caddy=caddy:2-alpine" \
      --role-image="orbit-websocket=ghcr.io/hardimpactdev/orbit-websocket:${version}" \
-     --output="orbit-release-manifest.candidate.json"
+     --output="${candidate_dir}/orbit-release-manifest.candidate.json"
+
+   ORBIT_CANDIDATE_PREFIX="$candidate_prefix" \
+   ORBIT_CANDIDATE_DIR="$candidate_dir" \
+     bin/orbit-gateway-artisan tinker --execute='
+       $disk = Illuminate\Support\Facades\Storage::disk(config("orbit.artifacts.disk"));
+       $prefix = trim((string) getenv("ORBIT_CANDIDATE_PREFIX"), "/");
+       $dir = rtrim((string) getenv("ORBIT_CANDIDATE_DIR"), "/");
+
+       foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
+           $disk->put("{$prefix}/{$asset}", file_get_contents("{$dir}/{$asset}"), "public");
+       }
+     '
    ```
 
-   Publish `orbit-linux-x64`, `orbit-macos-arm64`, and
-   `orbit-release-manifest.candidate.json` to the topology asset host. Configure
-   the target gateway's `ORBIT_RELEASE_MANIFEST_URL` to that candidate manifest.
+   Configure the target gateway's `ORBIT_RELEASE_MANIFEST_URL` to
+   `${candidate_asset_base_url}/orbit-release-manifest.candidate.json` and
+   restart the gateway service so the running app reads the new value. If the
+   candidate is not published, restore the gateway's normal manifest URL after
+   acceptance testing so future update checks do not depend on the candidate
+   path.
 
 7. Run the broad quality gate before tagging:
 
@@ -117,14 +175,36 @@ manifests.
 
 10. Confirm:
     - gateway service image is the tested digest-pinned
-      `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>` image;
+      `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>-candidate-<BUILD_ID>`
+      image;
     - scheduler service image matches gateway;
     - every selected workload node reports `Orbit <VERSION>`;
     - post-update `orbit doctor` output has no new regressions compared with the
       pre-release baseline;
     - `orbit node:list` succeeds after the update.
 
-11. Generate the final GitHub manifest from the same tested local assets. It must
+11. Stop and ask for explicit human approval to publish the accepted candidate
+    to GitHub. Do not create a GitHub release, push a `v<VERSION>` tag, upload
+    GitHub release assets, or move the final GHCR version tag until approval is
+    given for the candidate identified by `build_id`, commit, CLI hashes, and
+    gateway digest.
+
+12. After approval, promote the accepted gateway image digest to the final GHCR
+    version tag without rebuilding:
+
+   ```bash
+   version="$(bin/orbit-version)"
+   candidate_image="ghcr.io/hardimpactdev/orbit-gateway:${version}-candidate-${build_id}"
+   release_image="ghcr.io/hardimpactdev/orbit-gateway:${version}"
+
+   docker buildx imagetools create \
+     -t "$release_image" \
+     "${candidate_image}@${gateway_digest}"
+
+   docker buildx imagetools inspect "$release_image"
+   ```
+
+13. Generate the final GitHub manifest from the same tested local assets. It must
     have `source=github-release` and the same CLI hashes and gateway digest as the
     accepted candidate:
 
@@ -139,7 +219,7 @@ manifests.
      --source=github-release \
      --build-id="$build_id" \
      --gateway-image="ghcr.io/hardimpactdev/orbit-gateway:${version}" \
-     --gateway-digest="sha256:<tested-digest>" \
+     --gateway-digest="$gateway_digest" \
      --repository="hardimpactdev/orbit" \
      --cli-artifact="linux-amd64=orbit-linux-x64=orbit-linux-x64" \
      --cli-artifact="darwin-arm64=orbit-macos-arm64=orbit-macos-arm64" \
@@ -148,7 +228,7 @@ manifests.
      --output="orbit-release-manifest.json"
    ```
 
-12. Merge the worktree branch back to `main`, push `main`, then create a draft
+14. Merge the worktree branch back to `main`, push `main`, then create a draft
     release, attach the tested files, and publish the draft. The release workflow
     runs on the `release.published` event, so a tag push alone is not enough:
 
@@ -170,11 +250,11 @@ manifests.
    gh release edit "v${version}" --draft=false
    ```
 
-13. Watch the `Orbit Release` workflow until it succeeds. It verifies the
+15. Watch the `Orbit Release` workflow until it succeeds. It verifies the
     attached assets and digest-pinned gateway image, then publishes the split
     package repositories.
 
-14. Verify public artifacts without authentication:
+16. Verify public artifacts without authentication:
 
    ```bash
    version="$(bin/orbit-version)"
@@ -186,7 +266,7 @@ manifests.
    DOCKER_CONFIG="$tmp" docker pull "ghcr.io/hardimpactdev/orbit-gateway:${version}"
    ```
 
-15. If doctor output changed after `update:all`, classify the delta before
+17. If doctor output changed after `update:all`, classify the delta before
     accepting the release. Fix release-caused regressions immediately when
     feasible. For intentional or pre-existing live-topology migration work,
     create scoped follow-up tasks with the before/after doctor evidence.

@@ -40,10 +40,18 @@ return [
         'retention_days' => env('ORBIT_OPERATION_RUNS_RETENTION_DAYS', 90),
     ],
 
+    'artifacts' => [
+        'disk' => env('ORBIT_ARTIFACTS_DISK', 'orbit-artifacts'),
+        'base_url' => env('ORBIT_ARTIFACTS_BASE_URL'),
+    ],
+
     'updates' => [
         'release_manifest_url' => env('ORBIT_RELEASE_MANIFEST_URL', 'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json'),
         'release_manifest_timeout_seconds' => env('ORBIT_RELEASE_MANIFEST_TIMEOUT_SECONDS', 10),
         'allow_request_image_override' => env('ORBIT_UPDATE_ALLOW_REQUEST_IMAGE_OVERRIDE', false),
+        'artifact_base_url' => env('ORBIT_UPDATE_ARTIFACT_BASE_URL', env('APP_URL', 'http://localhost')),
+        'artifact_cache_ttl_seconds' => env('ORBIT_UPDATE_ARTIFACT_CACHE_TTL_SECONDS', 86400),
+        'artifact_download_timeout_seconds' => env('ORBIT_UPDATE_ARTIFACT_DOWNLOAD_TIMEOUT_SECONDS', 60),
         'gateway_image' => env('ORBIT_GATEWAY_IMAGE'),
         'gateway_image_archive' => env('ORBIT_GATEWAY_IMAGE_ARCHIVE'),
         'lease_ttl_seconds' => env('ORBIT_UPDATE_LEASE_TTL_SECONDS', 300),

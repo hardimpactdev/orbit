@@ -6,6 +6,7 @@ use App\Data\Operations\OperationUpdatePlanSnapshot;
 use App\Models\OperationRun;
 use App\Models\OperationUpdatePlan;
 use App\Services\Operations\FleetUpdateVerifier;
+use App\Services\Operations\GatewayCliArtifactRelay;
 use App\Services\Operations\GatewayServiceUpdater;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationUpdatePlanStore;
@@ -14,6 +15,23 @@ use Illuminate\Support\Str;
 use Orbit\Core\Enums\OperationStatus;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
+    {
+        #[Override]
+        public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
+        {
+            //
+        }
+
+        #[Override]
+        public function cleanup(OperationRun $operationRun): void
+        {
+            //
+        }
+    });
+});
 
 it('loads the immutable update plan and writes runner start events', function (): void {
     $run = updateRunnerCommandRun();

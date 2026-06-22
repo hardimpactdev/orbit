@@ -93,6 +93,7 @@ use App\Http\Controllers\Api\ToolUpdateBulkController;
 use App\Http\Controllers\Api\ToolUpdateController;
 use App\Http\Controllers\Api\UpdateAllController;
 use App\Http\Controllers\Api\UpdateAllStartController;
+use App\Http\Controllers\Api\UpdateArtifactDownloadController;
 use App\Http\Controllers\Api\VpnClientCreateController;
 use App\Http\Controllers\Api\VpnClientDisableController;
 use App\Http\Controllers\Api\VpnClientEnableController;
@@ -118,6 +119,8 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(CorrelationHeader::class)->group(function (): void {
     Route::get('/status', GatewayStatusController::class)->name('api.status');
     Route::get('/ca/root', CaRootController::class);
+    Route::get('/update/artifacts/{operationRun}/cli/{platform}', UpdateArtifactDownloadController::class)
+        ->name('api.update.artifacts.cli');
 
     Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class])->group(function (): void {
         Route::get('/operations/{operationRun}/events', OperationEventStreamController::class)

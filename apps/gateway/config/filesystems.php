@@ -60,6 +60,20 @@ return [
             'report' => false,
         ],
 
+        'orbit-artifacts' => [
+            'driver' => 's3',
+            'key' => env('ORBIT_ARTIFACTS_ACCESS_KEY', env('S3_UPCLOUD_ACCESS_KEY')),
+            'secret' => env('ORBIT_ARTIFACTS_SECRET_KEY', env('S3_UPCLOUD_ACCESS_SECRET')),
+            'region' => env('ORBIT_ARTIFACTS_REGION', env('S3_UPCLOUD_REGION', env('AWS_DEFAULT_REGION', 'us-east-1'))),
+            'bucket' => env('ORBIT_ARTIFACTS_BUCKET', env('S3_UPCLOUD_BUCKET')),
+            'url' => env('ORBIT_ARTIFACTS_URL'),
+            'endpoint' => env('ORBIT_ARTIFACTS_ENDPOINT', env('S3_UPCLOUD_ENDPOINT')),
+            'use_path_style_endpoint' => env('ORBIT_ARTIFACTS_USE_PATH_STYLE_ENDPOINT', env('S3_UPCLOUD_USE_PATH_STYLE_ENDPOINT', true)),
+            'visibility' => env('ORBIT_ARTIFACTS_VISIBILITY', 'public'),
+            'throw' => env('ORBIT_ARTIFACTS_THROW', true),
+            'report' => false,
+        ],
+
     ],
 
     /*
