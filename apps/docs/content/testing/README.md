@@ -129,9 +129,11 @@ These rules order the lanes above into a development workflow:
   Docker runtime image, publishes a `topology-candidate` manifest to a
   topology-reachable artifact source, activates the desired manifest on a stable
   candidate channel, and catches packaging and installer regressions before
-  GitHub release publication. Live release-candidate acceptance runs
-  `update:all` against that candidate channel; GitHub release creation is only
-  the promotion of the exact tested assets.
+  GitHub release publication. Live release-candidate acceptance sets the
+  gateway source with `orbit manifest:update <url>`, runs `update:all` against
+  that candidate channel, and clears the source with `orbit manifest:remove`
+  when the gateway should return to GitHub. GitHub release creation is only the
+  promotion of the exact tested assets.
 - Provisioning proves installer and `node:new` provisioning behavior after the
   prepared-topology feature lane is green. It is a final substrate/artifact
   gate, not the inner development loop and not a precondition for

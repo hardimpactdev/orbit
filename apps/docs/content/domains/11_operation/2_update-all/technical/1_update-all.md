@@ -68,8 +68,8 @@ execution details live in the renderer contracts.
   topology-reachable `topology-candidate` source. The manifest source is part of
   the immutable plan and terminal operation result so release-candidate
   acceptance can use a non-GitHub artifact source before promotion.
-- For release-candidate rehearsal, the configured release manifest URL may be a
-  stable artifact channel such as
+- For release-candidate rehearsal, the gateway-selected release manifest URL may
+  be a stable artifact channel such as
   `channels/live-test/orbit-release-manifest.json`. The channel object is only a
   manifest discovery location; the runner snapshots the resolved manifest
   content into the immutable plan before any side effects begin.
@@ -80,6 +80,9 @@ execution details live in the renderer contracts.
 - After the plan is persisted, the runner must read only that immutable plan for
   the remainder of the run. It must not fetch or substitute a fresh manifest
   during gateway, workload, or verification phases.
+- `manifest:update` stores the custom gateway manifest URL consumed by deferred
+  `update:all` runs. `manifest:remove` clears that override so deferred runs
+  return to the configured default release manifest URL.
 
 ### Version check and fleet version probe
 

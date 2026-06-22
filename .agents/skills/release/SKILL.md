@@ -24,8 +24,8 @@ manifests.
   `orbit-artifacts` disk, under immutable `candidates/<BUILD_ID>/` paths.
   Activating a candidate copies its manifest to a stable channel path,
   `channels/<CHANNEL>/orbit-release-manifest.json`, so live-test gateways can
-  keep `ORBIT_RELEASE_MANIFEST_URL` pointed at one URL while each new candidate
-  is still identified by its immutable build id.
+  keep one custom manifest URL selected through `orbit manifest:update <url>`
+  while each new candidate is still identified by its immutable build id.
   Candidate gateway images are pushed to GHCR package tags such as
   `ghcr.io/hardimpactdev/orbit-gateway:<VERSION>-candidate-<BUILD_ID>` and are
   always digest-pinned in the manifest.
@@ -140,32 +140,41 @@ manifests.
 
    ORBIT_CANDIDATE_PREFIX="$candidate_prefix" \
    ORBIT_CANDIDATE_DIR="$candidate_dir" \
+   ORBIT_CANDIDATE_CHANNEL="$candidate_channel" \
      bin/orbit-gateway-artisan tinker --execute='
        $disk = Illuminate\Support\Facades\Storage::disk(config("orbit.artifacts.disk"));
        $prefix = trim((string) getenv("ORBIT_CANDIDATE_PREFIX"), "/");
        $dir = rtrim((string) getenv("ORBIT_CANDIDATE_DIR"), "/");
+       $channel = trim((string) getenv("ORBIT_CANDIDATE_CHANNEL"), "/");
 
        foreach (["orbit-linux-x64", "orbit-macos-arm64", "orbit-release-manifest.candidate.json"] as $asset) {
            $disk->put("{$prefix}/{$asset}", file_get_contents("{$dir}/{$asset}"), "public");
        }
-     '
 
-   bin/orbit-gateway-artisan orbit:release-candidate:activate "$build_id" \
-     --channel="$candidate_channel"
+       $disk->put(
+           "channels/{$channel}/orbit-release-manifest.json",
+           file_get_contents("{$dir}/orbit-release-manifest.candidate.json"),
+           "public",
+       );
+     '
 
    candidate_channel_manifest_url="${artifact_base_url}/channels/${candidate_channel}/orbit-release-manifest.json"
    echo "Candidate channel manifest: ${candidate_channel_manifest_url}"
    ```
 
-   Configure the target gateway's `ORBIT_RELEASE_MANIFEST_URL` once to the
-   stable channel URL, usually
-   `${artifact_base_url}/channels/live-test/orbit-release-manifest.json`, and
-   restart the gateway service only when changing that environment value. Future
-   candidate rehearsals should upload immutable files under
-   `candidates/<BUILD_ID>/` and run `orbit:release-candidate:activate` again;
+   Point the target gateway at the stable channel URL:
+
+   ```bash
+   orbit manifest:update "$candidate_channel_manifest_url"
+   ```
+
+   Future candidate rehearsals should upload immutable files under
+   `candidates/<BUILD_ID>/` and replace the same channel manifest object;
    `orbit update:all` will resolve the current channel manifest during its
-   `Checking for updates` step. If the gateway should stop accepting candidate
-   manifests, restore the normal GitHub manifest URL.
+   `Checking for updates` step. Run `orbit manifest:update` again only when the
+   channel URL changes. If the gateway should stop accepting candidate
+   manifests, run `orbit manifest:remove` to restore the configured default
+   release manifest source.
 
 7. Run the broad quality gate before tagging:
 

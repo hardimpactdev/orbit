@@ -135,9 +135,10 @@ topology-reachable `topology-candidate` manifest, activated on a stable artifact
 channel such as `channels/live-test/orbit-release-manifest.json`, and proven
 with `orbit update:all` before a `v<VERSION>` GitHub release exists. Candidate
 assets remain immutable under `candidates/<BUILD_ID>/`; activation only updates
-the channel manifest so a live-test gateway can keep one
-`ORBIT_RELEASE_MANIFEST_URL`. After live acceptance, the exact tested CLI
-binaries, digest-pinned
+the channel manifest so a live-test gateway can keep one custom manifest URL
+selected through `orbit manifest:update`. `orbit manifest:remove` clears that
+override after candidate acceptance or rejection. After live acceptance, the
+exact tested CLI binaries, digest-pinned
 `ghcr.io/hardimpactdev/orbit-gateway:<version>` image, and final
 `github-release` manifest are attached to the `hardimpactdev/orbit` release; the
 GitHub release workflow verifies those promoted assets and publishes the

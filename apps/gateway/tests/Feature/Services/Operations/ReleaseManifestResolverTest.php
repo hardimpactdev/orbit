@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\OperationRun;
+use App\Models\ReleaseManifestSource;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\ReleaseManifestResolver;
 use App\Services\Operations\UpdatePlanBuilder;
@@ -73,6 +74,30 @@ it('accepts topology candidate manifests with a build identity', function (): vo
     expect($manifest->source)->toBe('topology-candidate')
         ->and($manifest->snapshot()['build_id'])->toBe('2026-06-21T120000Z-abc123')
         ->and($manifest->cliArtifacts['linux-amd64']['url'])->toBe('https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-linux-x64');
+});
+
+it('prefers the persisted custom manifest URL over the configured default', function (): void {
+    ReleaseManifestSource::current()->update([
+        'custom_url' => 'https://artifacts.orbit/channels/live-test/orbit-release-manifest.json',
+    ]);
+
+    Http::fake([
+        'artifacts.orbit/*' => Http::response(releaseManifestResolverFixture([
+            'source' => 'topology-candidate',
+            'build_id' => '20260622T100000Z-abc123',
+            'version' => '1.2.3',
+        ]), 200),
+        'github.com/*' => Http::response(releaseManifestResolverFixture([
+            'version' => '9.9.9',
+        ]), 200),
+    ]);
+
+    $manifest = app(ReleaseManifestResolver::class)->resolve();
+
+    Http::assertSentCount(1);
+
+    expect($manifest->source)->toBe('topology-candidate')
+        ->and($manifest->snapshot()['build_id'])->toBe('20260622T100000Z-abc123');
 });
 
 it('rejects malformed manifest json', function (): void {

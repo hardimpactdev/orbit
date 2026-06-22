@@ -156,5 +156,11 @@ return [
             'replacement' => 'host `php`/`artisan`/`composer` directly on the app node source path',
             'allow_paths' => ['product-decisions.md', 'domains/5_app/README.md'],
         ],
+        [
+            'terms' => ['orbit:release-candidate:activate'],
+            'decision' => '2026-06-22 manifest source selection moved to public CLI commands',
+            'replacement' => '`manifest:update` / `manifest:remove`',
+            'allow_paths' => ['product-decisions.md'],
+        ],
     ],
 ];

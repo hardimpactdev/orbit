@@ -63,6 +63,8 @@ authority](../architecture.md#gateway-implicit-authority).
 | `firewall:remove` | `firewall_rule:write` | target node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `gateway:add` | n/a - pre-grants bootstrap | n/a | Deployment-context command | n/a | n/a |
 | `gateway:trust` | n/a - local-only | n/a | Deployment-context command | n/a | n/a |
+| `manifest:update` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
+| `manifest:remove` | gateway-admin only | gateway | No narrow permission | `authorization_failed` | `reason=missing_gateway_admin`, `serving_node=<gateway>` |
 | `metrics:credentials` read mode | `tool:credentials` | selected active metrics node | V1 process-backed permission for Grafana credentials | `authorization_failed` | Standard missing-permission meta plus selected node and process |
 | `metrics:credentials --reset` | `tool:credentials` | selected active metrics node | V1 uses the explicit credentials permission for Grafana password rotation | `authorization_failed` | Standard missing-permission meta plus selected node and process |
 | `metrics:disable` | `role:remove` | target node | Delegates to metrics role removal; `--force` required before side effects | `authorization_failed` | Standard missing-permission meta plus target node and role |

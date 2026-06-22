@@ -17,6 +17,8 @@ These rules constrain all commands in the operation domain.
 **Scope and authority:**
 
 - Operation commands must not invent durable operation-domain configuration.
+- `manifest:update` and `manifest:remove` are the exception for the gateway
+  release manifest source.
 - Fleet-changing operation commands run through gateway-owned authority and node access policy.
 - Local operation commands affect only the caller machine. A command that extends beyond the caller machine must document a gateway-mediated fleet path.
 
@@ -52,3 +54,5 @@ These are the commands in the operation domain.
 3. [`orbit doctor`](3_doctor/doctor.md)
 4. [`orbit version`](4_version/version.md)
 5. [`orbit profile [target]`](5_profile/profile.md)
+6. [`orbit manifest:update <url>`](6_manifest-update/manifest-update.md)
+7. [`orbit manifest:remove`](7_manifest-remove/manifest-remove.md)

@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\FirewallRuleListController;
 use App\Http\Controllers\Api\FirewallRuleStoreController;
 use App\Http\Controllers\Api\GatewayStatusController;
 use App\Http\Controllers\Api\InternalExecutorTokenController;
+use App\Http\Controllers\Api\ManifestSourceController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\MetricsCredentialsController;
 use App\Http\Controllers\Api\MetricsCredentialsResetController;
@@ -162,6 +163,8 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
         Route::post('/deploy/steps', [DeployController::class, 'storeStep']);
         Route::delete('/deploy/steps/{step}', [DeployController::class, 'removeStep']);
         Route::post('/internal-executor/token/verify', InternalExecutorTokenController::class);
+        Route::put('/manifest', [ManifestSourceController::class, 'update'])->name('api.manifest.update');
+        Route::delete('/manifest', [ManifestSourceController::class, 'destroy'])->name('api.manifest.destroy');
         Route::get('/me', MeController::class);
         Route::get('/metrics/status', MetricsStatusController::class);
         Route::get('/metrics/credentials', MetricsCredentialsController::class);

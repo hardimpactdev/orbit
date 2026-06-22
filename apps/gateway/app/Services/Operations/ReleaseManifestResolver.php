@@ -13,6 +13,10 @@ use RuntimeException;
 
 class ReleaseManifestResolver
 {
+    public function __construct(
+        private readonly ReleaseManifestSourceManager $manifestSources,
+    ) {}
+
     public function resolve(): ReleaseManifest
     {
         $configuredSnapshot = config('orbit.updates.manifest_snapshot');
@@ -21,13 +25,7 @@ class ReleaseManifestResolver
             return ReleaseManifest::fromArray($configuredSnapshot);
         }
 
-        $url = config('orbit.updates.release_manifest_url');
-
-        if (! is_string($url) || trim($url) === '') {
-            throw new RuntimeException('Release manifest URL is not configured.');
-        }
-
-        $url = trim($url);
+        $url = $this->manifestSources->effectiveUrl();
 
         if (str_starts_with($url, 'file://')) {
             return ReleaseManifest::fromArray($this->readFileManifest(substr($url, 7)));

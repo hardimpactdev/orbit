@@ -66,6 +66,8 @@ use App\Commands\Internal\VerifyExecutorCommand;
 use App\Commands\Internal\WgEasyStateCommand;
 use App\Commands\Internal\WorkspaceAdapterLookupCommand;
 use App\Commands\Internal\WorkspaceAdapterUpdateCommand;
+use App\Commands\Manifest\ManifestRemoveCommand;
+use App\Commands\Manifest\ManifestUpdateCommand;
 use App\Commands\Metrics\MetricsCredentialsCommand;
 use App\Commands\Metrics\MetricsDisableCommand;
 use App\Commands\Metrics\MetricsEnableCommand;
@@ -218,6 +220,8 @@ return [
         GatewayTrustCommand::class,
         GatewayUseCommand::class,
         GatewayStatusCommand::class,
+        ManifestRemoveCommand::class,
+        ManifestUpdateCommand::class,
         MetricsCredentialsCommand::class,
         MetricsDisableCommand::class,
         MetricsEnableCommand::class,
