@@ -884,13 +884,14 @@ describe('DoctorReportRunner', function (): void {
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
         ]);
-        Workspace::factory()->create([
+        $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
             'path' => '/home/orbit/apps/docs/.worktrees/feature',
         ]);
+        $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
         $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\t1\t1\t0\t1\t1\t{$expectedHash}\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
@@ -1368,6 +1369,51 @@ TXT;
                 'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
                 'php_ini_path' => '/etc/orbit/workspaces/docs-feature-a.ini',
             ]);
+    });
+
+    it('restores missing PHP workspace runtime containers through workspace restore mode', function (): void {
+        $node = createDoctorRunnerAppHostNode([
+            'name' => 'app-1',
+            'platform' => 'ubuntu_24-04',
+        ]);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'path' => '/home/orbit/apps/docs',
+            'php_version' => '8.5',
+            'runtime_kind' => AppRuntimeKind::Php,
+        ]);
+        $workspace = Workspace::factory()->for($app, 'app')->create([
+            'name' => 'feature-a',
+            'path' => '/home/orbit/apps/docs/.worktrees/feature-a',
+            'php_version' => '8.5',
+        ]);
+        $shell = new DoctorReportRunnerRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: "feature-a\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such container: orbit-ws-docs-feature-a', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: 'orbit-ws-docs-feature-a', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $shell);
+
+        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
+
+        expect($report['healthy'])->toBeTrue()
+            ->and($report['actions'][0])->toMatchArray([
+                'family' => 'workspace',
+                'node' => 'app-1',
+                'key' => 'workspace.runtime_container_missing',
+                'mode' => 'restore',
+                'status' => 'completed',
+                'details' => [
+                    'app' => 'docs',
+                    'workspace' => 'feature-a',
+                    'container' => 'orbit-ws-docs-feature-a',
+                    'outcome' => 'created',
+                ],
+            ])
+            ->and($workspace->processes()->where('name', 'frankenphp-docs-feature-a')->exists())->toBeTrue()
+            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker run') && str_contains($script, "'orbit-ws-docs-feature-a'")))->toBeTrue();
     });
 
     it('restores missing node-owned process runtime units through restore mode family dispatch', function (): void {

@@ -54,6 +54,8 @@ use App\Services\Tools\ToolsProbe;
 use App\Services\WebSockets\WebSocketDoctorProbe;
 use App\Services\WebSockets\WebSocketProxyDoctorProbe;
 use App\Services\Workspaces\WorkspaceRuntimeContainer;
+use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
+use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -2157,6 +2159,9 @@ final readonly class DoctorReportRunner
             S3ProxyDoctorProbe::RouterRouteKey,
             S3ProxyDoctorProbe::RouterBackendKey,
             S3ProxyDoctorProbe::PublicRouteKey,
+            'workspace.runtime_container_missing',
+            'workspace.runtime_container_stopped',
+            'workspace.runtime_container_mismatch',
             'workspace.security.system_user',
             'workspace.security.fs_permissions',
             'app.runtime_container_missing',
@@ -2469,6 +2474,14 @@ final readonly class DoctorReportRunner
     {
         $workspace->loadMissing('app.node');
 
+        if (in_array($entry->key, [
+            'workspace.runtime_container_missing',
+            'workspace.runtime_container_stopped',
+            'workspace.runtime_container_mismatch',
+        ], true)) {
+            return $this->restoreWorkspaceRuntimeContainer($workspace, $entry);
+        }
+
         return [
             'family' => $entry->family,
             'node' => $workspace->app?->node?->name,
@@ -2477,6 +2490,70 @@ final readonly class DoctorReportRunner
             'mode' => 'restore',
             'status' => 'skipped',
             'summary' => "Skipped fix for {$entry->key}: workspace auto-fix is not supported in the Docker-first runtime.",
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function restoreWorkspaceRuntimeContainer(Workspace $workspace, DriftEntry $entry): array
+    {
+        $workspace->loadMissing('app.node');
+        $app = $workspace->app;
+        $node = $app?->node;
+
+        if (! $app instanceof App || ! $node instanceof Node) {
+            return [
+                'family' => $entry->family,
+                'node' => $node?->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$entry->key}.",
+                'details' => [
+                    'workspace' => $workspace->name,
+                    'error' => 'Workspace has no active parent app node.',
+                ],
+            ];
+        }
+
+        try {
+            app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
+
+            $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
+            $outcome = app(WorkspaceRuntimeContainerManager::class)->apply($node, $container);
+        } catch (\Throwable $e) {
+            return [
+                'family' => $entry->family,
+                'node' => $node->name,
+                'code' => $entry->key,
+                'key' => $entry->key,
+                'mode' => 'restore',
+                'status' => 'failed',
+                'summary' => "Failed to restore {$entry->key}.",
+                'details' => [
+                    'app' => $app->name,
+                    'workspace' => $workspace->name,
+                    'error' => $e->getMessage(),
+                ],
+            ];
+        }
+
+        return [
+            'family' => $entry->family,
+            'node' => $node->name,
+            'code' => $entry->key,
+            'key' => $entry->key,
+            'mode' => 'restore',
+            'status' => 'completed',
+            'summary' => "Restored FrankenPHP runtime container for workspace {$workspace->name}.",
+            'details' => [
+                'app' => $app->name,
+                'workspace' => $workspace->name,
+                'container' => $container->name(),
+                'outcome' => $outcome->value,
+            ],
         ];
     }
 

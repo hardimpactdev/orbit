@@ -173,6 +173,10 @@ run_liveness_mode() {
   local cadence_anchor_us=""
   local cadence_anchor_spinner=""
   local cadence_first_transition_us=-1
+  local cadence_last_spinner=""
+  local cadence_last_transition_us=""
+  local cadence_max_transition_gap_us=0
+  local cadence_transition_count=0
   local latest_row=""
   local latest_spinner=""
 
@@ -228,8 +232,30 @@ run_liveness_mode() {
           if [[ -z "$cadence_anchor_us" ]]; then
             cadence_anchor_us="$now_us_val"
             cadence_anchor_spinner="$spinner"
-          elif [[ "$spinner" != "$cadence_anchor_spinner" && "$cadence_first_transition_us" -lt 0 ]]; then
-            cadence_first_transition_us=$((now_us_val - cadence_anchor_us))
+            cadence_last_spinner="$spinner"
+          else
+            if [[ "$spinner" != "$cadence_anchor_spinner" && "$cadence_first_transition_us" -lt 0 ]]; then
+              cadence_first_transition_us=$((now_us_val - cadence_anchor_us))
+            fi
+
+            if [[ "$spinner" != "$cadence_last_spinner" ]]; then
+              local gap_us
+
+              if [[ -z "$cadence_last_transition_us" ]]; then
+                gap_us=$((now_us_val - cadence_anchor_us))
+              else
+                gap_us=$((now_us_val - cadence_last_transition_us))
+              fi
+
+              cadence_transition_count=$((cadence_transition_count + 1))
+              cadence_last_transition_us="$now_us_val"
+
+              if (( gap_us > cadence_max_transition_gap_us )); then
+                cadence_max_transition_gap_us="$gap_us"
+              fi
+            fi
+
+            cadence_last_spinner="$spinner"
           fi
         fi
       fi
@@ -237,7 +263,10 @@ run_liveness_mode() {
 
     if [[ "$still_running" == true && "$row_identity_stable" == true && "$saw_open" == true && "$saw_filled" == true ]]; then
       captured_while_running=true
-      break
+
+      if (( cadence_transition_count >= 4 )); then
+        break
+      fi
     fi
 
     if [[ "$still_running" == false ]]; then
@@ -258,9 +287,13 @@ run_liveness_mode() {
   fi
 
   local cadence_json
-  cadence_json="$(ORBIT_UPDATE_ALL_LIVENESS_FIRST_TRANSITION_US="$cadence_first_transition_us" php -r '
+  cadence_json="$(ORBIT_UPDATE_ALL_LIVENESS_FIRST_TRANSITION_US="$cadence_first_transition_us" ORBIT_UPDATE_ALL_LIVENESS_MAX_TRANSITION_GAP_US="$cadence_max_transition_gap_us" ORBIT_UPDATE_ALL_LIVENESS_TRANSITION_COUNT="$cadence_transition_count" php -r '
 require $argv[1];
-$result = validateUpdateAllLivenessCadence((int) getenv("ORBIT_UPDATE_ALL_LIVENESS_FIRST_TRANSITION_US"));
+$result = validateUpdateAllLivenessCadenceState([
+    "first_transition_us" => (int) getenv("ORBIT_UPDATE_ALL_LIVENESS_FIRST_TRANSITION_US"),
+    "max_transition_gap_us" => (int) getenv("ORBIT_UPDATE_ALL_LIVENESS_MAX_TRANSITION_GAP_US"),
+    "transition_count" => (int) getenv("ORBIT_UPDATE_ALL_LIVENESS_TRANSITION_COUNT"),
+]);
 echo json_encode($result, JSON_THROW_ON_ERROR);
 ' "$CADENCE")"
 
@@ -269,7 +302,19 @@ echo json_encode($result, JSON_THROW_ON_ERROR);
 
   if [[ "$captured_while_running" != true ]]; then
     echo "FAIL: ${mode} liveness row did not alternate on a stable row while process was still running" >&2
-    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled first_transition_us=${cadence_first_transition_us} cadence_ok=${cadence_ok}" >&2
+    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled first_transition_us=${cadence_first_transition_us} transition_count=${cadence_transition_count} max_transition_gap_us=${cadence_max_transition_gap_us} cadence_ok=${cadence_ok}" >&2
+    return 1
+  fi
+
+  if (( cadence_transition_count < 4 )); then
+    echo "FAIL: ${mode} liveness row did not keep alternating long enough while process was still running" >&2
+    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled first_transition_us=${cadence_first_transition_us} transition_count=${cadence_transition_count} max_transition_gap_us=${cadence_max_transition_gap_us} cadence_ok=${cadence_ok}" >&2
+    return 1
+  fi
+
+  if (( cadence_max_transition_gap_us >= 900000 )); then
+    echo "FAIL: ${mode} liveness spinner transition gap exceeded the 900000us ceiling" >&2
+    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled first_transition_us=${cadence_first_transition_us} transition_count=${cadence_transition_count} max_transition_gap_us=${cadence_max_transition_gap_us} cadence_ok=${cadence_ok}" >&2
     return 1
   fi
 
@@ -277,12 +322,12 @@ echo json_encode($result, JSON_THROW_ON_ERROR);
     local cadence_reason
     cadence_reason="$(php -r 'echo json_decode(file_get_contents("php://stdin"), true)["reason"] ?? "unknown cadence failure";' <<<"$cadence_json")"
     echo "FAIL: ${mode} liveness spinner cadence invalid (${cadence_reason})" >&2
-    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled first_transition_us=${cadence_first_transition_us} cadence_ok=false" >&2
+    echo "mode=${mode} observations=${#observations[@]} target_row=[${target_row:-none}] row_identity_stable=$row_identity_stable distinct_states=[${distinct_states:-none}] saw_open=$saw_open saw_filled=$saw_filled first_transition_us=${cadence_first_transition_us} transition_count=${cadence_transition_count} max_transition_gap_us=${cadence_max_transition_gap_us} cadence_ok=false" >&2
     return 1
   fi
 
   echo "${pass_message} ${target_row} while pid $pid was still running"
-  echo "mode=${mode} observations=${#observations[@]} target_row=${target_row} distinct_states=[${distinct_states}] first_transition_us=${cadence_first_transition_us} cadence_ok=true"
+  echo "mode=${mode} observations=${#observations[@]} target_row=${target_row} distinct_states=[${distinct_states}] first_transition_us=${cadence_first_transition_us} transition_count=${cadence_transition_count} max_transition_gap_us=${cadence_max_transition_gap_us} cadence_ok=true"
 }
 
 case "$MODE" in

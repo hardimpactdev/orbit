@@ -41,3 +41,25 @@ it('records the first stable-row transition from polling observations', function
         ->and($state['transition_count'])->toBe(1)
         ->and($state['max_transition_gap_us'])->toBe(300_000);
 });
+
+it('accepts cadence state when a late anchor undercounts the first transition but later gaps prove the interval', function (): void {
+    $result = validateUpdateAllLivenessCadenceState([
+        'first_transition_us' => 184_000,
+        'max_transition_gap_us' => 302_000,
+        'transition_count' => 4,
+    ]);
+
+    expect($result['cadence_ok'])->toBeTrue()
+        ->and($result['first_transition_us'])->toBe(184_000);
+});
+
+it('rejects cadence state when every observed transition remains below the cadence floor', function (): void {
+    $result = validateUpdateAllLivenessCadenceState([
+        'first_transition_us' => 184_000,
+        'max_transition_gap_us' => 210_000,
+        'transition_count' => 4,
+    ]);
+
+    expect($result['cadence_ok'])->toBeFalse()
+        ->and($result['reason'])->toContain('before');
+});

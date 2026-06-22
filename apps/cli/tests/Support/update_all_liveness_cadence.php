@@ -87,3 +87,36 @@ function validateUpdateAllLivenessCadence(int $firstTransitionUs): array
         'first_transition_us' => $firstTransitionUs,
     ];
 }
+
+/**
+ * @param  array{
+ *     first_transition_us: int,
+ *     max_transition_gap_us: int,
+ *     transition_count: int
+ * }  $state
+ * @return array{cadence_ok: bool, reason: string|null, first_transition_us: int|null}
+ */
+function validateUpdateAllLivenessCadenceState(array $state): array
+{
+    $firstTransitionUs = $state['first_transition_us'];
+    $result = validateUpdateAllLivenessCadence($firstTransitionUs);
+
+    if ($result['cadence_ok']) {
+        return $result;
+    }
+
+    $minUs = updateAllLivenessCadenceFloorUs();
+
+    if ($firstTransitionUs >= 0
+        && $firstTransitionUs < $minUs
+        && $state['transition_count'] >= 2
+        && $state['max_transition_gap_us'] >= $minUs) {
+        return [
+            'cadence_ok' => true,
+            'reason' => null,
+            'first_transition_us' => $firstTransitionUs,
+        ];
+    }
+
+    return $result;
+}

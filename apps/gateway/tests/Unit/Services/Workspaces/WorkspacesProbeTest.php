@@ -14,6 +14,7 @@ use App\Enums\WorkspaceLifecycleStatus;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -49,7 +50,7 @@ describe('source path reality', function (): void {
                 'name' => 'feature',
                 'path' => "{$app->path}/.worktrees/feature",
             ]);
-        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\n");
+        $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
 
         $snapshot = (new WorkspacesProbe($shell))->introspect($workspace);
 
@@ -58,13 +59,20 @@ describe('source path reality', function (): void {
             'path_usable' => true,
             'system_user_exists' => true,
             'fs_permissions_ok' => true,
+            'docker_available' => true,
+            'runtime_image_available' => true,
+            'runtime_image_probe_failed' => false,
+            'container_exists' => false,
+            'container_running' => false,
         ]);
         expect($shell->scripts[0])->not->toContain('php -r')
             ->and($shell->scripts[0])->toContain('path_exists=')
-            ->and($shell->scripts[0])->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\n\'')
+            ->and($shell->scripts[0])->toContain('docker container inspect')
+            ->and($shell->scripts[0])->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
             ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))->toMatchArray([
                 'name' => 'feature',
                 'path' => "{$app->path}/.worktrees/feature",
+                'container_name' => 'orbit-ws-'.$app->name.'-feature',
             ]);
         expect($shell->nodes[0]->is($app->node))->toBeTrue();
     });
@@ -201,6 +209,79 @@ describe('PHP runtime reality', function (): void {
         $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
+    });
+
+    it('detects missing PHP workspace runtime containers', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => true,
+                'runtime_image_available' => true,
+                'runtime_image_probe_failed' => false,
+                'container_exists' => false,
+                'container_running' => false,
+                'container_name' => 'orbit-ws-docs-feature',
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.runtime_container_missing')?->kind)->toBe(DriftKind::Missing);
+    });
+
+    it('detects stopped PHP workspace runtime containers', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => true,
+                'runtime_image_available' => true,
+                'runtime_image_probe_failed' => false,
+                'container_exists' => true,
+                'container_running' => false,
+                'container_name' => 'orbit-ws-docs-feature',
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.runtime_container_stopped')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('detects mismatched PHP workspace runtime containers', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+        $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => true,
+                'runtime_image_available' => true,
+                'runtime_image_probe_failed' => false,
+                'container_exists' => true,
+                'container_running' => true,
+                'container_spec_hash' => 'stale',
+                'container_expected_hash' => $expectedHash,
+                'container_name' => 'orbit-ws-docs-feature',
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.runtime_container_mismatch')?->kind)->toBe(DriftKind::Divergent);
+    });
+
+    it('does not report PHP workspace runtime container drift before the image is available', function (): void {
+        $app = workspaceableApp();
+        $workspace = workspaceFor($app, ['name' => 'feature']);
+
+        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+            'feature' => convergedRuntimeSnapshot([
+                'docker_available' => true,
+                'runtime_image_available' => false,
+                'runtime_image_probe_failed' => false,
+                'container_exists' => false,
+            ]),
+        ]));
+
+        expect(issue($drift, 'workspace.runtime_container_missing'))->toBeNull();
     });
 });
 
@@ -364,6 +445,14 @@ function convergedRuntimeSnapshot(array $overrides = []): array
         'path_usable' => true,
         'system_user_exists' => true,
         'fs_permissions_ok' => true,
+        'docker_available' => true,
+        'runtime_image_available' => true,
+        'runtime_image_probe_failed' => false,
+        'container_exists' => true,
+        'container_running' => true,
+        'container_spec_hash' => '',
+        'container_expected_hash' => '',
+        'container_name' => '',
         ...$overrides,
     ];
 }

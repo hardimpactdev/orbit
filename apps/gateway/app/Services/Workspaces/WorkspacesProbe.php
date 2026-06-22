@@ -22,6 +22,7 @@ final readonly class WorkspacesProbe
         private ?WorkspaceRuntimeUser $workspaceRuntimeUser = null,
         private ?NodeRoleAssignments $nodeRoleAssignments = null,
         private ?PhpRuntimeCatalog $phpRuntimeCatalog = null,
+        private ?WorkspaceRuntimeContainerRenderer $workspaceRuntimeContainerRenderer = null,
     ) {}
 
     public function key(): string
@@ -42,64 +43,102 @@ final readonly class WorkspacesProbe
             return new ProbeSnapshot([]);
         }
 
+        $runtimeContainer = null;
+
+        if ($workspace->app->runtime_kind === AppRuntimeKind::Php && $this->phpRuntimeCatalog()->supports((string) $workspace->effectivePhpVersion())) {
+            $runtimeContainer = $this->workspaceRuntimeContainerRenderer()->render($workspace);
+        }
+
         $spec = [
             'name' => $workspace->name,
             'path' => $workspace->path,
             'php_version' => $workspace->effectivePhpVersion(),
             'runtime_user' => $this->workspaceRuntimeUser()->forWorkspace($workspace),
+            'runtime_image' => $runtimeContainer?->image() ?? '',
+            'container_name' => $runtimeContainer?->name() ?? '',
+            'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
+            'container_spec_hash' => $runtimeContainer?->specHash() ?? '',
         ];
 
-        $script = <<<'SH'
-set -eu
-
-name=__NAME__
-path=__PATH__
-runtime_user=__RUNTIME_USER__
-
-path_exists=0
-path_usable=0
-system_user_exists=0
-fs_permissions_ok=0
-
-if [ -d "$path" ]; then
-    path_exists=1
-
-    if [ -r "$path" ] && [ -x "$path" ]; then
-        path_usable=1
-    fi
-fi
-
-if [ -n "$runtime_user" ] && id -u "$runtime_user" >/dev/null 2>&1; then
-    system_user_exists=1
-fi
-
-owner=''
-mode=''
-
-if [ "$path_exists" = "1" ]; then
-    owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path" 2>/dev/null || printf '')
-    mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || printf '')
-fi
-
-if [ "$path_exists" = "1" ] && [ -n "$runtime_user" ] && [ "$owner" = "$runtime_user" ] && [ -n "$mode" ]; then
-    group_digit=${mode%?}
-    group_digit=${group_digit#${group_digit%?}}
-    other_digit=${mode#${mode%?}}
-
-    case "$group_digit:$other_digit" in
-        0:0|0:1|0:4|0:5|1:0|1:1|1:4|1:5|4:0|4:1|4:4|4:5|5:0|5:1|5:4|5:5)
-            fs_permissions_ok=1
-            ;;
-    esac
-fi
-
-printf '%s\t%s\t%s\t%s\t%s\n' "$name" "$path_exists" "$path_usable" "$system_user_exists" "$fs_permissions_ok"
-SH;
+        $script = <<<'SH_WRAP'
+        set -eu
+        name=__NAME__
+        path=__PATH__
+        runtime_user=__RUNTIME_USER__
+        runtime_image=__RUNTIME_IMAGE__
+        container_name=__CONTAINER_NAME__
+        container_spec_hash_label=__CONTAINER_SPEC_HASH_LABEL__
+        path_exists=0
+        path_usable=0
+        system_user_exists=0
+        fs_permissions_ok=0
+        docker_available=0
+        runtime_image_available=0
+        runtime_image_probe_failed=0
+        container_exists=0
+        container_running=0
+        container_spec_hash=''
+        if [ -d "$path" ]; then
+            path_exists=1
+            if [ -r "$path" ] && [ -x "$path" ]; then
+                path_usable=1
+            fi
+        fi
+        if [ -n "$runtime_user" ] && id -u "$runtime_user" >/dev/null 2>&1; then
+            system_user_exists=1
+        fi
+        owner=''
+        mode=''
+        if [ "$path_exists" = "1" ]; then
+            owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path" 2>/dev/null || printf '')
+            mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || printf '')
+        fi
+        if [ "$path_exists" = "1" ] && [ -n "$runtime_user" ] && [ "$owner" = "$runtime_user" ] && [ -n "$mode" ]; then
+            group_digit=${mode%?}
+            group_digit=${group_digit#${group_digit%?}}
+            other_digit=${mode#${mode%?}}
+            case "$group_digit:$other_digit" in
+                0:0|0:1|0:4|0:5|1:0|1:1|1:4|1:5|4:0|4:1|4:4|4:5|5:0|5:1|5:4|5:5)
+                    fs_permissions_ok=1
+                    ;;
+            esac
+        fi
+        if command -v docker >/dev/null 2>&1; then
+            docker_available=1
+            if [ -n "$runtime_image" ]; then
+                image_error="$(docker image inspect "$runtime_image" >/dev/null 2>&1 || printf '%s' "$?")"
+                if [ -z "$image_error" ]; then
+                    runtime_image_available=1
+                elif docker image inspect "$runtime_image" 2>&1 | grep -qi 'No such image'; then
+                    runtime_image_available=0
+                else
+                    runtime_image_probe_failed=1
+                fi
+            fi
+            if [ -n "$container_name" ]; then
+                container_status="$(docker container inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
+                if [ -n "$container_status" ]; then
+                    container_exists=1
+                    if [ "$container_status" = "running" ]; then
+                        container_running=1
+                    fi
+                    container_spec_hash="$(docker container inspect --format "{{ index .Config.Labels \"$container_spec_hash_label\" }}" "$container_name" 2>/dev/null || true)"
+                    if [ "$container_spec_hash" = "<no value>" ]; then
+                        container_spec_hash=''
+                    fi
+                fi
+            fi
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$path_exists" "$path_usable" "$system_user_exists" "$fs_permissions_ok" "$docker_available" "$runtime_image_available" "$runtime_image_probe_failed" "$container_exists" "$container_running" "$container_spec_hash"
+        SH_WRAP;
 
         $script = strtr($script, [
             '__NAME__' => escapeshellarg($spec['name']),
             '__PATH__' => escapeshellarg($spec['path']),
             '__RUNTIME_USER__' => escapeshellarg($spec['runtime_user']),
+            '__RUNTIME_IMAGE__' => escapeshellarg($spec['runtime_image']),
+            '__CONTAINER_NAME__' => escapeshellarg($spec['container_name']),
+            '__CONTAINER_SPEC_HASH_LABEL__' => escapeshellarg($spec['container_spec_hash_label']),
         ]);
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app->node, $script, [
@@ -116,17 +155,37 @@ SH;
 
             $parts = explode("\t", $line);
 
-            if (count($parts) !== 5) {
+            if (count($parts) !== 11) {
                 continue;
             }
 
-            [$name, $pathExists, $pathUsable, $systemUserExists, $fsPermissionsOk] = $parts;
+            [
+                $name,
+                $pathExists,
+                $pathUsable,
+                $systemUserExists,
+                $fsPermissionsOk,
+                $dockerAvailable,
+                $runtimeImageAvailable,
+                $runtimeImageProbeFailed,
+                $containerExists,
+                $containerRunning,
+                $containerSpecHash,
+            ] = $parts;
 
             $items[$name] = [
                 'path_exists' => $pathExists === '1',
                 'path_usable' => $pathUsable === '1',
                 'system_user_exists' => $systemUserExists === '1',
                 'fs_permissions_ok' => $fsPermissionsOk === '1',
+                'docker_available' => $dockerAvailable === '1',
+                'runtime_image_available' => $runtimeImageAvailable === '1',
+                'runtime_image_probe_failed' => $runtimeImageProbeFailed === '1',
+                'container_exists' => $containerExists === '1',
+                'container_running' => $containerRunning === '1',
+                'container_spec_hash' => $containerSpecHash,
+                'container_expected_hash' => $spec['container_spec_hash'],
+                'container_name' => $spec['container_name'],
             ];
         }
 
@@ -144,6 +203,7 @@ SH;
         $drift = array_merge($drift, $this->checkParentApp($workspace));
         $drift = array_merge($drift, $this->checkSourcePath($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkPhpRuntime($workspace, $snapshot));
+        $drift = array_merge($drift, $this->checkPhpRuntimeContainer($workspace, $snapshot));
         $drift = array_merge($drift, $this->checkDevelopmentSecurity($workspace, $snapshot));
 
         return $drift;
@@ -171,6 +231,96 @@ SH;
                     key: 'workspace.record_incomplete',
                     kind: DriftKind::Missing,
                     summary: "Workspace record for {$workspace->name} is missing required fields.",
+                ),
+            ];
+        }
+
+        return [];
+    }
+
+    /**
+     * @return list<DriftEntry>
+     */
+    private function checkPhpRuntimeContainer(Workspace $workspace, ProbeSnapshot $snapshot): array
+    {
+        $workspace->loadMissing('app.node');
+
+        if (! $workspace->app instanceof App || $workspace->app->runtime_kind !== AppRuntimeKind::Php) {
+            return [];
+        }
+
+        if (! $this->phpRuntimeCatalog()->supports($workspace->effectivePhpVersion())) {
+            return [];
+        }
+
+        $observed = $snapshot->get($workspace->name);
+
+        if ($observed === null || ($observed['path_exists'] ?? null) === false) {
+            return [];
+        }
+
+        if (($observed['docker_available'] ?? null) === false) {
+            return [];
+        }
+
+        if (($observed['runtime_image_probe_failed'] ?? null) === true || ($observed['runtime_image_available'] ?? null) === false) {
+            return [];
+        }
+
+        $containerName = is_string($observed['container_name'] ?? null) ? $observed['container_name'] : '';
+
+        if (($observed['container_exists'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.runtime_container_missing',
+                    kind: DriftKind::Missing,
+                    summary: "Workspace {$workspace->name} is missing its FrankenPHP runtime container.",
+                    detail: [
+                        'workspace' => $workspace->name,
+                        'app' => $workspace->app->name,
+                        'node' => $workspace->app->node?->name,
+                        'container' => $containerName,
+                    ],
+                ),
+            ];
+        }
+
+        if (($observed['container_running'] ?? null) === false) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.runtime_container_stopped',
+                    kind: DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} FrankenPHP runtime container is stopped.",
+                    detail: [
+                        'workspace' => $workspace->name,
+                        'app' => $workspace->app->name,
+                        'node' => $workspace->app->node?->name,
+                        'container' => $containerName,
+                    ],
+                ),
+            ];
+        }
+
+        $expectedHash = is_string($observed['container_expected_hash'] ?? null) ? $observed['container_expected_hash'] : '';
+        $actualHash = is_string($observed['container_spec_hash'] ?? null) ? $observed['container_spec_hash'] : '';
+
+        if ($expectedHash !== '' && $actualHash !== $expectedHash) {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'workspace.runtime_container_mismatch',
+                    kind: DriftKind::Divergent,
+                    summary: "Workspace {$workspace->name} FrankenPHP runtime container does not match registry intent.",
+                    detail: [
+                        'workspace' => $workspace->name,
+                        'app' => $workspace->app->name,
+                        'node' => $workspace->app->node?->name,
+                        'container' => $containerName,
+                        'expected_hash' => $expectedHash,
+                        'actual_hash' => $actualHash,
+                    ],
                 ),
             ];
         }
@@ -470,5 +620,10 @@ SH;
     private function phpRuntimeCatalog(): PhpRuntimeCatalog
     {
         return $this->phpRuntimeCatalog ?? app(PhpRuntimeCatalog::class);
+    }
+
+    private function workspaceRuntimeContainerRenderer(): WorkspaceRuntimeContainerRenderer
+    {
+        return $this->workspaceRuntimeContainerRenderer ?? app(WorkspaceRuntimeContainerRenderer::class);
     }
 }
