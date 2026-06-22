@@ -74,6 +74,28 @@ it('streams fleet doctor progress per node instead of batching all running steps
         ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'doctor-stream-caller', 'running'));
 });
 
+it('streams node-scoped doctor progress per family as each family is probed', function (): void {
+    createDoctorRunStreamCallerNode();
+    createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+
+    $response = $this->call('POST', '/api/doctor/run', [
+        'mode' => 'verify',
+        'node' => 'app-1',
+    ], [], [], [
+        'HTTP_ACCEPT' => 'text/event-stream',
+        'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+    ]);
+
+    $response->assertOk();
+
+    $stepEvents = doctorRunStreamStepEvents($response->streamedContent());
+
+    expect(doctorRunStreamStepEventIndex($stepEvents, 'node', 'running'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'node', 'done'))
+        ->and(doctorRunStreamStepEventIndex($stepEvents, 'node', 'done'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app', 'running'));
+});
+
 /**
  * @return list<array{key: string, status: string}>
  */

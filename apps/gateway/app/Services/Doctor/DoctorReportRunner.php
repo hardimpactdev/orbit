@@ -312,13 +312,14 @@ final readonly class DoctorReportRunner
      * @param  list<string>  $families
      * @return array<string, mixed>
      */
-    public function probe(Node $node, array $families = [], ?string $key = null): array
+    public function probe(Node $node, array $families = [], ?string $key = null, ?callable $onFamilyProgress = null): array
     {
         $roleCategories = $this->categoriesForNode($node);
         $selectedFamilies = $families === [] ? $roleCategories : array_values(array_intersect($families, $roleCategories));
         $issues = [];
 
         if (in_array('node', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'node', 'running');
             $snapshot = $this->nodesProbe->introspect($node);
             $issues = [
                 ...$issues,
@@ -343,9 +344,12 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->nodeScopedIssuePayload($entry, $node);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'node', 'done');
         }
 
         if (in_array('app', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'app', 'running');
             foreach (App::query()->with('node')->where('node_id', $node->id)->get() as $app) {
                 $snapshot = $this->appsProbe->introspect($app);
 
@@ -461,9 +465,12 @@ final readonly class DoctorReportRunner
                     ]);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'app', 'done');
         }
 
         if (in_array('workspace', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'workspace', 'running');
             foreach (Workspace::query()->with('app.node')->whereHas('app', fn ($query) => $query->where('node_id', $node->id))->get() as $workspace) {
                 $snapshot = $this->workspacesProbe->introspect($workspace);
 
@@ -471,9 +478,12 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->workspaceIssuePayload($entry, $workspace);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'workspace', 'done');
         }
 
         if (in_array('process', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'process', 'running');
             foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
                 $snapshot = $this->processesProbe->introspect($process);
 
@@ -481,9 +491,12 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->processIssuePayload($entry, $process);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'process', 'done');
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'proxy', 'running');
             foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->where('node_id', $node->id)->get() as $route) {
                 $snapshot = $this->proxyRouteProbe->introspect($route);
 
@@ -545,9 +558,12 @@ final readonly class DoctorReportRunner
                     ]);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'proxy', 'done');
         }
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'firewall_rule', 'running');
             foreach (FirewallRule::query()->with('node')->where('node_id', $node->id)->get() as $rule) {
                 $snapshot = $this->firewallRuleProbe->introspect($rule);
 
@@ -555,9 +571,12 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->firewallIssuePayload($entry, $rule);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'firewall_rule', 'done');
         }
 
         if (in_array('tool', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'tool', 'running');
             foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
                 $snapshot = $this->toolsProbe->introspect($tool);
 
@@ -587,9 +606,12 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->nodeScopedIssuePayload($entry, $node);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'tool', 'done');
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'schedule', 'running');
             if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
                 $snapshot = $this->schedulesProbe->introspectGateway($node);
 
@@ -605,15 +627,20 @@ final readonly class DoctorReportRunner
                     $issues[] = $this->scheduleIssuePayload($entry, $schedule);
                 }
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'schedule', 'done');
         }
 
         if (in_array('database_connection', $selectedFamilies, true)) {
+            $this->reportFamilyProgress($onFamilyProgress, 'database_connection', 'running');
             foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
                 $issues[] = $this->annotateIssue([
                     ...$issue,
                     'node' => $node->name,
                 ]);
             }
+
+            $this->reportFamilyProgress($onFamilyProgress, 'database_connection', 'done');
         }
 
         $issues = $this->filterIssuesByKey($issues, $key);
@@ -635,6 +662,15 @@ final readonly class DoctorReportRunner
             'issues' => $issues,
             'actions' => [],
         ];
+    }
+
+    private function reportFamilyProgress(?callable $onFamilyProgress, string $family, string $phase): void
+    {
+        if ($onFamilyProgress === null) {
+            return;
+        }
+
+        $onFamilyProgress($family, $phase);
     }
 
     /**

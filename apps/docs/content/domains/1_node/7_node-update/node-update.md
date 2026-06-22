@@ -16,7 +16,7 @@ and [`node role:add`](../12_node-role-add/node-role-add.md).
 ## Usage
 
 ```bash
-orbit node:update [name] [--host=<host>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 Run without arguments in a TTY to let the interactive input mode prompt for
@@ -32,6 +32,7 @@ otherwise the command fails before side effects.
 
 ```bash
 orbit node:update app-1 --host=app-1.ssh.example.com
+orbit node:update beast --user=nckrtl
 orbit node:update app-1 --tld=test
 orbit node:update app-1 --gateway-endpoint=10.3.0.2
 orbit node:update gateway-1 --public-ipv4=203.0.113.2
@@ -48,6 +49,10 @@ orbit node:update app-1 --host=203.0.113.20 --public-ipv4=203.0.113.20 --json
   `node:new --template=gateway --host=<host>` seeds that endpoint only during
   first-gateway bootstrap before peer configs have been issued;
   `node:update --host` is later node metadata.
+- `--user=<user>`: SSH user the gateway should use for node operations. Valid
+  for workload-role-bearing nodes and role-less operator nodes. Forbidden on
+  the gateway node. Orbit stores the value only; it does not create or validate
+  the operating-system account.
 - `--tld=<tld>`: mandatory node TLD. Valid for every active node, including
   gateway, operator, and role-less targets. Role features such as `app-dev` and
   `agent` consume the same field for wildcard development DNS mappings.
@@ -84,6 +89,10 @@ that are directly affected by the changed metadata.
   SSH reachability, or egress checks.
 - Treats public IPv4/IPv6 values as operator-supplied metadata only. Updating
   them does not change the gateway endpoint used in WireGuard peer configs.
+- Updates the SSH user when `--user` is provided. Subsequent gateway-to-node
+  SSH sessions use the stored user. If the account does not exist or cannot
+  authenticate, node-side artifact re-applying may warn and hand repair to
+  `doctor --family=node --restore`.
 - Updates `gateway_endpoint` when `--gateway-endpoint` is provided. For nodes
   with workload roles, Orbit updates the WireGuard endpoint in
   `/etc/wireguard/wg-orbit.conf` or `/etc/wireguard/wg0.conf` when present,

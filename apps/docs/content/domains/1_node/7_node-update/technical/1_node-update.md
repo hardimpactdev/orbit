@@ -24,7 +24,7 @@
 ## Signature
 
 ```bash
-orbit node:update [name] [--host=<host>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
+orbit node:update [name] [--host=<host>] [--user=<user>] [--tld=<tld>] [--gateway-endpoint=<endpoint>] [--public-ipv4=<address>] [--public-ipv6=<address>] [--json]
 ```
 
 ## Input Contract
@@ -36,6 +36,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Must match an existing active node record. |
 | `host` | `--host` | Optional. | Target is an operator-identity node with no host metadata. | None. | SSH/bootstrap endpoint, never the canonical node address. Updating this does not change the gateway endpoint used in WireGuard peer configs; use `--gateway-endpoint` for that. |
+| `user` | `--user` | Optional. | Target is the gateway node. | None. | SSH user the gateway should use for node operations. Orbit stores this value as node metadata; it does not create the OS user. |
 | `tld` | `--tld` | Optional. | Never. | None. | Single lowercase DNS label without a leading dot. Unique among active node TLDs. |
 | `gateway_endpoint` | `--gateway-endpoint` | Optional. | Target is an operator-identity node. | None. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `public_ipv4` | `--public-ipv4` | Optional. | Target is an operator-identity node. | None. | Operator-supplied public IPv4 metadata. |
@@ -55,6 +56,7 @@ metadata is valid only for gateway and nodes. Concretely:
 | Field | Valid target roles | Forbidden when |
 | --- | --- | --- |
 | `--host` | `gateway`, workload-role-bearing nodes | Operator-identity target with no host metadata. |
+| `--user` | workload-role-bearing nodes and role-less operator nodes | Gateway target. |
 | `--tld` | every active node | Never. |
 | `--gateway-endpoint` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
 | `--public-ipv4` | `gateway`, workload-role-bearing nodes | Operator-identity targets. |
@@ -66,6 +68,14 @@ and `--public-ipv6` are forbidden on operator-identity targets. Public IPv4 and
 IPv6 metadata is supported on `gateway` and workload-role-bearing nodes; the
 gateway endpoint used in WireGuard peer configs lives on a separate field and is
 not updated by `--public-ipv4` or `--public-ipv6`.
+
+`node:update --user` updates the SSH user stored for the target node. The
+gateway uses this field when it opens node SSH sessions for remote shell,
+tooling, doctor restore/adopt, updates, and role-owned artifact convergence.
+Changing it does not create, rename, or validate an operating-system account on
+the target node. If the supplied user cannot SSH, the configuration write may
+succeed while node drift remains. Repair belongs to `doctor --family=node
+--restore` after the operator fixes access.
 
 `node:update --tld` updates the mandatory node-level `tld` for any active node.
 The `tld` is a shared node-level field (at most one per node); changing it
@@ -95,6 +105,7 @@ gateway-owned side effects.
    - Must match an existing active node record.
 3. Resolve field flags.
    - Resolve `node_update.host` from `--host` when present.
+   - Resolve `node_update.user` from `--user` when present.
    - Resolve `node_update.tld` from `--tld` when present.
    - Resolve `node_update.gateway_endpoint` from `--gateway-endpoint` when
      present.
@@ -104,6 +115,8 @@ gateway-owned side effects.
    - If `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6` is
      present and the target is an operator-identity node, fail before side
      effects with `node.field_role_incompatible`.
+   - If `--user` is present and the target is the gateway node, fail before
+     side effects with `node.field_role_incompatible`.
    - If the same field flag is supplied more than once in a single invocation,
      fail before side effects with `validation_failed` and `meta.field` set to
      the duplicated field name. Symfony last-wins is not accepted.
@@ -150,6 +163,9 @@ Input mode behavior is split out of the canonical command contract:
 - Changing `gateway_endpoint` updates the endpoint stored at node level. The
   changed field triggers node-owned artifact re-applying for workload-role
   targets.
+- Changing `user` updates the SSH user stored at node level. The changed field
+  affects subsequent gateway-to-node SSH operations and may trigger node-owned
+  artifact re-applying where those artifacts depend on the SSH account.
 - Changing `public_ipv4` on an `app-dev` node may change the managed
   `orbit-caddy` HTTP/HTTPS bindings when the value is an RFC1918 caller-facing
   LAN address. The private backend port remains WireGuard-only.
@@ -222,7 +238,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | TLD already in use | `--tld` matches another active node's stored TLD. | Failure |
 
 Examples: `--host`, `--gateway-endpoint`, `--public-ipv4`, or `--public-ipv6`
-for an operator-identity node.
+for an operator-identity node, or `--user` for the gateway node.
 
 Artifact applying failure after a successful configuration write is **not** a
 command failure. It returns a top-level `success` with a structured warning
