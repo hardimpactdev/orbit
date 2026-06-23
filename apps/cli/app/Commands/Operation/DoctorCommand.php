@@ -113,7 +113,7 @@ final class DoctorCommand extends GatewayCommand
             );
         }
 
-        $frame = $this->captureProgressTerminalFrame($path, $this->payload($mode));
+        $frame = $this->captureDoctorProgressTerminalFrame($path, $this->payload($mode));
 
         if (is_int($frame)) {
             return $frame;
@@ -145,11 +145,97 @@ final class DoctorCommand extends GatewayCommand
             $report['mode'] = $modeOverride;
         }
 
+        $this->writeDoctorPanel($report);
+
+        return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Stream doctor progress frames, render each doctor snapshot immediately,
+     * and return the terminal frame so the final result panel keeps the same
+     * success/failure semantics as the shared progress stream contract.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{type: ProgressEventType, payload: array<string, mixed>}|int
+     */
+    private function captureDoctorProgressTerminalFrame(string $path, array $payload): array|int
+    {
+        $client = app(GatewayStreamClient::class);
+        $frames = app(DoctorTerminalFrameExtractor::class);
+        $wantsJson = $this->wantsJson();
+        $renderedDoctorFrame = false;
+
+        $finalType = null;
+        $finalPayload = [];
+
+        try {
+            $client->streamEvents(
+                path: $path,
+                payload: $payload,
+                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, $frames, &$renderedDoctorFrame, &$finalType, &$finalPayload): void {
+                    if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
+                        $finalType = $type;
+                        $finalPayload = $eventPayload;
+
+                        return;
+                    }
+
+                    if ($wantsJson) {
+                        return;
+                    }
+
+                    $doctor = $frames->doctor([
+                        'type' => $type,
+                        'payload' => $eventPayload,
+                    ]);
+
+                    if ($doctor !== null) {
+                        $renderedDoctorFrame = true;
+                        $this->writeDoctorPanel($doctor);
+
+                        return;
+                    }
+
+                    if (! $renderedDoctorFrame) {
+                        $this->renderProgressFrame($type, $eventPayload);
+                    }
+                },
+            );
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        if ($finalType instanceof ProgressEventType) {
+            if (! $wantsJson && $this->progressTree?->isStarted()) {
+                $data = $this->frameData($finalPayload);
+                $footer = $this->frameString($data, 'footer') ?? $this->frameString($finalPayload, 'footer');
+
+                $this->progressTree->finish(
+                    $footer ?? ($finalType === ProgressEventType::Complete ? 'Done' : 'Failed'),
+                    success: $finalType === ProgressEventType::Complete,
+                );
+            }
+
+            return [
+                'type' => $finalType,
+                'payload' => $finalPayload,
+            ];
+        }
+
+        return $this->renderFailure(
+            'gateway_unavailable',
+            'Gateway progress stream closed without a terminal frame.',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function writeDoctorPanel(array $report): void
+    {
         foreach (app(DoctorPanelRenderer::class)->lines($report) as $line) {
             $this->line($line);
         }
-
-        return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
     }
 
     private function mode(): string|int
@@ -180,7 +266,7 @@ final class DoctorCommand extends GatewayCommand
     {
         $frames = app(DoctorTerminalFrameExtractor::class);
         $selector = app(InteractiveDoctorIssueSelector::class);
-        $probeFrame = $this->captureProgressTerminalFrame('/api/doctor/run', $this->payload('verify'));
+        $probeFrame = $this->captureDoctorProgressTerminalFrame('/api/doctor/run', $this->payload('verify'));
 
         if (is_int($probeFrame)) {
             return $probeFrame;
@@ -217,7 +303,7 @@ final class DoctorCommand extends GatewayCommand
                 continue;
             }
 
-            $fixFrame = $this->captureProgressTerminalFrame(
+            $fixFrame = $this->captureDoctorProgressTerminalFrame(
                 '/api/doctor/fix',
                 [
                     ...$this->payload($resolutionMode),

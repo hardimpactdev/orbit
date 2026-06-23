@@ -90,6 +90,19 @@ function doctorRunDriftStream(array $doctor, array $families = ['node']): string
     ]);
 }
 
+/**
+ * @param  array<string, mixed>  $doctor
+ */
+function doctorRunProgressFrame(array $doctor, string $key = '__doctor_panel', string $status = 'running'): string
+{
+    return gatewayProgressFrame('step', [
+        'key' => $key,
+        'status' => $status,
+        'message' => 'Doctor progress',
+        'doctor' => $doctor,
+    ]);
+}
+
 function fakeDoctorRunStream(string $body, int $status = 200): void
 {
     config()->set('orbit.gateway.url', 'https://gateway.test');
@@ -117,6 +130,63 @@ function decodeDoctorNdjson(string $output): array
 }
 
 describe('doctor human panel', function (): void {
+    it('renders an in-progress doctor panel immediately and surfaces findings before the final result', function (): void {
+        $families = ['node', 'app'];
+        $appIssue = [
+            'family' => 'app',
+            'node' => 'beast',
+            'key' => 'app.runtime_container_missing',
+            'code' => 'app.runtime_container_missing',
+            'kind' => 'missing',
+            'summary' => 'Runtime container for nckrtl is missing.',
+            'detail' => ['app' => 'nckrtl'],
+            'restorable' => true,
+            'adoptable' => false,
+        ];
+        $initialProgress = doctorVerifyReport([], ['families' => $families]);
+        $initialProgress['progress'] = [
+            'state' => 'running',
+            'families' => [
+                ['family' => 'node', 'status' => 'checking'],
+                ['family' => 'app', 'status' => 'queued'],
+            ],
+        ];
+        $partialProgress = doctorVerifyReport([$appIssue], ['families' => $families]);
+        $partialProgress['progress'] = [
+            'state' => 'running',
+            'families' => [
+                ['family' => 'node', 'status' => 'ok'],
+                ['family' => 'app', 'status' => 'done'],
+            ],
+        ];
+        $finalReport = doctorVerifyReport([$appIssue], ['families' => $families]);
+
+        fakeDoctorRunStream(
+            doctorRunProgressFrame($initialProgress)
+            .doctorRunProgressFrame($partialProgress, 'app', 'done')
+            .doctorRunDriftStream($finalReport, $families),
+        );
+
+        [$exitCode, $output] = runCommand($this, 'doctor', [
+            '--node' => 'beast',
+            '--family' => $families,
+        ]);
+
+        $plain = stripAnsi($output);
+        $progressPosition = strpos($plain, 'D O C T O R I N G');
+        $issuePosition = strpos($plain, 'Runtime container for nckrtl is missing.');
+        $finalPosition = strrpos($plain, 'D O C T O R  R E S U L T');
+
+        expect($exitCode)->toBe(1)
+            ->and($progressPosition)->not->toBeFalse()
+            ->and($plain)->toContain('Performing check-up on beast')
+            ->and($plain)->toContain('Checking')
+            ->and($plain)->toContain('Queued')
+            ->and($issuePosition)->not->toBeFalse()
+            ->and($finalPosition)->not->toBeFalse()
+            ->and($issuePosition)->toBeLessThan($finalPosition);
+    });
+
     it('renders a healthy result panel for a single-node verify run', function (): void {
         fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([])));
 

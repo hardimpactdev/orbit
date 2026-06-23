@@ -315,6 +315,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
+     * @param  (callable(string, 'running'|'done', list<array<string, mixed>>): void)|null  $onFamilyProgress
      * @return array<string, mixed>
      */
     public function probe(Node $node, array $families = [], ?string $key = null, ?callable $onFamilyProgress = null): array
@@ -324,6 +325,7 @@ final readonly class DoctorReportRunner
         $issues = [];
 
         if (in_array('node', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'node', 'running');
             $snapshot = $this->nodesProbe->introspect($node);
             $issues = [
@@ -350,10 +352,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'node', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'node', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('app', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'app', 'running');
             foreach (App::query()->with('node')->where('node_id', $node->id)->get() as $app) {
                 $snapshot = $this->appsProbe->introspect($app);
@@ -471,10 +474,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'app', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'app', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('workspace', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'workspace', 'running');
             foreach (Workspace::query()->with('app.node')->whereHas('app', fn ($query) => $query->where('node_id', $node->id))->get() as $workspace) {
                 $snapshot = $this->workspacesProbe->introspect($workspace);
@@ -484,10 +488,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'workspace', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'workspace', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('process', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'process', 'running');
             foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
                 $snapshot = $this->processesProbe->introspect($process);
@@ -497,10 +502,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'process', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'process', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('proxy', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'proxy', 'running');
             foreach (ProxyRoute::query()->with(['node', 'app', 'workspace'])->where('node_id', $node->id)->get() as $route) {
                 $snapshot = $this->proxyRouteProbe->introspect($route);
@@ -564,10 +570,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'proxy', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'proxy', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'firewall_rule', 'running');
             foreach (FirewallRule::query()->with('node')->where('node_id', $node->id)->get() as $rule) {
                 $snapshot = $this->firewallRuleProbe->introspect($rule);
@@ -577,10 +584,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'firewall_rule', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'firewall_rule', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('tool', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'tool', 'running');
             foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
                 $snapshot = $this->toolsProbe->introspect($tool);
@@ -612,10 +620,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'tool', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'tool', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('schedule', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'schedule', 'running');
             if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
                 $snapshot = $this->schedulesProbe->introspectGateway($node);
@@ -633,10 +642,11 @@ final readonly class DoctorReportRunner
                 }
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'schedule', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'schedule', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         if (in_array('database_connection', $selectedFamilies, true)) {
+            $familyIssueOffset = count($issues);
             $this->reportFamilyProgress($onFamilyProgress, 'database_connection', 'running');
             foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
                 $issues[] = $this->annotateIssue([
@@ -645,7 +655,7 @@ final readonly class DoctorReportRunner
                 ]);
             }
 
-            $this->reportFamilyProgress($onFamilyProgress, 'database_connection', 'done');
+            $this->reportFamilyProgress($onFamilyProgress, 'database_connection', 'done', $this->filterIssuesByKey(array_slice($issues, $familyIssueOffset), $key));
         }
 
         $issues = $this->filterIssuesByKey($issues, $key);
@@ -669,13 +679,16 @@ final readonly class DoctorReportRunner
         ];
     }
 
-    private function reportFamilyProgress(?callable $onFamilyProgress, string $family, string $phase): void
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     */
+    private function reportFamilyProgress(?callable $onFamilyProgress, string $family, string $phase, array $issues = []): void
     {
         if ($onFamilyProgress === null) {
             return;
         }
 
-        $onFamilyProgress($family, $phase);
+        $onFamilyProgress($family, $phase, $issues);
     }
 
     /**

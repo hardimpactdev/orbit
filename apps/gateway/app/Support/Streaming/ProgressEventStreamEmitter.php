@@ -21,11 +21,15 @@ final readonly class ProgressEventStreamEmitter
         ]);
     }
 
-    public function stepEvent(string $key, string $status, ?string $message = null): void
+    /**
+     * @param  array<string, mixed>  $extra
+     */
+    public function stepEvent(string $key, string $status, ?string $message = null, array $extra = []): void
     {
         $payload = [
             'key' => $key,
             'status' => $status,
+            ...$extra,
         ];
 
         if ($message !== null) {

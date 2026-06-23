@@ -76,20 +76,26 @@ final class DoctorPanelRenderer
     {
         $mode = $this->mode($report);
         $target = $this->target($report);
+        $inProgress = $this->isInProgress($report);
         $issuesByFamily = $this->issuesByFamily($report);
         $actionsByFamily = $this->actionsByFamily($report);
         $families = $this->renderedFamilies($report, $issuesByFamily, $actionsByFamily);
         $totalIssues = $this->totalIssues($report, $issuesByFamily);
 
         $lines = [];
-        $lines[] = $this->dividerLine($this->title($mode), top: true);
+        $lines[] = $this->dividerLine($this->title($mode, $inProgress), top: true);
         $lines[] = $this->blankLine();
-        $lines[] = $this->dividerLine($this->targetLine($report, $target));
+        $lines[] = $this->dividerLine($this->targetLine($report, $target, $inProgress));
         $lines[] = $this->blankLine();
 
         foreach ($families as $family) {
             $familyIssues = $issuesByFamily[$family] ?? [];
-            $lines[] = $this->categoryRow($family, $this->statusText($family, $familyIssues));
+            $lines[] = $this->categoryRow($family, $this->statusText(
+                family: $family,
+                familyIssues: $familyIssues,
+                progressStatus: $this->familyProgressStatus($report, $family),
+                mode: $mode,
+            ));
 
             if ($familyIssues !== []) {
                 $lines = [...$lines, ...$this->issueTable($family, $familyIssues)];
@@ -107,7 +113,7 @@ final class DoctorPanelRenderer
         $lines[] = $this->dividerLine('S U M M A R Y');
         $lines[] = $this->blankLine();
 
-        foreach ($this->summaryLines($report, $mode, $totalIssues) as $summaryLine) {
+        foreach ($this->summaryLines($report, $mode, $totalIssues, $inProgress) as $summaryLine) {
             $lines[] = $this->centeredContentLine($summaryLine);
             $lines[] = $this->blankLine();
         }
@@ -132,8 +138,12 @@ final class DoctorPanelRenderer
         };
     }
 
-    private function title(string $mode): string
+    private function title(string $mode, bool $inProgress): string
     {
+        if ($inProgress) {
+            return 'D O C T O R I N G';
+        }
+
         return match ($mode) {
             'restore' => 'D O C T O R  R E S T O R E',
             'adopt' => 'D O C T O R  A D O P T',
@@ -160,8 +170,12 @@ final class DoctorPanelRenderer
     /**
      * @param  array<string, mixed>  $report
      */
-    private function targetLine(array $report, string $target): string
+    private function targetLine(array $report, string $target, bool $inProgress): string
     {
+        if ($inProgress) {
+            return "Performing check-up on {$target}";
+        }
+
         if (($report['healthy'] ?? false) === true) {
             return "Successfully performed check-up on {$target}";
         }
@@ -227,8 +241,20 @@ final class DoctorPanelRenderer
     /**
      * @param  list<array<string, mixed>>  $familyIssues
      */
-    private function statusText(string $family, array $familyIssues): string
+    private function statusText(string $family, array $familyIssues, ?string $progressStatus = null, string $mode = 'verify'): string
     {
+        if ($progressStatus !== null && ! in_array($progressStatus, ['done', 'ok'], true)) {
+            return match ($progressStatus) {
+                'queued' => 'Queued',
+                'running', 'checking', 'start' => $mode === 'verify' ? 'Checking' : $this->actionRunningText($mode),
+                'gathering' => 'Gathering results',
+                'restoring' => 'Restoring',
+                'adopting' => 'Adopting',
+                'skipped' => 'Skipped',
+                default => $progressStatus,
+            };
+        }
+
         if ($familyIssues === []) {
             return 'OK';
         }
@@ -354,8 +380,16 @@ final class DoctorPanelRenderer
      * @param  array<string, mixed>  $report
      * @return list<string>
      */
-    private function summaryLines(array $report, string $mode, int $totalIssues): array
+    private function summaryLines(array $report, string $mode, int $totalIssues, bool $inProgress): array
     {
+        if ($inProgress) {
+            if ($totalIssues === 0) {
+                return ['No issues detected so far'];
+            }
+
+            return [$totalIssues === 1 ? '1 issue detected so far' : "{$totalIssues} issues detected so far"];
+        }
+
         if ($mode === 'verify') {
             if ($totalIssues === 0) {
                 return ['No issues detected'];
@@ -391,6 +425,15 @@ final class DoctorPanelRenderer
         }
 
         return ["{$totalIssues} issues remaining"];
+    }
+
+    private function actionRunningText(string $mode): string
+    {
+        return match ($mode) {
+            'restore' => 'Restoring',
+            'adopt' => 'Adopting',
+            default => 'Checking',
+        };
     }
 
     /**
@@ -519,6 +562,54 @@ final class DoctorPanelRenderer
     }
 
     /**
+     * @param  array<string, mixed>  $report
+     */
+    private function isInProgress(array $report): bool
+    {
+        $progress = $report['progress'] ?? null;
+
+        if (! is_array($progress)) {
+            return false;
+        }
+
+        return ($progress['state'] ?? null) !== 'complete';
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function familyProgressStatus(array $report, string $family): ?string
+    {
+        $progress = $report['progress'] ?? null;
+
+        if (! is_array($progress)) {
+            return null;
+        }
+
+        $families = $progress['families'] ?? null;
+
+        if (! is_array($families)) {
+            return null;
+        }
+
+        foreach ($families as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['family'] ?? null) !== $family) {
+                continue;
+            }
+
+            $status = $entry['status'] ?? null;
+
+            return is_string($status) && trim($status) !== '' ? trim($status) : null;
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $source
      */
     private function intValue(array $source, string $key): int
@@ -532,6 +623,10 @@ final class DoctorPanelRenderer
     {
         if ($status === 'OK') {
             return SpinnerTreeRenderer::GREEN;
+        }
+
+        if (in_array($status, ['Queued', 'Checking', 'Gathering results', 'Restoring', 'Adopting'], true)) {
+            return SpinnerTreeRenderer::ACCENT;
         }
 
         if (str_starts_with($status, 'Unavailable')) {

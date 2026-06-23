@@ -15,6 +15,12 @@ final class DoctorTerminalFrameExtractor
     public function doctor(array $frame): ?array
     {
         $payload = $frame['payload'];
+        $doctor = $payload['doctor'] ?? null;
+
+        if (is_array($doctor)) {
+            return $doctor;
+        }
+
         $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
         $doctor = $data['doctor'] ?? null;
 

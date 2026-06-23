@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
@@ -23,6 +24,7 @@ final class DoctorRunController implements Loggable
         Request $request,
         DoctorReportRunner $runner,
         DoctorScopeValidator $validator,
+        DoctorProgressReportFactory $progressReports,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
@@ -94,7 +96,7 @@ final class DoctorRunController implements Loggable
         }
 
         if ($this->wantsEventStream($request)) {
-            return $this->stream($streams, $runner, $target, $families, $key);
+            return $this->stream($streams, $runner, $progressReports, $target, $families, $key);
         }
 
         $doctor = $runner->probe($target, families: $families, key: $key);
@@ -114,12 +116,28 @@ final class DoctorRunController implements Loggable
     private function stream(
         ProgressEventStreamResponseFactory $streams,
         DoctorReportRunner $runner,
+        DoctorProgressReportFactory $progressReports,
         Node $target,
         array $families,
         ?string $key,
     ): StreamedResponse {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $target, $families, $key): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $progressReports, $target, $families, $key): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
+            $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
+            /** @var list<array<string, mixed>> $issues */
+            $issues = [];
+
+            $events->stepEvent('__doctor_panel', 'running', 'Doctor queued', [
+                'doctor' => $progressReports->report(
+                    target: $target,
+                    mode: 'verify',
+                    families: $renderedFamilies,
+                    key: $key,
+                    issues: $issues,
+                    actions: [],
+                    familyStatuses: $familyStatuses,
+                ),
+            ]);
             $events->tree('Running Doctor', array_map(
                 fn (string $family): array => [
                     'key' => $family,
@@ -128,17 +146,55 @@ final class DoctorRunController implements Loggable
                 $renderedFamilies,
             ));
 
+            /** @param  list<array<string, mixed>>  $familyIssues */
+            $onFamilyProgress = function (
+                string $family,
+                string $phase,
+                array $familyIssues = [],
+            ) use (
+                $events,
+                $progressReports,
+                $target,
+                $key,
+                $renderedFamilies,
+                &$familyStatuses,
+                &$issues,
+            ): void {
+                if ($phase === 'running') {
+                    $familyStatuses[$family] = 'checking';
+                }
+
+                if ($phase === 'done') {
+                    $issues = [
+                        ...$issues,
+                        ...$familyIssues,
+                    ];
+                    $familyStatuses[$family] = 'done';
+                }
+
+                $events->stepEvent(
+                    $family,
+                    $phase,
+                    $phase === 'running' ? "Checking {$family}" : "{$family} checked",
+                    [
+                        'doctor' => $progressReports->report(
+                            target: $target,
+                            mode: 'verify',
+                            families: $renderedFamilies,
+                            key: $key,
+                            issues: $issues,
+                            actions: [],
+                            familyStatuses: $familyStatuses,
+                        ),
+                    ],
+                );
+            };
+
             $doctor = $runner->probe(
                 $target,
                 families: $families,
                 key: $key,
-                onFamilyProgress: function (string $family, string $phase) use ($events): void {
-                    $events->stepEvent(
-                        $family,
-                        $phase,
-                        $phase === 'running' ? "Checking {$family}" : "{$family} checked",
-                    );
-                },
+                onFamilyProgress: $onFamilyProgress,
             );
 
             if (($doctor['healthy'] ?? false) === true) {

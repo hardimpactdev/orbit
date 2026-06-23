@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
+use App\Services\Doctor\DoctorProgressReportFactory;
 use App\Services\Doctor\DoctorReportRunner;
 use App\Services\Doctor\DoctorScopeValidator;
 use App\Services\Doctor\DoctorValidationFailure;
@@ -31,6 +32,7 @@ final class DoctorFixController implements Loggable
         Request $request,
         DoctorReportRunner $runner,
         DoctorScopeValidator $validator,
+        DoctorProgressReportFactory $progressReports,
         NodeAccessAuthorizer $authorizer,
         ProgressEventStreamResponseFactory $streams,
     ): JsonResponse|StreamedResponse {
@@ -99,7 +101,7 @@ final class DoctorFixController implements Loggable
         $issues = $this->issues($request);
 
         if ($this->wantsEventStream($request)) {
-            return $this->stream($streams, $runner, $target, $mode, $families, $issues, $key, $dryRun);
+            return $this->stream($streams, $runner, $progressReports, $target, $mode, $families, $issues, $key, $dryRun);
         }
 
         $doctor = $issues === null || $dryRun
@@ -122,6 +124,7 @@ final class DoctorFixController implements Loggable
     private function stream(
         ProgressEventStreamResponseFactory $streams,
         DoctorReportRunner $runner,
+        DoctorProgressReportFactory $progressReports,
         Node $target,
         string $mode,
         array $families,
@@ -129,8 +132,21 @@ final class DoctorFixController implements Loggable
         ?string $key,
         bool $dryRun,
     ): StreamedResponse {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $target, $mode, $families, $issues, $key, $dryRun): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $progressReports, $target, $mode, $families, $issues, $key, $dryRun): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
+            $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
+
+            $events->stepEvent('__doctor_panel', 'running', 'Doctor queued', [
+                'doctor' => $progressReports->report(
+                    target: $target,
+                    mode: $mode,
+                    families: $renderedFamilies,
+                    key: $key,
+                    issues: [],
+                    actions: [],
+                    familyStatuses: $familyStatuses,
+                ),
+            ]);
             $events->tree('Running Doctor', array_map(
                 fn (string $family): array => [
                     'key' => $family,
@@ -140,7 +156,18 @@ final class DoctorFixController implements Loggable
             ));
 
             foreach ($renderedFamilies as $family) {
-                $events->stepEvent($family, 'running', "{$mode} {$family}");
+                $familyStatuses[$family] = $mode === 'adopt' ? 'adopting' : 'restoring';
+                $events->stepEvent($family, 'running', "{$mode} {$family}", [
+                    'doctor' => $progressReports->report(
+                        target: $target,
+                        mode: $mode,
+                        families: $renderedFamilies,
+                        key: $key,
+                        issues: [],
+                        actions: [],
+                        familyStatuses: $familyStatuses,
+                    ),
+                ]);
             }
 
             $doctor = $issues === null || $dryRun
@@ -148,7 +175,18 @@ final class DoctorFixController implements Loggable
                 : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key);
 
             foreach ($renderedFamilies as $family) {
-                $events->stepEvent($family, 'done', "{$family} {$mode} complete");
+                $familyStatuses[$family] = 'done';
+                $events->stepEvent($family, 'done', "{$family} {$mode} complete", [
+                    'doctor' => $progressReports->report(
+                        target: $target,
+                        mode: $mode,
+                        families: $renderedFamilies,
+                        key: $key,
+                        issues: $this->doctorEntries($doctor, 'issues'),
+                        actions: $this->doctorEntries($doctor, 'actions'),
+                        familyStatuses: $familyStatuses,
+                    ),
+                ]);
             }
 
             if (($doctor['healthy'] ?? false) === true || $dryRun) {
@@ -168,6 +206,21 @@ final class DoctorFixController implements Loggable
                 'footer' => 'Doctor detected drift.',
             ]);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $doctor
+     * @return list<array<string, mixed>>
+     */
+    private function doctorEntries(array $doctor, string $key): array
+    {
+        $entries = $doctor[$key] ?? [];
+
+        if (! is_array($entries)) {
+            return [];
+        }
+
+        return array_values(array_filter($entries, is_array(...)));
     }
 
     /**

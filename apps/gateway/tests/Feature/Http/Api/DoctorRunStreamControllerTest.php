@@ -53,6 +53,37 @@ it('streams doctor verify progress from the gateway', function (): void {
         ->and($content)->toContain('event: complete');
 });
 
+it('streams doctor panel snapshots before and during node-scoped probes', function (): void {
+    createDoctorRunStreamCallerNode();
+
+    $response = $this->call('POST', '/api/doctor/run', [
+        'families' => ['node'],
+        'mode' => 'verify',
+        'self' => true,
+    ], [], [], [
+        'HTTP_ACCEPT' => 'text/event-stream',
+        'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+    ]);
+
+    $response->assertOk();
+
+    $frames = doctorRunStreamFrames($response->streamedContent());
+    $initial = doctorRunStreamDoctorFrames($frames)[0] ?? null;
+    $nodeDone = array_values(array_filter(
+        doctorRunStreamDoctorFrames($frames),
+        static fn (array $frame): bool => ($frame['key'] ?? null) === 'node' && ($frame['status'] ?? null) === 'done',
+    ))[0] ?? null;
+
+    expect($initial)->not->toBeNull()
+        ->and($initial['doctor']['scope']['families'])->toBe(['node'])
+        ->and($initial['doctor']['progress']['state'])->toBe('running')
+        ->and($initial['doctor']['progress']['families'][0]['family'])->toBe('node')
+        ->and($initial['doctor']['progress']['families'][0]['status'])->toBe('queued')
+        ->and($nodeDone)->not->toBeNull()
+        ->and($nodeDone['doctor']['issues'])->toBeArray()
+        ->and($nodeDone['doctor']['summary'])->toBeArray();
+});
+
 it('streams fleet doctor progress per node instead of batching all running steps before probing', function (): void {
     createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
     createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
@@ -131,6 +162,63 @@ function doctorRunStreamStepEvents(string $content): array
     }
 
     return $events;
+}
+
+/**
+ * @return list<array{event: string, data: array<string, mixed>}>
+ */
+function doctorRunStreamFrames(string $content): array
+{
+    $frames = [];
+
+    foreach (preg_split("/\r\n\r\n|\n\n/", trim($content)) ?: [] as $frame) {
+        $event = null;
+        $data = null;
+
+        foreach (explode("\n", $frame) as $line) {
+            if (str_starts_with($line, 'event: ')) {
+                $event = substr($line, 7);
+            }
+
+            if (str_starts_with($line, 'data: ')) {
+                $data = json_decode(substr($line, 6), true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+
+        if (is_string($event) && is_array($data)) {
+            $frames[] = [
+                'event' => $event,
+                'data' => $data,
+            ];
+        }
+    }
+
+    return $frames;
+}
+
+/**
+ * @param  list<array{event: string, data: array<string, mixed>}>  $frames
+ * @return list<array<string, mixed>>
+ */
+function doctorRunStreamDoctorFrames(array $frames): array
+{
+    $doctorFrames = [];
+
+    foreach ($frames as $frame) {
+        if ($frame['event'] !== 'step') {
+            continue;
+        }
+
+        $data = $frame['data'];
+
+        if (! is_array($data['doctor'] ?? null)) {
+            continue;
+        }
+
+        $doctorFrames[] = $data;
+    }
+
+    return $doctorFrames;
 }
 
 /**
