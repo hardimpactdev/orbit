@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Services\AgentIde;
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Workspace;
 use App\Services\Apps\AppAgentIdeDefaults;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class AgentIdeMessageDelivery
 {

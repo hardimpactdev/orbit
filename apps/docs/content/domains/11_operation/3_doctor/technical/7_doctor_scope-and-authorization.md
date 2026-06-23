@@ -12,13 +12,18 @@ and [`3_doctor_on-gateway-node.md`](3_doctor_on-gateway-node.md).
 ## Scope and Authorization Rules
 
 - Resolve and validate all scope filters before probes or side effects.
-- Resolve a single-node target before probes; multi-node scopes are not supported.
+- Resolve a single-node target before probes unless explicit `--all` fleet
+  verify mode is selected.
 - Apply gateway-owned grant authorization to the resolved scope before probes or side effects.
 - Verify mode requires `doctor:verify` on the resolved target node.
 - Resolution actions require the matching doctor permission on the resolved
   target node: `doctor:restore` or `doctor:adopt`.
 - Reject mutually exclusive option combinations before probes.
 - Mutually exclusive pairs: `--fix`/`--restore`, `--fix`/`--adopt`, `--restore`/`--adopt`, and `--self`/`--node`.
+- `--all` is mutually exclusive with `--node`, `--self`, `--app`,
+  `--workspace`, `--fix`, `--restore`, and `--adopt`.
+- Reject `--node=all` with `validation_failed` and `field=node` metadata before
+  probes.
 - Reject unresolvable family, node, app, or workspace scopes before probes.
 - Reject family selections outside the target node's active-role category set before probes. The `process` family is inside that set for every node with at least one active role assignment.
 - Reject mode requests unsupported by the selected family before side effects.

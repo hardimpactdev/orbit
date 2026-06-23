@@ -206,6 +206,7 @@ jobs:
           }
 
           publish_split core hardimpactdev/orbit-core
+          publish_split sdk hardimpactdev/orbit-sdk-laravel
           publish_split cli hardimpactdev/orbit-cli
           publish_split gateway hardimpactdev/orbit-gateway
 
@@ -215,6 +216,11 @@ jobs:
               -H "Content-Type: application/json" \
               -d '{"repository":{"url":"https://github.com/hardimpactdev/orbit-core"}}' \
               "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}"
+            curl -fsS \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -d '{"repository":{"url":"https://github.com/hardimpactdev/orbit-sdk-laravel"}}' \
+              "https://packagist.org/api/update-package?username=${PACKAGIST_USERNAME}&apiToken=${PACKAGIST_TOKEN}"
           else
-            echo "Packagist credentials not configured; skipping hardimpactdev/orbit-core API update."
+            echo "Packagist credentials not configured; skipping hardimpactdev/orbit-core and hardimpactdev/orbit-sdk-laravel API updates."
           fi

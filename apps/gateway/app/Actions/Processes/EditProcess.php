@@ -8,12 +8,12 @@ use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class EditProcess
 {

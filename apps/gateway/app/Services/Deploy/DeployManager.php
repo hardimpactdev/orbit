@@ -10,7 +10,6 @@ use App\Contracts\AppRuntimeUserResolver;
 use App\Contracts\ProgressReporter;
 use App\Contracts\RemoteShell;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
@@ -20,6 +19,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class DeployManager
 {

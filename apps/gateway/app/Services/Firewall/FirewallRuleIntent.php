@@ -7,11 +7,11 @@ namespace App\Services\Firewall;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\DriftKind;
 use App\Enums\Nodes\NodeStatus;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 class FirewallRuleIntent
 {

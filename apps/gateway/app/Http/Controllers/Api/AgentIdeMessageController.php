@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Gateway\GatewayApiException;
 use App\Http\Requests\Api\SendAgentIdeMessageApiRequest;
 use App\Models\App;
 use App\Models\Node;
@@ -15,6 +14,7 @@ use App\Services\AgentIde\AgentIdeMessageDelivery;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final class AgentIdeMessageController implements Loggable
 {

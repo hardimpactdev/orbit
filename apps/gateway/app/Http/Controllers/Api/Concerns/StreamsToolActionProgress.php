@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\Concerns;
 
 use App\Contracts\ProgressReporter;
-use App\Http\Gateway\GatewayApiException;
 use App\Services\Tools\ToolRegistryFailure;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use App\Support\Tools\ToolActionProgressRunner;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 

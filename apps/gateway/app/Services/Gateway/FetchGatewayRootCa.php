@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\Requests\Gateway\ShowGatewayCaRootRequest;
+use Orbit\Sdk\Laravel\GatewayConnector;
+use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayCaRootRequest;
 use RuntimeException;
 use Saloon\Http\Response;
 

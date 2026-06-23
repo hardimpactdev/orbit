@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Nodes;
 
-use App\Http\Gateway\Responses\Nodes\NodeRemoveResponse;
 use App\Models\Node;
 use App\Models\NodeAccess;
 use App\Models\WireGuardPeer;
 use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Nodes\DevelopmentDnsMappingEnactor;
+use Orbit\Sdk\Laravel\Responses\Nodes\NodeRemoveResponse;
 
 final readonly class RemoveNode
 {

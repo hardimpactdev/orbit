@@ -18,15 +18,20 @@ Gateway peers are the authority path for doctor.
 
 | Mode | Behavior |
 | --- | --- |
-| `verify` | Resolve the single-node scope, read gateway configuration, probe the target node's reality, and return the diagnostic. |
+| `verify` | Resolve the single-node scope, or explicit `--all` fleet scope, read gateway configuration, probe the selected node reality, and return the diagnostic. |
 | `interactive`, `restore`, `adopt` | Resolve the single-node scope, read gateway configuration, probe the target node's reality, apply the resolution actions declared safe by the owning family, and return the diagnostic. |
 
 ## Single-Node Scope
 
-`doctor` always targets one node per run. When the calling peer is the gateway itself, the default target is the local gateway node identity (equivalent to `--self`). An operator may target a different node with `--node=<other>`; multi-node scopes are not supported.
+Plain `doctor` resolves one target node. The CLI first forwards the locally
+configured default node when one is selected. If no default node is configured,
+the gateway resolves the local gateway node identity. An operator may target a
+different node with `--node=<other>`. Fleet verification is explicit `--all`
+only.
 
 - The gateway resolves `--self` to its own node identity.
 - The gateway resolves `--node`, `--app`, and `--workspace` against its configuration.
+- The gateway rejects `node=all`; fleet verification uses `all=true`.
 - Reject `--self` combined with `--node`.
 - Apply authorization before probing the selected target node.
 

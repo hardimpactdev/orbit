@@ -185,7 +185,7 @@ fi
 step "Installing Composer dependencies"
 run_in "$worktree_path" composer install
 
-for directory in packages/core apps/gateway apps/docs apps/cli apps/e2e; do
+for directory in packages/core packages/sdk apps/gateway apps/docs apps/cli apps/e2e; do
     if [ -f "${worktree_path}/${directory}/composer.json" ]; then
         run_in "${worktree_path}/${directory}" composer install
     fi

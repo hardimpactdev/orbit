@@ -84,7 +84,29 @@ it('streams doctor panel snapshots before and during node-scoped probes', functi
         ->and($nodeDone['doctor']['summary'])->toBeArray();
 });
 
-it('streams fleet doctor progress per node instead of batching all running steps before probing', function (): void {
+it('streams fleet doctor progress per node only with explicit all scope', function (): void {
+    createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
+    createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+
+    $response = $this->call('POST', '/api/doctor/run', [
+        'families' => ['node'],
+        'mode' => 'verify',
+        'all' => true,
+    ], [], [], [
+        'HTTP_ACCEPT' => 'text/event-stream',
+        'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+    ]);
+
+    $response->assertOk();
+
+    $stepEvents = doctorRunStreamStepEvents($response->streamedContent());
+
+    expect($stepEvents)->not->toBeEmpty()
+        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-1', 'done'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'doctor-stream-caller', 'running'));
+});
+
+it('streams omitted scope as caller-node family progress instead of fleet progress', function (): void {
     createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
     createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
 
@@ -98,11 +120,14 @@ it('streams fleet doctor progress per node instead of batching all running steps
 
     $response->assertOk();
 
+    $frames = doctorRunStreamFrames($response->streamedContent());
+    $doctorFrames = doctorRunStreamDoctorFrames($frames);
     $stepEvents = doctorRunStreamStepEvents($response->streamedContent());
 
-    expect($stepEvents)->not->toBeEmpty()
-        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-1', 'done'))
-        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'doctor-stream-caller', 'running'));
+    expect($doctorFrames)->not->toBeEmpty()
+        ->and($doctorFrames[0]['doctor']['scope']['node'])->toBe('doctor-stream-caller')
+        ->and(doctorRunStreamStepEventIndex($stepEvents, 'node', 'running'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'node', 'done'));
 });
 
 it('streams node-scoped doctor progress per family as each family is probed', function (): void {

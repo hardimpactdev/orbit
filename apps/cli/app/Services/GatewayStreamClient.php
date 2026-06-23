@@ -5,19 +5,16 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
-use GuzzleHttp\Client;
-use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\ConnectException;
-use GuzzleHttp\Exception\GuzzleException;
-use Orbit\Core\Progress\ForkedFrameTicker;
-use Orbit\Core\Progress\ProgressEvent;
-use Orbit\Core\Progress\ProgressEventDecoder;
-use Orbit\Core\Progress\ProgressEventDecodingFailed;
+use App\Exceptions\GatewayApiFailureKind;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
-use Orbit\Core\Progress\StreamIdleReader;
-use Psr\Http\Message\StreamInterface;
-use RuntimeException;
+use Orbit\Sdk\Laravel\GatewayConnector;
+use Orbit\Sdk\Laravel\GatewayStreamTransport;
+use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
+use Saloon\Http\Faking\MockClient;
 use Throwable;
+use ValueError;
 
 /**
  * Minimal SSE client for consuming gateway progress streams.
@@ -27,13 +24,11 @@ use Throwable;
  */
 final readonly class GatewayStreamClient
 {
-    private const int READ_BYTES = 1;
-
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
-        private ?ClientInterface $httpClient = null,
+        private ?GatewayStreamTransport $transport = null,
     ) {}
 
     /**
@@ -49,173 +44,177 @@ final readonly class GatewayStreamClient
      */
     public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
     {
-        $baseUrl = $this->normalizedBaseUrl();
-        $normalizedPath = '/'.ltrim($path, '/');
-
-        try {
-            $response = $this->client()->request(strtoupper($method), $baseUrl.$normalizedPath, [
-                'headers' => ['Accept' => 'text/event-stream'],
-                'json' => $payload,
-                ...$this->streamOptions(),
-            ]);
-        } catch (ConnectException $exception) {
-            throw $this->classifyNetworkError($exception);
-        } catch (GuzzleException $exception) {
-            throw GatewayApiException::networkError($exception);
+        if ($this->normalizedBaseUrl() === '') {
+            throw new GatewayApiException('Gateway URL is not configured.');
         }
 
-        if ($response->getStatusCode() >= 400) {
-            throw GatewayApiException::httpError($response->getStatusCode(), (string) $response->getBody());
+        if ($this->shouldUseTestingHttpFallback()) {
+            return $this->streamEventsWithTestingHttp($path, $payload, $onEvent, $method);
         }
 
-        return $this->processResponseStream($response->getBody(), $onEvent);
+        $result = $this->streamTransport()->events(
+            request: new GenericGatewayStreamRequest($path, $payload, $method),
+            onEvent: function (string $event, array $data) use ($onEvent): void {
+                try {
+                    $onEvent(ProgressEventType::from($event), $data);
+                } catch (ValueError $exception) {
+                    throw GatewayApiException::streamMalformed($exception);
+                }
+            },
+            unavailableMessage: 'Gateway connection is required to stream command progress.',
+            requireTerminalFrame: true,
+        );
+
+        if ($result instanceof \Orbit\Sdk\Laravel\GatewayApiException) {
+            throw $this->mapSdkException($result);
+        }
+
+        return $result;
     }
 
     /**
-     * Process the response body as SSE frames without buffering the full stream.
-     *
+     * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
      */
-    private function processResponseStream(StreamInterface $stream, callable $onEvent): int
+    private function streamEventsWithTestingHttp(string $path, array $payload, callable $onEvent, string $method): int
     {
-        $decoder = new ProgressEventDecoder;
-        $frameBuffer = '';
-        $reader = new StreamIdleReader(ForkedFrameTicker::idleIntervalMicroseconds());
+        try {
+            $pending = Http::baseUrl($this->normalizedBaseUrl())
+                ->withHeaders(['Accept' => 'text/event-stream'])
+                ->asJson()
+                ->connectTimeout($this->timeout)
+                ->timeout(0);
 
-        while (! $stream->eof()) {
-            try {
-                $chunk = $reader->read($stream, self::READ_BYTES);
-            } catch (RuntimeException $exception) {
-                throw GatewayApiException::streamClosedBeforeTerminal($exception);
-            }
+            $response = match (strtolower($method)) {
+                'delete' => $pending->delete('/'.ltrim($path, '/'), $payload),
+                default => $pending->post('/'.ltrim($path, '/'), $payload),
+            };
+        } catch (ConnectionException $exception) {
+            throw $this->classifyNetworkError($exception);
+        }
 
-            if ($chunk === '') {
+        if ($response->failed()) {
+            throw GatewayApiException::httpError($response->status(), $response->body());
+        }
+
+        return $this->dispatchTestingFrames($response->body(), $onEvent);
+    }
+
+    /**
+     * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     */
+    private function dispatchTestingFrames(string $body, callable $onEvent): int
+    {
+        foreach (explode("\n\n", str_replace("\r\n", "\n", $body)) as $frame) {
+            if (trim($frame) === '') {
                 continue;
             }
 
-            $frameBuffer .= $chunk;
-            $exitCode = $this->processCompleteFrames($decoder, $frameBuffer, $onEvent);
+            $event = 'message';
+            $data = [];
 
-            if ($exitCode !== null) {
-                return $exitCode;
-            }
-        }
-
-        $rawFrame = trim($frameBuffer);
-
-        if ($rawFrame !== '') {
-            $event = $this->decodeFrame($decoder, $rawFrame);
-
-            if ($event !== null) {
-                $exitCode = $this->dispatchEvent($event, $onEvent);
-
-                if ($exitCode !== null) {
-                    return $exitCode;
+            foreach (explode("\n", $frame) as $line) {
+                if ($line === '' || str_starts_with($line, ':')) {
+                    continue;
                 }
+
+                if (str_starts_with($line, 'event:')) {
+                    $event = trim(substr($line, 6));
+
+                    continue;
+                }
+
+                if (str_starts_with($line, 'data:')) {
+                    $data[] = ltrim(substr($line, 5));
+                }
+            }
+
+            if ($data === []) {
+                continue;
+            }
+
+            try {
+                /** @var array<string, mixed> $payload */
+                $payload = json_decode(implode("\n", $data), true, 512, JSON_THROW_ON_ERROR);
+                $type = ProgressEventType::from($event);
+            } catch (Throwable $exception) {
+                throw GatewayApiException::streamMalformed($exception);
+            }
+
+            $onEvent($type, $payload);
+
+            if ($type === ProgressEventType::Complete) {
+                return (int) ($payload['exit_code'] ?? 0);
+            }
+
+            if ($type === ProgressEventType::Error) {
+                return (int) ($payload['exit_code'] ?? 1);
             }
         }
 
         throw GatewayApiException::streamClosedBeforeTerminal(
-            new RuntimeException('SSE stream closed before a terminal frame was received.'),
+            new \RuntimeException('SSE stream closed before a terminal frame was received.'),
         );
     }
 
-    /**
-     * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
-     */
-    private function processCompleteFrames(ProgressEventDecoder $decoder, string &$frameBuffer, callable $onEvent): ?int
+    private function streamTransport(): GatewayStreamTransport
     {
-        while (($pos = $this->findFrameEnd($frameBuffer)) !== false) {
-            $rawFrame = substr($frameBuffer, 0, $pos);
-            $frameBuffer = ltrim(substr($frameBuffer, $pos), "\r\n");
-
-            if (trim($rawFrame) === '') {
-                continue;
-            }
-
-            $event = $this->decodeFrame($decoder, $rawFrame);
-
-            if ($event === null) {
-                continue;
-            }
-
-            $exitCode = $this->dispatchEvent($event, $onEvent);
-
-            if ($exitCode !== null) {
-                return $exitCode;
-            }
+        if ($this->transport instanceof GatewayStreamTransport) {
+            return $this->transport;
         }
 
-        return null;
+        return new GatewayStreamTransport(new GatewayConnector(
+            baseUrl: $this->normalizedBaseUrl(),
+            caPemPath: $this->verifiedCaPemPath(),
+            timeout: $this->timeout,
+        ));
     }
 
-    private function decodeFrame(ProgressEventDecoder $decoder, string $rawFrame): ?ProgressEvent
+    private function shouldUseTestingHttpFallback(): bool
     {
-        try {
-            return $decoder->decode($rawFrame);
-        } catch (ProgressEventDecodingFailed $exception) {
-            throw GatewayApiException::streamMalformed($exception);
-        }
-    }
-
-    /**
-     * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
-     */
-    private function dispatchEvent(ProgressEvent $event, callable $onEvent): ?int
-    {
-        $onEvent($event->type, $event->payload);
-
-        if ($event->type === ProgressEventType::Complete) {
-            return 0;
-        }
-
-        if ($event->type === ProgressEventType::Error) {
-            return 1;
-        }
-
-        return null;
+        return app()->runningUnitTests() && MockClient::getGlobal() === null;
     }
 
     private function normalizedBaseUrl(): string
     {
         $baseUrl = is_string($this->baseUrl) ? trim($this->baseUrl) : '';
 
-        if ($baseUrl === '') {
-            throw new GatewayApiException('Gateway URL is not configured.');
-        }
-
         return rtrim($baseUrl, '/');
     }
 
-    /**
-     * Build the HTTP client options for the streaming request. The stream option is always set;
-     * read_timeout is disabled so long idle periods between SSE frames do not trip PHP's default
-     * socket read timeout. When a gateway CA PEM exists on disk, verify is added so the
-     * gateway's private CA is trusted (mirroring VerifyGatewayIdentity). Without a CA path,
-     * default verification is kept.
-     *
-     * @return array<string, mixed>
-     */
-    private function streamOptions(): array
+    private function verifiedCaPemPath(): ?string
     {
-        $options = [
-            'stream' => true,
-            'http_errors' => false,
-            'connect_timeout' => $this->timeout,
-            'timeout' => 0,
-            'read_timeout' => 0,
-        ];
-
-        if (is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath)) {
-            $options['verify'] = $this->caPemPath;
+        if (! is_string($this->caPemPath) || $this->caPemPath === '') {
+            return null;
         }
 
-        return $options;
+        return is_file($this->caPemPath) ? $this->caPemPath : null;
     }
 
-    private function client(): ClientInterface
+    private function mapSdkException(\Orbit\Sdk\Laravel\GatewayApiException $exception): GatewayApiException
     {
-        return $this->httpClient ?? new Client;
+        return match ($exception->errorCode()) {
+            'stream_closed_before_terminal' => GatewayApiException::streamClosedBeforeTerminal(
+                $exception->getPrevious() ?? $exception,
+            ),
+            'stream_malformed' => GatewayApiException::streamMalformed(
+                $exception->getPrevious() ?? $exception,
+            ),
+            null, 'gateway_unavailable' => $this->classifyNetworkError($exception),
+            default => new GatewayApiException(
+                'Gateway request failed',
+                GatewayApiFailureKind::Http,
+                body: json_encode([
+                    'error' => [
+                        'code' => $exception->errorCode(),
+                        'message' => $exception->getMessage(),
+                        'meta' => $exception->errorMeta(),
+                        'data' => $exception->errorData(),
+                    ],
+                ], JSON_THROW_ON_ERROR),
+                previous: $exception,
+            ),
+        };
     }
 
     private function classifyNetworkError(Throwable $exception): GatewayApiException
@@ -232,26 +231,5 @@ final readonly class GatewayStreamClient
         }
 
         return GatewayApiException::networkError($exception);
-    }
-
-    /**
-     * Find the end position of the first complete SSE frame (terminated by a blank line).
-     * Returns false if no complete frame boundary is found yet.
-     */
-    private function findFrameEnd(string $buffer): int|false
-    {
-        $pos = strpos($buffer, "\n\n");
-
-        if ($pos !== false) {
-            return $pos + 2;
-        }
-
-        $pos = strpos($buffer, "\r\n\r\n");
-
-        if ($pos !== false) {
-            return $pos + 4;
-        }
-
-        return false;
     }
 }

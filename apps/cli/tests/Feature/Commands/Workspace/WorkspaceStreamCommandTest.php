@@ -259,7 +259,7 @@ describe('WorkspaceStream commands', function (): void {
             $readCount = $count;
         }));
 
-        $exitCode = (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
+        $exitCode = app(GatewayStreamClient::class)
             ->streamEvents('/api/workspaces', [], function (ProgressEventType $type) use (&$readCount, &$eventReadCounts): void {
                 $eventReadCounts[$type->value] = $readCount;
             });

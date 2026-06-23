@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Http\Gateway\Requests\Gateway\ShowGatewayIdentityRequest;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -20,6 +19,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Testing\ParallelRunner;
+use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayIdentityRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;

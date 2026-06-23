@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Schedules\SchedulePayload;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class AddSchedule
 {

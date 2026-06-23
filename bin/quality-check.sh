@@ -50,18 +50,21 @@ run_bg gateway_phpstan bin/orbit-gateway-vendor-bin phpstan analyse --memory-lim
 run_bg cli_phpstan bash -lc 'cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
 run_bg docs_phpstan bash -lc 'cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
 run_bg core_phpstan bash -lc 'cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
+run_bg sdk_phpstan bash -lc 'cd packages/sdk && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
 run_bg e2e_phpstan bash -lc 'cd apps/e2e && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
 
 run_bg gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
 run_bg cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 run_bg docs_rector bash -lc 'cd apps/docs && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 run_bg core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
+run_bg sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 run_bg e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 
 run_bg gateway_pint bin/orbit-gateway-vendor-bin pint "${PINT_ARGS[@]}"
 run_bg cli_pint bash -lc 'cd apps/cli && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
 run_bg docs_pint bash -lc 'cd apps/docs && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
 run_bg core_pint bash -lc 'cd packages/core && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
+run_bg sdk_pint bash -lc 'cd packages/sdk && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
 run_bg e2e_pint bash -lc 'cd apps/e2e && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
 
 run_bg cli_pest bin/orbit-cli-pest --compact
@@ -79,25 +82,29 @@ CHECK_LABELS=(
     cli_phpstan
     docs_phpstan
     core_phpstan
+    sdk_phpstan
     e2e_phpstan
     gateway_rector
     cli_rector
     docs_rector
     core_rector
+    sdk_rector
     e2e_rector
     gateway_pint
     cli_pint
     docs_pint
     core_pint
+    sdk_pint
     e2e_pint
     cli_pest
     docs_pest
     core_pest
+    sdk_pest
     e2e_pest
 )
 
 for label in "${CHECK_LABELS[@]}"; do
-    if [ "$label" = core_pest ] || [ "$label" = e2e_pest ]; then
+    if [ "$label" = core_pest ] || [ "$label" = sdk_pest ] || [ "$label" = e2e_pest ]; then
         continue
     fi
 
@@ -114,6 +121,8 @@ done
 # this lane out of the background fan-out so unrelated Pest suites cannot
 # deliver process-group signals to the core Pest parent.
 ( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )
+
+( cd packages/sdk && vendor/bin/pest --compact >"$LOG_DIR/sdk_pest.log" 2>&1; echo "$?" >"$LOG_DIR/sdk_pest.exit" )
 
 print_log() {
     local label="$1"

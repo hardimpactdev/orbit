@@ -8,7 +8,6 @@ use App\Actions\Schedules\AddSchedule;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
@@ -16,6 +15,7 @@ use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ScheduleStoreController implements Loggable
 {

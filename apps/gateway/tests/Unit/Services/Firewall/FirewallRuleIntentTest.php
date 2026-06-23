@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Services\Firewall\FirewallRuleIntent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class);

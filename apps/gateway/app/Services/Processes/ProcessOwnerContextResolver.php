@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Services\Processes;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ProcessOwnerContextResolver
 {

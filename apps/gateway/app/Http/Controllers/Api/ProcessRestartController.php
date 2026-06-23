@@ -9,13 +9,13 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 #[RequiresPermission('process:restart', servingNode: ServingNode::AppOwning)]
 final class ProcessRestartController implements Loggable

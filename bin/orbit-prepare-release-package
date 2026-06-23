@@ -17,12 +17,13 @@ try {
 
     $sources = [
         'core' => 'packages/core',
+        'sdk' => 'packages/sdk',
         'cli' => 'apps/cli',
         'gateway' => 'apps/gateway',
     ];
 
     if (! array_key_exists($package, $sources)) {
-        fail('Unsupported package ['.$package.']. Expected one of: core, cli, gateway.');
+        fail('Unsupported package ['.$package.']. Expected one of: core, sdk, cli, gateway.');
     }
 
     $source = $repoRoot.'/'.$sources[$package];
@@ -171,12 +172,16 @@ function rewrite_composer_json(string $path, string $version, string $package): 
 
     if ($package !== 'core') {
         unset($json['repositories']);
+    }
+
+    if (in_array($package, ['cli', 'gateway'], true)) {
 
         if (! isset($json['require']) || ! is_array($json['require'])) {
             $json['require'] = [];
         }
 
         $json['require']['hardimpactdev/orbit-core'] = $version;
+        $json['require']['hardimpactdev/orbit-sdk-laravel'] = $version;
         ksort($json['require']);
     }
 

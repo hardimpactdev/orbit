@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Cloudflare;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareManager
 {

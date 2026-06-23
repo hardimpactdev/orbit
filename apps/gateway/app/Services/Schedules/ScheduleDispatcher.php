@@ -8,7 +8,6 @@ use App\Data\RemoteShell\RemoteShellPoolJob;
 use App\Data\RemoteShell\RemoteShellPoolResult;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Data\Schedules\ScheduleDispatchResult;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
@@ -16,6 +15,7 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\RemoteShell\RemoteShellPool;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Process;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
 final readonly class ScheduleDispatcher

@@ -12,13 +12,13 @@ use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Processes\ProcessOwnerContextResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 #[RequiresPermission('process:edit', servingNode: ServingNode::AppOwning)]
 final class ProcessUpdateController implements Loggable

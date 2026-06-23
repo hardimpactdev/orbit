@@ -68,6 +68,12 @@ final class DoctorFixController implements Loggable
         $this->activityDryRun = $dryRun;
 
         $families = $this->families($request);
+        $scopeFailure = $this->validateScope($request);
+
+        if ($scopeFailure instanceof JsonResponse) {
+            return $scopeFailure;
+        }
+
         $target = $this->resolveTarget($request, $caller);
 
         if ($target === null) {
@@ -247,6 +253,40 @@ final class DoctorFixController implements Loggable
         }
 
         return $caller;
+    }
+
+    private function validateScope(Request $request): ?JsonResponse
+    {
+        $node = $this->scopeValue($request, 'node');
+
+        if ($node !== null && strtolower($node) === 'all') {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'Use all=true to run doctor across the fleet; node=all is not supported.',
+                    'meta' => ['field' => 'node', 'value' => 'all'],
+                ],
+            ], 422);
+        }
+
+        if (! $request->boolean('all')) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => [
+                'code' => 'validation_failed',
+                'message' => 'Fleet doctor runs are verify-only; resolution modes require a single target node.',
+                'meta' => ['field' => 'all'],
+            ],
+        ], 422);
+    }
+
+    private function scopeValue(Request $request, string $key): ?string
+    {
+        $value = $request->input($key);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function authorizeDoctorFix(NodeAccessAuthorizer $authorizer, Node $caller, Node $target, string $mode): ?JsonResponse

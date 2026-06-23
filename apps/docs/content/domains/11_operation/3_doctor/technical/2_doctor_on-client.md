@@ -15,21 +15,28 @@ operator peer.
 
 ## Allowed Paths
 
-Operator peers do not probe fleet reality directly. The CLI is a client of the gateway doctor endpoint.
+Operator peers do not probe node reality directly. The CLI is a client of the
+gateway doctor endpoint.
 
 | Mode | Behavior |
 | --- | --- |
-| `verify` | Forward the single-node scope to the gateway, stream gateway-owned progress, and render the returned diagnostic. |
+| `verify` | Forward the resolved single-node scope, or explicit `--all` fleet scope, to the gateway, stream gateway-owned progress, and render the returned diagnostic. |
 | `interactive`, `restore`, `adopt` | Forward the resolution request to the gateway, stream gateway-owned progress, and render the returned diagnostic. Allowed when the gateway authorizes the resolved scope. |
 
 ## Single-Node Scope
 
-`doctor` always targets one node per run. When the calling peer is identified as an operator peer, the default target is that peer's identified node (equivalent to `--self`). An operator may target a different node with `--node=<other>`; multi-node scopes are not supported.
+Plain `doctor` resolves one target node. The CLI first forwards the locally
+configured default node when one is selected. If no default node is configured,
+the CLI sends `self=true` and the gateway resolves the calling peer's identified
+node. An operator may target a different node with `--node=<other>`. Fleet
+verification is explicit `--all` only.
 
 - Forward `--self` to the gateway; the gateway resolves it to the calling peer's identified node.
 - Forward `--node=<other>` to the gateway; the gateway resolves it and uses that node's active roles to derive the rendered category set.
+- Reject `--node=all`; fleet verification uses `--all`.
 - Reject `--self` combined with `--node` before forwarding.
-- The CLI does not infer gateway-local or app-local defaults.
+- The CLI may forward its configured local default node for omitted scope.
+- The CLI forwards `self=true` for omitted scope when no default node exists.
 - App and workspace filters are forwarded only when explicit options are present.
 
 ## Category Set by Target Roles

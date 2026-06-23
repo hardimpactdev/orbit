@@ -58,6 +58,10 @@
 /packages/core/.phpunit.result.cache
 /packages/core/build/
 /packages/core/vendor
+/packages/sdk/.phpunit.cache
+/packages/sdk/.phpunit.result.cache
+/packages/sdk/build/
+/packages/sdk/vendor
 /vendor
 _ide_helper.php
 Homestead.json

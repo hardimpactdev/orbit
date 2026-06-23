@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -13,6 +12,7 @@ use App\Models\Workspace;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ProcessOwnerContext
 {

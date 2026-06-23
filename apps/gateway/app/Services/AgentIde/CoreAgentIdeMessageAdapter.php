@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\AgentIde;
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\NodeTool;
 use App\Models\Workspace;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 {

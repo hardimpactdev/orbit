@@ -6,12 +6,12 @@ namespace App\Actions\Processes;
 
 use App\Contracts\RemoteShell;
 use App\Contracts\RemoteShellStream;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessServiceMetadataPayload;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ShowProcessLogs
 {

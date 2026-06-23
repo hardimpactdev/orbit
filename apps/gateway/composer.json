@@ -16,10 +16,10 @@
         "hardimpactdev/librarian": "^0.0.2",
         "hardimpactdev/opencode-sdk-laravel": "^0.0.7",
         "hardimpactdev/orbit-core": "dev-main",
+        "hardimpactdev/orbit-sdk-laravel": "dev-main",
         "laravel/framework": "^13.0",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.0",
-        "saloonphp/saloon": "^4.0",
         "spatie/laravel-activitylog": "^4.0"
     },
     "require-dev": {
@@ -41,6 +41,13 @@
         {
             "type": "path",
             "url": "../../packages/core",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "path",
+            "url": "../../packages/sdk",
             "options": {
                 "symlink": true
             }

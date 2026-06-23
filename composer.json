@@ -16,6 +16,7 @@
         "setup": [
             "composer install",
             "cd packages/core && composer install",
+            "cd packages/sdk && composer install",
             "cd apps/gateway && composer install",
             "cd apps/docs && composer install",
             "cd apps/cli && composer install",
@@ -42,7 +43,8 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
-            "cd packages/core && vendor/bin/pest --compact"
+            "cd packages/core && vendor/bin/pest --compact",
+            "cd packages/sdk && vendor/bin/pest --compact"
         ],
         "test:slow": [
             "Composer\\Config::disableProcessTimeout",
@@ -50,7 +52,8 @@
             "bin/orbit-gateway-pest --exclude-group=e2e --parallel --compact",
             "bin/orbit-cli-pest --compact",
             "bin/orbit-docs-pest --compact",
-            "cd packages/core && vendor/bin/pest --compact"
+            "cd packages/core && vendor/bin/pest --compact",
+            "cd packages/sdk && vendor/bin/pest --compact"
         ],
         "test:e2e": [
             "Composer\\Config::disableProcessTimeout",
@@ -151,6 +154,7 @@
             "cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M",
             "cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M",
             "cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M",
+            "cd packages/sdk && vendor/bin/phpstan analyse --memory-limit=512M",
             "cd apps/e2e && vendor/bin/phpstan analyse --memory-limit=512M"
         ],
         "format": [
@@ -158,6 +162,7 @@
             "cd apps/cli && vendor/bin/pint",
             "cd apps/docs && vendor/bin/pint",
             "cd packages/core && vendor/bin/pint",
+            "cd packages/sdk && vendor/bin/pint",
             "cd apps/e2e && vendor/bin/pint"
         ],
         "rector": [
@@ -165,6 +170,7 @@
             "cd apps/cli && vendor/bin/rector process",
             "cd apps/docs && vendor/bin/rector process",
             "cd packages/core && vendor/bin/rector process",
+            "cd packages/sdk && vendor/bin/rector process",
             "cd apps/e2e && vendor/bin/rector process"
         ],
         "quality-check": [

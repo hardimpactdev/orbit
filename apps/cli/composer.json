@@ -12,6 +12,7 @@
     "require": {
         "php": "^8.5",
         "hardimpactdev/orbit-core": "dev-main",
+        "hardimpactdev/orbit-sdk-laravel": "dev-main",
         "illuminate/http": "^12.0",
         "laravel-zero/framework": "^12.0"
     },
@@ -31,6 +32,13 @@
         {
             "type": "path",
             "url": "../../packages/core",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
+            "type": "path",
+            "url": "../../packages/sdk",
             "options": {
                 "symlink": true
             }

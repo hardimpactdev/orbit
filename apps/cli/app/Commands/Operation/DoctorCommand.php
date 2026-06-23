@@ -8,6 +8,7 @@ use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
 use App\Exceptions\GatewayApiException;
+use App\Exceptions\OrbitConfigStoreException;
 use App\Services\Doctor\DoctorPanelRenderer;
 use App\Services\Doctor\DoctorTerminalFrameExtractor;
 use App\Services\Doctor\InteractiveDoctorIssueSelector;
@@ -27,6 +28,7 @@ final class DoctorCommand extends GatewayCommand
         {--workspace= : Limit to one workspace}
         {--node= : Target node name}
         {--self : Limit to the calling node identity}
+        {--all : Run across all eligible active role nodes}
         {--family=* : Scope to one or more state families}
         {--key= : Limit reported drift to one exact doctor issue key}
         {--fix : Enter resolution mode}
@@ -38,6 +40,10 @@ final class DoctorCommand extends GatewayCommand
 
     #[\Override]
     protected $description = 'Check Orbit health and diagnose drift through the gateway.';
+
+    private int $doctorPanelLineCount = 0;
+
+    private int $doctorPanelRewindExtraLines = 0;
 
     public function handle(): int
     {
@@ -71,6 +77,12 @@ final class DoctorCommand extends GatewayCommand
             );
         }
 
+        $scopeValidation = $this->validateDoctorScopeOptions($mode);
+
+        if (is_int($scopeValidation)) {
+            return $scopeValidation;
+        }
+
         if ($mode === 'interactive') {
             if ($this->wantsStreamJson()) {
                 return $this->renderFailure(
@@ -100,20 +112,25 @@ final class DoctorCommand extends GatewayCommand
         }
 
         $path = $mode === 'verify' ? '/api/doctor/run' : '/api/doctor/fix';
+        $payload = $this->payload($mode);
+
+        if (is_int($payload)) {
+            return $payload;
+        }
 
         if ($this->wantsStreamJson()) {
-            return $this->streamDoctorJson($path, $this->payload($mode));
+            return $this->streamDoctorJson($path, $payload);
         }
 
         if ($this->wantsJson()) {
             return $this->streamProgress(
                 $path,
-                $this->payload($mode),
+                $payload,
                 fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
             );
         }
 
-        $frame = $this->captureDoctorProgressTerminalFrame($path, $this->payload($mode));
+        $frame = $this->captureDoctorProgressTerminalFrame($path, $payload);
 
         if (is_int($frame)) {
             return $frame;
@@ -143,6 +160,12 @@ final class DoctorCommand extends GatewayCommand
 
         if ($modeOverride !== null) {
             $report['mode'] = $modeOverride;
+        }
+
+        if ($this->isFleetReport($report)) {
+            $this->writeDoctorFleetResult($report);
+
+            return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
         }
 
         $this->writeDoctorPanel($report);
@@ -191,7 +214,7 @@ final class DoctorCommand extends GatewayCommand
 
                     if ($doctor !== null) {
                         $renderedDoctorFrame = true;
-                        $this->writeDoctorPanel($doctor);
+                        $this->writeDoctorProgressPanel($doctor);
 
                         return;
                     }
@@ -214,6 +237,10 @@ final class DoctorCommand extends GatewayCommand
                     $footer ?? ($finalType === ProgressEventType::Complete ? 'Done' : 'Failed'),
                     success: $finalType === ProgressEventType::Complete,
                 );
+
+                if ($this->output->isDecorated() && $this->doctorPanelLineCount > 0) {
+                    $this->doctorPanelRewindExtraLines++;
+                }
             }
 
             return [
@@ -233,9 +260,82 @@ final class DoctorCommand extends GatewayCommand
      */
     private function writeDoctorPanel(array $report): void
     {
-        foreach (app(DoctorPanelRenderer::class)->lines($report) as $line) {
+        $lines = app(DoctorPanelRenderer::class)->lines($report);
+
+        if ($this->output->isDecorated() && $this->doctorPanelLineCount > 0) {
+            $previousLineCount = $this->doctorPanelLineCount;
+            $renderedLineCount = max($previousLineCount, count($lines));
+            $rewindLineCount = $previousLineCount + $this->doctorPanelRewindExtraLines;
+
+            $this->output->write("\e[{$rewindLineCount}A");
+
+            for ($index = 0; $index < $renderedLineCount; $index++) {
+                $line = $lines[$index] ?? '';
+
+                $this->output->write("\e[2K\r{$line}\n");
+            }
+
+            $this->doctorPanelLineCount = $renderedLineCount;
+            $this->doctorPanelRewindExtraLines = 0;
+
+            return;
+        }
+
+        foreach ($lines as $line) {
             $this->line($line);
         }
+
+        $this->doctorPanelLineCount = count($lines);
+        $this->doctorPanelRewindExtraLines = 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function writeDoctorProgressPanel(array $report): void
+    {
+        if (! $this->output->isDecorated()) {
+            return;
+        }
+
+        $this->writeDoctorPanel($report);
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function isFleetReport(array $report): bool
+    {
+        $scope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
+
+        return ($scope['role'] ?? null) === 'fleet';
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function writeDoctorFleetResult(array $report): void
+    {
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+        $issues = is_int($summary['issues'] ?? null) ? $summary['issues'] : 0;
+        $rawNodes = $report['nodes'] ?? [];
+        $nodes = is_array($rawNodes) ? array_values(array_filter($rawNodes, is_array(...))) : [];
+        $targetCount = count($nodes);
+
+        $this->line('F L E E T  D O C T O R  R E S U L T');
+        $this->line($targetCount === 1 ? 'Checked 1 node' : "Checked {$targetCount} nodes");
+
+        foreach ($nodes as $node) {
+            $name = is_string($node['node'] ?? null) ? $node['node'] : 'unknown';
+            $role = is_string($node['role'] ?? null) ? $node['role'] : 'unknown';
+            $healthy = ($node['healthy'] ?? false) === true ? 'OK' : 'ISSUES';
+            $nodeSummary = is_array($node['summary'] ?? null) ? $node['summary'] : [];
+            $nodeIssues = is_int($nodeSummary['issues'] ?? null) ? $nodeSummary['issues'] : 0;
+
+            $this->line("{$name}  {$role}  {$healthy}  {$nodeIssues} issues");
+        }
+
+        $this->line($issues === 0 ? 'No issues detected' : ($issues === 1 ? '1 issue detected' : "{$issues} issues detected"));
     }
 
     private function mode(): string|int
@@ -266,7 +366,13 @@ final class DoctorCommand extends GatewayCommand
     {
         $frames = app(DoctorTerminalFrameExtractor::class);
         $selector = app(InteractiveDoctorIssueSelector::class);
-        $probeFrame = $this->captureDoctorProgressTerminalFrame('/api/doctor/run', $this->payload('verify'));
+        $payload = $this->payload('verify');
+
+        if (is_int($payload)) {
+            return $payload;
+        }
+
+        $probeFrame = $this->captureDoctorProgressTerminalFrame('/api/doctor/run', $payload);
 
         if (is_int($probeFrame)) {
             return $probeFrame;
@@ -303,10 +409,16 @@ final class DoctorCommand extends GatewayCommand
                 continue;
             }
 
+            $resolutionPayload = $this->payload($resolutionMode);
+
+            if (is_int($resolutionPayload)) {
+                return $resolutionPayload;
+            }
+
             $fixFrame = $this->captureDoctorProgressTerminalFrame(
                 '/api/doctor/fix',
                 [
-                    ...$this->payload($resolutionMode),
+                    ...$resolutionPayload,
                     'issues' => $issues,
                 ],
             );
@@ -344,12 +456,18 @@ final class DoctorCommand extends GatewayCommand
                 onEvent: function (ProgressEventType $type, array $eventPayload) use (&$streamStarted): void {
                     $streamStarted = true;
 
-                    $this->outputJsonLine($this->doctorStreamFrame($type, $eventPayload));
+                    $this->line(json_encode(
+                        $this->doctorStreamFrame($type, $eventPayload),
+                        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                    ));
                 },
             );
         } catch (GatewayApiException $exception) {
             if ($streamStarted) {
-                $this->outputJsonLine($this->doctorStreamGatewayFailureFrame($exception));
+                $this->line(json_encode(
+                    $this->doctorStreamGatewayFailureFrame($exception),
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                ));
 
                 return self::FAILURE;
             }
@@ -538,20 +656,104 @@ final class DoctorCommand extends GatewayCommand
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<string, mixed>|int
      */
-    private function payload(string $mode): array
+    private function payload(string $mode): array|int
     {
+        try {
+            $node = $this->doctorTargetNode();
+        } catch (OrbitConfigStoreException $exception) {
+            return $this->renderFailure($exception->orbitCode, $exception->getMessage());
+        }
+
+        $self = (bool) $this->option('self') || $this->usesCallerNodeFallback($node);
+
         return $this->filledQuery([
             'mode' => $mode,
             'families' => $this->families(),
             'key' => $this->stringOption('key'),
-            'node' => $this->stringOption('node'),
-            'self' => (bool) $this->option('self') ? true : null,
+            'node' => $node,
+            'self' => $self ? true : null,
+            'all' => (bool) $this->option('all') ? true : null,
             'app' => $this->stringOption('app'),
             'workspace' => $this->stringOption('workspace'),
             'dry_run' => (bool) $this->option('dry-run') ? true : null,
         ]);
+    }
+
+    private function doctorTargetNode(): ?string
+    {
+        if ((bool) $this->option('all') || (bool) $this->option('self')) {
+            return null;
+        }
+
+        if (
+            $this->stringOption('node') === null
+            && ($this->stringOption('app') !== null || $this->stringOption('workspace') !== null)
+        ) {
+            return null;
+        }
+
+        return $this->targetNodeOptionOrDefault();
+    }
+
+    private function usesCallerNodeFallback(?string $node): bool
+    {
+        if ($node !== null) {
+            return false;
+        }
+
+        if ((bool) $this->option('all') || (bool) $this->option('self')) {
+            return false;
+        }
+
+        if ($this->stringOption('app') !== null || $this->stringOption('workspace') !== null) {
+            return false;
+        }
+
+        return $this->stringOption('node') === null;
+    }
+
+    private function validateDoctorScopeOptions(string $mode): ?int
+    {
+        $node = $this->stringOption('node');
+
+        if ($node !== null && strtolower($node) === 'all') {
+            return $this->renderFailure(
+                'validation_failed',
+                'Use --all to run doctor across the fleet; --node=all is not supported.',
+                ['field' => 'node', 'value' => 'all'],
+            );
+        }
+
+        if (! (bool) $this->option('all')) {
+            return null;
+        }
+
+        if ($mode !== 'verify') {
+            return $this->renderFailure(
+                'validation_failed',
+                'Fleet doctor runs are verify-only; resolution modes require a single target node.',
+                ['field' => 'all'],
+            );
+        }
+
+        $conflicts = array_values(array_filter([
+            $node !== null ? 'node' : null,
+            (bool) $this->option('self') ? 'self' : null,
+            $this->stringOption('app') !== null ? 'app' : null,
+            $this->stringOption('workspace') !== null ? 'workspace' : null,
+        ]));
+
+        if ($conflicts === []) {
+            return null;
+        }
+
+        return $this->renderFailure(
+            'validation_failed',
+            '--all cannot be combined with node, self, app, or workspace scope.',
+            ['fields' => ['all', ...$conflicts]],
+        );
     }
 
     /**
