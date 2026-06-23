@@ -29,7 +29,7 @@ function makeProcessRendererApp(array $overrides = []): App
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ], $overrides));
 }
 
@@ -222,7 +222,7 @@ it('changes the spec hash when the process command changes so the manager recrea
 });
 
 it('throws when the owning app is not a PHP app and therefore has no runtime image', function (): void {
-    $app = makeProcessRendererApp(['runtime_kind' => AppRuntimeKind::Static]);
+    $app = makeProcessRendererApp(['runtime' => AppRuntimeKind::Static]);
     $process = makeProcessRendererProcess($app);
 
     expect(fn () => processDockerRenderer()->render($app, $process))

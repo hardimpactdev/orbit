@@ -12,25 +12,33 @@ use Tests\TestCase;
 uses(TestCase::class);
 uses(RefreshDatabase::class);
 
-it('applies inner TLS only to app-dev PHP apps that are not production', function (): void {
+it('applies inner TLS only to opted-in app-dev PHP apps that are not production', function (): void {
     $policy = new AppDevelopmentInnerTlsPolicy;
     $appDevNode = createTestAppHostNode(['user' => 'nckrtl']);
     $appProdNode = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
 
-    $appDevPhp = App::factory()->for($appDevNode, 'node')->create([
+    $appDevPhpDefault = App::factory()->for($appDevNode, 'node')->create([
         'name' => 'docs',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+    $appDevPhpOptedIn = App::factory()->for($appDevNode, 'node')->create([
+        'name' => 'api',
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
     ]);
     $appProdPhp = App::factory()->for($appProdNode, 'node')->create([
         'name' => 'docs-prod',
         'environment' => 'production',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
     ]);
     $appDevStatic = App::factory()->for($appDevNode, 'node')->static()->create([
         'name' => 'marketing',
+        'runtime_config' => ['proxy_transport' => 'https'],
     ]);
 
-    expect($policy->appliesToApp($appDevPhp))->toBeTrue()
+    expect($policy->appliesToApp($appDevPhpDefault))->toBeFalse()
+        ->and($policy->appliesToApp($appDevPhpOptedIn))->toBeTrue()
         ->and($policy->appliesToApp($appProdPhp))->toBeFalse()
         ->and($policy->appliesToApp($appDevStatic))->toBeFalse();
 });
@@ -40,7 +48,7 @@ it('describes runtime TLS mounts and upstream transport for an app-dev route dom
     $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $domain = $policy->appRouteDomain($app);
@@ -81,7 +89,8 @@ it('describes workspace route domains and inherits the app-dev inner TLS policy 
     $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'demo',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',

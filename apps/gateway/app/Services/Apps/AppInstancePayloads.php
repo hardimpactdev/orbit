@@ -55,7 +55,7 @@ final readonly class AppInstancePayloads
         $image = null;
 
         try {
-            if ($app->runtime_kind === AppRuntimeKind::Php) {
+            if ($app->runtime === AppRuntimeKind::Php) {
                 $image = $this->phpRuntimeCatalog->imageFor((string) $app->php_version);
             }
         } catch (InvalidArgumentException) {
@@ -63,7 +63,8 @@ final readonly class AppInstancePayloads
         }
 
         return [
-            'runtime_kind' => $app->runtime_kind->value,
+            'runtime' => $app->runtime->value,
+            'runtime_config' => $app->runtimeConfig()->toArray(),
             'php_version' => $app->php_version,
             'frankenphp_image' => $image,
             'mode' => $app->worker_enabled ? 'worker' : 'classic',

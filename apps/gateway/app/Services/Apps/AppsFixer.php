@@ -116,7 +116,7 @@ final readonly class AppsFixer
      */
     private function reapplyRuntimeContainer(App $app, Node $node, DriftEntry $entry): ?array
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             return null;
         }
 
@@ -157,7 +157,7 @@ final readonly class AppsFixer
      */
     private function reapplyRuntimeConfig(App $app, Node $node, DriftEntry $entry): ?array
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             return null;
         }
 

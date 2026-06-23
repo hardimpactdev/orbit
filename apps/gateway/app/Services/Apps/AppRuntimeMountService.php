@@ -151,11 +151,11 @@ final readonly class AppRuntimeMountService
 
     private function assertSupportedApp(App $app): void
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             throw $this->validationFailure(
-                'app_runtime_kind_not_php',
+                'app_runtime_not_php',
                 "App '{$app->name}' does not use the PHP runtime.",
-                ['app' => $app->name, 'runtime_kind' => $app->runtime_kind->value],
+                ['app' => $app->name, 'runtime' => $app->runtime->value],
             );
         }
 
@@ -170,7 +170,7 @@ final readonly class AppRuntimeMountService
 
     private function isSupportedAppDevPhpApp(App $app): bool
     {
-        return $app->runtime_kind === AppRuntimeKind::Php && $this->isAppDevApp($app);
+        return $app->runtime === AppRuntimeKind::Php && $this->isAppDevApp($app);
     }
 
     private function isAppDevApp(App $app): bool

@@ -20,6 +20,7 @@ final class AppRegisterCommand extends AppGatewayCommand
         {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
+        {--runtime-proxy-transport= : FrankenPHP inner proxy transport (http|https)}
         {--json : Output JSON}';
 
     #[\Override]
@@ -134,14 +135,22 @@ final class AppRegisterCommand extends AppGatewayCommand
      */
     private function registerApp(string $name): array
     {
-        return $this->gatewayPost('/api/apps/register', [
+        $payload = [
             'name' => $name,
             'node' => $this->stringOption('node'),
             'path' => $this->stringOption('path'),
             'root' => $this->stringOption('root') ?? 'public',
             'php_version' => $this->stringOption('php-version') ?? '8.5',
             'domain' => $this->stringOption('domain'),
-        ]);
+        ];
+
+        $runtimeProxyTransport = $this->stringOption('runtime-proxy-transport');
+
+        if ($runtimeProxyTransport !== null) {
+            $payload['runtime_proxy_transport'] = $runtimeProxyTransport;
+        }
+
+        return $this->gatewayPost('/api/apps/register', $payload);
     }
 
     /**

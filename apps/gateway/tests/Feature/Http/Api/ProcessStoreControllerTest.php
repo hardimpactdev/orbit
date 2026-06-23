@@ -83,7 +83,7 @@ describe('ProcessStoreController', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $appNode->id,
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs']);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([

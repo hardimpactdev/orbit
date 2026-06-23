@@ -796,8 +796,8 @@ CADDY);
         expect($content)->toContain('legacy-docs.test {')
             // Renderer must derive runtime_upstream from the app identity
             // so legacy routes do not throw before ProxyRouteFixer can repair.
-            ->and($content)->toContain('reverse_proxy https://orbit-app-legacy-docs:8443')
-            ->and($content)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($content)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+            ->and($content)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             // App routes never revert to php_fastcgi under the Docker-first model.
             ->and($content)->not->toContain('php_fastcgi')
             // file_server is reserved for static apps.
@@ -962,8 +962,8 @@ CADDY);
         $content = (new ProxyRouteRenderer)->render($route);
 
         expect($content)->toContain('feature-a.legacy-docs.test {')
-            ->and($content)->toContain('reverse_proxy https://orbit-ws-legacy-docs-feature-a:8443')
-            ->and($content)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($content)->toContain('reverse_proxy http://orbit-ws-legacy-docs-feature-a')
+            ->and($content)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($content)->not->toContain('php_fastcgi')
             ->and($content)->not->toContain('file_server');
     });

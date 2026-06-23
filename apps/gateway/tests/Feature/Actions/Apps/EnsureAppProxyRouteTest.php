@@ -72,7 +72,7 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'document_root' => 'public',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
@@ -88,16 +88,12 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
     $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
     expect($route->domain)->toBe('docs.test')
-        ->and($route->config['runtime_upstream'])->toBe('https://orbit-app-docs:8443')
-        ->and($route->config['runtime_upstream_tls'])->toBe([
-            'trusted_by_gateway_ca' => true,
-            'ca_path' => '/etc/orbit/ca/root.crt',
-            'server_name' => 'docs.test',
-        ])
+        ->and($route->config['runtime_upstream'])->toBe('http://orbit-app-docs:8080')
+        ->and($route->config['runtime_upstream_tls'] ?? null)->toBeNull()
         ->and($route->config['php_socket'])->toBeNull()
-        ->and($caddySite)->toContain('reverse_proxy https://orbit-app-docs:8443')
-        ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-        ->and($caddySite)->toContain('tls_server_name docs.test')
+        ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
+        ->and($caddySite)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+        ->and($caddySite)->not->toContain('tls_server_name docs.test')
         ->and($caddySite)->not->toContain('php_fastcgi')
         ->and($caddySite)->not->toContain('file_server');
 });

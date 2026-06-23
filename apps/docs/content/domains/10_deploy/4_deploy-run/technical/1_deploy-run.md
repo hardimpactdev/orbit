@@ -58,7 +58,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
   `releases_path`, or explicitly managed shared paths.
 - Executes all steps from the app source path on the host node. Steps that
   invoke `php`, `composer`, or `artisan` use the host PHP toolchain matched to
-  the app's PHP version (`php8.4`/`php8.5`) when `runtime_kind=php`.
+  the app's PHP version (`php8.4`/`php8.5`) when `runtime=php`.
 - Renders `{{ key }}` placeholders against the deployment run context before
   execution. Dot notation may address nested context values such as
   `{{ app.name }}`.

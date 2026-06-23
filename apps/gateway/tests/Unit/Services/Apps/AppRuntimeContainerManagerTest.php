@@ -33,7 +33,7 @@ function appAndNodeForManagerTest(): array
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     return [$app, $node];
@@ -47,7 +47,7 @@ function productionAppAndNodeForManagerTest(): array
         'environment' => 'production',
         'path' => '/home/docs/app',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     return [$app, $node];
@@ -140,7 +140,7 @@ it('creates the app-dev packages bind mount source before running the app runtim
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $container = renderTestAppContainer($app);
 
@@ -167,7 +167,7 @@ it('creates configured runtime mount sources before running the app runtime cont
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $app->runtimeMounts()->create([
         'source' => '/home/nckrtl/packages',
@@ -199,7 +199,8 @@ it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', f
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
     ]);
     $container = renderTestAppContainer($app);
 

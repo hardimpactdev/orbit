@@ -388,7 +388,7 @@ final readonly class DoctorReportRunner
             // be reported as extra.
             $activePhpAppSlugs = App::query()
                 ->where('node_id', $node->id)
-                ->where('runtime_kind', AppRuntimeKind::Php->value)
+                ->where('runtime', AppRuntimeKind::Php->value)
                 ->pluck('name')
                 ->all();
 

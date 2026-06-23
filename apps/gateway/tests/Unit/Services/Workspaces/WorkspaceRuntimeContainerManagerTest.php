@@ -33,7 +33,7 @@ function workspaceAndNodeForManagerTest(): array
         'name' => 'demo',
         'path' => '/home/orbit/apps/demo',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -124,7 +124,7 @@ it('creates the app-dev packages bind mount source before running the workspace 
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -157,7 +157,7 @@ it('creates inherited configured runtime mount sources before running the worksp
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $app->runtimeMounts()->create([
         'source' => '/home/nckrtl/packages',
@@ -195,7 +195,8 @@ it('treats app-dev workspace runtime TLS certificate mounts as Orbit-managed bui
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',

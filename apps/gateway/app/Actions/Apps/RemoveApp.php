@@ -47,7 +47,7 @@ final readonly class RemoveApp
 
         $appPayload = $this->appPayload($app);
         $appName = $app->name;
-        $isPhpApp = $app->runtime_kind === AppRuntimeKind::Php;
+        $isPhpApp = $app->runtime === AppRuntimeKind::Php;
         $processCleanupScripts = $this->processCleanupScripts($app);
         $proxyRouteIds = ProxyRoute::query()
             ->where('app_id', $app->id)
@@ -165,7 +165,8 @@ final readonly class RemoveApp
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
-            'runtime_kind' => $app->runtime_kind->value,
+            'runtime' => $app->runtime->value,
+            'runtime_config' => $app->runtimeConfig()->toArray(),
             'php_version' => $app->php_version,
             'worker_enabled' => $app->worker_enabled,
             'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,

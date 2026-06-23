@@ -84,7 +84,7 @@ of evidence below:
 - `config/octane.php` references `frankenphp` outside of comments. The
   default commented example in `octane.php` does not count as readiness.
 
-Static apps and apps with `runtime_kind != php` always fail readiness;
+Static apps and apps with `runtime != php` always fail readiness;
 worker mode requires the FrankenPHP app runtime container.
 
 ## Output

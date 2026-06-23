@@ -58,6 +58,7 @@ final class AppRegisterController implements Loggable
         $this->addStringOption($arguments, '--root', $request, 'root');
         $this->addStringOption($arguments, '--php-version', $request, 'php_version');
         $this->addStringOption($arguments, '--domain', $request, 'domain');
+        $this->addStringOption($arguments, '--runtime-proxy-transport', $request, 'runtime_proxy_transport');
 
         $result = app(AppRegistrar::class)->register($arguments);
 

@@ -7,6 +7,7 @@ namespace App\Services\Proxy;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
+use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
@@ -265,51 +266,61 @@ final readonly class ProxyRouteFixer
         $route->loadMissing('app.node', 'workspace');
 
         if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
-            if (! $this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
-                return;
-            }
-
             $route->workspace->loadMissing('app');
             $app = $route->workspace->app;
 
-            if (! $app instanceof App) {
-                return;
-            }
-
-            $node = $app->node ?? $route->node;
-
-            if (! $node instanceof Node) {
+            if (! $app instanceof App || $app->runtime !== AppRuntimeKind::Php) {
                 return;
             }
 
             $config = is_array($route->config) ? $route->config : [];
-            $config['runtime_upstream'] = "https://orbit-ws-{$app->name}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
-            $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
-                $node,
-                $this->innerTlsPolicy->workspaceRouteDomain($route->workspace),
-            );
+            $config['runtime_upstream'] = "http://orbit-ws-{$app->name}-{$route->workspace->name}";
+
+            if ($this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+                $node = $app->node ?? $route->node;
+
+                if (! $node instanceof Node) {
+                    return;
+                }
+
+                $config['runtime_upstream'] = "https://orbit-ws-{$app->name}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+                $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+                    $node,
+                    $this->innerTlsPolicy->workspaceRouteDomain($route->workspace),
+                );
+            } else {
+                unset($config['runtime_upstream_tls']);
+            }
+
             $config['php_socket'] = null;
             $route->config = $config;
 
             return;
         }
 
-        if (! $route->app instanceof App || ! $this->innerTlsPolicy->appliesToApp($route->app)) {
-            return;
-        }
-
-        $node = $route->node ?? $route->app->node;
-
-        if (! $node instanceof Node) {
+        if (! $route->app instanceof App || $route->app->runtime !== AppRuntimeKind::Php) {
             return;
         }
 
         $config = is_array($route->config) ? $route->config : [];
-        $config['runtime_upstream'] = "https://orbit-app-{$route->app->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
-        $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
-            $node,
-            $this->innerTlsPolicy->appRouteDomain($route->app),
-        );
+        $config['runtime_upstream'] = "http://orbit-app-{$route->app->name}:8080";
+
+        if ($this->innerTlsPolicy->appliesToApp($route->app)) {
+            $node = $route->node ?? $route->app->node;
+
+            if (! $node instanceof Node) {
+                return;
+            }
+
+            $config['runtime_upstream'] = "https://orbit-app-{$route->app->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+            $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+                $node,
+                $this->innerTlsPolicy->appRouteDomain($route->app),
+            );
+        } else {
+            unset($config['runtime_upstream_tls']);
+        }
+
         $config['php_socket'] = null;
         $route->config = $config;
     }

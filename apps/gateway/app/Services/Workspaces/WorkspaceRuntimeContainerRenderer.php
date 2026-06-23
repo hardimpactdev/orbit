@@ -36,9 +36,9 @@ final readonly class WorkspaceRuntimeContainerRenderer
             throw new InvalidArgumentException("Workspace '{$workspace->name}' has no owning app; cannot render runtime container.");
         }
 
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             throw new InvalidArgumentException(
-                "Workspace '{$workspace->name}' belongs to app '{$app->name}' with runtime kind '{$app->runtime_kind->value}' and does not get a FrankenPHP runtime container.",
+                "Workspace '{$workspace->name}' belongs to app '{$app->name}' with runtime kind '{$app->runtime->value}' and does not get a FrankenPHP runtime container.",
             );
         }
 

@@ -78,7 +78,7 @@ it('re-applies a missing FrankenPHP runtime container via the manager', function
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
@@ -116,7 +116,7 @@ it('refreshes the managed FrankenPHP process intent when re-applying an app runt
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $process = OrbitProcess::factory()->forOwner($app)->create([
         'name' => 'frankenphp-docs',
@@ -163,7 +163,7 @@ it('re-applies a mismatched FrankenPHP runtime container by removing and recreat
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $inspectPayload = json_encode([
@@ -360,7 +360,7 @@ it('rewrites the managed runtime config when handed app.runtime_config_missing',
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
@@ -387,7 +387,7 @@ it('rewrites the managed runtime config when handed app.runtime_config_mismatch'
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
@@ -411,7 +411,7 @@ it('repairs the production runtime user when handed app.security.system_user', f
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
@@ -442,7 +442,7 @@ it('reapplies filesystem ownership when handed app.security.fs_permissions', fun
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new AppsFixerRecordingRemoteShell(
@@ -468,7 +468,7 @@ it('repairs production runtime container isolation by re-applying the container'
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new AppsFixerRecordingRemoteShell(

@@ -35,7 +35,7 @@ it('renders and enacts systemd units for app process definitions', function (): 
         'name' => 'docs',
         'node_id' => $node->id,
         'path' => '/home/orbit/apps/docs',
-        'runtime_kind' => AppRuntimeKind::Static,
+        'runtime' => AppRuntimeKind::Static,
     ]);
     $app->setRelation('node', $node);
 
@@ -81,7 +81,7 @@ it('reports process family warnings when systemd unit enactment fails after inte
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
-        'runtime_kind' => AppRuntimeKind::Static,
+        'runtime' => AppRuntimeKind::Static,
     ]);
     $app->setRelation('node', $node);
 
@@ -124,7 +124,7 @@ it('reports process.tls_certificate_missing when the site certificate installer 
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
-        'runtime_kind' => AppRuntimeKind::Static,
+        'runtime' => AppRuntimeKind::Static,
     ]);
     $app->setRelation('node', $node);
 
@@ -190,7 +190,7 @@ describe('runtime dispatcher', function (): void {
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
         $app->setRelation('node', $node);
 
@@ -235,7 +235,7 @@ describe('runtime dispatcher', function (): void {
             'name' => 'marketing',
             'node_id' => $node->id,
             'path' => '/home/orbit/apps/marketing',
-            'runtime_kind' => AppRuntimeKind::Static,
+            'runtime' => AppRuntimeKind::Static,
         ]);
         $app->setRelation('node', $node);
 

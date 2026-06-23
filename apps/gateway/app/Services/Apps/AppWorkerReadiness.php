@@ -28,12 +28,12 @@ final readonly class AppWorkerReadiness
 
     public function assess(App $app): AppWorkerReadinessResult
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             return AppWorkerReadinessResult::notReady(
                 code: 'app.worker_unsupported_runtime',
-                message: "Worker mode requires runtime_kind=php; app '{$app->name}' uses '{$app->runtime_kind->value}'.",
-                missing: ['runtime_kind=php'],
-                meta: ['runtime_kind' => $app->runtime_kind->value],
+                message: "Worker mode requires runtime=php; app '{$app->name}' uses '{$app->runtime->value}'.",
+                missing: ['runtime=php'],
+                meta: ['runtime' => $app->runtime->value],
             );
         }
 

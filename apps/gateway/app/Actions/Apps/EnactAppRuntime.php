@@ -42,7 +42,7 @@ final readonly class EnactAppRuntime
 
         $warnings = [];
 
-        if ($app->runtime_kind === AppRuntimeKind::Php) {
+        if ($app->runtime === AppRuntimeKind::Php) {
             try {
                 $this->ensureFrankenPhpRuntimeProcess->forApp($app);
                 $this->ensureRuntimeTlsMaterial($app);

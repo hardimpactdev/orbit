@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit app:register [name] [--node=] [--path=] [--root=] [--php-version=] [--domain=] [--json]
+orbit app:register [name] [--node=] [--path=] [--root=] [--php-version=] [--runtime-proxy-transport=] [--domain=] [--json]
 ```
 
 `--repo` is intentionally absent. In the current converted app command surface,
@@ -38,6 +38,7 @@ This command follows the shared
 | `--node` | `text` | No default can be resolved. | Existing owner / gateway-resolved default node | Valid node name. |
 | `--root` | `text` | Optional | `public` | Path relative to app path. |
 | `--php-version` | `text` | Optional | Existing app value; otherwise `8.5` | Supported app runtime container version. This is app runtime configuration, not a host PHP default. |
+| `--runtime-proxy-transport` | `text` | Optional | Existing app value; otherwise `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
 | `--domain`| `text` | Optional | n/a | Valid hostname. |
 | `--json` | `flag` | Optional | `false` | n/a |
 
@@ -60,7 +61,13 @@ This command follows the shared
      adoption.
    - Do not read or inherit any host PHP default; app runtime container
      configuration is the architecture concept.
-5. **Validate Eligibility**:
+5. **Resolve runtime proxy transport**:
+   - Explicit `--runtime-proxy-transport`.
+   - Existing app runtime config when `name` is already registered.
+   - `http` for first-time registration or adoption.
+   - `https` stores PHP/FrankenPHP runtime config that makes app-dev app and
+     workspace proxy routes use inner TLS.
+6. **Validate Eligibility**:
    - Target node must have the active app role required by the requested
      registration mode: `app-dev` when `--domain` is absent,
      `app-prod` when `--domain` is supplied.

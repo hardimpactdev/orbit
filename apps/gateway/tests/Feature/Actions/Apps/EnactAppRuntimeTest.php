@@ -38,7 +38,7 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => $kind,
+        'runtime' => $kind,
     ]);
 }
 
@@ -70,7 +70,7 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'environment' => 'production',
         'path' => '/home/docs/app',
         'php_version' => '8.5',
-        'runtime_kind' => $kind,
+        'runtime' => $kind,
     ]);
 }
 
@@ -416,7 +416,7 @@ it('throws when the app has no owning node', function (): void {
         'name' => 'orphan',
         'path' => '/home/orbit/apps/orphan',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
         'node_id' => 99999,
     ]);
     $app->setRelation('node', null);

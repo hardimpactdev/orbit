@@ -492,8 +492,8 @@ describe('ProxyRouteFixer', function (): void {
         ])
             ->and($siteScript)->toContain('/etc/caddy/sites/docs.test.caddy')
             ->and($caddySite)->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
-            ->and($caddySite)->toContain('reverse_proxy https://orbit-app-docs:8443')
-            ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->and($caddySite)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($certificates->hosts)->toBe(['docs.test'])
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
@@ -575,16 +575,12 @@ describe('ProxyRouteFixer', function (): void {
         $caddySite = proxyFixerDecodedSite(proxyFixerSiteScript($shell, '/etc/caddy/sites/legacy-docs.test.caddy'));
 
         expect($action['status'])->toBe('completed')
-            ->and($caddySite)->toContain('reverse_proxy https://orbit-app-legacy-docs:8443')
-            ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+            ->and($caddySite)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($caddySite)->not->toContain('file_server')
-            ->and($route->refresh()->config['runtime_upstream'])->toBe('https://orbit-app-legacy-docs:8443')
-            ->and($route->refresh()->config['runtime_upstream_tls'])->toBe([
-                'trusted_by_gateway_ca' => true,
-                'ca_path' => '/etc/orbit/ca/root.crt',
-                'server_name' => 'legacy-docs.test',
-            ])
+            ->and($route->refresh()->config['runtime_upstream'])->toBe('http://orbit-app-legacy-docs:8080')
+            ->and($route->refresh()->config['runtime_upstream_tls'] ?? null)->toBeNull()
             ->and($route->refresh()->config['php_socket'])->toBeNull();
     });
 

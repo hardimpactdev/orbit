@@ -20,7 +20,7 @@ the app-family registration pipeline.
 ## Signature
 
 ```bash
-orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--domain=<host>] [--json]
+orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json]
 ```
 
 ## Input Contract
@@ -35,6 +35,7 @@ This command follows the shared
 | `--repo` | string | No | null | Full Git repository URL, or GitHub-only `owner/repo` shorthand. GitHub inputs use the target node's `gh` authentication. No credential discovery, prompting, or forwarding. |
 | `--root` | string | No | `public` | App document root relative to app path. |
 | `--php-version` | string | No | `8.5` | Must match Orbit's supported PHP version set (gateway-side static check). Node-side availability is verified while applying. |
+| `--runtime-proxy-transport` | string | No | `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
 | `--domain` | string | No | null | Valid production domain; implies production activation. |
 | `--json` | flag | No | false | Force non-interactive mode and JSON output. |
 
@@ -57,6 +58,10 @@ This command follows the shared
    effects with `error.code=validation_failed` and `error.meta.field=php_version`.
    Node-side availability of the requested PHP runtime is verified while
    applying, not during input resolution.
+5. **Runtime proxy transport validation:** Validate `--runtime-proxy-transport`
+   against `http|https`. `http` stores no override and is the default. `https`
+   stores PHP/FrankenPHP runtime config that makes app-dev app and workspace
+   proxy routes use inner TLS.
 
 ## Input Mode Contracts
 

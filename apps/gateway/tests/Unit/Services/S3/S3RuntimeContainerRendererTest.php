@@ -110,7 +110,7 @@ it('renders a deterministic S3 runtime container', function (): void {
         ]);
 });
 
-it('exposes labels with the spec hash and s3-runtime kind', function (): void {
+it('exposes labels with the spec hash and s3-runtime', function (): void {
     $container = s3RuntimeRenderer()->render(s3RuntimeNode(), new S3RoleSettings);
 
     expect($container->labels())->toMatchArray([

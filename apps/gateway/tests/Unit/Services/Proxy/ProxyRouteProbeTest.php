@@ -656,13 +656,12 @@ describe('proxy backend and TLS reality', function (): void {
             ]);
     });
 
-    it('detects existing app-dev PHP route artifacts that still match old HTTP runtime upstream intent', function (): void {
+    it('accepts default app-dev PHP route artifacts that use HTTP runtime upstream intent', function (): void {
         $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
         $app = App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'document_root' => 'public',
         ]);
-        $oldHttpHash = hash('sha256', 'old-http-runtime-route');
         $route = ProxyRoute::factory()
             ->for($node, 'node')
             ->for($app, 'app')
@@ -670,7 +669,6 @@ describe('proxy backend and TLS reality', function (): void {
                 'domain' => 'docs.test',
                 'owner_type' => 'app',
                 'kind' => 'app',
-                'source_hash' => $oldHttpHash,
                 'config' => [
                     'document_root' => '/home/orbit/apps/docs/public',
                     'runtime_upstream' => 'http://orbit-app-docs:8080',
@@ -681,11 +679,13 @@ describe('proxy backend and TLS reality', function (): void {
                     ],
                 ],
             ]);
+        $expectedHash = (new ProxyRouteRenderer)->sourceHash($route);
+        $route->forceFill(['source_hash' => $expectedHash])->save();
 
         $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
             'docs.test' => [
                 'route_exists' => true,
-                'route_hash' => $oldHttpHash,
+                'route_hash' => $expectedHash,
                 'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
                 'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
                 'cert_exists' => true,
@@ -695,10 +695,8 @@ describe('proxy backend and TLS reality', function (): void {
 
         $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
 
-        expect((new ProxyRouteRenderer)->render($route))->toContain('reverse_proxy https://orbit-app-docs:8443')
-            ->and($issue?->kind)->toBe(DriftKind::Divergent)
-            ->and($issue?->detail['observed_hash'] ?? null)->toBe($oldHttpHash)
-            ->and($issue?->detail['expected_hash'] ?? null)->not->toBe($oldHttpHash);
+        expect((new ProxyRouteRenderer)->render($route))->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->and($issue)->toBeNull();
     });
 
     it('detects missing Orbit-managed TLS material', function (): void {

@@ -10,6 +10,7 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Services\Apps\AppAgentIdeDefaults;
+use App\Services\Apps\AppResponsePayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 
@@ -69,19 +70,7 @@ final class AppShowController implements Loggable
      */
     private function appPayload(App $app): array
     {
-        return [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime_kind' => $app->runtime_kind->value,
-            'php_version' => $app->php_version,
-            'worker_enabled' => $app->worker_enabled,
-            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
-            'adopted' => $app->adopted,
-        ];
+        return app(AppResponsePayload::class)->forApp($app);
     }
 
     /**

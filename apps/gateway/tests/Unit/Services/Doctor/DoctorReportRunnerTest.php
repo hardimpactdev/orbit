@@ -1280,7 +1280,7 @@ TXT;
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
         $expectedHash = app(AppRuntimeContainerRenderer::class)->render($app)->specHash();
         $process = \App\Models\Process::factory()->forOwner($app)->create([
@@ -1331,7 +1331,7 @@ TXT;
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
         $workspace = Workspace::factory()->for($app, 'app')->create([
             'name' => 'feature-a',
@@ -1387,7 +1387,7 @@ TXT;
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
         $workspace = Workspace::factory()->for($app, 'app')->create([
             'name' => 'feature-a',

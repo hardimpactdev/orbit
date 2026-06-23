@@ -178,8 +178,8 @@ CADDY;
         $documentRoot = $backendArtifact['document_root'] ?? null;
         $runtimeUpstream = $backendArtifact['runtime_upstream'] ?? null;
         $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
-        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Php;
-        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Static;
+        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Php;
+        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
 
         if (! is_string($bind) || $bind === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a bind address.");
@@ -245,9 +245,9 @@ http://{$route->domain}:{$port} {
 CADDY;
         }
 
-        // App and workspace routes must have a resolved runtime_kind of
+        // App and workspace routes must have a resolved runtime of
         // `php` or `static`. Reaching this line means the route config is
-        // malformed or the runtime_kind is unrecognised.
+        // malformed or the runtime is unrecognised.
         throw new RuntimeException("Proxy route '{$route->domain}' backend artifact has an unresolvable runtime target.");
     }
 
@@ -331,8 +331,8 @@ CADDY;
         $runtimeUpstream = $config['runtime_upstream'] ?? null;
         $tls = $this->tlsDirective($route);
         $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
-        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Php;
-        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Static;
+        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Php;
+        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
 
         $pathBlocking = $route->app?->document_root === '.'
             ? 'import path_blocking_project_root'
@@ -391,9 +391,9 @@ CADDY;
 CADDY;
         }
 
-        // App and workspace routes must have a resolved runtime_kind of
+        // App and workspace routes must have a resolved runtime of
         // `php` or `static`. Reaching this line means the route config is
-        // malformed or the runtime_kind is unrecognised.
+        // malformed or the runtime is unrecognised.
         throw new RuntimeException("Proxy route '{$route->domain}' has an unresolvable runtime target.");
     }
 

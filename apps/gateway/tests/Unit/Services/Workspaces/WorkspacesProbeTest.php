@@ -356,7 +356,7 @@ describe('PHP runtime reality', function (): void {
 
 describe('workspace security reality', function (): void {
     it('detects development workspace runtime isolation drift', function (): void {
-        $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Static]);
+        $app = workspaceableApp(['runtime' => AppRuntimeKind::Static]);
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
         $snapshot = new ProbeSnapshot([
@@ -373,7 +373,7 @@ describe('workspace security reality', function (): void {
     });
 
     it('does not report host runtime isolation drift for Docker-first PHP workspaces', function (): void {
-        $app = workspaceableApp(['runtime_kind' => AppRuntimeKind::Php]);
+        $app = workspaceableApp(['runtime' => AppRuntimeKind::Php]);
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
         $snapshot = new ProbeSnapshot([

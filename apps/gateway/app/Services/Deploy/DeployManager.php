@@ -281,7 +281,7 @@ final readonly class DeployManager
      */
     private function routeCommand(App $app, string $command, array $context): string
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             return $command;
         }
 
@@ -370,7 +370,7 @@ final readonly class DeployManager
      */
     private function runWarmupSteps(App $app, array $context, ?ProgressReporter $progress = null): ?array
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             return null;
         }
 

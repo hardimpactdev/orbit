@@ -90,7 +90,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Production HTTP ingress | `orbit-caddy` on `ingress` nodes terminating public HTTPS and forwarding to `router` over WireGuard |
 | Private production routing | `orbit-caddy` on the gateway-coupled `router` role selecting private HTTP/WebSocket/S3 routes, `.orbit` service names, and backend pools |
 | Production app backend | App-role-owned `orbit-caddy` on `app-prod` nodes bound to the node's WireGuard address and forwarding to per-app FrankenPHP Docker runtime containers on internal port `8080` over the node Docker network |
-| App-dev PHP backend | `orbit-caddy` on `app-dev` nodes terminating the public site route and reverse-proxying to per-app or per-workspace FrankenPHP containers over inner HTTPS on port `8443`, trusting the node gateway CA and presenting the route domain as `tls_server_name` |
+| App-dev PHP backend | `orbit-caddy` on `app-dev` nodes terminating the public site route and reverse-proxying to per-app or per-workspace FrankenPHP containers over plain HTTP by default, or over opt-in inner HTTPS on port `8443` when the app's PHP runtime config sets `proxy_transport=https` |
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and workload nodes; Grafana private route `metrics.orbit` |
@@ -300,7 +300,7 @@ CLI/local-executor artifact in the native CLI binary's embedded PHP 8.5
 `filter`, `fileinfo`, `json`, `phar`, `zlib`).
 Source-mounted Docker/Incus development and E2E nodes invoke
 `<source>/apps/cli/orbit`. Apps and workspaces run in dedicated long-lived
-app/workspace containers when their runtime kind is PHP. Static or non-PHP
+app/workspace containers when their runtime is PHP. Static or non-PHP
 apps do not get a FrankenPHP container.
 
 Each PHP workspace gets its own FrankenPHP container so workspaces are isolated
@@ -320,11 +320,15 @@ homes are container-local and ephemeral: `XDG_CONFIG_HOME` is
 workspace checkout, `~/.config/orbit`, or `/var/lib/orbit`; the only durable
 Caddy state in Orbit belongs to `orbit-caddy` under `/var/lib/orbit/caddy`.
 
-On `app-dev` nodes, PHP app and workspace FrankenPHP containers speak inner
-HTTPS on port `8443`. Orbit mounts the same Orbit-issued site certificate and
-key the public route already uses into the runtime at
-`/etc/orbit/runtime-tls/tls.crt` and `/etc/orbit/runtime-tls/tls.key`, sets
-`SERVER_NAME` to `https://<route-domain>:8443`, and configures FrankenPHP with
+On `app-dev` nodes, PHP app and workspace FrankenPHP containers speak plain HTTP
+by default (`:8080` for app containers and the FrankenPHP default HTTP listener
+for workspace containers). An app may opt into inner HTTPS for its FrankenPHP
+runtime by setting `runtime_config.proxy_transport=https` through the app
+creation or registration surface. When enabled, Orbit mounts the same
+Orbit-issued site certificate and key the public route already uses into the
+runtime at `/etc/orbit/runtime-tls/tls.crt` and
+`/etc/orbit/runtime-tls/tls.key`, sets `SERVER_NAME` to
+`https://<route-domain>:8443`, and configures FrankenPHP with
 `CADDY_SERVER_EXTRA_DIRECTIVES=tls <cert> <key>`. Outer `orbit-caddy`
 reverse-proxies to `https://<runtime-alias>:8443` with
 `transport http { tls_trust_pool file /etc/orbit/ca/root.crt ; tls_server_name <route-domain> }`

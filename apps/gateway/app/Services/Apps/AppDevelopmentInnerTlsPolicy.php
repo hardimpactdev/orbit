@@ -23,11 +23,15 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function appliesToApp(App $app): bool
     {
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        if ($app->runtime !== AppRuntimeKind::Php) {
             return false;
         }
 
         if ($app->environment === 'production') {
+            return false;
+        }
+
+        if (! $app->runtimeConfig()->usesInnerHttpsProxyTransport()) {
             return false;
         }
 
