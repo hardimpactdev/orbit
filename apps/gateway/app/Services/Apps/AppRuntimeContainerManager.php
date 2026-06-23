@@ -497,6 +497,8 @@ SH,
             AppRuntimeContainer::SourceTarget,
             AppRuntimeContainer::PhpIniMountTarget,
             AppDevelopmentPackagesMount::Target,
+            AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath,
+            AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath,
             '/config',
             '/data',
         ], true);

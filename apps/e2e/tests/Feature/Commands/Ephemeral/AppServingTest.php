@@ -31,7 +31,7 @@ it('serves an app created on a prepared app-dev topology', function (): void {
 
         appServingGrantAccess($topology);
         appServingPrepareRedisProbe($topology);
-        appServingAssertDoctorHealthy($topology, 'tool');
+        appServingRestoreDoctorFamily($topology, 'tool');
 
         $appNewResult = $topology->ssh(
             'operator',

@@ -196,12 +196,13 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+        $siteScript = proxyFixerSiteScript($shell, '/etc/caddy/sites/docs.test.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['summary'])->toBe('Re-applied public proxy route docs.test from gateway intent.')
             ->and($action['node'])->toBe('edge-1')
             ->and($shell->nodes[0]->is($edge))->toBeTrue()
-            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
+            ->and($siteScript)->toContain('/etc/caddy/sites/docs.test.caddy')
             ->and($caddySite)->toContain('reverse_proxy http://10.6.0.2:80')
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite));
     });
@@ -242,12 +243,13 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
-        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+        $siteScript = proxyFixerSiteScript($shell, '/etc/caddy/sites/docs.test.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action['summary'])->toBe('Re-applied private router route docs.test from gateway intent.')
             ->and($action['node'])->toBe('gateway-1')
             ->and($shell->nodes[0]->is($router))->toBeTrue()
-            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
+            ->and($siteScript)->toContain('/etc/caddy/sites/docs.test.caddy')
             ->and($caddySite)->not->toContain('bind 10.6.0.2')
             ->and($caddySite)->toContain('reverse_proxy http://10.6.0.21:80')
             ->and($route->refresh()->config['router_artifact']['source_hash'])->toBe(hash('sha256', $caddySite));
@@ -479,7 +481,8 @@ describe('ProxyRouteFixer', function (): void {
             kind: DriftKind::Divergent,
             summary: 'mismatch',
         ));
-        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+        $siteScript = proxyFixerSiteScript($shell, '/etc/caddy/sites/docs.test.caddy');
+        $caddySite = proxyFixerDecodedSite($siteScript);
 
         expect($action)->toMatchArray([
             'family' => 'proxy',
@@ -487,9 +490,10 @@ describe('ProxyRouteFixer', function (): void {
             'key' => 'proxy.route_mismatch',
             'status' => 'completed',
         ])
-            ->and($shell->scripts[0])->toContain('/etc/caddy/sites/docs.test.caddy')
+            ->and($siteScript)->toContain('/etc/caddy/sites/docs.test.caddy')
             ->and($caddySite)->toContain('tls /etc/orbit/certs/docs.test.crt /etc/orbit/certs/docs.test.key')
-            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->and($caddySite)->toContain('reverse_proxy https://orbit-app-docs:8443')
+            ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($caddySite)->not->toContain('php_fastcgi')
             ->and($certificates->hosts)->toBe(['docs.test'])
             ->and($route->refresh()->source_hash)->toBe(hash('sha256', $caddySite))
@@ -568,12 +572,20 @@ describe('ProxyRouteFixer', function (): void {
             summary: 'mismatch',
         ));
 
-        $caddySite = base64_decode((string) str($shell->scripts[0])->match("/printf %s\\s+'([^']+)'/")->toString(), true);
+        $caddySite = proxyFixerDecodedSite(proxyFixerSiteScript($shell, '/etc/caddy/sites/legacy-docs.test.caddy'));
 
         expect($action['status'])->toBe('completed')
-            ->and($caddySite)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+            ->and($caddySite)->toContain('reverse_proxy https://orbit-app-legacy-docs:8443')
+            ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($caddySite)->not->toContain('php_fastcgi')
-            ->and($caddySite)->not->toContain('file_server');
+            ->and($caddySite)->not->toContain('file_server')
+            ->and($route->refresh()->config['runtime_upstream'])->toBe('https://orbit-app-legacy-docs:8443')
+            ->and($route->refresh()->config['runtime_upstream_tls'])->toBe([
+                'trusted_by_gateway_ca' => true,
+                'ca_path' => '/etc/orbit/ca/root.crt',
+                'server_name' => 'legacy-docs.test',
+            ])
+            ->and($route->refresh()->config['php_socket'])->toBeNull();
     });
 
     it('starts the orbit-caddy container on the serving node when proxy.caddy_container_down is reported', function (): void {
@@ -779,6 +791,21 @@ final readonly class ProxyFixerFakeCa extends OrbitCaService
 
         return ['cert' => $cert, 'key' => $key];
     }
+}
+
+function proxyFixerSiteScript(ProxyFixerRecordingRemoteShell $shell, string $path): string
+{
+    $script = collect($shell->scripts)
+        ->first(fn (string $script): bool => str_contains($script, $path));
+
+    expect($script)->not->toBeNull("Expected a proxy fixer script writing {$path}.");
+
+    return (string) $script;
+}
+
+function proxyFixerDecodedSite(string $script): string
+{
+    return base64_decode((string) str($script)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 }
 
 final class ProxyFixerRecordingRemoteShell implements RemoteShell

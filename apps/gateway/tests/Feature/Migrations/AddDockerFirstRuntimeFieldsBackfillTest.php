@@ -293,7 +293,8 @@ it('updates non-ingress source_hash from the legacy php_fastcgi rendered content
 
     expect($route->source_hash)->toBe($dockerFirstHash)
         ->and($route->source_hash)->not->toBe($legacyHash)
-        ->and($dockerFirstContent)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+        ->and($dockerFirstContent)->toContain('reverse_proxy https://orbit-app-legacy-docs:8443')
+        ->and($dockerFirstContent)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
         ->and($dockerFirstContent)->not->toContain('php_fastcgi')
         ->and($dockerFirstContent)->not->toContain($phpSocket);
 });

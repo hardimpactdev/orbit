@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Apps;
 
+use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
@@ -23,6 +25,8 @@ final readonly class EnactAppRuntime
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
+        private SiteCertificateInstaller $siteCertificateInstaller,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     /**
@@ -41,6 +45,7 @@ final readonly class EnactAppRuntime
         if ($app->runtime_kind === AppRuntimeKind::Php) {
             try {
                 $this->ensureFrankenPhpRuntimeProcess->forApp($app);
+                $this->ensureRuntimeTlsMaterial($app);
                 $container = $this->appRuntimeContainerRenderer->render($app);
                 $this->appRuntimeContainerManager->apply($app->node, $container);
             } catch (AppRuntimeImageUnavailableException $exception) {
@@ -68,6 +73,18 @@ final readonly class EnactAppRuntime
             ...$this->ensureAppProxyRoute->handle($app),
             ...$this->ensureAppProcessRuntimeUnits->handle($app),
         ];
+    }
+
+    private function ensureRuntimeTlsMaterial(App $app): void
+    {
+        if (! $this->innerTlsPolicy->appliesToApp($app)) {
+            return;
+        }
+
+        $this->siteCertificateInstaller->ensureFor(
+            $app->node,
+            $this->innerTlsPolicy->appRouteDomain($app),
+        );
     }
 
     /**

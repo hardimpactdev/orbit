@@ -7,9 +7,12 @@ namespace App\Services\Proxy;
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Tools\CaddyTool;
@@ -21,6 +24,7 @@ final readonly class ProxyRouteFixer
         private ProxyRouteRenderer $renderer,
         private OrbitCaService $ca,
         private SiteCertificateInstaller $siteCertificateInstaller,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     /**
@@ -74,6 +78,8 @@ final readonly class ProxyRouteFixer
             ];
         }
 
+        $this->normalizeManagedPhpRuntimeConfig($route);
+
         $content = $this->renderer->render($route);
 
         if ($route->owner_type === 'router') {
@@ -81,10 +87,12 @@ final readonly class ProxyRouteFixer
         }
 
         $this->ensureRouteTlsMaterial($route);
+        $this->ensureRuntimeTrustPool($route->node, $route);
 
         $this->remoteShell->run($route->node, $this->installScript($route->node, $route->domain, $content), ['throw' => true]);
 
         $route->forceFill([
+            'config' => $route->config,
             'source_hash' => hash('sha256', $content),
         ])->save();
 
@@ -155,6 +163,7 @@ final readonly class ProxyRouteFixer
         }
 
         $content = $this->renderer->renderPrivateBackend($route, $artifact);
+        $this->ensureRuntimeTrustPool($backendNode, $route);
         $this->remoteShell->run($backendNode, $this->installScript($backendNode, $route->domain, $content, backend: true), ['throw' => true]);
 
         $this->updateBackendArtifactHash($route, $nodeId, hash('sha256', $content));
@@ -247,6 +256,64 @@ final readonly class ProxyRouteFixer
         return ($config['placement'] ?? null) === 'ingress';
     }
 
+    private function normalizeManagedPhpRuntimeConfig(ProxyRoute $route): void
+    {
+        if ($this->usesIngressPlacement($route) || ! in_array($route->kind, ['app', 'workspace'], true)) {
+            return;
+        }
+
+        $route->loadMissing('app.node', 'workspace');
+
+        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
+            if (! $this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+                return;
+            }
+
+            $route->workspace->loadMissing('app');
+            $app = $route->workspace->app;
+
+            if (! $app instanceof App) {
+                return;
+            }
+
+            $node = $app->node ?? $route->node;
+
+            if (! $node instanceof Node) {
+                return;
+            }
+
+            $config = is_array($route->config) ? $route->config : [];
+            $config['runtime_upstream'] = "https://orbit-ws-{$app->name}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+            $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+                $node,
+                $this->innerTlsPolicy->workspaceRouteDomain($route->workspace),
+            );
+            $config['php_socket'] = null;
+            $route->config = $config;
+
+            return;
+        }
+
+        if (! $route->app instanceof App || ! $this->innerTlsPolicy->appliesToApp($route->app)) {
+            return;
+        }
+
+        $node = $route->node ?? $route->app->node;
+
+        if (! $node instanceof Node) {
+            return;
+        }
+
+        $config = is_array($route->config) ? $route->config : [];
+        $config['runtime_upstream'] = "https://orbit-app-{$route->app->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+            $node,
+            $this->innerTlsPolicy->appRouteDomain($route->app),
+        );
+        $config['php_socket'] = null;
+        $route->config = $config;
+    }
+
     private function installScript(Node $node, string $domain, string $content, bool $backend = false): string
     {
         $suffix = $backend ? '.backend' : '';
@@ -278,6 +345,26 @@ SH,
             : '/etc/orbit/ca/root.crt';
 
         $this->remoteShell->run($node, $this->trustPoolInstallScript($route, $caPath), ['throw' => true]);
+    }
+
+    private function ensureRuntimeTrustPool(Node $node, ProxyRoute $route): void
+    {
+        $config = is_array($route->config) ? $route->config : [];
+        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
+
+        if (! is_array($runtimeUpstreamTls) || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true) {
+            return;
+        }
+
+        $caPath = is_string($runtimeUpstreamTls['ca_path'] ?? null) && $runtimeUpstreamTls['ca_path'] !== ''
+            ? $runtimeUpstreamTls['ca_path']
+            : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
+
+        $this->remoteShell->run(
+            $node,
+            $this->innerTlsPolicy->trustPoolInstallScript($caPath, $this->ca->rootCert()),
+            ['throw' => true],
+        );
     }
 
     private function trustPoolInstallScript(ProxyRoute $route, string $caPath): string

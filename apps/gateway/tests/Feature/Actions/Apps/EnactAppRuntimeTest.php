@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
@@ -96,7 +97,16 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
 
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    app()->instance(OrbitCaService::class, new EnactAppRuntimeTestCa);
 });
+
+final readonly class EnactAppRuntimeTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
 
 it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini config', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);

@@ -333,7 +333,7 @@ describe('ToolsFixer', function (): void {
         'mysql container' => ['mysql', 'tool.container_missing'],
     ]);
 
-    it('reconciles missing or drifted orbit-caddy containers through the declared container spec', function (string $key): void {
+    it('reconciles missing stopped or drifted orbit-caddy containers through the declared container spec', function (string $key): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
         $tool = NodeTool::factory()->create([
@@ -361,6 +361,7 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts[0])->toContain('orbit.caddy.spec_hash');
     })->with([
         'missing container' => ['tool.container_missing'],
+        'stopped container' => ['tool.container_not_running'],
         'drifted container spec' => ['tool.container_spec_mismatch'],
     ]);
 });

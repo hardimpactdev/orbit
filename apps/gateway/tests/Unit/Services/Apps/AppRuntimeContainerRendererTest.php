@@ -284,26 +284,74 @@ it('renders FrankenPHP-consumed SERVER_NAME and SERVER_ROOT so the configured ro
     $projectRoot = $renderer->render(makePhpApp(['name' => 'c', 'document_root' => '.']));
 
     expect($publicRoot->environment())->toMatchArray([
-        'SERVER_NAME' => ':8080',
+        'SERVER_NAME' => 'https://a.test:8443',
         'SERVER_ROOT' => '/app/public',
         'ORBIT_APP_DOCUMENT_ROOT' => 'public',
     ])
         ->and($webRoot->environment())->toMatchArray([
-            'SERVER_NAME' => ':8080',
+            'SERVER_NAME' => 'https://b.test:8443',
             'SERVER_ROOT' => '/app/web',
         ])
         ->and($projectRoot->environment())->toMatchArray([
-            'SERVER_NAME' => ':8080',
+            'SERVER_NAME' => 'https://c.test:8443',
             'SERVER_ROOT' => '/app',
         ])
         ->and($publicRoot->specHash())->not->toBe($webRoot->specHash())
         ->and($publicRoot->specHash())->not->toBe($projectRoot->specHash());
 });
 
-it('uses the internal app runtime upstream on port 8080', function (): void {
+it('uses the internal app-dev runtime upstream on HTTPS port 8443', function (): void {
     $app = makePhpApp(['name' => 'docs']);
 
-    expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs:8080');
+    expect(rendererForTest()->upstreamUrl($app))->toBe('https://orbit-app-docs:8443');
+});
+
+it('renders app-dev PHP runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/home/nckrtl/apps/docs',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(rendererForTest()->upstreamUrl($app))->toBe('https://orbit-app-docs:8443')
+        ->and($container->environment())->toMatchArray([
+            'SERVER_NAME' => 'https://docs.test:8443',
+            'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key',
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/docs.test.crt',
+            'target' => '/etc/orbit/runtime-tls/tls.crt',
+            'read_only' => true,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/docs.test.key',
+            'target' => '/etc/orbit/runtime-tls/tls.key',
+            'read_only' => true,
+        ]);
+});
+
+it('keeps app-prod PHP runtimes on plain HTTP port 8080 without inner TLS mounts', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs-prod:8080')
+        ->and($container->environment()['SERVER_NAME'])->toBe(':8080')
+        ->and(array_key_exists('CADDY_SERVER_EXTRA_DIRECTIVES', $container->environment()))->toBeFalse()
+        ->and(collect($container->mounts())->pluck('target'))->not->toContain('/etc/orbit/runtime-tls/tls.crt');
 });
 
 it('exposes the document-root env on the rendered docker run command so the configured root reaches FrankenPHP', function (): void {
@@ -312,7 +360,8 @@ it('exposes the document-root env on the rendered docker run command so the conf
 
     $command = (new DockerCommandBuilder)->runDetached($container);
 
-    expect($command)->toContain("--env 'SERVER_NAME=:8080'")
+    expect($command)->toContain("--env 'SERVER_NAME=https://docs.test:8443'")
+        ->and($command)->toContain("--env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key'")
         ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
         ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
         ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")

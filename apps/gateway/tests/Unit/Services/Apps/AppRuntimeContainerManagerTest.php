@@ -9,6 +9,7 @@ use App\Enums\Apps\AppRuntimeContainerApplyOutcome;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
@@ -190,6 +191,39 @@ it('creates configured runtime mount sources before running the app runtime cont
         ->and($script)->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/home/nckrtl/packages,readonly'")
         ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
         ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
+it('treats app-dev runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $container = renderTestAppContainer($app);
+
+    $shell = new AppRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    (new AppRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+    $certSource = '/home/nckrtl/.config/orbit/certs/nckrtl.test.crt';
+    $keySource = '/home/nckrtl/.config/orbit/certs/nckrtl.test.key';
+
+    expect($script)
+        ->toContain("--mount 'type=bind,source={$certSource},target=".AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath.",readonly'")
+        ->and($script)
+        ->toContain("--mount 'type=bind,source={$keySource},target=".AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath.",readonly'")
+        ->and($script)
+        ->not->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '{$certSource}'")
+        ->and($script)
+        ->not->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '{$keySource}'");
 });
 
 it('rejects unsafe app-dev packages bind mount sources before running the app runtime container', function (): void {

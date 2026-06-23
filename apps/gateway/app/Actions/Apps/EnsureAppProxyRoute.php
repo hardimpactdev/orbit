@@ -11,7 +11,9 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
 use App\Services\Proxy\IngressResolver;
 use App\Services\Proxy\ProxyRouteRenderer;
@@ -28,6 +30,8 @@ final readonly class EnsureAppProxyRoute
         private IngressResolver $ingressResolver,
         private ProxyRouteRenderer $proxyRouteRenderer,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
+        private OrbitCaService $ca,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     /**
@@ -58,6 +62,7 @@ final readonly class EnsureAppProxyRoute
 
         try {
             $this->siteCertificateInstaller->ensureFor($servingNode, $domain);
+            $this->ensureRuntimeTrustPool($servingNode, $config);
             $this->ensureGlobalCaddyfile($servingNode);
         } catch (Throwable) {
             return [[
@@ -132,6 +137,7 @@ final readonly class EnsureAppProxyRoute
             );
 
             $this->ensureGlobalCaddyfile($app->node);
+            $this->ensureRuntimeTrustPool($app->node, $config);
             $backendResult = $this->remoteShell->run($app->node, $this->renderInstallScript($app->node, $domain, $backendContent, backend: true));
 
             if (! $backendResult->successful()) {
@@ -185,6 +191,8 @@ final readonly class EnsureAppProxyRoute
                 throw new RuntimeException("App '{$app->name}' route is missing a runtime container upstream.");
             }
 
+            $transport = $this->runtimeUpstreamTransportDirectives($config);
+
             return <<<CADDY
 {$domain} {
     tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
@@ -200,7 +208,7 @@ final readonly class EnsureAppProxyRoute
         header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {scheme}
-    }
+{$transport}    }
 }
 
 CADDY;
@@ -241,6 +249,28 @@ SH,
             escapeshellarg($sitePath),
             $caddyUpdateScript,
             CaddyTool::reloadCommand(),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function ensureRuntimeTrustPool(Node $node, array $config): void
+    {
+        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
+
+        if (! is_array($runtimeUpstreamTls) || ($runtimeUpstreamTls['trusted_by_gateway_ca'] ?? null) !== true) {
+            return;
+        }
+
+        $caPath = is_string($runtimeUpstreamTls['ca_path'] ?? null) && $runtimeUpstreamTls['ca_path'] !== ''
+            ? $runtimeUpstreamTls['ca_path']
+            : AppDevelopmentInnerTlsPolicy::RuntimeTrustPoolPath;
+
+        $this->remoteShell->run(
+            $node,
+            $this->innerTlsPolicy->trustPoolInstallScript($caPath, $this->ca->rootCert()),
+            ['throw' => true],
         );
     }
 
@@ -320,6 +350,10 @@ SH,
                 ],
             ];
 
+            if ($this->innerTlsPolicy->appliesToApp($app)) {
+                $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($app->node, $domain);
+            }
+
             return [$app->node, $config, $this->renderCaddySite($app, $domain, $config)];
         }
 
@@ -392,5 +426,19 @@ SH,
         $config['backend_artifacts'] = [$backendArtifact];
 
         return [$ingressNode, $config, $content];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function runtimeUpstreamTransportDirectives(array $config): string
+    {
+        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
+
+        if (! is_array($runtimeUpstreamTls)) {
+            return '';
+        }
+
+        return $this->innerTlsPolicy->runtimeUpstreamTransportDirectives($runtimeUpstreamTls);
     }
 }

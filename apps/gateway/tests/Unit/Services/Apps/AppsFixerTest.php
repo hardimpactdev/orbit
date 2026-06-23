@@ -23,6 +23,7 @@ use App\Services\Runtime\DockerCommandBuilder;
 use App\Services\Runtime\OrbitContainerNames;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Fakes\SiteCertificateInstallerFake;
 use Tests\TestCase;
 
 uses(TestCase::class);
@@ -62,6 +63,7 @@ function buildAppsFixer(RemoteShell $shell): AppsFixer
             $appRuntimeContainerRenderer,
             new WorkspaceRuntimeContainerRenderer(new PhpRuntimePolicy(new PhpRuntimeCatalog), new OrbitContainerNames),
         ),
+        new SiteCertificateInstallerFake,
     );
 }
 

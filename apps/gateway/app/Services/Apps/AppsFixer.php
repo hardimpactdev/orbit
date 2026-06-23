@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Apps;
 
 use App\Contracts\RemoteShell;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeArtifactRemovalOutcome;
 use App\Enums\Apps\AppRuntimeKind;
@@ -21,6 +22,8 @@ final readonly class AppsFixer
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private AppRuntimeUser $appRuntimeUser,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
+        private SiteCertificateInstaller $siteCertificateInstaller,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     /**
@@ -118,6 +121,7 @@ final readonly class AppsFixer
         }
 
         $this->ensureFrankenPhpRuntimeProcess->forApp($app);
+        $this->ensureRuntimeTlsMaterial($app, $node);
         $container = $this->appRuntimeContainerRenderer->render($app);
         $this->appRuntimeContainerManager->apply($node, $container);
 
@@ -134,6 +138,18 @@ final readonly class AppsFixer
                 'container' => $container->name(),
             ],
         ];
+    }
+
+    private function ensureRuntimeTlsMaterial(App $app, Node $node): void
+    {
+        if (! $this->innerTlsPolicy->appliesToApp($app)) {
+            return;
+        }
+
+        $this->siteCertificateInstaller->ensureFor(
+            $node,
+            $this->innerTlsPolicy->appRouteDomain($app),
+        );
     }
 
     /**

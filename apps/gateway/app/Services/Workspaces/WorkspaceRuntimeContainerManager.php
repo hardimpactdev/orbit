@@ -9,6 +9,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Workspaces\WorkspaceRuntimeArtifactRemovalOutcome;
 use App\Enums\Workspaces\WorkspaceRuntimeContainerApplyOutcome;
 use App\Models\Node;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Runtime\DockerCommandBuilder;
 use RuntimeException;
@@ -422,6 +423,8 @@ SH,
             WorkspaceRuntimeContainer::SourceTarget,
             WorkspaceRuntimeContainer::PhpIniMountTarget,
             AppDevelopmentPackagesMount::Target,
+            AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath,
+            AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath,
         ], true);
     }
 

@@ -225,6 +225,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['app']);
 
@@ -259,6 +260,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'container in use', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['app']);
 
@@ -305,6 +307,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             new RemoteShellResult(exitCode: 0, stdout: "orbit-container-config-probe:absent\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['app']);
 
@@ -428,6 +431,7 @@ describe('DoctorReportRunner app family extra container detection', function ():
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['app']);
 
@@ -895,6 +899,7 @@ describe('DoctorReportRunner', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: "feature\t1\t1\t1\t1\t1\t1\t0\t1\t1\t{$expectedHash}\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
 
@@ -1398,6 +1403,7 @@ TXT;
             new RemoteShellResult(exitCode: 0, stdout: 'orbit-ws-docs-feature-a', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $shell);
+        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['workspace']);
         $action = collect($report['actions'])->first();
@@ -1621,7 +1627,7 @@ TXT;
             ->and($create)->toContain("'redis:7.2'");
     });
 
-    it('restores missing orbit-caddy containers through restore mode family dispatch', function (): void {
+    it('restores missing and stopped orbit-caddy containers through restore mode family dispatch', function (string $issueKey, string $state, string $containerExists): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $node = createDoctorRunnerAppHostNode();
         $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
@@ -1631,7 +1637,7 @@ TXT;
             'config' => ['container' => $container->spec()],
         ]);
         $shell = new DoctorReportRunnerRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\t{$state}\t\t\t\t\t{$containerExists}\t{$state}\t{$container->specHash()}\n", stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$container->specHash()}\n", stderr: '', durationMs: 1),
         ]);
@@ -1649,14 +1655,17 @@ TXT;
             ->and($report['actions'][0])->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-1',
-                'key' => 'tool.container_missing',
+                'key' => $issueKey,
                 'mode' => 'restore',
                 'status' => 'completed',
             ])
             ->and($shell->scripts[1])->toContain('docker container inspect')
             ->and($shell->scripts[1])->toContain('10.6.0.50:80:80')
             ->and($shell->scripts[1])->toContain('orbit.caddy.spec_hash');
-    });
+    })->with([
+        'missing container' => ['tool.container_missing', 'missing', '0'],
+        'stopped container' => ['tool.container_not_running', 'stopped', '1'],
+    ]);
 
     it('does not require gh on gateway-only no-source nodes', function (): void {
         $gateway = Node::factory()->gateway()->create([

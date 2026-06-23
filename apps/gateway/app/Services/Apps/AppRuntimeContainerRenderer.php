@@ -34,6 +34,7 @@ final readonly class AppRuntimeContainerRenderer
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
         private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
@@ -77,6 +78,16 @@ final readonly class AppRuntimeContainerRenderer
             $mounts[] = $mount;
         }
 
+        if ($this->innerTlsPolicy->appliesToApp($app)) {
+            $app->loadMissing('node');
+
+            if ($app->node !== null) {
+                foreach ($this->innerTlsPolicy->runtimeTlsMounts($app->node, $this->innerTlsPolicy->appRouteDomain($app)) as $mount) {
+                    $mounts[] = $mount;
+                }
+            }
+        }
+
         return new AppRuntimeContainer(
             name: $this->containerName($app),
             image: $policy->image,
@@ -106,6 +117,10 @@ final readonly class AppRuntimeContainerRenderer
 
     public function upstreamUrl(App $app): string
     {
+        if ($this->innerTlsPolicy->appliesToApp($app)) {
+            return 'https://'.$this->containerName($app).':'.AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        }
+
         return 'http://'.$this->containerName($app).':'.self::InternalPort;
     }
 
@@ -115,7 +130,6 @@ final readonly class AppRuntimeContainerRenderer
     private function environmentFor(App $app): array
     {
         $environment = [
-            'SERVER_NAME' => ':'.self::InternalPort,
             'SERVER_ROOT' => $this->documentRootInContainer($app),
             'XDG_CONFIG_HOME' => self::XdgConfigHome,
             'XDG_DATA_HOME' => self::XdgDataHome,
@@ -123,6 +137,12 @@ final readonly class AppRuntimeContainerRenderer
             'ORBIT_APP_DOCUMENT_ROOT' => $app->document_root,
             'ORBIT_PHP_VERSION' => $app->php_version,
         ];
+
+        if ($this->innerTlsPolicy->appliesToApp($app)) {
+            $environment = array_merge($environment, $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->appRouteDomain($app)));
+        } else {
+            $environment['SERVER_NAME'] = ':'.self::InternalPort;
+        }
 
         if ($app->worker_enabled) {
             $environment = array_merge($environment, $this->workerEnvironmentFor($app));

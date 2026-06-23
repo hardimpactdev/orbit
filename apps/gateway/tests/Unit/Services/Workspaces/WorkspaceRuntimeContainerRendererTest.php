@@ -318,16 +318,16 @@ it('renders FrankenPHP-consumed SERVER_NAME and SERVER_ROOT so the configured ro
     $projectRoot = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'c', 'document_root' => '.'], workspaceOverrides: ['name' => 'feature-c']));
 
     expect($publicRoot->environment())->toMatchArray([
-        'SERVER_NAME' => ':80',
+        'SERVER_NAME' => 'https://feature-a.a.test:8443',
         'SERVER_ROOT' => '/app/public',
         'ORBIT_APP_DOCUMENT_ROOT' => 'public',
     ])
         ->and($webRoot->environment())->toMatchArray([
-            'SERVER_NAME' => ':80',
+            'SERVER_NAME' => 'https://feature-b.b.test:8443',
             'SERVER_ROOT' => '/app/web',
         ])
         ->and($projectRoot->environment())->toMatchArray([
-            'SERVER_NAME' => ':80',
+            'SERVER_NAME' => 'https://feature-c.c.test:8443',
             'SERVER_ROOT' => '/app',
         ])
         ->and($publicRoot->specHash())->not->toBe($webRoot->specHash())
@@ -346,13 +346,48 @@ it('exposes ORBIT_APP, ORBIT_WORKSPACE, and ORBIT_PHP_VERSION env to the contain
     ]);
 });
 
+it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo',
+        'path' => '/home/nckrtl/apps/demo',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime_kind' => AppRuntimeKind::Php,
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect(workspaceRendererForTest()->upstreamUrl($workspace))->toBe('https://orbit-ws-demo-feature-a:8443')
+        ->and($container->environment())->toMatchArray([
+            'SERVER_NAME' => 'https://feature-a.demo.test:8443',
+            'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key',
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/feature-a.demo.test.crt',
+            'target' => '/etc/orbit/runtime-tls/tls.crt',
+            'read_only' => true,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/feature-a.demo.test.key',
+            'target' => '/etc/orbit/runtime-tls/tls.key',
+            'read_only' => true,
+        ]);
+});
+
 it('exposes the document-root env on the rendered docker run command so the configured root reaches FrankenPHP', function (): void {
     $workspace = makePhpWorkspace(appOverrides: ['document_root' => 'web']);
     $container = workspaceRendererForTest()->render($workspace);
 
     $command = (new DockerCommandBuilder)->runDetached($container);
 
-    expect($command)->toContain("--env 'SERVER_NAME=:80'")
+    expect($command)->toContain("--env 'SERVER_NAME=https://feature-a.demo.test:8443'")
+        ->and($command)->toContain("--env 'CADDY_SERVER_EXTRA_DIRECTIVES=tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key'")
         ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
         ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
         ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")

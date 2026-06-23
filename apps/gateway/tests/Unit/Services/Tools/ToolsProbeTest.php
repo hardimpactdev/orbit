@@ -394,7 +394,7 @@ describe('ToolsProbe', function (): void {
             ]);
     });
 
-    it('inspects orbit-caddy container state instead of only checking the docker binary', function (): void {
+    it('detects stopped orbit-caddy containers instead of only checking the docker binary', function (): void {
         withE2EEnvironment(['ORBIT_E2E_DOCKER_NETWORK'], [
             'ORBIT_E2E_DOCKER_NETWORK' => 'orbit-e2e-dev-abc123',
         ], function (): void {
@@ -421,7 +421,11 @@ describe('ToolsProbe', function (): void {
             expect($shell->script)->toContain('docker container inspect')
                 ->and($input['container'])->toBe($container->name())
                 ->and($input['container'])->toBe('orbit-e2e-dev-abc123-dev-orbit-caddy')
-                ->and(in_array('tool.lifecycle_state_mismatch', $issueKeys, true))->toBeFalse();
+                ->and($issueKeys)->toContain('tool.container_not_running')
+                ->and(toolProbeIssue($drift, 'tool.container_not_running')?->detail)->toMatchArray([
+                    'container' => 'orbit-e2e-dev-abc123-dev-orbit-caddy',
+                    'observed_state' => 'stopped',
+                ]);
         });
     });
 

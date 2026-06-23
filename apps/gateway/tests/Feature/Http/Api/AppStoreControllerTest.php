@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -16,6 +17,19 @@ use Tests\Fakes\SiteCertificateInstallerFake;
 uses(RefreshDatabase::class);
 
 const APP_STORE_CALLER_WG_IP = '10.6.0.77';
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    app()->instance(OrbitCaService::class, new AppStoreControllerTestCa);
+});
+
+final readonly class AppStoreControllerTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
 
 function createAppStoreCallerNode(array $overrides = []): Node
 {
@@ -64,8 +78,6 @@ describe('AppStoreController', function (): void {
 
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
-        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $response = $this->call('POST', '/api/apps', [
             'name' => 'docs',
@@ -85,7 +97,8 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->runs)->toHaveCount(8);
+            ->and($remoteShell->runs)->toHaveCount(9)
+            ->and(collect($remoteShell->runs)->pluck('script')->contains(fn (string $script): bool => str_contains($script, '/etc/orbit/ca/root.crt')))->toBeTrue();
     });
 
     it('rejects app creation when the caller lacks app:new on the target app node', function (): void {

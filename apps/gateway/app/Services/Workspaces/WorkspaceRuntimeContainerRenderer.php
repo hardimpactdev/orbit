@@ -7,6 +7,7 @@ namespace App\Services\Workspaces;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppDevelopmentPackagesMount;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeMountService;
@@ -23,6 +24,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
         private AppDevelopmentPackagesMount $appDevelopmentPackagesMount = new AppDevelopmentPackagesMount,
         private AppRuntimeMountService $appRuntimeMounts = new AppRuntimeMountService,
         private FrankenPhpRuntimeConfigRenderer $frankenPhpConfig = new FrankenPhpRuntimeConfigRenderer,
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
     public function render(Workspace $workspace, ?string $preloadPath = null): WorkspaceRuntimeContainer
@@ -79,6 +81,12 @@ final readonly class WorkspaceRuntimeContainerRenderer
             $mounts[] = $mount;
         }
 
+        if ($this->innerTlsPolicy->appliesToWorkspace($workspace) && $app->node !== null) {
+            foreach ($this->innerTlsPolicy->runtimeTlsMounts($app->node, $this->innerTlsPolicy->workspaceRouteDomain($workspace)) as $mount) {
+                $mounts[] = $mount;
+            }
+        }
+
         return new WorkspaceRuntimeContainer(
             name: $this->containerName($workspace),
             image: $policy->image,
@@ -119,6 +127,10 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
     public function upstreamUrl(Workspace $workspace): string
     {
+        if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
+            return 'https://'.$this->containerName($workspace).':'.AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        }
+
         return 'http://'.$this->containerName($workspace);
     }
 
@@ -128,7 +140,6 @@ final readonly class WorkspaceRuntimeContainerRenderer
     private function environmentFor(App $app, Workspace $workspace, string $phpVersion): array
     {
         $environment = [
-            'SERVER_NAME' => ':80',
             'SERVER_ROOT' => $this->documentRootInContainer($app),
             'XDG_CONFIG_HOME' => AppRuntimeContainerRenderer::XdgConfigHome,
             'XDG_DATA_HOME' => AppRuntimeContainerRenderer::XdgDataHome,
@@ -137,6 +148,12 @@ final readonly class WorkspaceRuntimeContainerRenderer
             'ORBIT_WORKSPACE' => $workspace->name,
             'ORBIT_PHP_VERSION' => $phpVersion,
         ];
+
+        if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
+            $environment = array_merge($environment, $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->workspaceRouteDomain($workspace)));
+        } else {
+            $environment['SERVER_NAME'] = ':80';
+        }
 
         $frankenPhpConfig = $this->frankenPhpConfig->classic($app);
 

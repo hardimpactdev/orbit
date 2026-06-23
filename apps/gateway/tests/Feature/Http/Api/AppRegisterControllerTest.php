@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -16,9 +17,18 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    app()->instance(OrbitCaService::class, new AppRegisterControllerTestCa);
 });
 
 const APP_REGISTER_CALLER_WG_IP = '10.6.0.78';
+
+final readonly class AppRegisterControllerTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
 
 function createAppRegisterCallerNode(array $overrides = [], ?string $role = null): Node
 {

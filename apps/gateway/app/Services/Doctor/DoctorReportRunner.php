@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Doctor;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
+use App\Contracts\SiteCertificateInstaller;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
@@ -25,6 +26,7 @@ use App\Models\Process;
 use App\Models\ProxyRoute;
 use App\Models\Schedule;
 use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainer;
 use App\Services\Apps\AppRuntimeRequirementProbe;
 use App\Services\Apps\AppsFixer;
@@ -2196,6 +2198,7 @@ final readonly class DoctorReportRunner
             'tool.capability_missing',
             'tool.agent_route_missing',
             'tool.container_missing',
+            'tool.container_not_running',
             'tool.container_spec_mismatch',
             'tool.version_mismatch',
             'tool.config_missing',
@@ -2533,6 +2536,7 @@ final readonly class DoctorReportRunner
 
         try {
             app(EnsureFrankenPhpRuntimeProcess::class)->forWorkspace($workspace);
+            $this->ensureWorkspaceRuntimeTlsMaterial($workspace, $node);
 
             $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
             $outcome = app(WorkspaceRuntimeContainerManager::class)->apply($node, $container);
@@ -2568,6 +2572,20 @@ final readonly class DoctorReportRunner
                 'outcome' => $outcome->value,
             ],
         ];
+    }
+
+    private function ensureWorkspaceRuntimeTlsMaterial(Workspace $workspace, Node $node): void
+    {
+        $innerTlsPolicy = app(AppDevelopmentInnerTlsPolicy::class);
+
+        if (! $innerTlsPolicy->appliesToWorkspace($workspace)) {
+            return;
+        }
+
+        app(SiteCertificateInstaller::class)->ensureFor(
+            $node,
+            $innerTlsPolicy->workspaceRouteDomain($workspace),
+        );
     }
 
     /**

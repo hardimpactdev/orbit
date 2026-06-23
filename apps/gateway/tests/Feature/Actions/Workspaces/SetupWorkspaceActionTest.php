@@ -19,6 +19,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Models\WorkspaceRun;
 use App\Models\WorkspaceStep;
+use App\Services\Ca\OrbitCaService;
 use App\Services\Workspaces\EnsureWorkspaceProxyRoute;
 use App\Tools\CaddyTool;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +58,7 @@ beforeEach(function (): void {
             'node_id' => 1,
             'path' => '/home/nckrtl/apps/demo',
             'php_version' => '8.5',
+            'runtime_kind' => 'php',
             'document_root' => 'public',
             'created_at' => now(),
             'updated_at' => now(),
@@ -65,6 +67,7 @@ beforeEach(function (): void {
 
     app()->instance(RemoteShell::class, new SetupWorkspaceActionTestShell);
     app()->instance(SiteCertificateInstaller::class, new SetupWorkspaceActionTestCertificateInstaller);
+    app()->instance(OrbitCaService::class, new SetupWorkspaceActionTestCa);
 });
 
 it('sets up a workspace and marks it active', function (): void {
@@ -172,6 +175,11 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
 });
 
 it('registers workspace proxy routes against the FrankenPHP runtime container', function (): void {
+    NodeRoleAssignment::query()
+        ->where('node_id', 1)
+        ->where('role', 'gateway')
+        ->update(['role' => 'app-dev']);
+
     $workspace = Workspace::create([
         'app_id' => 1,
         'name' => 'feature-a',
@@ -194,12 +202,19 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     $route = $workspace->proxyRoutes()->first();
 
     expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
-        ->and($caddySite)->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
+        ->and($caddySite)->toContain('reverse_proxy https://orbit-ws-demo-feature-a:8443')
+        ->and($caddySite)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+        ->and($caddySite)->toContain('tls_server_name feature-a.demo')
         ->and($caddySite)->not->toContain('php_fastcgi')
         ->and((string) $siteScript)->toContain(CaddyTool::reloadCommand())
         ->and((string) $siteScript)->not->toContain("docker restart 'orbit-caddy'")
         ->and((string) $siteScript)->not->toContain('sudo systemctl reload caddy')
-        ->and($route?->config['runtime_upstream'])->toBe('http://orbit-ws-demo-feature-a')
+        ->and($route?->config['runtime_upstream'])->toBe('https://orbit-ws-demo-feature-a:8443')
+        ->and($route?->config['runtime_upstream_tls'])->toBe([
+            'trusted_by_gateway_ca' => true,
+            'ca_path' => '/etc/orbit/ca/root.crt',
+            'server_name' => 'feature-a.demo',
+        ])
         ->and($route?->config['php_socket'])->toBeNull()
         ->and($route?->config['tls'])->toBe([
             'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
@@ -731,6 +746,14 @@ final class SetupWorkspaceActionTestCertificateInstaller implements SiteCertific
             'cert' => "/home/gateway/.config/orbit/certs/{$host}.crt",
             'key' => "/home/gateway/.config/orbit/certs/{$host}.key",
         ];
+    }
+}
+
+final readonly class SetupWorkspaceActionTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
     }
 }
 
