@@ -48,6 +48,9 @@ Responsibilities:
 - Monitor Grok output, inspect diffs, ask for corrections, and keep unrelated
   dirty files untouched.
 - Run or require the verification gates and independently read the results.
+- Run applicable reviewer personas from `HARNESS.md` after implementation
+  evidence exists. For CLI command changes, use
+  `.agents/review-personas/cli-command.md` before accepting the slice.
 - Own final commit, merge-back, worktree cleanup, and the implementation report.
 
 Do not make substantive implementation edits yourself unless the user explicitly
@@ -395,27 +398,31 @@ moving on to durable E2E.
     behavior, durable E2E follows the retained VM/user-verification checkpoint.
     For non-CLI behavior, proceed to the relevant E2E lane once code and
     focused tests are ready; no retained CLI confirmation gate applies.
-16. Run artifact-backed feature verification when production artifact behavior
+16. Run the applicable reviewer persona from the `HARNESS.md` routing table once
+    implementation evidence exists and before accepting the slice. For CLI
+    command changes, run `.agents/review-personas/cli-command.md` and resolve or
+    explicitly report its findings before commit.
+17. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
-17. Run provider provision gates only as final/nightly substrate verification
+18. Run provider provision gates only as final/nightly substrate verification
     when installer, host mutation, image, binary, or topology-preparation
     behavior changed. Docker provision is only for Docker artifact/image or
     Docker topology-preparer changes; do not run it as a generic post-`composer
     test:e2e` gate.
-18. If PHP changed, run:
+19. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-19. Before reporting completion, run the project quality gate:
+20. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-20. Commit the verified worktree changes on the worktree branch.
-21. Merge the branch back into `main` from the primary `~/orbit` checkout,
+21. Commit the verified worktree changes on the worktree branch.
+22. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
@@ -566,6 +573,9 @@ Repeat this block for each durable signal, or write `none`.
 - Verification: <how the guardrail target was checked, or not applicable>
 - Follow-up: <scoped follow-up, or none>
 
+Reviewer personas:
+- <persona path>: <findings resolved, findings deferred, not applicable, or blocked>
+
 Tests:
 - Pest unit/feature: <test added or changed>
 - Pest E2E: <test added or changed>
@@ -588,4 +598,7 @@ Blockers:
 
 Risks:
 - <risk or none>
+
+Next step:
+- <next slice or next concrete action; do not leave this implicit>
 ```

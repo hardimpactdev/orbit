@@ -118,6 +118,8 @@ Orbit repo development follows a simple loop stack:
    context or guardrail
 4. **Distill**: encode the lesson into durable text: skill, doc, test message,
    or product-decision entry
+5. **Handoff**: report the completed evidence and name the next slice or next
+   concrete step. Do not make the user ask what comes next.
 
 The harness surfaces the map; the loop turns session signals into better
 guardrails.
