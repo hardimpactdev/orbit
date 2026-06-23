@@ -63,6 +63,71 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['node']);
     });
 
+    it('defaults omitted API scope to the caller node instead of fleet', function (): void {
+        createDoctorRunCallerNode(['platform' => 'linux']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'families' => ['node'],
+            'mode' => 'verify',
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.node', 'caller')
+            ->assertJsonPath('success.data.doctor.scope.self', false)
+            ->assertJsonPath('success.data.doctor.scope.families', ['node'])
+            ->assertJsonMissingPath('success.data.doctor.scope.targets')
+            ->assertJsonMissingPath('success.data.doctor.nodes');
+    });
+
+    it('keeps roleless caller nodes limited to the node family by default', function (): void {
+        Node::factory()->operator()->create([
+            'name' => 'operator-1',
+            'host' => DOCTOR_RUN_CALLER_WG_IP,
+            'wireguard_address' => DOCTOR_RUN_CALLER_WG_IP,
+            'status' => 'active',
+            'platform' => 'ubuntu',
+        ]);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'mode' => 'verify',
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.node', 'operator-1')
+            ->assertJsonPath('success.data.doctor.scope.families', ['node']);
+    });
+
+    it('rejects node=all as validation before resolving a target', function (): void {
+        createDoctorRunCallerNode(['platform' => 'linux']);
+        createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+
+        $response = $this->call('POST', '/api/doctor/run', [
+            'families' => ['node'],
+            'mode' => 'verify',
+            'node' => 'all',
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'node')
+            ->assertJsonPath('error.meta.value', 'all');
+    });
+
+    it('rejects all=true on doctor fix requests because fleet resolution is verify-only', function (): void {
+        createDoctorRunCallerNode(['platform' => 'linux']);
+
+        $response = $this->call('POST', '/api/doctor/fix', [
+            'families' => ['node'],
+            'mode' => 'restore',
+            'all' => true,
+        ], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'all');
+    });
+
     it('accepts the proxy family scope when targeting an app node', function (): void {
         createDoctorRunCallerNode(['platform' => 'linux']);
         createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
@@ -284,7 +349,7 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['process']);
     });
 
-    it('runs process family doctor across active role nodes when no node scope is provided', function (): void {
+    it('runs process family doctor across active role nodes only with explicit all scope', function (): void {
         createDoctorRunCallerNode();
         createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
         Node::factory()->create([
@@ -296,7 +361,8 @@ describe('DoctorRunController', function (): void {
 
         $response = $this->call('POST', '/api/doctor/run', [
             'mode' => 'verify',
-            'families' => ['process']], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
+            'families' => ['process'],
+            'all' => true], [], [], ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP]);
 
         $response->assertOk()
             ->assertJsonPath('success.data.doctor.healthy', true)

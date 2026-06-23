@@ -43,6 +43,12 @@ final class DoctorRunController implements Loggable
         $families = $this->families($request);
         $key = $this->key($request);
 
+        $scopeFailure = $this->validateScope($request);
+
+        if ($scopeFailure instanceof JsonResponse) {
+            return $scopeFailure;
+        }
+
         if ($this->usesFleetScope($request)) {
             $failure = $validator->validate($families, $runner);
 
@@ -273,10 +279,7 @@ final class DoctorRunController implements Loggable
 
     private function usesFleetScope(Request $request): bool
     {
-        return $this->scopeValue($request, 'node') === null
-            && ! $request->boolean('self')
-            && $this->scopeValue($request, 'app') === null
-            && $this->scopeValue($request, 'workspace') === null;
+        return $request->boolean('all');
     }
 
     private function scopeValue(Request $request, string $key): ?string
@@ -311,6 +314,42 @@ final class DoctorRunController implements Loggable
         }
 
         return $caller;
+    }
+
+    private function validateScope(Request $request): ?JsonResponse
+    {
+        if (strtolower((string) $this->scopeValue($request, 'node')) === 'all') {
+            return response()->json([
+                'error' => [
+                    'code' => 'validation_failed',
+                    'message' => 'Use all=true to run doctor across the fleet; node=all is not supported.',
+                    'meta' => ['field' => 'node', 'value' => 'all'],
+                ],
+            ], 422);
+        }
+
+        if (! $request->boolean('all')) {
+            return null;
+        }
+
+        $conflicts = array_values(array_filter([
+            $this->scopeValue($request, 'node') !== null ? 'node' : null,
+            $request->boolean('self') ? 'self' : null,
+            $this->scopeValue($request, 'app') !== null ? 'app' : null,
+            $this->scopeValue($request, 'workspace') !== null ? 'workspace' : null,
+        ]));
+
+        if ($conflicts === []) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => [
+                'code' => 'validation_failed',
+                'message' => 'all cannot be combined with node, self, app, or workspace scope.',
+                'meta' => ['fields' => ['all', ...$conflicts]],
+            ],
+        ], 422);
     }
 
     private function key(Request $request): ?string
