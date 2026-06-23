@@ -67,6 +67,8 @@ try {
             continue;
         }
 
+        write_best_subgate_durations($baseline);
+
         $baselineDuration = (float) ($baseline['duration_seconds'] ?? 0);
         $runDuration = (float) ($latest['duration_seconds'] ?? 0);
 
@@ -306,6 +308,42 @@ function write_subgate_durations(array $artifact): void
             'subgate duration: %s=%.1fs%s',
             $label,
             (float) $seconds,
+            PHP_EOL,
+        ));
+    }
+}
+
+/**
+ * @param  array<string, mixed>  $baseline
+ */
+function write_best_subgate_durations(array $baseline): void
+{
+    $durations = $baseline['best_subgate_durations'] ?? null;
+
+    if (! is_array($durations) || $durations === []) {
+        return;
+    }
+
+    $labels = array_keys($durations);
+    sort($labels);
+
+    foreach ($labels as $label) {
+        $seconds = $durations[$label];
+
+        if (! is_string($label) || trim($label) === '' || ! is_numeric($seconds)) {
+            continue;
+        }
+
+        $parsed = (float) $seconds;
+
+        if ($parsed < 0) {
+            continue;
+        }
+
+        fwrite(STDOUT, sprintf(
+            'best subgate duration: %s=%.1fs%s',
+            $label,
+            $parsed,
             PHP_EOL,
         ));
     }

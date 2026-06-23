@@ -56,6 +56,12 @@ try {
         'updated_at' => (string) ($latest['ended_at'] ?? ''),
     ];
 
+    $bestSubgateDurations = best_subgate_durations($artifacts, $gate);
+
+    if ($bestSubgateDurations !== []) {
+        $baseline['best_subgate_durations'] = $bestSubgateDurations;
+    }
+
     $baselinePath = $baselineDir.'/'.$gate.'.json';
     $encoded = json_encode($baseline, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
 
@@ -158,4 +164,49 @@ function latest_artifacts_by_gate(array $artifacts): array
     }
 
     return $latest;
+}
+
+/**
+ * @param  list<array<string, mixed>>  $artifacts
+ * @return array<string, float>
+ */
+function best_subgate_durations(array $artifacts, string $gate): array
+{
+    $best = [];
+
+    foreach ($artifacts as $artifact) {
+        if ((string) ($artifact['gate'] ?? '') !== $gate) {
+            continue;
+        }
+
+        if ((int) ($artifact['exit_code'] ?? 1) !== 0) {
+            continue;
+        }
+
+        $durations = $artifact['subgate_durations'] ?? null;
+
+        if (! is_array($durations)) {
+            continue;
+        }
+
+        foreach ($durations as $label => $seconds) {
+            if (! is_string($label) || trim($label) === '' || ! is_numeric($seconds)) {
+                continue;
+            }
+
+            $parsed = (float) $seconds;
+
+            if ($parsed < 0) {
+                continue;
+            }
+
+            if (! isset($best[$label]) || $parsed < $best[$label]) {
+                $best[$label] = $parsed;
+            }
+        }
+    }
+
+    ksort($best);
+
+    return $best;
 }

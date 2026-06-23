@@ -618,6 +618,35 @@ it('promotes the latest successful quality-check artifact into a local baseline 
         'exit_code' => 0,
         'git' => ['branch' => 'main', 'commit' => 'older123'],
         'subgates' => ['gateway_pest' => 0],
+        'subgate_durations' => [
+            'core_pest' => 4.2,
+            'core_phpstan' => 6.4,
+            'core_pint' => 1.0,
+            'core_rector' => 2.0,
+            'sdk_pest' => 0.5,
+            'sdk_phpstan' => 5.0,
+            'sdk_pint' => 0.8,
+            'sdk_rector' => 1.7,
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100300Z-failed789.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:03:00Z',
+        'duration_seconds' => 180,
+        'exit_code' => 1,
+        'git' => ['branch' => 'main', 'commit' => 'failed789'],
+        'subgates' => ['core_pest' => 1, 'sdk_pest' => 1],
+        'subgate_durations' => [
+            'core_pest' => 0.1,
+            'core_phpstan' => -1,
+            'sdk_pest' => 0.1,
+            'sdk_phpstan' => 'fast',
+        ],
     ], JSON_THROW_ON_ERROR));
 
     $latestArtifactPath = "{$artifactDir}/quality-check-2026-06-23T100530Z-latest456.json";
@@ -632,7 +661,18 @@ it('promotes the latest successful quality-check artifact into a local baseline 
         'exit_code' => 0,
         'git' => ['branch' => 'quality-gate-baseline-capture', 'commit' => 'latest456'],
         'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
-        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0],
+        'subgate_durations' => [
+            'core_pest' => 3.2,
+            'core_phpstan' => 7.0,
+            'core_pint' => 1.2,
+            'core_rector' => 1.8,
+            'sdk_pest' => 0.3,
+            'sdk_phpstan' => 4.8,
+            'sdk_pint' => 0.9,
+            'sdk_rector' => 1.5,
+            'gateway_pest' => 245.5,
+            'docs_lint' => 12.0,
+        ],
     ], JSON_THROW_ON_ERROR));
 
     try {
@@ -658,6 +698,18 @@ it('promotes the latest successful quality-check artifact into a local baseline 
             'warning_threshold_percent' => 25,
             'source_artifact' => basename($latestArtifactPath),
             'updated_at' => '2026-06-23T10:05:30Z',
+            'best_subgate_durations' => [
+                'core_pest' => 3.2,
+                'core_phpstan' => 6.4,
+                'core_pint' => 1.0,
+                'core_rector' => 1.8,
+                'docs_lint' => 12.0,
+                'gateway_pest' => 245.5,
+                'sdk_pest' => 0.3,
+                'sdk_phpstan' => 4.8,
+                'sdk_pint' => 0.8,
+                'sdk_rector' => 1.5,
+            ],
         ]);
     } finally {
         (new Process(['rm', '-rf', $artifactDir]))->run();
@@ -753,7 +805,27 @@ it('writes per-subgate duration data into quality-check artifacts', function ():
 
 it('surfaces slow sub-gate durations from analyzer output', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-subgate-analyze-'.bin2hex(random_bytes(6));
-    mkdir($artifactDir, 0700, true);
+    $baselineDir = "{$artifactDir}/baselines";
+    mkdir($baselineDir, 0700, true);
+
+    file_put_contents("{$baselineDir}/quality-check.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'duration_seconds' => 300,
+        'warning_threshold_percent' => 25,
+        'source_artifact' => 'quality-check-2026-06-23T095000Z-baseline.json',
+        'updated_at' => '2026-06-23T09:50:00Z',
+        'best_subgate_durations' => [
+            'core_pest' => 3.2,
+            'core_phpstan' => 6.4,
+            'core_pint' => 1.0,
+            'core_rector' => 1.8,
+            'sdk_pest' => 0.3,
+            'sdk_phpstan' => 4.8,
+            'sdk_pint' => 0.8,
+            'sdk_rector' => 1.5,
+        ],
+    ], JSON_THROW_ON_ERROR));
 
     file_put_contents("{$artifactDir}/quality-check-2026-06-23T100530Z-profiling123.json", json_encode([
         'schema_version' => 1,
@@ -781,7 +853,15 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
             ->and($process->getOutput())
             ->toContain('gateway_pest')
             ->toContain('245.5')
-            ->toContain('subgate');
+            ->toContain('subgate')
+            ->toContain('best subgate duration: core_pest=3.2s')
+            ->toContain('best subgate duration: core_phpstan=6.4s')
+            ->toContain('best subgate duration: core_pint=1.0s')
+            ->toContain('best subgate duration: core_rector=1.8s')
+            ->toContain('best subgate duration: sdk_pest=0.3s')
+            ->toContain('best subgate duration: sdk_phpstan=4.8s')
+            ->toContain('best subgate duration: sdk_pint=0.8s')
+            ->toContain('best subgate duration: sdk_rector=1.5s');
     } finally {
         (new Process(['rm', '-rf', $artifactDir]))->run();
     }
@@ -811,6 +891,8 @@ it('documents quality gate baseline capture and subgate profiling', function ():
         ->toContain('composer quality-gate:baseline-capture')
         ->toContain('.orbit/quality-gates/baselines/')
         ->toContain('source_artifact')
+        ->toContain('best_subgate_durations')
+        ->toContain('core and SDK')
         ->toContain('subgate_durations')
         ->toContain('warning_threshold_percent');
 });

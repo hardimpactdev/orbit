@@ -104,7 +104,11 @@ Baseline file shape:
   "duration_seconds": 330,
   "warning_threshold_percent": 25,
   "source_artifact": "quality-check-2026-06-23T100530Z-latest456.json",
-  "updated_at": "2026-06-23T10:05:30Z"
+  "updated_at": "2026-06-23T10:05:30Z",
+  "best_subgate_durations": {
+    "core_pest": 3.2,
+    "sdk_pest": 0.3
+  }
 }
 ```
 
@@ -119,6 +123,10 @@ Quality-check artifacts may also record per-subgate profiling under
 `subgate_durations` alongside the existing `subgates` exit-code map. The
 analyzer prints these subgate durations so slow lanes such as `cli_pest` or
 `gateway_pest` are visible without rerunning `composer quality-check`.
+Baseline capture also records `best_subgate_durations` from the fastest
+successful observed subgate timings for the selected gate. The analyzer and
+final check print those best timings, which keeps core and SDK package lanes
+visible when comparing later `composer quality-check` runs.
 
 Timing baseline observations remain warning-only. `composer quality-gate:analyze`
 and `composer quality-gate:final-check` exit successfully even when a run
