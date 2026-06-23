@@ -26,6 +26,8 @@ use Throwable;
  */
 final readonly class GatewayApiClient
 {
+    private const int IdleRequestPollMicroseconds = 100_000;
+
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
@@ -77,8 +79,14 @@ final readonly class GatewayApiClient
             return $this->post($path, $payload);
         }
 
-        if (! $this->httpClientIsFaked() && $this->canForkIdleRequest()) {
-            return $this->postWithIdleTicksInChild($path, $payload);
+        if (! $this->httpClientIsFaked()) {
+            if ($this->canForkIdleRequest()) {
+                return $this->postWithIdleTicksInChild($path, $payload);
+            }
+
+            if ($this->canCurlIdleRequest()) {
+                return $this->postWithCurlIdleTicks($path, $payload);
+            }
         }
 
         return $this->decode(
@@ -203,9 +211,110 @@ final readonly class GatewayApiClient
 
     private function canForkIdleRequest(): bool
     {
+        if (getenv('ORBIT_GATEWAY_IDLE_POST_DISABLE_FORK') === '1') {
+            return false;
+        }
+
         return function_exists('pcntl_fork')
             && function_exists('pcntl_waitpid')
             && function_exists('stream_socket_pair');
+    }
+
+    private function canCurlIdleRequest(): bool
+    {
+        return function_exists('curl_init')
+            && function_exists('curl_multi_init')
+            && function_exists('curl_multi_exec')
+            && function_exists('curl_multi_select');
+    }
+
+    /**
+     * Keep the idle callback moving in self-contained binaries that do not ship
+     * the pcntl extension. Guzzle's progress hook is too sparse while a POST is
+     * waiting on response headers, so drive the request through cURL multi and
+     * poll it on the progress ticker cadence.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function postWithCurlIdleTicks(string $path, array $payload): array
+    {
+        $curl = curl_init($this->normalizedBaseUrl().$this->path($path));
+
+        if ($curl === false) {
+            throw $this->classifyNetworkError(new ConnectionException('Unable to initialize gateway request.'));
+        }
+
+        $multi = curl_multi_init();
+        $body = '';
+        $requestBody = $payload === []
+            ? '{}'
+            : json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        curl_setopt_array($curl, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $requestBody,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/json',
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => min($this->timeout, 10),
+            CURLOPT_HEADER => false,
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_WRITEFUNCTION => static function ($curl, string $chunk) use (&$body): int {
+                $body .= $chunk;
+
+                return strlen($chunk);
+            },
+        ]);
+
+        if ($this->shouldVerifyAgainstGatewayCa()) {
+            curl_setopt($curl, CURLOPT_CAINFO, $this->caPemPath);
+        }
+
+        curl_multi_add_handle($multi, $curl);
+
+        try {
+            $running = null;
+
+            do {
+                do {
+                    $multiStatus = curl_multi_exec($multi, $running);
+                } while ($multiStatus === CURLM_CALL_MULTI_PERFORM);
+
+                if ($multiStatus !== CURLM_OK) {
+                    throw $this->classifyNetworkError(new ConnectionException(curl_multi_strerror($multiStatus)));
+                }
+
+                if ($running > 0) {
+                    ForkedFrameTicker::invokeIdleCallback();
+
+                    if (curl_multi_select($multi, 0.0) === -1) {
+                        usleep(250);
+                    }
+
+                    usleep(min(ForkedFrameTicker::idleIntervalMicroseconds(), self::IdleRequestPollMicroseconds));
+                }
+            } while ($running > 0);
+
+            $curlErrorNumber = curl_errno($curl);
+
+            if ($curlErrorNumber !== 0) {
+                throw $this->classifyNetworkError(new ConnectionException(curl_error($curl)));
+            }
+
+            $statusCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+
+            if ($statusCode >= 400) {
+                throw GatewayApiException::httpError($statusCode, $body);
+            }
+
+            return $this->decodeBody($body);
+        } finally {
+            curl_multi_remove_handle($multi, $curl);
+            curl_multi_close($multi);
+        }
     }
 
     /**
@@ -265,7 +374,7 @@ final readonly class GatewayApiClient
                 }
 
                 ForkedFrameTicker::invokeIdleCallback();
-                usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+                usleep(min(ForkedFrameTicker::idleIntervalMicroseconds(), self::IdleRequestPollMicroseconds));
             } while (true);
 
             $remaining = stream_get_contents($parentSocket);
@@ -417,7 +526,15 @@ final readonly class GatewayApiClient
      */
     private function decode(Response $response): array
     {
-        $decoded = $response->json();
+        return $this->decodeBody($response->body());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeBody(string $body): array
+    {
+        $decoded = json_decode($body, associative: true);
 
         if (! is_array($decoded)) {
             throw new GatewayApiException('Gateway response is not valid JSON.');
