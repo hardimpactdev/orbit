@@ -13,7 +13,7 @@ should become guidance or enforcement.
 | Failed Pest, PHPStan, Pint, Rector, or docs-lint run | Command and failure excerpt | Is the failure message enough for the next agent to self-correct? | Test assertion message, skill runbook, or static rule | Re-run the failing command. |
 | E2E or retained-topology failure | Topology id, role, command, and observed output | Is this a product bug, verification-lane gap, or missing setup guidance? | `apps/docs/content/testing/**`, `e2e-verification-lanes`, product docs, or E2E coverage | Re-run the focused lane or retained check. |
 | Live-node bug report | Node, version, command, and before/after evidence | Is the repo correct but the installed/runtime surface stale? | Runtime-user verification rule, release skill, product docs, or regression test | Verify against the actual runtime user or live node. |
-| Docs drift audit finding | Finding id, conflicting files, and authority chain | Is authority unclear or is one downstream doc stale? | Product docs, product-decision ledger, banned term, or docs audit skill | `composer docs-lint` and focused drift re-check. |
+| Docs drift audit finding | Finding id, conflicting files, and authority chain | Is authority unclear, is one downstream doc stale, or is reviewer scope too broad? | `.agents/review-personas/docs-librarian.md`, product docs, product-decision ledger, banned term, or `auditing-docs-drift` | `composer docs-lint` and focused drift re-check. |
 | Agent implementation mistake | Prompt, changed files, and correction needed | Did the agent miss routing, ownership, or verification context? | `AGENTS.md`, `HARNESS.md`, `LOOP.md`, or relevant skill | Run through the discovery path and confirm the missing route exists. |
 | Worktree/bootstrap failure | Worktree path, command, and setup output | Is the setup flow broken or did an agent bypass it? | `bin/orbit-prepare-worktree`, `AGENTS.md`, or `implementing-features` | Prepare a fresh worktree or re-run the failed setup step. |
 | Command-contract drift | Command, docs path, test path, and observed output | Is the public contract wrong, under-tested, missing reviewer coverage, or just the implementation stale? | `command-designer`, `.agents/review-personas/cli-command.md`, command docs, Pest coverage, or product-decision ledger | Focused Pest for the command plus docs-lint when docs changed. |
@@ -33,6 +33,9 @@ should become guidance or enforcement.
 - Update a reviewer persona when the signal is about post-test review criteria,
   evidence interpretation, or repeated mistakes that a focused review checklist
   should catch.
+- Update the Solo role matrix or implementation skill when the signal is about
+  which agent should own orchestration, documentation, implementation,
+  verification, or review.
 - Update product docs when the signal changes or clarifies user-facing Orbit
   behavior.
 - Update tests or static checks when a future failure can be detected

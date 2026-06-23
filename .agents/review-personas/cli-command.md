@@ -35,6 +35,13 @@ contract is complete. A command implementation is not ready when the human
 renderer, JSON renderer, docs, tests, and runtime surface tell different
 stories.
 
+## Review Scope
+
+Review the changed command files, command docs, focused tests, implementation
+report, and captured CLI evidence. Read project-wide command patterns and
+authority docs only as needed to judge the changed surface. Do not expand a CLI
+review into a full project audit unless the user explicitly asks for one.
+
 ## Checklist
 
 ### Contract And Scope

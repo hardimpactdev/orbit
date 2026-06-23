@@ -67,13 +67,37 @@ Start at the monorepo root and read in this order:
 Session plans and specs stay at `docs/superpowers/`. They are not product
 authority and are not the durable harness.
 
+## Solo Role Matrix
+
+Solo is the worker substrate for Orbit repo development. Use it to split work
+only when ownership can stay clear.
+
+| Role | Default Agent | Owns | Does Not Own |
+|------|---------------|------|--------------|
+| Feature orchestrator | Codex | Goal contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
+| Implementation worker | Grok | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Merge-back, release, broad refactors, unrelated dirty files |
+| Documenter / librarian worker | Claude | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
+| CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
+| Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
+
+The main Codex thread is the source of work. Workers receive the active goal
+contract, worktree path, owned files or domains, stop predicates, and reporting
+shape. If those boundaries are hard to state, use one worker serially instead of
+parallel workers.
+
+Documentation-heavy work may start with a Claude documenter/librarian worker.
+Code implementation can run after Codex accepts the docs contract as stable
+enough. Docs and code may proceed in parallel only when the product contract is
+settled, ownership is disjoint, and Codex owns reconciliation before commit.
+
 ## Root Routing
 
 Use this table to pick the smallest workflow that can prove the change.
 
 | Surface | Skill | Authority Docs | Test Lane | Reviewer Needed | Loop Depth | Hard Stop |
 |---------|-------|----------------|-----------|-----------------|------------|-----------|
-| Docs-only | `updating-documentation` | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | Human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
+| Docs-only | `updating-documentation`; `auditing-docs-drift` only for an explicit consistency scan | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | `.agents/review-personas/docs-librarian.md` or human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
+| Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Claude documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest/E2E owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
 | CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; E2E next; PTY capture for terminal UX/cadence issues; retained Incus VM Solo-terminal gate before live or release-candidate deploy | `.agents/review-personas/cli-command.md` or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained VM proof when CLI behavior needs it, or live topology would be touched without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; E2E when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
 | Provisioning/live-node | `e2e-verification-lanes`, `implementing-features` | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Prepared-topology lane, retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |
@@ -105,6 +129,19 @@ Human approval boundary:
 
 The contract is not ceremony. It defines when the agent should continue, when it
 should stop, and which evidence is enough for handoff.
+
+## Review Scope
+
+Reviewer personas inspect the changed files, named authority docs, focused
+tests, implementation report, and captured evidence for the slice under review.
+They may read project-wide patterns from `AGENTS.md`, `HARNESS.md`, skills, and
+authority docs to evaluate the diff, but they do not scan or relitigate the
+whole project unless the user explicitly asks for a broad audit.
+
+Broad documentation audits are a separate workflow. Use
+`auditing-docs-drift` for explicit contradiction, drift, stale terminology, or
+anchor-sweep requests; do not smuggle that full-repo audit into routine feature
+review.
 
 ## Loop Stack
 

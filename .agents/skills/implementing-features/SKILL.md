@@ -43,13 +43,18 @@ Responsibilities:
 - Read the handoff, docs, and existing code enough to define clear Grok tasks.
 - Spawn one Grok worker by default. Spawn multiple Grok workers only for
   disjoint slices with explicit ownership and merge order.
-- Keep docs, tests, and code for the same behavior in the same Grok task unless
-  the split is genuinely independent.
+- Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Claude
+  documenter/librarian worker for substantial docs-first or documentation-heavy
+  slices when its ownership is separable.
+- Keep docs, tests, and code for the same behavior in one worker by default.
+  Split documentation and code only when Codex can accept the docs contract
+  before code relies on it, or when ownership is genuinely independent.
 - Monitor Grok output, inspect diffs, ask for corrections, and keep unrelated
   dirty files untouched.
 - Run or require the verification gates and independently read the results.
 - Run applicable reviewer personas from `HARNESS.md` after implementation
-  evidence exists. For CLI command changes, use
+  evidence exists. For documentation-heavy changes, use
+  `.agents/review-personas/docs-librarian.md`; for CLI command changes, use
   `.agents/review-personas/cli-command.md` before accepting the slice.
 - Own final commit, merge-back, worktree cleanup, and the implementation report.
 
@@ -111,6 +116,62 @@ Rules:
 
 Report changed files, tests, harness signals, verification commands/results,
 blockers, and risks.
+```
+
+## Claude Documenter / Librarian Delegation
+
+Use a Claude documenter/librarian worker when documentation is substantial
+enough to own separately: command contracts, product authority edits,
+documentation-first handoffs, or focused docs drift analysis inside the changed
+surface. Do not spawn it for routine small copy edits.
+
+The documenter owns documentation artifacts, not final product decisions or code
+implementation. Codex reviews the result and reconciles it with the code worker
+before commit. Routine docs review covers changed files and named authority
+docs; full-repo drift audits use `.agents/skills/auditing-docs-drift/SKILL.md`
+only when explicitly requested.
+
+When running inside Solo, discover the live Claude-capable tool with
+`list_agent_tools`, spawn it with `spawn_agent`, and prepend Solo's returned
+`agent_instructions` to the first prompt.
+
+Use this prompt shape:
+
+```text
+<prepend the agent_instructions returned by Solo spawn_agent>
+
+You are the documentation/librarian worker for one scoped Orbit feature slice.
+Keep ownership narrow and do not edit code unless Codex explicitly asks for a
+mechanical docs-support change.
+
+Worktree:
+<absolute path to .worktrees/<branch-name>>
+
+Read and follow:
+- AGENTS.md
+- HARNESS.md
+- HARNESS_SIGNALS.md
+- harness-signals/README.md
+- .agents/skills/updating-documentation/SKILL.md
+- .agents/review-personas/docs-librarian.md
+- .agents/skills/auditing-docs-drift/SKILL.md only if the handoff asks for
+  drift, contradiction, stale terminology, or anchor analysis
+- changed docs and immediate authority docs named in the handoff
+
+Documentation handoff:
+<paste the docs-owned slice>
+
+Rules:
+- Review and edit only the changed docs surface plus immediate authority docs
+  needed to judge it.
+- Do not turn focused docs review into a full-project audit.
+- Keep process/harness docs separate from product behavior docs.
+- If product intent is unclear, stop with the exact conflict instead of
+  choosing silently.
+- Run or request the assigned docs verification.
+
+Report changed docs, authority docs read, docs-lint result, open questions,
+harness signals, and whether the docs contract is stable enough for code work.
 ```
 
 ## Workspace Setup
@@ -353,19 +414,24 @@ moving on to durable E2E.
    `LOOP.md.example` to ignored `LOOP.md` for the active worktree and fill the
    goal contract before implementation.
 4. Confirm owned files or domains and existing dirty work before editing.
-5. Decide the Grok delegation plan. Use one Grok worker unless the feature has
-   disjoint slices with explicit file/domain ownership and merge order.
-6. Spawn the Grok worker(s) with the worktree path, handoff, owned scope,
+5. Decide the Solo worker plan from `HARNESS.md`. Use one Grok worker by
+   default. Add a Claude documenter/librarian worker only when documentation is
+   substantial and the docs-owned surface is clear.
+6. If a Claude documenter/librarian worker is used, spawn it first or in
+   parallel only after the docs-owned slice is explicit. Codex must inspect the
+   docs result and accept the docs contract before code relies on it.
+7. Spawn the Grok worker(s) with the worktree path, handoff, owned scope,
    documentation authority, TDD requirement, focused verification, and the rule
    that Grok must not merge to `main` or clean up the worktree.
-7. Monitor Grok, inspect diffs, and send correction prompts until the
+8. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. When a correction
    reveals missing durable context, triage it through `LOOP.md` and
    `HARNESS_SIGNALS.md`.
-8. Align documentation inside this worktree when the handoff identifies missing
-   or contradictory docs. Prefer sending documentation corrections back through
-   the Grok worker that owns the related behavior.
-9. For every failed verification, review comment, human correction, docs
+9. Align documentation inside this worktree when the handoff identifies missing
+   or contradictory docs. Use the Claude documenter/librarian for substantial
+   docs-owned corrections; otherwise keep docs corrections with the worker that
+   owns the related behavior.
+10. For every failed verification, review comment, human correction, docs
    conflict, setup problem, or agent mistake encountered during the slice,
    search `harness-signals/` for related prior records, then decide whether it
    is local cleanup or a durable harness signal. If the search returns stale,
@@ -375,58 +441,59 @@ moving on to durable E2E.
    signal record and update the smallest guardrail target in the same worktree.
    If it is durable but broader than the slice, report a scoped follow-up
    instead of expanding ownership.
-10. Check whether the project-owned Orbit skill under `skills/orbit/**` is
+11. Check whether the project-owned Orbit skill under `skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-11. Ensure the Grok implementation followed TDD (see Test-Driven Development
+12. Ensure the Grok implementation followed TDD (see Test-Driven Development
    below): failing Pest tests first, then implementation.
-12. Keep the smallest working vertical slice that makes the tests pass.
-13. For CLI command behavior, ensure durable E2E coverage has been created or
+13. Keep the smallest working vertical slice that makes the tests pass.
+14. For CLI command behavior, ensure durable E2E coverage has been created or
     updated for the integrated behavior, then run the retained ingress VM
     Solo-terminal gate from this worktree before durable E2E. Give the user a
     chance to inspect the VM-observed CLI behavior before any
     live/release-candidate deployment. If this cannot be completed, report the
     blocker explicitly instead of widening the release path.
-14. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+15. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-15. Run focused in-memory and prepared-topology feature verification. For CLI
+16. Run focused in-memory and prepared-topology feature verification. For CLI
     behavior, durable E2E follows the retained VM/user-verification checkpoint.
     For non-CLI behavior, proceed to the relevant E2E lane once code and
     focused tests are ready; no retained CLI confirmation gate applies.
-16. Run the applicable reviewer persona from the `HARNESS.md` routing table once
-    implementation evidence exists and before accepting the slice. For CLI
-    command changes, run `.agents/review-personas/cli-command.md` and resolve or
-    explicitly report its findings before commit.
-17. Run artifact-backed feature verification when production artifact behavior
+17. Run the applicable reviewer persona from the `HARNESS.md` routing table once
+    implementation evidence exists and before accepting the slice. For
+    documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
+    For CLI command changes, run `.agents/review-personas/cli-command.md`.
+    Resolve or explicitly report findings before commit.
+18. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
-18. Run provider provision gates only as final/nightly substrate verification
+19. Run provider provision gates only as final/nightly substrate verification
     when installer, host mutation, image, binary, or topology-preparation
     behavior changed. Docker provision is only for Docker artifact/image or
     Docker topology-preparer changes; do not run it as a generic post-`composer
     test:e2e` gate.
-19. If PHP changed, run:
+20. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-20. Before reporting completion, run the project quality gate:
+21. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-21. Commit the verified worktree changes on the worktree branch.
-22. Merge the branch back into `main` from the primary `~/orbit` checkout,
+22. Commit the verified worktree changes on the worktree branch.
+23. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
-22. If release was explicitly agreed or specifically discussed as part of the
+24. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
     the release artifacts are accepted, run `doctor` again, compare the before
@@ -554,6 +621,10 @@ Worktree:
 Grok delegation:
 - Worker(s): <name/process id and owned scope>
 - Corrections requested: <summary or none>
+
+Documenter/librarian delegation:
+- Worker: <name/process id and owned docs scope, or not used>
+- Docs contract status: <accepted, needs changes, blocked, or not applicable>
 
 Changed files:
 - <path>: <why>
