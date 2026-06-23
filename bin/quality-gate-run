@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+
+set -u
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GATE=""
+COMMAND=""
+MODE="check"
+ARTIFACT_DIR="${ORBIT_QUALITY_GATES_DIR:-${ROOT}/.orbit/quality-gates}"
+
+usage_error() {
+    echo "$1" >&2
+    exit 1
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --gate=*)
+            GATE="${1#*=}"
+            shift
+            ;;
+        --gate)
+            [ "$#" -ge 2 ] || usage_error "Missing value for --gate."
+            GATE="${2:-}"
+            shift 2
+            ;;
+        --command=*)
+            COMMAND="${1#*=}"
+            shift
+            ;;
+        --command)
+            [ "$#" -ge 2 ] || usage_error "Missing value for --command."
+            COMMAND="${2:-}"
+            shift 2
+            ;;
+        --mode=*)
+            MODE="${1#*=}"
+            shift
+            ;;
+        --mode)
+            [ "$#" -ge 2 ] || usage_error "Missing value for --mode."
+            MODE="${2:-}"
+            shift 2
+            ;;
+        --artifact-dir=*)
+            ARTIFACT_DIR="${1#*=}"
+            shift
+            ;;
+        --artifact-dir)
+            [ "$#" -ge 2 ] || usage_error "Missing value for --artifact-dir."
+            ARTIFACT_DIR="${2:-}"
+            shift 2
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Unknown option [$1]." >&2
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$GATE" ]; then
+    usage_error "Missing required option --gate."
+fi
+
+if [ "$#" -eq 0 ]; then
+    usage_error "Missing command after --."
+fi
+
+if [ -z "$COMMAND" ]; then
+    COMMAND="$GATE"
+fi
+
+STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+GIT_BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+
+set +e
+"$@"
+EXIT_CODE="$?"
+set -e
+
+ENDED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+php "${ROOT}/bin/quality-gate-write-artifact" \
+    --gate="$GATE" \
+    --command="$COMMAND" \
+    --mode="$MODE" \
+    --started-at="$STARTED_AT" \
+    --ended-at="$ENDED_AT" \
+    --exit-code="$EXIT_CODE" \
+    --git-branch="$GIT_BRANCH" \
+    --git-commit="$GIT_COMMIT" \
+    --artifact-dir="$ARTIFACT_DIR" >/dev/null 2>&1 || true
+
+exit "$EXIT_CODE"

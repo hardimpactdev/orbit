@@ -470,8 +470,11 @@ moving on to durable E2E.
    acceptance criteria are met or a blocker is explicit. The first checkpoint is
    a narrow owned diff or an explicit missing-context blocker after the required
    local files are read; broad discovery without a first diff is a process
-   problem to correct. When a correction reveals missing durable context, triage
-   it through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
+   problem to correct. After one explicit first-diff correction, if the worker
+   still produces no diff or blocker, stand down the worker and mark the
+   matching harness signal recurring instead of letting the process stall. When
+   a correction reveals missing durable context, triage it
+   through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that

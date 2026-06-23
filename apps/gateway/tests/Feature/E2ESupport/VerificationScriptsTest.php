@@ -176,10 +176,10 @@ it('keeps default composer tests out of e2e lanes', function (): void {
         ->not->toContain('ORBIT_E2E=1')
         ->not->toContain('--group=e2e');
 
-    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:test @additional_args';
-    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-e2e-artisan e2e:test @additional_args';
-    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/orbit-e2e-artisan e2e:test --canary @additional_args';
-    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/orbit-e2e-artisan e2e:test @additional_args';
+    $e2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/quality-gate-run --gate=e2e --command="composer test:e2e" -- bin/orbit-e2e-artisan e2e:test @additional_args';
+    $dockerE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/quality-gate-run --gate=e2e-docker --command="composer test:e2e:docker" -- bin/orbit-e2e-artisan e2e:test @additional_args';
+    $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/quality-gate-run --gate=e2e-docker-canary --command="composer test:e2e:docker:canary" -- bin/orbit-e2e-artisan e2e:test --canary @additional_args';
+    $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/quality-gate-run --gate=e2e-incus --command="composer test:e2e:incus" -- bin/orbit-e2e-artisan e2e:test @additional_args';
 
     expect($composer['scripts']['test:e2e'])->toBe([
         'Composer\\Config::disableProcessTimeout',

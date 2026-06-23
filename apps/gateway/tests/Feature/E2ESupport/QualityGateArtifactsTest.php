@@ -58,6 +58,92 @@ it('writes a quality gate artifact with required timing and git metadata', funct
     }
 });
 
+it('runs a wrapped quality gate command and writes timing evidence', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-run-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-run'),
+            '--gate=e2e-docker',
+            '--command=composer test:e2e:docker',
+            "--artifact-dir={$artifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'fwrite(STDOUT, "wrapped-ok\n");',
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toContain('wrapped-ok');
+
+        $artifacts = glob("{$artifactDir}/e2e-docker-*.json") ?: [];
+
+        expect($artifacts)->toHaveCount(1);
+
+        $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($artifact)
+            ->toMatchArray([
+                'schema_version' => 1,
+                'gate' => 'e2e-docker',
+                'command' => 'composer test:e2e:docker',
+                'mode' => 'check',
+                'exit_code' => 0,
+            ])
+            ->and(is_numeric($artifact['duration_seconds']))->toBeTrue()
+            ->and($artifact['git']['branch'])->toBeString()
+            ->and($artifact['git']['commit'])->toBeString();
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('preserves the wrapped quality gate command exit code', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-run-fail-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-run'),
+            '--gate=e2e-incus',
+            '--command=composer test:e2e:incus',
+            "--artifact-dir={$artifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'exit(7);',
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(7);
+
+        $artifacts = glob("{$artifactDir}/e2e-incus-*.json") ?: [];
+
+        expect($artifacts)->toHaveCount(1);
+
+        $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($artifact)->toMatchArray([
+            'gate' => 'e2e-incus',
+            'command' => 'composer test:e2e:incus',
+            'exit_code' => 7,
+        ]);
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('rejects quality gate wrapper options that are missing values', function (): void {
+    $process = new Process([
+        repo_path('bin/quality-gate-run'),
+        '--gate',
+    ], repo_path());
+    $process->run();
+
+    expect($process->getExitCode())->toBe(1)
+        ->and($process->getErrorOutput())->toContain('Missing value for --gate.');
+});
+
 it('reports missing quality-check evidence when no artifacts exist', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-empty-'.bin2hex(random_bytes(6));
     mkdir($artifactDir, 0700, true);
@@ -184,6 +270,42 @@ it('final-check skips timing analysis when no quality gate artifacts exist', fun
     }
 });
 
+it('final-check discovers existing e2e gate artifacts when no explicit gate is passed', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-final-e2e-'.bin2hex(random_bytes(6));
+    mkdir($artifactDir, 0700, true);
+
+    file_put_contents("{$artifactDir}/e2e-docker-2026-06-23T100000Z-abc123.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'e2e-docker',
+        'command' => 'composer test:e2e:docker',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:04:00Z',
+        'duration_seconds' => 240,
+        'exit_code' => 0,
+        'git' => ['branch' => 'quality-gate-e2e-artifacts', 'commit' => 'abc123'],
+        'subgates' => [],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-final-check'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('recent run: gate=e2e-docker')
+            ->not->toContain('missing evidence: no artifact found for gate [quality-check]')
+            ->not->toContain('missing evidence: no artifact found for gate [e2e-incus]')
+            ->toContain('Final check did not rerun quality-check or E2E lanes');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
 it('final-check surfaces analyzer warnings without rerunning quality gates', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-final-warning-'.bin2hex(random_bytes(6));
     $baselineDir = "{$artifactDir}/baselines";
@@ -267,11 +389,42 @@ it('keeps quality-check artifact capture wired into the aggregate gate script', 
         ->toContain('.orbit/quality-gates');
 });
 
+it('keeps source-prepared e2e artifact capture out of provider provision scripts', function (): void {
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+
+    expect(repo_path('bin/quality-gate-run'))->toBeFile()
+        ->and(is_executable(repo_path('bin/quality-gate-run')))->toBeTrue()
+        ->and($composer['scripts']['test:e2e'][1])
+        ->toContain('bin/quality-gate-run')
+        ->toContain('--gate=e2e')
+        ->toContain('--command="composer test:e2e"')
+        ->toContain('bin/orbit-e2e-artisan e2e:test')
+        ->and($composer['scripts']['test:e2e:docker'][1])
+        ->toContain('bin/quality-gate-run')
+        ->toContain('--gate=e2e-docker')
+        ->toContain('ORBIT_E2E_LANES=docker')
+        ->and($composer['scripts']['test:e2e:docker:canary'][1])
+        ->toContain('--gate=e2e-docker-canary')
+        ->toContain('e2e:test --canary')
+        ->and($composer['scripts']['test:e2e:incus'][1])
+        ->toContain('--gate=e2e-incus')
+        ->toContain('ORBIT_E2E_LANES=incus')
+        ->and(implode("\n", $composer['scripts']['test:e2e:provision']))
+        ->not->toContain('quality-gate-run')
+        ->and(implode("\n", $composer['scripts']['test:e2e:provision:docker']))
+        ->not->toContain('quality-gate-run')
+        ->and(implode("\n", $composer['scripts']['test:e2e:provision:incus']))
+        ->not->toContain('quality-gate-run');
+});
+
 it('documents quality gate artifact and analyzer commands', function (): void {
     $qualityGates = (string) file_get_contents(repo_path('apps/docs/content/testing/quality-gates.md'));
 
     expect($qualityGates)
         ->toContain('.orbit/quality-gates/')
+        ->toContain('composer test:e2e')
+        ->toContain('e2e-docker')
+        ->toContain('e2e-incus')
         ->toContain('composer quality-gate:analyze')
         ->toContain('composer quality-gate:final-check')
         ->toContain('composer quality-check:fix')

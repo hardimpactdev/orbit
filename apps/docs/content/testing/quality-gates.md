@@ -18,10 +18,20 @@ Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
 default Pest suite across each app and package.
 
-`composer quality-check` and `composer quality-check:fix` both write a local
-timing artifact under `.orbit/quality-gates/`. The `:fix` lane records the same
-evidence shape with `mode=fix` so triage can distinguish read-only checks from
-auto-fix runs without rerunning the gate.
+`composer quality-check`, `composer quality-check:fix`, and E2E lanes that run
+against the prepared source checkout write local timing artifacts under
+`.orbit/quality-gates/`. The `:fix` lane records the same evidence shape with
+`mode=fix` so triage can distinguish read-only checks from auto-fix runs without
+rerunning the gate.
+
+Gate names for prepared-source E2E are:
+
+| Command | Gate |
+|---------|------|
+| `composer test:e2e` | `e2e` |
+| `composer test:e2e:docker` | `e2e-docker` |
+| `composer test:e2e:docker:canary` | `e2e-docker-canary` |
+| `composer test:e2e:incus` | `e2e-incus` |
 
 Inspect existing artifacts with:
 
@@ -39,12 +49,14 @@ Before merging a worktree, inspect the existing timing evidence with:
 composer quality-gate:final-check
 ```
 
-The final check wraps the analyzer and highlights missing or stale evidence,
-latest gate exits that were non-zero, and local baseline observations that
-remain warning-only. It does not rerun `composer quality-check`, Pest, Docker
-E2E, Incus E2E, or provider provision lanes. When no timing artifacts exist, it
-exits successfully and reports that timing regression analysis was skipped so
-the feature owner can decide whether another gate run is needed.
+The final check wraps the analyzer and highlights stale evidence, latest gate
+exits that were non-zero, and local baseline observations that remain
+warning-only. Without explicit `--gate` arguments, it analyzes the gates that
+already have artifacts in this worktree. It does not warn about missing E2E
+lanes that were not run, and it does not rerun `composer quality-check`, Pest,
+Docker E2E, Incus E2E, or provider provision lanes. When no timing artifacts
+exist, it exits successfully and reports that timing regression analysis was
+skipped so the feature owner can decide whether another gate run is needed.
 
 ## Failure and timing triage
 
@@ -66,7 +78,9 @@ regression.
 
 Run `composer test:e2e` when behavior touches the integrated prepared topology.
 Use `composer test:e2e:docker` for Docker-eligible feature tests and
-`composer test:e2e:incus` for VM-feature behavior.
+`composer test:e2e:incus` for VM-feature behavior. These source-prepared lanes
+write timing artifacts through `bin/quality-gate-run`; the wrapper preserves the
+lane's exit code and does not change provider selection or argument forwarding.
 
 Run feature E2E before any affected provider artifact/provision gate. The
 prepared-topology lanes exercise the current source checkout and are the normal

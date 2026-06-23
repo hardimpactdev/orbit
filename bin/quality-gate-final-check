@@ -26,6 +26,10 @@ try {
         exit(0);
     }
 
+    if ($gates === []) {
+        $gates = existing_gates($artifactDir);
+    }
+
     $analyzer = run_analyzer($artifactDir, $gates, $maxAgeHours);
 
     fwrite(STDOUT, 'Analyzer report:'.PHP_EOL);
@@ -117,6 +121,53 @@ function artifact_count(string $artifactDir): int
     }
 
     return count(glob(rtrim($artifactDir, '/').'/*.json') ?: []);
+}
+
+/**
+ * @return list<string>
+ */
+function existing_gates(string $artifactDir): array
+{
+    if (! is_dir($artifactDir)) {
+        return [];
+    }
+
+    $gates = [];
+
+    foreach (glob(rtrim($artifactDir, '/').'/*.json') ?: [] as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        if (! is_array($decoded) || ! isset($decoded['gate']) || ! is_string($decoded['gate'])) {
+            continue;
+        }
+
+        $gate = trim($decoded['gate']);
+
+        if ($gate !== '') {
+            $gates[] = $gate;
+        }
+    }
+
+    $gates = array_values(array_unique($gates));
+
+    usort($gates, function (string $left, string $right): int {
+        $order = [
+            'quality-check' => 0,
+            'e2e' => 1,
+            'e2e-docker' => 2,
+            'e2e-docker-canary' => 3,
+            'e2e-incus' => 4,
+        ];
+
+        return ($order[$left] ?? 100) <=> ($order[$right] ?? 100)
+            ?: strcmp($left, $right);
+    });
+
+    return $gates;
 }
 
 /**
