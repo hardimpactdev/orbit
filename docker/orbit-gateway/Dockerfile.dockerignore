@@ -37,6 +37,11 @@ apps/gateway/bootstrap/cache/**
 !packages/core/composer.lock
 !packages/core/src/
 !packages/core/src/**
+!packages/sdk/
+!packages/sdk/composer.json
+!packages/sdk/composer.lock
+!packages/sdk/src/
+!packages/sdk/src/**
 !docker/
 !docker/orbit-gateway/
 !docker/orbit-gateway/**

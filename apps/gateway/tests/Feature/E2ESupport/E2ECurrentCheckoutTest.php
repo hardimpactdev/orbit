@@ -309,7 +309,7 @@ it('writes source-mounted gateway state under the node config root instead of th
 
     expect($command)
         ->toContain("sudo install -d -m 775 -o orbit -g orbit '/home/orbit/.config/orbit'")
-        ->toContain("sudo chown -R orbit:orbit '/home/orbit/.config/orbit'")
+        ->toContain("sudo chown -R orbit:orbit '/home/orbit/.config/orbit' 2>/dev/null || true")
         ->toContain('/home/orbit/.config/orbit/.env')
         ->toContain('/home/orbit/.config/orbit/.env.tmp')
         ->toContain('/home/orbit/.config/orbit/gateway.sqlite')

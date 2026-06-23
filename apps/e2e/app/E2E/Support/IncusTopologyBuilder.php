@@ -3737,7 +3737,7 @@ PHP;
         $scriptContent = "#!/bin/bash\nset -euo pipefail\n"
             ."cd {$orbitPath}\n"
             ."if command -v composer >/dev/null 2>&1; then\n"
-            ."  for app in apps/gateway apps/cli apps/e2e packages/core apps/docs; do\n"
+            ."  for app in apps/gateway apps/cli apps/e2e packages/core packages/sdk apps/docs; do\n"
             ."    if [ -f \"\$app/composer.json\" ]; then\n"
             ."      {$composerCacheEnv}composer --working-dir=\"\$app\" install --no-interaction --no-progress --prefer-dist --optimize-autoloader 2>&1 || true\n"
             ."    fi\n"

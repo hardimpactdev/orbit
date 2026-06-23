@@ -5,6 +5,7 @@ set -Eeuo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 cli_dir="$repo_root/apps/cli"
 core_dir="$repo_root/packages/core"
+sdk_dir="$repo_root/packages/sdk"
 
 usage() {
     cat <<'EOF'
@@ -55,11 +56,13 @@ php -r 'exit(extension_loaded("zlib") ? 0 : 1);' || fail 'Host PHP must have the
 [ -x "$cli_dir/vendor/bin/phpacker" ] || fail 'PHPacker is not installed. Run `composer install --working-dir=apps/cli` first.'
 [ -f "$cli_dir/composer.lock" ] || fail 'apps/cli/composer.lock is required.'
 [ -f "$core_dir/composer.json" ] || fail 'packages/core/composer.json is required.'
+[ -f "$sdk_dir/composer.json" ] || fail 'packages/sdk/composer.json is required.'
 
 stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/orbit-cli-build.XXXXXX")"
 stage_root="$stage_dir/repo"
 stage_cli_dir="$stage_root/apps/cli"
 stage_core_dir="$stage_root/packages/core"
+stage_sdk_dir="$stage_root/packages/sdk"
 
 cleanup() {
     rm -rf "$stage_dir"
@@ -85,6 +88,14 @@ rsync -a --delete \
     "$core_dir/" \
     "$stage_core_dir/"
 
+rsync -a --delete \
+    --exclude vendor \
+    --exclude build \
+    --exclude builds \
+    --exclude node_modules \
+    "$sdk_dir/" \
+    "$stage_sdk_dir/"
+
 COMPOSER_MIRROR_PATH_REPOS=1 composer --working-dir="$stage_cli_dir" install \
     --no-dev \
     --optimize-autoloader \
@@ -96,6 +107,11 @@ orbit_core_vendor_dir="$stage_cli_dir/vendor/hardimpactdev/orbit-core"
 rm -rf "$orbit_core_vendor_dir"
 mkdir -p "$orbit_core_vendor_dir"
 cp -R "$stage_core_dir/src" "$stage_core_dir/composer.json" "$orbit_core_vendor_dir/"
+
+orbit_sdk_vendor_dir="$stage_cli_dir/vendor/hardimpactdev/orbit-sdk-laravel"
+rm -rf "$orbit_sdk_vendor_dir"
+mkdir -p "$orbit_sdk_vendor_dir"
+cp -R "$stage_sdk_dir/src" "$stage_sdk_dir/composer.json" "$orbit_sdk_vendor_dir/"
 
 (
     cd "$stage_cli_dir"

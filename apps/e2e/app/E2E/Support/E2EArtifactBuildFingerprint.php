@@ -18,10 +18,12 @@ final class E2EArtifactBuildFingerprint
         return self::forPaths([
             'apps/cli',
             'packages/core',
+            'packages/sdk',
         ], [
             'apps/cli/builds',
             'apps/cli/vendor',
             'packages/core/vendor',
+            'packages/sdk/vendor',
         ]);
     }
 
@@ -48,6 +50,9 @@ final class E2EArtifactBuildFingerprint
             'packages/core/composer.json',
             'packages/core/composer.lock',
             'packages/core/src',
+            'packages/sdk/composer.json',
+            'packages/sdk/composer.lock',
+            'packages/sdk/src',
             'docker/orbit-gateway',
         ], [
             'apps/gateway/bootstrap/cache',
@@ -56,6 +61,7 @@ final class E2EArtifactBuildFingerprint
             'apps/gateway/database/database.sqlite-wal',
             'apps/gateway/storage/framework',
             'apps/gateway/storage/logs',
+            'packages/sdk/vendor',
         ]);
     }
 

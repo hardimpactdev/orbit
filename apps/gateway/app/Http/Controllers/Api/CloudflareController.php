@@ -8,12 +8,12 @@ use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Cloudflare\CloudflareManager;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final class CloudflareController implements Loggable
 {

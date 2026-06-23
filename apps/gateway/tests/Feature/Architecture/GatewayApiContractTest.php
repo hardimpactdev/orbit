@@ -23,10 +23,10 @@ it('keeps command action progress streams on their canonical api routes', functi
 it('keeps gateway stream requests on canonical action endpoints', function (): void {
     $allowedRequestFiles = [];
 
-    $violations = collect(File::allFiles(app_path('Http/Gateway/Requests')))
+    $violations = collect(File::allFiles(repo_path('packages/sdk/src/Requests')))
         ->reject(fn (SplFileInfo $file): bool => in_array($file->getPathname(), $allowedRequestFiles, true))
         ->filter(fn (SplFileInfo $file): bool => preg_match("/return ['\"]\\/api\\/[^'\"]*\\/stream['\"];/", File::get($file->getPathname())) === 1)
-        ->map(fn (SplFileInfo $file): string => str_replace(base_path().'/', '', $file->getPathname()))
+        ->map(fn (SplFileInfo $file): string => str_replace(repo_path().'/', '', $file->getPathname()))
         ->values()
         ->all();
 
@@ -49,14 +49,14 @@ it('preserves real-time streaming headers on gateway api stream routes', functio
 it('does not use laravel http for gateway transport', function (): void {
     $gatewayTransportPaths = [
         app_path('Console/Commands'),
-        app_path('Http/Gateway'),
         app_path('Services/Gateway'),
+        repo_path('packages/sdk/src'),
     ];
 
     $violations = collect($gatewayTransportPaths)
         ->flatMap(fn (string $path): array => File::allFiles($path))
         ->filter(fn (SplFileInfo $file): bool => str_contains(File::get($file->getPathname()), 'Http::'))
-        ->map(fn (SplFileInfo $file): string => str_replace(base_path().'/', '', $file->getPathname()))
+        ->map(fn (SplFileInfo $file): string => str_replace(repo_path().'/', '', $file->getPathname()))
         ->values()
         ->all();
 

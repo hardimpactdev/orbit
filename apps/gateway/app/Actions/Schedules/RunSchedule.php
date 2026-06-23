@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use App\Services\Schedules\ScheduleDispatcher;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class RunSchedule
 {

@@ -17,8 +17,7 @@ use App\Contracts\UpdateAllGatewayStream;
 use App\Contracts\WorkspaceSourceDrivers;
 use App\Data\Apps\LaravelCloudAppInstanceDriverConfigData;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
-use App\Http\Gateway\GatewayConnector;
-use App\Http\Gateway\UpdateAllGatewayStreamClient;
+use App\Models\LocalGatewaySettings;
 use App\Services\ActivityLogCorrelation;
 use App\Services\ActivityLogger;
 use App\Services\AgentIde\CoreAgentIdeMessageAdapter;
@@ -31,6 +30,7 @@ use App\Services\Dns\DnsmasqReconciler;
 use App\Services\Dns\LocalResolver;
 use App\Services\Dns\OrbitDnsServiceInstaller;
 use App\Services\Doctor\DnsRuntimeProbe;
+use App\Services\Gateway\SdkUpdateAllGatewayStream;
 use App\Services\Operations\OperationResultRegistry;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Operations\OperationTokenFactory;
@@ -78,6 +78,7 @@ use App\Tools\VitePlusTool;
 use Illuminate\Support\ServiceProvider;
 use Orbit\Core\Security\OperationTokenSigner;
 use Orbit\Core\Security\OperationTokenVerifier;
+use Orbit\Sdk\Laravel\GatewayConnector;
 use RuntimeException;
 use Spatie\LaravelData\Support\DataConfig;
 
@@ -110,7 +111,15 @@ class AppServiceProvider extends ServiceProvider
             verifier: $app->make(OperationTokenVerifier::class),
             secret: $this->operationTokenSigningKey(),
         ));
-        $this->app->singleton(GatewayConnector::class);
+        $this->app->singleton(GatewayConnector::class, function ($app): GatewayConnector {
+            $settings = LocalGatewaySettings::current();
+
+            return new GatewayConnector(
+                baseUrl: is_string($settings->gateway_url) ? $settings->gateway_url : null,
+                caPemPath: $settings->ca_pem_path,
+                correlationIdResolver: fn (): ?string => $app->make(ActivityLogCorrelation::class)->current(),
+            );
+        });
         $this->app->singleton(LocalResolver::class);
         $this->app->bind(ProgressReporter::class, NullProgressReporter::class);
         $this->app->bind(AgentIdeMessageAdapter::class, CoreAgentIdeMessageAdapter::class);
@@ -136,7 +145,7 @@ class AppServiceProvider extends ServiceProvider
             localExecutor: $app->make(RemoteLocalExecutor::class),
         ));
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
-        $this->app->bind(UpdateAllGatewayStream::class, UpdateAllGatewayStreamClient::class);
+        $this->app->bind(UpdateAllGatewayStream::class, SdkUpdateAllGatewayStream::class);
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
         $this->app->singleton(ToolDefinitionRegistry::class, fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([
             $app->make(CaddyTool::class),

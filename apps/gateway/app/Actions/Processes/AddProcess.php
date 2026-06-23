@@ -8,7 +8,6 @@ use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Process;
@@ -18,6 +17,7 @@ use App\Services\Processes\ProcessRuntimeUnitPayload;
 use App\Services\Processes\ProcessServiceDefinitionRegistry;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class AddProcess
 {

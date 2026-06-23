@@ -17,8 +17,14 @@ use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
+use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
+use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
+use Orbit\Sdk\Laravel\Testing\GatewayPendingRequest;
 use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
 use Symfony\Component\Console\Output\StreamOutput;
 use Tests\TestCase;
@@ -59,6 +65,7 @@ function fakeGateway(array $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
     app()->forgetInstance(FakeGatewayStreamHttpClient::class);
+    GatewayMockClient::destroyGlobal();
 
     Http::fake(['https://gateway.test/*' => Http::response($body, $status)]);
 }
@@ -113,10 +120,16 @@ function fakeGatewayProgressStreamSequence(array $bodies, int $status = 200): Fa
     $httpClient = new FakeGatewayStreamHttpClient($responses);
 
     app()->instance(FakeGatewayStreamHttpClient::class, $httpClient);
+    GatewayMockClient::destroyGlobal();
+    GatewayMockClient::global([
+        GenericGatewayStreamRequest::class => fn (GatewayPendingRequest $pendingRequest): GatewayMockResponse => new FakeGatewayStreamMockResponse(
+            $httpClient->recordPendingRequest($pendingRequest),
+        ),
+    ]);
+
     app()->instance(GatewayStreamClient::class, new GatewayStreamClient(
         baseUrl: 'https://gateway.test',
         timeout: 30,
-        httpClient: $httpClient,
     ));
 
     return $httpClient;
@@ -206,6 +219,27 @@ final class FakeGatewayStreamHttpClient implements ClientInterface
         private array $queue,
     ) {}
 
+    public function recordPendingRequest(GatewayPendingRequest $request): ResponseInterface
+    {
+        $headers = [];
+        $accept = $request->header('Accept');
+
+        if (is_string($accept)) {
+            $headers['Accept'] = $accept;
+        }
+
+        $this->requests[] = [
+            'method' => $request->method(),
+            'uri' => $request->url(),
+            'options' => [
+                'headers' => $headers,
+                'json' => $request->body(),
+            ],
+        ];
+
+        return $this->nextResponse();
+    }
+
     public function send(RequestInterface $request, array $options = []): ResponseInterface
     {
         return $this->request($request->getMethod(), (string) $request->getUri(), $options);
@@ -224,6 +258,21 @@ final class FakeGatewayStreamHttpClient implements ClientInterface
             'options' => $options,
         ];
 
+        return $this->nextResponse();
+    }
+
+    public function requestAsync(string $method, $uri = '', array $options = []): PromiseInterface
+    {
+        return Create::promiseFor($this->request($method, $uri, $options));
+    }
+
+    public function getConfig(?string $option = null): mixed
+    {
+        return $option === null ? [] : null;
+    }
+
+    private function nextResponse(): ResponseInterface
+    {
         $response = array_shift($this->queue);
 
         if ($response instanceof Throwable) {
@@ -236,15 +285,19 @@ final class FakeGatewayStreamHttpClient implements ClientInterface
 
         return $response;
     }
+}
 
-    public function requestAsync(string $method, $uri = '', array $options = []): PromiseInterface
-    {
-        return Create::promiseFor($this->request($method, $uri, $options));
+final class FakeGatewayStreamMockResponse extends GatewayMockResponse
+{
+    public function __construct(
+        private readonly ResponseInterface $response,
+    ) {
+        parent::__construct('', $response->getStatusCode());
     }
 
-    public function getConfig(?string $option = null): mixed
+    public function createPsrResponse(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): ResponseInterface
     {
-        return $option === null ? [] : null;
+        return $this->response;
     }
 }
 
@@ -326,6 +379,7 @@ function fakeGatewayTextStream(string $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
     app()->forgetInstance(FakeGatewayStreamHttpClient::class);
+    GatewayMockClient::destroyGlobal();
 
     Http::fake([
         'https://gateway.test/*' => Http::response($body, $status, [
@@ -347,6 +401,7 @@ function fakeGatewayDown(string $message = 'connection refused'): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
     app()->forgetInstance(FakeGatewayStreamHttpClient::class);
+    GatewayMockClient::destroyGlobal();
 
     Http::fake(function () use ($message): never {
         throw new ConnectionException($message);

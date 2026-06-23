@@ -45,8 +45,8 @@ Plain `orbit doctor` sends the configured local default node when one is set
 with `orbit node:default`; otherwise it sends `self=true` so the gateway uses
 the caller identity. For long-running LLM-agent checks, prefer
 `orbit doctor --stream-json` so the agent receives incremental NDJSON progress
-frames. Broader `--stream-json` rollout to other long-running commands is a
-separate follow-up.
+frames. Other command families list `--stream-json` in their own references
+when that renderer is available.
 
 The process family is available for every node with at least one active role
 assignment. Role-less client/operator identities remain node-family only.
@@ -77,6 +77,9 @@ orbit update:all [--json]
 
 Runs from the gateway or an authorized client. Failures on one fan-out node do
 not abort the others.
+`update:all` does not yet expose `--stream-json`; its durable operation stream
+and caller-local fan-out update need a separate command-contract pass before
+agent-facing NDJSON progress can be added safely.
 
 ## `orbit profile`
 

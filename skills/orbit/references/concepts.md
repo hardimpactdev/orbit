@@ -114,6 +114,16 @@ Pass `--json` to force JSON. Non-interactive mode (`-n`) auto-enables JSON. Same
 
 Commands like `workspace:setup`, `deploy:run`, `tool:install`, and `node:new` stream Server-Sent Events from the gateway. The CLI renders a step tree (`tree` -> `step` events -> `complete`/`error`). If the stream closes without `complete` or `error`, the command failed.
 
+For LLM agents, prefer `--stream-json` when the command offers it so progress
+arrives as newline-delimited JSON frames during slow gateway work. Current
+agent-facing stream JSON commands include `doctor`, `app:new`,
+`workspace:new`, `workspace:setup`, gateway-streamed `node:new`, `deploy:run`,
+`tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, and
+`s3:unpublish`. `--stream-json` and `--json` are mutually exclusive; use
+`--json` when only the final machine-readable result is needed. `update:all`
+and local `update` still use their existing `--json` final-result contracts
+until their progress contracts are designed separately.
+
 ## Local node defaults
 
 ```bash

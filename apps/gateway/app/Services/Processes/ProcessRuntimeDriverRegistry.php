@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Process;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\DockerSwarmProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use App\Services\Processes\ProcessRuntimeDrivers\SystemdProcessRuntimeDriver;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ProcessRuntimeDriverRegistry
 {

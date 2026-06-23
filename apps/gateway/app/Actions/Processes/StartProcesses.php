@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\Processes;
 
 use App\Enums\ProcessEventType;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeDrivers\ProcessRuntimeDriver;
 use Illuminate\Database\Eloquent\Collection;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class StartProcesses
 {

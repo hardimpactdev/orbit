@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Enums\Nodes\NodeStatus;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 class ProxyRouteQuery
 {

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Processes;
 
 use App\Enums\Processes\ProcessRuntime;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Nodes\NodeWireGuardServiceAddress;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use RuntimeException;
 
 final readonly class ProcessServiceDefinitionRegistry

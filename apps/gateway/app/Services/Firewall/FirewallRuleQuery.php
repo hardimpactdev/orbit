@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Services\Firewall;
 
 use App\Enums\Nodes\NodeStatus;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 class FirewallRuleQuery
 {

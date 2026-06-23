@@ -5,12 +5,17 @@ declare(strict_types=1);
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\GatewayApiFailureKind;
 use App\Services\GatewayStreamClient;
-use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\FnStream;
-use GuzzleHttp\Psr7\Request as Psr7Request;
-use GuzzleHttp\Psr7\Response as Psr7Response;
 use GuzzleHttp\Psr7\Utils;
 use Orbit\Core\Progress\ProgressEventType;
+use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
+use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
+use Orbit\Sdk\Laravel\Testing\GatewayPendingRequest;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
 
 /**
  * Build a raw SSE stream body string from named event frames.
@@ -30,15 +35,33 @@ function buildSseStream(array $frames): string
     return implode("\n", $lines);
 }
 
-function fakeGatewayStreamClient(string $body, int $status = 200, array $headers = []): GatewayStreamClient
+function fakeGatewayStreamClient(string|StreamInterface $body, int $status = 200, array $headers = []): GatewayStreamClient
 {
-    return new GatewayStreamClient(
-        'https://gateway.test',
-        30,
-        httpClient: new FakeGatewayStreamHttpClient([
-            new Psr7Response($status, $headers + ['Content-Type' => 'text/event-stream'], $body),
-        ]),
+    fakeGatewayStreamMock(
+        $body instanceof StreamInterface
+            ? new CliGatewayStreamMockResponse($body, $status, $headers + ['Content-Type' => 'text/event-stream'])
+            : GatewayMockResponse::make($body, $status, $headers + ['Content-Type' => 'text/event-stream']),
     );
+
+    return new GatewayStreamClient('https://gateway.test', 30);
+}
+
+function fakeGatewayStreamMock(GatewayMockResponse $response): void
+{
+    GatewayMockClient::destroyGlobal();
+
+    GatewayMockClient::global([
+        GenericGatewayStreamRequest::class => $response,
+    ]);
+}
+
+function lastGatewayStreamPendingRequest(): GatewayPendingRequest
+{
+    $pendingRequest = GatewayMockClient::lastPendingRequest();
+
+    expect($pendingRequest)->not->toBeNull();
+
+    return $pendingRequest;
 }
 
 describe('GatewayStreamClient', function (): void {
@@ -62,11 +85,8 @@ describe('GatewayStreamClient', function (): void {
             ->and($events[2]['type'])->toBe('complete');
     });
 
-    it('dispatches delayed SSE chunks as they arrive over the curl transport', function (): void {
-        if (! function_exists('curl_multi_init')) {
-            test()->markTestSkipped('curl_multi_init is required for delayed stream coverage.');
-        }
-
+    it('dispatches delayed SSE chunks as they arrive over the SDK stream transport', function (): void {
+        GatewayMockClient::destroyGlobal();
         $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
 
         if ($server === false) {
@@ -136,11 +156,8 @@ describe('GatewayStreamClient', function (): void {
         }
     });
 
-    it('keeps only a bounded response tail for curl HTTP errors', function (): void {
-        if (! function_exists('curl_multi_init')) {
-            test()->markTestSkipped('curl_multi_init is required for curl HTTP error coverage.');
-        }
-
+    it('keeps only a bounded response tail for stream HTTP errors', function (): void {
+        GatewayMockClient::destroyGlobal();
         $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
 
         if ($server === false) {
@@ -255,14 +272,10 @@ describe('GatewayStreamClient', function (): void {
             'read' => fn (int $length): string => throw $readFailure,
         ]);
 
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new Psr7Response(200, ['Content-Type' => 'text/event-stream'], $stream),
-        ]);
-
         $exception = null;
 
         try {
-            (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
+            fakeGatewayStreamClient($stream)
                 ->streamEvents('/api/stream', [], fn () => null);
         } catch (Throwable $caught) {
             $exception = $caught;
@@ -314,12 +327,14 @@ describe('GatewayStreamClient', function (): void {
     });
 
     it('throws GatewayApiException for WireGuard unreachable connection errors', function (): void {
-        $request = new Psr7Request('POST', 'https://10.6.0.1/api/stream');
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new ConnectException('Connection timed out after 30 seconds', $request),
+        GatewayMockClient::destroyGlobal();
+        GatewayMockClient::global([
+            GenericGatewayStreamRequest::class => function (): never {
+                throw new RuntimeException('Connection timed out after 30 seconds');
+            },
         ]);
 
-        expect(fn () => (new GatewayStreamClient('https://10.6.0.1', 30, httpClient: $httpClient))
+        expect(fn () => new GatewayStreamClient('https://10.6.0.1', 30)
             ->streamEvents('/api/stream', [], fn () => null))
             ->toThrow(GatewayApiException::class, 'WireGuard');
     });
@@ -329,19 +344,15 @@ describe('GatewayStreamClient', function (): void {
             ['event' => 'complete', 'data' => ['ok' => true]],
         ]);
 
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new Psr7Response(200, ['Content-Type' => 'text/event-stream'], $body),
-        ]);
-
-        (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
+        fakeGatewayStreamClient($body)
             ->streamEvents('/api/stream', ['key' => 'val'], fn () => null);
 
-        $request = $httpClient->requests[0];
+        $pendingRequest = lastGatewayStreamPendingRequest();
 
-        expect($request['method'])->toBe('POST')
-            ->and($request['uri'])->toBe('https://gateway.test/api/stream')
-            ->and($request['options']['headers']['Accept'] ?? null)->toBe('text/event-stream')
-            ->and($request['options']['json']['key'] ?? null)->toBe('val');
+        expect($pendingRequest->method())->toBe('POST')
+            ->and($pendingRequest->url())->toBe('https://gateway.test/api/stream')
+            ->and($pendingRequest->header('Accept'))->toBe('text/event-stream')
+            ->and($pendingRequest->body())->toBe(['key' => 'val']);
     });
 
     it('verifies TLS against the configured gateway CA when a PEM file exists', function (): void {
@@ -349,69 +360,80 @@ describe('GatewayStreamClient', function (): void {
         $pemPath = tempnam(sys_get_temp_dir(), 'orbit-ca-').'.pem';
         file_put_contents($pemPath, "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n");
 
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new Psr7Response(200, ['Content-Type' => 'text/event-stream'], $body),
-        ]);
-
         try {
-            (new GatewayStreamClient('https://gateway.test', 30, $pemPath, $httpClient))
+            fakeGatewayStreamClient($body);
+
+            (new GatewayStreamClient('https://gateway.test', 30, $pemPath))
                 ->streamEvents('/api/stream', [], fn () => null);
         } finally {
             @unlink($pemPath);
         }
 
-        $options = $httpClient->requests[0]['options'];
+        $config = lastGatewayStreamPendingRequest()->config();
 
-        expect($options['verify'] ?? null)->toBe($pemPath)
-            ->and($options['stream'] ?? null)->toBeTrue()
-            ->and($options['read_timeout'] ?? null)->toBe(0);
+        expect($config['verify'] ?? null)->toBe($pemPath)
+            ->and($config['stream'] ?? null)->toBeTrue()
+            ->and($config['read_timeout'] ?? null)->toBe(0);
     });
 
     it('does not apply the gateway connect timeout as a whole-stream deadline', function (): void {
         $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
 
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new Psr7Response(200, ['Content-Type' => 'text/event-stream'], $body),
-        ]);
-
-        (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
+        fakeGatewayStreamClient($body)
             ->streamEvents('/api/stream', [], fn () => null);
 
-        $options = $httpClient->requests[0]['options'];
+        $config = lastGatewayStreamPendingRequest()->config();
 
-        expect($options['stream'] ?? null)->toBeTrue()
-            ->and($options['connect_timeout'] ?? null)->toBe(30)
-            ->and($options['timeout'] ?? null)->toBe(0);
+        expect($config['stream'] ?? null)->toBeTrue()
+            ->and($config['connect_timeout'] ?? null)->toBe(10)
+            ->and($config['timeout'] ?? null)->toBe(0);
     });
 
     it('disables idle read timeout so long silent streams can complete', function (): void {
         $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
 
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new Psr7Response(200, ['Content-Type' => 'text/event-stream'], $body),
-        ]);
-
-        (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
+        fakeGatewayStreamClient($body)
             ->streamEvents('/api/stream', [], fn () => null);
 
-        $options = $httpClient->requests[0]['options'];
+        $config = lastGatewayStreamPendingRequest()->config();
 
-        expect($options['read_timeout'] ?? null)->toBe(0);
+        expect($config['read_timeout'] ?? null)->toBe(0);
     });
 
     it('leaves the default verify behavior when no CA PEM path is configured', function (): void {
         $body = buildSseStream([['event' => 'complete', 'data' => ['ok' => true]]]);
 
-        $httpClient = new FakeGatewayStreamHttpClient([
-            new Psr7Response(200, ['Content-Type' => 'text/event-stream'], $body),
-        ]);
-
-        (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
+        fakeGatewayStreamClient($body)
             ->streamEvents('/api/stream', [], fn () => null);
 
-        $verify = $httpClient->requests[0]['options']['verify'] ?? null;
+        $verify = lastGatewayStreamPendingRequest()->configValue('verify');
 
         // Stream option stays, but verify is never overridden to a CA path string.
         expect($verify)->not->toBeString();
     });
 });
+
+final class CliGatewayStreamMockResponse extends GatewayMockResponse
+{
+    /**
+     * @param  array<string, string|int|float|bool>  $headers
+     */
+    public function __construct(
+        private readonly StreamInterface $stream,
+        private readonly int $responseStatus = 200,
+        private readonly array $responseHeaders = [],
+    ) {
+        parent::__construct('', $responseStatus, $responseHeaders);
+    }
+
+    public function createPsrResponse(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): ResponseInterface
+    {
+        $response = $responseFactory->createResponse($this->responseStatus);
+
+        foreach ($this->responseHeaders as $name => $value) {
+            $response = $response->withHeader($name, (string) $value);
+        }
+
+        return $response->withBody($this->stream);
+    }
+}

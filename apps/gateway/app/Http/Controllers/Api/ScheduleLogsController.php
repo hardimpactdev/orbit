@@ -7,12 +7,12 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
 use App\Http\Controllers\Api\Concerns\LogsScheduleApiActivity;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Services\Schedules\ScheduleLogsPayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ScheduleLogsController implements Loggable
 {

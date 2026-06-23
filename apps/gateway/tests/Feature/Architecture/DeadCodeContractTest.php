@@ -31,3 +31,47 @@ it('does not keep the unused remote progress reporter wrapper', function (): voi
 
     expect("{$repoRoot}/apps/gateway/app/Support/Cli/RemoteProgressReporter.php")->not->toBeFile();
 });
+
+it('keeps gateway-owned code behind the Orbit SDK boundary', function (): void {
+    $repoRoot = deadCodeContractRepoRoot();
+    $needle = 'Sa'.'loon';
+
+    foreach (gatewaySdkBoundaryPhpFiles([
+        "{$repoRoot}/apps/gateway/app",
+        "{$repoRoot}/apps/gateway/tests",
+    ]) as $path) {
+        expect(file_get_contents($path) ?: '')
+            ->not->toContain($needle, "{$path} imports SDK HTTP-client internals directly.");
+    }
+});
+
+/**
+ * @param  list<string>  $roots
+ * @return list<string>
+ */
+function gatewaySdkBoundaryPhpFiles(array $roots): array
+{
+    $files = [];
+
+    foreach ($roots as $root) {
+        if (! is_dir($root)) {
+            continue;
+        }
+
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        );
+
+        foreach ($iterator as $file) {
+            if (! $file instanceof SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $files[] = $file->getPathname();
+        }
+    }
+
+    sort($files);
+
+    return $files;
+}

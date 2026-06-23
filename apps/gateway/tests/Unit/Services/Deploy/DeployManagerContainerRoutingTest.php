@@ -5,13 +5,13 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeployStep;
 use App\Models\Node;
 use App\Services\Deploy\DeployManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class);

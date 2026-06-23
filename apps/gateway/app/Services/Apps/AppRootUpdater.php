@@ -7,9 +7,9 @@ namespace App\Services\Apps;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Exceptions\PromptAborted;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Services\Support\GatewayActionResult;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 use function Laravel\Prompts\text;
 

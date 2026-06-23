@@ -7,7 +7,6 @@ namespace App\Concerns;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Schedule;
@@ -15,6 +14,7 @@ use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignmentPayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 trait PromptsForRegistryEntities
 {

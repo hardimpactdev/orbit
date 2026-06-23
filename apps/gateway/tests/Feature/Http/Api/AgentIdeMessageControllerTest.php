@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Contracts\AgentIdeMessageAdapter;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
@@ -11,6 +10,7 @@ use App\Models\Workspace;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Spatie\Activitylog\Models\Activity;
 
 uses(RefreshDatabase::class);

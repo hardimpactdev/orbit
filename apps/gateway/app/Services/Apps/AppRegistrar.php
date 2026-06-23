@@ -13,13 +13,13 @@ use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Nodes\NodeStatus;
 use App\Exceptions\PromptAborted;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Support\GatewayActionResult;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\text;

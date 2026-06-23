@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Cloudflare;
 
-use App\Http\Gateway\GatewayApiException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareClient
 {

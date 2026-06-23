@@ -6,12 +6,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
 use App\Enums\ActivityLogType;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Firewall\FirewallRuleIntent;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final class FirewallRuleDestroyController implements Loggable
 {

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class RemoveProcess
 {

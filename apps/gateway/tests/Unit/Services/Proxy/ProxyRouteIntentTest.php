@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
@@ -10,6 +9,7 @@ use App\Services\Proxy\ProxyRouteIntent;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class);

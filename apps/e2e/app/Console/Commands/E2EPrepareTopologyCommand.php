@@ -396,7 +396,7 @@ class E2EPrepareTopologyCommand extends Command
             throw new RuntimeException("Could not create remote gateway image build context on {$host->config->host}: {$mkdir->errorOutput()}");
         }
 
-        foreach (['apps/gateway', 'packages/core', 'docker/orbit-gateway'] as $path) {
+        foreach (['apps/gateway', 'packages/core', 'packages/sdk', 'docker/orbit-gateway'] as $path) {
             $label = str_replace('/', '-', $path);
             $mkdirParent = $timer->measure(
                 "gateway-artifacts.push.context-parent.{$label}",

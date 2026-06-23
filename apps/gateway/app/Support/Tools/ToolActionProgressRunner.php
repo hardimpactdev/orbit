@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Support\Tools;
 
 use App\Contracts\ProgressReporter;
-use App\Http\Gateway\GatewayApiException;
 use App\Services\Tools\ToolRegistryFailure;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Throwable;
 
 final class ToolActionProgressRunner

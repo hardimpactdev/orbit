@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use App\Enums\Processes\ProcessRuntime;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Services\Processes\ProcessServiceDefinitionRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);

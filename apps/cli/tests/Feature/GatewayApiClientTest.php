@@ -116,6 +116,10 @@ describe('GatewayApiClient', function (): void {
     });
 
     it('keeps idle callbacks on cadence while waiting for a slow post response without fork signals', function (): void {
+        if (! function_exists('curl_multi_init')) {
+            test()->markTestSkipped('curl_multi_init is required for no-fork gateway post coverage.');
+        }
+
         $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
 
         if ($server === false) {
@@ -165,6 +169,8 @@ describe('GatewayApiClient', function (): void {
         });
 
         try {
+            putenv('ORBIT_GATEWAY_IDLE_POST_DISABLE_FORK=1');
+
             $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
                 ->postWithIdleTicks('/api/update/all/start');
 
@@ -178,6 +184,7 @@ describe('GatewayApiClient', function (): void {
 
             expect($maxGapMicroseconds)->toBeLessThan(300_000);
         } finally {
+            putenv('ORBIT_GATEWAY_IDLE_POST_DISABLE_FORK');
             $cleanupIdleCallback();
             pcntl_waitpid($serverPid, $status);
             fclose($server);

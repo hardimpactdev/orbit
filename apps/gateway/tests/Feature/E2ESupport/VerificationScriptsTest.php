@@ -85,18 +85,22 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('cd apps/cli && vendor/bin/phpstan analyse')
         ->toContain('cd apps/docs && vendor/bin/phpstan analyse')
         ->toContain('cd packages/core && vendor/bin/phpstan analyse')
+        ->toContain('cd packages/sdk && vendor/bin/phpstan analyse')
         ->toContain('cd apps/e2e && vendor/bin/phpstan analyse')
         ->toContain('cd apps/cli && vendor/bin/rector process')
         ->toContain('cd apps/docs && vendor/bin/rector process')
         ->toContain('cd packages/core && vendor/bin/rector process')
+        ->toContain('cd packages/sdk && vendor/bin/rector process')
         ->toContain('cd apps/e2e && vendor/bin/rector process')
         ->toContain('cd apps/cli && vendor/bin/pint')
         ->toContain('cd apps/docs && vendor/bin/pint')
         ->toContain('cd packages/core && vendor/bin/pint')
+        ->toContain('cd packages/sdk && vendor/bin/pint')
         ->toContain('cd apps/e2e && vendor/bin/pint')
         ->toContain('bin/orbit-cli-pest')
         ->toContain('bin/orbit-docs-pest')
         ->toContain('cd packages/core && vendor/bin/pest')
+        ->toContain('cd packages/sdk && vendor/bin/pest')
         ->toContain('cd apps/e2e && vendor/bin/pest')
         ->toContain('--exclude-group=e2e-binary')
         ->toContain('--exclude-group=e2e-provision')
@@ -105,6 +109,23 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('--exclude-group=slow')
         ->toContain('--parallel')
         ->toContain('--compact');
+});
+
+it('includes monorepo path packages in the gateway image build context', function (): void {
+    $dockerfile = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
+    $dockerignore = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
+
+    foreach (['core', 'sdk'] as $package) {
+        expect($dockerfile)
+            ->toContain("COPY packages/{$package}/composer.json packages/{$package}/composer.lock /srv/orbit/packages/{$package}/")
+            ->toContain("COPY packages/{$package}/src /srv/orbit/packages/{$package}/src")
+            ->and($dockerignore)
+            ->toContain("!packages/{$package}/")
+            ->toContain("!packages/{$package}/composer.json")
+            ->toContain("!packages/{$package}/composer.lock")
+            ->toContain("!packages/{$package}/src/")
+            ->toContain("!packages/{$package}/src/**");
+    }
 });
 
 it('keeps default composer tests out of e2e lanes', function (): void {
@@ -125,6 +146,7 @@ it('keeps default composer tests out of e2e lanes', function (): void {
             fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
+            fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),
         )->and($composer['scripts']['test:slow'])
         ->sequence(
             fn ($script) => $script->toBe('Composer\\Config::disableProcessTimeout'),
@@ -136,6 +158,7 @@ it('keeps default composer tests out of e2e lanes', function (): void {
             fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
+            fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),
         )->and($e2eComposer['scripts']['test'])
         ->sequence(
             fn ($script) => $script->toBe('@php artisan config:clear --ansi'),

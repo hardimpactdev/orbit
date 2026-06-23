@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Schedules;
 
-use App\Http\Gateway\GatewayApiException;
 use App\Models\Node;
 use App\Models\Schedule;
 use App\Models\ScheduleRun;
 use Illuminate\Database\Eloquent\Builder;
+use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class ScheduleLogsPayload
 {

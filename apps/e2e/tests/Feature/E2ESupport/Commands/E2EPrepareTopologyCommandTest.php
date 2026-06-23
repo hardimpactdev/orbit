@@ -563,11 +563,19 @@ it('builds the gateway artifact image on the Incus host', function (): void {
     expect($command)
         ->toContain('gateway-build-context')
         ->toContain('rsync -a --delete')
+        ->toContain("'apps/gateway', 'packages/core', 'packages/sdk', 'docker/orbit-gateway'")
         ->toContain('docker build -f docker/orbit-gateway/Dockerfile')
         ->toContain('docker save')
         ->toContain('docker/orbit-gateway/Dockerfile')
         ->toContain('bin/install-orbit')
         ->toContain('VERSION');
+});
+
+it('refreshes SDK dependencies in Incus selected-role source overlays', function (): void {
+    $builder = file_get_contents(app_path('E2E/Support/IncusTopologyBuilder.php'));
+
+    expect($builder)
+        ->toContain('for app in apps/gateway apps/cli apps/e2e packages/core packages/sdk apps/docs; do');
 });
 
 it('--branch uses git archive instead of tar', function (): void {

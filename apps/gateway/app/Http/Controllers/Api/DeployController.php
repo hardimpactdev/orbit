@@ -7,13 +7,13 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\ProgressReporter;
 use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
-use App\Http\Gateway\GatewayApiException;
 use App\Models\DeployStep;
 use App\Services\Deploy\DeployManager;
 use App\Support\Streaming\ProgressEventStreamEmitter;
 use App\Support\Streaming\ProgressEventStreamResponseFactory;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Orbit\Sdk\Laravel\GatewayApiException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final readonly class DeployController

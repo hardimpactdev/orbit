@@ -303,9 +303,9 @@ orbit doctor --node=beast --stream-json            # long-running agent progress
 Plain `orbit doctor` targets the local `node:default` when configured, then
 falls back to the caller identity. Use `--all` for fleet verification;
 `--node=all` is invalid. For LLM agents or other long-running non-interactive
-checks, prefer `orbit doctor --stream-json` for incremental NDJSON frames.
-Broader `--stream-json` rollout to other long-running commands is a separate
-follow-up.
+operations, prefer `--stream-json` when the command offers it so progress
+arrives as incremental NDJSON frames. Use `--json` when only the final
+machine-readable result is needed.
 
 **Move an app to a different PHP version**
 

@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.php diff=php
+
+/.github export-ignore
+/tests export-ignore
+/phpunit.xml export-ignore
+/pint.json export-ignore

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e41b8b83b00227fc28b378edccc8a6ca",
+    "content-hash": "f8e4c0e0b8a1e8b42ab89316f317ca44",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -1528,6 +1528,73 @@
             "keywords": [
                 "laravel",
                 "orbit"
+            ],
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
+        },
+        {
+            "name": "hardimpactdev/orbit-sdk-laravel",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "../../packages/sdk",
+                "reference": "ced2e0807c5a11c5d5cfe6707053061c960a8da0"
+            },
+            "require": {
+                "illuminate/support": "^12.0 || ^13.0",
+                "php": "^8.5",
+                "psr/http-message": "^2.0",
+                "saloonphp/saloon": "^4.0"
+            },
+            "require-dev": {
+                "laravel/pint": "^1.29",
+                "mockery/mockery": "^1.6",
+                "pestphp/pest": "^4.6",
+                "phpstan/phpstan": "^2.1",
+                "rector/rector": "^2.3"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Orbit\\Sdk\\Laravel\\OrbitSdkLaravelServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Orbit\\Sdk\\Laravel\\": "src/"
+                }
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Orbit\\Sdk\\Laravel\\Tests\\": "tests/"
+                }
+            },
+            "scripts": {
+                "analyse": [
+                    "vendor/bin/phpstan analyse --memory-limit=512M"
+                ],
+                "format": [
+                    "vendor/bin/pint"
+                ],
+                "rector": [
+                    "vendor/bin/rector process"
+                ],
+                "test": [
+                    "vendor/bin/pest --compact"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "Laravel SDK for consuming the Orbit gateway API.",
+            "keywords": [
+                "laravel",
+                "orbit",
+                "sdk"
             ],
             "transport-options": {
                 "symlink": true,
@@ -10918,6 +10985,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "hardimpactdev/orbit-core": 20,
+        "hardimpactdev/orbit-sdk-laravel": 20,
         "spatie/guidelines-skills": 20
     },
     "prefer-stable": true,
