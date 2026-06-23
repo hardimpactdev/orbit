@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json]`
+# Technical Contract: `orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json|--stream-json]`
 
 [Back to public `tool-reconfigure` documentation.](../tool-reconfigure.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json]
+orbit tool:reconfigure [tool] [--app=<app>] [--node=<node>] [--password=<password>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -27,6 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `password` | `--password` | `Optional.` | `when the tool definition does not support password reconfiguration.` | `None.` | `Tool-definition-specific password value.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
+| `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 
 ## Input Mode Contracts
 
@@ -60,6 +61,9 @@ definition. Related drift belongs to each owning family doctor contract.
 
 - [Human renderer](6.1_tool-reconfigure_output-render_human.md)
 - [JSON renderer](6.2_tool-reconfigure_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

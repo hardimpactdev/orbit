@@ -16,7 +16,8 @@ final class AppNewCommand extends AppGatewayCommand
         {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Create a new app on an app node.';

@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-
 describe('ToolStream commands', function (): void {
     it('streams tool:install and emits only the final complete frame in json mode', function (): void {
         $complete = [
@@ -29,7 +26,7 @@ describe('ToolStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -62,7 +59,7 @@ describe('ToolStream commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/opencode-server/install'
             && $request->data() === [
                 'node' => 'app-1',
@@ -92,7 +89,7 @@ describe('ToolStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/update'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -126,7 +123,7 @@ describe('ToolStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/update'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === ['node' => 'app-1']);
@@ -155,7 +152,7 @@ describe('ToolStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/opencode-server/reconfigure'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [

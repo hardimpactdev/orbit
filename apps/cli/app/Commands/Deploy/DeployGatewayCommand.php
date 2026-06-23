@@ -26,7 +26,7 @@ abstract class DeployGatewayCommand extends GatewayCommand
         $value = $this->stringArgument($argument);
 
         if ($value === null) {
-            if (! $this->wantsJson() && $this->input->isInteractive()) {
+            if ($this->allowsInteractiveInput()) {
                 $answer = $this->ask($this->promptLabel($field));
 
                 if (is_string($answer) && trim($answer) !== '') {

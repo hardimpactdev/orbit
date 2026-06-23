@@ -29,7 +29,7 @@ describe('Operation stream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -60,7 +60,7 @@ describe('Operation stream commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/fix'
             && $request->data() === [
                 'mode' => 'restore',

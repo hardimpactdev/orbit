@@ -11,13 +11,14 @@ Production-only  -  development apps use `workspace:setup` instead.
 Run the configured pipeline for one app.
 
 ```bash
-orbit deploy:run [<app>] [--detach] [--json]
+orbit deploy:run [<app>] [--detach] [--json|--stream-json]
 ```
 
 | Option | Notes |
 |---|---|
 | `app` | Production app slug or domain. |
 | `--detach` | Start the run, return as soon as it's durable. Default streams progress until complete. |
+| `--stream-json` | JSONL deployment progress for agents; mutually exclusive with `--json`. |
 
 Examples:
 
@@ -25,6 +26,7 @@ Examples:
 orbit deploy:run myapp                # stream pipeline output
 orbit deploy:run myapp --detach       # fire-and-return; check status with deploy:history
 orbit deploy:run myapp.com --json
+orbit deploy:run myapp.com --stream-json
 ```
 
 ## `orbit deploy:history [app]`

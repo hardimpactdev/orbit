@@ -56,13 +56,14 @@ Provision a managed tool on a node.
 
 ```bash
 orbit tool:install <tool> [--app=<name>] [--node=<name>]
-                   [--status=installed|running] [--tool-version=<v>] [--json]
+                   [--status=installed|running] [--tool-version=<v>] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
 | `--status` | `installed` | Desired capability state. Tool definitions that declare a related process configure that process idempotently unless `--no-process` is used. |
 | `--tool-version` |  -  | Version or version family to install (catalog-dependent). |
+| `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
 
 Examples:
 
@@ -76,7 +77,7 @@ orbit tool:install php --tool-version=8.4 --node=beast
 Update a managed tool to the catalog target version.
 
 ```bash
-orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v>] [--json]
+orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v>] [--json|--stream-json]
 ```
 
 ## `orbit tool:remove <tool>`
@@ -85,14 +86,19 @@ orbit tool:update [<tool>] [--app=<name>] [--node=<name>] [--expected-version=<v
 orbit tool:remove <tool> [--app=<name>] [--node=<name>] [--force] [--json]
 ```
 
+`tool:remove` does not support `--stream-json`; it uses the blocking remove path.
+
 ## `orbit tool:reconfigure <tool>`
 
 Re-provision or rotate tool-owned configuration. Tool-specific options.
 
 ```bash
 orbit tool:reconfigure <tool> [--app=<name>] [--node=<name>]
-                       [--password=<value>] [--json]
+                       [--password=<value>] [--json|--stream-json]
 ```
+
+`tool:update` and `tool:reconfigure` support `--stream-json` for JSONL progress;
+use `--json` when only the final result envelope is needed.
 
 Examples:
 

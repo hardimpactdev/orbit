@@ -9,6 +9,8 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ForkedFrameTicker;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
+use Symfony\Component\Process\Process;
 
 describe('GatewayApiClient', function (): void {
     it('returns decoded arrays from get requests', function (): void {
@@ -180,6 +182,90 @@ describe('GatewayApiClient', function (): void {
             pcntl_waitpid($serverPid, $status);
             fclose($server);
         }
+    });
+
+    it('closes the curl multi handler before PHP shutdown after idle tick requests resolve', function (): void {
+        $script = <<<'PHP'
+declare(strict_types=1);
+
+use App\Services\GatewayApiClient;
+use Illuminate\Contracts\Console\Kernel;
+use Orbit\Core\Progress\ForkedFrameTicker;
+
+require __DIR__.'/vendor/autoload.php';
+$app = require __DIR__.'/bootstrap/app.php';
+$app->make(Kernel::class)->bootstrap();
+
+$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+
+if ($server === false) {
+    fwrite(STDERR, 'server unavailable');
+    exit(2);
+}
+
+$address = stream_socket_get_name($server, false);
+$port = (int) substr((string) $address, strrpos((string) $address, ':') + 1);
+$serverPid = pcntl_fork();
+
+if ($serverPid === -1) {
+    fclose($server);
+    fwrite(STDERR, 'fork unavailable');
+    exit(2);
+}
+
+if ($serverPid === 0) {
+    $connection = stream_socket_accept($server);
+
+    if (is_resource($connection)) {
+        while (! feof($connection)) {
+            $chunk = fread($connection, 8192);
+
+            if ($chunk === false || $chunk === '' || str_contains($chunk, "\r\n\r\n")) {
+                break;
+            }
+        }
+
+        $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
+        fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
+        fclose($connection);
+    }
+
+    fclose($server);
+    exit(0);
+}
+
+$ticker = new ForkedFrameTicker(50_000);
+$ticker->start(static function (): void {});
+
+try {
+    $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
+        ->postWithIdleTicks('/api/update/all/start');
+
+    if ($result !== ['started' => true]) {
+        fwrite(STDERR, 'unexpected result');
+        exit(1);
+    }
+} finally {
+    $ticker->stop();
+    posix_kill($serverPid, SIGTERM);
+    pcntl_waitpid($serverPid, $status);
+    fclose($server);
+}
+
+echo "done\n";
+PHP;
+
+        $process = new Process([PHP_BINARY, '-r', $script], base_path());
+        $process->setTimeout(3);
+
+        try {
+            $process->run();
+        } catch (ProcessTimedOutException) {
+            $this->fail('GatewayApiClient idle tick request process timed out during PHP shutdown.');
+        }
+
+        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
+            ->and($process->getOutput())->toContain('done');
     });
 
     it('returns decoded arrays from post requests and sends JSON payloads', function (): void {

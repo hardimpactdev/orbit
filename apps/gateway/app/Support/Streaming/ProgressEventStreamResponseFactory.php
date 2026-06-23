@@ -24,6 +24,7 @@ final readonly class ProgressEventStreamResponseFactory
             $emitter = new ProgressEventStreamEmitter($this->sapi);
 
             app()->instance(ProgressReporter::class, new SseProgressReporter($emitter));
+            $emitter->bufferingPrelude();
 
             try {
                 $streamer($emitter);

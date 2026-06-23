@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--json]
+orbit workspace:setup [name] [--app=<app>] [--path=<path>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `--app` | `text` | No local context or default. | Local app default | Valid parent app slug. |
 | `--path` | `text` | Adopting an unmanaged path. | Caller's current directory resolved to an absolute path on the owning node. | Absolute path on the owning node. See `--path` rules below. |
 | `--json` | `flag` | Optional. | `false` | n/a |
+| `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
 The `--path` value must be an absolute path on the owning node. A relative
 or non-absolute value fails before side effects with
@@ -191,6 +192,9 @@ letting `result.action` describe what this run did, mirroring the
 
 - [`technical/6.1_workspace-setup_output-render_human.md`](6.1_workspace-setup_output-render_human.md)
 - [`technical/6.2_workspace-setup_output-render_json.md`](6.2_workspace-setup_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

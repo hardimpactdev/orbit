@@ -31,7 +31,7 @@ describe('tool write commands', function (): void {
             ->expectsOutputToContain('composer')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->data() === [
                 'node' => 'app-1',
@@ -57,7 +57,7 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -93,7 +93,7 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -128,7 +128,7 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/install'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -243,7 +243,7 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/composer/update'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -275,7 +275,7 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/update'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === ['node' => 'app-1']);
@@ -302,7 +302,7 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/tools/opencode-server/reconfigure'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [

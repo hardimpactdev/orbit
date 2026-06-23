@@ -26,7 +26,7 @@ Create or clone a new app on an app-role node.
 
 ```bash
 orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
-              [--php-version=8.5] [--domain=<host>] [--json]
+              [--php-version=8.5] [--domain=<host>] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
@@ -37,6 +37,7 @@ orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
 | `--root` | `public` | Document root relative to app path. |
 | `--php-version` | `8.5` | Initial PHP version (one of 8.3, 8.4, 8.5). |
 | `--domain` |  -  | Production: triggers production setup. If DNS/TLS isn't ready yet, the app installs but the domain stays inactive  -  re-run `app:register --domain=...` to retry. |
+| `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
 
 Examples:
 

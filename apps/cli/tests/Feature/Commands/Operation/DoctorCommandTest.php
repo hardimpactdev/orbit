@@ -3,12 +3,11 @@
 declare(strict_types=1);
 
 use App\Services\Doctor\DoctorPanelRenderer;
-use App\Services\GatewayApiClient;
-use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
-use Illuminate\Http\Client\Request;
+use App\Services\StreamJsonIdleStepWriter;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ProgressEventType;
 
 /**
  * Strip ANSI escape sequences so panel substrings can be matched on the
@@ -155,16 +154,7 @@ function doctorRunProgressFrame(array $doctor, string $key = '__doctor_panel', s
 
 function fakeDoctorRunStream(string $body, int $status = 200): void
 {
-    config()->set('orbit.gateway.url', 'https://gateway.test');
-    config()->set('orbit.gateway.timeout', 30);
-    app()->forgetInstance(GatewayApiClient::class);
-    app()->forgetInstance(GatewayLogStreamClient::class);
-    app()->forgetInstance(GatewayStreamClient::class);
-
-    Http::fake([
-        'https://gateway.test/api/doctor/run' => Http::response($body, $status, ['Content-Type' => 'text/event-stream']),
-    ]);
-    app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
+    fakeGatewayProgressStream($body, $status);
 }
 
 /**
@@ -463,19 +453,7 @@ describe('doctor human panel', function (): void {
         $report['healthy'] = true;
         $report['summary']['fixed'] = 1;
 
-        config()->set('orbit.gateway.url', 'https://gateway.test');
-        config()->set('orbit.gateway.timeout', 30);
-        app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayLogStreamClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
-        Http::fake([
-            'https://gateway.test/api/doctor/fix' => Http::response(
-                doctorRunCompleteStream($report),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
-        ]);
-        app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
+        fakeGatewayProgressStreamClient(doctorRunCompleteStream($report));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -613,20 +591,7 @@ describe('doctor human panel', function (): void {
     it('streams doctor bulk resolution modes through the fix endpoint', function (string $mode): void {
         $report = doctorVerifyReport([], mode: $mode);
 
-        config()->set('orbit.gateway.url', 'https://gateway.test');
-        config()->set('orbit.gateway.timeout', 30);
-        app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayLogStreamClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
-
-        Http::fake([
-            'https://gateway.test/api/doctor/fix' => Http::response(
-                doctorRunCompleteStream($report),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
-        ]);
-        app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
+        fakeGatewayProgressStreamClient(doctorRunCompleteStream($report));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -637,7 +602,7 @@ describe('doctor human panel', function (): void {
 
         $frames = decodeDoctorNdjson($output);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/fix'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -666,7 +631,7 @@ describe('doctor human panel', function (): void {
             '--family' => ['node'],
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -694,7 +659,7 @@ describe('doctor human panel', function (): void {
             '--family' => ['node'],
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->data() === [
                 'mode' => 'verify',
@@ -723,7 +688,7 @@ describe('doctor human panel', function (): void {
             '--family' => ['node'],
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->data() === [
                 'mode' => 'verify',
@@ -752,7 +717,7 @@ describe('doctor human panel', function (): void {
             '--family' => ['workspace'],
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->data() === [
                 'mode' => 'verify',
@@ -778,7 +743,7 @@ describe('doctor human panel', function (): void {
             '--stream-json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -861,6 +826,63 @@ describe('doctor human panel', function (): void {
                     'data' => ['doctor' => $report],
                 ],
             ]);
+    });
+
+    it('replays the last running step during stream-json idle waits', function (): void {
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        app()->instance(StreamJsonIdleStepWriter::class, new class extends StreamJsonIdleStepWriter
+        {
+            /**
+             * @param  callable(string): void  $write
+             */
+            public function start(string $line, callable $write, int $intervalSeconds = 1): void
+            {
+                $write($line);
+            }
+
+            public function stop(): void {}
+        });
+        app()->forgetInstance(GatewayStreamClient::class);
+        app()->instance(GatewayStreamClient::class, new class
+        {
+            /**
+             * @param  array<string, mixed>  $payload
+             * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+             */
+            public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
+            {
+                $onEvent(ProgressEventType::Step, [
+                    'key' => 'beast',
+                    'status' => 'running',
+                    'message' => 'Checking beast',
+                ]);
+
+                $onEvent(ProgressEventType::Complete, [
+                    'exit_code' => 0,
+                    'data' => ['doctor' => doctorFleetReport()],
+                ]);
+
+                return 0;
+            }
+        });
+
+        [$exitCode, $output] = runCommand($this, 'doctor', [
+            '--all' => true,
+            '--stream-json' => true,
+        ]);
+
+        $frames = decodeDoctorNdjson($output);
+        $runningFrames = array_values(array_filter(
+            $frames,
+            static fn (array $frame): bool => ($frame['event'] ?? null) === 'step'
+                && (($frame['data']['key'] ?? null) === 'beast')
+                && (($frame['data']['status'] ?? null) === 'running'),
+        ));
+
+        expect($exitCode)->toBe(0)
+            ->and($runningFrames)->toHaveCount(2)
+            ->and($frames[count($frames) - 1]['event'])->toBe('complete');
     });
 
     it('streams transport failures as error frames after progress has started', function (): void {

@@ -29,7 +29,7 @@ abstract class ToolGatewayCommand extends GatewayCommand
         $tool = $this->stringArgument('tool');
 
         if ($tool === null) {
-            if (! $this->wantsJson() && $this->input->isInteractive()) {
+            if ($this->allowsInteractiveInput()) {
                 $answer = $this->ask('Tool name');
 
                 if (is_string($answer) && trim($answer) !== '') {
@@ -65,7 +65,7 @@ abstract class ToolGatewayCommand extends GatewayCommand
         ]);
 
         if ($requireTarget && $payload === []) {
-            if (! $this->wantsJson() && $this->input->isInteractive()) {
+            if ($this->allowsInteractiveInput()) {
                 $answer = $this->ask('Target node');
 
                 if (is_string($answer) && trim($answer) !== '') {

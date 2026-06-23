@@ -6,9 +6,17 @@ namespace App\Support\Streaming;
 
 final readonly class ProgressEventStreamEmitter
 {
+    private const int BUFFERING_PRELUDE_BYTES = 1;
+
     public function __construct(
         private string $sapi = PHP_SAPI,
     ) {}
+
+    public function bufferingPrelude(): void
+    {
+        echo ': '.str_repeat(' ', self::BUFFERING_PRELUDE_BYTES)."\n\n";
+        $this->flush();
+    }
 
     /**
      * @param  list<array{key: string, label: string, doneLabel?: string}>  $steps

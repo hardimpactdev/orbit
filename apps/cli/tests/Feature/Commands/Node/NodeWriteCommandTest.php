@@ -35,7 +35,7 @@ describe('node write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request['name'] === 'app-1'
@@ -69,7 +69,7 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request['roles'] === ['app-dev', 'database']
             && ! isset($request['template']));
@@ -93,7 +93,7 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request['roles'] === ['metrics']
             && ! isset($request['template']));
@@ -152,6 +152,52 @@ describe('node write commands', function (): void {
             ->and($bootstrapper->arguments)->toContain('--template=gateway')
             ->and($bootstrapper->arguments)->toContain('--host=192.0.2.10')
             ->and($bootstrapper->arguments)->toContain('--json');
+
+        @unlink($store->path());
+    });
+
+    it('rejects --stream-json for first gateway bootstrap before gateway IO', function (): void {
+        config()->set('orbit.gateway.url', null);
+        app()->forgetInstance(GatewayApiClient::class);
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-node-new-bootstrap-stream-config.json'));
+        @unlink($store->path());
+        app()->instance(OrbitConfigStore::class, $store);
+
+        $bootstrapper = new class extends NodeGatewayBootstrapper
+        {
+            public bool $called = false;
+
+            /**
+             * @param  list<string>  $arguments
+             * @return array{exit_code: int, output: string}
+             */
+            public function run(array $arguments): array
+            {
+                $this->called = true;
+
+                return ['exit_code' => 0, 'output' => ''];
+            }
+        };
+
+        app()->instance(NodeGatewayBootstrapper::class, $bootstrapper);
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'node:new', [
+            'name' => 'gateway-1',
+            '--template' => 'gateway',
+            '--host' => '192.0.2.10',
+            '--stream-json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->not->toHaveKey('event')
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('stream-json')
+            ->and($bootstrapper->called)->toBeFalse();
 
         @unlink($store->path());
     });
@@ -785,7 +831,7 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request['roles'] === ['analytics']
             && $request['postgres_node'] === 'database-1'

@@ -28,7 +28,7 @@ describe('S3Publish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/s3/public-hosts'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === ['host' => 's3.example.com', 'node' => 'storage-1']);
@@ -37,19 +37,15 @@ describe('S3Publish CLI command', function (): void {
     });
 
     it('sends only the host when node auto-resolves from a single s3 node', function (): void {
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3PublishCompleteFrame()));
+
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(fakeNodeListEnvelope(['storage-1']), 200),
-            'https://gateway.test/api/s3/public-hosts' => Http::response(
-                gatewayProgressFrame('complete', s3PublishCompleteFrame()),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
         ]);
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
 
         [$exitCode] = runCommand($this, 's3:publish', [
             'host' => 's3.example.com',
@@ -58,7 +54,7 @@ describe('S3Publish CLI command', function (): void {
 
         expect($exitCode)->toBe(0);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/s3/public-hosts'
             && $request->data()['host'] === 's3.example.com');
     });
@@ -179,7 +175,6 @@ describe('S3Publish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        // CLI JSON output: {"event":"complete","data":{"exit_code":0,"data":{"s3":{...},"meta":{...}}}}
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
@@ -314,24 +309,17 @@ describe('S3Publish CLI command', function (): void {
     // -----------------------------------------------------------------------
 
     it('prompts for the host when the host argument is omitted in interactive mode', function (): void {
-        Http::fake([
-            'https://gateway.test/api/s3/public-hosts' => Http::response(
-                gatewayProgressFrame('complete', s3PublishCompleteFrame('prompted.example.com', 'storage-1')),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
-        ]);
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3PublishCompleteFrame('prompted.example.com', 'storage-1')));
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
 
         $this->artisan('s3:publish', ['--node' => 'storage-1'])
             ->expectsQuestion('Public hostname (e.g. s3.example.com)', 'prompted.example.com')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/s3/public-hosts'
             && $request->data()['host'] === 'prompted.example.com');
     });

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]`
+# Technical Contract: `orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]`
 
 [Back to public `tool-update` documentation.](../tool-update.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json]
+orbit tool:update [tool] [--app=<app>] [--node=<node>] [--expected-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -27,6 +27,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | `Optional.` | `Never.` | `node:default if set; otherwise --self (the calling peer).` | Visible active non-gateway node slug; selected tool must support the node operating system. |
 | `app` | `--app` | `Optional.` | `Never.` | `None.` | `Visible app selector used to resolve the owning node.` |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
+| `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 
 ## Behavior Contract
 
@@ -51,6 +52,9 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 - [Human renderer](6.1_tool-update_output-render_human.md)
 - [JSON renderer](6.2_tool-update_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

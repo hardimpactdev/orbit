@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
-use GuzzleHttp\Handler\CurlMultiHandler;
-use GuzzleHttp\Promise\PromiseInterface;
+use App\Exceptions\GatewayApiFailureKind;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Http\Client\Promises\LazyPromise;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ForkedFrameTicker;
+use ReflectionObject;
 use Throwable;
 
 /**
@@ -26,8 +26,6 @@ use Throwable;
  */
 final readonly class GatewayApiClient
 {
-    private const int CurlMultiSelectTimeoutSeconds = 0;
-
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
@@ -79,10 +77,12 @@ final readonly class GatewayApiClient
             return $this->post($path, $payload);
         }
 
+        if (! $this->httpClientIsFaked() && $this->canForkIdleRequest()) {
+            return $this->postWithIdleTicksInChild($path, $payload);
+        }
+
         return $this->decode(
-            $this->requestWithIdleTicks(
-                fn (CurlMultiHandler $handler) => $this->pendingRequestForDispatch($handler)->post($this->path($path), $payload),
-            ),
+            $this->request(fn () => $this->pendingRequestWithIdleProgress()->post($this->path($path), $payload)),
         );
     }
 
@@ -191,80 +191,203 @@ final readonly class GatewayApiClient
         return $response;
     }
 
-    /**
-     * @param  callable(CurlMultiHandler): (Response|PromiseInterface)  $callback
-     */
-    private function requestWithIdleTicks(callable $callback): Response
-    {
-        $handler = new CurlMultiHandler([
-            'select_timeout' => self::CurlMultiSelectTimeoutSeconds,
-        ]);
-
-        return $this->finalizeResponse($this->waitForResponseWithIdleTicks(fn () => $callback($handler), $handler));
-    }
-
-    /**
-     * @param  callable(): (Response|PromiseInterface)  $callback
-     */
-    private function waitForResponseWithIdleTicks(callable $callback, CurlMultiHandler $handler): Response
-    {
-        try {
-            $result = $callback();
-
-            if ($result instanceof Response) {
-                return $result;
-            }
-
-            if ($result instanceof LazyPromise) {
-                $result = $result->buildPromise();
-            }
-
-            $response = null;
-            $rejection = null;
-
-            $result->then(
-                function (Response $resolved) use (&$response): void {
-                    $response = $resolved;
-                },
-                function (mixed $reason) use (&$rejection): void {
-                    $rejection = $reason;
-                },
-            );
-
-            while ($response === null && $rejection === null) {
-                ForkedFrameTicker::invokeIdleCallback();
-                $handler->tick();
-                usleep(ForkedFrameTicker::idleIntervalMicroseconds());
-            }
-
-            if ($rejection instanceof Throwable) {
-                throw $rejection;
-            }
-
-            if (! $response instanceof Response) {
-                throw new GatewayApiException('Gateway request did not return a response.');
-            }
-
-            return $response;
-        } catch (ConnectionException $exception) {
-            throw $this->classifyNetworkError($exception);
-        }
-    }
-
-    private function finalizeResponse(Response $response): Response
-    {
-        if ($response->failed()) {
-            throw GatewayApiException::httpError($response->status(), $response->body());
-        }
-
-        return $response;
-    }
-
-    private function pendingRequestForDispatch(CurlMultiHandler $handler): PendingRequest
+    private function pendingRequestWithIdleProgress(): PendingRequest
     {
         return $this->pendingRequest()
-            ->async()
-            ->setHandler($handler);
+            ->withOptions([
+                'progress' => static function (): void {
+                    ForkedFrameTicker::invokeIdleCallback();
+                },
+            ]);
+    }
+
+    private function canForkIdleRequest(): bool
+    {
+        return function_exists('pcntl_fork')
+            && function_exists('pcntl_waitpid')
+            && function_exists('stream_socket_pair');
+    }
+
+    /**
+     * Run the blocking HTTP request in a child process while the parent keeps
+     * invoking the idle callback on cadence. This avoids Guzzle's CurlMultiHandler
+     * shutdown path on macOS/libcurl while preserving live progress ticks.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function postWithIdleTicksInChild(string $path, array $payload): array
+    {
+        $sockets = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, STREAM_IPPROTO_IP);
+
+        if ($sockets === false) {
+            return $this->decode(
+                $this->request(fn () => $this->pendingRequestWithIdleProgress()->post($this->path($path), $payload)),
+            );
+        }
+
+        [$parentSocket, $childSocket] = $sockets;
+        $pid = pcntl_fork();
+
+        if ($pid === -1) {
+            fclose($parentSocket);
+            fclose($childSocket);
+
+            return $this->decode(
+                $this->request(fn () => $this->pendingRequestWithIdleProgress()->post($this->path($path), $payload)),
+            );
+        }
+
+        if ($pid === 0) {
+            fclose($parentSocket);
+            $this->writeIdleChildResult($childSocket, $path, $payload);
+            fclose($childSocket);
+            exit(0);
+        }
+
+        fclose($childSocket);
+        stream_set_blocking($parentSocket, false);
+
+        $buffer = '';
+
+        try {
+            do {
+                $chunk = stream_get_contents($parentSocket);
+
+                if (is_string($chunk) && $chunk !== '') {
+                    $buffer .= $chunk;
+                }
+
+                $result = pcntl_waitpid($pid, $status, WNOHANG);
+
+                if ($result === $pid || $result === -1) {
+                    break;
+                }
+
+                ForkedFrameTicker::invokeIdleCallback();
+                usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+            } while (true);
+
+            $remaining = stream_get_contents($parentSocket);
+
+            if (is_string($remaining) && $remaining !== '') {
+                $buffer .= $remaining;
+            }
+        } finally {
+            fclose($parentSocket);
+            pcntl_waitpid($pid, $status, WNOHANG);
+        }
+
+        return $this->decodeIdleChildResult($buffer);
+    }
+
+    /**
+     * @param  resource  $socket
+     * @param  array<string, mixed>  $payload
+     */
+    private function writeIdleChildResult(mixed $socket, string $path, array $payload): void
+    {
+        try {
+            $result = [
+                'ok' => true,
+                'data' => $this->post($path, $payload),
+            ];
+        } catch (GatewayApiException $exception) {
+            $result = [
+                'ok' => false,
+                'type' => 'gateway',
+                'message' => $exception->getMessage(),
+                'failure_kind' => $exception->failureKind()->name,
+                'status_code' => $exception->statusCode(),
+                'gateway_error' => $exception->hasGatewayError() ? [
+                    'code' => $exception->gatewayErrorCode(),
+                    'message' => $exception->gatewayErrorMessage(),
+                    'meta' => $exception->gatewayErrorMeta(),
+                    'data' => $exception->gatewayErrorData(),
+                ] : null,
+            ];
+        } catch (Throwable $exception) {
+            $result = [
+                'ok' => false,
+                'type' => 'generic',
+                'message' => $exception->getMessage(),
+            ];
+        }
+
+        fwrite($socket, json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeIdleChildResult(string $buffer): array
+    {
+        $decoded = json_decode($buffer, associative: true);
+
+        if (! is_array($decoded)) {
+            throw new GatewayApiException('Gateway request child did not return a valid response.');
+        }
+
+        if (($decoded['ok'] ?? false) === true && is_array($decoded['data'] ?? null)) {
+            return $decoded['data'];
+        }
+
+        if (($decoded['type'] ?? null) === 'gateway') {
+            throw $this->gatewayExceptionFromChildResult($decoded);
+        }
+
+        $message = is_string($decoded['message'] ?? null) ? $decoded['message'] : 'Gateway request failed.';
+
+        throw new GatewayApiException($message);
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     */
+    private function gatewayExceptionFromChildResult(array $result): GatewayApiException
+    {
+        $failureKindName = is_string($result['failure_kind'] ?? null) ? $result['failure_kind'] : GatewayApiFailureKind::Generic->name;
+        $failureKind = GatewayApiFailureKind::{$failureKindName};
+        $statusCode = is_int($result['status_code'] ?? null) ? $result['status_code'] : null;
+        $message = is_string($result['message'] ?? null) ? $result['message'] : 'Gateway request failed.';
+        $gatewayError = is_array($result['gateway_error'] ?? null) ? $result['gateway_error'] : null;
+        $body = null;
+
+        if ($gatewayError !== null && is_string($gatewayError['code'] ?? null)) {
+            $envelope = JsonEnvelope::failure(
+                $gatewayError['code'],
+                is_string($gatewayError['message'] ?? null) ? $gatewayError['message'] : 'Gateway request failed.',
+                is_array($gatewayError['meta'] ?? null) ? $gatewayError['meta'] : [],
+            );
+
+            if (is_array($gatewayError['data'] ?? null) && $gatewayError['data'] !== []) {
+                $envelope['error']['data'] = $gatewayError['data'];
+            }
+
+            $body = json_encode($envelope, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        }
+
+        return new GatewayApiException($message, $failureKind, $statusCode, $body);
+    }
+
+    private function httpClientIsFaked(): bool
+    {
+        $factory = Http::getFacadeRoot();
+
+        if (! is_object($factory)) {
+            return false;
+        }
+
+        $reflection = new ReflectionObject($factory);
+
+        if (! $reflection->hasProperty('stubCallbacks')) {
+            return false;
+        }
+
+        $property = $reflection->getProperty('stubCallbacks');
+        $callbacks = $property->getValue($factory);
+
+        return is_countable($callbacks) && count($callbacks) > 0;
     }
 
     /**

@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-
 describe('NodeNewStream command', function (): void {
     it('renders gateway-authored node:new progress in human mode', function (): void {
         fakeGatewayProgressStream(
@@ -29,7 +26,7 @@ describe('NodeNewStream command', function (): void {
             '--tld' => 'test',
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/nodes'
             && $request->hasHeader('Accept', 'text/event-stream'));
 

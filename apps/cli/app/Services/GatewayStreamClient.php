@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
+use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\GuzzleException;
 use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventDecoder;
@@ -25,7 +27,7 @@ use Throwable;
  */
 final readonly class GatewayStreamClient
 {
-    private const int READ_BYTES = 8192;
+    private const int READ_BYTES = 1;
 
     private const int ERROR_BODY_TAIL_BYTES = 65536;
 
@@ -33,8 +35,20 @@ final readonly class GatewayStreamClient
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
+        ClientInterface|bool|null $httpClient = null,
         private bool $preferCurl = false,
-    ) {}
+    ) {
+        if (is_bool($httpClient)) {
+            $this->preferCurl = $httpClient;
+            $this->httpClient = null;
+
+            return;
+        }
+
+        $this->httpClient = $httpClient;
+    }
+
+    private ?ClientInterface $httpClient;
 
     /**
      * Stream progress events from the gateway. Sends $payload to $path with
@@ -46,60 +60,75 @@ final readonly class GatewayStreamClient
      *
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     * @param  callable(): void|null  $onIdle
      */
-    public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
-    {
+    public function streamEvents(
+        string $path,
+        array $payload,
+        callable $onEvent,
+        string $method = 'post',
+        ?callable $onIdle = null,
+        int $idleIntervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS,
+    ): int {
         if ($this->preferCurl && function_exists('curl_init') && function_exists('curl_multi_init')) {
             return ForkedFrameTicker::withoutForking(
-                fn (): int => $this->streamEventsWithCurl($path, $payload, $onEvent, $method),
+                fn (): int => $this->streamEventsWithCurl($path, $payload, $onEvent, $method, $onIdle, $idleIntervalMicroseconds),
             );
         }
 
-        return $this->streamEventsWithHttp($path, $payload, $onEvent, $method);
+        return $this->streamEventsWithHttp($path, $payload, $onEvent, $method, $onIdle, $idleIntervalMicroseconds);
     }
 
     /**
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
      */
-    private function streamEventsWithHttp(string $path, array $payload, callable $onEvent, string $method): int
-    {
+    private function streamEventsWithHttp(
+        string $path,
+        array $payload,
+        callable $onEvent,
+        string $method,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): int {
         $baseUrl = $this->normalizedBaseUrl();
+        $normalizedPath = '/'.ltrim($path, '/');
+
         try {
-            $pending = Http::baseUrl($baseUrl)
-                ->withHeaders(['Accept' => 'text/event-stream'])
-                ->asJson()
-                ->connectTimeout($this->timeout)
-                ->timeout(0)
-                ->withOptions($this->streamOptions());
-
-            $normalizedPath = '/'.ltrim($path, '/');
-
-            $response = match (strtolower($method)) {
-                'delete' => $pending->delete($normalizedPath, $payload),
-                default => $pending->post($normalizedPath, $payload),
-            };
-        } catch (ConnectionException $exception) {
+            $response = $this->client()->request(strtoupper($method), $baseUrl.$normalizedPath, [
+                'headers' => ['Accept' => 'text/event-stream'],
+                'json' => $payload,
+                ...$this->streamOptions(),
+            ]);
+        } catch (ConnectException $exception) {
             throw $this->classifyNetworkError($exception);
+        } catch (GuzzleException $exception) {
+            throw GatewayApiException::networkError($exception);
         }
 
-        if ($response->failed()) {
-            throw GatewayApiException::httpError($response->status(), $response->body());
+        if ($response->getStatusCode() >= 400) {
+            throw GatewayApiException::httpError($response->getStatusCode(), (string) $response->getBody());
         }
 
-        return $this->processResponseStream($response->toPsrResponse()->getBody(), $onEvent);
+        return $this->processResponseStream($response->getBody(), $onEvent, $onIdle, $idleIntervalMicroseconds);
     }
 
     /**
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
      */
-    private function streamEventsWithCurl(string $path, array $payload, callable $onEvent, string $method): int
-    {
+    private function streamEventsWithCurl(
+        string $path,
+        array $payload,
+        callable $onEvent,
+        string $method,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): int {
         $curl = curl_init($this->absoluteUrl($path));
 
         if ($curl === false) {
-            throw $this->classifyNetworkError(new ConnectionException('Unable to initialize gateway progress stream.'));
+            throw $this->classifyNetworkError(new RuntimeException('Unable to initialize gateway progress stream.'));
         }
 
         $multi = curl_multi_init();
@@ -182,7 +211,7 @@ final readonly class GatewayStreamClient
                 } while ($multiStatus === CURLM_CALL_MULTI_PERFORM);
 
                 if ($multiStatus !== CURLM_OK) {
-                    throw $this->classifyNetworkError(new ConnectionException(curl_multi_strerror($multiStatus)));
+                    throw $this->classifyNetworkError(new RuntimeException(curl_multi_strerror($multiStatus)));
                 }
 
                 if ($failure instanceof Throwable || $terminal !== null) {
@@ -190,13 +219,13 @@ final readonly class GatewayStreamClient
                 }
 
                 if ($running > 0) {
-                    ForkedFrameTicker::invokeIdleCallback();
+                    $this->invokeIdle($onIdle);
 
                     if (curl_multi_select($multi, 0.0) === -1) {
                         usleep(250);
                     }
 
-                    usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+                    usleep($idleIntervalMicroseconds);
                 }
             } while ($running > 0);
 
@@ -207,7 +236,7 @@ final readonly class GatewayStreamClient
             $curlErrorNumber = curl_errno($curl);
 
             if ($curlErrorNumber !== 0) {
-                throw $this->classifyNetworkError(new ConnectionException(curl_error($curl)));
+                throw $this->classifyNetworkError(new RuntimeException(curl_error($curl)));
             }
 
             $resolvedStatusCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
@@ -251,12 +280,17 @@ final readonly class GatewayStreamClient
      * Process the response body as SSE frames without buffering the full stream.
      *
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     * @param  callable(): void|null  $onIdle
      */
-    private function processResponseStream(StreamInterface $stream, callable $onEvent): int
-    {
+    private function processResponseStream(
+        StreamInterface $stream,
+        callable $onEvent,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): int {
         $decoder = new ProgressEventDecoder;
         $frameBuffer = '';
-        $reader = new StreamIdleReader(ForkedFrameTicker::idleIntervalMicroseconds());
+        $reader = new StreamIdleReader($idleIntervalMicroseconds, $onIdle);
 
         while (! $stream->eof()) {
             try {
@@ -352,6 +386,17 @@ final readonly class GatewayStreamClient
         return null;
     }
 
+    private function invokeIdle(?callable $onIdle): void
+    {
+        if ($onIdle !== null) {
+            $onIdle();
+
+            return;
+        }
+
+        ForkedFrameTicker::invokeIdleCallback();
+    }
+
     private function normalizedBaseUrl(): string
     {
         $baseUrl = is_string($this->baseUrl) ? trim($this->baseUrl) : '';
@@ -396,6 +441,9 @@ final readonly class GatewayStreamClient
     {
         $options = [
             'stream' => true,
+            'http_errors' => false,
+            'connect_timeout' => $this->timeout,
+            'timeout' => 0,
             'read_timeout' => 0,
         ];
 
@@ -406,7 +454,12 @@ final readonly class GatewayStreamClient
         return $options;
     }
 
-    private function classifyNetworkError(ConnectionException $exception): GatewayApiException
+    private function client(): ClientInterface
+    {
+        return $this->httpClient ?? new Client;
+    }
+
+    private function classifyNetworkError(Throwable $exception): GatewayApiException
     {
         $message = strtolower($exception->getMessage());
 

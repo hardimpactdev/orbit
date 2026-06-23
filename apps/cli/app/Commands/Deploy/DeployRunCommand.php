@@ -12,7 +12,8 @@ final class DeployRunCommand extends DeployGatewayCommand
     protected $signature = 'deploy:run
         {app? : Production app name or domain}
         {--detach : Start and return after the run is durable}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Run the deployment pipeline for a production app.';
