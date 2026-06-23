@@ -1,8 +1,8 @@
 # Orbit Repo Feedback Loop
 
-Orbit's repo feedback loop turns implementation signals into durable harness
-guardrails. It is manual in this slice: no scheduler, reviewer automation, or
-eval runner is introduced here.
+Orbit's repo feedback loop turns implementation signals into durable guardrails
+that guide future fixes and block repeat failure modes. It is manual in this
+slice: no scheduler, reviewer automation, or eval runner is introduced here.
 
 ## Scope
 
@@ -18,9 +18,9 @@ show agents are missing context. Product behavior contracts remain under
 - Prefer the latest useful intervention point: prompt correction before a
   skill update, skill update before a static rule, static rule before broader
   automation.
-- Keep the sink close to the failure: tests for executable contracts, skills
-  for workflow, product docs for behavior, root harness docs for repo-wide
-  routing.
+- Keep the guardrail target close to the failure: tests for executable
+  contracts, skills for workflow, product docs for behavior, root harness docs
+  for repo-wide routing.
 - Do not turn `AGENTS.md` into a rulebook. Add pointers there only when agents
   need a new discovery route.
 
@@ -30,23 +30,23 @@ show agents are missing context. Product behavior contracts remain under
    human correction, drift finding, or live-node symptom.
 2. **Triage**: decide whether it is one-off local work, a missing guardrail, or
    a product contract conflict.
-3. **Select Sink**: choose the smallest durable home for the lesson. Use
-   `HARNESS_SIGNALS.md` as the source-to-sink map.
-4. **Distill**: update the chosen sink in the same worktree when it is part of
-   the current change. Otherwise create a scoped follow-up.
-5. **Verify**: prove the sink now catches or routes the issue with the narrowest
-   useful command or review check.
-6. **Report**: include the signal, chosen sink, verification, and any follow-up
-   in the implementation report.
+3. **Select Guardrail Target**: choose the smallest durable home for the
+   lesson. Use `HARNESS_SIGNALS.md` as the signal-to-guardrail-target map.
+4. **Distill**: update the chosen guardrail target in the same worktree when it
+   is part of the current change. Otherwise create a scoped follow-up.
+5. **Verify**: prove the guardrail now guides or blocks the issue with the
+   narrowest useful command or review check.
+6. **Report**: include the signal, chosen guardrail target, verification, and
+   any follow-up in the implementation report.
 
-## Sink Types
+## Guardrail Targets
 
-| Sink | Use When |
+| Guardrail Target | Use When |
 |------|----------|
 | `AGENTS.md` | Agents need a new root discovery route or repo-wide warning. |
 | `HARNESS.md` | The durable repo harness map changes. |
 | `LOOP.md` | The feedback-loop procedure changes. |
-| `HARNESS_SIGNALS.md` | A signal source or sink decision changes. |
+| `HARNESS_SIGNALS.md` | A signal source or guardrail target decision changes. |
 | `.agents/skills/**` | A workflow, command family, verification lane, or role-specific procedure changes. |
 | `apps/docs/content/**` | Product behavior, operator-facing contracts, or authority docs change. |
 | Tests/static checks | The lesson can be enforced mechanically. |
@@ -60,7 +60,7 @@ Use this compact block when a session distills a signal:
 Harness signal:
 - Source:
 - Missing context:
-- Sink:
+- Guardrail target:
 - Verification:
 - Follow-up:
 ```
