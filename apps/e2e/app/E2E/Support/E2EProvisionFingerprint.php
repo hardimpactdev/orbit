@@ -179,6 +179,7 @@ final readonly class E2EProvisionFingerprint
         return [
             'apps/cli',
             'packages/core',
+            'packages/sdk',
             'composer.json',
             'composer.lock',
             'apps/cli/composer.json',
@@ -207,6 +208,9 @@ final readonly class E2EProvisionFingerprint
             'apps/gateway/.env.example',
             'apps/gateway/composer.json',
             'apps/gateway/composer.lock',
+            'packages/sdk/composer.json',
+            'packages/sdk/composer.lock',
+            'packages/sdk/src',
             'docker/orbit-gateway',
         ];
     }

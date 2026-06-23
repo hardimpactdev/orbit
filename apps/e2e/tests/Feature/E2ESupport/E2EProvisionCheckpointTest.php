@@ -154,6 +154,27 @@ it('invalidates all CLI-consuming roles when the CLI artifact changes', function
     }
 });
 
+it('invalidates CLI and gateway artifacts when the shared SDK changes', function (): void {
+    $root = makeProvisionFingerprintFixture();
+
+    try {
+        $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+        file_put_contents("{$root}/packages/sdk/src/SdkRuntime.php", "<?php\nreturn 'changed';\n");
+
+        $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+
+        expect($after['fingerprints']['cli_artifact'])->not->toBe($before['fingerprints']['cli_artifact'])
+            ->and($after['fingerprints']['gateway_artifact'])->not->toBe($before['fingerprints']['gateway_artifact']);
+
+        foreach (['operator', 'gateway', 'dev', 'prod', 'agent'] as $role) {
+            expect($after['role_fingerprints'][$role])->not->toBe($before['role_fingerprints'][$role]);
+        }
+    } finally {
+        remove_directory($root);
+    }
+});
+
 it('invalidates gateway and gateway-state-dependent roles when the gateway artifact changes', function (): void {
     $root = makeProvisionFingerprintFixture();
 
@@ -430,6 +451,9 @@ function makeProvisionFingerprintFixture(): string
         'apps/cli/composer.lock' => '{}',
         'apps/cli/tests/Feature/Commands/Tool/ToolLogsCommandTest.php' => "<?php\nit('asserts', fn () => expect(true)->toBeTrue());\n",
         'packages/core/src/Core.php' => "<?php\nreturn 'core';\n",
+        'packages/sdk/composer.json' => '{"name":"orbit/sdk"}',
+        'packages/sdk/composer.lock' => '{}',
+        'packages/sdk/src/SdkRuntime.php' => "<?php\nreturn 'sdk';\n",
         'apps/gateway/app/GatewayRuntime.php' => "<?php\nreturn 'gateway';\n",
         'apps/gateway/composer.json' => '{"name":"orbit/gateway"}',
         'apps/gateway/composer.lock' => '{}',
