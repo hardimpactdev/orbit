@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Services\Doctor\DoctorPanelRenderer;
 use App\Services\GatewayApiClient;
 use App\Services\GatewayLogStreamClient;
 use App\Services\GatewayStreamClient;
+use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -49,6 +51,54 @@ function doctorVerifyReport(array $issues, array $scopeOverrides = [], string $m
         ],
         'issues' => $issues,
         'actions' => $actions,
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function doctorFleetReport(): array
+{
+    return [
+        'healthy' => true,
+        'mode' => 'verify',
+        'scope' => [
+            'families' => ['node'],
+            'node' => null,
+            'role' => 'fleet',
+            'self' => false,
+            'app' => null,
+            'workspace' => null,
+            'key' => null,
+            'targets' => ['app-1', 'gateway-1'],
+        ],
+        'summary' => [
+            'issues' => 0,
+            'fixed' => 0,
+            'adopted' => 0,
+            'skipped' => 0,
+            'conflicts' => 0,
+            'failed' => 0,
+            'planned' => 0,
+        ],
+        'issues' => [],
+        'actions' => [],
+        'nodes' => [
+            [
+                'node' => 'app-1',
+                'role' => 'app-dev',
+                'healthy' => true,
+                'families' => ['node'],
+                'summary' => ['issues' => 0],
+            ],
+            [
+                'node' => 'gateway-1',
+                'role' => 'gateway',
+                'healthy' => true,
+                'families' => ['node'],
+                'summary' => ['issues' => 0],
+            ],
+        ],
     ];
 }
 
@@ -114,6 +164,7 @@ function fakeDoctorRunStream(string $body, int $status = 200): void
     Http::fake([
         'https://gateway.test/api/doctor/run' => Http::response($body, $status, ['Content-Type' => 'text/event-stream']),
     ]);
+    app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
 }
 
 /**
@@ -130,7 +181,7 @@ function decodeDoctorNdjson(string $output): array
 }
 
 describe('doctor human panel', function (): void {
-    it('renders an in-progress doctor panel immediately and surfaces findings before the final result', function (): void {
+    it('keeps non-decorated human output to one final doctor panel instead of full-frame progress spam', function (): void {
         $families = ['node', 'app'];
         $appIssue = [
             'family' => 'app',
@@ -173,18 +224,51 @@ describe('doctor human panel', function (): void {
         ]);
 
         $plain = stripAnsi($output);
-        $progressPosition = strpos($plain, 'D O C T O R I N G');
-        $issuePosition = strpos($plain, 'Runtime container for nckrtl is missing.');
-        $finalPosition = strrpos($plain, 'D O C T O R  R E S U L T');
 
         expect($exitCode)->toBe(1)
-            ->and($progressPosition)->not->toBeFalse()
-            ->and($plain)->toContain('Performing check-up on beast')
-            ->and($plain)->toContain('Checking')
-            ->and($plain)->toContain('Queued')
-            ->and($issuePosition)->not->toBeFalse()
-            ->and($finalPosition)->not->toBeFalse()
-            ->and($issuePosition)->toBeLessThan($finalPosition);
+            ->and(substr_count($plain, 'D O C T O R I N G'))->toBe(0)
+            ->and(substr_count($plain, 'D O C T O R  R E S U L T'))->toBe(1)
+            ->and($plain)->toContain('Successfully performed check-up on beast')
+            ->and($plain)->toContain('Runtime container for nckrtl is missing.');
+    });
+
+    it('repaints the single live doctor panel in decorated human output', function (): void {
+        $families = ['node'];
+        $initialProgress = doctorVerifyReport([], ['families' => $families]);
+        $initialProgress['progress'] = [
+            'state' => 'running',
+            'families' => [
+                ['family' => 'node', 'status' => 'checking'],
+            ],
+        ];
+        $initialPanelLineCount = count(app(DoctorPanelRenderer::class)->lines($initialProgress));
+        $finalReport = doctorVerifyReport([], ['families' => $families]);
+
+        fakeDoctorRunStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Running Doctor',
+                'steps' => array_map(fn (string $family): array => ['key' => $family, 'label' => "Check {$family}"], $families),
+            ])
+            .doctorRunProgressFrame($initialProgress)
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => [
+                    'footer' => 'Doctor completed.',
+                    'doctor' => $finalReport,
+                ],
+            ]),
+        );
+
+        [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
+            '--node' => 'beast',
+            '--family' => $families,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("\e[2K")
+            ->and(substr($output, 0, (int) strrpos($output, 'D O C T O R  R E S U L T')))
+            ->toContain("\e[?25h\n\e[".($initialPanelLineCount + 1).'A')
+            ->and($output)->toContain('D O C T O R  R E S U L T');
     });
 
     it('renders a healthy result panel for a single-node verify run', function (): void {
@@ -205,6 +289,23 @@ describe('doctor human panel', function (): void {
             ->and($plain)->toContain('S U M M A R Y')
             ->and($plain)->toContain('No issues detected')
             ->and($plain)->not->toContain('Run doctor --fix');
+    });
+
+    it('renders fleet human output for --all without a fake single-node target', function (): void {
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorFleetReport()));
+
+        [$exitCode, $output] = runCommand($this, 'doctor', [
+            '--all' => true,
+            '--family' => ['node'],
+        ]);
+
+        $plain = stripAnsi($output);
+
+        expect($exitCode)->toBe(0)
+            ->and($plain)->toContain('F L E E T  D O C T O R  R E S U L T')
+            ->and($plain)->toContain('app-1')
+            ->and($plain)->toContain('gateway-1')
+            ->and($plain)->not->toContain('this node');
     });
 
     it('renders a result panel with a node issue table and summary next-action line', function (): void {
@@ -374,6 +475,7 @@ describe('doctor human panel', function (): void {
                 ['Content-Type' => 'text/event-stream'],
             ),
         ]);
+        app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -524,6 +626,7 @@ describe('doctor human panel', function (): void {
                 ['Content-Type' => 'text/event-stream'],
             ),
         ]);
+        app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -548,6 +651,158 @@ describe('doctor human panel', function (): void {
             ->and($frames[1]['event'])->toBe('complete')
             ->and($frames[1]['success']['data']['doctor']['mode'])->toBe($mode);
     })->with(['restore', 'adopt']);
+
+    it('sends the configured default node when plain doctor has no explicit scope', function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-doctor-default-node-config.json'));
+        @unlink($store->path());
+        $store->save(['defaults' => ['node' => 'default-app', 'profile' => null]]);
+        app()->instance(OrbitConfigStore::class, $store);
+
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([], [
+            'node' => 'default-app',
+        ])));
+
+        [$exitCode] = runCommand($this, 'doctor', [
+            '--family' => ['node'],
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/doctor/run'
+            && $request->hasHeader('Accept', 'text/event-stream')
+            && $request->data() === [
+                'mode' => 'verify',
+                'families' => ['node'],
+                'node' => 'default-app',
+            ]);
+
+        expect($exitCode)->toBe(0);
+
+        @unlink($store->path());
+    });
+
+    it('falls back to caller resolution by omitting node when no default node is configured', function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-doctor-empty-default-node-config.json'));
+        @unlink($store->path());
+        app()->instance(OrbitConfigStore::class, $store);
+
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([])));
+
+        [$exitCode] = runCommand($this, 'doctor', [
+            '--family' => ['node'],
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/doctor/run'
+            && $request->data() === [
+                'mode' => 'verify',
+                'families' => ['node'],
+            ]);
+
+        expect($exitCode)->toBe(0);
+
+        @unlink($store->path());
+    });
+
+    it('keeps explicit self scope from being replaced by the configured default node', function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-doctor-self-default-node-config.json'));
+        @unlink($store->path());
+        $store->save(['defaults' => ['node' => 'default-app', 'profile' => null]]);
+        app()->instance(OrbitConfigStore::class, $store);
+
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([], [
+            'node' => 'caller',
+            'self' => true,
+        ])));
+
+        [$exitCode] = runCommand($this, 'doctor', [
+            '--self' => true,
+            '--family' => ['node'],
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/doctor/run'
+            && $request->data() === [
+                'mode' => 'verify',
+                'families' => ['node'],
+                'self' => true,
+            ]);
+
+        expect($exitCode)->toBe(0);
+
+        @unlink($store->path());
+    });
+
+    it('does not inject the configured default node for workspace scope without an explicit node', function (): void {
+        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-doctor-workspace-default-node-config.json'));
+        @unlink($store->path());
+        $store->save(['defaults' => ['node' => 'default-app', 'profile' => null]]);
+        app()->instance(OrbitConfigStore::class, $store);
+
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([], [
+            'node' => 'caller',
+            'workspace' => 'docs-api',
+        ])));
+
+        [$exitCode] = runCommand($this, 'doctor', [
+            '--workspace' => 'docs-api',
+            '--family' => ['workspace'],
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/doctor/run'
+            && $request->data() === [
+                'mode' => 'verify',
+                'families' => ['workspace'],
+                'workspace' => 'docs-api',
+            ]);
+
+        expect($exitCode)->toBe(0);
+
+        @unlink($store->path());
+    });
+
+    it('sends explicit fleet scope only when --all is supplied', function (): void {
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([], [
+            'node' => null,
+            'role' => 'fleet',
+            'targets' => ['app-1', 'gateway-1'],
+        ])));
+
+        [$exitCode] = runCommand($this, 'doctor', [
+            '--all' => true,
+            '--family' => ['node'],
+            '--stream-json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/doctor/run'
+            && $request->hasHeader('Accept', 'text/event-stream')
+            && $request->data() === [
+                'mode' => 'verify',
+                'families' => ['node'],
+                'all' => true,
+            ]);
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('rejects --node=all before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'doctor', [
+            '--node' => 'all',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('node')
+            ->and($decoded['error']['meta']['value'])->toBe('all');
+    });
 
     it('streams doctor terminal errors with the doctor payload as a JSON error sibling', function (): void {
         $report = doctorVerifyReport([

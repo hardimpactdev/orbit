@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-23 — `orbit doctor` defaults to exactly one target node: the configured local default node first, then the caller identity when no default is selected; fleet doctor verification is explicit `--all` only, and `--node=all` is invalid.
 - 2026-06-23 — Workspace FrankenPHP runtime containers mount the workspace source both at `/app` and at the workspace's original absolute node path, matching app runtimes, so absolute source-local configuration paths such as SQLite database files continue to resolve without storing Orbit-specific state in the checkout.
 - 2026-06-22 — App and workspace FrankenPHP runtimes use Orbit-owned `ghcr.io/hardimpactdev/orbit-frankenphp:1-php<version>-bookworm` images built from upstream FrankenPHP with Orbit's baseline Laravel app extensions; upstream `dunglas/frankenphp` remains the image base, not the managed runtime catalog target.
 - 2026-06-22 — App and workspace FrankenPHP runtimes keep Caddy/FrankenPHP XDG state ephemeral inside the container at `/tmp/orbit-frankenphp`; only `orbit-caddy` owns durable Caddy storage under `/var/lib/orbit/caddy`, and app/workspace checkouts, `~/.config/orbit`, and `/var/lib/orbit` must not store per-runtime XDG state.

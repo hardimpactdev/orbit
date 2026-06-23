@@ -2,9 +2,17 @@
 
 [Back to Operation commands.](../README.md)
 
-Verify gateway configuration against observed node reality for one node at a time, and optionally repair or adopt supported drift.
+Verify gateway configuration against observed node reality for one resolved
+target node, or explicitly inspect the fleet with `--all`.
 
-`doctor` is Orbit's convergence command. Each run targets a single node. It orchestrates state-family probes for families such as `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, and `workspace`. The global command owns scope resolution, mode selection, authorization, result handling, and output selection. Family doctor contracts own concrete probe facts, issue codes, and safe restore/adopt maps.
+`doctor` is Orbit's convergence command. Plain `orbit doctor`, `--self`, and
+`--node=<name>` each resolve exactly one target node. Fleet verification is
+available only through explicit `--all`. It orchestrates state-family probes for
+families such as `node`, `app`, `database_connection`, `firewall_rule`,
+`process`, `proxy`, `schedule`, `tool`, and `workspace`. The global command
+owns scope resolution, mode selection, authorization, result handling, and
+output selection. Family doctor contracts own concrete probe facts, issue
+codes, and safe restore/adopt maps.
 
 The categories rendered for a run are derived from the target node's active
 role assignments. The compatibility node role field is only a shadow value
@@ -35,7 +43,7 @@ diagnostic source exists; until then, findings related to DNS stay inside the
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self|--all] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Examples
@@ -48,6 +56,7 @@ orbit doctor --restore --family=app --app=docs
 orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --json
 orbit doctor --restore --family=node --key=node.security.host_key.app-1 --dry-run --json
 orbit doctor --node=app-1 --stream-json
+orbit doctor --all --stream-json
 ```
 
 ## Arguments and options
@@ -61,6 +70,10 @@ orbit doctor --node=app-1 --stream-json
 - `--key`: Limit reported drift to a single exact issue-key filter inside the selected family/families.
 - `--node`: Limit the run to one gateway-known node.
 - `--self`: Limit the run to the caller's gateway-known node identity.
+- `--all`: Verify every eligible active role-bearing fleet node. This is the
+  only fleet mode and is mutually exclusive with `--node`, `--self`, `--app`,
+  and `--workspace`. Use `--all`; `--node=all` is rejected as
+  `validation_failed` before probes.
 - `--app`: Limit the run to one app and the family facts owned by that app.
 - `--workspace`: Limit the run to one workspace and its owned facts.
 
@@ -76,7 +89,13 @@ orbit doctor --node=app-1 --stream-json
 
 ## What Happens
 
-`doctor` resolves a single-node scope, asks the gateway to authorize that scope and run the matching family probes for the target node's active roles, and reports the final diagnostic. The CLI is a thin gateway client; the gateway identifies the calling WireGuard peer and applies authorization. Without `--self` or `--node`, the target defaults to the calling peer's node as the gateway identifies it.
+`doctor` resolves scope before probes. Plain `orbit doctor` first uses the
+locally configured default node from `orbit node:default` when one is selected.
+If no default node is selected and no explicit scope is supplied, the CLI omits
+`node` and the gateway resolves the caller's identified node. `--node=<name>`
+targets exactly one named node. `--self` targets the caller identity. `--all`
+is the only fleet mode and runs verify-mode fleet inspection. Resolution modes
+(`--fix`, `--restore`, `--adopt`) require a single target node.
 
 The command supports four modes. Verify mode (no flag) compares only and does not mutate gateway configuration or node reality. Interactive mode (`--fix`) walks each finding and prompts for restore, adopt, skip, or details. Restore mode (`--restore`) bulk-applies gateway configuration to node reality for all supported findings. Adopt mode (`--adopt`) records compatible observed node reality into gateway configuration in bulk.
 
@@ -88,7 +107,7 @@ requires `doctor:verify`; resolution actions require `doctor:restore` or
 
 ## Output
 
-Human output renders a framed check-up panel for the single target node.
+Human output renders a framed check-up panel for a single target node.
 While the command is running, the panel shows each category in the target's
 active-role set and its current state. The final result uses the same
 category rows, marks healthy categories as `OK`, renders issue tables inline
@@ -97,10 +116,15 @@ output must still say what was checked. In the resolution modes (`--fix`, `--res
 `--adopt`), action results render inline below the owning category.
 Verify-mode runs do not render action tables.
 
+`--all` uses a fleet-specific progress surface and a fleet result; it never
+renders a fake single-node `this node` panel.
+
 Use `--json` for one final machine-readable diagnostic result. Use
-`--stream-json` for long-running non-interactive agents that need progress
-frames as the gateway reports them. Exact JSON fields live in the technical
-renderer contracts.
+`--stream-json` for long-running non-interactive agents that need incremental
+progress frames as the gateway reports them. The stream scope matches human
+mode, including default-node, caller fallback, named-node, and `--all` fleet
+scope. Broader `--stream-json` rollout to other long-running commands is a
+separate follow-up, not part of this doctor contract.
 
 When no drift or probe errors remain, `doctor` exits successfully. When drift
 remains, a probe fails, or scope cannot be resolved, `doctor` exits failed and

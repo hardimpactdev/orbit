@@ -59,6 +59,147 @@ describe('GatewayStreamClient', function (): void {
             ->and($events[2]['type'])->toBe('complete');
     });
 
+    it('dispatches delayed SSE chunks as they arrive over the curl transport', function (): void {
+        if (! function_exists('curl_multi_init')) {
+            test()->markTestSkipped('curl_multi_init is required for delayed stream coverage.');
+        }
+
+        $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+
+        if ($server === false) {
+            test()->markTestSkipped('stream_socket_server is required for delayed stream coverage.');
+        }
+
+        $address = stream_socket_get_name($server, false);
+        $port = (int) substr((string) $address, strrpos((string) $address, ':') + 1);
+
+        $serverPid = pcntl_fork();
+
+        if ($serverPid === -1) {
+            fclose($server);
+
+            test()->markTestSkipped('pcntl_fork is required for delayed stream coverage.');
+        }
+
+        if ($serverPid === 0) {
+            $connection = stream_socket_accept($server, 5);
+
+            if (is_resource($connection)) {
+                while (! feof($connection)) {
+                    $chunk = fread($connection, 8192);
+
+                    if ($chunk === false || $chunk === '' || str_contains($chunk, "\r\n\r\n")) {
+                        break;
+                    }
+                }
+
+                fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
+                fwrite($connection, "event: tree\ndata: {\"name\":\"doctor\"}\n\n");
+                fflush($connection);
+                usleep(600_000);
+                fwrite($connection, "event: step\ndata: {\"message\":\"checking\"}\n\n");
+                fflush($connection);
+                usleep(600_000);
+                fwrite($connection, "event: complete\ndata: {\"ok\":true}\n\n");
+                fclose($connection);
+            }
+
+            fclose($server);
+            terminateForkedFixtureProcess();
+        }
+
+        $events = [];
+
+        try {
+            $exitCode = (new GatewayStreamClient("http://127.0.0.1:{$port}", 30, preferCurl: true))
+                ->streamEvents('/api/stream', ['scope' => 'doctor'], function (ProgressEventType $type, array $payload) use (&$events): void {
+                    $events[] = [
+                        'type' => $type->value,
+                        'payload' => $payload,
+                        'at' => hrtime(true),
+                    ];
+                });
+
+            $firstGapMicroseconds = intdiv($events[1]['at'] - $events[0]['at'], 1000);
+            $secondGapMicroseconds = intdiv($events[2]['at'] - $events[1]['at'], 1000);
+
+            expect($exitCode)->toBe(0)
+                ->and(array_column($events, 'type'))->toBe(['tree', 'step', 'complete'])
+                ->and($firstGapMicroseconds)->toBeGreaterThan(250_000)
+                ->and($secondGapMicroseconds)->toBeGreaterThan(250_000);
+        } finally {
+            pcntl_waitpid($serverPid, $status);
+            fclose($server);
+        }
+    });
+
+    it('keeps only a bounded response tail for curl HTTP errors', function (): void {
+        if (! function_exists('curl_multi_init')) {
+            test()->markTestSkipped('curl_multi_init is required for curl HTTP error coverage.');
+        }
+
+        $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+
+        if ($server === false) {
+            test()->markTestSkipped('stream_socket_server is required for curl HTTP error coverage.');
+        }
+
+        $address = stream_socket_get_name($server, false);
+        $port = (int) substr((string) $address, strrpos((string) $address, ':') + 1);
+
+        $serverPid = pcntl_fork();
+
+        if ($serverPid === -1) {
+            fclose($server);
+
+            test()->markTestSkipped('pcntl_fork is required for curl HTTP error coverage.');
+        }
+
+        if ($serverPid === 0) {
+            $connection = stream_socket_accept($server, 5);
+
+            if (is_resource($connection)) {
+                while (! feof($connection)) {
+                    $chunk = fread($connection, 8192);
+
+                    if ($chunk === false || $chunk === '' || str_contains($chunk, "\r\n\r\n")) {
+                        break;
+                    }
+                }
+
+                $body = 'orbit-leading-token'.str_repeat('x', 70_000);
+
+                fwrite($connection, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n");
+
+                foreach (str_split($body, 8192) as $chunk) {
+                    fwrite($connection, $chunk);
+                }
+
+                fclose($connection);
+            }
+
+            fclose($server);
+            terminateForkedFixtureProcess();
+        }
+
+        $exception = null;
+
+        try {
+            (new GatewayStreamClient("http://127.0.0.1:{$port}", 30, preferCurl: true))
+                ->streamEvents('/api/stream', ['scope' => 'doctor'], fn () => null);
+        } catch (GatewayApiException $caught) {
+            $exception = $caught;
+        } finally {
+            pcntl_waitpid($serverPid, $status);
+            fclose($server);
+        }
+
+        expect($exception)->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->statusCode())->toBe(500)
+            ->and($exception?->bodyExcerpt())->toBeString()
+            ->not->toContain('orbit-leading-token');
+    });
+
     it('returns non-zero exit code on error frame', function (): void {
         $body = buildSseStream([
             ['event' => 'step', 'data' => ['message' => 'started']],

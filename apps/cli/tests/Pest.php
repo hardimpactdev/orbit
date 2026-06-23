@@ -79,6 +79,7 @@ function fakeGatewayProgressStream(string $body, int $status = 200): void
             'Content-Type' => 'text/event-stream',
         ]),
     ]);
+    app()->instance(GatewayStreamClient::class, new GatewayStreamClient('https://gateway.test', 30));
 }
 
 function fakeGatewayTextStream(string $body, int $status = 200): void
@@ -255,4 +256,15 @@ function restoreHostCwd(string|false $previousHostCwd): void
     }
 
     putenv("ORBIT_HOST_CWD={$previousHostCwd}");
+}
+
+function terminateForkedFixtureProcess(): never
+{
+    $pid = getmypid();
+
+    if (is_int($pid) && $pid > 0 && function_exists('posix_kill') && defined('SIGKILL')) {
+        posix_kill($pid, SIGKILL);
+    }
+
+    exit(0);
 }

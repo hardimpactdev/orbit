@@ -56,10 +56,11 @@ Standing configuration is tracked as **state families**. Each family is a gatewa
 Doctor modes:
 
 - **verify** (default): probe and report drift, no writes.
-- **`--fix --restore`**: re-enact gateway intent on the node.
-- **`--fix --adopt`**: pull node reality into gateway intent (DR or fleet adoption). For `app`, filesystem presence counts as intent  -  clean an app's directory before adopting if you don't want it re-created.
+- **`--fix`**: enter interactive resolution mode.
+- **`--restore`**: re-enact gateway intent on the node.
+- **`--adopt`**: pull node reality into gateway intent (DR or fleet adoption). For `app`, filesystem presence counts as intent  -  clean an app's directory before adopting if you don't want it re-created.
 
-Scope flags: `--node`, `--self`, `--app`, `--workspace`, `--family=<key>` (repeatable). Without scope flags, doctor checks every family on every reachable node.
+Scope flags: `--node`, `--self`, `--all`, `--app`, `--workspace`, `--family=<key>` (repeatable). Without scope flags, doctor targets the configured local default node, then falls back to the caller identity. Use `--all` for fleet verification.
 
 ## RemoteShell and where commands run
 
@@ -127,7 +128,7 @@ This avoids passing `--node` on every dev-flavored command. App nodes don't need
 
 - It doesn't talk to workload nodes from a client directly. Always via gateway.
 - It doesn't infer or store public IPv4/IPv6 from `--host`. Use `node:update --public-ipv4=... --public-ipv6=...`.
-- It doesn't keep a separate "sync" command per family  -  adoption is `doctor --fix --adopt --family=<key>`.
+- It doesn't keep a separate "sync" command per family  -  adoption is `doctor --adopt --family=<key>`.
 - It doesn't expose a separate web UI today. Future UI builds on the typed API.
 - It doesn't use PHP-FPM or Supervisor for app/workspace web runtimes.
 - It doesn't proxy git credentials. `app:new --repo=...` clones non-interactively as the SSH user already configured on the owning node.

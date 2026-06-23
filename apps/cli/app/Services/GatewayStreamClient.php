@@ -15,6 +15,7 @@ use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\StreamIdleReader;
 use Psr\Http\Message\StreamInterface;
 use RuntimeException;
+use Throwable;
 
 /**
  * Minimal SSE client for consuming gateway progress streams.
@@ -26,10 +27,13 @@ final readonly class GatewayStreamClient
 {
     private const int READ_BYTES = 8192;
 
+    private const int ERROR_BODY_TAIL_BYTES = 65536;
+
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
+        private bool $preferCurl = false,
     ) {}
 
     /**
@@ -44,6 +48,21 @@ final readonly class GatewayStreamClient
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
      */
     public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
+    {
+        if ($this->preferCurl && function_exists('curl_init') && function_exists('curl_multi_init')) {
+            return ForkedFrameTicker::withoutForking(
+                fn (): int => $this->streamEventsWithCurl($path, $payload, $onEvent, $method),
+            );
+        }
+
+        return $this->streamEventsWithHttp($path, $payload, $onEvent, $method);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     */
+    private function streamEventsWithHttp(string $path, array $payload, callable $onEvent, string $method): int
     {
         $baseUrl = $this->normalizedBaseUrl();
         try {
@@ -69,6 +88,163 @@ final readonly class GatewayStreamClient
         }
 
         return $this->processResponseStream($response->toPsrResponse()->getBody(), $onEvent);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     */
+    private function streamEventsWithCurl(string $path, array $payload, callable $onEvent, string $method): int
+    {
+        $curl = curl_init($this->absoluteUrl($path));
+
+        if ($curl === false) {
+            throw $this->classifyNetworkError(new ConnectionException('Unable to initialize gateway progress stream.'));
+        }
+
+        $multi = curl_multi_init();
+
+        $decoder = new ProgressEventDecoder;
+        $frameBuffer = '';
+        $bodyTail = '';
+        $terminal = null;
+        $failure = null;
+        $statusCode = 0;
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+
+        curl_setopt_array($curl, [
+            CURLOPT_CONNECTTIMEOUT => $this->timeout,
+            CURLOPT_HEADER => false,
+            CURLOPT_HEADERFUNCTION => function ($curl, string $header) use (&$statusCode): int {
+                if (preg_match('/^HTTP\/\S+\s+(\d{3})\b/', trim($header), $matches) === 1) {
+                    $statusCode = (int) $matches[1];
+                }
+
+                return strlen($header);
+            },
+            CURLOPT_HTTPHEADER => [
+                'Accept: text/event-stream',
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_TIMEOUT => 0,
+            CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use (
+                $decoder,
+                &$frameBuffer,
+                &$bodyTail,
+                &$terminal,
+                &$failure,
+                &$statusCode,
+                $onEvent,
+            ): int {
+                $bodyTail = $this->appendBodyTail($bodyTail, $chunk);
+
+                if ($statusCode >= 400) {
+                    return strlen($chunk);
+                }
+
+                if ($terminal !== null) {
+                    return strlen($chunk);
+                }
+
+                try {
+                    $frameBuffer .= $chunk;
+                    $terminal = $this->processCompleteFrames($decoder, $frameBuffer, $onEvent);
+                } catch (Throwable $exception) {
+                    $failure = $exception;
+
+                    return 0;
+                }
+
+                return strlen($chunk);
+            },
+        ]);
+
+        if (strtolower($method) === 'delete') {
+            curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        } else {
+            curl_setopt($curl, CURLOPT_POST, true);
+        }
+
+        if (is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath)) {
+            curl_setopt($curl, CURLOPT_CAINFO, $this->caPemPath);
+        }
+
+        curl_multi_add_handle($multi, $curl);
+
+        try {
+            $running = null;
+
+            do {
+                do {
+                    $multiStatus = curl_multi_exec($multi, $running);
+                } while ($multiStatus === CURLM_CALL_MULTI_PERFORM);
+
+                if ($multiStatus !== CURLM_OK) {
+                    throw $this->classifyNetworkError(new ConnectionException(curl_multi_strerror($multiStatus)));
+                }
+
+                if ($failure instanceof Throwable || $terminal !== null) {
+                    break;
+                }
+
+                if ($running > 0) {
+                    ForkedFrameTicker::invokeIdleCallback();
+
+                    if (curl_multi_select($multi, 0.0) === -1) {
+                        usleep(250);
+                    }
+
+                    usleep(ForkedFrameTicker::idleIntervalMicroseconds());
+                }
+            } while ($running > 0);
+
+            if ($failure instanceof Throwable) {
+                throw $failure;
+            }
+
+            $curlErrorNumber = curl_errno($curl);
+
+            if ($curlErrorNumber !== 0) {
+                throw $this->classifyNetworkError(new ConnectionException(curl_error($curl)));
+            }
+
+            $resolvedStatusCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+
+            if ($resolvedStatusCode > 0) {
+                $statusCode = $resolvedStatusCode;
+            }
+
+            if ($statusCode >= 400) {
+                throw GatewayApiException::httpError($statusCode, $bodyTail);
+            }
+
+            if ($terminal !== null) {
+                return $terminal;
+            }
+
+            $rawFrame = trim($frameBuffer);
+
+            if ($rawFrame !== '') {
+                $event = $this->decodeFrame($decoder, $rawFrame);
+
+                if ($event !== null) {
+                    $exitCode = $this->dispatchEvent($event, $onEvent);
+
+                    if ($exitCode !== null) {
+                        return $exitCode;
+                    }
+                }
+            }
+
+            throw GatewayApiException::streamClosedBeforeTerminal(
+                new RuntimeException('SSE stream closed before a terminal frame was received.'),
+            );
+        } finally {
+            curl_multi_remove_handle($multi, $curl);
+            curl_multi_close($multi);
+        }
     }
 
     /**
@@ -185,6 +361,26 @@ final readonly class GatewayStreamClient
         }
 
         return rtrim($baseUrl, '/');
+    }
+
+    private function appendBodyTail(string $tail, string $chunk): string
+    {
+        if (strlen($chunk) >= self::ERROR_BODY_TAIL_BYTES) {
+            return substr($chunk, -self::ERROR_BODY_TAIL_BYTES);
+        }
+
+        $tail .= $chunk;
+
+        if (strlen($tail) <= self::ERROR_BODY_TAIL_BYTES) {
+            return $tail;
+        }
+
+        return substr($tail, -self::ERROR_BODY_TAIL_BYTES);
+    }
+
+    private function absoluteUrl(string $path): string
+    {
+        return $this->normalizedBaseUrl().'/'.ltrim($path, '/');
     }
 
     /**

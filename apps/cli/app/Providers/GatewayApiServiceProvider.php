@@ -97,6 +97,7 @@ final class GatewayApiServiceProvider extends ServiceProvider
                 baseUrl: $config['base_url'],
                 timeout: $config['timeout'],
                 caPemPath: $config['ca_pem_path'],
+                preferCurl: ! $this->app->runningUnitTests(),
             );
         });
 
