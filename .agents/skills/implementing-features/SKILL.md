@@ -97,9 +97,12 @@ Rules:
   HARNESS_SIGNALS.md to select the smallest guardrail target. Update or create
   a signal record only when it belongs to this slice; otherwise report a scoped
   follow-up.
-- For CLI command changes, run or request the retained ingress VM
-  Solo-terminal gate before durable E2E and report the topology id, terminal,
-  exact commands, and observed results.
+- For CLI command changes, create or update Pest coverage first and E2E
+  coverage next. After the tests exist and the focused command behavior is
+  working, run or request the retained ingress VM Solo-terminal gate before
+  durable E2E or any live/release-candidate deployment. Report the topology
+  id, VM instance, terminal/session, exact commands, observed human/JSON/failure
+  results, and whether user verification is pending or complete.
 - Do not merge to main, delete the worktree, force-push, reset, clean, stash, or
   touch unrelated dirty files.
 
@@ -134,8 +137,9 @@ bin/orbit-prepare-worktree <branch-name>
 
 Use `--base=<ref>` when the todo must start from a branch other than `main`.
 Use `--with-e2e` when the change needs prepared-topology feature lanes. CLI
-command changes need `--with-e2e` because they must pass the retained ingress VM
-Solo-terminal gate before durable E2E. The
+command changes need `--with-e2e` because they must define durable E2E coverage
+and pass the retained ingress VM Solo-terminal gate before durable E2E or
+live/release-candidate deployment. The
 script creates or reuses `.worktrees/<branch-name>/`, installs dependencies,
 prepares Laravel app state, links `.env.e2e` when available, and runs
 `composer test` unless `--skip-tests` is explicitly passed.
@@ -235,17 +239,31 @@ host mutation, gateway API shims, source-mounted checkout behavior, or anything
 that previously failed only inside an Incus topology.
 
 Any feature that creates or changes a CLI command must also pass a retained
-ingress VM Solo-terminal gate after the command implementation is working under
-focused Pest coverage and before creating, expanding, or running durable E2E.
-This includes new commands, flags, options, arguments, human output, JSON
-schemas, validation, prompts, command side effects, and command-family behavior.
-The point is to prove the operator-facing command behavior on a retained VM
-while iteration is cheap, then codify the proven behavior in E2E.
+ingress VM Solo-terminal gate before durable E2E or live/release-candidate
+deployment. This includes new commands, flags, options, arguments, human output,
+JSON schemas, validation, prompts, command side effects, and command-family
+behavior.
 
-Do not treat retained Incus as optional "extra confidence" for those changes.
-Use it to prove the current worktree behaves on real VMs, then codify the same
-finding in focused Pest E2E. The retained check is not the final signal by
-itself; the durable prepared Incus lane must still pass afterward.
+For CLI changes, use this ordering:
+
+1. Create or update focused Pest tests for the command contract.
+2. Create or update durable E2E tests for the integrated command behavior.
+3. Implement the smallest slice that makes the focused command behavior work.
+4. Spawn or request a Solo terminal.
+5. Acquire a retained Incus topology with the relevant source-mounted VM.
+6. Run the changed command inside the relevant VM, usually the retained ingress
+   VM, from `/home/orbit/orbit-run`.
+7. Prove the observed human output, JSON output, prompts, failure paths, and
+   side effects that changed.
+8. Give the user a chance to inspect and confirm the VM-observed CLI behavior.
+9. Only then run durable E2E and any broader quality or release-candidate flow.
+
+Do not spend the live topology or release-candidate path on a CLI change before
+this retained VM proof and user verification point. Do not treat retained Incus
+as optional "extra confidence" for those changes. The retained check is the
+operator-facing proof checkpoint; it is not the final automated signal by
+itself, and the durable prepared Incus lane must still pass afterward when the
+change requires it.
 
 Acquire the topology from the implementation worktree and source-mount only the
 roles that need the current checkout:
@@ -360,19 +378,21 @@ moving on to durable E2E.
 11. Ensure the Grok implementation followed TDD (see Test-Driven Development
    below): failing Pest tests first, then implementation.
 12. Keep the smallest working vertical slice that makes the tests pass.
-13. For CLI command behavior, run the retained ingress VM Solo-terminal gate
-    from this worktree before durable E2E. Do not start the E2E test work until
-    the changed command has been exercised successfully on the retained ingress
-    VM and the user has confirmed the observed CLI behavior is correct, or
-    until the blocker is explicit.
+13. For CLI command behavior, ensure durable E2E coverage has been created or
+    updated for the integrated behavior, then run the retained ingress VM
+    Solo-terminal gate from this worktree before durable E2E. Give the user a
+    chance to inspect the VM-observed CLI behavior before any
+    live/release-candidate deployment. If this cannot be completed, report the
+    blocker explicitly instead of widening the release path.
 14. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-15. Run focused in-memory and prepared-topology feature verification. For
-    non-CLI behavior, proceed to the relevant E2E lane once code and focused
-    tests are ready; no retained CLI confirmation gate applies.
+15. Run focused in-memory and prepared-topology feature verification. For CLI
+    behavior, durable E2E follows the retained VM/user-verification checkpoint.
+    For non-CLI behavior, proceed to the relevant E2E lane once code and
+    focused tests are ready; no retained CLI confirmation gate applies.
 16. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
 17. Run provider provision gates only as final/nightly substrate verification
@@ -432,14 +452,16 @@ Normal feature work follows a staged E2E model:
     edits are disposable unless copied back explicitly. Node-local mutable
     Orbit state remains under `/home/orbit/.config/orbit`.
   - Use retained/live Incus topologies to develop and test against real VM
-    behavior before or while writing the durable E2E test. For
+    behavior while keeping durable E2E coverage in sync. For
     VM/node/tool/package/doctor/role-baseline changes, this retained check is a
     required gate before `composer test:e2e:incus`, not an optional diagnostic.
     It is still not proof by itself; durable prepared-topology E2E must pass.
   - CLI command changes always use the retained ingress VM Solo-terminal gate
-    before durable E2E. First prove the command behavior manually from
-    `/home/orbit/orbit-run` inside the retained ingress VM, then add or adjust
-    E2E coverage for the behavior that just proved out.
+    after focused Pest coverage and durable E2E coverage have been created or
+    updated, and before durable E2E execution or live/release-candidate
+    deployment. Prove the command behavior manually from
+    `/home/orbit/orbit-run` inside the retained ingress VM, give the user a
+    chance to inspect it, then run the durable E2E lane.
   - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
     or `composer e2e:incus -- --stop --all` when finished.
 - **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
@@ -549,6 +571,7 @@ Verification:
 - `php artisan test --compact`: <result>
 - Retained CLI ingress VM Solo-terminal check: <topology id, instance,
   terminal/session, command results, or not applicable>
+- User CLI verification: <confirmed, pending, blocked, or not applicable>
 - `composer test:e2e` (or the appropriate ephemeral lane): <result>
 - `composer quality-check`: <result>
 
