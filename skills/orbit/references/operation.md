@@ -9,7 +9,8 @@ Diagnose state-family drift across nodes; optionally repair.
 
 ```bash
 orbit doctor [--node=<name>] [--self] [--app=<name>] [--workspace=<name>]
-             [--family=<key>]... [--fix] [--restore] [--adopt] [--json]
+             [--family=<key>]... [--fix] [--restore] [--adopt]
+             [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
@@ -22,7 +23,8 @@ orbit doctor [--node=<name>] [--self] [--app=<name>] [--workspace=<name>]
 | `--fix` | off | Enter resolution mode (required for `--restore` or `--adopt`). |
 | `--restore` | off | Re-enact gateway intent on node reality. |
 | `--adopt` | off | Pull observed node reality into gateway intent (DR / fleet adoption). |
-| `--json` | off | JSON output. |
+| `--json` | off | One final machine-readable terminal frame. |
+| `--stream-json` | off | Newline-delimited gateway progress frames for non-interactive agents. Mutually exclusive with `--json`; rejected with `--fix`. |
 
 Examples:
 
@@ -33,6 +35,7 @@ orbit doctor --node=beast --family=proxy --family=process
 orbit doctor --node=beast --fix --restore           # repair drift toward intent
 orbit doctor --node=beast --fix --adopt --family=app  # adopt only apps
 orbit doctor --app=myapp                            # app-scoped report
+orbit doctor --node=beast --stream-json             # agent progress stream
 ```
 
 The process family is available for every node with at least one active role

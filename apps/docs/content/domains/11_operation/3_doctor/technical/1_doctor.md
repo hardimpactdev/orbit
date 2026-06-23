@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -37,7 +37,8 @@ This command follows the shared
 | `restore` | `--restore` | Never. | `--fix` or `--adopt` is present. | `false`. | Selects bulk restore mode (gateway configuration to node reality). |
 | `adopt` | `--adopt` | Never. | `--fix` or `--restore` is present. | `false`. | Selects bulk adopt mode (node reality into gateway configuration). |
 | `dry_run` | `--dry-run` | Never. | No `--restore` or `--adopt` flag is present. | `false`. | Returns planned bulk actions without invoking family fixers or adopters. |
-| `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `json` | `--json` | Optional. | `--stream-json` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `stream_json` | `--stream-json` | Optional. | `--json` or `--fix` is present. | `false`. | Selects the stream JSON renderer and non-interactive input mode. |
 
 ## Target Roles and Category Set
 
@@ -68,7 +69,8 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
 
 ## Input Resolution
 
-1. Select the output renderer.
+1. Resolve option compatibility, including mutually exclusive machine-readable
+   output flags.
 2. Resolve mode: `verify` (no flag), `interactive` (`--fix`), `restore` (`--restore`), or `adopt` (`--adopt`). `--fix`, `--restore`, and `--adopt` are mutually exclusive. `--dry-run` is valid only with `--restore` or `--adopt`.
 3. Resolve the single-node target.
    - `--self` is forwarded to the gateway; the gateway resolves it to the calling peer's identified node.
@@ -182,6 +184,7 @@ Family doctor contracts define the family-specific cases that produce these kind
 
 - [Human renderer](6.1_doctor_output-render_human.md)
 - [JSON renderer](6.2_doctor_output-render_json.md)
+- [Stream JSON renderer](6.3_doctor_output-render_stream-json.md)
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
@@ -193,6 +196,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Probe failed | A family probe fails in a way that prevents a healthy result. | Failure with diagnostic payload |
 | Drift detected | Drift remains after the selected mode completes. | Failure with diagnostic payload |
 | Dry-run mode invalid | `--dry-run` is supplied without `--restore` or `--adopt`. | Failure before probes |
+| Ambiguous JSON renderer | `--json` and `--stream-json` are supplied together. | Failure before gateway I/O |
+| Interactive stream invalid | `--fix` and `--stream-json` are supplied together. | Failure before gateway I/O |
 
 The shared exit status policy applies: `0` for healthy success, `1` for
 Orbit-handled command failures, and `2` only for console-runtime invalid usage
@@ -228,7 +233,9 @@ Required contract tests:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Operations/DoctorCommandContractTest.php` | Generic input contract, `--key`, `--dry-run`, scope resolution, mutually exclusive flags, mode selection, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
+| `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API input contract, `--key`, `--dry-run`, scope resolution, family-key validation, gateway authorization failures, exit-code semantics, JSON envelope, and family dispatch boundaries. |
+| `apps/cli/tests/Feature/Commands/Operation/DoctorCommandTest.php` | CLI renderer compatibility for `--json`, `--stream-json`, ambiguous renderer rejection, and `--fix --stream-json` rejection. |
+| `apps/cli/tests/Feature/Commands/Operation/DoctorFixCommandTest.php` | CLI interactive `--fix` prompt flow, cancellation, selected issue forwarding, and `--json --fix` rejection. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Role-aware category set per target active roles, universal process-family support for role-bearing nodes, app-dev/app-prod workspace split, `--family` rejection through scope validation, and per-node probe scoping for app/workspace/proxy families. |
 | `apps/gateway/tests/Feature/Http/Api/DoctorRunControllerTest.php` | Gateway API verify and fix endpoints, target node resolution from request body, caller authorization, and family dispatch over the API path. |
 | `apps/gateway/tests/Unit/Services/Doctor/DoctorReportRunnerTest.php` | Per-target probe scoping, restore-mode action suppression, action failure recording, and family dispatch through the in-process runner. |

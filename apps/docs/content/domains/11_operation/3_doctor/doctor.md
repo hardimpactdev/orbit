@@ -35,7 +35,7 @@ diagnostic source exists; until then, findings related to DNS stay inside the
 ## Usage
 
 ```bash
-orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json]
+orbit doctor [--app=<app>] [--workspace=<workspace>] [--node=<node>|--self] [--family=<family>] [--key=<key>] [--fix|--restore|--adopt] [--dry-run] [--json|--stream-json]
 ```
 
 ## Examples
@@ -47,6 +47,7 @@ orbit doctor --fix --family=app --app=docs
 orbit doctor --restore --family=app --app=docs
 orbit doctor --adopt --family=workspace --app=docs --workspace=feature-api --json
 orbit doctor --restore --family=node --key=node.security.host_key.app-1 --dry-run --json
+orbit doctor --node=app-1 --stream-json
 ```
 
 ## Arguments and options
@@ -69,7 +70,9 @@ orbit doctor --restore --family=node --key=node.security.host_key.app-1 --dry-ru
 - `--restore`: Non-interactively restore all supported findings (gateway configuration to node reality). Mutually exclusive with `--fix` and `--adopt`.
 - `--adopt`: Non-interactively adopt all supported findings (node reality into gateway configuration). Mutually exclusive with `--fix` and `--restore`.
 - `--dry-run`: Valid with `--restore` or `--adopt`; returns planned actions without applying fixers or adopters.
-- `--json`: Output JSON.
+- `--json`: Output one final machine-readable JSON terminal frame.
+- `--stream-json`: Stream gateway progress as newline-delimited JSON frames.
+  Mutually exclusive with `--json` and rejected with `--fix`.
 
 ## What Happens
 
@@ -94,8 +97,10 @@ output must still say what was checked. In the resolution modes (`--fix`, `--res
 `--adopt`), action results render inline below the owning category.
 Verify-mode runs do not render action tables.
 
-Use `--json` for machine-readable diagnostics. Exact JSON fields live in the
-technical renderer contract.
+Use `--json` for one final machine-readable diagnostic result. Use
+`--stream-json` for long-running non-interactive agents that need progress
+frames as the gateway reports them. Exact JSON fields live in the technical
+renderer contracts.
 
 When no drift or probe errors remain, `doctor` exits successfully. When drift
 remains, a probe fails, or scope cannot be resolved, `doctor` exits failed and

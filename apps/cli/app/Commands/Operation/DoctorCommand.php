@@ -7,9 +7,12 @@ namespace App\Commands\Operation;
 use App\Commands\Concerns\ResolvesHostContext;
 use App\Commands\Concerns\StreamsGatewayProgress;
 use App\Commands\GatewayCommand;
+use App\Exceptions\GatewayApiException;
 use App\Services\Doctor\DoctorPanelRenderer;
 use App\Services\Doctor\DoctorTerminalFrameExtractor;
 use App\Services\Doctor\InteractiveDoctorIssueSelector;
+use App\Services\GatewayStreamClient;
+use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEventType;
 use Throwable;
 
@@ -30,13 +33,22 @@ final class DoctorCommand extends GatewayCommand
         {--restore : Bulk restore gateway configuration to nodes}
         {--adopt : Bulk adopt node reality into gateway configuration}
         {--dry-run : Preview bulk restore or adopt actions without applying changes}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream progress frames as newline-delimited JSON}';
 
     #[\Override]
     protected $description = 'Check Orbit health and diagnose drift through the gateway.';
 
     public function handle(): int
     {
+        if ((bool) $this->option('json') && $this->wantsStreamJson()) {
+            return $this->renderFailure(
+                'validation_failed',
+                'doctor --json and --stream-json cannot be combined.',
+                ['fields' => ['json', 'stream-json']],
+            );
+        }
+
         $mode = $this->mode();
 
         if (is_int($mode)) {
@@ -60,6 +72,14 @@ final class DoctorCommand extends GatewayCommand
         }
 
         if ($mode === 'interactive') {
+            if ($this->wantsStreamJson()) {
+                return $this->renderFailure(
+                    'validation_failed',
+                    'doctor --fix cannot run with --stream-json because it requires interactive prompts.',
+                    ['field' => 'stream-json'],
+                );
+            }
+
             if ($this->wantsJson()) {
                 return $this->renderFailure(
                     'validation_failed',
@@ -80,6 +100,10 @@ final class DoctorCommand extends GatewayCommand
         }
 
         $path = $mode === 'verify' ? '/api/doctor/run' : '/api/doctor/fix';
+
+        if ($this->wantsStreamJson()) {
+            return $this->streamDoctorJson($path, $this->payload($mode));
+        }
 
         if ($this->wantsJson()) {
             return $this->streamProgress(
@@ -220,6 +244,220 @@ final class DoctorCommand extends GatewayCommand
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function streamDoctorJson(string $path, array $payload): int
+    {
+        $client = app(GatewayStreamClient::class);
+        $streamStarted = false;
+
+        try {
+            return $client->streamEvents(
+                path: $path,
+                payload: $payload,
+                onEvent: function (ProgressEventType $type, array $eventPayload) use (&$streamStarted): void {
+                    $streamStarted = true;
+
+                    $this->line(json_encode(
+                        $this->doctorStreamFrame($type, $eventPayload),
+                        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                    ));
+                },
+            );
+        } catch (GatewayApiException $exception) {
+            if ($streamStarted) {
+                $this->line(json_encode(
+                    $this->doctorStreamGatewayFailureFrame($exception),
+                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                ));
+
+                return self::FAILURE;
+            }
+
+            return $this->renderGatewayFailure($exception);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function doctorStreamFrame(ProgressEventType $type, array $payload): array
+    {
+        if ($type === ProgressEventType::Complete) {
+            return [
+                'event' => $type->value,
+                'success' => $this->doctorStreamSuccess($type, $payload),
+            ];
+        }
+
+        if ($type === ProgressEventType::Error) {
+            return [
+                'event' => $type->value,
+                'error' => $this->doctorStreamError($type, $payload),
+            ];
+        }
+
+        return [
+            'event' => $type->value,
+            'data' => $payload,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function doctorStreamGatewayFailureFrame(GatewayApiException $exception): array
+    {
+        if ($exception->hasGatewayError()) {
+            $envelope = JsonEnvelope::failure(
+                $exception->gatewayErrorCode() ?? $exception->cliFailureCode(),
+                $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                $exception->gatewayErrorMeta(),
+            );
+
+            if ($exception->gatewayErrorData() !== []) {
+                $envelope['error']['data'] = $exception->gatewayErrorData();
+            }
+
+            return [
+                'event' => ProgressEventType::Error->value,
+                'error' => $envelope['error'],
+            ];
+        }
+
+        return [
+            'event' => ProgressEventType::Error->value,
+            'error' => JsonEnvelope::failure(
+                $exception->cliFailureCode(),
+                $exception->getMessage(),
+            )['error'],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function doctorStreamSuccess(ProgressEventType $type, array $payload): array
+    {
+        $doctor = app(DoctorTerminalFrameExtractor::class)->doctor([
+            'type' => $type,
+            'payload' => $payload,
+        ]);
+
+        $data = $doctor === null
+            ? $this->doctorStreamTerminalData($payload)
+            : ['doctor' => $doctor];
+
+        $envelope = JsonEnvelope::success($data, $this->doctorStreamSuccessMeta($payload));
+
+        return $envelope['success'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function doctorStreamError(ProgressEventType $type, array $payload): array
+    {
+        $data = $this->doctorStreamTerminalData($payload);
+        $code = $this->stringFromPayload($data, 'code')
+            ?? $this->stringFromPayload($payload, 'code')
+            ?? 'gateway_stream_error';
+        $message = $this->stringFromPayload($data, 'message')
+            ?? $this->stringFromPayload($payload, 'message')
+            ?? 'Gateway progress stream failed.';
+        $meta = $this->arrayFromPayload($data, 'meta')
+            ?? $this->arrayFromPayload($payload, 'meta')
+            ?? [];
+
+        $envelope = JsonEnvelope::failure($code, $message, $meta);
+        $error = $envelope['error'];
+        $diagnosticData = $this->doctorStreamErrorData($type, $payload);
+
+        if ($diagnosticData !== []) {
+            $error['data'] = $diagnosticData;
+        }
+
+        return $error;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function doctorStreamTerminalData(array $payload): array
+    {
+        $data = $payload['data'] ?? null;
+
+        return is_array($data) ? $data : $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function doctorStreamSuccessMeta(array $payload): array
+    {
+        $exitCode = $payload['exit_code'] ?? null;
+
+        if (! is_int($exitCode)) {
+            return [];
+        }
+
+        return ['exit_code' => $exitCode];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function doctorStreamErrorData(ProgressEventType $type, array $payload): array
+    {
+        $doctor = app(DoctorTerminalFrameExtractor::class)->doctor([
+            'type' => $type,
+            'payload' => $payload,
+        ]);
+
+        if ($doctor !== null) {
+            return ['doctor' => $doctor];
+        }
+
+        $data = $this->doctorStreamTerminalData($payload);
+        $nestedData = $data['data'] ?? null;
+
+        return is_array($nestedData) ? $nestedData : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function stringFromPayload(array $payload, string $key): ?string
+    {
+        $value = $payload[$key] ?? null;
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function arrayFromPayload(array $payload, string $key): ?array
+    {
+        $value = $payload[$key] ?? null;
+
+        return is_array($value) ? $value : null;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function payload(string $mode): array
@@ -248,5 +486,16 @@ final class DoctorCommand extends GatewayCommand
         }
 
         return array_values(array_filter($families, fn (mixed $family): bool => is_string($family) && $family !== ''));
+    }
+
+    #[\Override]
+    protected function wantsJson(): bool
+    {
+        return (bool) $this->option('json') || $this->wantsStreamJson();
+    }
+
+    private function wantsStreamJson(): bool
+    {
+        return (bool) $this->option('stream-json');
     }
 }
