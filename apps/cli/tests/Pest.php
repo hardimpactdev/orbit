@@ -8,11 +8,18 @@ use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
 use App\Services\OrbitConfigStore;
+use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Promise\Create;
+use GuzzleHttp\Promise\PromiseInterface;
+use GuzzleHttp\Psr7\Response as Psr7Response;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamInterface;
 use Symfony\Component\Console\Output\StreamOutput;
 use Tests\TestCase;
 
@@ -51,6 +58,7 @@ function fakeGateway(array $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationEventStreamClient::class);
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
+    app()->forgetInstance(FakeGatewayStreamHttpClient::class);
 
     Http::fake(['https://gateway.test/*' => Http::response($body, $status)]);
 }
@@ -64,7 +72,26 @@ function gatewayProgressFrame(string $event, array $data): string
         .'data: '.json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n\n";
 }
 
-function fakeGatewayProgressStream(string $body, int $status = 200): void
+function fakeGatewayProgressStream(string|StreamInterface $body, int $status = 200): void
+{
+    fakeGatewayProgressStreamClient($body, $status);
+
+    Http::fake([
+        'https://gateway.test/*' => Http::response($body, $status, [
+            'Content-Type' => 'text/event-stream',
+        ]),
+    ]);
+}
+
+function fakeGatewayProgressStreamClient(string|StreamInterface $body, int $status = 200): FakeGatewayStreamHttpClient
+{
+    return fakeGatewayProgressStreamSequence([$body], $status);
+}
+
+/**
+ * @param  list<string|StreamInterface>  $bodies
+ */
+function fakeGatewayProgressStreamSequence(array $bodies, int $status = 200): FakeGatewayStreamHttpClient
 {
     config()->set('orbit.gateway.url', 'https://gateway.test');
     config()->set('orbit.gateway.timeout', 30);
@@ -74,11 +101,219 @@ function fakeGatewayProgressStream(string $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
 
-    Http::fake([
-        'https://gateway.test/*' => Http::response($body, $status, [
-            'Content-Type' => 'text/event-stream',
-        ]),
-    ]);
+    $responses = array_map(
+        fn (string|StreamInterface $body): Psr7Response => new Psr7Response(
+            $status,
+            ['Content-Type' => 'text/event-stream'],
+            $body,
+        ),
+        $bodies,
+    );
+
+    $httpClient = new FakeGatewayStreamHttpClient($responses);
+
+    app()->instance(FakeGatewayStreamHttpClient::class, $httpClient);
+    app()->instance(GatewayStreamClient::class, new GatewayStreamClient(
+        baseUrl: 'https://gateway.test',
+        timeout: 30,
+        httpClient: $httpClient,
+    ));
+
+    return $httpClient;
+}
+
+/**
+ * @implements ArrayAccess<string, mixed>
+ */
+final readonly class FakeGatewayStreamRequest implements ArrayAccess
+{
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function __construct(
+        private string $method,
+        private string $url,
+        private array $options,
+    ) {}
+
+    public function method(): string
+    {
+        return $this->method;
+    }
+
+    public function url(): string
+    {
+        return $this->url;
+    }
+
+    public function hasHeader(string $header, ?string $value = null): bool
+    {
+        $headers = $this->options['headers'] ?? [];
+
+        if (! is_array($headers) || ! array_key_exists($header, $headers)) {
+            return false;
+        }
+
+        if ($value === null) {
+            return true;
+        }
+
+        return $headers[$header] === $value;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function data(): array
+    {
+        $data = $this->options['json'] ?? [];
+
+        return is_array($data) ? $data : [];
+    }
+
+    public function offsetExists(mixed $offset): bool
+    {
+        return array_key_exists((string) $offset, $this->data());
+    }
+
+    public function offsetGet(mixed $offset): mixed
+    {
+        return $this->data()[(string) $offset] ?? null;
+    }
+
+    public function offsetSet(mixed $offset, mixed $value): void
+    {
+        throw new LogicException('Fake gateway stream requests are read-only.');
+    }
+
+    public function offsetUnset(mixed $offset): void
+    {
+        throw new LogicException('Fake gateway stream requests are read-only.');
+    }
+}
+
+/**
+ * @param  list<ResponseInterface|Throwable>  $queue
+ */
+final class FakeGatewayStreamHttpClient implements ClientInterface
+{
+    /**
+     * @var list<array{method: string, uri: string, options: array<string, mixed>}>
+     */
+    public array $requests = [];
+
+    public function __construct(
+        private array $queue,
+    ) {}
+
+    public function send(RequestInterface $request, array $options = []): ResponseInterface
+    {
+        return $this->request($request->getMethod(), (string) $request->getUri(), $options);
+    }
+
+    public function sendAsync(RequestInterface $request, array $options = []): PromiseInterface
+    {
+        return Create::promiseFor($this->send($request, $options));
+    }
+
+    public function request(string $method, $uri = '', array $options = []): ResponseInterface
+    {
+        $this->requests[] = [
+            'method' => $method,
+            'uri' => (string) $uri,
+            'options' => $options,
+        ];
+
+        $response = array_shift($this->queue);
+
+        if ($response instanceof Throwable) {
+            throw $response;
+        }
+
+        if (! $response instanceof ResponseInterface) {
+            throw new RuntimeException('No fake gateway stream response queued.');
+        }
+
+        return $response;
+    }
+
+    public function requestAsync(string $method, $uri = '', array $options = []): PromiseInterface
+    {
+        return Create::promiseFor($this->request($method, $uri, $options));
+    }
+
+    public function getConfig(?string $option = null): mixed
+    {
+        return $option === null ? [] : null;
+    }
+}
+
+/**
+ * @param  callable(FakeGatewayStreamRequest): bool  $callback
+ */
+function assertGatewayStreamSent(callable $callback): void
+{
+    $httpClient = app(FakeGatewayStreamHttpClient::class);
+
+    foreach ($httpClient->requests as $request) {
+        $fakeRequest = new FakeGatewayStreamRequest(
+            method: $request['method'],
+            url: $request['uri'],
+            options: $request['options'],
+        );
+
+        if ($callback($fakeRequest)) {
+            expect(true)->toBeTrue();
+
+            return;
+        }
+    }
+
+    expect(false)->toBeTrue('An expected gateway stream request was not recorded.');
+}
+
+/**
+ * @param  callable(FakeGatewayStreamRequest): bool  $callback
+ */
+function assertGatewayStreamNotSent(callable $callback): void
+{
+    if (! app()->bound(FakeGatewayStreamHttpClient::class)) {
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    $httpClient = app(FakeGatewayStreamHttpClient::class);
+
+    foreach ($httpClient->requests as $request) {
+        $fakeRequest = new FakeGatewayStreamRequest(
+            method: $request['method'],
+            url: $request['uri'],
+            options: $request['options'],
+        );
+
+        if ($callback($fakeRequest)) {
+            expect(false)->toBeTrue('An unexpected gateway stream request was recorded.');
+        }
+    }
+
+    expect(true)->toBeTrue();
+}
+
+function assertGatewayStreamNothingSent(): void
+{
+    if (! app()->bound(FakeGatewayStreamHttpClient::class)) {
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    expect(app(FakeGatewayStreamHttpClient::class)->requests)->toBe([]);
+}
+
+function assertGatewayStreamSentCount(int $count): void
+{
+    expect(app(FakeGatewayStreamHttpClient::class)->requests)->toHaveCount($count);
 }
 
 function fakeGatewayTextStream(string $body, int $status = 200): void
@@ -90,6 +325,7 @@ function fakeGatewayTextStream(string $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationEventStreamClient::class);
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
+    app()->forgetInstance(FakeGatewayStreamHttpClient::class);
 
     Http::fake([
         'https://gateway.test/*' => Http::response($body, $status, [
@@ -110,6 +346,7 @@ function fakeGatewayDown(string $message = 'connection refused'): void
     app()->forgetInstance(GatewayOperationEventStreamClient::class);
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
+    app()->forgetInstance(FakeGatewayStreamHttpClient::class);
 
     Http::fake(function () use ($message): never {
         throw new ConnectionException($message);
@@ -129,6 +366,7 @@ function fakeNoGatewayConfig(string $configPath): void
     app()->forgetInstance(GatewayOperationEventStreamClient::class);
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
+    app()->forgetInstance(FakeGatewayStreamHttpClient::class);
 }
 
 function assertProgressTreeSpacerContract(string $text): bool

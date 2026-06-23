@@ -8,7 +8,6 @@ use App\Exceptions\GatewayApiException;
 use App\Services\GatewayStreamClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
 
@@ -261,7 +260,7 @@ describe('StreamsGatewayProgress', function (): void {
             array_filter(explode("\n", $output)),
         );
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === $method
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === $method
             && $request->url() === "https://gateway.test{$url}"
             && $request->hasHeader('Accept', 'text/event-stream'));
 

@@ -2,10 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Services\GatewayApiClient;
-use App\Services\GatewayLogStreamClient;
-use App\Services\GatewayStreamClient;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -105,15 +101,7 @@ function doctorRunProgressFrame(array $doctor, string $key = '__doctor_panel', s
 
 function fakeDoctorRunStream(string $body, int $status = 200): void
 {
-    config()->set('orbit.gateway.url', 'https://gateway.test');
-    config()->set('orbit.gateway.timeout', 30);
-    app()->forgetInstance(GatewayApiClient::class);
-    app()->forgetInstance(GatewayLogStreamClient::class);
-    app()->forgetInstance(GatewayStreamClient::class);
-
-    Http::fake([
-        'https://gateway.test/api/doctor/run' => Http::response($body, $status, ['Content-Type' => 'text/event-stream']),
-    ]);
+    fakeGatewayProgressStream($body, $status);
 }
 
 /**
@@ -362,18 +350,7 @@ describe('doctor human panel', function (): void {
         $report['healthy'] = true;
         $report['summary']['fixed'] = 1;
 
-        config()->set('orbit.gateway.url', 'https://gateway.test');
-        config()->set('orbit.gateway.timeout', 30);
-        app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayLogStreamClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
-        Http::fake([
-            'https://gateway.test/api/doctor/fix' => Http::response(
-                doctorRunCompleteStream($report),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
-        ]);
+        fakeGatewayProgressStreamClient(doctorRunCompleteStream($report));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -511,19 +488,7 @@ describe('doctor human panel', function (): void {
     it('streams doctor bulk resolution modes through the fix endpoint', function (string $mode): void {
         $report = doctorVerifyReport([], mode: $mode);
 
-        config()->set('orbit.gateway.url', 'https://gateway.test');
-        config()->set('orbit.gateway.timeout', 30);
-        app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayLogStreamClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
-
-        Http::fake([
-            'https://gateway.test/api/doctor/fix' => Http::response(
-                doctorRunCompleteStream($report),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
-        ]);
+        fakeGatewayProgressStreamClient(doctorRunCompleteStream($report));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -534,7 +499,7 @@ describe('doctor human panel', function (): void {
 
         $frames = decodeDoctorNdjson($output);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/doctor/fix'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [

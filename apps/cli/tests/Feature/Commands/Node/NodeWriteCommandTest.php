@@ -35,7 +35,7 @@ describe('node write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request['name'] === 'app-1'
@@ -69,7 +69,7 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request['roles'] === ['app-dev', 'database']
             && ! isset($request['template']));
@@ -93,7 +93,7 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request['roles'] === ['metrics']
             && ! isset($request['template']));
@@ -831,7 +831,7 @@ describe('node write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/nodes')
             && $request['roles'] === ['analytics']
             && $request['postgres_node'] === 'database-1'

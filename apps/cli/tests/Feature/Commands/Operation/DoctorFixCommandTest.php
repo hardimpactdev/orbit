@@ -3,12 +3,8 @@
 declare(strict_types=1);
 
 use App\Commands\Operation\DoctorCommand;
-use App\Services\GatewayApiClient;
-use App\Services\GatewayLogStreamClient;
-use App\Services\GatewayStreamClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -77,14 +73,14 @@ describe('doctor --fix', function (): void {
             ->expectsOutputToContain('Doctor completed.')
             ->assertExitCode(0);
 
-        Http::assertSentCount(2);
-        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://gateway.test/api/doctor/run'
+        assertGatewayStreamSentCount(2);
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run'
             && $request->data() === [
                 'mode' => 'verify',
                 'families' => ['node'],
                 'node' => 'app-1',
             ]);
-        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://gateway.test/api/doctor/fix'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/fix'
             && $request->data() === [
                 'mode' => 'restore',
                 'families' => ['node'],
@@ -117,8 +113,8 @@ describe('doctor --fix', function (): void {
             ->expectsQuestion('Resolve Proxy route differs.', 'skip')
             ->assertExitCode(1);
 
-        Http::assertSentCount(1);
-        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://gateway.test/api/doctor/run');
+        assertGatewayStreamSentCount(1);
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run');
     });
 
     it('treats prompt cancellation as a validation failure without sending a fix request', function (): void {
@@ -148,8 +144,8 @@ describe('doctor --fix', function (): void {
         expect($exitCode)->toBe(1)
             ->and($output->fetch())->toContain('validation_failed: Operation cancelled.');
 
-        Http::assertSentCount(1);
-        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://gateway.test/api/doctor/run');
+        assertGatewayStreamSentCount(1);
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run');
     });
 });
 
@@ -246,26 +242,5 @@ function doctorFixCompleteStream(array $doctor): string
  */
 function fakeDoctorFixGatewayStreams(string $runBody, array $fixBodies): void
 {
-    config()->set('orbit.gateway.url', 'https://gateway.test');
-    config()->set('orbit.gateway.timeout', 30);
-    app()->forgetInstance(GatewayApiClient::class);
-    app()->forgetInstance(GatewayLogStreamClient::class);
-    app()->forgetInstance(GatewayStreamClient::class);
-
-    $fixIndex = 0;
-
-    Http::fake(function (Request $request) use ($runBody, $fixBodies, &$fixIndex) {
-        if ($request->url() === 'https://gateway.test/api/doctor/run') {
-            return Http::response($runBody, 200, ['Content-Type' => 'text/event-stream']);
-        }
-
-        if ($request->url() === 'https://gateway.test/api/doctor/fix') {
-            $body = $fixBodies[$fixIndex] ?? end($fixBodies) ?: '';
-            $fixIndex++;
-
-            return Http::response($body, 200, ['Content-Type' => 'text/event-stream']);
-        }
-
-        return Http::response('', 404);
-    });
+    fakeGatewayProgressStreamSequence([$runBody, ...$fixBodies]);
 }

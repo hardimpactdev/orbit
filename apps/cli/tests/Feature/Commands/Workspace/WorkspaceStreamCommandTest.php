@@ -2,11 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Services\GatewayApiClient;
 use App\Services\GatewayStreamClient;
 use GuzzleHttp\Psr7\FnStream;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
 use Psr\Http\Message\StreamInterface;
 
@@ -85,16 +82,7 @@ function chunkedSseStream(array $chunks, ?callable $onRead = null): StreamInterf
 
 function fakeWorkspaceStreamGateway(string|StreamInterface $body, int $status = 200): void
 {
-    config()->set('orbit.gateway.url', 'https://gateway.test');
-    config()->set('orbit.gateway.timeout', 30);
-    app()->forgetInstance(GatewayApiClient::class);
-    app()->forgetInstance(GatewayStreamClient::class);
-
-    Http::fake([
-        'https://gateway.test/*' => Http::response($body, $status, [
-            'Content-Type' => 'text/event-stream',
-        ]),
-    ]);
+    fakeGatewayProgressStream($body, $status);
 }
 
 describe('WorkspaceStream commands', function (): void {
@@ -127,7 +115,7 @@ describe('WorkspaceStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/workspaces'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === [
@@ -264,14 +252,14 @@ describe('WorkspaceStream commands', function (): void {
         $readCount = 0;
         $eventReadCounts = [];
 
-        fakeWorkspaceStreamGateway(chunkedSseStream([
+        $httpClient = fakeGatewayProgressStreamClient(chunkedSseStream([
             sseFrame('step', ['key' => 'source', 'status' => 'running']),
             sseFrame('complete', ['exit_code' => 0, 'data' => []]),
         ], function (int $count) use (&$readCount): void {
             $readCount = $count;
         }));
 
-        $exitCode = (new GatewayStreamClient('https://gateway.test', 30))
+        $exitCode = (new GatewayStreamClient('https://gateway.test', 30, httpClient: $httpClient))
             ->streamEvents('/api/workspaces', [], function (ProgressEventType $type) use (&$readCount, &$eventReadCounts): void {
                 $eventReadCounts[$type->value] = $readCount;
             });

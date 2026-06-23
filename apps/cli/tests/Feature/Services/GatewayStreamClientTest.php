@@ -5,17 +5,12 @@ declare(strict_types=1);
 use App\Exceptions\GatewayApiException;
 use App\Exceptions\GatewayApiFailureKind;
 use App\Services\GatewayStreamClient;
-use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\ConnectException;
-use GuzzleHttp\Promise\Create;
-use GuzzleHttp\Promise\PromiseInterface;
 use GuzzleHttp\Psr7\FnStream;
 use GuzzleHttp\Psr7\Request as Psr7Request;
 use GuzzleHttp\Psr7\Response as Psr7Response;
 use GuzzleHttp\Psr7\Utils;
 use Orbit\Core\Progress\ProgressEventType;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
 
 /**
  * Build a raw SSE stream body string from named event frames.
@@ -33,62 +28,6 @@ function buildSseStream(array $frames): string
     }
 
     return implode("\n", $lines);
-}
-
-/**
- * @param  list<ResponseInterface|Throwable>  $queue
- */
-final class FakeGatewayStreamHttpClient implements ClientInterface
-{
-    /**
-     * @var list<array{method: string, uri: string, options: array<string, mixed>}>
-     */
-    public array $requests = [];
-
-    public function __construct(
-        private array $queue,
-    ) {}
-
-    public function send(RequestInterface $request, array $options = []): ResponseInterface
-    {
-        return $this->request($request->getMethod(), (string) $request->getUri(), $options);
-    }
-
-    public function sendAsync(RequestInterface $request, array $options = []): PromiseInterface
-    {
-        return Create::promiseFor($this->send($request, $options));
-    }
-
-    public function request(string $method, $uri = '', array $options = []): ResponseInterface
-    {
-        $this->requests[] = [
-            'method' => $method,
-            'uri' => (string) $uri,
-            'options' => $options,
-        ];
-
-        $response = array_shift($this->queue);
-
-        if ($response instanceof Throwable) {
-            throw $response;
-        }
-
-        if (! $response instanceof ResponseInterface) {
-            throw new RuntimeException('No fake gateway stream response queued.');
-        }
-
-        return $response;
-    }
-
-    public function requestAsync(string $method, $uri = '', array $options = []): PromiseInterface
-    {
-        return Create::promiseFor($this->request($method, $uri, $options));
-    }
-
-    public function getConfig(?string $option = null): mixed
-    {
-        return $option === null ? [] : null;
-    }
 }
 
 function fakeGatewayStreamClient(string $body, int $status = 200, array $headers = []): GatewayStreamClient

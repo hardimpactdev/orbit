@@ -162,7 +162,7 @@ describe('deploy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(function (Request $request): bool {
+        assertGatewayStreamSent(function (FakeGatewayStreamRequest $request): bool {
             return $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/run')
                 && $request->hasHeader('Accept', 'text/event-stream')
