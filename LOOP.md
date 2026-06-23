@@ -31,18 +31,21 @@ show agents are missing context. Product behavior contracts remain under
 2. **Search**: check `harness-signals/` for similar prior signals before
    treating the issue as new. If it reappeared, question whether the current
    guardrail target is sufficient.
-3. **Triage**: decide whether it is one-off local work, a missing guardrail, or
+3. **Curate**: if the search returns stale, overlapping, or noisy records,
+   update, consolidate, retire, or delete them when the curation is in scope.
+   Otherwise report a focused curation follow-up.
+4. **Triage**: decide whether it is one-off local work, a missing guardrail, or
    a product contract conflict.
-4. **Record**: create or update a curated signal record in `harness-signals/`
+5. **Record**: create or update a curated signal record in `harness-signals/`
    when the signal is repeatable, high-cost, safety-critical, or evidence that
    an existing guardrail failed. Do not record ordinary local noise.
-5. **Select Guardrail Target**: choose the smallest durable home for the
+6. **Select Guardrail Target**: choose the smallest durable home for the
    lesson. Use `HARNESS_SIGNALS.md` as the signal-to-guardrail-target map.
-6. **Distill**: update the chosen guardrail target in the same worktree when it
+7. **Distill**: update the chosen guardrail target in the same worktree when it
    is part of the current change. Otherwise create a scoped follow-up.
-7. **Verify**: prove the guardrail now guides or blocks the issue with the
+8. **Verify**: prove the guardrail now guides or blocks the issue with the
    narrowest useful command or review check.
-8. **Report**: include the signal record, chosen guardrail target,
+9. **Report**: include the signal record, chosen guardrail target,
    verification, and any follow-up in the implementation report.
 
 ## Guardrail Targets

@@ -3,12 +3,14 @@
 Status: guarded
 First seen: 2026-06-23
 Last seen: 2026-06-23
+Last reviewed: 2026-06-23
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: 38ff38aa
 Signal type: review-comment
 Guardrail target: harness-signals/, LOOP.md, HARNESS_SIGNALS.md, .agents/skills/implementing-features/SKILL.md
 Guardrail change: current harness signal ledger slice
 Related signals: harness-signals/2026-06-23-guardrail-target-terminology.md, harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
+Superseded by: none
 Tags: signal-ledger, compound-engineering, recurrence
 
 ## Signal
@@ -48,3 +50,9 @@ quality gate for this slice.
 If agents keep reporting signals only in final prose without adding or updating
 records, make signal-ledger checks part of a reviewer persona or static docs
 check.
+
+## Curation Notes
+
+Keep as the ledger bootstrap signal. If a later curation workflow supersedes
+this file, mark it retired and point `Superseded by` at the newer curation
+record or workflow doc.

@@ -3,12 +3,14 @@
 Status: open
 First seen: YYYY-MM-DD
 Last seen: YYYY-MM-DD
+Last reviewed: YYYY-MM-DD
 Source worktree: <branch or path>
 Source commit: <sha, branch, or none>
 Signal type: <review-comment | failed-check | docs-conflict | e2e-failure | live-node | agent-mistake | setup | other>
 Guardrail target: <path or planned path>
 Guardrail change: <commit, pending, or none>
 Related signals: <paths or none>
+Superseded by: <path or none>
 Tags: <comma-separated tags>
 
 ## Signal
@@ -38,3 +40,8 @@ is reachable and useful.
 ## Reappearance Check
 
 State what a future agent should do if this signal appears again.
+
+## Curation Notes
+
+Record updates, consolidation decisions, stale reasons, retirement reasons, or
+delete rationale when useful.

@@ -3,12 +3,14 @@
 Status: guarded
 First seen: 2026-06-23
 Last seen: 2026-06-23
+Last reviewed: 2026-06-23
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: b269f590
 Signal type: review-comment
 Guardrail target: .agents/skills/implementing-features/SKILL.md
 Guardrail change: 38ff38aa
 Related signals: none
+Superseded by: none
 Tags: implementing-features, workflow, loop-engineering
 
 ## Signal
@@ -42,3 +44,9 @@ shows the workflow hooks, and `composer docs-lint` exited 0.
 
 If future implementation reports omit durable signal triage, tighten the report
 template or add a review-persona check before merge.
+
+## Curation Notes
+
+Keep until several feature worktrees have produced implementation reports with
+usable harness-signal sections. Then retire or consolidate into a broader
+implementation-report signal.

@@ -346,10 +346,13 @@ moving on to durable E2E.
 9. For every failed verification, review comment, human correction, docs
    conflict, setup problem, or agent mistake encountered during the slice,
    search `harness-signals/` for related prior records, then decide whether it
-   is local cleanup or a durable harness signal. If it is durable and belongs to
-   the current slice, create or update the signal record and update the smallest
-   guardrail target in the same worktree. If it is durable but broader than the
-   slice, report a scoped follow-up instead of expanding ownership.
+   is local cleanup or a durable harness signal. If the search returns stale,
+   overlapping, or noisy records and curation belongs to this slice, update,
+   consolidate, retire, or delete the records using `harness-signals/README.md`.
+   If it is durable and belongs to the current slice, create or update the
+   signal record and update the smallest guardrail target in the same worktree.
+   If it is durable but broader than the slice, report a scoped follow-up
+   instead of expanding ownership.
 10. Check whether the project-owned Orbit skill under `skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
@@ -485,7 +488,8 @@ is not required after ordinary `composer test:e2e` runs.
   not need a repository edit, but every durable signal needs either a curated
   `harness-signals/` record plus a guardrail target update in this worktree, or
   a scoped follow-up in the implementation report. Do not use `LOOP.md` or
-  `HARNESS_SIGNALS.md` as event logs.
+  `HARNESS_SIGNALS.md` as event logs. Curate stale or noisy signal records when
+  they are in the owned scope; otherwise report a focused curation follow-up.
 - Keep the project-owned Orbit skill in sync with product and implementation
   changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
   `skills/orbit/references/*.md` carries command-family detail. If a change

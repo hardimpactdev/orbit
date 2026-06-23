@@ -3,12 +3,14 @@
 Status: guarded
 First seen: 2026-06-23
 Last seen: 2026-06-23
+Last reviewed: 2026-06-23
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: b269f590
 Signal type: review-comment
 Guardrail target: LOOP.md, HARNESS_SIGNALS.md
 Guardrail change: 3eecf1c4
 Related signals: none
+Superseded by: none
 Tags: terminology, harness-signals, loop-engineering
 
 ## Signal
@@ -41,3 +43,8 @@ returned no matches, and `composer docs-lint` exited 0.
 
 If "sink" reappears in harness docs, treat it as terminology drift and replace
 it unless the context is unrelated to the feedback-loop model.
+
+## Curation Notes
+
+Keep while the harness vocabulary is settling. Retire once later worktrees show
+the terminology is no longer drifting.

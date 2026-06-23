@@ -48,11 +48,51 @@ Use one of these statuses:
 | `open` | Signal is recorded, but no guardrail target has absorbed it yet. |
 | `guarded` | A guardrail target was updated and verified. |
 | `recurring` | The signal reappeared after a guardrail target was updated. |
+| `stale` | The record may be outdated or misleading, but the right action is not clear yet. |
 | `retired` | Later work has not reproduced the signal, or a stronger guardrail superseded it. |
 
 Retirement is deliberately manual in this slice. Prefer marking a record
 `retired` before deleting it, so future agents can still discover the history
 while the signal cools down.
+
+## Curation
+
+Signal records should make future work easier. If the ledger starts producing
+too many weak matches, curate it instead of expecting agents to read around the
+noise.
+
+Run a focused curation pass when:
+
+- A search returns several records for the same underlying signal
+- A `guarded` signal reappears in a new worktree
+- A record points at files, skills, commands, or docs that no longer exist
+- A record is repeatedly skipped because it no longer helps decisions
+- Roughly ten feature or bugfix worktrees have landed since the last broad pass
+
+Use these outcomes:
+
+| Outcome | Action |
+|---------|--------|
+| Keep | Record is still accurate and useful. Do not edit just to leave a review breadcrumb. |
+| Update | Facts drifted, but the signal and guardrail target are still valid. Fix paths, commits, status, or verification. |
+| Consolidate | Two or more records cover the same signal. Merge unique recurrence history into the canonical record, then delete the redundant files. |
+| Mark recurring | The signal reappeared after a guardrail target changed. Set `Status: recurring` and tighten or replace the guardrail target. |
+| Mark stale | The record seems outdated, but the right replacement or deletion is ambiguous. Add a short stale reason. |
+| Retire | The signal has cooled down or a stronger guardrail superseded it, but the history remains useful. Set `Status: retired`. |
+| Delete | The record no longer has retrieval value, is fully redundant, or points at a dead concern with no active lesson. Delete it; git history is the archive. |
+
+Do not create an `_archived/` directory. Archive folders pollute searches and
+hide old guidance without removing it. If a deleted record is needed later, git
+history can recover it.
+
+Before deleting a record, search for inbound references:
+
+```bash
+rg -n "signal-slug-or-filename" .
+```
+
+If another record or harness doc relies on it for context, consolidate or
+retire instead of deleting.
 
 ## Record Shape
 
