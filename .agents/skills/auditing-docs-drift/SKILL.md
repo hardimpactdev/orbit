@@ -15,13 +15,13 @@ consistency, find contradictions, or align documentation.
 
 ## Authority Order
 
-`apps/docs/content/product-decisions.md` is the dated **intent ledger** and sits
-above this chain as the anchor for *current intent*. The authority docs below
-state the contract; the ledger states which direction is current when they
-disagree. A dated decision overrides an undated authority doc for determining
-intent — the contradicting doc is the stale side unless a *later* decision
-reaffirms it. The ledger pre-fills a fix direction; it does not authorize silent
-edits — every finding is still walked with the user.
+`PRODUCT_DECISIONS.md` is the dated **intent ledger** and sits above this chain
+as the anchor for *current intent*. The authority docs below state the contract;
+the ledger states which direction is current when they disagree. A dated
+decision overrides an undated authority doc for determining intent — the
+contradicting doc is the stale side unless a *later* decision reaffirms it. The
+ledger pre-fills a fix direction; it does not authorize silent edits — every
+finding is still walked with the user.
 
 These docs are authoritative in this exact order. A downstream doc that
 contradicts an upstream doc is drift, regardless of how recently it was edited.
@@ -56,9 +56,9 @@ decision because of this?* If yes, A. If they just feel uncertain, B.
 
 ### 1. Read authority docs (in order)
 
-Read `apps/docs/content/product-decisions.md` first — the dated intent ledger
-tells you which direction is current before you compare what the docs say. Then
-read `apps/docs/content/mission.md`, `apps/docs/content/architecture.md`,
+Read `PRODUCT_DECISIONS.md` first — the dated intent ledger tells you which
+direction is current before you compare what the docs say. Then read
+`apps/docs/content/mission.md`, `apps/docs/content/architecture.md`,
 `apps/docs/content/concepts.md`, `apps/docs/content/tech-stack.md`,
 `apps/docs/content/domains/README.md` in full. Build a mental model of what
 the docs *claim* before checking what they *say*.
@@ -146,13 +146,13 @@ What a reader does wrong, what a maintainer has to relitigate, or what risk
 the silent inconsistency creates. One paragraph.
 
 **Recommended fix:**
-First `grep apps/docs/content/product-decisions.md` for the finding's topic
-noun. If a dated decision exists, the latest entry is current intent: the fix is
-to align the contradicting (stale) doc to that decision — state it directly
-rather than as an open choice. Then give concrete numbered edits. Quote the
-exact replacement prose for any rewrites. Name files affected by absolute path.
-If no ledger decision covers the topic and a product decision is required,
-present 2–3 options with pros/cons and a recommendation.
+First `grep PRODUCT_DECISIONS.md` for the finding's topic noun. If a dated
+decision exists, the latest entry is current intent: the fix is to align the
+contradicting (stale) doc to that decision — state it directly rather than as an
+open choice. Then give concrete numbered edits. Quote the exact replacement
+prose for any rewrites. Name files affected by absolute path. If no ledger
+decision covers the topic and a product decision is required, present 2–3
+options with pros/cons and a recommendation.
 ```
 
 Use IDs `A1, A2, ...`, `B1, B2, ...`, `C1, C2, ...` per severity.

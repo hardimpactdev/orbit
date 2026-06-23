@@ -327,9 +327,8 @@ moving on to durable E2E.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md`,
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
-   `apps/docs/content/product-decisions.md`, relevant product docs under
-   `apps/docs/content/**`, and relevant session context under
-   `docs/superpowers/**`.
+   `PRODUCT_DECISIONS.md`, relevant product docs under `apps/docs/content/**`,
+   and relevant session context under `docs/superpowers/**`.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Grok delegation plan. Use one Grok worker unless the feature has
    disjoint slices with explicit file/domain ownership and merge order.
@@ -497,7 +496,7 @@ is not required after ordinary `composer test:e2e` runs.
   reference file in the same commit. If the skill is not affected, say so in
   the report instead of leaving the check implicit.
 - When the change lands a direction change or reversal, append a one-line entry
-  to `apps/docs/content/product-decisions.md` (newest first,
+  to `PRODUCT_DECISIONS.md` (newest first,
   `- YYYY-MM-DD — <decision with topic noun>. (solo todo #NNNN)`), linking the
   Solo todo being executed. Skip routine work — flags, fixes, refactors.
 - When a decision removes or renames a public command, flag, or product term,

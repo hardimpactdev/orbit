@@ -59,8 +59,8 @@ show agents are missing context. Product behavior contracts remain under
 | `harness-signals/` | A curated signal should remain searchable across worktrees. |
 | `.agents/skills/**` | A workflow, command family, verification lane, or role-specific procedure changes. |
 | `apps/docs/content/**` | Product behavior, operator-facing contracts, or authority docs change. |
+| `PRODUCT_DECISIONS.md` | A dated product direction change or reversal lands. |
 | Tests/static checks | The lesson can be enforced mechanically. |
-| `apps/docs/content/product-decisions.md` | A dated product direction change or reversal lands. |
 
 ## Report Template
 
