@@ -182,11 +182,10 @@ it('reports banned terms outside their allow paths', function (): void {
             'terms' => ['tool:start'],
             'decision' => '2026-06-06 tool lifecycle is process-owned (solo todo #703)',
             'replacement' => 'process:start',
-            'allow_paths' => ['product-decisions.md'],
+            'allow_paths' => [],
         ],
     ]);
     bindLiveSurfaceFake([]);
-    writeLiveSurfaceFile($this->fixtureRoot, 'content/product-decisions.md', "# Product Decisions\n\n- 2026-06-06 — Orbit removes `tool:start`.\n");
     writeLiveSurfaceFile($this->fixtureRoot, 'content/domains/7_process/process-concepts.md', "# Process Concepts\n\nUse `tool:start` to start tools.\n");
 
     $payload = runLiveSurfaceLint();

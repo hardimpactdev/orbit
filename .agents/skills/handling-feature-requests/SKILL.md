@@ -24,7 +24,7 @@ skill.
    direction still needs refinement.
 4. Read current product authority before writing Solo todos:
    - `AGENTS.md`
-   - `apps/docs/content/product-decisions.md` (dated intent ledger — read current direction before proposing a change, so a new decision does not contradict or duplicate an existing one)
+   - `PRODUCT_DECISIONS.md` (dated intent ledger — read current direction before proposing a change, so a new decision does not contradict or duplicate an existing one)
    - `apps/docs/content/mission.md`
    - `apps/docs/content/architecture.md`
    - `apps/docs/content/tech-stack.md`
@@ -111,7 +111,7 @@ Task:
 
 Required context:
 - `AGENTS.md`
-- `apps/docs/content/product-decisions.md` (dated intent ledger — current direction)
+- `PRODUCT_DECISIONS.md` (dated intent ledger — current direction)
 - relevant product docs under `apps/docs/content/**`
 - relevant session context under `docs/superpowers/**`
 - current code and tests in owned scope

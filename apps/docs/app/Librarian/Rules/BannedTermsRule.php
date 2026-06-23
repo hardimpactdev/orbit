@@ -13,7 +13,7 @@ use HardImpact\Librarian\Linting\GroupedRule;
  * Terms retired by a product decision must not linger anywhere in the product
  * docs. Each registry entry in `librarian.banned_terms` names the removed
  * terms, the decision that retired them, the replacement wording, and the
- * allow paths that may keep a historical mention (the ledger, removal notes).
+ * allow paths that may keep an intentional product-doc mention.
  */
 final readonly class BannedTermsRule implements GroupedRule
 {
