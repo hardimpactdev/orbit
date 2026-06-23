@@ -905,7 +905,7 @@ final class E2ECurrentCheckout
         $gatewayDatabase = escapeshellarg(self::gatewayStatePath('gateway.sqlite'));
 
         return implode(' && ', [
-            "if command -v sudo >/dev/null 2>&1; then sudo install -d -m 775 -o orbit -g orbit {$configRoot} && sudo chown -R orbit:orbit {$configRoot}; else install -d -m 775 {$configRoot}; fi",
+            "if command -v sudo >/dev/null 2>&1; then sudo install -d -m 775 -o orbit -g orbit {$configRoot} && (sudo chown -R orbit:orbit {$configRoot} 2>/dev/null || true); else install -d -m 775 {$configRoot}; fi",
             "mkdir -p {$configRoot} apps/gateway/storage/framework/cache/data apps/gateway/storage/framework/sessions apps/gateway/storage/framework/testing apps/gateway/storage/framework/views apps/gateway/storage/logs",
             "if [ ! -f {$gatewayEnv} ]; then cp apps/gateway/.env.example {$gatewayEnv}; fi",
             "rm -f {$gatewayEnvTmp}",
