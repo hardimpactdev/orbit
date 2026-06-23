@@ -76,6 +76,9 @@ Worktree:
 
 Read and follow:
 - AGENTS.md
+- HARNESS.md
+- LOOP.md
+- HARNESS_SIGNALS.md
 - .agents/skills/implementing-features/SKILL.md
 - relevant docs and tests named in the handoff
 
@@ -87,13 +90,19 @@ Rules:
 - Keep docs, tests, and code aligned.
 - Use TDD: failing Pest coverage first, then implementation.
 - Run the focused verification assigned to this slice.
+- Capture implementation signals as they appear. When a failure, review
+  correction, docs conflict, or setup problem reveals missing durable context,
+  use LOOP.md and HARNESS_SIGNALS.md to select the smallest guardrail target.
+  Update it only when it belongs to this slice; otherwise report a scoped
+  follow-up.
 - For CLI command changes, run or request the retained ingress VM
   Solo-terminal gate before durable E2E and report the topology id, terminal,
   exact commands, and observed results.
 - Do not merge to main, delete the worktree, force-push, reset, clean, stash, or
   touch unrelated dirty files.
 
-Report changed files, tests, verification commands/results, blockers, and risks.
+Report changed files, tests, harness signals, verification commands/results,
+blockers, and risks.
 ```
 
 ## Workspace Setup
@@ -314,9 +323,10 @@ moving on to durable E2E.
    implementation and proceed as orchestrator. Do not route through retired
    orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
-3. Read the handoff, `AGENTS.md`, `apps/docs/content/product-decisions.md`,
-   relevant product docs under `apps/docs/content/**`, and relevant session
-   context under `docs/superpowers/**`.
+3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md`,
+   `HARNESS_SIGNALS.md`, `apps/docs/content/product-decisions.md`, relevant
+   product docs under `apps/docs/content/**`, and relevant session context
+   under `docs/superpowers/**`.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Grok delegation plan. Use one Grok worker unless the feature has
    disjoint slices with explicit file/domain ownership and merge order.
@@ -324,56 +334,64 @@ moving on to durable E2E.
    documentation authority, TDD requirement, focused verification, and the rule
    that Grok must not merge to `main` or clean up the worktree.
 7. Monitor Grok, inspect diffs, and send correction prompts until the
-   acceptance criteria are met or a blocker is explicit.
+   acceptance criteria are met or a blocker is explicit. When a correction
+   reveals missing durable context, triage it through `LOOP.md` and
+   `HARNESS_SIGNALS.md`.
 8. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Prefer sending documentation corrections back through
    the Grok worker that owns the related behavior.
-9. Check whether the project-owned Orbit skill under `skills/orbit/**` is
+9. For every failed verification, review comment, human correction, docs
+   conflict, setup problem, or agent mistake encountered during the slice,
+   decide whether it is local cleanup or a durable harness signal. If it is
+   durable and belongs to the current slice, update the smallest guardrail
+   target in the same worktree. If it is durable but broader than the slice,
+   report a scoped follow-up instead of expanding ownership.
+10. Check whether the project-owned Orbit skill under `skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-10. Ensure the Grok implementation followed TDD (see Test-Driven Development
+11. Ensure the Grok implementation followed TDD (see Test-Driven Development
    below): failing Pest tests first, then implementation.
-11. Keep the smallest working vertical slice that makes the tests pass.
-12. For CLI command behavior, run the retained ingress VM Solo-terminal gate
+12. Keep the smallest working vertical slice that makes the tests pass.
+13. For CLI command behavior, run the retained ingress VM Solo-terminal gate
     from this worktree before durable E2E. Do not start the E2E test work until
     the changed command has been exercised successfully on the retained ingress
     VM and the user has confirmed the observed CLI behavior is correct, or
     until the blocker is explicit.
-13. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
+14. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-14. Run focused in-memory and prepared-topology feature verification. For
+15. Run focused in-memory and prepared-topology feature verification. For
     non-CLI behavior, proceed to the relevant E2E lane once code and focused
     tests are ready; no retained CLI confirmation gate applies.
-15. Run artifact-backed feature verification when production artifact behavior
+16. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
-16. Run provider provision gates only as final/nightly substrate verification
+17. Run provider provision gates only as final/nightly substrate verification
     when installer, host mutation, image, binary, or topology-preparation
     behavior changed. Docker provision is only for Docker artifact/image or
     Docker topology-preparer changes; do not run it as a generic post-`composer
     test:e2e` gate.
-17. If PHP changed, run:
+18. If PHP changed, run:
 
    ```bash
    vendor/bin/pint --dirty --format agent
    ```
 
-18. Before reporting completion, run the project quality gate:
+19. Before reporting completion, run the project quality gate:
 
    ```bash
    composer quality-check
    ```
 
-19. Commit the verified worktree changes on the worktree branch.
-20. Merge the branch back into `main` from the primary `~/orbit` checkout,
+20. Commit the verified worktree changes on the worktree branch.
+21. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
-21. If release was explicitly agreed or specifically discussed as part of the
+22. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
     the release artifacts are accepted, run `doctor` again, compare the before
@@ -459,6 +477,10 @@ is not required after ordinary `composer test:e2e` runs.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
+- Run the repo feedback loop from `LOOP.md` during the slice. Every signal does
+  not need a repository edit, but every durable signal needs either a guardrail
+  target update in this worktree or a scoped follow-up in the implementation
+  report. Do not use `LOOP.md` or `HARNESS_SIGNALS.md` as event logs.
 - Keep the project-owned Orbit skill in sync with product and implementation
   changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
   `skills/orbit/references/*.md` carries command-family detail. If a change
@@ -501,6 +523,14 @@ Product-decisions ledger:
 
 Orbit skill:
 - <updated files, or not affected>
+
+Harness signals:
+Repeat this block for each durable signal, or write `none`.
+- Source: <signal source, or none>
+- Missing context: <context gap, or none>
+- Guardrail target: <updated target, follow-up target, or none>
+- Verification: <how the guardrail target was checked, or not applicable>
+- Follow-up: <scoped follow-up, or none>
 
 Tests:
 - Pest unit/feature: <test added or changed>
