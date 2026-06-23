@@ -22,6 +22,8 @@ final class DoctorPanelRenderer
     /** Visible width available between the two side borders ("│ ... │"). */
     private const int INNER_WIDTH = self::PANEL_WIDTH - 4;
 
+    private const int ISSUE_DETAIL_INDENT = 15;
+
     /**
      * Family key to operator-facing category label (Category Catalog).
      *
@@ -72,7 +74,7 @@ final class DoctorPanelRenderer
      * @param  array<string, mixed>  $report
      * @return list<string>
      */
-    public function lines(array $report): array
+    public function lines(array $report, int $frame = 0): array
     {
         $mode = $this->mode($report);
         $target = $this->target($report);
@@ -90,15 +92,22 @@ final class DoctorPanelRenderer
 
         foreach ($families as $family) {
             $familyIssues = $issuesByFamily[$family] ?? [];
+            $rendersIssueDetails = $mode === 'verify' && $familyIssues !== [];
             $lines[] = $this->categoryRow($family, $this->statusText(
                 family: $family,
                 familyIssues: $familyIssues,
                 progressStatus: $this->familyProgressStatus($report, $family),
                 mode: $mode,
-            ));
+                detailsFollow: $rendersIssueDetails,
+            ), $frame);
 
             if ($familyIssues !== []) {
-                $lines = [...$lines, ...$this->issueTable($family, $familyIssues)];
+                $lines = [
+                    ...$lines,
+                    ...($rendersIssueDetails
+                        ? $this->issueDetails($familyIssues)
+                        : $this->issueTable($family, $familyIssues)),
+                ];
             }
 
             $familyActions = $actionsByFamily[$family] ?? [];
@@ -241,8 +250,13 @@ final class DoctorPanelRenderer
     /**
      * @param  list<array<string, mixed>>  $familyIssues
      */
-    private function statusText(string $family, array $familyIssues, ?string $progressStatus = null, string $mode = 'verify'): string
-    {
+    private function statusText(
+        string $family,
+        array $familyIssues,
+        ?string $progressStatus = null,
+        string $mode = 'verify',
+        bool $detailsFollow = false,
+    ): string {
         if ($progressStatus !== null && ! in_array($progressStatus, ['done', 'ok'], true)) {
             return match ($progressStatus) {
                 'queued' => 'Queued',
@@ -272,7 +286,43 @@ final class DoctorPanelRenderer
 
         $count = count($familyIssues);
 
-        return $count === 1 ? '1 issue detected' : "{$count} issues found";
+        $status = $count === 1 ? '1 issue detected' : "{$count} issues found";
+
+        return $detailsFollow ? "{$status}:" : $status;
+    }
+
+    /**
+     * Build verify-mode inline issue detail lines for a family.
+     *
+     * @param  list<array<string, mixed>>  $familyIssues
+     * @return list<string>
+     */
+    private function issueDetails(array $familyIssues): array
+    {
+        $lines = [$this->issueSeparatorLine()];
+        $summaryWidth = self::INNER_WIDTH - self::ISSUE_DETAIL_INDENT - 2;
+
+        foreach ($this->sortIssues($familyIssues) as $issue) {
+            foreach ($this->wrapText($this->issueSummary($issue), $summaryWidth) as $index => $summaryLine) {
+                $prefix = $index === 0 ? '- ' : '  ';
+                $content = str_repeat(' ', self::ISSUE_DETAIL_INDENT).$prefix.$summaryLine;
+
+                $lines[] = $this->contentLine($content, $this->visibleWidth($content));
+            }
+        }
+
+        return $lines;
+    }
+
+    private function issueSeparatorLine(): string
+    {
+        $dashWidth = self::INNER_WIDTH - self::ISSUE_DETAIL_INDENT;
+        $content = str_repeat(' ', self::ISSUE_DETAIL_INDENT)
+            .SpinnerTreeRenderer::DIM
+            .str_repeat('-', $dashWidth)
+            .SpinnerTreeRenderer::RESET;
+
+        return $this->contentLine($content, self::INNER_WIDTH);
     }
 
     /**
@@ -636,14 +686,29 @@ final class DoctorPanelRenderer
         return SpinnerTreeRenderer::RED;
     }
 
-    private function categoryRow(string $family, string $status): string
+    private function categoryRow(string $family, string $status, int $frame): string
     {
         $label = self::CATEGORY_LABELS[$family] ?? ucfirst($family);
-        $dot = $this->statusColor($status).'●'.SpinnerTreeRenderer::RESET;
+        $dot = $this->statusDot($status, $frame);
         $labelColumn = str_pad($label, 14);
         $content = "{$dot}  {$labelColumn}{$status}";
 
-        return $this->contentLine($content, $this->visibleWidth("●  {$labelColumn}{$status}"));
+        return $this->flushRightBorderLine($content, $this->visibleWidth("●  {$labelColumn}{$status}"));
+    }
+
+    private function statusDot(string $status, int $frame): string
+    {
+        if (in_array($status, ['Checking', 'Gathering results', 'Restoring', 'Adopting'], true)) {
+            $frames = SpinnerTreeRenderer::spinnerFrames();
+
+            return $frames[$frame % count($frames)];
+        }
+
+        if ($status === 'Queued') {
+            return SpinnerTreeRenderer::DIM.'○'.SpinnerTreeRenderer::RESET;
+        }
+
+        return $this->statusColor($status).'●'.SpinnerTreeRenderer::RESET;
     }
 
     /**
@@ -934,6 +999,17 @@ final class DoctorPanelRenderer
         return SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET
             .' '.$content.str_repeat(' ', $pad).' '
             .SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET;
+    }
+
+    /**
+     * Render category rows with the status dot in column 1 while preserving the
+     * dim right border of the outer panel.
+     */
+    private function flushRightBorderLine(string $content, int $visibleWidth): string
+    {
+        $pad = max(0, self::PANEL_WIDTH - 1 - $visibleWidth);
+
+        return $content.str_repeat(' ', $pad).SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET;
     }
 
     /**

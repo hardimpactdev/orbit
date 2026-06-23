@@ -48,6 +48,11 @@ final class DoctorCommand extends GatewayCommand
 
     private int $doctorPanelRewindExtraLines = 0;
 
+    private int $doctorPanelFrame = 0;
+
+    /** @var array<string, mixed>|null */
+    private ?array $latestDoctorProgressReport = null;
+
     public function handle(): int
     {
         if ((bool) $this->option('json') && $this->wantsStreamJson()) {
@@ -188,8 +193,8 @@ final class DoctorCommand extends GatewayCommand
     {
         $client = app(GatewayStreamClient::class);
         $frames = app(DoctorTerminalFrameExtractor::class);
-        $wantsJson = $this->wantsJson();
         $renderedDoctorFrame = false;
+        $this->latestDoctorProgressReport = null;
 
         $finalType = null;
         $finalPayload = [];
@@ -198,15 +203,11 @@ final class DoctorCommand extends GatewayCommand
             $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, $frames, &$renderedDoctorFrame, &$finalType, &$finalPayload): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use ($frames, &$renderedDoctorFrame, &$finalType, &$finalPayload): void {
                     if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
                         $finalType = $type;
                         $finalPayload = $eventPayload;
 
-                        return;
-                    }
-
-                    if ($wantsJson) {
                         return;
                     }
 
@@ -217,6 +218,7 @@ final class DoctorCommand extends GatewayCommand
 
                     if ($doctor !== null) {
                         $renderedDoctorFrame = true;
+                        $this->latestDoctorProgressReport = $doctor;
                         $this->writeDoctorProgressPanel($doctor);
 
                         return;
@@ -226,13 +228,22 @@ final class DoctorCommand extends GatewayCommand
                         $this->renderProgressFrame($type, $eventPayload);
                     }
                 },
+                onIdle: function (): void {
+                    $latestDoctorReport = $this->latestDoctorProgressReport;
+
+                    if ($latestDoctorReport === null) {
+                        return;
+                    }
+
+                    $this->writeDoctorProgressPanel($latestDoctorReport);
+                },
             );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
 
         if ($finalType instanceof ProgressEventType) {
-            if (! $wantsJson && $this->progressTree?->isStarted()) {
+            if ($this->progressTree?->isStarted()) {
                 $data = $this->frameData($finalPayload);
                 $footer = $this->frameString($data, 'footer') ?? $this->frameString($finalPayload, 'footer');
 
@@ -263,7 +274,8 @@ final class DoctorCommand extends GatewayCommand
      */
     private function writeDoctorPanel(array $report): void
     {
-        $lines = app(DoctorPanelRenderer::class)->lines($report);
+        $lines = app(DoctorPanelRenderer::class)->lines($report, $this->doctorPanelFrame);
+        $this->doctorPanelFrame++;
 
         if ($this->output->isDecorated() && $this->doctorPanelLineCount > 0) {
             $previousLineCount = $this->doctorPanelLineCount;

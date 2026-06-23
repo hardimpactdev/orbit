@@ -261,6 +261,69 @@ describe('doctor human panel', function (): void {
             ->and($output)->toContain('D O C T O R  R E S U L T');
     });
 
+    it('keeps the doctor progress panel spinner blinking during idle waits', function (): void {
+        $families = ['node'];
+        $initialProgress = doctorVerifyReport([], ['families' => $families]);
+        $initialProgress['progress'] = [
+            'state' => 'running',
+            'families' => [
+                ['family' => 'node', 'status' => 'checking'],
+            ],
+        ];
+        $finalReport = doctorVerifyReport([], ['families' => $families]);
+
+        app()->forgetInstance(GatewayStreamClient::class);
+        app()->instance(GatewayStreamClient::class, new class($initialProgress, $finalReport)
+        {
+            /**
+             * @param  array<string, mixed>  $initialProgress
+             * @param  array<string, mixed>  $finalReport
+             */
+            public function __construct(
+                private readonly array $initialProgress,
+                private readonly array $finalReport,
+            ) {}
+
+            /**
+             * @param  array<string, mixed>  $payload
+             * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+             */
+            public function streamEvents(
+                string $path,
+                array $payload,
+                callable $onEvent,
+                string $method = 'post',
+                ?callable $onIdle = null,
+                int $idleIntervalMicroseconds = 300_000,
+            ): int {
+                $onEvent(ProgressEventType::Step, [
+                    'key' => '__doctor_panel',
+                    'status' => 'running',
+                    'doctor' => $this->initialProgress,
+                ]);
+
+                $onIdle?->__invoke();
+
+                $onEvent(ProgressEventType::Complete, [
+                    'exit_code' => 0,
+                    'data' => ['doctor' => $this->finalReport],
+                ]);
+
+                return 0;
+            }
+        });
+
+        [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
+            '--node' => 'beast',
+            '--family' => $families,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("\e[36m○\e[39m  Node          Checking")
+            ->and($output)->toContain("\e[36m◉\e[39m  Node          Checking")
+            ->and($output)->toContain('D O C T O R  R E S U L T');
+    });
+
     it('renders a healthy result panel for a single-node verify run', function (): void {
         fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([])));
 
@@ -276,6 +339,8 @@ describe('doctor human panel', function (): void {
             ->and($plain)->toContain('Successfully performed check-up on beast')
             ->and($plain)->toContain('Node')
             ->and($plain)->toContain('OK')
+            ->and($plain)->toContain("\n●  Node          OK")
+            ->and($plain)->not->toContain("\n│ ●  Node")
             ->and($plain)->toContain('S U M M A R Y')
             ->and($plain)->toContain('No issues detected')
             ->and($plain)->not->toContain('Run doctor --fix');
@@ -298,7 +363,7 @@ describe('doctor human panel', function (): void {
             ->and($plain)->not->toContain('this node');
     });
 
-    it('renders a result panel with a node issue table and summary next-action line', function (): void {
+    it('renders verify issues as readable bullet details and summary next-action line', function (): void {
         $report = doctorVerifyReport([
             [
                 'family' => 'node',
@@ -324,16 +389,18 @@ describe('doctor human panel', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($plain)->toContain('D O C T O R  R E S U L T')
-            ->and($plain)->toContain('1 issue detected')
-            ->and($plain)->toContain('ISSUE')
-            ->and($plain)->toContain('WireGuard peer for node beast is missing.')
+            ->and($plain)->toContain("\n●  Node          1 issue detected:")
+            ->and($plain)->toContain('               -------------------------------------------------------------')
+            ->and($plain)->toContain('               - WireGuard peer for node beast is missing.')
             ->and($plain)->toContain('S U M M A R Y')
             ->and($plain)->toContain('Run doctor --fix manually or through an LLM to resolve issues')
             // node family table must not carry a NODE column.
-            ->and($plain)->not->toContain('NODE');
+            ->and($plain)->not->toContain('NODE')
+            ->and($plain)->not->toContain('ISSUE')
+            ->and($plain)->not->toContain('node.wireguard_peer_missing');
     });
 
-    it('renders entity columns for non-node families and an active-role category row', function (): void {
+    it('renders verify-mode family issues as readable bullet details in active-role order', function (): void {
         $report = doctorVerifyReport(
             issues: [
                 [
@@ -387,18 +454,62 @@ describe('doctor human panel', function (): void {
             ->and($plain)->toContain('Workspaces')
             ->and($plain)->toContain('Proxy routes')
             ->and($plain)->toContain('Firewall')
-            // App family preferred columns.
-            ->and($plain)->toContain('APP')
-            ->and($plain)->toContain('nckrtl')
-            // Workspace family preferred columns + both rows.
-            ->and($plain)->toContain('WORKSPACE')
-            ->and($plain)->toContain('abc123.nckrtl.test')
-            ->and($plain)->toContain('ui-redesign.hauser.test')
+            // Verify mode renders issue details as readable bullets, not nested tables.
+            ->and($plain)->toContain("\n●  Apps          1 issue detected:")
+            ->and($plain)->toContain('- https://nckrtl.test returned a 500 error response')
+            ->and($plain)->toContain("\n●  Workspaces    2 issues found:")
+            ->and($plain)->toContain('- Workspace should exist on node but is missing')
+            ->and($plain)->toContain('- Workspace exists on node but is not expected')
             // Categories with no issues render OK.
             ->and($plain)->toContain('OK')
             // Total count summary, never "across N categories".
             ->and($plain)->toContain('3 issues detected')
+            ->and($plain)->not->toContain('APP')
+            ->and($plain)->not->toContain('WORKSPACE')
+            ->and($plain)->not->toContain('ISSUE')
+            ->and($plain)->not->toContain('abc123.nckrtl.test')
+            ->and($plain)->not->toContain('ui-redesign.hauser.test')
             ->and($plain)->not->toContain('across');
+    });
+
+    it('dims the outer border and dashed issue separator when a category has issues', function (): void {
+        $report = doctorVerifyReport(
+            issues: [
+                [
+                    'family' => 'database_connection',
+                    'node' => 'beast',
+                    'key' => 'database_connection.missing',
+                    'code' => 'database_connection.missing',
+                    'kind' => 'missing',
+                    'summary' => 'Database connection ditis_hr is missing from the node.',
+                    'detail' => ['connection' => 'ditis_hr'],
+                    'restorable' => true,
+                    'adoptable' => false,
+                ],
+            ],
+            scopeOverrides: ['families' => ['node', 'database_connection']],
+        );
+
+        fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'database_connection']));
+
+        [$exitCode, $output] = runCommand($this, 'doctor', [
+            '--node' => 'beast',
+            '--family' => ['node', 'database_connection'],
+        ]);
+
+        $plain = stripAnsi($output);
+
+        expect($exitCode)->toBe(1)
+            ->and($plain)->toContain("\n●  Node          OK")
+            ->and($plain)->toContain("\n●  Databases     1 issue detected:")
+            ->and($plain)->toContain('               -------------------------------------------------------------')
+            ->and($plain)->toContain('               - Database connection ditis_hr is missing from the node.')
+            ->and($plain)->not->toContain("\n│ ●  Databases")
+            ->and($plain)->not->toContain('ISSUE')
+            ->and($plain)->not->toContain('database_connection.missing')
+            ->and($output)->toMatch('/\e\[31m●\e\[39m  Databases\s+1 issue detected:\s+\e\[38;5;242m│\e\[39m/')
+            ->and($output)->toMatch('/\e\[38;5;242m│\e\[39m\s+\e\[38;5;242m-{20,}\e\[39m\s+\e\[38;5;242m│\e\[39m/')
+            ->and($output)->not->toContain("\e[38;5;242m- Database connection ditis_hr is missing from the node.");
     });
 
     it('wraps the node reboot-required guidance instead of truncating it', function (): void {
@@ -429,7 +540,9 @@ describe('doctor human panel', function (): void {
         $plain = stripAnsi($output);
 
         expect($exitCode)->toBe(1)
-            ->and($plain)->toContain('This node requires an explicit reboot to finish installed updates.')
+            ->and($plain)->toContain('- This node requires an explicit reboot to finish installed')
+            ->and($plain)->toContain('  updates.')
+            ->and($plain)->toContain('Orbit will not reboot it automatically.')
             ->and($plain)->toContain('Reboot this server as soon as possible.')
             // Long node summaries wrap rather than truncate with an ellipsis.
             ->and($plain)->not->toContain('…');
@@ -850,8 +963,14 @@ describe('doctor human panel', function (): void {
              * @param  array<string, mixed>  $payload
              * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
              */
-            public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
-            {
+            public function streamEvents(
+                string $path,
+                array $payload,
+                callable $onEvent,
+                string $method = 'post',
+                ?callable $onIdle = null,
+                int $idleIntervalMicroseconds = 300_000,
+            ): int {
                 $onEvent(ProgressEventType::Step, [
                     'key' => 'beast',
                     'status' => 'running',
