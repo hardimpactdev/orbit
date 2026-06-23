@@ -67,8 +67,6 @@ try {
             continue;
         }
 
-        write_best_subgate_durations($baseline);
-
         $baselineDuration = (float) ($baseline['duration_seconds'] ?? 0);
         $runDuration = (float) ($latest['duration_seconds'] ?? 0);
 
@@ -80,6 +78,7 @@ try {
 
         $thresholdPercent = baseline_warning_threshold_percent($baseline);
         $thresholdMultiplier = 1 + ($thresholdPercent / 100);
+        $needsTimingTriage = false;
 
         if ($runDuration > ($baselineDuration * $thresholdMultiplier)) {
             fwrite(STDOUT, sprintf(
@@ -89,7 +88,7 @@ try {
                 $baselineDuration,
                 PHP_EOL,
             ));
-            fwrite(STDOUT, 'timing triage: '.TIMING_TRIAGE_SKILL_PATH.PHP_EOL);
+            $needsTimingTriage = true;
         } else {
             fwrite(STDOUT, sprintf(
                 'baseline: gate [%s] duration %.1fs is within local baseline %.1fs%s',
@@ -98,6 +97,14 @@ try {
                 $baselineDuration,
                 PHP_EOL,
             ));
+        }
+
+        if (write_subgate_duration_warnings($gate, $latest, $baseline, $thresholdMultiplier)) {
+            $needsTimingTriage = true;
+        }
+
+        if ($needsTimingTriage) {
+            fwrite(STDOUT, 'timing triage: '.TIMING_TRIAGE_SKILL_PATH.PHP_EOL);
         }
     }
 
@@ -288,9 +295,9 @@ function baseline_warning_threshold_percent(array $baseline): float
  */
 function write_subgate_durations(array $artifact): void
 {
-    $durations = $artifact['subgate_durations'] ?? null;
+    $durations = subgate_durations($artifact);
 
-    if (! is_array($durations) || $durations === []) {
+    if ($durations === []) {
         return;
     }
 
@@ -314,22 +321,64 @@ function write_subgate_durations(array $artifact): void
 }
 
 /**
+ * @param  array<string, mixed>  $artifact
  * @param  array<string, mixed>  $baseline
  */
-function write_best_subgate_durations(array $baseline): void
+function write_subgate_duration_warnings(string $gate, array $artifact, array $baseline, float $thresholdMultiplier): bool
 {
-    $durations = $baseline['best_subgate_durations'] ?? null;
+    $artifactDurations = subgate_durations($artifact);
+    $baselineDurations = subgate_durations($baseline);
 
-    if (! is_array($durations) || $durations === []) {
-        return;
+    if ($artifactDurations === [] || $baselineDurations === []) {
+        return false;
     }
 
-    $labels = array_keys($durations);
-    sort($labels);
+    $warned = false;
+    $labels = array_keys($artifactDurations);
 
     foreach ($labels as $label) {
-        $seconds = $durations[$label];
+        $baselineSeconds = $baselineDurations[$label] ?? null;
 
+        if ($baselineSeconds === null || $baselineSeconds <= 0) {
+            continue;
+        }
+
+        $runSeconds = $artifactDurations[$label];
+
+        if ($runSeconds <= ($baselineSeconds * $thresholdMultiplier)) {
+            continue;
+        }
+
+        fwrite(STDOUT, sprintf(
+            'warning: subgate [%s:%s] duration %.1fs exceeds local baseline %.1fs (warning-only)%s',
+            $gate,
+            $label,
+            $runSeconds,
+            $baselineSeconds,
+            PHP_EOL,
+        ));
+
+        $warned = true;
+    }
+
+    return $warned;
+}
+
+/**
+ * @param  array<string, mixed>  $source
+ * @return array<string, float>
+ */
+function subgate_durations(array $source): array
+{
+    $durations = $source['subgate_durations'] ?? null;
+
+    if (! is_array($durations)) {
+        return [];
+    }
+
+    $parsedDurations = [];
+
+    foreach ($durations as $label => $seconds) {
         if (! is_string($label) || trim($label) === '' || ! is_numeric($seconds)) {
             continue;
         }
@@ -340,11 +389,10 @@ function write_best_subgate_durations(array $baseline): void
             continue;
         }
 
-        fwrite(STDOUT, sprintf(
-            'best subgate duration: %s=%.1fs%s',
-            $label,
-            $parsed,
-            PHP_EOL,
-        ));
+        $parsedDurations[$label] = $parsed;
     }
+
+    ksort($parsedDurations);
+
+    return $parsedDurations;
 }

@@ -105,9 +105,9 @@ Baseline file shape:
   "warning_threshold_percent": 25,
   "source_artifact": "quality-check-2026-06-23T100530Z-latest456.json",
   "updated_at": "2026-06-23T10:05:30Z",
-  "best_subgate_durations": {
-    "core_pest": 3.2,
-    "sdk_pest": 0.3
+  "subgate_durations": {
+    "gateway_pest": 245.5,
+    "docs_lint": 12.0
   }
 }
 ```
@@ -120,13 +120,13 @@ regression. `source_artifact` records which artifact was promoted into the
 baseline.
 
 Quality-check artifacts may also record per-subgate profiling under
-`subgate_durations` alongside the existing `subgates` exit-code map. The
-analyzer prints these subgate durations so slow lanes such as `cli_pest` or
-`gateway_pest` are visible without rerunning `composer quality-check`.
-Baseline capture also records `best_subgate_durations` from the fastest
-successful observed subgate timings for the selected gate. The analyzer and
-final check print those best timings, which keeps core and SDK package lanes
-visible when comparing later `composer quality-check` runs.
+`subgate_durations` alongside the existing `subgates` exit-code map. Baseline
+capture stores the `subgate_durations` from the latest quality-gate artifact
+that was promoted into the local baseline. The analyzer prints the latest
+artifact's subgate durations and compares them with the baseline subgate
+durations using the same warning threshold. This values the final run in a
+feature worktree instead of an earlier faster run from a different
+implementation state.
 
 Timing baseline observations remain warning-only. `composer quality-gate:analyze`
 and `composer quality-gate:final-check` exit successfully even when a run

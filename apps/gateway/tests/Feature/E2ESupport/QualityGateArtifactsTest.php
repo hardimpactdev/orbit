@@ -627,6 +627,8 @@ it('promotes the latest successful quality-check artifact into a local baseline 
             'sdk_phpstan' => 5.0,
             'sdk_pint' => 0.8,
             'sdk_rector' => 1.7,
+            'gateway_pest' => 120.0,
+            'docs_lint' => 8.0,
         ],
     ], JSON_THROW_ON_ERROR));
 
@@ -698,19 +700,21 @@ it('promotes the latest successful quality-check artifact into a local baseline 
             'warning_threshold_percent' => 25,
             'source_artifact' => basename($latestArtifactPath),
             'updated_at' => '2026-06-23T10:05:30Z',
-            'best_subgate_durations' => [
+            'subgate_durations' => [
                 'core_pest' => 3.2,
-                'core_phpstan' => 6.4,
-                'core_pint' => 1.0,
+                'core_phpstan' => 7.0,
+                'core_pint' => 1.2,
                 'core_rector' => 1.8,
                 'docs_lint' => 12.0,
                 'gateway_pest' => 245.5,
                 'sdk_pest' => 0.3,
                 'sdk_phpstan' => 4.8,
-                'sdk_pint' => 0.8,
+                'sdk_pint' => 0.9,
                 'sdk_rector' => 1.5,
             ],
         ]);
+
+        expect($baseline)->not->toHaveKey('best_subgate_durations');
     } finally {
         (new Process(['rm', '-rf', $artifactDir]))->run();
     }
@@ -815,15 +819,9 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
         'warning_threshold_percent' => 25,
         'source_artifact' => 'quality-check-2026-06-23T095000Z-baseline.json',
         'updated_at' => '2026-06-23T09:50:00Z',
-        'best_subgate_durations' => [
-            'core_pest' => 3.2,
-            'core_phpstan' => 6.4,
-            'core_pint' => 1.0,
-            'core_rector' => 1.8,
-            'sdk_pest' => 0.3,
-            'sdk_phpstan' => 4.8,
-            'sdk_pint' => 0.8,
-            'sdk_rector' => 1.5,
+        'subgate_durations' => [
+            'docs_lint' => 12.0,
+            'gateway_pest' => 180.0,
         ],
     ], JSON_THROW_ON_ERROR));
 
@@ -838,7 +836,7 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
         'exit_code' => 0,
         'git' => ['branch' => 'main', 'commit' => 'profiling123'],
         'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
-        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0],
+        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0, 'cli_pest' => 999.9],
     ], JSON_THROW_ON_ERROR));
 
     try {
@@ -854,14 +852,14 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
             ->toContain('gateway_pest')
             ->toContain('245.5')
             ->toContain('subgate')
-            ->toContain('best subgate duration: core_pest=3.2s')
-            ->toContain('best subgate duration: core_phpstan=6.4s')
-            ->toContain('best subgate duration: core_pint=1.0s')
-            ->toContain('best subgate duration: core_rector=1.8s')
-            ->toContain('best subgate duration: sdk_pest=0.3s')
-            ->toContain('best subgate duration: sdk_phpstan=4.8s')
-            ->toContain('best subgate duration: sdk_pint=0.8s')
-            ->toContain('best subgate duration: sdk_rector=1.5s');
+            ->toContain('subgate duration: cli_pest=999.9s')
+            ->toContain('subgate duration: gateway_pest=245.5s')
+            ->toContain('subgate duration: docs_lint=12.0s')
+            ->toContain('warning: subgate [quality-check:gateway_pest] duration 245.5s exceeds local baseline 180.0s (warning-only)')
+            ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
+            ->not->toContain('warning: subgate [quality-check:cli_pest]')
+            ->not->toContain('best subgate duration')
+            ->not->toContain('best_subgate_durations');
     } finally {
         (new Process(['rm', '-rf', $artifactDir]))->run();
     }
@@ -870,6 +868,7 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
 it('keeps baseline capture wired as a composer script', function (): void {
     $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
     $script = (string) file_get_contents(repo_path('bin/quality-gate-baseline-capture'));
+    $analyzerScript = (string) file_get_contents(repo_path('bin/quality-gate-analyze'));
 
     expect($composer['scripts'])->toHaveKey('quality-gate:baseline-capture')
         ->and($composer['scripts']['quality-gate:baseline-capture'])->toBe([
@@ -881,7 +880,10 @@ it('keeps baseline capture wired as a composer script', function (): void {
         ->not->toContain('quality-check.sh')
         ->not->toContain('vendor/bin/pest')
         ->not->toContain('bin/orbit-gateway-pest')
-        ->not->toContain('test:e2e');
+        ->not->toContain('test:e2e')
+        ->not->toContain('best_subgate_durations')
+        ->and($analyzerScript)
+        ->not->toContain('best_subgate_durations');
 });
 
 it('documents quality gate baseline capture and subgate profiling', function (): void {
@@ -891,8 +893,8 @@ it('documents quality gate baseline capture and subgate profiling', function ():
         ->toContain('composer quality-gate:baseline-capture')
         ->toContain('.orbit/quality-gates/baselines/')
         ->toContain('source_artifact')
-        ->toContain('best_subgate_durations')
-        ->toContain('core and SDK')
+        ->toContain('latest quality-gate artifact')
         ->toContain('subgate_durations')
+        ->not->toContain('best_subgate_durations')
         ->toContain('warning_threshold_percent');
 });
