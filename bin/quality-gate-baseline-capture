@@ -1,0 +1,161 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+const DEFAULT_WARNING_THRESHOLD_PERCENT = 25;
+
+$options = getopt('', [
+    'artifact-dir::',
+    'gate::',
+    'warning-threshold-percent::',
+    'force',
+]);
+
+try {
+    $artifactDir = optional_string($options, 'artifact-dir', default_artifact_dir());
+    $gate = optional_string($options, 'gate', 'quality-check');
+    $warningThresholdPercent = optional_positive_float(
+        $options,
+        'warning-threshold-percent',
+        (float) DEFAULT_WARNING_THRESHOLD_PERCENT,
+    );
+    $force = array_key_exists('force', $options);
+
+    $artifacts = load_artifacts($artifactDir);
+    $latestByGate = latest_artifacts_by_gate($artifacts);
+    $latest = $latestByGate[$gate] ?? null;
+
+    if ($latest === null) {
+        throw new RuntimeException("No artifact found for gate [{$gate}].");
+    }
+
+    $exitCode = (int) ($latest['exit_code'] ?? 1);
+
+    if ($exitCode !== 0 && ! $force) {
+        throw new RuntimeException(
+            "Latest artifact for gate [{$gate}] has exit_code [{$exitCode}]. Use --force to capture anyway.",
+        );
+    }
+
+    $baselineDir = rtrim($artifactDir, '/').'/baselines';
+
+    if (! is_dir($baselineDir) && ! mkdir($baselineDir, 0777, true) && ! is_dir($baselineDir)) {
+        throw new RuntimeException("Unable to create baseline directory [{$baselineDir}].");
+    }
+
+    $sourcePath = (string) ($latest['_path'] ?? '');
+    $sourceArtifact = $sourcePath !== '' ? basename($sourcePath) : 'unknown';
+
+    $baseline = [
+        'schema_version' => 1,
+        'gate' => $gate,
+        'duration_seconds' => (float) ($latest['duration_seconds'] ?? 0),
+        'warning_threshold_percent' => $warningThresholdPercent,
+        'source_artifact' => $sourceArtifact,
+        'updated_at' => (string) ($latest['ended_at'] ?? ''),
+    ];
+
+    $baselinePath = $baselineDir.'/'.$gate.'.json';
+    $encoded = json_encode($baseline, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
+
+    if (file_put_contents($baselinePath, $encoded) === false) {
+        throw new RuntimeException("Unable to write baseline [{$baselinePath}].");
+    }
+
+    fwrite(STDOUT, $baselinePath.PHP_EOL);
+    fwrite(STDOUT, 'Baseline capture did not rerun quality gates.'.PHP_EOL);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(1);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_string(array $options, string $key, string $default = ''): string
+{
+    $value = $options[$key] ?? $default;
+
+    if (! is_string($value)) {
+        return $default;
+    }
+
+    return trim($value);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_positive_float(array $options, string $key, float $default): float
+{
+    $value = $options[$key] ?? $default;
+
+    if ($value === false || ! is_numeric($value)) {
+        return $default;
+    }
+
+    $parsed = (float) $value;
+
+    return $parsed > 0 ? $parsed : $default;
+}
+
+function default_artifact_dir(): string
+{
+    $root = dirname(__DIR__);
+
+    return $root.'/.orbit/quality-gates';
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function load_artifacts(string $artifactDir): array
+{
+    if (! is_dir($artifactDir)) {
+        return [];
+    }
+
+    $artifacts = [];
+
+    foreach (glob(rtrim($artifactDir, '/').'/*.json') ?: [] as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        if (! is_array($decoded) || ! isset($decoded['gate'], $decoded['ended_at'])) {
+            continue;
+        }
+
+        $decoded['_path'] = $path;
+        $artifacts[] = $decoded;
+    }
+
+    usort(
+        $artifacts,
+        fn (array $left, array $right): int => strcmp((string) $right['ended_at'], (string) $left['ended_at']),
+    );
+
+    return $artifacts;
+}
+
+/**
+ * @param  list<array<string, mixed>>  $artifacts
+ * @return array<string, array<string, mixed>>
+ */
+function latest_artifacts_by_gate(array $artifacts): array
+{
+    $latest = [];
+
+    foreach ($artifacts as $artifact) {
+        $gate = (string) $artifact['gate'];
+
+        if (! isset($latest[$gate])) {
+            $latest[$gate] = $artifact;
+        }
+    }
+
+    return $latest;
+}

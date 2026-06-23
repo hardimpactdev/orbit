@@ -80,6 +80,21 @@ Store machine-local baseline metadata under
 `.orbit/quality-gates/baselines/{gate}.json`. Each file records the expected
 duration for one gate on the current runner pool.
 
+Capture or refresh a machine-local baseline from the latest quality-gate
+artifact:
+
+```bash
+composer quality-gate:baseline-capture
+```
+
+Baseline capture reads existing artifacts only. It does not rerun
+`composer quality-check`, Pest, E2E lanes, or `composer quality-gate:analyze`.
+By default it promotes the latest `quality-check` artifact into
+`.orbit/quality-gates/baselines/quality-check.json`. Pass `--force` when the
+latest artifact exited non-zero but you still want to refresh the local
+baseline. Use `--warning-threshold-percent=<n>` to override the stored
+warning threshold.
+
 Baseline file shape:
 
 ```json
@@ -88,6 +103,7 @@ Baseline file shape:
   "gate": "quality-check",
   "duration_seconds": 330,
   "warning_threshold_percent": 25,
+  "source_artifact": "quality-check-2026-06-23T100530Z-latest456.json",
   "updated_at": "2026-06-23T10:05:30Z"
 }
 ```
@@ -96,7 +112,13 @@ Baseline file shape:
 is missing or invalid, the analyzer keeps the backward-compatible default of
 25 percent above the baseline duration. When it is present and valid, the
 analyzer uses that percentage to decide whether a recent run is a timing
-regression.
+regression. `source_artifact` records which artifact was promoted into the
+baseline.
+
+Quality-check artifacts may also record per-subgate profiling under
+`subgate_durations` alongside the existing `subgates` exit-code map. The
+analyzer prints these subgate durations so slow lanes such as `cli_pest` or
+`gateway_pest` are visible without rerunning `composer quality-check`.
 
 Timing baseline observations remain warning-only. `composer quality-gate:analyze`
 and `composer quality-gate:final-check` exit successfully even when a run

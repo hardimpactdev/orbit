@@ -601,3 +601,216 @@ it('documents quality gate artifact and analyzer commands', function (): void {
         ->toContain('composer quality-check:fix')
         ->toContain('warning-only');
 });
+
+it('promotes the latest successful quality-check artifact into a local baseline file', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-baseline-capture-'.bin2hex(random_bytes(6));
+    mkdir($artifactDir, 0700, true);
+
+    $olderArtifactPath = "{$artifactDir}/quality-check-2026-06-23T090000Z-older123.json";
+    file_put_contents($olderArtifactPath, json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T09:00:00Z',
+        'ended_at' => '2026-06-23T09:04:00Z',
+        'duration_seconds' => 240,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'older123'],
+        'subgates' => ['gateway_pest' => 0],
+    ], JSON_THROW_ON_ERROR));
+
+    $latestArtifactPath = "{$artifactDir}/quality-check-2026-06-23T100530Z-latest456.json";
+    file_put_contents($latestArtifactPath, json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:05:30Z',
+        'duration_seconds' => 330,
+        'exit_code' => 0,
+        'git' => ['branch' => 'quality-gate-baseline-capture', 'commit' => 'latest456'],
+        'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
+        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-baseline-capture'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $baselinePath = "{$artifactDir}/baselines/quality-check.json";
+
+        expect($baselinePath)->toBeFile();
+
+        $baseline = json_decode((string) file_get_contents($baselinePath), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($baseline)->toMatchArray([
+            'schema_version' => 1,
+            'gate' => 'quality-check',
+            'duration_seconds' => 330.0,
+            'warning_threshold_percent' => 25,
+            'source_artifact' => basename($latestArtifactPath),
+            'updated_at' => '2026-06-23T10:05:30Z',
+        ]);
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('refuses to capture a baseline from a failed latest quality-check artifact unless forced', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-baseline-refuse-'.bin2hex(random_bytes(6));
+    mkdir($artifactDir, 0700, true);
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100530Z-failed789.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:05:30Z',
+        'duration_seconds' => 330,
+        'exit_code' => 1,
+        'git' => ['branch' => 'main', 'commit' => 'failed789'],
+        'subgates' => ['gateway_pest' => 1],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $refuseProcess = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-baseline-capture'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $refuseProcess->run();
+
+        expect($refuseProcess->getExitCode())->toBe(1, $refuseProcess->getErrorOutput())
+            ->and($refuseProcess->getErrorOutput())->toContain('exit_code')
+            ->and("{$artifactDir}/baselines/quality-check.json")->not->toBeFile();
+
+        $forceProcess = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-baseline-capture'),
+            '--force',
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $forceProcess->run();
+
+        expect($forceProcess->getExitCode())->toBe(0, $forceProcess->getErrorOutput())
+            ->and("{$artifactDir}/baselines/quality-check.json")->toBeFile();
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('writes per-subgate duration data into quality-check artifacts', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-subgate-duration-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-write-artifact'),
+            '--gate=quality-check',
+            '--command=composer quality-check',
+            '--mode=check',
+            '--started-at=2026-06-23T10:00:00Z',
+            '--ended-at=2026-06-23T10:05:30Z',
+            '--exit-code=0',
+            '--git-branch=quality-gate-baseline-capture',
+            '--git-commit=profiling123',
+            '--subgate=gateway_pest=0',
+            '--subgate=docs_lint=0',
+            '--subgate-duration=gateway_pest=245.5',
+            '--subgate-duration=docs_lint=12.0',
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $artifacts = glob("{$artifactDir}/quality-check-*.json") ?: [];
+
+        expect($artifacts)->toHaveCount(1);
+
+        $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($artifact['subgates'])->toMatchArray([
+            'docs_lint' => 0,
+            'gateway_pest' => 0,
+        ])->and($artifact['subgate_durations'])->toMatchArray([
+            'docs_lint' => 12.0,
+            'gateway_pest' => 245.5,
+        ]);
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('surfaces slow sub-gate durations from analyzer output', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-subgate-analyze-'.bin2hex(random_bytes(6));
+    mkdir($artifactDir, 0700, true);
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100530Z-profiling123.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:05:30Z',
+        'duration_seconds' => 330,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'profiling123'],
+        'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
+        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('gateway_pest')
+            ->toContain('245.5')
+            ->toContain('subgate');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('keeps baseline capture wired as a composer script', function (): void {
+    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $script = (string) file_get_contents(repo_path('bin/quality-gate-baseline-capture'));
+
+    expect($composer['scripts'])->toHaveKey('quality-gate:baseline-capture')
+        ->and($composer['scripts']['quality-gate:baseline-capture'])->toBe([
+            'bin/quality-gate-baseline-capture',
+        ])
+        ->and($script)
+        ->toContain('Baseline capture')
+        ->not->toContain('quality-gate-analyze')
+        ->not->toContain('quality-check.sh')
+        ->not->toContain('vendor/bin/pest')
+        ->not->toContain('bin/orbit-gateway-pest')
+        ->not->toContain('test:e2e');
+});
+
+it('documents quality gate baseline capture and subgate profiling', function (): void {
+    $qualityGates = (string) file_get_contents(repo_path('apps/docs/content/testing/quality-gates.md'));
+
+    expect($qualityGates)
+        ->toContain('composer quality-gate:baseline-capture')
+        ->toContain('.orbit/quality-gates/baselines/')
+        ->toContain('source_artifact')
+        ->toContain('subgate_durations')
+        ->toContain('warning_threshold_percent');
+});

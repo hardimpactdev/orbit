@@ -13,6 +13,7 @@ $options = getopt('', [
     'git-branch::',
     'git-commit::',
     'subgate:',
+    'subgate-duration:',
     'artifact-dir::',
 ]);
 
@@ -27,6 +28,7 @@ try {
     $gitBranch = optional_string($options, 'git-branch', '');
     $gitCommit = optional_string($options, 'git-commit', '');
     $subgates = subgates(repeated_values($options, 'subgate'));
+    $subgateDurations = subgate_durations(repeated_values($options, 'subgate-duration'));
 
     if (! in_array($mode, ['check', 'fix'], true)) {
         throw new InvalidArgumentException("Unsupported mode [{$mode}]. Expected check or fix.");
@@ -53,6 +55,10 @@ try {
         ],
         'subgates' => $subgates,
     ];
+
+    if ($subgateDurations !== []) {
+        $artifact['subgate_durations'] = $subgateDurations;
+    }
 
     $filename = sprintf(
         '%s-%s-%s.json',
@@ -161,6 +167,35 @@ function subgates(array $values): array
     ksort($subgates);
 
     return $subgates;
+}
+
+/**
+ * @param  list<string>  $values
+ * @return array<string, float>
+ */
+function subgate_durations(array $values): array
+{
+    $durations = [];
+
+    foreach ($values as $value) {
+        if (! str_contains($value, '=')) {
+            throw new InvalidArgumentException("Invalid subgate duration value [{$value}]. Expected label=seconds.");
+        }
+
+        [$label, $seconds] = explode('=', $value, 2);
+        $label = trim($label);
+        $seconds = trim($seconds);
+
+        if ($label === '' || $seconds === '' || ! is_numeric($seconds)) {
+            throw new InvalidArgumentException("Invalid subgate duration value [{$value}]. Expected label=seconds.");
+        }
+
+        $durations[$label] = (float) $seconds;
+    }
+
+    ksort($durations);
+
+    return $durations;
 }
 
 function default_command(string $gate, string $mode): string

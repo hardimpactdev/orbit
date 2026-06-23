@@ -186,6 +186,9 @@
         ],
         "quality-gate:final-check": [
             "bin/quality-gate-final-check"
+        ],
+        "quality-gate:baseline-capture": [
+            "bin/quality-gate-baseline-capture"
         ]
     },
     "config": {

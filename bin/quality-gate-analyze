@@ -57,6 +57,8 @@ try {
             PHP_EOL,
         ));
 
+        write_subgate_durations($latest);
+
         $baseline = load_baseline($artifactDir, $gate);
 
         if ($baseline === null) {
@@ -277,4 +279,34 @@ function baseline_warning_threshold_percent(array $baseline): float
     $parsed = (float) $value;
 
     return $parsed > 0 ? $parsed : (float) DEFAULT_WARNING_THRESHOLD_PERCENT;
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function write_subgate_durations(array $artifact): void
+{
+    $durations = $artifact['subgate_durations'] ?? null;
+
+    if (! is_array($durations) || $durations === []) {
+        return;
+    }
+
+    $labels = array_keys($durations);
+    sort($labels);
+
+    foreach ($labels as $label) {
+        $seconds = $durations[$label];
+
+        if (! is_numeric($seconds)) {
+            continue;
+        }
+
+        fwrite(STDOUT, sprintf(
+            'subgate duration: %s=%.1fs%s',
+            $label,
+            (float) $seconds,
+            PHP_EOL,
+        ));
+    }
 }

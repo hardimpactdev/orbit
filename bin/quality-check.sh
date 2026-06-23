@@ -46,11 +46,39 @@ if [ "$FIX_MODE" -eq 1 ]; then
     PINT_ARGS=("--format=agent")
 fi
 
+record_subgate_start() {
+    local label="$1"
+    php -r 'file_put_contents($argv[1], (string) microtime(true));' "$LOG_DIR/$label.start"
+}
+
+record_subgate_duration() {
+    local label="$1"
+    local start_file="$LOG_DIR/$label.start"
+
+    if [ ! -f "$start_file" ]; then
+        return
+    fi
+
+    php -r 'echo round(max(0, microtime(true) - (float) file_get_contents($argv[1])), 1);' "$start_file" >"$LOG_DIR/$label.duration"
+}
+
+subgate_duration_seconds() {
+    local label="$1"
+    local duration_file="$LOG_DIR/$label.duration"
+
+    if [ ! -f "$duration_file" ]; then
+        return
+    fi
+
+    cat "$duration_file"
+}
+
 run_bg() {
     local label="$1"
     shift
     local log="$LOG_DIR/$label.log"
-    ( "$@" >"$log" 2>&1; echo "$?" >"$LOG_DIR/$label.exit" ) &
+    record_subgate_start "$label"
+    ( "$@" >"$log" 2>&1; code="$?"; record_subgate_duration "$label"; echo "$code" >"$LOG_DIR/$label.exit"; exit "$code" ) &
     eval "${label}_PID=$!"
 }
 
@@ -83,8 +111,10 @@ run_bg cli_pest bin/orbit-cli-pest --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
+record_subgate_start gateway_pest
 bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
 pest_exit=$?
+record_subgate_duration gateway_pest
 
 CHECK_LABELS=(
     docs_lint
@@ -127,14 +157,20 @@ done
 # The E2E support tests compute checkout archive hashes from the working tree.
 # Run them after static/style lanes so generated cache metadata cannot change
 # the tree hash mid-test.
+record_subgate_start e2e_pest
 ( cd apps/e2e && vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact >"$LOG_DIR/e2e_pest.log" 2>&1; echo "$?" >"$LOG_DIR/e2e_pest.exit" )
+record_subgate_duration e2e_pest
 
 # The core progress tests intentionally fork short-lived ticker children. Keep
 # this lane out of the background fan-out so unrelated Pest suites cannot
 # deliver process-group signals to the core Pest parent.
+record_subgate_start core_pest
 ( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )
+record_subgate_duration core_pest
 
+record_subgate_start sdk_pest
 ( cd packages/sdk && vendor/bin/pest --compact >"$LOG_DIR/sdk_pest.log" 2>&1; echo "$?" >"$LOG_DIR/sdk_pest.exit" )
+record_subgate_duration sdk_pest
 
 print_log() {
     local label="$1"
@@ -153,6 +189,12 @@ print_log() {
 overall="$pest_exit"
 summary="gateway_pest=${pest_exit}"
 SUBGATE_ARGS=(--subgate="gateway_pest=${pest_exit}")
+SUBGATE_DURATION_ARGS=()
+
+gateway_pest_duration="$(subgate_duration_seconds gateway_pest)"
+if [ -n "$gateway_pest_duration" ]; then
+    SUBGATE_DURATION_ARGS+=(--subgate-duration="gateway_pest=${gateway_pest_duration}")
+fi
 
 for label in "${CHECK_LABELS[@]}"; do
     print_log "$label"
@@ -160,6 +202,11 @@ for label in "${CHECK_LABELS[@]}"; do
     overall=$((overall | code))
     summary="${summary} ${label}=${code}"
     SUBGATE_ARGS+=(--subgate="${label}=${code}")
+
+    duration="$(subgate_duration_seconds "$label")"
+    if [ -n "$duration" ]; then
+        SUBGATE_DURATION_ARGS+=(--subgate-duration="${label}=${duration}")
+    fi
 done
 
 if [ "$overall" -ne 0 ]; then
@@ -177,6 +224,7 @@ php "${ROOT}/bin/quality-gate-write-artifact" \
     --git-branch="$GIT_BRANCH" \
     --git-commit="$GIT_COMMIT" \
     --artifact-dir="$ARTIFACT_DIR" \
-    "${SUBGATE_ARGS[@]}" >/dev/null 2>&1 || true
+    "${SUBGATE_ARGS[@]}" \
+    "${SUBGATE_DURATION_ARGS[@]}" >/dev/null 2>&1 || true
 
 exit "$overall"
