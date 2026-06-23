@@ -180,6 +180,9 @@
         "quality-check:fix": [
             "Composer\\Config::disableProcessTimeout",
             "bin/quality-check.sh --fix"
+        ],
+        "quality-gate:analyze": [
+            "bin/quality-gate-analyze"
         ]
     },
     "config": {

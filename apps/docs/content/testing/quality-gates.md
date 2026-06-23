@@ -18,6 +18,21 @@ Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
 default Pest suite across each app and package.
 
+`composer quality-check` and `composer quality-check:fix` both write a local
+timing artifact under `.orbit/quality-gates/`. The `:fix` lane records the same
+evidence shape with `mode=fix` so triage can distinguish read-only checks from
+auto-fix runs without rerunning the gate.
+
+Inspect existing artifacts with:
+
+```bash
+composer quality-gate:analyze
+```
+
+The analyzer reads `.orbit/quality-gates/` only. It reports missing evidence,
+recent run durations, and warning-only baseline observations when a local
+baseline exists. It does not rerun `composer quality-check` or E2E lanes.
+
 ## Failure and timing triage
 
 When a quality gate fails or slows down, use the root

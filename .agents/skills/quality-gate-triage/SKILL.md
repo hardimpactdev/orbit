@@ -94,9 +94,10 @@ screenshots, or topology pointers under `.orbit/evidence/`. If no artifact
 exists yet, classify from captured command output and report the missing
 evidence as a baseline or tooling action.
 
-The final analyzer inspects existing evidence and classifies the run. It does
-not rerun expensive gates as part of analysis. A rerun can be the next command
-only after classification names why the rerun is useful, such as confirming a
+The final analyzer inspects existing evidence and classifies the run. Run it
+with `composer quality-gate:analyze` from the repo root. It does not rerun
+expensive gates as part of analysis. A rerun can be the next command only after
+classification names why the rerun is useful, such as confirming a
 flake on the narrowest lane.
 
 ## Baseline Rules

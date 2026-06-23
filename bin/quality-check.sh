@@ -18,10 +18,22 @@ cd "$ROOT"
 
 source "${ROOT}/bin/_orbit-gateway-paths.sh"
 
+STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+ARTIFACT_DIR="${ORBIT_QUALITY_GATES_DIR:-${ROOT}/.orbit/quality-gates}"
+GIT_BRANCH="$(git -C "$ROOT" branch --show-current 2>/dev/null || echo unknown)"
+GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+
 FIX_MODE=0
 if [ "${1:-}" = "--fix" ]; then
     FIX_MODE=1
     shift
+fi
+
+MODE="check"
+COMMAND="composer quality-check"
+if [ "$FIX_MODE" -eq 1 ]; then
+    MODE="fix"
+    COMMAND="composer quality-check:fix"
 fi
 
 LOG_DIR="$(mktemp -d)"
@@ -140,16 +152,31 @@ print_log() {
 
 overall="$pest_exit"
 summary="gateway_pest=${pest_exit}"
+SUBGATE_ARGS=(--subgate="gateway_pest=${pest_exit}")
 
 for label in "${CHECK_LABELS[@]}"; do
     print_log "$label"
     code=$?
     overall=$((overall | code))
     summary="${summary} ${label}=${code}"
+    SUBGATE_ARGS+=(--subgate="${label}=${code}")
 done
 
 if [ "$overall" -ne 0 ]; then
     echo "Quality gate FAILED (${summary})"
 fi
+
+ENDED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+php "${ROOT}/bin/quality-gate-write-artifact" \
+    --gate=quality-check \
+    --command="$COMMAND" \
+    --mode="$MODE" \
+    --started-at="$STARTED_AT" \
+    --ended-at="$ENDED_AT" \
+    --exit-code="$overall" \
+    --git-branch="$GIT_BRANCH" \
+    --git-commit="$GIT_COMMIT" \
+    --artifact-dir="$ARTIFACT_DIR" \
+    "${SUBGATE_ARGS[@]}" >/dev/null 2>&1 || true
 
 exit "$overall"

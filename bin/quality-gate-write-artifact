@@ -1,0 +1,202 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$options = getopt('', [
+    'gate:',
+    'command::',
+    'mode::',
+    'started-at:',
+    'ended-at:',
+    'exit-code:',
+    'git-branch::',
+    'git-commit::',
+    'subgate:',
+    'artifact-dir::',
+]);
+
+try {
+    $gate = required_string($options, 'gate');
+    $startedAt = required_string($options, 'started-at');
+    $endedAt = required_string($options, 'ended-at');
+    $exitCode = required_int($options, 'exit-code');
+    $mode = optional_string($options, 'mode', 'check');
+    $command = optional_string($options, 'command', default_command($gate, $mode));
+    $artifactDir = optional_string($options, 'artifact-dir', default_artifact_dir());
+    $gitBranch = optional_string($options, 'git-branch', '');
+    $gitCommit = optional_string($options, 'git-commit', '');
+    $subgates = subgates(repeated_values($options, 'subgate'));
+
+    if (! in_array($mode, ['check', 'fix'], true)) {
+        throw new InvalidArgumentException("Unsupported mode [{$mode}]. Expected check or fix.");
+    }
+
+    $durationSeconds = duration_seconds($startedAt, $endedAt);
+
+    if (! is_dir($artifactDir) && ! mkdir($artifactDir, 0777, true) && ! is_dir($artifactDir)) {
+        throw new RuntimeException("Unable to create artifact directory [{$artifactDir}].");
+    }
+
+    $artifact = [
+        'schema_version' => 1,
+        'gate' => $gate,
+        'command' => $command,
+        'mode' => $mode,
+        'started_at' => $startedAt,
+        'ended_at' => $endedAt,
+        'duration_seconds' => $durationSeconds,
+        'exit_code' => $exitCode,
+        'git' => [
+            'branch' => $gitBranch !== '' ? $gitBranch : 'unknown',
+            'commit' => $gitCommit !== '' ? $gitCommit : 'unknown',
+        ],
+        'subgates' => $subgates,
+    ];
+
+    $filename = sprintf(
+        '%s-%s-%s.json',
+        $gate,
+        str_replace(':', '', $endedAt),
+        substr(hash('sha256', json_encode($artifact, JSON_THROW_ON_ERROR)), 0, 12),
+    );
+
+    $path = rtrim($artifactDir, '/').'/'.$filename;
+    $encoded = json_encode($artifact, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
+
+    if (file_put_contents($path, $encoded) === false) {
+        throw new RuntimeException("Unable to write artifact [{$path}].");
+    }
+
+    fwrite(STDOUT, $path.PHP_EOL);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(1);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function required_string(array $options, string $key): string
+{
+    $value = $options[$key] ?? null;
+
+    if (! is_string($value) || trim($value) === '') {
+        throw new InvalidArgumentException("Missing required option --{$key}.");
+    }
+
+    return trim($value);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function required_int(array $options, string $key): int
+{
+    $value = $options[$key] ?? null;
+
+    if ($value === null || $value === false || ! is_numeric($value)) {
+        throw new InvalidArgumentException("Missing required option --{$key}.");
+    }
+
+    return (int) $value;
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_string(array $options, string $key, string $default = ''): string
+{
+    $value = $options[$key] ?? $default;
+
+    if (! is_string($value)) {
+        return $default;
+    }
+
+    return trim($value);
+}
+
+/**
+ * @return list<string>
+ */
+function repeated_values(array $options, string $key): array
+{
+    $value = $options[$key] ?? [];
+
+    if (is_string($value)) {
+        return [$value];
+    }
+
+    if (! is_array($value)) {
+        return [];
+    }
+
+    return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+}
+
+/**
+ * @param  list<string>  $values
+ * @return array<string, int>
+ */
+function subgates(array $values): array
+{
+    $subgates = [];
+
+    foreach ($values as $value) {
+        if (! str_contains($value, '=')) {
+            throw new InvalidArgumentException("Invalid subgate value [{$value}]. Expected label=exit_code.");
+        }
+
+        [$label, $code] = explode('=', $value, 2);
+        $label = trim($label);
+        $code = trim($code);
+
+        if ($label === '' || $code === '' || ! is_numeric($code)) {
+            throw new InvalidArgumentException("Invalid subgate value [{$value}]. Expected label=exit_code.");
+        }
+
+        $subgates[$label] = (int) $code;
+    }
+
+    ksort($subgates);
+
+    return $subgates;
+}
+
+function default_command(string $gate, string $mode): string
+{
+    if ($gate === 'quality-check') {
+        return $mode === 'fix' ? 'composer quality-check:fix' : 'composer quality-check';
+    }
+
+    return $gate;
+}
+
+function default_artifact_dir(): string
+{
+    $root = dirname(__DIR__);
+
+    return $root.'/.orbit/quality-gates';
+}
+
+function duration_seconds(string $startedAt, string $endedAt): float
+{
+    $started = DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, normalize_timestamp($startedAt));
+    $ended = DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, normalize_timestamp($endedAt));
+
+    if ($started === false || $ended === false) {
+        throw new InvalidArgumentException('started-at and ended-at must be ISO-8601 timestamps.');
+    }
+
+    return max(0.0, ($ended->getTimestamp() + ((int) $ended->format('u')) / 1_000_000)
+        - ($started->getTimestamp() + ((int) $started->format('u')) / 1_000_000));
+}
+
+function normalize_timestamp(string $timestamp): string
+{
+    if (str_ends_with($timestamp, 'Z')) {
+        return substr($timestamp, 0, -1).'+00:00';
+    }
+
+    return $timestamp;
+}

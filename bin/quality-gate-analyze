@@ -1,0 +1,257 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$options = getopt('', [
+    'artifact-dir::',
+    'gate:',
+    'max-age-hours::',
+]);
+
+try {
+    $artifactDir = optional_string($options, 'artifact-dir', default_artifact_dir());
+    $expectedGates = expected_gates(repeated_values($options, 'gate'));
+    $maxAgeHours = optional_positive_int($options, 'max-age-hours', 168);
+
+    $artifacts = load_artifacts($artifactDir);
+    $latestByGate = latest_artifacts_by_gate($artifacts);
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+
+    fwrite(STDOUT, 'Quality gate analyzer'.PHP_EOL);
+    fwrite(STDOUT, 'Artifact directory: '.$artifactDir.PHP_EOL.PHP_EOL);
+
+    foreach ($expectedGates as $gate) {
+        $latest = $latestByGate[$gate] ?? null;
+
+        if ($latest === null) {
+            fwrite(STDOUT, "missing evidence: no artifact found for gate [{$gate}]".PHP_EOL);
+
+            continue;
+        }
+
+        $ageHours = artifact_age_hours($latest, $now);
+
+        if ($ageHours > $maxAgeHours) {
+            fwrite(STDOUT, sprintf(
+                'missing evidence: latest [%s] artifact is %.1f hours old (max %.1f hours)%s',
+                $gate,
+                $ageHours,
+                (float) $maxAgeHours,
+                PHP_EOL,
+            ));
+        }
+
+        fwrite(STDOUT, sprintf(
+            'recent run: gate=%s duration=%.1fs exit=%d mode=%s branch=%s commit=%s ended_at=%s%s',
+            $gate,
+            (float) ($latest['duration_seconds'] ?? 0),
+            (int) ($latest['exit_code'] ?? 1),
+            (string) ($latest['mode'] ?? 'unknown'),
+            (string) ($latest['git']['branch'] ?? 'unknown'),
+            (string) ($latest['git']['commit'] ?? 'unknown'),
+            (string) ($latest['ended_at'] ?? 'unknown'),
+            PHP_EOL,
+        ));
+
+        $baseline = load_baseline($artifactDir, $gate);
+
+        if ($baseline === null) {
+            fwrite(STDOUT, "baseline: no local baseline for gate [{$gate}]".PHP_EOL);
+
+            continue;
+        }
+
+        $baselineDuration = (float) ($baseline['duration_seconds'] ?? 0);
+        $runDuration = (float) ($latest['duration_seconds'] ?? 0);
+
+        if ($baselineDuration <= 0) {
+            fwrite(STDOUT, "baseline: invalid duration for gate [{$gate}]".PHP_EOL);
+
+            continue;
+        }
+
+        if ($runDuration > ($baselineDuration * 1.25)) {
+            fwrite(STDOUT, sprintf(
+                'warning: gate [%s] duration %.1fs exceeds local baseline %.1fs (warning-only)%s',
+                $gate,
+                $runDuration,
+                $baselineDuration,
+                PHP_EOL,
+            ));
+        } else {
+            fwrite(STDOUT, sprintf(
+                'baseline: gate [%s] duration %.1fs is within local baseline %.1fs%s',
+                $gate,
+                $runDuration,
+                $baselineDuration,
+                PHP_EOL,
+            ));
+        }
+    }
+
+    fwrite(STDOUT, PHP_EOL.'Analyzer did not rerun quality-check or E2E lanes.'.PHP_EOL);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(1);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_string(array $options, string $key, string $default = ''): string
+{
+    $value = $options[$key] ?? $default;
+
+    if (! is_string($value)) {
+        return $default;
+    }
+
+    return trim($value);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_positive_int(array $options, string $key, int $default): int
+{
+    $value = $options[$key] ?? $default;
+
+    if ($value === false || ! is_numeric($value)) {
+        return $default;
+    }
+
+    $parsed = (int) $value;
+
+    return $parsed > 0 ? $parsed : $default;
+}
+
+/**
+ * @return list<string>
+ */
+function repeated_values(array $options, string $key): array
+{
+    $value = $options[$key] ?? [];
+
+    if (is_string($value)) {
+        return [$value];
+    }
+
+    if (! is_array($value)) {
+        return [];
+    }
+
+    return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+}
+
+/**
+ * @param  list<string>  $gates
+ * @return list<string>
+ */
+function expected_gates(array $gates): array
+{
+    if ($gates !== []) {
+        return array_values(array_unique($gates));
+    }
+
+    return ['quality-check'];
+}
+
+function default_artifact_dir(): string
+{
+    $root = dirname(__DIR__);
+
+    return $root.'/.orbit/quality-gates';
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function load_artifacts(string $artifactDir): array
+{
+    if (! is_dir($artifactDir)) {
+        return [];
+    }
+
+    $artifacts = [];
+
+    foreach (glob(rtrim($artifactDir, '/').'/*.json') ?: [] as $path) {
+        if (! is_file($path)) {
+            continue;
+        }
+
+        $decoded = json_decode((string) file_get_contents($path), true);
+
+        if (! is_array($decoded) || ! isset($decoded['gate'], $decoded['ended_at'])) {
+            continue;
+        }
+
+        $decoded['_path'] = $path;
+        $artifacts[] = $decoded;
+    }
+
+    usort(
+        $artifacts,
+        fn (array $left, array $right): int => strcmp((string) $right['ended_at'], (string) $left['ended_at']),
+    );
+
+    return $artifacts;
+}
+
+/**
+ * @param  list<array<string, mixed>>  $artifacts
+ * @return array<string, array<string, mixed>>
+ */
+function latest_artifacts_by_gate(array $artifacts): array
+{
+    $latest = [];
+
+    foreach ($artifacts as $artifact) {
+        $gate = (string) $artifact['gate'];
+
+        if (! isset($latest[$gate])) {
+            $latest[$gate] = $artifact;
+        }
+    }
+
+    return $latest;
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function load_baseline(string $artifactDir, string $gate): ?array
+{
+    $path = rtrim($artifactDir, '/').'/baselines/'.$gate.'.json';
+
+    if (! is_file($path)) {
+        return null;
+    }
+
+    $decoded = json_decode((string) file_get_contents($path), true);
+
+    return is_array($decoded) ? $decoded : null;
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function artifact_age_hours(array $artifact, DateTimeImmutable $now): float
+{
+    $endedAt = DateTimeImmutable::createFromFormat(DateTimeInterface::ATOM, normalize_timestamp((string) $artifact['ended_at']));
+
+    if ($endedAt === false) {
+        return INF;
+    }
+
+    return max(0.0, ($now->getTimestamp() - $endedAt->getTimestamp()) / 3600);
+}
+
+function normalize_timestamp(string $timestamp): string
+{
+    if (str_ends_with($timestamp, 'Z')) {
+        return substr($timestamp, 0, -1).'+00:00';
+    }
+
+    return $timestamp;
+}
