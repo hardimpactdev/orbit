@@ -1,8 +1,8 @@
 # Orbit Loop State
 
-`LOOP.md` is local state for one active worktree. Copy this file to `LOOP.md`
-when a change is non-trivial, keep it updated while work is active, and do not
-commit the copy.
+This is the committed loop-state template. For non-trivial active work, copy it
+to `.orbit/loop.md`, keep that local copy updated while work is active, and do
+not commit `.orbit/`.
 
 ## Current Goal
 

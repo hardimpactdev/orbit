@@ -93,7 +93,7 @@ Worktree:
 Read and follow:
 - AGENTS.md
 - HARNESS.md
-- LOOP.md.example, then copy it to ignored LOOP.md for this active worktree
+- LOOP.md.example, then copy it to `.orbit/loop.md` for this active worktree
 - HARNESS_SIGNALS.md
 - harness-signals/README.md
 - .agents/skills/implementing-features/SKILL.md
@@ -109,7 +109,7 @@ Rules:
 - Run the focused verification assigned to this slice.
 - Capture implementation signals as they appear. When a failure, review
   correction, docs conflict, or setup problem reveals missing durable context,
-  search harness-signals/ for prior occurrences, then use LOOP.md and
+  search harness-signals/ for prior occurrences, then use `.orbit/loop.md` and
   HARNESS_SIGNALS.md to select the smallest guardrail target. Update or create
   a signal record only when it belongs to this slice; otherwise report a scoped
   follow-up.
@@ -447,7 +447,7 @@ moving on to durable E2E.
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
    `PRODUCT_DECISIONS.md`, relevant product docs under `apps/docs/content/**`,
    and relevant session context under `docs/superpowers/**`. Copy
-   `LOOP.md.example` to ignored `LOOP.md` for the active worktree and fill the
+   `LOOP.md.example` to `.orbit/loop.md` for the active worktree and fill the
    goal contract before implementation.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Solo worker plan from `HARNESS.md`. Use one Solo implementation
@@ -462,7 +462,7 @@ moving on to durable E2E.
    that workers must not merge to `main` or clean up the worktree.
 8. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. When a correction
-   reveals missing durable context, triage it through `LOOP.md` and
+   reveals missing durable context, triage it through `.orbit/loop.md` and
    `HARNESS_SIGNALS.md`.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
@@ -636,13 +636,13 @@ is not required after ordinary `composer test:e2e` runs.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
-- Run the repo feedback loop from ignored `LOOP.md` during the slice, creating
+- Run the repo feedback loop from `.orbit/loop.md` during the slice, creating
   it from `LOOP.md.example` when needed. Every signal does not need a repository
   edit, but every durable signal needs either a curated `harness-signals/` record
   plus a guardrail target update in this worktree, or a scoped follow-up in the
-  implementation report. Do not use `LOOP.md` or `HARNESS_SIGNALS.md` as event
-  logs. Curate stale or noisy signal records when they are in the owned scope;
-  otherwise report a focused curation follow-up.
+  implementation report. Do not use `.orbit/loop.md` or `HARNESS_SIGNALS.md` as
+  event logs. Curate stale or noisy signal records when they are in the owned
+  scope; otherwise report a focused curation follow-up.
 - Keep the project-owned Orbit skill in sync with product and implementation
   changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
   `skills/orbit/references/*.md` carries command-family detail. If a change

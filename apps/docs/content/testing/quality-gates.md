@@ -18,6 +18,22 @@ Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
 default Pest suite across each app and package.
 
+## Failure and timing triage
+
+When a quality gate fails or slows down, use the root
+`.agents/skills/quality-gate-triage/SKILL.md` runbook before blaming product
+code. Participating gate commands and future timing wrappers should leave timing
+and command evidence under `.orbit/quality-gates/`, with supporting transcripts
+under `.orbit/evidence/` when applicable. If no artifact exists yet, triage uses
+the captured command output and reports the missing evidence as a baseline or
+tooling action. A final analyzer inspects existing artifacts and should not
+rerun expensive gates merely to classify a failure or slowdown.
+
+Treat timing baselines as local and machine-specific first. Until a stable
+baseline exists for the current lane and runner pool, classify timing deltas as
+warning-only and record the missing-baseline action instead of calling a product
+regression.
+
 ## E2E gates
 
 Run `composer test:e2e` when behavior touches the integrated prepared topology.
