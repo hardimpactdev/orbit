@@ -14,8 +14,8 @@ use Symfony\Component\Console\Output\OutputInterface;
  * events as they arrive: {@see self::tree()} to paint the idle tree, then
  * {@see self::step()} with `start`/`done`/`fail`/`skip`/progress statuses, and
  * {@see self::finish()} for the footer. The active row animates between events
- * via a parent-process signal ticker, so the operator sees motion while the main process
- * blocks reading the next frame.
+ * via a ticker, so the operator sees motion while the main process blocks reading the
+ * next frame.
  */
 final class StreamedStepTree
 {
@@ -40,6 +40,8 @@ final class StreamedStepTree
     private int $lastFrameAtUs = 0;
 
     private ?ForkedFrameTicker $ticker = null;
+
+    private ?StreamedStepProcessTicker $processTicker = null;
 
     public function __construct(
         private readonly OutputInterface $output,
@@ -207,8 +209,18 @@ final class StreamedStepTree
             return;
         }
 
-        if ($this->ticker !== null) {
+        if ($this->ticker !== null || $this->processTicker !== null) {
             return;
+        }
+
+        if ($this->shouldUseProcessTicker()) {
+            $ticker = new StreamedStepProcessTicker;
+
+            if ($ticker->start($this->processTickerFrames())) {
+                $this->processTicker = $ticker;
+
+                return;
+            }
         }
 
         $this->ticker = new ForkedFrameTicker;
@@ -219,6 +231,9 @@ final class StreamedStepTree
 
     private function stopSpinnerProcess(): void
     {
+        $this->processTicker?->stop();
+        $this->processTicker = null;
+
         $this->ticker?->stop();
         $this->ticker = null;
     }
@@ -241,5 +256,47 @@ final class StreamedStepTree
             static fn (array $step): int => mb_strlen($step['doneLabel'] ?? $step['label']),
             $steps,
         ));
+    }
+
+    private function shouldUseProcessTicker(): bool
+    {
+        $stream = LiveRepaintOutput::resolveStream($this->output);
+
+        return is_resource($stream)
+            && function_exists('stream_isatty')
+            && stream_isatty($stream);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function processTickerFrames(): array
+    {
+        if ($this->activeKey === null || $this->tree === null || $this->summary === null) {
+            return [];
+        }
+
+        $index = $this->indexByKey[$this->activeKey] ?? null;
+
+        if ($index === null) {
+            return [];
+        }
+
+        $step = $this->steps[$index];
+        $spinnerFrames = SpinnerTreeRenderer::spinnerFrames();
+
+        return array_map(
+            fn (int $offset): string => $this->tree->updateLineSequence(
+                $index,
+                count($this->steps),
+                $this->summary->spinnerLine(
+                    $spinnerFrames[($this->frame + $offset) % count($spinnerFrames)],
+                    $step['label'],
+                    $this->labelWidth,
+                    $this->activeMessage,
+                ),
+            ),
+            array_keys($spinnerFrames),
+        );
     }
 }

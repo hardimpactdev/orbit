@@ -46,9 +46,16 @@ final readonly class GatewayStreamClient
      *
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     * @param  callable(): void|null  $onIdle
      */
-    public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
-    {
+    public function streamEvents(
+        string $path,
+        array $payload,
+        callable $onEvent,
+        string $method = 'post',
+        ?callable $onIdle = null,
+        int $idleIntervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS,
+    ): int {
         $baseUrl = $this->normalizedBaseUrl();
         $normalizedPath = '/'.ltrim($path, '/');
 
@@ -68,19 +75,24 @@ final readonly class GatewayStreamClient
             throw GatewayApiException::httpError($response->getStatusCode(), (string) $response->getBody());
         }
 
-        return $this->processResponseStream($response->getBody(), $onEvent);
+        return $this->processResponseStream($response->getBody(), $onEvent, $onIdle, $idleIntervalMicroseconds);
     }
 
     /**
      * Process the response body as SSE frames without buffering the full stream.
      *
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     * @param  callable(): void|null  $onIdle
      */
-    private function processResponseStream(StreamInterface $stream, callable $onEvent): int
-    {
+    private function processResponseStream(
+        StreamInterface $stream,
+        callable $onEvent,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): int {
         $decoder = new ProgressEventDecoder;
         $frameBuffer = '';
-        $reader = new StreamIdleReader(ForkedFrameTicker::idleIntervalMicroseconds());
+        $reader = new StreamIdleReader($idleIntervalMicroseconds, $onIdle);
 
         while (! $stream->eof()) {
             try {
