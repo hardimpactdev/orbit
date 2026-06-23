@@ -42,7 +42,7 @@ orbit doctor --all --stream-json                    # fleet agent progress strea
 ```
 
 Plain `orbit doctor` sends the configured local default node when one is set
-with `orbit node:default`; otherwise it omits `node` so the gateway resolves
+with `orbit node:default`; otherwise it sends `self=true` so the gateway uses
 the caller identity. For long-running LLM-agent checks, prefer
 `orbit doctor --stream-json` so the agent receives incremental NDJSON progress
 frames. Broader `--stream-json` rollout to other long-running commands is a

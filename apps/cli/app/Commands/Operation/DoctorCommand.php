@@ -666,12 +666,14 @@ final class DoctorCommand extends GatewayCommand
             return $this->renderFailure($exception->orbitCode, $exception->getMessage());
         }
 
+        $self = (bool) $this->option('self') || $this->usesCallerNodeFallback($node);
+
         return $this->filledQuery([
             'mode' => $mode,
             'families' => $this->families(),
             'key' => $this->stringOption('key'),
             'node' => $node,
-            'self' => (bool) $this->option('self') ? true : null,
+            'self' => $self ? true : null,
             'all' => (bool) $this->option('all') ? true : null,
             'app' => $this->stringOption('app'),
             'workspace' => $this->stringOption('workspace'),
@@ -693,6 +695,23 @@ final class DoctorCommand extends GatewayCommand
         }
 
         return $this->targetNodeOptionOrDefault();
+    }
+
+    private function usesCallerNodeFallback(?string $node): bool
+    {
+        if ($node !== null) {
+            return false;
+        }
+
+        if ((bool) $this->option('all') || (bool) $this->option('self')) {
+            return false;
+        }
+
+        if ($this->stringOption('app') !== null || $this->stringOption('workspace') !== null) {
+            return false;
+        }
+
+        return $this->stringOption('node') === null;
     }
 
     private function validateDoctorScopeOptions(string $mode): ?int

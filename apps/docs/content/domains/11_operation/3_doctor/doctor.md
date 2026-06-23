@@ -91,10 +91,10 @@ orbit doctor --all --stream-json
 
 `doctor` resolves scope before probes. Plain `orbit doctor` first uses the
 locally configured default node from `orbit node:default` when one is selected.
-If no default node is selected and no explicit scope is supplied, the CLI omits
-`node` and the gateway resolves the caller's identified node. `--node=<name>`
-targets exactly one named node. `--self` targets the caller identity. `--all`
-is the only fleet mode and runs verify-mode fleet inspection. Resolution modes
+If no default node is selected and no explicit scope is supplied, the CLI sends
+`self=true` so the caller's identified node is selected. `--node=<name>` targets
+exactly one named node. `--self` targets the caller identity. `--all` is the
+only fleet mode and runs verify-mode fleet inspection. Resolution modes
 (`--fix`, `--restore`, `--adopt`) require a single target node.
 
 The command supports four modes. Verify mode (no flag) compares only and does not mutate gateway configuration or node reality. Interactive mode (`--fix`) walks each finding and prompts for restore, adopt, skip, or details. Restore mode (`--restore`) bulk-applies gateway configuration to node reality for all supported findings. Adopt mode (`--adopt`) records compatible observed node reality into gateway configuration in bulk.

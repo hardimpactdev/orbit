@@ -29,7 +29,7 @@ This command follows the shared
 | --- | --- | --- | --- | --- | --- |
 | `family` | `--family` | Never. | Never. | The full category set derived from the target node's active roles. | Repeatable product family key: `node`, `app`, `database_connection`, `firewall_rule`, `process`, `proxy`, `schedule`, `tool`, or `workspace`. `security` is not a valid family; security-section findings live under the owning family key. Must intersect with the target's role-assignment category set. |
 | `key` | `--key` | Never. | Never. | All issue keys from the selected family/families. | Single exact doctor issue-key filter. Filters reported drift after probes and before action planning. Does not imply or select a family. |
-| `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted so the gateway resolves the caller. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
+| `node` | `--node` | Never. | `--self` or `--all` is present. | The locally configured default node when one is selected; otherwise omitted with `self=true` so the caller node is selected. | Gateway-known node name. Selects the single target node. The literal value `all` is invalid; use `--all` for fleet verification. |
 | `self` | `--self` | Never. | `--node` or `--all` is present. | `false`. | Forwarded to the gateway; the gateway resolves it to the calling peer's identified node. |
 | `all` | `--all` | Never. | `--node`, `--self`, `--app`, `--workspace`, `--fix`, `--restore`, or `--adopt` is present. | `false`. | Selects verify-only fleet mode across eligible active role-bearing nodes. This is the only fleet mode. |
 | `app` | `--app` | Never. | A selected family contract forbids app scoping. | Apps selected by each family contract after authorization and node/workspace filters. | Gateway-known app slug. |
@@ -80,8 +80,8 @@ A future `DNS/TLD` row is reserved for operator/app targets and a `DNS` row for 
    - `--node=<node>` is forwarded to the gateway and resolved against gateway configuration.
    - `--node=all` is rejected with `validation_failed` before probes.
    - Omitted node scope first uses the locally configured default node when one
-     is selected. When no default node is configured, the CLI omits `node` and
-     the gateway resolves the caller's identified node.
+     is selected. When no default node is configured, the CLI sends `self=true`
+     so the caller's identified node is selected.
    - `--self` combined with `--node` is rejected before forwarding.
 4. Call the gateway to authorize the scope, derive the target-role category set, and dispatch family probes.
    - In resolution modes, the gateway also attempts actions.

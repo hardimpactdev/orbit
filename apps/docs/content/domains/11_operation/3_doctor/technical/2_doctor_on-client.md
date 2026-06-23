@@ -27,7 +27,7 @@ gateway doctor endpoint.
 
 Plain `doctor` resolves one target node. The CLI first forwards the locally
 configured default node when one is selected. If no default node is configured,
-the CLI omits `node` and the gateway resolves the calling peer's identified
+the CLI sends `self=true` and the gateway resolves the calling peer's identified
 node. An operator may target a different node with `--node=<other>`. Fleet
 verification is explicit `--all` only.
 
@@ -36,6 +36,7 @@ verification is explicit `--all` only.
 - Reject `--node=all`; fleet verification uses `--all`.
 - Reject `--self` combined with `--node` before forwarding.
 - The CLI may forward its configured local default node for omitted scope.
+- The CLI forwards `self=true` for omitted scope when no default node exists.
 - App and workspace filters are forwarded only when explicit options are present.
 
 ## Category Set by Target Roles

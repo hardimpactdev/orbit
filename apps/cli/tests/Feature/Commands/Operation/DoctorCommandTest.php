@@ -680,12 +680,15 @@ describe('doctor human panel', function (): void {
         @unlink($store->path());
     });
 
-    it('falls back to caller resolution by omitting node when no default node is configured', function (): void {
+    it('falls back to self scope when no default node is configured', function (): void {
         $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-doctor-empty-default-node-config.json'));
         @unlink($store->path());
         app()->instance(OrbitConfigStore::class, $store);
 
-        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([])));
+        fakeDoctorRunStream(doctorRunCompleteStream(doctorVerifyReport([], [
+            'node' => 'caller',
+            'self' => true,
+        ])));
 
         [$exitCode] = runCommand($this, 'doctor', [
             '--family' => ['node'],
@@ -696,6 +699,7 @@ describe('doctor human panel', function (): void {
             && $request->data() === [
                 'mode' => 'verify',
                 'families' => ['node'],
+                'self' => true,
             ]);
 
         expect($exitCode)->toBe(0);
