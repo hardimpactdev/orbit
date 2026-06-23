@@ -528,12 +528,23 @@ moving on to durable E2E.
    composer quality-check
    ```
 
-22. Commit the verified worktree changes on the worktree branch.
-23. Merge the branch back into `main` from the primary `~/orbit` checkout,
+22. Before committing or reporting completion, run a Post-Feature Session
+    Review. Review the feature thread or handoff, Solo worker sessions,
+    reviewer output, retained terminal or PTY evidence when applicable,
+    verification output, and human corrections. Identify mistakes found after a
+    worker claimed or implied readiness, then decide whether they are local
+    cleanup, already covered by existing `harness-signals/` records, or a new
+    durable signal. Update, create, curate, retire, or intentionally leave
+    `harness-signals/` records and the smallest guardrail target only for
+    concrete durable signals. If no new durable signal remains, say that in the
+    report. Re-run the narrow check that proves any changed guardrail target is
+    reachable.
+23. Commit the verified worktree changes on the worktree branch.
+24. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
-24. If release was explicitly agreed or specifically discussed as part of the
+25. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
     the release artifacts are accepted, run `doctor` again, compare the before
@@ -690,6 +701,16 @@ Repeat this block for each durable signal, or write `none`.
 
 Reviewer personas:
 - <persona path>: <findings resolved, findings deferred, not applicable, or blocked>
+
+Post-feature session review:
+- Evidence reviewed: <feature thread, Solo workers, reviewer output,
+  terminal/PTY evidence, verification output, human corrections, or not
+  applicable>
+- Mistakes found after readiness claims: <summary or none>
+- Existing signals covered: <harness-signals paths or none>
+- New durable signal or guardrail change: <record/target and verification, or
+  none>
+- No-new-signal rationale: <why local cleanup was enough, or not applicable>
 
 Tests:
 - Pest unit/feature: <test added or changed>
