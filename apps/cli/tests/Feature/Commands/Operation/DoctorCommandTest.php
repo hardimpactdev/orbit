@@ -436,11 +436,55 @@ describe('doctor human panel', function (): void {
                     'restorable' => false,
                     'adoptable' => true,
                 ],
+                [
+                    'family' => 'process',
+                    'node' => 'beast',
+                    'key' => 'process.runtime_unit_missing',
+                    'code' => 'process.runtime_unit_missing',
+                    'kind' => 'missing',
+                    'summary' => 'process.runtime_unit_missing',
+                    'detail' => ['app' => 'nckrtl', 'process' => 'queue-worker'],
+                    'restorable' => true,
+                    'adoptable' => false,
+                ],
+                [
+                    'family' => 'database_connection',
+                    'node' => 'beast',
+                    'key' => 'database_connection.env_mismatch',
+                    'code' => 'database_connection.env_mismatch',
+                    'kind' => 'divergent',
+                    'summary' => 'database_connection.env_mismatch',
+                    'detail' => ['connection' => 'ditis_hr'],
+                    'restorable' => true,
+                    'adoptable' => true,
+                ],
+                [
+                    'family' => 'database_connection',
+                    'node' => 'beast',
+                    'key' => 'database_connection.env_mismatch',
+                    'code' => 'database_connection.env_mismatch',
+                    'kind' => 'divergent',
+                    'summary' => 'database_connection.env_mismatch',
+                    'detail' => ['target_type' => 'app', 'app' => 'nckrtl', 'env_prefix' => 'REPORTING'],
+                    'restorable' => true,
+                    'adoptable' => true,
+                ],
+                [
+                    'family' => 'schedule',
+                    'node' => 'beast',
+                    'key' => 'schedule.lock_stuck',
+                    'code' => 'schedule.lock_stuck',
+                    'kind' => 'divergent',
+                    'summary' => 'schedule.lock_stuck',
+                    'detail' => ['schedule_key' => 'app:docs:laravel-scheduler'],
+                    'restorable' => true,
+                    'adoptable' => false,
+                ],
             ],
-            scopeOverrides: ['families' => ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule']],
+            scopeOverrides: ['families' => ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection']],
         );
 
-        fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule']));
+        fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection']));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -456,19 +500,26 @@ describe('doctor human panel', function (): void {
             ->and($plain)->toContain('Firewall')
             // Verify mode renders issue details as readable bullets, not nested tables.
             ->and($plain)->toContain("\n●  Apps          1 issue detected:")
-            ->and($plain)->toContain('- https://nckrtl.test returned a 500 error response')
+            ->and($plain)->toContain('- App nckrtl: https://nckrtl.test returned a 500 error')
             ->and($plain)->toContain("\n●  Workspaces    2 issues found:")
-            ->and($plain)->toContain('- Workspace should exist on node but is missing')
-            ->and($plain)->toContain('- Workspace exists on node but is not expected')
+            ->and($plain)->toContain('- Workspace abc123.nckrtl.test: Workspace should exist')
+            ->and($plain)->toContain('- Workspace ui-redesign.hauser.test: Workspace exists')
+            ->and($plain)->toContain("\n●  Processes     1 issue detected:")
+            ->and($plain)->toContain('- Process queue-worker for app nckrtl: Runtime unit missing.')
+            ->and($plain)->toContain("\n●  Scheduling    1 issue detected:")
+            ->and($plain)->toContain('- Schedule app:docs:laravel-scheduler: Lock stuck.')
+            ->and($plain)->toContain("\n●  Databases     2 issues found:")
+            ->and($plain)->toContain('- Database connection ditis_hr: Environment mismatch.')
+            ->and($plain)->toContain('- Database connection REPORTING for app nckrtl: Environment')
             // Categories with no issues render OK.
             ->and($plain)->toContain('OK')
             // Total count summary, never "across N categories".
-            ->and($plain)->toContain('3 issues detected')
+            ->and($plain)->toContain('7 issues detected')
             ->and($plain)->not->toContain('APP')
             ->and($plain)->not->toContain('WORKSPACE')
             ->and($plain)->not->toContain('ISSUE')
-            ->and($plain)->not->toContain('abc123.nckrtl.test')
-            ->and($plain)->not->toContain('ui-redesign.hauser.test')
+            ->and($plain)->not->toContain('database_connection.env_mismatch')
+            ->and($plain)->not->toContain('schedule.lock_stuck')
             ->and($plain)->not->toContain('across');
     });
 

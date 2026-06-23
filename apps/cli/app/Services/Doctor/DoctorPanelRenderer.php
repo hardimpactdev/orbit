@@ -55,7 +55,53 @@ final class DoctorPanelRenderer
         'proxy' => ['label' => 'DOMAIN', 'keys' => ['domain', 'host']],
         'firewall_rule' => ['label' => 'RULE', 'keys' => ['rule', 'name', 'key']],
         'tool' => ['label' => 'TOOL', 'keys' => ['tool', 'name', 'binary']],
-        'schedule' => ['label' => 'SCHEDULE', 'keys' => ['schedule', 'name', 'command']],
+        'schedule' => ['label' => 'SCHEDULE', 'keys' => ['schedule', 'schedule_key', 'name', 'command']],
+        'database_connection' => ['label' => 'CONNECTION', 'keys' => ['connection', 'database_connection', 'slug', 'name', 'env_prefix']],
+    ];
+
+    /**
+     * Resource labels used by verify-mode issue bullets.
+     *
+     * @var array<string, array{label: string, keys: list<string>}>
+     */
+    private const array ISSUE_RESOURCE_LABELS = [
+        'app' => ['label' => 'App', 'keys' => ['app', 'slug', 'name']],
+        'workspace' => ['label' => 'Workspace', 'keys' => ['workspace', 'name']],
+        'process' => ['label' => 'Process', 'keys' => ['process', 'name', 'unit']],
+        'proxy' => ['label' => 'Proxy route', 'keys' => ['domain', 'host', 'route']],
+        'firewall_rule' => ['label' => 'Firewall rule', 'keys' => ['rule', 'name', 'key']],
+        'tool' => ['label' => 'Tool', 'keys' => ['tool', 'name', 'binary']],
+        'schedule' => ['label' => 'Schedule', 'keys' => ['schedule', 'schedule_key', 'name', 'command']],
+        'database_connection' => ['label' => 'Database connection', 'keys' => ['connection', 'database_connection', 'slug', 'name']],
+    ];
+
+    /**
+     * Common issue-token expansions for human fallback summaries.
+     *
+     * @var array<string, string>
+     */
+    private const array ISSUE_WORD_REPLACEMENTS = [
+        'api' => 'API',
+        'ca' => 'CA',
+        'cli' => 'CLI',
+        'config' => 'configuration',
+        'db' => 'database',
+        'dns' => 'DNS',
+        'env' => 'environment',
+        'fpm' => 'FPM',
+        'fs' => 'filesystem',
+        'http' => 'HTTP',
+        'https' => 'HTTPS',
+        'id' => 'ID',
+        'ip' => 'IP',
+        'php' => 'PHP',
+        'ssh' => 'SSH',
+        'tls' => 'TLS',
+        'tld' => 'TLD',
+        'ufw' => 'UFW',
+        'url' => 'URL',
+        'wg' => 'WireGuard',
+        'wireguard' => 'WireGuard',
     ];
 
     /**
@@ -303,7 +349,7 @@ final class DoctorPanelRenderer
         $summaryWidth = self::INNER_WIDTH - self::ISSUE_DETAIL_INDENT - 2;
 
         foreach ($this->sortIssues($familyIssues) as $issue) {
-            foreach ($this->wrapText($this->issueSummary($issue), $summaryWidth) as $index => $summaryLine) {
+            foreach ($this->wrapText($this->issueBulletText($issue), $summaryWidth) as $index => $summaryLine) {
                 $prefix = $index === 0 ? '- ' : '  ';
                 $content = str_repeat(' ', self::ISSUE_DETAIL_INDENT).$prefix.$summaryLine;
 
@@ -604,11 +650,142 @@ final class DoctorPanelRenderer
             $value = $issue[$key] ?? null;
 
             if (is_string($value) && trim($value) !== '') {
-                return trim($value);
+                $summary = trim($value);
+
+                return $this->looksLikeMachineIssueKey($summary, $issue)
+                    ? $this->humanizedMachineIssueSummary($summary, $issue)
+                    : $summary;
             }
         }
 
         return 'doctor finding';
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function issueBulletText(array $issue): string
+    {
+        $summary = $this->issueSummary($issue);
+        $resource = $this->issueResourceLabel($issue);
+
+        if ($resource === '' || str_contains(strtolower($summary), strtolower($resource))) {
+            return $summary;
+        }
+
+        return "{$resource}: {$summary}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function looksLikeMachineIssueKey(string $summary, array $issue): bool
+    {
+        foreach (['code', 'key'] as $field) {
+            $value = $issue[$field] ?? null;
+
+            if (is_string($value) && trim($value) === $summary) {
+                return true;
+            }
+        }
+
+        return preg_match('/^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/', $summary) === 1;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function humanizedMachineIssueSummary(string $summary, array $issue): string
+    {
+        $family = is_string($issue['family'] ?? null) ? trim($issue['family']) : '';
+        $suffix = $summary;
+
+        if ($family !== '' && str_starts_with($suffix, "{$family}.")) {
+            $suffix = substr($suffix, strlen($family) + 1);
+        } elseif (str_contains($suffix, '.')) {
+            $suffix = substr($suffix, strpos($suffix, '.') + 1);
+        }
+
+        $words = array_values(array_filter(
+            preg_split('/[._]+/', $suffix) ?: [],
+            static fn (string $word): bool => $word !== '',
+        ));
+
+        if ($words === []) {
+            return 'Doctor finding.';
+        }
+
+        $summary = implode(' ', array_map($this->issueWord(...), $words));
+
+        return ucfirst($summary).'.';
+    }
+
+    private function issueWord(string $word): string
+    {
+        return self::ISSUE_WORD_REPLACEMENTS[$word] ?? $word;
+    }
+
+    /**
+     * @param  array<string, mixed>  $issue
+     */
+    private function issueResourceLabel(array $issue): string
+    {
+        $family = is_string($issue['family'] ?? null) ? $issue['family'] : '';
+        $detail = $this->detail($issue);
+        $resource = self::ISSUE_RESOURCE_LABELS[$family] ?? null;
+
+        if ($resource === null) {
+            return '';
+        }
+
+        if ($family === 'database_connection') {
+            return $this->databaseConnectionIssueResourceLabel($detail);
+        }
+
+        $value = $this->firstDetailValue($detail, $resource['keys']);
+
+        if ($value === '') {
+            return '';
+        }
+
+        if ($family !== 'process') {
+            return "{$resource['label']} {$value}";
+        }
+
+        $app = $this->firstDetailValue($detail, self::PROCESS_APP_KEYS);
+
+        return $app === '' ? "{$resource['label']} {$value}" : "{$resource['label']} {$value} for app {$app}";
+    }
+
+    /**
+     * @param  array<string, mixed>  $detail
+     */
+    private function databaseConnectionIssueResourceLabel(array $detail): string
+    {
+        $connection = $this->firstDetailValue($detail, self::ISSUE_RESOURCE_LABELS['database_connection']['keys']);
+
+        if ($connection !== '') {
+            return "Database connection {$connection}";
+        }
+
+        $envPrefix = $this->firstDetailValue($detail, ['env_prefix']);
+        $workspace = $this->firstDetailValue($detail, ['workspace']);
+
+        if ($workspace !== '') {
+            return $envPrefix === ''
+                ? "Database connection for workspace {$workspace}"
+                : "Database connection {$envPrefix} for workspace {$workspace}";
+        }
+
+        $app = $this->firstDetailValue($detail, ['app']);
+
+        if ($app === '') {
+            return '';
+        }
+
+        return $envPrefix === ''
+            ? "Database connection for app {$app}"
+            : "Database connection {$envPrefix} for app {$app}";
     }
 
     /**
