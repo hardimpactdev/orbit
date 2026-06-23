@@ -344,18 +344,12 @@ final class DoctorCommand extends GatewayCommand
                 onEvent: function (ProgressEventType $type, array $eventPayload) use (&$streamStarted): void {
                     $streamStarted = true;
 
-                    $this->line(json_encode(
-                        $this->doctorStreamFrame($type, $eventPayload),
-                        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-                    ));
+                    $this->outputJsonLine($this->doctorStreamFrame($type, $eventPayload));
                 },
             );
         } catch (GatewayApiException $exception) {
             if ($streamStarted) {
-                $this->line(json_encode(
-                    $this->doctorStreamGatewayFailureFrame($exception),
-                    JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-                ));
+                $this->outputJsonLine($this->doctorStreamGatewayFailureFrame($exception));
 
                 return self::FAILURE;
             }

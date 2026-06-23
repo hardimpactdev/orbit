@@ -209,10 +209,10 @@ trait StreamsGatewayProgress
         }
 
         if ($this->wantsJson()) {
-            $this->line(json_encode([
+            $this->outputJsonLine([
                 'event' => $type->value,
                 'data' => $payload,
-            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+            ]);
 
             return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
         }
@@ -244,10 +244,10 @@ trait StreamsGatewayProgress
      */
     private function renderStreamJsonProgressFrame(ProgressEventType $type, array $payload): void
     {
-        $this->line(json_encode([
+        $this->outputJsonLine([
             'event' => $type->value,
             'data' => $payload,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ]);
     }
 
     /**
@@ -260,10 +260,10 @@ trait StreamsGatewayProgress
             $this->streamSuccessMeta($payload),
         )['success'];
 
-        $this->line(json_encode([
+        $this->outputJsonLine([
             'event' => ProgressEventType::Complete->value,
             'success' => $success,
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ]);
 
         return self::SUCCESS;
     }
@@ -273,10 +273,10 @@ trait StreamsGatewayProgress
      */
     private function renderStreamJsonErrorFrame(array $payload): int
     {
-        $this->line(json_encode([
+        $this->outputJsonLine([
             'event' => ProgressEventType::Error->value,
             'error' => $this->streamErrorPayload($payload),
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        ]);
 
         return self::FAILURE;
     }

@@ -6,7 +6,7 @@ namespace App\Support\Streaming;
 
 final readonly class ProgressEventStreamEmitter
 {
-    private const int BUFFERING_PRELUDE_BYTES = 4096;
+    private const int BUFFERING_PRELUDE_BYTES = 1;
 
     public function __construct(
         private string $sapi = PHP_SAPI,

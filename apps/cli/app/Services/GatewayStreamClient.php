@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Exceptions\GatewayApiException;
-use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Support\Facades\Http;
+use GuzzleHttp\Client;
+use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\ConnectException;
+use GuzzleHttp\Exception\GuzzleException;
 use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEvent;
 use Orbit\Core\Progress\ProgressEventDecoder;
@@ -15,6 +17,7 @@ use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\StreamIdleReader;
 use Psr\Http\Message\StreamInterface;
 use RuntimeException;
+use Throwable;
 
 /**
  * Minimal SSE client for consuming gateway progress streams.
@@ -24,12 +27,13 @@ use RuntimeException;
  */
 final readonly class GatewayStreamClient
 {
-    private const int READ_BYTES = 8192;
+    private const int READ_BYTES = 1;
 
     public function __construct(
         private ?string $baseUrl,
         private int $timeout,
         private ?string $caPemPath = null,
+        private ?ClientInterface $httpClient = null,
     ) {}
 
     /**
@@ -46,29 +50,25 @@ final readonly class GatewayStreamClient
     public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
     {
         $baseUrl = $this->normalizedBaseUrl();
+        $normalizedPath = '/'.ltrim($path, '/');
+
         try {
-            $pending = Http::baseUrl($baseUrl)
-                ->withHeaders(['Accept' => 'text/event-stream'])
-                ->asJson()
-                ->connectTimeout($this->timeout)
-                ->timeout(0)
-                ->withOptions($this->streamOptions());
-
-            $normalizedPath = '/'.ltrim($path, '/');
-
-            $response = match (strtolower($method)) {
-                'delete' => $pending->delete($normalizedPath, $payload),
-                default => $pending->post($normalizedPath, $payload),
-            };
-        } catch (ConnectionException $exception) {
+            $response = $this->client()->request(strtoupper($method), $baseUrl.$normalizedPath, [
+                'headers' => ['Accept' => 'text/event-stream'],
+                'json' => $payload,
+                ...$this->streamOptions(),
+            ]);
+        } catch (ConnectException $exception) {
             throw $this->classifyNetworkError($exception);
+        } catch (GuzzleException $exception) {
+            throw GatewayApiException::networkError($exception);
         }
 
-        if ($response->failed()) {
-            throw GatewayApiException::httpError($response->status(), $response->body());
+        if ($response->getStatusCode() >= 400) {
+            throw GatewayApiException::httpError($response->getStatusCode(), (string) $response->getBody());
         }
 
-        return $this->processResponseStream($response->toPsrResponse()->getBody(), $onEvent);
+        return $this->processResponseStream($response->getBody(), $onEvent);
     }
 
     /**
@@ -200,6 +200,9 @@ final readonly class GatewayStreamClient
     {
         $options = [
             'stream' => true,
+            'http_errors' => false,
+            'connect_timeout' => $this->timeout,
+            'timeout' => 0,
             'read_timeout' => 0,
         ];
 
@@ -210,7 +213,12 @@ final readonly class GatewayStreamClient
         return $options;
     }
 
-    private function classifyNetworkError(ConnectionException $exception): GatewayApiException
+    private function client(): ClientInterface
+    {
+        return $this->httpClient ?? new Client;
+    }
+
+    private function classifyNetworkError(Throwable $exception): GatewayApiException
     {
         $message = strtolower($exception->getMessage());
 

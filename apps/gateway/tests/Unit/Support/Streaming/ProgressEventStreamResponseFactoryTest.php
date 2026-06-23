@@ -104,7 +104,7 @@ it('sends a buffering prelude before streamed events under frankenphp', function
 
     expect($flushedOutput)
         ->toStartWith(': ')
-        ->and(strpos($flushedOutput, "event: tree\n"))->toBeGreaterThan(4096);
+        ->and(strpos($flushedOutput, "event: tree\n"))->toBeGreaterThan(0);
 });
 
 it('skips buffer flush under cli sapi', function (): void {

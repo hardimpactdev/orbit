@@ -13,9 +13,21 @@ trait EmitsCanonicalEnvelopes
      */
     protected function outputAsJson(array $payload): int
     {
-        $this->line(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+        $this->outputJsonLine($payload);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function outputJsonLine(array $payload): void
+    {
+        $this->line(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+        if (defined('STDOUT') && is_resource(STDOUT)) {
+            @fflush(STDOUT);
+        }
     }
 
     /**
