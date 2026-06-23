@@ -20,14 +20,11 @@ trait EmitsCanonicalEnvelopes
 
     /**
      * @param  array<string, mixed>  $meta
-     */
-    /**
-     * @param  array<string, mixed>  $meta
      * @param  array<string, mixed>  $data
      */
     protected function renderFailure(string $code, string $message, array $meta = [], array $data = []): int
     {
-        if ($this->wantsJson()) {
+        if ($this->wantsMachineJson()) {
             $payload = JsonEnvelope::failure($code, $message, $meta);
 
             if ($data !== []) {
@@ -81,7 +78,27 @@ trait EmitsCanonicalEnvelopes
 
     protected function wantsJson(): bool
     {
-        return (bool) $this->option('json');
+        return $this->hasInputOption('json') && (bool) $this->option('json');
+    }
+
+    protected function wantsStreamingJson(): bool
+    {
+        return $this->hasInputOption('stream-json') && (bool) $this->option('stream-json');
+    }
+
+    protected function wantsMachineJson(): bool
+    {
+        return $this->wantsJson() || $this->wantsStreamingJson();
+    }
+
+    protected function allowsInteractiveInput(): bool
+    {
+        return ! $this->wantsMachineJson() && $this->input->isInteractive();
+    }
+
+    private function hasInputOption(string $option): bool
+    {
+        return $this->input->hasOption($option);
     }
 
     private function renderHumanValue(mixed $value): string

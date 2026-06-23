@@ -12,7 +12,8 @@ final class ToolReconfigureCommand extends ToolGatewayCommand
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
         {--password= : Auth password (OpenCode Server)}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Reconfigure a managed tool through the gateway.';

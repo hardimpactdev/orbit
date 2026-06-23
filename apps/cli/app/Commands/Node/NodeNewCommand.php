@@ -44,7 +44,8 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         {--grant-from-preset= : Preset for grant-from permissions}
         {--grant-from-permissions= : Custom permissions for grant-from}
         {--agent-tool=* : Agent tool to install}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Create or provision a node in the Orbit fleet.';
@@ -86,6 +87,14 @@ final class NodeNewCommand extends BootstrapGatewayCommand
         }
 
         if (($payload['template'] ?? null) === 'gateway' && ! $this->hasConfiguredGateway($configStore)) {
+            if ($this->wantsStreamingJson()) {
+                return $this->renderFailure(
+                    'validation_failed',
+                    '--stream-json is not supported for first-gateway bootstrap because that path does not expose gateway progress.',
+                    ['field' => 'stream-json', 'reason' => 'unsupported_bootstrap_path'],
+                );
+            }
+
             $result = $bootstrapper->run($payloadBuilder->toGatewayArtisanArguments($payload, $this->wantsJson()));
 
             if ($result['output'] !== '') {

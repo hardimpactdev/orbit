@@ -16,7 +16,8 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
         {name? : Workspace name}
         {--app= : Parent app name}
         {--path= : Explicit workspace path to adopt}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Converge a workspace to a ready-to-develop-in state.';

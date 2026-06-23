@@ -20,7 +20,7 @@
 ## Signature
 
 ```bash
-orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json]
+orbit node:new [name] [--template=<template>] [--operator] [--roles=<roles>] [--host=<host>] [--operator-name=<name>] [--tld=<tld>] [--user=<user>] [--gateway-endpoint=<endpoint>] [--ingress=<node>] [--redis-node=<node>] [--postgres-node=<node>] [--clickhouse-node=<node>] [--s3-data-path=<path>] [--host-key-fingerprint=<fingerprint>] [--self-grant=<mode>] [--self-grant-permissions=<permissions>] [--grant-to=<node>] [--grant-to-preset=<preset>] [--grant-to-permissions=<permissions>] [--grant-from=<node>] [--grant-from-preset=<preset>] [--grant-from-permissions=<permissions>] [--agent-tool=<tool>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -55,6 +55,7 @@ This command follows the shared
 | `grant_from_permissions` | `--grant-from-permissions` | Optional. | Never. | None. | Custom permission set for the `--grant-from` grant. |
 | `agent_tool` | `--agent-tool` | Optional. | Never. | None. | Agent tool to install on this node. Multiple values allowed. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `stream-json` | `--stream-json` | Optional. | Never. | `false`. | Selects the stream JSON renderer and non-interactive input mode for gateway-mediated provisioning. Mutually exclusive with `--json`; unsupported for first-gateway bootstrap. |
 
 Canonical stored role values accepted through `--roles` are `app-dev`,
 `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, and
@@ -309,6 +310,12 @@ Output renderer behavior is split out of the canonical command contract:
 - [`6.2_node-new_output-render_json.md`](6.2_node-new_output-render_json.md): JSON
   envelope, data shape, error codes, error messages, error metadata, validation
   errors, and partial-provisioning errors.
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract for the
+normal gateway-mediated provisioning path. First-gateway bootstrap rejects
+`--stream-json` before bootstrap starts because that local bootstrap path does
+not expose gateway progress.
 
 ## Activity Logging
 

@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit workspace:new [name] [--app=<app>] [--base=<ref>] [--php-version=<version>] [--json]
+orbit workspace:new [name] [--app=<app>] [--base=<ref>] [--php-version=<version>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -29,6 +29,7 @@ This command follows the shared
 | `--base` | `text` | Optional. | `main` | Source git ref/branch used by the selected workspace source driver. Generic and OpenCode worktrees create branch `<workspace>` from this ref; PolyScope passes it as `base_branch` to the PolyScope API. |
 | `--php-version` | `text` | Optional. | (parent app PHP version) | Supported PHP version. When omitted, the workspace row stores `null` and inherits the parent app's PHP version. |
 | `--json` | `flag` | Optional. | `false` | Forces non-interactive mode and JSON output. |
+| `--stream-json` | `flag` | Optional. | `false` | Forces non-interactive mode and emits newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
 When `--base` is omitted, the default source ref is hard-coded to `main`.
 Operators may supply another explicit ref with `--base=<ref>`. Inheriting an
@@ -159,6 +160,9 @@ register an existing path use
 
 - [`6.1_workspace-new_output-render_human.md`](6.1_workspace-new_output-render_human.md)
 - [`6.2_workspace-new_output-render_json.md`](6.2_workspace-new_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

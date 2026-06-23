@@ -7,6 +7,7 @@ namespace App\Commands\Concerns;
 use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
 use App\Services\GatewayStreamClient;
+use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Core\Progress\StreamedStepTree;
 
@@ -38,18 +39,36 @@ trait StreamsGatewayProgress
     {
         $client = app(GatewayStreamClient::class);
         $wantsJson = $this->wantsJson();
+        $wantsStreamJson = $this->wantsStreamingJson();
 
         $finalType = null;
         $finalPayload = [];
+        $streamStarted = false;
+
+        if ($wantsJson && $wantsStreamJson) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Use either --json or --stream-json, not both.',
+                ['fields' => ['json', 'stream-json'], 'reason' => 'conflicting_options'],
+            );
+        }
 
         try {
             $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, &$finalType, &$finalPayload): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, $wantsStreamJson, &$finalType, &$finalPayload, &$streamStarted): void {
+                    $streamStarted = true;
+
                     if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
                         $finalType = $type;
                         $finalPayload = $eventPayload;
+
+                        return;
+                    }
+
+                    if ($wantsStreamJson) {
+                        $this->renderStreamJsonProgressFrame($type, $eventPayload);
 
                         return;
                     }
@@ -64,6 +83,10 @@ trait StreamsGatewayProgress
                 method: $method,
             );
         } catch (GatewayApiException $exception) {
+            if ($wantsStreamJson && $streamStarted) {
+                return $this->renderStreamJsonTransportFailure($exception);
+            }
+
             return $this->renderGatewayFailure($exception);
         }
 
@@ -179,6 +202,12 @@ trait StreamsGatewayProgress
      */
     protected function renderProgressTerminalFrame(ProgressEventType $type, array $payload): int
     {
+        if ($this->wantsStreamingJson()) {
+            return $type === ProgressEventType::Complete
+                ? $this->renderStreamJsonCompleteFrame($payload)
+                : $this->renderStreamJsonErrorFrame($payload);
+        }
+
         if ($this->wantsJson()) {
             $this->line(json_encode([
                 'event' => $type->value,
@@ -208,6 +237,135 @@ trait StreamsGatewayProgress
         }
 
         return $this->renderSuccess($data);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderStreamJsonProgressFrame(ProgressEventType $type, array $payload): void
+    {
+        $this->line(json_encode([
+            'event' => $type->value,
+            'data' => $payload,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderStreamJsonCompleteFrame(array $payload): int
+    {
+        $success = JsonEnvelope::success(
+            $this->streamSuccessData($payload),
+            $this->streamSuccessMeta($payload),
+        )['success'];
+
+        $this->line(json_encode([
+            'event' => ProgressEventType::Complete->value,
+            'success' => $success,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function renderStreamJsonErrorFrame(array $payload): int
+    {
+        $this->line(json_encode([
+            'event' => ProgressEventType::Error->value,
+            'error' => $this->streamErrorPayload($payload),
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
+
+        return self::FAILURE;
+    }
+
+    private function renderStreamJsonTransportFailure(GatewayApiException $exception): int
+    {
+        if ($exception->hasGatewayError()) {
+            return $this->renderStreamJsonErrorFrame([
+                'data' => array_filter([
+                    'code' => $exception->gatewayErrorCode() ?? $exception->cliFailureCode(),
+                    'message' => $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                    'meta' => $exception->gatewayErrorMeta(),
+                    'data' => $exception->gatewayErrorData(),
+                ], fn (mixed $value): bool => $value !== []),
+            ]);
+        }
+
+        return $this->renderStreamJsonErrorFrame([
+            'data' => [
+                'code' => $exception->cliFailureCode(),
+                'message' => $exception->getMessage(),
+                'meta' => [],
+            ],
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function streamSuccessData(array $payload): array
+    {
+        $data = $this->frameData($payload);
+        $success = $data['success'] ?? null;
+
+        if (is_array($success) && is_array($success['data'] ?? null)) {
+            return $success['data'];
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function streamSuccessMeta(array $payload): array
+    {
+        $data = $this->frameData($payload);
+        $success = $data['success'] ?? null;
+
+        if (is_array($success) && is_array($success['meta'] ?? null)) {
+            return $success['meta'];
+        }
+
+        return $this->frameArray($payload, 'meta') ?? [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function streamErrorPayload(array $payload): array
+    {
+        $data = $this->frameData($payload);
+        $error = $data['error'] ?? null;
+
+        if (is_array($error)) {
+            return [
+                'code' => $this->frameString($error, 'code') ?? 'gateway_stream_error',
+                'message' => $this->frameString($error, 'message') ?? 'Gateway progress stream failed.',
+                'meta' => $this->frameArray($error, 'meta') ?? [],
+                ...($this->frameArray($error, 'data') !== null ? ['data' => $this->frameArray($error, 'data')] : []),
+            ];
+        }
+
+        $errorPayload = [
+            'code' => $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error',
+            'message' => $this->frameString($data, 'message') ?? $this->frameString($payload, 'message') ?? 'Gateway progress stream failed.',
+            'meta' => $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [],
+        ];
+
+        $diagnosticData = $this->frameArray($data, 'data');
+
+        if ($diagnosticData !== null) {
+            $errorPayload['data'] = $diagnosticData;
+        }
+
+        return $errorPayload;
     }
 
     /**

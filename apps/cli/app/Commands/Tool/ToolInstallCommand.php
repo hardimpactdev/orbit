@@ -17,7 +17,8 @@ final class ToolInstallCommand extends ToolGatewayCommand
         {--status=installed : Desired state after install (installed|running)}
         {--with-process : Also configure the related service process (default for service tools)}
         {--no-process : Install the capability only; do not configure the related service process}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Install a managed tool through the gateway.';

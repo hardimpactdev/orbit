@@ -1,4 +1,4 @@
-# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--with-process|--no-process] [--json]`
+# Technical Contract: `orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]`
 
 [Back to public `tool-install` documentation.](../tool-install.md)
 
@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--with-process|--no-process] [--json]
+orbit tool:install <tool> [--app=<app>] [--node=<node>] [--tool-version=<version>] [--status=<installed|running>] [--with-process|--no-process] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -29,6 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `status` | `--status` | `Optional.` | `Never.` | `installed` | Expected capability state: installed or running. This does not start a process. |
 | `with_process` | `--with-process` / `--no-process` | `Optional.` | `Never.` | `true` for tools that declare a related process | When set true (the default), a tool that declares a related singleton process configures that process. `--no-process` installs the capability only. Supplying both `--with-process` and `--no-process` fails. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | `Selects the JSON renderer.` |
+| `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 
 `--tool-version` records the intended tool version at install time. `--expected-version`
 and `expected_version` remain `tool:update` inputs and are rejected here.
@@ -87,6 +88,9 @@ Related drift belongs to each owning family doctor contract.
 
 - [Human renderer](6.1_tool-install_output-render_human.md)
 - [JSON renderer](6.2_tool-install_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

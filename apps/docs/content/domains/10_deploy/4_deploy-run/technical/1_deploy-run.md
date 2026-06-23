@@ -1,4 +1,4 @@
-# Technical Contract: `orbit deploy:run [app] [--detach] [--json]`
+# Technical Contract: `orbit deploy:run [app] [--detach] [--json|--stream-json]`
 
 [Back to public `deploy-run` documentation.](../deploy-run.md)
 
@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit deploy:run [app] [--detach] [--json]
+orbit deploy:run [app] [--detach] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -26,6 +26,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `argument` | `Required in non-interactive mode.` | `Never.` | `None.` | Visible production app the caller may deploy. |
 | `detach` | `--detach` | `Optional.` | `Never.` | `false` | Boolean flag. Starts the run and returns without streaming output. |
 | `json` | `--json` | `Optional.` | `Never.` | `false` | Selects the JSON renderer. |
+| `stream-json` | `--stream-json` | `Optional.` | `Never.` | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 
 ## Input Mode Contracts
 
@@ -110,6 +111,9 @@ prove application HTTP readiness; production app health belongs to
 
 - [Human renderer](6.1_deploy-run_output-render_human.md)
 - [JSON renderer](6.2_deploy-run_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

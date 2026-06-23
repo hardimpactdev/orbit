@@ -12,7 +12,8 @@ final class ToolUpdateCommand extends ToolGatewayCommand
         {--app= : Resolve target by app selector}
         {--node= : Resolve target by node}
         {--expected-version= : Expected version constraint}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Update a managed tool through the gateway.';

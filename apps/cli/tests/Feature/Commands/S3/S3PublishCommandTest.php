@@ -179,7 +179,6 @@ describe('S3Publish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        // CLI JSON output: {"event":"complete","data":{"exit_code":0,"data":{"s3":{...},"meta":{...}}}}
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)

@@ -20,7 +20,7 @@ the app-family registration pipeline.
 ## Signature
 
 ```bash
-orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--domain=<host>] [--json]
+orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--domain=<host>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -37,6 +37,7 @@ This command follows the shared
 | `--php-version` | string | No | `8.5` | Must match Orbit's supported PHP version set (gateway-side static check). Node-side availability is verified while applying. |
 | `--domain` | string | No | null | Valid production domain; implies production activation. |
 | `--json` | flag | No | false | Force non-interactive mode and JSON output. |
+| `--stream-json` | flag | No | false | Force non-interactive mode and emit newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
 ### Input Resolution
 
@@ -136,6 +137,9 @@ If `--domain` is supplied:
 
 - [`6.1_app-new_output-render_human.md`](6.1_app-new_output-render_human.md)
 - [`6.2_app-new_output-render_json.md`](6.2_app-new_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.

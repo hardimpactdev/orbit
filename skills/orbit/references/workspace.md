@@ -11,7 +11,7 @@ FrankenPHP runtime container. Spec:
 Create a workspace intent for an app.
 
 ```bash
-orbit workspace:new [<name>] [--app=<name>] [--base=main] [--php-version=<v>] [--json]
+orbit workspace:new [<name>] [--app=<name>] [--base=main] [--php-version=<v>] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
@@ -20,6 +20,7 @@ orbit workspace:new [<name>] [--app=<name>] [--base=main] [--php-version=<v>] [-
 | `--app` |  -  | Parent app slug. |
 | `--base` | `main` | Base git ref to branch from. |
 | `--php-version` | inherit | Optional PHP version override (otherwise inherits the app's PHP version). |
+| `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
 
 `workspace:new` only writes intent. Use `workspace:setup` to converge.
 
@@ -40,10 +41,12 @@ orbit workspace:show [<name>] [--app=<name>] [--json]
 Converge a workspace to a ready-to-develop-in state. Streams output from each setup step.
 
 ```bash
-orbit workspace:setup [<name>] [--app=<name>] [--path=<path>] [--json]
+orbit workspace:setup [<name>] [--app=<name>] [--path=<path>] [--json|--stream-json]
 ```
 
 `--path` adopts an existing on-disk workspace path instead of creating a fresh checkout.
+Use `--stream-json` for JSONL setup progress when an agent needs incremental
+frames; use `--json` for the final result envelope only.
 
 Workspace setup runs the steps configured for the parent app via `workspace-setup-step:add`.
 
