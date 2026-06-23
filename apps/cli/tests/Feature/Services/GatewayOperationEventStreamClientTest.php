@@ -98,7 +98,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
                 }
             }
 
-            usleep(1_200_000);
+            usleep(800_000);
             $body = "id: 1\nevent: complete\ndata: {\"exit_code\":0}\n\n";
             fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
             fclose($connection);

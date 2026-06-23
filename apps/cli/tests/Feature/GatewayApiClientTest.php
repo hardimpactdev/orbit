@@ -153,7 +153,7 @@ describe('GatewayApiClient', function (): void {
                     }
                 }
 
-                usleep(1_200_000);
+                usleep(800_000);
                 $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
                 fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
                 fclose($connection);

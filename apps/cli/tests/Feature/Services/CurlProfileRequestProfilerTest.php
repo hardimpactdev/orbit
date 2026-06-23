@@ -8,7 +8,7 @@ describe(ProfileRequestProfiler::class, function (): void {
     it('uses the active gateway timeout for slow caller-side profiles', function (): void {
         $server = startSlowCurlProfileHttpTestServer();
 
-        config()->set('orbit.gateway.timeout', 5);
+        config()->set('orbit.gateway.timeout', 4);
         app()->forgetInstance(ProfileRequestProfiler::class);
 
         try {
@@ -61,7 +61,7 @@ function startSlowCurlProfileHttpTestServer(): array
     file_put_contents("{$directory}/index.php", <<<'PHP'
 <?php
 
-usleep(4_000_000);
+usleep(3_200_000);
 
 header('Content-Type: text/plain');
 

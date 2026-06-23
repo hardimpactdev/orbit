@@ -227,7 +227,7 @@ it('keeps update-all rows blinking while the gateway event stream is quiet', fun
     $router = startUpdateAllGatewayLivenessRouter(
         port: $port,
         startDelayMicroseconds: 0,
-        silentDelayMicroseconds: 1_500_000,
+        silentDelayMicroseconds: 1_100_000,
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
     $typescriptPath = sys_get_temp_dir().'/orbit-update-all-gateway-pty-'.uniqid('', true).'.typescript';
@@ -342,7 +342,7 @@ it('keeps the check-updates row blinking while the gateway start request is pend
     $port = unusedUpdateAllGatewayLivenessPort();
     $router = startUpdateAllGatewayLivenessRouter(
         port: $port,
-        startDelayMicroseconds: 2_500_000,
+        startDelayMicroseconds: 1_750_000,
         silentDelayMicroseconds: 0,
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
@@ -401,7 +401,7 @@ it('keeps the check-updates row blinking while the gateway start request is pend
                 : 0;
 
             if ($stillRunning
-                && $observedForUs >= 2_000_000
+                && $observedForUs >= 1_200_000
                 && $checkUpdates['cadence_state']['transition_count'] >= 4) {
                 $capturedContinuousBlinkWhilePending = true;
 

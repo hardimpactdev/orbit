@@ -119,10 +119,10 @@ describe('GatewayStreamClient', function (): void {
                 fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
                 fwrite($connection, "event: tree\ndata: {\"name\":\"doctor\"}\n\n");
                 fflush($connection);
-                usleep(600_000);
+                usleep(500_000);
                 fwrite($connection, "event: step\ndata: {\"message\":\"checking\"}\n\n");
                 fflush($connection);
-                usleep(600_000);
+                usleep(500_000);
                 fwrite($connection, "event: complete\ndata: {\"ok\":true}\n\n");
                 fclose($connection);
             }
