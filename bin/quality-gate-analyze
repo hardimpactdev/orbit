@@ -3,6 +3,9 @@
 
 declare(strict_types=1);
 
+const DEFAULT_WARNING_THRESHOLD_PERCENT = 25;
+const TIMING_TRIAGE_SKILL_PATH = '.agents/skills/quality-gate-triage/SKILL.md';
+
 $options = getopt('', [
     'artifact-dir::',
     'gate:',
@@ -71,7 +74,10 @@ try {
             continue;
         }
 
-        if ($runDuration > ($baselineDuration * 1.25)) {
+        $thresholdPercent = baseline_warning_threshold_percent($baseline);
+        $thresholdMultiplier = 1 + ($thresholdPercent / 100);
+
+        if ($runDuration > ($baselineDuration * $thresholdMultiplier)) {
             fwrite(STDOUT, sprintf(
                 'warning: gate [%s] duration %.1fs exceeds local baseline %.1fs (warning-only)%s',
                 $gate,
@@ -79,6 +85,7 @@ try {
                 $baselineDuration,
                 PHP_EOL,
             ));
+            fwrite(STDOUT, 'timing triage: '.TIMING_TRIAGE_SKILL_PATH.PHP_EOL);
         } else {
             fwrite(STDOUT, sprintf(
                 'baseline: gate [%s] duration %.1fs is within local baseline %.1fs%s',
@@ -254,4 +261,20 @@ function normalize_timestamp(string $timestamp): string
     }
 
     return $timestamp;
+}
+
+/**
+ * @param  array<string, mixed>  $baseline
+ */
+function baseline_warning_threshold_percent(array $baseline): float
+{
+    $value = $baseline['warning_threshold_percent'] ?? null;
+
+    if (! is_numeric($value)) {
+        return (float) DEFAULT_WARNING_THRESHOLD_PERCENT;
+    }
+
+    $parsed = (float) $value;
+
+    return $parsed > 0 ? $parsed : (float) DEFAULT_WARNING_THRESHOLD_PERCENT;
 }

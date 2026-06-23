@@ -114,9 +114,14 @@ rerun expensive gates or warn about E2E lanes that were not run.
 
 - Prefer local, machine-specific, lane-specific baselines before global
   comparisons.
+- Read baseline metadata from `.orbit/quality-gates/baselines/{gate}.json`.
+  Required field: `duration_seconds`. Optional field:
+  `warning_threshold_percent`. Legacy baselines with only `duration_seconds`
+  keep the default 25 percent warning threshold.
 - Keep baseline enforcement warning-only until the lane has stable repeated
   passes with matching test count, assertion count, provider pool, and host
-  health.
+  health. Analyzer and final-check timing warnings do not fail the merge gate by
+  themselves.
 - Compare Docker E2E timing only when SSH multiplexing, runner reachability,
   cache state, and host load are healthy enough for the comparison.
 - Compare Incus E2E timing only when the prepared topology, source checkout,
@@ -124,6 +129,21 @@ rerun expensive gates or warn about E2E lanes that were not run.
 - If runner pool, SSH, caches, host load, or provider availability are degraded,
   classify timing as `provider capacity`, `host/env drift`, or
   `stale/missing baseline` before considering `product regression`.
+
+## Timing Regression Routing
+
+When `composer quality-gate:analyze` or `composer quality-gate:final-check`
+reports a timing baseline warning, activate this skill before blaming product
+code. The analyzer prints a routing hint to
+`.agents/skills/quality-gate-triage/SKILL.md` on those warnings.
+
+1. Read the latest artifact under `.orbit/quality-gates/` and the matching
+   baseline file under `.orbit/quality-gates/baselines/`.
+2. Confirm the baseline is compatible with the current lane, runner pool, cache
+   state, and host health.
+3. Classify the slowdown using the categories below.
+4. Recommend the next narrow command or owner action. Do not rerun expensive
+   gates unless classification proves the rerun is diagnostic.
 
 ## Triage Workflow
 

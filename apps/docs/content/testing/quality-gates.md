@@ -74,6 +74,39 @@ baseline exists for the current lane and runner pool, classify timing deltas as
 warning-only and record the missing-baseline action instead of calling a product
 regression.
 
+## Local timing baselines
+
+Store machine-local baseline metadata under
+`.orbit/quality-gates/baselines/{gate}.json`. Each file records the expected
+duration for one gate on the current runner pool.
+
+Baseline file shape:
+
+```json
+{
+  "schema_version": 1,
+  "gate": "quality-check",
+  "duration_seconds": 330,
+  "warning_threshold_percent": 25,
+  "updated_at": "2026-06-23T10:05:30Z"
+}
+```
+
+`duration_seconds` is required. `warning_threshold_percent` is optional. When it
+is missing or invalid, the analyzer keeps the backward-compatible default of
+25 percent above the baseline duration. When it is present and valid, the
+analyzer uses that percentage to decide whether a recent run is a timing
+regression.
+
+Timing baseline observations remain warning-only. `composer quality-gate:analyze`
+and `composer quality-gate:final-check` exit successfully even when a run
+exceeds the local baseline. They do not rerun `composer quality-check` or E2E
+lanes to classify the slowdown.
+
+When the analyzer emits a timing baseline warning, it also prints a routing hint
+to `.agents/skills/quality-gate-triage/SKILL.md`. Use that skill to classify the
+slowdown before treating it as a product regression.
+
 ## E2E gates
 
 Run `composer test:e2e` when behavior touches the integrated prepared topology.

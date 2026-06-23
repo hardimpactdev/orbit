@@ -4,7 +4,7 @@ Status: recurring
 First seen: 2026-06-23
 Last seen: 2026-06-23
 Last reviewed: 2026-06-23
-Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts
+Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines
 Source commit: pending
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
@@ -34,6 +34,12 @@ producing the focused test diff. After an explicit correction, it acknowledged
 the boundary but continued reading named files and still produced no diff. The
 feature owner stopped the worker and implemented the slice directly.
 
+This signal reappeared again in `quality-gate-baselines`: a Solo Codex worker
+received an even narrower quality-gate slice with an explicit first checkpoint,
+but still read extra memory and global skill context before producing any test
+diff. After the first-diff correction, the worker remained without a diff or
+blocker and was stood down.
+
 ## Missing Guardrail
 
 The reusable worker prompt required narrow ownership and TDD, but it did not
@@ -57,9 +63,14 @@ requires the feature owner to stand down the worker after one explicit
 first-diff correction if the worker still reads or reasons without producing a
 diff or blocker. Do not allow a stalled worker to consume the slice.
 
+After the second recurrence, the next guardrail should stop relying on prompt
+wording alone. Feature owners should dispatch the first checkpoint as a
+test-only patch with a short timer, then replace the worker immediately if it
+does not return a diff or missing-context blocker.
+
 ## Verification
 
-`rg -n "first narrow diff|broad discovery without a first diff|stand down the worker" .agents/skills/implementing-features/SKILL.md harness-signals/2026-06-23-worker-first-diff-checkpoint.md`
+`rg -n "test-only first diff|short timer|replace the worker|first narrow diff|broad discovery without a first diff|stand down the worker" .agents/skills/implementing-features/SKILL.md harness-signals/2026-06-23-worker-first-diff-checkpoint.md`
 shows the checkpoint is discoverable from the worker prompt, the feature-owner
 monitoring flow, and this signal.
 
@@ -70,8 +81,8 @@ the same worktree after the guardrail update.
 
 If a future worker with a clear owned slice keeps searching without producing a
 first diff or explicit missing-context blocker after one correction, do not keep
-prompting. Stand down the worker and either tighten the Solo dispatch wrapper or require
-a timed first-checkpoint response before assigning substantial implementation.
+prompting. Stand down the worker and require a timed test-only first-checkpoint
+response before assigning substantial implementation.
 
 ## Curation Notes
 

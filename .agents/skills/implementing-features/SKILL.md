@@ -106,10 +106,11 @@ Rules:
 - Edit only inside the assigned worktree.
 - Keep docs, tests, and code aligned.
 - Use TDD: failing Pest coverage first, then implementation.
-- After reading the required local files named in this prompt, produce the first narrow diff
-  in the owned test, docs, or code surface before doing broad repository
-  discovery. If the first diff cannot be made from the handoff, report the
-  missing context instead of continuing to search.
+- After reading the required local files named in this prompt, produce the
+  first narrow diff before doing broad repository discovery. Prefer a
+  test-only first diff for behavior changes or a docs-only first diff for
+  documentation-owned work. If the first diff cannot be made from the handoff,
+  report the missing context instead of continuing to search.
 - Run the focused verification assigned to this slice.
 - Capture implementation signals as they appear. When a failure, review
   correction, docs conflict, or setup problem reveals missing durable context,
@@ -467,14 +468,18 @@ moving on to durable E2E.
    and the rule that workers must not commit, merge to `main`, or clean up the
    worktree unless the feature owner explicitly assigns that exact step.
 8. Monitor workers, inspect diffs, and send correction prompts until the
-   acceptance criteria are met or a blocker is explicit. The first checkpoint is
+   acceptance criteria are met or a blocker is explicit. Start substantial
+   slices with a first-checkpoint prompt that asks only for a test-only diff
+   for behavior changes or a docs-only diff for documentation-owned work. Give
+   that checkpoint a short timer in Solo when available. The first checkpoint is
    a narrow owned diff or an explicit missing-context blocker after the required
    local files are read; broad discovery without a first diff is a process
    problem to correct. After one explicit first-diff correction, if the worker
-   still produces no diff or blocker, stand down the worker and mark the
-   matching harness signal recurring instead of letting the process stall. When
-   a correction reveals missing durable context, triage it
-   through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
+   still produces no diff or blocker, stand down the worker, mark the matching
+   harness signal recurring, and replace the worker instead of letting the
+   process stall. Assign the implementation phase only after the first diff
+   exists and has been inspected. When a correction reveals missing durable
+   context, triage it through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that

@@ -202,6 +202,131 @@ it('summarizes recent quality gate artifacts without rerunning gates', function 
     }
 });
 
+it('uses warning_threshold_percent from baseline metadata to determine timing warnings', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-threshold-custom-'.bin2hex(random_bytes(6));
+    $baselineDir = "{$artifactDir}/baselines";
+    mkdir($baselineDir, 0700, true);
+
+    file_put_contents("{$baselineDir}/quality-check.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'duration_seconds' => 100,
+        'warning_threshold_percent' => 50,
+        'updated_at' => '2026-06-23T09:00:00Z',
+    ], JSON_THROW_ON_ERROR));
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100000Z-abc123.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:02:20Z',
+        'duration_seconds' => 140,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'abc123'],
+        'subgates' => ['gateway_pest' => 0],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('baseline: gate [quality-check] duration 140.0s is within local baseline 100.0s')
+            ->not->toContain('warning: gate [quality-check]');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('defaults to a 25 percent warning threshold for legacy baseline files with only duration_seconds', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-threshold-legacy-'.bin2hex(random_bytes(6));
+    $baselineDir = "{$artifactDir}/baselines";
+    mkdir($baselineDir, 0700, true);
+
+    file_put_contents("{$baselineDir}/quality-check.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'duration_seconds' => 100,
+        'updated_at' => '2026-06-23T09:00:00Z',
+    ], JSON_THROW_ON_ERROR));
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100000Z-within.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:02:00Z',
+        'duration_seconds' => 120,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'within123'],
+        'subgates' => ['gateway_pest' => 0],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $withinProcess = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $withinProcess->run();
+
+        expect($withinProcess->getExitCode())->toBe(0, $withinProcess->getErrorOutput())
+            ->and($withinProcess->getOutput())
+            ->toContain('baseline: gate [quality-check] duration 120.0s is within local baseline 100.0s')
+            ->not->toContain('warning: gate [quality-check]');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-threshold-legacy-warn-'.bin2hex(random_bytes(6));
+    $baselineDir = "{$artifactDir}/baselines";
+    mkdir($baselineDir, 0700, true);
+
+    file_put_contents("{$baselineDir}/quality-check.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'duration_seconds' => 100,
+        'updated_at' => '2026-06-23T09:00:00Z',
+    ], JSON_THROW_ON_ERROR));
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100000Z-exceeds.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:02:10Z',
+        'duration_seconds' => 130,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'exceeds123'],
+        'subgates' => ['gateway_pest' => 0],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $warningProcess = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $warningProcess->run();
+
+        expect($warningProcess->getExitCode())->toBe(0, $warningProcess->getErrorOutput())
+            ->and($warningProcess->getOutput())
+            ->toContain('warning: gate [quality-check] duration 130.0s exceeds local baseline 100.0s (warning-only)')
+            ->toContain('.agents/skills/quality-gate-triage/SKILL.md');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
 it('emits warning-only baseline observations when a run exceeds the local baseline', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-baseline-'.bin2hex(random_bytes(6));
     $baselineDir = "{$artifactDir}/baselines";
@@ -240,7 +365,52 @@ it('emits warning-only baseline observations when a run exceeds the local baseli
             ->toContain('warning')
             ->toContain('baseline')
             ->toContain('330')
-            ->toContain('100');
+            ->toContain('100')
+            ->toContain('.agents/skills/quality-gate-triage/SKILL.md');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('keeps final-check exit code zero when only timing baseline warnings are present', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-final-timing-only-'.bin2hex(random_bytes(6));
+    $baselineDir = "{$artifactDir}/baselines";
+    mkdir($baselineDir, 0700, true);
+
+    file_put_contents("{$baselineDir}/quality-check.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'duration_seconds' => 100,
+        'updated_at' => '2026-06-23T09:00:00Z',
+    ], JSON_THROW_ON_ERROR));
+
+    file_put_contents("{$artifactDir}/quality-check-2026-06-23T100000Z-abc123.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'quality-check',
+        'command' => 'composer quality-check',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:05:30Z',
+        'duration_seconds' => 330,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'abc123'],
+        'subgates' => ['gateway_pest' => 0],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-final-check'),
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('warning: gate [quality-check] duration 330.0s exceeds local baseline 100.0s (warning-only)')
+            ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
+            ->toContain('Final check did not rerun quality-check or E2E lanes')
+            ->not->toContain('latest gate [quality-check] exited with code');
     } finally {
         (new Process(['rm', '-rf', $artifactDir]))->run();
     }
@@ -344,6 +514,7 @@ it('final-check surfaces analyzer warnings without rerunning quality gates', fun
             ->toContain('Analyzer report:')
             ->toContain('recent run: gate=quality-check')
             ->toContain('warning: gate [quality-check] duration 330.0s exceeds local baseline 100.0s (warning-only)')
+            ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
             ->toContain('latest gate [quality-check] exited with code 1')
             ->toContain('Final check did not rerun quality-check or E2E lanes');
     } finally {
