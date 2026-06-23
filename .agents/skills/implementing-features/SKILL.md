@@ -119,8 +119,9 @@ Rules:
   durable E2E or any live/release-candidate deployment. Report the topology
   id, VM instance, terminal/session, exact commands, observed human/JSON/failure
   results, and whether user verification is pending or complete.
-- Do not merge to main, delete the worktree, force-push, reset, clean, stash, or
-  touch unrelated dirty files.
+- Do not commit, merge to main, delete the worktree, force-push, reset, clean,
+  stash, or touch unrelated dirty files unless the feature owner explicitly
+  gives you that exact boundary.
 
 Report changed files, tests, harness signals, verification commands/results,
 blockers, and risks.
@@ -457,9 +458,10 @@ moving on to durable E2E.
 6. If a Claude documenter/librarian worker is used, spawn it first or in
    parallel only after the docs-owned slice is explicit. The feature owner must
    inspect the docs result and accept the docs contract before code relies on it.
-7. Spawn the Solo implementation worker(s) with the worktree path, handoff, owned scope,
-   documentation authority, TDD requirement, focused verification, and the rule
-   that workers must not merge to `main` or clean up the worktree.
+7. Spawn the Solo implementation worker(s) with the worktree path, handoff,
+   owned scope, documentation authority, TDD requirement, focused verification,
+   and the rule that workers must not commit, merge to `main`, or clean up the
+   worktree unless the feature owner explicitly assigns that exact step.
 8. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. When a correction
    reveals missing durable context, triage it through `.orbit/loop.md` and
