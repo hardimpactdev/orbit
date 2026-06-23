@@ -18,14 +18,14 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
+use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
+use Orbit\Sdk\Laravel\Testing\GatewayPendingRequest;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\StreamFactoryInterface;
 use Psr\Http\Message\StreamInterface;
-use Saloon\Http\Faking\MockClient;
-use Saloon\Http\Faking\MockResponse;
-use Saloon\Http\PendingRequest;
 use Symfony\Component\Console\Output\StreamOutput;
 use Tests\TestCase;
 
@@ -65,7 +65,7 @@ function fakeGateway(array $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
     app()->forgetInstance(FakeGatewayStreamHttpClient::class);
-    MockClient::destroyGlobal();
+    GatewayMockClient::destroyGlobal();
 
     Http::fake(['https://gateway.test/*' => Http::response($body, $status)]);
 }
@@ -120,9 +120,9 @@ function fakeGatewayProgressStreamSequence(array $bodies, int $status = 200): Fa
     $httpClient = new FakeGatewayStreamHttpClient($responses);
 
     app()->instance(FakeGatewayStreamHttpClient::class, $httpClient);
-    MockClient::destroyGlobal();
-    MockClient::global([
-        GenericGatewayStreamRequest::class => fn (PendingRequest $pendingRequest): MockResponse => new FakeGatewayStreamMockResponse(
+    GatewayMockClient::destroyGlobal();
+    GatewayMockClient::global([
+        GenericGatewayStreamRequest::class => fn (GatewayPendingRequest $pendingRequest): GatewayMockResponse => new FakeGatewayStreamMockResponse(
             $httpClient->recordPendingRequest($pendingRequest),
         ),
     ]);
@@ -219,21 +219,21 @@ final class FakeGatewayStreamHttpClient implements ClientInterface
         private array $queue,
     ) {}
 
-    public function recordPendingRequest(PendingRequest $request): ResponseInterface
+    public function recordPendingRequest(GatewayPendingRequest $request): ResponseInterface
     {
         $headers = [];
-        $accept = $request->headers()->get('Accept');
+        $accept = $request->header('Accept');
 
         if (is_string($accept)) {
             $headers['Accept'] = $accept;
         }
 
         $this->requests[] = [
-            'method' => $request->getMethod()->value,
-            'uri' => $request->getUrl(),
+            'method' => $request->method(),
+            'uri' => $request->url(),
             'options' => [
                 'headers' => $headers,
-                'json' => $request->body()?->all() ?? [],
+                'json' => $request->body(),
             ],
         ];
 
@@ -287,7 +287,7 @@ final class FakeGatewayStreamHttpClient implements ClientInterface
     }
 }
 
-final class FakeGatewayStreamMockResponse extends MockResponse
+final class FakeGatewayStreamMockResponse extends GatewayMockResponse
 {
     public function __construct(
         private readonly ResponseInterface $response,
@@ -379,7 +379,7 @@ function fakeGatewayTextStream(string $body, int $status = 200): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
     app()->forgetInstance(FakeGatewayStreamHttpClient::class);
-    MockClient::destroyGlobal();
+    GatewayMockClient::destroyGlobal();
 
     Http::fake([
         'https://gateway.test/*' => Http::response($body, $status, [
@@ -401,7 +401,7 @@ function fakeGatewayDown(string $message = 'connection refused'): void
     app()->forgetInstance(GatewayOperationFollower::class);
     app()->forgetInstance(GatewayStreamClient::class);
     app()->forgetInstance(FakeGatewayStreamHttpClient::class);
-    MockClient::destroyGlobal();
+    GatewayMockClient::destroyGlobal();
 
     Http::fake(function () use ($message): never {
         throw new ConnectionException($message);

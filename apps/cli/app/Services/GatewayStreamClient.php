@@ -12,7 +12,7 @@ use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Sdk\Laravel\GatewayConnector;
 use Orbit\Sdk\Laravel\GatewayStreamTransport;
 use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
-use Saloon\Http\Faking\MockClient;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
 use Throwable;
 use ValueError;
 
@@ -172,7 +172,7 @@ final readonly class GatewayStreamClient
 
     private function shouldUseTestingHttpFallback(): bool
     {
-        return app()->runningUnitTests() && MockClient::getGlobal() === null;
+        return app()->runningUnitTests() && ! GatewayMockClient::hasGlobal();
     }
 
     private function normalizedBaseUrl(): string

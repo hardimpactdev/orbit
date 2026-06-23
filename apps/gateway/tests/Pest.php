@@ -20,9 +20,9 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\ParallelTesting;
 use Illuminate\Testing\ParallelRunner;
 use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayIdentityRequest;
-use Saloon\Http\Faking\MockClient;
-use Saloon\Http\Faking\MockResponse;
-use Saloon\Http\PendingRequest;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
+use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
+use Orbit\Sdk\Laravel\Testing\GatewayPendingRequest;
 use Tests\TestCase;
 
 (static function (): void {
@@ -146,15 +146,15 @@ function fakeGatewayIdentity(
     int $status = 200,
     array|string|null $rootCaBody = null,
     int $rootCaStatus = 200,
-): MockClient {
-    MockClient::destroyGlobal();
+): void {
+    GatewayMockClient::destroyGlobal();
 
-    return MockClient::global([
-        ShowGatewayIdentityRequest::class => MockResponse::make(
+    GatewayMockClient::global([
+        ShowGatewayIdentityRequest::class => GatewayMockResponse::make(
             $body ?? gatewayIdentityEnvelope(),
             $status,
         ),
-        'http://10.6.0.2/api/ca/root' => MockResponse::make(
+        'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make(
             $rootCaBody ?? gatewayCaEnvelope(),
             $rootCaStatus,
         ),
@@ -175,31 +175,31 @@ function gatewayCaEnvelope(string $pem = "-----BEGIN CERTIFICATE-----\nTEST\n---
     ];
 }
 
-function fakeGatewayCaRootThroughLaravelHttp(): MockClient
+function fakeGatewayCaRootThroughLaravelHttp(): void
 {
-    MockClient::destroyGlobal();
+    GatewayMockClient::destroyGlobal();
 
-    return MockClient::global([
-        'http://10.6.0.2/api/ca/root' => function (PendingRequest $request): MockResponse {
+    GatewayMockClient::global([
+        'http://10.6.0.2/api/ca/root' => function (GatewayPendingRequest $request): GatewayMockResponse {
             $response = Http::timeout(10)
                 ->withOptions(['allow_redirects' => false])
                 ->acceptJson()
-                ->get($request->getUrl());
+                ->get($request->url());
 
-            return MockResponse::make(
+            return GatewayMockResponse::make(
                 $response->body(),
                 $response->status(),
                 $response->headers(),
             );
         },
-        'https://10.6.0.2/api/ca/root' => function (PendingRequest $request): MockResponse {
+        'https://10.6.0.2/api/ca/root' => function (GatewayPendingRequest $request): GatewayMockResponse {
             $response = Http::timeout(10)
                 ->withOptions(['allow_redirects' => false])
                 ->withoutVerifying()
                 ->acceptJson()
-                ->get($request->getUrl());
+                ->get($request->url());
 
-            return MockResponse::make(
+            return GatewayMockResponse::make(
                 $response->body(),
                 $response->status(),
                 $response->headers(),

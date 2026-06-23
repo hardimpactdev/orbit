@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Services\Gateway\FetchGatewayRootCa;
-use Saloon\Http\Faking\MockClient;
-use Saloon\Http\Faking\MockResponse;
+use Orbit\Sdk\Laravel\Testing\GatewayMockClient;
+use Orbit\Sdk\Laravel\Testing\GatewayMockResponse;
 
 describe('FetchGatewayRootCa', function (): void {
     beforeEach(function (): void {
@@ -12,13 +12,13 @@ describe('FetchGatewayRootCa', function (): void {
     });
 
     afterEach(function (): void {
-        MockClient::destroyGlobal();
+        GatewayMockClient::destroyGlobal();
     });
 
     it('fetches root CA from gateway', function (): void {
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
-        MockClient::global([
-            'http://10.6.0.2/api/ca/root' => MockResponse::make([
+        GatewayMockClient::global([
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make([
                 'success' => [
                     'data' => [
                         'root_ca' => $pem,
@@ -36,9 +36,9 @@ describe('FetchGatewayRootCa', function (): void {
 
     it('follows same-host HTTPS redirect', function (): void {
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
-        MockClient::global([
-            'http://10.6.0.2/api/ca/root' => MockResponse::make('', 302, ['Location' => 'https://10.6.0.2/api/ca/root']),
-            'https://10.6.0.2/api/ca/root' => MockResponse::make([
+        GatewayMockClient::global([
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make('', 302, ['Location' => 'https://10.6.0.2/api/ca/root']),
+            'https://10.6.0.2/api/ca/root' => GatewayMockResponse::make([
                 'success' => [
                     'data' => [
                         'root_ca' => $pem,
@@ -53,8 +53,8 @@ describe('FetchGatewayRootCa', function (): void {
     });
 
     it('rejects empty CA response', function (): void {
-        MockClient::global([
-            'http://10.6.0.2/api/ca/root' => MockResponse::make('', 200),
+        GatewayMockClient::global([
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make('', 200),
         ]);
 
         expect(fn () => $this->fetcher->handle('10.6.0.2'))
@@ -62,8 +62,8 @@ describe('FetchGatewayRootCa', function (): void {
     });
 
     it('rejects non-PEM content', function (): void {
-        MockClient::global([
-            'http://10.6.0.2/api/ca/root' => MockResponse::make('not a pem', 200),
+        GatewayMockClient::global([
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make('not a pem', 200),
         ]);
 
         expect(fn () => $this->fetcher->handle('10.6.0.2'))
@@ -72,8 +72,8 @@ describe('FetchGatewayRootCa', function (): void {
 
     it('unwraps legacy data.root_ca envelope', function (): void {
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
-        MockClient::global([
-            'http://10.6.0.2/api/ca/root' => MockResponse::make([
+        GatewayMockClient::global([
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make([
                 'data' => [
                     'root_ca' => $pem,
                 ],
@@ -87,8 +87,8 @@ describe('FetchGatewayRootCa', function (): void {
 
     it('unwraps JSON-only payload with nested success.data.root_ca', function (): void {
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
-        MockClient::global([
-            'http://10.6.0.2/api/ca/root' => MockResponse::make(
+        GatewayMockClient::global([
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make(
                 json_encode(['success' => ['data' => ['root_ca' => $pem]]]),
                 200,
             ),

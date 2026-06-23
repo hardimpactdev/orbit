@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Gateway;
 
-use Orbit\Sdk\Laravel\GatewayConnector;
-use Orbit\Sdk\Laravel\Requests\Gateway\ShowGatewayCaRootRequest;
+use Orbit\Sdk\Laravel\GatewayResponse;
+use Orbit\Sdk\Laravel\GatewayRootCaClient;
 use RuntimeException;
-use Saloon\Http\Response;
 
 final readonly class FetchGatewayRootCa
 {
@@ -55,44 +54,15 @@ final readonly class FetchGatewayRootCa
         );
     }
 
-    private function fetchRootCa(string $gatewayIp): Response
+    private function fetchRootCa(string $gatewayIp): GatewayResponse
     {
-        $response = new GatewayConnector(
-            baseUrl: "http://{$gatewayIp}",
-            caPemPath: false,
-            timeout: self::TIMEOUT,
-        )->send(new ShowGatewayCaRootRequest);
-
-        if (! in_array($response->status(), [301, 302, 307, 308], true)) {
-            return $response;
-        }
-
-        $location = $response->header('Location');
-
-        if (! is_string($location) || ! $this->isSameGatewayCaLocation($location, $gatewayIp)) {
-            return $response;
-        }
-
-        return new GatewayConnector(
-            baseUrl: "https://{$gatewayIp}",
-            caPemPath: false,
-            timeout: self::TIMEOUT,
-        )->send(new ShowGatewayCaRootRequest);
-    }
-
-    private function isSameGatewayCaLocation(string $location, string $gatewayIp): bool
-    {
-        $parts = parse_url($location);
-
-        return ($parts['scheme'] ?? null) === 'https'
-            && ($parts['host'] ?? null) === $gatewayIp
-            && ($parts['path'] ?? null) === '/api/ca/root';
+        return new GatewayRootCaClient(self::TIMEOUT)->fetch($gatewayIp);
     }
 
     /**
      * @return array<string, mixed>|null
      */
-    private function decodeJsonBody(Response $response): ?array
+    private function decodeJsonBody(GatewayResponse $response): ?array
     {
         try {
             /** @var array<string, mixed> $decoded */
