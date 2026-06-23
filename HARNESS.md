@@ -45,13 +45,15 @@ Start at the monorepo root and read in this order:
 2. **`HARNESS.md`**: this file; repo harness anchor
 3. **`LOOP.md`**: how implementation signals become durable guardrails
 4. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
-5. **`.agents/skills/`**: domain procedures activated just-in-time per change
+5. **`harness-signals/`**: curated signal records to search for prior
+   occurrences, guardrail changes, and recurrence checks
+6. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
-6. **`apps/docs/content/`**: product authority (behavior contracts, not
+7. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-7. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+8. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-8. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
+9. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
    Rector, and E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product

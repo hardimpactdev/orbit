@@ -28,16 +28,22 @@ show agents are missing context. Product behavior contracts remain under
 
 1. **Capture**: record the exact signal: failing command, review comment,
    human correction, drift finding, or live-node symptom.
-2. **Triage**: decide whether it is one-off local work, a missing guardrail, or
+2. **Search**: check `harness-signals/` for similar prior signals before
+   treating the issue as new. If it reappeared, question whether the current
+   guardrail target is sufficient.
+3. **Triage**: decide whether it is one-off local work, a missing guardrail, or
    a product contract conflict.
-3. **Select Guardrail Target**: choose the smallest durable home for the
+4. **Record**: create or update a curated signal record in `harness-signals/`
+   when the signal is repeatable, high-cost, safety-critical, or evidence that
+   an existing guardrail failed. Do not record ordinary local noise.
+5. **Select Guardrail Target**: choose the smallest durable home for the
    lesson. Use `HARNESS_SIGNALS.md` as the signal-to-guardrail-target map.
-4. **Distill**: update the chosen guardrail target in the same worktree when it
+6. **Distill**: update the chosen guardrail target in the same worktree when it
    is part of the current change. Otherwise create a scoped follow-up.
-5. **Verify**: prove the guardrail now guides or blocks the issue with the
+7. **Verify**: prove the guardrail now guides or blocks the issue with the
    narrowest useful command or review check.
-6. **Report**: include the signal, chosen guardrail target, verification, and
-   any follow-up in the implementation report.
+8. **Report**: include the signal record, chosen guardrail target,
+   verification, and any follow-up in the implementation report.
 
 ## Guardrail Targets
 
@@ -47,6 +53,7 @@ show agents are missing context. Product behavior contracts remain under
 | `HARNESS.md` | The durable repo harness map changes. |
 | `LOOP.md` | The feedback-loop procedure changes. |
 | `HARNESS_SIGNALS.md` | A signal source or guardrail target decision changes. |
+| `harness-signals/` | A curated signal should remain searchable across worktrees. |
 | `.agents/skills/**` | A workflow, command family, verification lane, or role-specific procedure changes. |
 | `apps/docs/content/**` | Product behavior, operator-facing contracts, or authority docs change. |
 | Tests/static checks | The lesson can be enforced mechanically. |
@@ -58,6 +65,7 @@ Use this compact block when a session distills a signal:
 
 ```markdown
 Harness signal:
+- Record: <harness-signals/path.md, or none>
 - Source:
 - Missing context:
 - Guardrail target:
@@ -71,4 +79,4 @@ Harness signal:
 - Automated reviewer-persona matrix
 - Eval runner or `evalc/`
 - Customer workspace or fleet-operation harness
-- Logging every implementation event in this file
+- Logging every implementation event in this file or in `harness-signals/`

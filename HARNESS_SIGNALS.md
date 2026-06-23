@@ -21,7 +21,13 @@ should become guidance or enforcement.
 
 ## Guardrail Target Selection
 
+- Search `harness-signals/` before treating a durable signal as new. If a
+  related signal is already `guarded` and the issue reappears, mark or treat the
+  signal as `recurring` and evaluate whether the guardrail target needs to be
+  tightened.
 - Fix only the current diff when the signal is local and unlikely to recur.
+- Create or update a `harness-signals/` record when the signal should remain
+  searchable across worktrees.
 - Update a skill when the signal is about workflow, command usage, ownership,
   verification, or environment setup.
 - Update product docs when the signal changes or clarifies user-facing Orbit
@@ -37,6 +43,8 @@ should become guidance or enforcement.
 
 Every distilled signal needs evidence that the chosen guardrail target works:
 
+- Signal-ledger target: a searchable record under `harness-signals/` links the
+  source, recurrence status, guardrail target, and verification.
 - Documentation target: `git diff --check` and, when product docs changed,
   `composer docs-lint`.
 - Skill target: read the skill from the root discovery path and confirm the new

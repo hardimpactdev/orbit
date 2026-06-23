@@ -79,6 +79,7 @@ Read and follow:
 - HARNESS.md
 - LOOP.md
 - HARNESS_SIGNALS.md
+- harness-signals/README.md
 - .agents/skills/implementing-features/SKILL.md
 - relevant docs and tests named in the handoff
 
@@ -92,8 +93,9 @@ Rules:
 - Run the focused verification assigned to this slice.
 - Capture implementation signals as they appear. When a failure, review
   correction, docs conflict, or setup problem reveals missing durable context,
-  use LOOP.md and HARNESS_SIGNALS.md to select the smallest guardrail target.
-  Update it only when it belongs to this slice; otherwise report a scoped
+  search harness-signals/ for prior occurrences, then use LOOP.md and
+  HARNESS_SIGNALS.md to select the smallest guardrail target. Update or create
+  a signal record only when it belongs to this slice; otherwise report a scoped
   follow-up.
 - For CLI command changes, run or request the retained ingress VM
   Solo-terminal gate before durable E2E and report the topology id, terminal,
@@ -324,9 +326,10 @@ moving on to durable E2E.
    orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md`,
-   `HARNESS_SIGNALS.md`, `apps/docs/content/product-decisions.md`, relevant
-   product docs under `apps/docs/content/**`, and relevant session context
-   under `docs/superpowers/**`.
+   `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
+   `apps/docs/content/product-decisions.md`, relevant product docs under
+   `apps/docs/content/**`, and relevant session context under
+   `docs/superpowers/**`.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Grok delegation plan. Use one Grok worker unless the feature has
    disjoint slices with explicit file/domain ownership and merge order.
@@ -342,10 +345,11 @@ moving on to durable E2E.
    the Grok worker that owns the related behavior.
 9. For every failed verification, review comment, human correction, docs
    conflict, setup problem, or agent mistake encountered during the slice,
-   decide whether it is local cleanup or a durable harness signal. If it is
-   durable and belongs to the current slice, update the smallest guardrail
-   target in the same worktree. If it is durable but broader than the slice,
-   report a scoped follow-up instead of expanding ownership.
+   search `harness-signals/` for related prior records, then decide whether it
+   is local cleanup or a durable harness signal. If it is durable and belongs to
+   the current slice, create or update the signal record and update the smallest
+   guardrail target in the same worktree. If it is durable but broader than the
+   slice, report a scoped follow-up instead of expanding ownership.
 10. Check whether the project-owned Orbit skill under `skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
@@ -478,9 +482,10 @@ is not required after ordinary `composer test:e2e` runs.
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
 - Run the repo feedback loop from `LOOP.md` during the slice. Every signal does
-  not need a repository edit, but every durable signal needs either a guardrail
-  target update in this worktree or a scoped follow-up in the implementation
-  report. Do not use `LOOP.md` or `HARNESS_SIGNALS.md` as event logs.
+  not need a repository edit, but every durable signal needs either a curated
+  `harness-signals/` record plus a guardrail target update in this worktree, or
+  a scoped follow-up in the implementation report. Do not use `LOOP.md` or
+  `HARNESS_SIGNALS.md` as event logs.
 - Keep the project-owned Orbit skill in sync with product and implementation
   changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
   `skills/orbit/references/*.md` carries command-family detail. If a change
@@ -526,6 +531,7 @@ Orbit skill:
 
 Harness signals:
 Repeat this block for each durable signal, or write `none`.
+- Record: <harness-signals/path.md, follow-up path, or none>
 - Source: <signal source, or none>
 - Missing context: <context gap, or none>
 - Guardrail target: <updated target, follow-up target, or none>
