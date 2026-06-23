@@ -1,0 +1,55 @@
+# Orbit Loop State
+
+`LOOP.md` is local state for one active worktree. Copy this file to `LOOP.md`
+when a change is non-trivial, keep it updated while work is active, and do not
+commit the copy.
+
+## Current Goal
+
+<short objective>
+
+## Worktree / Branch
+
+- Worktree:
+- Branch:
+
+## Active Contract
+
+- Objective:
+- Out of scope:
+- Affected surface:
+- Stop predicates:
+- Failure exits:
+- Evidence required:
+- Reviewer required:
+- Human approval boundary:
+
+## Attempts
+
+- <attempt, command, or implementation path>
+
+## Failed Approaches
+
+- <what failed and why it should not be repeated>
+
+## Passed Checks
+
+- <command and result>
+
+## Next Action
+
+<one concrete next step>
+
+## Blockers
+
+- <blocker, owner, and unblock condition>
+
+## Evidence Links
+
+- <test output, retained topology id, Solo terminal/session, commit, or report>
+
+## Harness Signals
+
+- Searched:
+- Created or updated:
+- Deferred follow-up:

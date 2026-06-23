@@ -4,6 +4,7 @@
 .env.e2e
 .env.backup
 .env.production
+/LOOP.md
 .phpactor.json
 .phpunit.result.cache
 /.codex/*

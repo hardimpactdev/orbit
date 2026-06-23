@@ -77,7 +77,7 @@ Worktree:
 Read and follow:
 - AGENTS.md
 - HARNESS.md
-- LOOP.md
+- LOOP.md.example, then copy it to ignored LOOP.md for this active worktree
 - HARNESS_SIGNALS.md
 - harness-signals/README.md
 - .agents/skills/implementing-features/SKILL.md
@@ -343,10 +343,12 @@ moving on to durable E2E.
    implementation and proceed as orchestrator. Do not route through retired
    orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
-3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md`,
+3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
    `PRODUCT_DECISIONS.md`, relevant product docs under `apps/docs/content/**`,
-   and relevant session context under `docs/superpowers/**`.
+   and relevant session context under `docs/superpowers/**`. Copy
+   `LOOP.md.example` to ignored `LOOP.md` for the active worktree and fill the
+   goal contract before implementation.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Grok delegation plan. Use one Grok worker unless the feature has
    disjoint slices with explicit file/domain ownership and merge order.
@@ -505,12 +507,13 @@ is not required after ordinary `composer test:e2e` runs.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
-- Run the repo feedback loop from `LOOP.md` during the slice. Every signal does
-  not need a repository edit, but every durable signal needs either a curated
-  `harness-signals/` record plus a guardrail target update in this worktree, or
-  a scoped follow-up in the implementation report. Do not use `LOOP.md` or
-  `HARNESS_SIGNALS.md` as event logs. Curate stale or noisy signal records when
-  they are in the owned scope; otherwise report a focused curation follow-up.
+- Run the repo feedback loop from ignored `LOOP.md` during the slice, creating
+  it from `LOOP.md.example` when needed. Every signal does not need a repository
+  edit, but every durable signal needs either a curated `harness-signals/` record
+  plus a guardrail target update in this worktree, or a scoped follow-up in the
+  implementation report. Do not use `LOOP.md` or `HARNESS_SIGNALS.md` as event
+  logs. Curate stale or noisy signal records when they are in the owned scope;
+  otherwise report a focused curation follow-up.
 - Keep the project-owned Orbit skill in sync with product and implementation
   changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
   `skills/orbit/references/*.md` carries command-family detail. If a change
