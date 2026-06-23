@@ -83,6 +83,30 @@ it('flushes output buffers under fpm-fcgi, cli-server, and frankenphp sapi', fun
         ->and($flushedOutput)->toContain('"status":"done"');
 })->with(['fpm-fcgi', 'cli-server', 'frankenphp']);
 
+it('sends a buffering prelude before streamed events under frankenphp', function (): void {
+    $response = (new ProgressEventStreamResponseFactory('frankenphp'))->make(function (): void {
+        app(ProgressReporter::class)->tree('Test', [['key' => 'step', 'label' => 'Step']]);
+    });
+
+    $flushedOutput = '';
+
+    ob_start(function (string $chunk) use (&$flushedOutput): string {
+        $flushedOutput .= $chunk;
+
+        return '';
+    });
+
+    try {
+        $response->sendContent();
+    } finally {
+        ob_end_clean();
+    }
+
+    expect($flushedOutput)
+        ->toStartWith(': ')
+        ->and(strpos($flushedOutput, "event: tree\n"))->toBeGreaterThan(4096);
+});
+
 it('skips buffer flush under cli sapi', function (): void {
     $response = (new ProgressEventStreamResponseFactory('cli'))->make(function (): void {
         $reporter = app(ProgressReporter::class);
