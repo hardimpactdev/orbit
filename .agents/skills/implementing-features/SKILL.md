@@ -334,10 +334,18 @@ For CLI changes, use this ordering:
    terminal should land at `/home/orbit/orbit-run` inside the VM so the user can
    watch progress, spinners, blinking indicators, prompts, and streaming output
    while the command runs.
-8. Prove the observed human output, JSON output, prompts, failure paths, and
+8. Run or request CLI reviewer PTY frame analysis from the same runtime context
+   before asking the user to inspect human UX/output. For retained Incus proof,
+   prefer running the capture script inside the Solo terminal shell attached to
+   the target VM. The reviewer inspects `summary.txt`, `chunks.jsonl`, and
+   `transcript.txt` for cadence, liveness, skipped frames, wrapping, ANSI
+   framing, and final shape.
+9. Prove the observed human output, JSON output, prompts, failure paths, and
    side effects that changed.
-9. Give the user a chance to inspect and confirm the VM-observed CLI behavior.
-10. Only then run durable E2E and any broader quality or release-candidate flow.
+10. Give the user a chance to inspect and confirm the VM-observed CLI behavior
+    only after the reviewer has summarized the PTY confidence basis or exact
+    remaining mismatch.
+11. Only then run durable E2E and any broader quality or release-candidate flow.
 
 Do not spend the live topology or release-candidate path on a CLI change before
 this retained VM proof and user verification point. Do not treat retained Incus
@@ -480,10 +488,13 @@ moving on to durable E2E.
 13. Keep the smallest working vertical slice that makes the tests pass.
 14. For CLI command behavior, ensure durable E2E coverage has been created or
     updated for the integrated behavior, then run the retained ingress VM
-    Solo-terminal gate from this worktree before durable E2E. Give the user a
-    chance to inspect the VM-observed CLI behavior before any
-    live/release-candidate deployment. If this cannot be completed, report the
-    blocker explicitly instead of widening the release path.
+    Solo-terminal gate from this worktree before durable E2E. For human
+    rendering, progress, prompts, or streaming output, run CLI reviewer PTY
+    frame analysis before user inspection. Give the user a chance to inspect the
+    VM-observed CLI behavior only after the reviewer has summarized the
+    confidence basis or blocker, and before any live/release-candidate
+    deployment. If this cannot be completed, report the blocker explicitly
+    instead of widening the release path.
 15. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
@@ -688,6 +699,8 @@ Verification:
 - `php artisan test --compact`: <result>
 - Retained CLI ingress VM Solo-terminal check: <topology id, instance,
   terminal/session, command results, or not applicable>
+- PTY frame analysis before user review: <artifact paths, launcher, exit code,
+  max idle gap, cadence/transcript finding, or not applicable>
 - User CLI verification: <confirmed, pending, blocked, or not applicable>
 - `composer test:e2e` (or the appropriate ephemeral lane): <result>
 - `composer quality-check`: <result>

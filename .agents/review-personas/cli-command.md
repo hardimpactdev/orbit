@@ -83,7 +83,12 @@ Require PTY capture evidence when the change fixes or risks:
 - reported freezes, long idle gaps, skipped frames, or buffering
 - human renderer behavior that automated text assertions cannot represent
 
-Use:
+The reviewer must either run the PTY capture or inspect artifacts produced in
+the same runtime context before asking the user for UX/output review. The user
+inspection step is confirmation; it is not the first serious rendering check.
+
+Use from the relevant runtime context. For retained Incus proof, prefer running
+inside the Solo terminal shell that is already attached to the target VM:
 
 ```bash
 python3 .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py \
@@ -94,9 +99,10 @@ python3 .agents/skills/cli-output-pty-capture/scripts/capture_pty_frames.py \
 ```
 
 Review `summary.txt` for exit code, duration, maximum idle gap, and artifact
-paths. Review `chunks.jsonl` when cadence matters; visible indicator changes
-for a 300ms blinker should usually be near 0.30s apart, allowing normal
-scheduler noise. Review `transcript.txt` for the final human shape. Use the
+paths. Review `chunks.jsonl` for cadence, liveness, skipped frames, and delayed
+first output; visible indicator changes for a 300ms blinker should usually be
+near 0.30s apart, allowing normal scheduler noise. Review `transcript.txt` for
+final human shape, wrapping, ANSI framing, and missing progress states. Use the
 source checkout launcher (`./apps/cli/orbit` from `/home/orbit/orbit-run`) for
 source-mounted retained topology proof, unless the report proves
 `/usr/local/bin/orbit` resolves to that source checkout. Use the installed
@@ -139,6 +145,10 @@ behavior.
 - Retained Solo-terminal proof for human rendering starts from a VM shell prompt
   inside the target VM; host-wrapped one-shot `incus exec` output is not enough
   when in-progress rendering is part of the contract.
+- Before asking the user to inspect CLI UX/output, the reviewer has run or
+  inspected PTY frame artifacts from the same runtime context and summarized the
+  confidence basis: command, launcher, exit code, max idle gap, relevant cadence
+  observations, transcript shape, and any downgrade from ideal runtime context.
 - Live topology mutation, release-candidate deployment, tagging, publishing, or
   merge/push beyond the agreed step has explicit human approval.
 - Failed E2E output is classified before blame: provider pool, auth, bootstrap,
@@ -168,6 +178,7 @@ Use this shape:
 
 - Tests:
 - PTY artifacts:
+- PTY analysis before user inspection:
 - E2E/live proof:
 - JSON samples:
 ```
