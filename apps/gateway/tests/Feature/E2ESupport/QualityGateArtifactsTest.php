@@ -599,6 +599,8 @@ it('documents quality gate artifact and analyzer commands', function (): void {
         ->toContain('composer quality-gate:analyze')
         ->toContain('composer quality-gate:final-check')
         ->toContain('composer quality-check:fix')
+        ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
+        ->toContain('Queue time is reflected in the aggregate gate')
         ->toContain('warning-only');
 });
 

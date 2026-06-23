@@ -66,8 +66,8 @@ it('reports command docs lint severities in agent format', function (): void {
 it('keeps the aggregate quality gate complete', function (): void {
     $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
 
-    // The gate fans out docs-lint, phpstan, rector, and pint concurrently while
-    // the default Pest suite runs in parallel through `bin/quality-check.sh`.
+    // The gate keeps every subgate but caps background fan-out so local
+    // runner contention does not distort the Pest lanes unnecessarily.
     expect($composer['scripts']['quality-check'])->toBe([
         'Composer\\Config::disableProcessTimeout',
         'bin/quality-check.sh',
@@ -77,6 +77,9 @@ it('keeps the aggregate quality gate complete', function (): void {
 
     expect($script)
         ->toContain('librarian:lint')
+        ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
+        ->toContain('quality_check_default_max_background_jobs')
+        ->toContain('wait_for_bg_slot')
         ->toContain('--path=testing')
         ->toContain('--group=references')
         ->toContain('phpstan analyse')

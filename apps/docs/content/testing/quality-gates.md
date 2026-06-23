@@ -18,6 +18,17 @@ Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
 default Pest suite across each app and package.
 
+The wrapper caps background fan-out by default so local runner contention does
+not inflate the long Pest lane timings unnecessarily. The cap is derived from
+the detected logical CPU count and only changes scheduling; every subgate still
+runs and still contributes to the final exit code. For a one-off diagnostic,
+override it with `ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=<n> composer
+quality-check`.
+
+Subgate durations start when the actual subgate command starts, after any
+background-slot queue wait. Queue time is reflected in the aggregate gate
+duration, not in the individual `subgate_durations` values.
+
 `composer quality-check`, `composer quality-check:fix`, and E2E lanes that run
 against the prepared source checkout write local timing artifacts under
 `.orbit/quality-gates/`. The `:fix` lane records the same evidence shape with

@@ -2,10 +2,10 @@
 
 # Parallelized quality gate for Orbit.
 #
-# Static checks (docs-lint, phpstan, rector, pint) run concurrently in the
-# background while the Pest suite runs in the foreground. Each background
-# job writes to its own log file so output stays readable, and the gate
-# exits non-zero if any single check failed.
+# Static checks (docs-lint, phpstan, rector, pint) run concurrently in a
+# capped background pool while Pest lanes run alongside them. Each background
+# job writes to its own log file so output stays readable, and the gate exits
+# non-zero if any single check failed.
 #
 # Defaults are read-only (rector --dry-run, pint --test). Pass
 # `--fix` to apply rector + pint changes the same way the legacy
@@ -46,6 +46,41 @@ if [ "$FIX_MODE" -eq 1 ]; then
     PINT_ARGS=("--format=agent")
 fi
 
+quality_check_default_max_background_jobs() {
+    local detected_jobs
+
+    detected_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.logicalcpu 2>/dev/null || echo 8)"
+
+    if ! [[ "$detected_jobs" =~ ^[0-9]+$ ]] || [ "$detected_jobs" -lt 1 ]; then
+        echo 4
+        return
+    fi
+
+    if [ "$detected_jobs" -le 4 ]; then
+        echo 2
+        return
+    fi
+
+    echo $((detected_jobs / 2))
+}
+
+DEFAULT_MAX_BACKGROUND_JOBS="$(quality_check_default_max_background_jobs)"
+MAX_BACKGROUND_JOBS="${ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS:-$DEFAULT_MAX_BACKGROUND_JOBS}"
+
+if ! [[ "$MAX_BACKGROUND_JOBS" =~ ^[0-9]+$ ]] || [ "$MAX_BACKGROUND_JOBS" -lt 1 ]; then
+    MAX_BACKGROUND_JOBS="$DEFAULT_MAX_BACKGROUND_JOBS"
+fi
+
+running_bg_jobs() {
+    jobs -pr | wc -l | tr -d '[:space:]'
+}
+
+wait_for_bg_slot() {
+    while [ "$(running_bg_jobs)" -ge "$MAX_BACKGROUND_JOBS" ]; do
+        sleep 0.2
+    done
+}
+
 record_subgate_start() {
     local label="$1"
     php -r 'file_put_contents($argv[1], (string) microtime(true));' "$LOG_DIR/$label.start"
@@ -77,6 +112,7 @@ run_bg() {
     local label="$1"
     shift
     local log="$LOG_DIR/$label.log"
+    wait_for_bg_slot
     record_subgate_start "$label"
     ( "$@" >"$log" 2>&1; code="$?"; record_subgate_duration "$label"; echo "$code" >"$LOG_DIR/$label.exit"; exit "$code" ) &
     eval "${label}_PID=$!"
