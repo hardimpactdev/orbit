@@ -9,6 +9,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Fakes\SiteCertificateInstallerFake;
@@ -16,6 +17,19 @@ use Tests\Fakes\SiteCertificateInstallerFake;
 uses(RefreshDatabase::class);
 
 const APP_STORE_CALLER_WG_IP = '10.6.0.77';
+
+beforeEach(function (): void {
+    app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    app()->instance(OrbitCaService::class, new AppStoreControllerTestCa);
+});
+
+final readonly class AppStoreControllerTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
 
 function createAppStoreCallerNode(array $overrides = []): Node
 {
@@ -64,8 +78,6 @@ describe('AppStoreController', function (): void {
 
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
-        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
-        app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
         $response = $this->call('POST', '/api/apps', [
             'name' => 'docs',
@@ -79,13 +91,69 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
             ->assertJsonPath('success.data.app.php_version', '8.4')
-            ->assertJsonPath('success.data.app.runtime_kind', 'php')
+            ->assertJsonPath('success.data.app.runtime', 'php')
+            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http')
             ->assertJsonPath('success.data.app.worker_enabled', false)
             ->assertJsonPath('success.data.app.worker_config', null)
             ->assertJsonPath('success.meta.warnings', []);
 
         expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->runs)->toHaveCount(8);
+            ->and(collect($remoteShell->runs)->pluck('script')->contains(fn (string $script): bool => str_contains($script, '/etc/orbit/ca/root.crt')))->toBeFalse();
+    });
+
+    it('stores the opt-in HTTPS runtime proxy transport for new apps', function (): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        app()->instance(RemoteShell::class, new AppStoreRecordingRemoteShell);
+
+        $response = $this->call('POST', '/api/apps', [
+            'name' => 'docs',
+            'node' => 'app-1',
+            'root' => 'public',
+            'php_version' => '8.4',
+            'runtime_proxy_transport' => 'https',
+        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.app.runtime', 'php')
+            ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'https');
+
+        expect(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
+            ->toBe(['proxy_transport' => 'https']);
+    });
+
+    it('rejects invalid runtime proxy transport values before creating the app', function (): void {
+        $caller = createAppStoreCallerNode();
+        $targetNode = Node::factory()->create([
+            'name' => 'app-1',
+            'tld' => 'test',
+            'status' => 'active',
+        ]);
+        assignAppStoreRole($targetNode, 'app-dev', settings: ['tld' => 'test']);
+        grantAppStoreAccess($caller, $targetNode);
+
+        $remoteShell = new AppStoreRecordingRemoteShell;
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/apps', [
+            'name' => 'docs',
+            'node' => 'app-1',
+            'runtime_proxy_transport' => 'ftp',
+        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(400)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'runtime_proxy_transport');
+
+        expect(App::query()->count())->toBe(0)
+            ->and($remoteShell->runs)->toBe([]);
     });
 
     it('rejects app creation when the caller lacks app:new on the target app node', function (): void {

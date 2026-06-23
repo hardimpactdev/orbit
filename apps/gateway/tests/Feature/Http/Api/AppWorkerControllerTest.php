@@ -69,7 +69,7 @@ describe('AppWorkerController', function (): void {
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('GET', '/api/apps/docs/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -87,7 +87,7 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -109,7 +109,7 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php]);
         bindWorkerControllerShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
 
@@ -129,7 +129,7 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
             'worker_enabled' => true,
             'worker_config' => ['workers' => 'auto', 'max_requests' => 500]]);
         bindWorkerControllerShell();
@@ -149,7 +149,7 @@ describe('AppWorkerController', function (): void {
         $caller = createWorkerControllerCaller();
         $node = createTestAppHostNode(['name' => 'app-1', 'host' => '10.6.0.7']);
         grantWorkerAccess($caller, $node, ['app:read']);
-        App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime_kind' => AppRuntimeKind::Php]);
+        App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
@@ -180,11 +180,11 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'alpha',
             'domain' => 'docs.example.com',
-            'runtime_kind' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php]);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs.example.com',
             'domain' => 'other.example.com',
-            'runtime_kind' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
         $response = $this->call('GET', '/api/apps/docs.example.com/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);

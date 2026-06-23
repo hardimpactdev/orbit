@@ -70,6 +70,7 @@ describe('app write commands', function (): void {
                 'root' => 'public',
                 'php_version' => '8.5',
                 'domain' => 'docs.example.com',
+                'runtime_proxy_transport' => 'http',
             ]);
 
         expect($exitCode)->toBe(0)
@@ -92,6 +93,7 @@ describe('app write commands', function (): void {
             '--root' => 'public',
             '--php-version' => '8.5',
             '--domain' => 'docs.example.com',
+            '--runtime-proxy-transport' => 'https',
             '--json' => true,
         ]);
 
@@ -106,10 +108,31 @@ describe('app write commands', function (): void {
                 'root' => 'public',
                 'php_version' => '8.5',
                 'domain' => 'docs.example.com',
+                'runtime_proxy_transport' => 'https',
             ]);
 
         expect($exitCode)->toBe(0)
             ->and($decoded['success']['data']['result']['action'])->toBe('adopted');
+    });
+
+    it('omits app:register runtime proxy transport unless it is explicit', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'result' => ['action' => 'converged'],
+            'app' => ['name' => 'docs', 'node' => 'app-1'],
+        ]));
+
+        [$exitCode] = runCommand($this, 'app:register', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            '--path' => '/home/orbit/apps/docs',
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/apps/register'
+            && ! array_key_exists('runtime_proxy_transport', $request->data()));
+
+        expect($exitCode)->toBe(0);
     });
 
     it('validates required app:register inputs before gateway IO', function (): void {

@@ -797,6 +797,7 @@ CADDY);
             // Renderer must derive runtime_upstream from the app identity
             // so legacy routes do not throw before ProxyRouteFixer can repair.
             ->and($content)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+            ->and($content)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             // App routes never revert to php_fastcgi under the Docker-first model.
             ->and($content)->not->toContain('php_fastcgi')
             // file_server is reserved for static apps.
@@ -863,6 +864,45 @@ CADDY);
             ->and($content)->not->toContain('reverse_proxy');
     });
 
+    it('renders app-dev PHP routes through HTTPS runtime upstreams with gateway CA transport', function (): void {
+        $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/nckrtl/apps/docs/public',
+                    'runtime_upstream' => 'https://orbit-app-docs:8443',
+                    'runtime_upstream_tls' => [
+                        'trusted_by_gateway_ca' => true,
+                        'ca_path' => '/etc/orbit/ca/root.crt',
+                        'server_name' => 'docs.test',
+                    ],
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/home/nckrtl/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/nckrtl/.config/orbit/certs/docs.test.key',
+                    ],
+                ],
+            ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toContain('docs.test {')
+            ->and($content)->toContain('reverse_proxy https://orbit-app-docs:8443')
+            ->and($content)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($content)->toContain('tls_server_name docs.test')
+            ->and($content)->not->toContain('php_fastcgi')
+            ->and($content)->not->toContain('file_server');
+    });
+
     it('renders workspace PHP routes as reverse_proxy to the FrankenPHP runtime container', function (): void {
         $node = createTestAppHostNode();
         $app = App::factory()->for($node, 'node')->create([
@@ -923,6 +963,7 @@ CADDY);
 
         expect($content)->toContain('feature-a.legacy-docs.test {')
             ->and($content)->toContain('reverse_proxy http://orbit-ws-legacy-docs-feature-a')
+            ->and($content)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
             ->and($content)->not->toContain('php_fastcgi')
             ->and($content)->not->toContain('file_server');
     });

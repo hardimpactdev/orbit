@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Laravel;
 
+use Orbit\Sdk\Laravel\Requests\GenericGatewayStreamRequest;
 use Psr\Http\Message\StreamInterface;
 use RuntimeException;
 use Saloon\Http\Response;
@@ -11,15 +12,35 @@ use Throwable;
 
 final readonly class GatewayStreamTransport
 {
+    private const int DEFAULT_IDLE_INTERVAL_MICROSECONDS = 300_000;
+
+    private const int ERROR_BODY_TAIL_BYTES = 65536;
+
     public function __construct(
         private GatewayConnector $connector,
+        private bool $preferCurl = false,
     ) {}
 
     /**
      * @param  callable(string, array<string, mixed>): void  $onEvent
      */
-    public function events(GatewayStreamRequest $request, callable $onEvent, string $unavailableMessage, int $defaultExitCode = 1, bool $requireTerminalFrame = false): int|GatewayApiException
-    {
+    public function events(
+        GatewayStreamRequest $request,
+        callable $onEvent,
+        string $unavailableMessage,
+        int $defaultExitCode = 1,
+        bool $requireTerminalFrame = false,
+        ?callable $onIdle = null,
+        int $idleIntervalMicroseconds = self::DEFAULT_IDLE_INTERVAL_MICROSECONDS,
+    ): int|GatewayApiException {
+        if ($this->preferCurl && $request instanceof GenericGatewayStreamRequest && function_exists('curl_init') && function_exists('curl_multi_init')) {
+            try {
+                return $this->eventsWithCurl($request, $onEvent, $defaultExitCode, $requireTerminalFrame, $onIdle, $idleIntervalMicroseconds);
+            } catch (GatewayApiException $exception) {
+                return $exception;
+            }
+        }
+
         $response = $this->send($request, $unavailableMessage);
 
         if ($response instanceof GatewayApiException) {
@@ -27,7 +48,14 @@ final readonly class GatewayStreamTransport
         }
 
         try {
-            return $this->consumeEvents($response->stream(), $onEvent, $defaultExitCode, $requireTerminalFrame);
+            return $this->consumeEvents(
+                $response->stream(),
+                $onEvent,
+                $defaultExitCode,
+                $requireTerminalFrame,
+                $onIdle,
+                $idleIntervalMicroseconds,
+            );
         } catch (GatewayApiException $exception) {
             return $exception;
         }
@@ -81,14 +109,20 @@ final readonly class GatewayStreamTransport
     /**
      * @param  callable(string, array<string, mixed>): void  $onEvent
      */
-    private function consumeEvents(StreamInterface $body, callable $onEvent, int $defaultExitCode, bool $requireTerminalFrame): int
-    {
+    private function consumeEvents(
+        StreamInterface $body,
+        callable $onEvent,
+        int $defaultExitCode,
+        bool $requireTerminalFrame,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): int {
         $buffer = '';
         $exitCode = $defaultExitCode;
 
         while (! $body->eof()) {
             try {
-                $chunk = $body->read(1);
+                $chunk = $this->readStream($body, 1, $onIdle, $idleIntervalMicroseconds);
             } catch (RuntimeException $exception) {
                 throw new GatewayApiException(
                     message: 'Gateway stream closed before a terminal frame.',
@@ -99,8 +133,6 @@ final readonly class GatewayStreamTransport
             }
 
             if ($chunk === '') {
-                usleep(50_000);
-
                 continue;
             }
 
@@ -144,6 +176,210 @@ final readonly class GatewayStreamTransport
         }
 
         return $exitCode;
+    }
+
+    /**
+     * @param  callable(string, array<string, mixed>): void  $onEvent
+     */
+    private function eventsWithCurl(
+        GenericGatewayStreamRequest $request,
+        callable $onEvent,
+        int $defaultExitCode,
+        bool $requireTerminalFrame,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): int {
+        $curl = curl_init($this->absoluteUrl($request));
+
+        if ($curl === false) {
+            throw $this->unavailable('Unable to initialize gateway progress stream.');
+        }
+
+        $multi = curl_multi_init();
+
+        $frameBuffer = '';
+        $bodyTail = '';
+        $terminal = null;
+        $failure = null;
+        $statusCode = 0;
+        $body = json_encode($request->payload(), JSON_THROW_ON_ERROR);
+
+        curl_setopt_array($curl, [
+            CURLOPT_CONNECTTIMEOUT => $this->connector->timeout(),
+            CURLOPT_HEADER => false,
+            CURLOPT_HEADERFUNCTION => function ($curl, string $header) use (&$statusCode): int {
+                if (preg_match('/^HTTP\/\S+\s+(\d{3})\b/', trim($header), $matches) === 1) {
+                    $statusCode = (int) $matches[1];
+                }
+
+                return strlen($header);
+            },
+            CURLOPT_HTTPHEADER => [
+                'Accept: text/event-stream',
+                'Content-Type: application/json',
+            ],
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_TIMEOUT => 0,
+            CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use (
+                &$frameBuffer,
+                &$bodyTail,
+                &$terminal,
+                &$failure,
+                &$statusCode,
+                $onEvent,
+                $defaultExitCode,
+            ): int {
+                $bodyTail = $this->appendBodyTail($bodyTail, $chunk);
+
+                if ($statusCode >= 400 || $terminal !== null) {
+                    return strlen($chunk);
+                }
+
+                try {
+                    $frameBuffer .= $chunk;
+                    $terminal = $this->processCompleteFrames($frameBuffer, $onEvent, $defaultExitCode);
+                } catch (Throwable $exception) {
+                    $failure = $exception;
+
+                    return 0;
+                }
+
+                return strlen($chunk);
+            },
+        ]);
+
+        if (strtolower($request->methodName()) === 'delete') {
+            curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        } else {
+            curl_setopt($curl, CURLOPT_POST, true);
+        }
+
+        $caPemPath = $this->connector->caPemPath();
+
+        if (is_string($caPemPath) && $caPemPath !== '' && is_file($caPemPath)) {
+            curl_setopt($curl, CURLOPT_CAINFO, $caPemPath);
+        }
+
+        curl_multi_add_handle($multi, $curl);
+
+        try {
+            $running = null;
+
+            do {
+                do {
+                    $multiStatus = curl_multi_exec($multi, $running);
+                } while ($multiStatus === CURLM_CALL_MULTI_PERFORM);
+
+                if ($multiStatus !== CURLM_OK) {
+                    throw $this->unavailable(curl_multi_strerror($multiStatus));
+                }
+
+                if ($failure instanceof Throwable || $terminal !== null) {
+                    break;
+                }
+
+                if ($running > 0) {
+                    if ($onIdle !== null) {
+                        $onIdle();
+                    }
+
+                    if (curl_multi_select($multi, 0.0) === -1) {
+                        usleep(250);
+                    }
+
+                    usleep($idleIntervalMicroseconds);
+                }
+            } while ($running > 0);
+
+            if ($failure instanceof Throwable) {
+                throw $failure;
+            }
+
+            $curlErrorNumber = curl_errno($curl);
+
+            if ($curlErrorNumber !== 0) {
+                throw $this->unavailable(curl_error($curl));
+            }
+
+            $resolvedStatusCode = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+
+            if ($resolvedStatusCode > 0) {
+                $statusCode = $resolvedStatusCode;
+            }
+
+            if ($statusCode >= 400) {
+                throw new GatewayApiException(
+                    message: "Gateway stream returned HTTP {$statusCode}.",
+                    errorCode: 'http_error',
+                    errorMeta: [],
+                    errorData: [
+                        'status' => $statusCode,
+                        'body' => $bodyTail,
+                    ],
+                );
+            }
+
+            if ($terminal !== null) {
+                return $terminal;
+            }
+
+            $rawFrame = trim($frameBuffer);
+
+            if ($rawFrame !== '') {
+                $event = $this->parseFrame($rawFrame);
+
+                if ($event !== null) {
+                    $exitCode = $this->dispatchEvent($event, $onEvent, $defaultExitCode);
+
+                    if ($exitCode !== null) {
+                        return $exitCode;
+                    }
+                }
+            }
+
+            if ($requireTerminalFrame) {
+                throw new GatewayApiException(
+                    message: 'Gateway stream closed before a terminal frame.',
+                    errorCode: 'stream_closed_before_terminal',
+                    errorMeta: [],
+                );
+            }
+
+            return $defaultExitCode;
+        } finally {
+            curl_multi_remove_handle($multi, $curl);
+            curl_multi_close($multi);
+        }
+    }
+
+    /**
+     * @param  callable(string, array<string, mixed>): void  $onEvent
+     */
+    private function processCompleteFrames(string &$frameBuffer, callable $onEvent, int $defaultExitCode): ?int
+    {
+        while (($position = $this->findFrameEnd($frameBuffer)) !== false) {
+            $rawFrame = substr($frameBuffer, 0, $position);
+            $frameBuffer = ltrim(substr($frameBuffer, $position), "\r\n");
+
+            if (trim($rawFrame) === '') {
+                continue;
+            }
+
+            $event = $this->parseFrame($rawFrame);
+
+            if ($event === null) {
+                continue;
+            }
+
+            $exitCode = $this->dispatchEvent($event, $onEvent, $defaultExitCode);
+
+            if ($exitCode !== null) {
+                return $exitCode;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -207,6 +443,128 @@ final readonly class GatewayStreamTransport
         }
 
         return [$event, $payload];
+    }
+
+    private function readStream(StreamInterface $body, int $maxBytes, ?callable $onIdle, int $idleIntervalMicroseconds): string
+    {
+        if ($onIdle === null) {
+            return $body->read($maxBytes);
+        }
+
+        $resource = $body->getMetadata('stream');
+
+        if (! is_resource($resource) || get_resource_type($resource) !== 'stream') {
+            return $this->readStreamWithIdlePolling($body, $maxBytes, $onIdle, $idleIntervalMicroseconds);
+        }
+
+        while (! $body->eof()) {
+            $read = [$resource];
+            $write = null;
+            $except = null;
+            $seconds = intdiv($idleIntervalMicroseconds, 1_000_000);
+            $microseconds = $idleIntervalMicroseconds % 1_000_000;
+
+            set_error_handler(static fn (): bool => true);
+
+            try {
+                $ready = stream_select($read, $write, $except, $seconds, $microseconds);
+            } catch (\ValueError|\TypeError) {
+                return $this->readStreamWithIdlePolling($body, $maxBytes, $onIdle, $idleIntervalMicroseconds);
+            } finally {
+                restore_error_handler();
+            }
+
+            if ($ready === false || $ready === 0) {
+                $onIdle();
+
+                continue;
+            }
+
+            $chunk = $this->readReadyStreamChunk($resource, $maxBytes);
+
+            if ($chunk !== '') {
+                return $chunk;
+            }
+
+            $onIdle();
+        }
+
+        return '';
+    }
+
+    private function readReadyStreamChunk(mixed $resource, int $maxBytes): string
+    {
+        if (! is_resource($resource) || get_resource_type($resource) !== 'stream') {
+            return '';
+        }
+
+        $metadata = stream_get_meta_data($resource) + ['blocked' => false];
+        $restoreBlocking = $metadata['blocked'] === true;
+
+        stream_set_blocking($resource, false);
+
+        try {
+            $chunk = fread($resource, max(1, $maxBytes));
+
+            return $chunk === false ? '' : $chunk;
+        } finally {
+            if ($restoreBlocking && is_resource($resource)) {
+                stream_set_blocking($resource, true);
+            }
+        }
+    }
+
+    private function readStreamWithIdlePolling(StreamInterface $body, int $maxBytes, callable $onIdle, int $idleIntervalMicroseconds): string
+    {
+        while (! $body->eof()) {
+            $chunk = $body->read($maxBytes);
+
+            if ($chunk !== '') {
+                return $chunk;
+            }
+
+            $onIdle();
+            usleep($idleIntervalMicroseconds);
+        }
+
+        return '';
+    }
+
+    private function absoluteUrl(GenericGatewayStreamRequest $request): string
+    {
+        return rtrim($this->connector->resolveBaseUrl(), '/').'/'.ltrim($request->resolveEndpoint(), '/');
+    }
+
+    private function appendBodyTail(string $tail, string $chunk): string
+    {
+        if (strlen($chunk) >= self::ERROR_BODY_TAIL_BYTES) {
+            return substr($chunk, -self::ERROR_BODY_TAIL_BYTES);
+        }
+
+        $tail .= $chunk;
+
+        if (strlen($tail) <= self::ERROR_BODY_TAIL_BYTES) {
+            return $tail;
+        }
+
+        return substr($tail, -self::ERROR_BODY_TAIL_BYTES);
+    }
+
+    private function findFrameEnd(string $buffer): int|false
+    {
+        $position = strpos($buffer, "\n\n");
+
+        if ($position !== false) {
+            return $position + 2;
+        }
+
+        $position = strpos($buffer, "\r\n\r\n");
+
+        if ($position !== false) {
+            return $position + 4;
+        }
+
+        return false;
     }
 
     private function unavailable(string $message, ?string $reason = null, ?Throwable $previous = null): GatewayApiException

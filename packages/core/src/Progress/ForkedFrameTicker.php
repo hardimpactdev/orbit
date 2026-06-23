@@ -25,6 +25,8 @@ final class ForkedFrameTicker
 
     private static float $lastInvokedAt = 0.0;
 
+    private static int $forkingSuppressionDepth = 0;
+
     private ?int $pid = null;
 
     private bool $usesIdleCallback = false;
@@ -60,6 +62,23 @@ final class ForkedFrameTicker
         (self::$idleCallback)();
     }
 
+    /**
+     * @template TReturn
+     *
+     * @param  callable(): TReturn  $callback
+     * @return TReturn
+     */
+    public static function withoutForking(callable $callback): mixed
+    {
+        self::$forkingSuppressionDepth++;
+
+        try {
+            return $callback();
+        } finally {
+            self::$forkingSuppressionDepth--;
+        }
+    }
+
     public function start(callable $onTick): void
     {
         $this->stop();
@@ -68,6 +87,10 @@ final class ForkedFrameTicker
         self::$idleCallback = $onTick;
         self::$lastInvokedAt = 0.0;
         $this->usesIdleCallback = true;
+
+        if (self::$forkingSuppressionDepth > 0) {
+            return;
+        }
 
         if (! $this->canFork()) {
             return;

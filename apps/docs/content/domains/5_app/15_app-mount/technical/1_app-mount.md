@@ -112,7 +112,7 @@ failures below.
 | Validation failed (source) | `add` is missing `source`, or `source` is not an allowed absolute host path. | Failure |
 | Validation failed (target) | `add` or `remove` is missing `target`, or `target` is not an allowed absolute target path. | Failure |
 | App not found | No app record matches `app`. | Failure |
-| Unsupported app runtime | The app has `runtime_kind != php`; `error.meta.reason=app_runtime_kind_not_php`. | Failure |
+| Unsupported app runtime | The app has `runtime != php`; `error.meta.reason=app_runtime_not_php`. | Failure |
 | Unsupported owning role | The app is not owned by an active `app-dev` node; `error.meta.reason=app_mounts_app_dev_only`. | Failure |
 
 Validation failures use `error.code=validation_failed`. Source and target

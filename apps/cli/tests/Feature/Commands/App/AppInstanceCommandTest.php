@@ -232,7 +232,7 @@ describe('app:instance', function (): void {
                 'driver' => 'orbit',
                 'driver_config' => ['node' => 'app-1', 'document_root' => '/srv/billing/public'],
                 'runtime' => [
-                    'runtime_kind' => 'php',
+                    'runtime' => 'php',
                     'php_version' => '8.5',
                     'mode' => 'worker',
                     'required_php_extensions' => ['intl', 'redis'],

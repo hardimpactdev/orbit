@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace App\Services\Proxy;
 
 use App\Enums\Apps\AppRuntimeKind;
+use App\Models\App;
 use App\Models\ProxyRoute;
+use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Runtime\OrbitCaddyContainer;
 use RuntimeException;
 
 final readonly class ProxyRouteRenderer
 {
+    public function __construct(
+        private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
+    ) {}
+
     private const string WebSocketStreamCloseDelay = '5m';
 
     /**
@@ -165,14 +172,14 @@ CADDY;
      */
     public function renderPrivateBackend(ProxyRoute $route, array $backendArtifact): string
     {
-        $route->loadMissing('app');
+        $route->loadMissing('app.node', 'workspace');
 
         $bind = $backendArtifact['bind'] ?? null;
         $documentRoot = $backendArtifact['document_root'] ?? null;
         $runtimeUpstream = $backendArtifact['runtime_upstream'] ?? null;
         $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
-        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Php;
-        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Static;
+        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Php;
+        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
 
         if (! is_string($bind) || $bind === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a bind address.");
@@ -187,7 +194,7 @@ CADDY;
         $port = OrbitCaddyContainer::PrivateBackendPort;
 
         if ($usesPhpRuntime) {
-            $runtimeUpstream = $this->deriveRuntimeUpstreamIfMissing($route, $runtimeUpstream);
+            $runtimeUpstream = $this->runtimeUpstreamForRoute($route, $runtimeUpstream);
 
             if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
                 throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a runtime container upstream.");
@@ -238,9 +245,9 @@ http://{$route->domain}:{$port} {
 CADDY;
         }
 
-        // App and workspace routes must have a resolved runtime_kind of
+        // App and workspace routes must have a resolved runtime of
         // `php` or `static`. Reaching this line means the route config is
-        // malformed or the runtime_kind is unrecognised.
+        // malformed or the runtime is unrecognised.
         throw new RuntimeException("Proxy route '{$route->domain}' backend artifact has an unresolvable runtime target.");
     }
 
@@ -317,28 +324,29 @@ CADDY;
 
     private function renderPhpFastCgi(ProxyRoute $route): string
     {
-        $route->loadMissing('app');
+        $route->loadMissing('app.node', 'workspace');
 
         $config = is_array($route->config) ? $route->config : [];
         $documentRoot = $config['document_root'] ?? null;
         $runtimeUpstream = $config['runtime_upstream'] ?? null;
         $tls = $this->tlsDirective($route);
         $isAppOrWorkspace = in_array($route->kind, ['app', 'workspace'], true);
-        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Php;
-        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime_kind === AppRuntimeKind::Static;
+        $usesPhpRuntime = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Php;
+        $isStaticApp = $isAppOrWorkspace && $route->app?->runtime === AppRuntimeKind::Static;
 
         $pathBlocking = $route->app?->document_root === '.'
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
         if ($usesPhpRuntime) {
-            $runtimeUpstream = $this->deriveRuntimeUpstreamIfMissing($route, $runtimeUpstream);
+            $runtimeUpstream = $this->runtimeUpstreamForRoute($route, $runtimeUpstream);
 
             if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
                 throw new RuntimeException("Proxy route '{$route->domain}' is missing a runtime container upstream.");
             }
 
             $runtimeUpstream = $this->validatedHttpUpstream($route, $runtimeUpstream);
+            $transport = $this->runtimeUpstreamTransportDirectives($route, $config);
 
             return <<<CADDY
 {$route->domain} {
@@ -355,7 +363,7 @@ CADDY;
         header_up Host {host}
         header_up X-Forwarded-Host {host}
         header_up X-Forwarded-Proto {scheme}
-    }
+{$transport}    }
 }
 
 CADDY;
@@ -383,9 +391,9 @@ CADDY;
 CADDY;
         }
 
-        // App and workspace routes must have a resolved runtime_kind of
+        // App and workspace routes must have a resolved runtime of
         // `php` or `static`. Reaching this line means the route config is
-        // malformed or the runtime_kind is unrecognised.
+        // malformed or the runtime is unrecognised.
         throw new RuntimeException("Proxy route '{$route->domain}' has an unresolvable runtime target.");
     }
 
@@ -682,11 +690,117 @@ CADDY;
             return null;
         }
 
+        if ($this->usesIngressPlacement($route)) {
+            if ($route->kind === 'workspace' && $route->workspace !== null) {
+                return "http://orbit-ws-{$slug}-{$route->workspace->name}";
+            }
+
+            return "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
+        }
+
         if ($route->kind === 'workspace' && $route->workspace !== null) {
+            if ($this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+                return "https://orbit-ws-{$slug}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+            }
+
             return "http://orbit-ws-{$slug}-{$route->workspace->name}";
         }
 
+        if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
+            return "https://orbit-app-{$slug}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+        }
+
         return "http://orbit-app-{$slug}:".AppRuntimeContainerRenderer::InternalPort;
+    }
+
+    private function runtimeUpstreamForRoute(ProxyRoute $route, mixed $current): ?string
+    {
+        if (! $this->usesIngressPlacement($route)) {
+            if ($route->kind === 'workspace') {
+                if ($route->workspace instanceof Workspace && $this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+                    $route->workspace->loadMissing('app');
+                    $app = $route->workspace->app;
+
+                    if ($app instanceof App && is_string($app->name) && $app->name !== '') {
+                        return "https://orbit-ws-{$app->name}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+                    }
+                }
+
+                return $this->deriveRuntimeUpstreamIfMissing($route, $current);
+            }
+
+            if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
+                return "https://orbit-app-{$route->app->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+            }
+        }
+
+        return $this->deriveRuntimeUpstreamIfMissing($route, $current);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    private function runtimeUpstreamTransportDirectives(ProxyRoute $route, array $config): string
+    {
+        if ($this->usesIngressPlacement($route)) {
+            return '';
+        }
+
+        $runtimeUpstreamTls = $config['runtime_upstream_tls'] ?? null;
+
+        if (! is_array($runtimeUpstreamTls)) {
+            $runtimeUpstreamTls = $this->deriveRuntimeUpstreamTls($route);
+        }
+
+        if (! is_array($runtimeUpstreamTls)) {
+            return '';
+        }
+
+        return $this->innerTlsPolicy->runtimeUpstreamTransportDirectives($runtimeUpstreamTls);
+    }
+
+    /**
+     * @return array{trusted_by_gateway_ca: bool, ca_path: string, server_name: string}|null
+     */
+    private function deriveRuntimeUpstreamTls(ProxyRoute $route): ?array
+    {
+        $route->loadMissing('app.node', 'workspace', 'node');
+
+        if ($route->kind === 'workspace' && $route->workspace instanceof Workspace) {
+            if (! $this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+                return null;
+            }
+
+            if (! $route->app instanceof App) {
+                return null;
+            }
+
+            $node = $route->app->node ?? $route->node;
+
+            if ($node === null) {
+                return null;
+            }
+
+            return $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+                $node,
+                $this->innerTlsPolicy->workspaceRouteDomain($route->workspace),
+            );
+        }
+
+        if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
+            $node = $route->node ?? $route->app->node;
+
+            if ($node === null) {
+                return null;
+            }
+
+            return $this->innerTlsPolicy->runtimeUpstreamTlsConfig(
+                $node,
+                $this->innerTlsPolicy->appRouteDomain($route->app),
+            );
+        }
+
+        return null;
     }
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string

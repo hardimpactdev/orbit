@@ -15,19 +15,19 @@ implementation handoff needs aligned before code changes.
 1. Read the request and identify the documentation surface: architecture, concept docs, command contracts, orchestration docs, or feature handoff.
 2. Read current product authority:
    - `AGENTS.md`
-   - `apps/docs/content/product-decisions.md` (dated intent ledger — current direction)
-   - `docs/mission.md`
-   - `docs/architecture.md`
-   - `docs/tech-stack.md`
-   - `docs/concepts.md`
-   - relevant `docs/domains/**`
+   - `PRODUCT_DECISIONS.md` (dated intent ledger — current direction)
+   - `apps/docs/content/mission.md`
+   - `apps/docs/content/architecture.md`
+   - `apps/docs/content/tech-stack.md`
+   - `apps/docs/content/concepts.md`
+   - relevant `apps/docs/content/domains/**`
    - relevant `docs/superpowers/**`
 3. Keep this pass focused on documentation; PHP and JavaScript implementation belongs to a separate implementation pass.
 4. Keep changes scoped to the request.
 5. Record open questions and unresolved decisions explicitly.
 6. Intent-ledger backstop: if this pass lands a direction-changing edit to an
    authority doc, confirm a matching line exists in
-   `apps/docs/content/product-decisions.md`. If not, append it (newest first,
+   `PRODUCT_DECISIONS.md`. If not, append it (newest first,
    `- YYYY-MM-DD — <decision with topic noun>. (solo todo #NNNN)`). The ledger
    is the dated intent anchor the drift audit consults.
 7. Run the documentation quality gate:

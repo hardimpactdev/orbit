@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 use App\Exceptions\GatewayApiFailureKind;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 use Orbit\Sdk\Laravel\GatewayConnector;
 use Orbit\Sdk\Laravel\GatewayStreamTransport;
@@ -29,6 +30,7 @@ final readonly class GatewayStreamClient
         private int $timeout,
         private ?string $caPemPath = null,
         private ?GatewayStreamTransport $transport = null,
+        private bool $preferCurl = false,
     ) {}
 
     /**
@@ -41,9 +43,16 @@ final readonly class GatewayStreamClient
      *
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
+     * @param  callable(): void|null  $onIdle
      */
-    public function streamEvents(string $path, array $payload, callable $onEvent, string $method = 'post'): int
-    {
+    public function streamEvents(
+        string $path,
+        array $payload,
+        callable $onEvent,
+        string $method = 'post',
+        ?callable $onIdle = null,
+        int $idleIntervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS,
+    ): int {
         if ($this->normalizedBaseUrl() === '') {
             throw new GatewayApiException('Gateway URL is not configured.');
         }
@@ -63,6 +72,8 @@ final readonly class GatewayStreamClient
             },
             unavailableMessage: 'Gateway connection is required to stream command progress.',
             requireTerminalFrame: true,
+            onIdle: $onIdle ?? (ForkedFrameTicker::hasIdleCallback() ? ForkedFrameTicker::invokeIdleCallback(...) : null),
+            idleIntervalMicroseconds: $idleIntervalMicroseconds,
         );
 
         if ($result instanceof \Orbit\Sdk\Laravel\GatewayApiException) {
@@ -163,16 +174,19 @@ final readonly class GatewayStreamClient
             return $this->transport;
         }
 
-        return new GatewayStreamTransport(new GatewayConnector(
-            baseUrl: $this->normalizedBaseUrl(),
-            caPemPath: $this->verifiedCaPemPath(),
-            timeout: $this->timeout,
-        ));
+        return new GatewayStreamTransport(
+            connector: new GatewayConnector(
+                baseUrl: $this->normalizedBaseUrl(),
+                caPemPath: $this->verifiedCaPemPath(),
+                timeout: $this->timeout,
+            ),
+            preferCurl: $this->preferCurl,
+        );
     }
 
     private function shouldUseTestingHttpFallback(): bool
     {
-        return app()->runningUnitTests() && ! GatewayMockClient::hasGlobal();
+        return app()->runningUnitTests() && ! $this->preferCurl && ! GatewayMockClient::hasGlobal();
     }
 
     private function normalizedBaseUrl(): string
@@ -194,6 +208,10 @@ final readonly class GatewayStreamClient
     private function mapSdkException(\Orbit\Sdk\Laravel\GatewayApiException $exception): GatewayApiException
     {
         return match ($exception->errorCode()) {
+            'http_error' => GatewayApiException::httpError(
+                (int) ($exception->errorData()['status'] ?? 0),
+                (string) ($exception->errorData()['body'] ?? $exception->getMessage()),
+            ),
             'stream_closed_before_terminal' => GatewayApiException::streamClosedBeforeTerminal(
                 $exception->getPrevious() ?? $exception,
             ),

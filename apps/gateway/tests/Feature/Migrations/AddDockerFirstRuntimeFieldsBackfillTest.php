@@ -72,7 +72,7 @@ it('backfills legacy app proxy route configs with a Docker-first runtime_upstrea
     $node = Node::factory()->appDev()->create();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'legacy-docs',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $id = DB::table('proxy_routes')->insertGetId([
@@ -111,7 +111,7 @@ it('backfills nested backend_artifacts entries too (ingress topology with privat
     $appNode = Node::factory()->appDev()->create();
     $app = App::factory()->for($appNode, 'node')->create([
         'name' => 'legacy-docs',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $id = DB::table('proxy_routes')->insertGetId([
@@ -210,7 +210,7 @@ it('is idempotent: re-running over already-backfilled rows does not mutate them'
     $node = Node::factory()->appDev()->create();
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'legacy-docs',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $id = DB::table('proxy_routes')->insertGetId([
@@ -244,7 +244,7 @@ it('updates non-ingress source_hash from the legacy php_fastcgi rendered content
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'legacy-docs',
         'document_root' => 'public',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $documentRoot = '/home/orbit/apps/legacy-docs/public';
@@ -294,6 +294,7 @@ it('updates non-ingress source_hash from the legacy php_fastcgi rendered content
     expect($route->source_hash)->toBe($dockerFirstHash)
         ->and($route->source_hash)->not->toBe($legacyHash)
         ->and($dockerFirstContent)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+        ->and($dockerFirstContent)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
         ->and($dockerFirstContent)->not->toContain('php_fastcgi')
         ->and($dockerFirstContent)->not->toContain($phpSocket);
 });
@@ -304,7 +305,7 @@ it('updates each ingress backend_artifact source_hash from the legacy private-ba
     $app = App::factory()->for($appNode, 'node')->create([
         'name' => 'legacy-docs',
         'document_root' => 'public',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $documentRoot = '/home/orbit/apps/legacy-docs/public';
@@ -372,7 +373,7 @@ it('leaves a non-ingress source_hash that already matches the Docker-first rende
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'legacy-docs',
         'document_root' => 'public',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $id = DB::table('proxy_routes')->insertGetId([

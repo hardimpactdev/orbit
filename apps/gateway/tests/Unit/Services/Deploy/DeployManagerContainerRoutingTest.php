@@ -52,7 +52,7 @@ function createDeployManagerTestApp(array $overrides = []): App
         'environment' => 'production',
         'path' => '/srv/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ], $overrides));
 }
 
@@ -153,7 +153,7 @@ it('runs non-php commands on the host for php apps', function (): void {
 });
 
 it('runs all commands on the host for static apps', function (): void {
-    $app = createDeployManagerTestApp(['runtime_kind' => AppRuntimeKind::Static]);
+    $app = createDeployManagerTestApp(['runtime' => AppRuntimeKind::Static]);
     createDeployManagerTestStep($app, 'php artisan migrate --force');
 
     $shell = new DeployManagerRecordingShell;
@@ -272,7 +272,7 @@ it('skips warmup steps when a user step fails', function (): void {
 });
 
 it('does not run warmup steps for static apps', function (): void {
-    $app = createDeployManagerTestApp(['runtime_kind' => AppRuntimeKind::Static]);
+    $app = createDeployManagerTestApp(['runtime' => AppRuntimeKind::Static]);
     createDeployManagerTestStep($app, 'git pull origin main');
 
     $shell = new DeployManagerRecordingShell;

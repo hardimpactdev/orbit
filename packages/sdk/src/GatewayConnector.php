@@ -31,6 +31,16 @@ final class GatewayConnector extends Connector
         return $this->baseUrl ?? '';
     }
 
+    public function caPemPath(): string|bool|null
+    {
+        return $this->caPemPath;
+    }
+
+    public function timeout(): int
+    {
+        return $this->timeout;
+    }
+
     /**
      * @return array<string, mixed>
      */

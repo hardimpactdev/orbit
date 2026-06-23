@@ -71,7 +71,7 @@ it('applies, removes, and cleans up docker process runtime units through the doc
         'node_id' => $node->id,
         'path' => '/srv/docs',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $process = Process::factory()->forOwner($app)->create([
         'name' => 'queue',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Models\App;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\OperationRun;
@@ -65,6 +66,7 @@ it('streams app creation from an operation_run source', function (): void {
         'node' => 'app-1',
         'root' => 'public',
         'php_version' => '8.5',
+        'runtime_proxy_transport' => 'https',
     ], [], [], [
         'HTTP_ACCEPT' => 'text/event-stream',
         'REMOTE_ADDR' => APP_STORE_STREAM_CALLER_WG_IP,
@@ -83,7 +85,9 @@ it('streams app creation from an operation_run source', function (): void {
         ->and($operationRun->status->value)->toBe('succeeded')
         ->and($operationRun->caller_node_id)->toBe($caller->id)
         ->and($operationRun->target_node_id)->toBe($targetNode->id)
-        ->and($operationRun->result['app']['name'])->toBe('docs');
+        ->and($operationRun->result['app']['name'])->toBe('docs')
+        ->and($operationRun->result['app']['runtime_config']['proxy_transport'])->toBe('https')
+        ->and(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)->toBe(['proxy_transport' => 'https']);
 });
 
 final class AppStoreStreamRecordingRemoteShell implements RemoteShell

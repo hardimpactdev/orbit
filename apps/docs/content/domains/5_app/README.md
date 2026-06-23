@@ -152,7 +152,10 @@ canonical app entity.
   "path": "/home/docs/app",
   "root": "public",
   "repository": "git@github.com:my/repo.git",
-  "runtime_kind": "php",
+  "runtime": "php",
+  "runtime_config": {
+    "proxy_transport": "http"
+  },
   "php_version": "8.5",
   "worker_enabled": false,
   "worker_config": null,
@@ -168,7 +171,8 @@ canonical app entity.
 | `path` | string | Absolute app path on the owning node. |
 | `root` | string | Document root relative to `path`. |
 | `repository` | string \| null | Source repository URL recorded for the app, or `null` when none is configured. |
-| `runtime_kind` | string | Runtime kind for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
+| `runtime` | string | Runtime for the app. `php` uses a FrankenPHP app runtime container; `static` serves without one. |
+| `runtime_config` | object \| null | Runtime-specific gateway configuration. PHP/FrankenPHP apps expose `proxy_transport`, which is `http` by default and may be `https` for app-dev inner TLS; static apps report `null`. |
 | `php_version` | string | PHP version recorded in gateway app configuration. This remains flat until Orbit defines a broader version-reporting object for configuration, observed node versions, and framework metadata. |
 | `worker_enabled` | boolean | Whether FrankenPHP worker mode is enabled for this app. Defaults to `false`. |
 | `worker_config` | object \| null | Worker settings used only when worker mode is enabled. |
@@ -195,7 +199,7 @@ App-instance renderers return this shape under `success.data.instance`, or under
     "domain": "docs.example.com"
   },
   "runtime": {
-    "runtime_kind": "php",
+    "runtime": "php",
     "php_version": "8.5",
     "frankenphp_image": "ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm",
     "mode": "classic",
@@ -214,7 +218,7 @@ App-instance renderers return this shape under `success.data.instance`, or under
 | `driver` | string | Instance driver: `orbit` or `laravel-cloud`. |
 | `driver_config` | object | Driver-specific Laravel Data object serialized through the gateway. |
 | `runtime` | object | Effective runtime metadata for this instance. |
-| `runtime.runtime_kind` | string | Logical app runtime kind. |
+| `runtime.runtime` | string | Logical app runtime. |
 | `runtime.php_version` | string | PHP version recorded for the app runtime. |
 | `runtime.frankenphp_image` | string \| null | Resolved FrankenPHP image for PHP apps. |
 | `runtime.mode` | string | `classic` or `worker` for PHP apps. |

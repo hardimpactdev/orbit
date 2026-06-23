@@ -46,7 +46,7 @@ final readonly class RemoveWorkspace
         $app = $workspace->app;
         $name = $workspace->name;
         $appName = (string) $app?->name;
-        $isPhpWorkspace = $app?->runtime_kind === AppRuntimeKind::Php;
+        $isPhpWorkspace = $app?->runtime === AppRuntimeKind::Php;
         $proxyRouteIds = ProxyRoute::query()
             ->where('workspace_id', $workspace->id)
             ->pluck('id')

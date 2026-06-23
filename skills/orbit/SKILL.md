@@ -27,19 +27,8 @@ over the Orbit/WireGuard network.
 ## Universal output rules
 
 - Every command supports `--help` for signature, arguments, and options.
-- Every command that returns structured data supports `--json`, which prints one
-  final JSON envelope (`{"success":{"data":{...},"meta":{...}}}` or
-  `{"error":{"code":"...","message":"...","meta":{...}}}`).
-- `--json` is final-result-only and may stay silent during long-running work.
-- Some long-running commands document `--stream-json`; use it for LLM-agent
-  progress only on commands that list it in this skill/reference docs. It is
-  mutually exclusive with `--json` and prints one JSON object per line:
-  non-terminal `{"event":"tree"|"step","data":...}`, terminal
-  `{"event":"complete","success":...}` or `{"event":"error","error":...}`.
-- Do not invent `--stream-json` for commands that do not document it.
-- Non-interactive mode (`-n`) auto-enables JSON. Pass `--json` when parsing a
-  final result; pass `--stream-json` for documented long-running commands when
-  progress is needed.
+- Every command that returns structured data supports `--json` (`{"success":{"data":{...}}}` or `{"success":false,"error":...}`).
+- Non-interactive mode (`-n`) auto-enables JSON. Always pass `--json` when parsing programmatically.
 - Destructive commands take `--force` to skip confirmation.
 - Nothing prints secrets to logs; use `tool:credentials` for those.
 

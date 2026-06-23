@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Apps\AppRuntimeConfig;
 use App\Data\Apps\PhpWorkerConfig;
 use App\Enums\Apps\AppRuntimeKind;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,7 +26,8 @@ use Illuminate\Support\Str;
  * @property string $document_root
  * @property string|null $repository
  * @property string $php_version
- * @property AppRuntimeKind $runtime_kind
+ * @property AppRuntimeKind $runtime
+ * @property array<string, mixed>|null $runtime_config
  * @property bool $worker_enabled
  * @property array<string, mixed>|null $worker_config
  * @property list<string>|null $deploy_warmup_paths
@@ -60,7 +62,8 @@ class App extends Model
         'document_root',
         'repository',
         'php_version',
-        'runtime_kind',
+        'runtime',
+        'runtime_config',
         'worker_enabled',
         'worker_config',
         'deploy_warmup_paths',
@@ -72,7 +75,7 @@ class App extends Model
 
     #[\Override]
     protected $attributes = [
-        'runtime_kind' => 'php',
+        'runtime' => 'php',
         'worker_enabled' => false,
     ];
 
@@ -82,11 +85,32 @@ class App extends Model
         return [
             'adopted' => 'boolean',
             'agent_ide_config' => 'array',
-            'runtime_kind' => AppRuntimeKind::class,
+            'runtime' => AppRuntimeKind::class,
+            'runtime_config' => 'array',
             'worker_enabled' => 'boolean',
             'worker_config' => 'array',
             'deploy_warmup_paths' => 'array',
         ];
+    }
+
+    public function runtimeConfig(): AppRuntimeConfig
+    {
+        return AppRuntimeConfig::fromArray(is_array($this->runtime_config) ? $this->runtime_config : null);
+    }
+
+    public function runtimeKind(): AppRuntimeKind
+    {
+        $runtime = $this->getRawOriginal('runtime') ?? ($this->attributes['runtime'] ?? null);
+
+        if ($runtime instanceof AppRuntimeKind) {
+            return $runtime;
+        }
+
+        if (is_string($runtime)) {
+            return AppRuntimeKind::tryFrom($runtime) ?? AppRuntimeKind::Php;
+        }
+
+        return AppRuntimeKind::Php;
     }
 
     public function workerConfig(): PhpWorkerConfig

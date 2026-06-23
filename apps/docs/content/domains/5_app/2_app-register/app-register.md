@@ -34,6 +34,7 @@ The following arguments and options shape an `app:register` invocation.
 - `--node=<name>`: The target node.
 - `--root=<path>`: The document root relative to the app path. Default: `public`.
 - `--php-version=<version>`: The app runtime container version to store in gateway app configuration.
+- `--runtime-proxy-transport=<http|https>`: The app-dev FrankenPHP transport between `orbit-caddy` and the runtime container. Default: existing value or `http`; `https` opts the app into inner TLS.
 - `--domain=<host>`: The production domain. Triggers or retries production activation.
 - `--json`: Output JSON.
 

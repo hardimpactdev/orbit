@@ -10,6 +10,7 @@ use App\Enums\Workspaces\WorkspaceRuntimeContainerApplyOutcome;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
 use App\Services\Php\PhpRuntimeCatalog;
 use App\Services\Php\PhpRuntimePolicy;
 use App\Services\Runtime\DockerCommandBuilder;
@@ -32,7 +33,7 @@ function workspaceAndNodeForManagerTest(): array
         'name' => 'demo',
         'path' => '/home/orbit/apps/demo',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -123,7 +124,7 @@ it('creates the app-dev packages bind mount source before running the workspace 
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -156,7 +157,7 @@ it('creates inherited configured runtime mount sources before running the worksp
         'name' => 'nckrtl',
         'path' => '/home/nckrtl/apps/nckrtl',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $app->runtimeMounts()->create([
         'source' => '/home/nckrtl/packages',
@@ -186,6 +187,46 @@ it('creates inherited configured runtime mount sources before running the worksp
         ->and($script)->toContain("--mount 'type=bind,source=/home/nckrtl/packages,target=/home/nckrtl/packages,readonly'")
         ->and(strpos($script, "sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '/home/nckrtl/packages'"))
         ->toBeLessThan(strpos($script, 'docker run -d'));
+});
+
+it('treats app-dev workspace runtime TLS certificate mounts as Orbit-managed built-ins', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'nckrtl',
+        'path' => '/home/nckrtl/apps/nckrtl',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/nckrtl/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+    $workspace->setRelation('app', $app);
+    $container = renderTestWorkspaceContainer($workspace);
+
+    $shell = new WorkspaceRuntimeRecordingShell(
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '[{"Id":"sha256:abc"}]', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    );
+
+    (new WorkspaceRuntimeContainerManager($shell, new DockerCommandBuilder))->apply($node, $container);
+
+    $script = $shell->calls[3]['script'];
+    $certSource = '/home/nckrtl/.config/orbit/certs/feature-a.nckrtl.test.crt';
+    $keySource = '/home/nckrtl/.config/orbit/certs/feature-a.nckrtl.test.key';
+
+    expect($script)
+        ->toContain("--mount 'type=bind,source={$certSource},target=".AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath.",readonly'")
+        ->and($script)
+        ->toContain("--mount 'type=bind,source={$keySource},target=".AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath.",readonly'")
+        ->and($script)
+        ->not->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '{$certSource}'")
+        ->and($script)
+        ->not->toContain("sudo install -d -m 0775 -o 'nckrtl' -g 'nckrtl' '{$keySource}'");
 });
 
 it('rejects unsafe app-dev packages bind mount sources before running the workspace runtime container', function (): void {

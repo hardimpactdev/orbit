@@ -26,7 +26,7 @@ function makePhpWorkspace(array $appOverrides = [], array $workspaceOverrides = 
         'path' => '/home/orbit/apps/demo',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ], $appOverrides));
 
     $workspace = Workspace::factory()->for($app, 'app')->create(array_merge([
@@ -85,7 +85,7 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -109,7 +109,7 @@ it('inherits configured app runtime mounts from the parent app', function (): vo
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $app->runtimeMounts()->create([
         'source' => '/home/nckrtl/packages',
@@ -143,7 +143,7 @@ it('does not mount the packages directory for app-prod PHP workspace runtimes', 
         'path' => '/home/demo/app',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -187,7 +187,7 @@ it('uses the approved glibc-based FrankenPHP image family rather than alpine/mus
 });
 
 it('does not render a workspace runtime container for static (non-PHP) workspaces', function (): void {
-    $workspace = makePhpWorkspace(appOverrides: ['runtime_kind' => AppRuntimeKind::Static]);
+    $workspace = makePhpWorkspace(appOverrides: ['runtime' => AppRuntimeKind::Static]);
 
     expect(fn () => workspaceRendererForTest()->render($workspace))
         ->toThrow(InvalidArgumentException::class);
@@ -281,7 +281,7 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod workspa
         'path' => '/home/demo/app',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $workspace = Workspace::factory()->for($app, 'app')->create([
         'name' => 'feature-a',
@@ -346,6 +346,41 @@ it('exposes ORBIT_APP, ORBIT_WORKSPACE, and ORBIT_PHP_VERSION env to the contain
     ]);
 });
 
+it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'demo',
+        'path' => '/home/nckrtl/apps/demo',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
+    ]);
+    $workspace = Workspace::factory()->for($app, 'app')->create([
+        'name' => 'feature-a',
+        'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
+        'php_version' => null,
+    ]);
+
+    $container = workspaceRendererForTest()->render($workspace);
+
+    expect(workspaceRendererForTest()->upstreamUrl($workspace))->toBe('https://orbit-ws-demo-feature-a:8443')
+        ->and($container->environment())->toMatchArray([
+            'SERVER_NAME' => 'https://feature-a.demo.test:8443',
+            'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key',
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/feature-a.demo.test.crt',
+            'target' => '/etc/orbit/runtime-tls/tls.crt',
+            'read_only' => true,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/feature-a.demo.test.key',
+            'target' => '/etc/orbit/runtime-tls/tls.key',
+            'read_only' => true,
+        ]);
+});
+
 it('exposes the document-root env on the rendered docker run command so the configured root reaches FrankenPHP', function (): void {
     $workspace = makePhpWorkspace(appOverrides: ['document_root' => 'web']);
     $container = workspaceRendererForTest()->render($workspace);
@@ -356,6 +391,7 @@ it('exposes the document-root env on the rendered docker run command so the conf
         ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
         ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
         ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
+        ->and($command)->not->toContain('CADDY_SERVER_EXTRA_DIRECTIVES')
         ->and($command)->not->toContain('target=/data')
         ->and($command)->not->toContain('target=/config');
 });

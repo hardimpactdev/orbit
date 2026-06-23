@@ -105,7 +105,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
         }
 
         fclose($server);
-        exit(0);
+        terminateForkedFixtureProcess();
     }
 
     $ticks = [];

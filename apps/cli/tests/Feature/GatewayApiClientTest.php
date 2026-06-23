@@ -93,7 +93,7 @@ describe('GatewayApiClient', function (): void {
             }
 
             fclose($server);
-            exit(0);
+            terminateForkedFixtureProcess();
         }
 
         $tickCount = 0;
@@ -156,7 +156,7 @@ describe('GatewayApiClient', function (): void {
             }
 
             fclose($server);
-            exit(0);
+            terminateForkedFixtureProcess();
         }
 
         $ticks = [];

@@ -133,7 +133,7 @@ return [
     /*
      * Terms retired by a product decision. Mentions anywhere in the product
      * docs fail `command_docs.banned_terms` unless the file is listed in the
-     * entry's allow_paths (the intent ledger, intentional removal notes).
+     * entry's allow_paths for an intentional product-doc note.
      * Append an entry whenever a decision removes or renames a public
      * concept, in the same change that lands the decision.
      */
@@ -142,25 +142,25 @@ return [
             'terms' => ['RustFS', 'rustfs'],
             'decision' => '2026-06-13 S3 backend is SeaweedFS',
             'replacement' => 'SeaweedFS / seaweedfs',
-            'allow_paths' => ['product-decisions.md'],
+            'allow_paths' => [],
         ],
         [
             'terms' => ['tool:start', 'tool:stop', 'tool:restart', 'tool:logs', 'tool:reload'],
             'decision' => '2026-06-06 tool lifecycle is process-owned (solo todo #703)',
             'replacement' => '`process:start` / `process:stop` / `process:restart` / `process:logs`',
-            'allow_paths' => ['product-decisions.md'],
+            'allow_paths' => [],
         ],
         [
             'terms' => ['app:exec', 'workspace:exec'],
             'decision' => '2026-06-03 Orbit has no command-exec surface',
             'replacement' => 'host `php`/`artisan`/`composer` directly on the app node source path',
-            'allow_paths' => ['product-decisions.md', 'domains/5_app/README.md'],
+            'allow_paths' => ['domains/5_app/README.md'],
         ],
         [
             'terms' => ['orbit:release-candidate:activate'],
             'decision' => '2026-06-22 manifest source selection moved to public CLI commands',
             'replacement' => '`manifest:update` / `manifest:remove`',
-            'allow_paths' => ['product-decisions.md'],
+            'allow_paths' => [],
         ],
     ],
 ];

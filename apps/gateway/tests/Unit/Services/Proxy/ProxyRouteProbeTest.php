@@ -656,6 +656,49 @@ describe('proxy backend and TLS reality', function (): void {
             ]);
     });
 
+    it('accepts default app-dev PHP route artifacts that use HTTP runtime upstream intent', function (): void {
+        $node = createTestAppHostNode(['user' => 'orbit', 'tld' => 'test']);
+        $app = App::factory()->for($node, 'node')->create([
+            'name' => 'docs',
+            'document_root' => 'public',
+        ]);
+        $route = ProxyRoute::factory()
+            ->for($node, 'node')
+            ->for($app, 'app')
+            ->create([
+                'domain' => 'docs.test',
+                'owner_type' => 'app',
+                'kind' => 'app',
+                'config' => [
+                    'document_root' => '/home/orbit/apps/docs/public',
+                    'runtime_upstream' => 'http://orbit-app-docs:8080',
+                    'php_socket' => null,
+                    'tls' => [
+                        'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                        'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                    ],
+                ],
+            ]);
+        $expectedHash = (new ProxyRouteRenderer)->sourceHash($route);
+        $route->forceFill(['source_hash' => $expectedHash])->save();
+
+        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+            'docs.test' => [
+                'route_exists' => true,
+                'route_hash' => $expectedHash,
+                'cert_path' => '/home/orbit/.config/orbit/certs/docs.test.crt',
+                'key_path' => '/home/orbit/.config/orbit/certs/docs.test.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+            ],
+        ]));
+
+        $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
+
+        expect((new ProxyRouteRenderer)->render($route))->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->and($issue)->toBeNull();
+    });
+
     it('detects missing Orbit-managed TLS material', function (): void {
         $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([

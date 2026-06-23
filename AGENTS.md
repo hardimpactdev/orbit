@@ -3,6 +3,11 @@
 Orbit is a command-first PHP/Laravel monorepo for local development,
 provisioning, hosting workflows, and node orchestration.
 
+Orbit is an LLM-first monorepo. Repo development harness guidance lives at the
+root; see [`HARNESS.md`](HARNESS.md) for scope, agent discovery path, and how
+the harness differs from the feedback loop. Product behavior contracts remain in
+`apps/docs/content/`.
+
 ## Repository Shape
 
 - The repository root is orchestration only: root Composer scripts, `bin/`
@@ -42,11 +47,11 @@ Orbit's current product contract lives in this repo under `apps/docs/content/`:
 - `apps/docs/content/tech-stack.md`
 - `apps/docs/content/domains/**`
 
-`apps/docs/content/product-decisions.md` is the chronological intent ledger. It
-does not restate contracts; it records each direction-change decision with a
-date. When docs conflict, the latest dated decision on a topic states current
-intent and indicates which side is stale. Treat it as the intent anchor above
-the authority chain.
+`PRODUCT_DECISIONS.md` is the chronological intent ledger. It does not restate
+contracts; it records each direction-change decision with a date. When docs
+conflict, the latest dated decision on a topic states current intent and
+indicates which side is stale. Treat it as the intent anchor above the product
+docs authority chain.
 
 Session artifacts (plans, specs) stay at `docs/superpowers/`. They are not
 product authority and are not linted as product docs.

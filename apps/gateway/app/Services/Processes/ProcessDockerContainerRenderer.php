@@ -28,9 +28,11 @@ final readonly class ProcessDockerContainerRenderer
             return $this->renderNodeProcess($process->owner, $process);
         }
 
-        if ($app->runtime_kind !== AppRuntimeKind::Php) {
+        $runtime = $app->runtimeKind();
+
+        if ($runtime !== AppRuntimeKind::Php) {
             throw new InvalidArgumentException(
-                "App '{$app->name}' uses runtime kind '{$app->runtime_kind->value}' and cannot back a Docker process runtime unit.",
+                "App '{$app->name}' uses runtime kind '{$runtime->value}' and cannot back a Docker process runtime unit.",
             );
         }
 

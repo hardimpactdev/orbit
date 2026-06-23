@@ -196,7 +196,8 @@ describe('AppListController', function (): void {
                 'path' => '/srv/docs',
                 'root' => 'public',
                 'repository' => null,
-                'runtime_kind' => 'php',
+                'runtime' => 'php',
+                'runtime_config' => ['proxy_transport' => 'http'],
                 'php_version' => '8.5',
                 'worker_enabled' => false,
                 'worker_config' => null,
@@ -211,7 +212,7 @@ describe('AppListController', function (): void {
             ]);
     });
 
-    it('returns runtime_kind=static for static apps', function (): void {
+    it('returns runtime=static for static apps', function (): void {
         $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
@@ -230,7 +231,8 @@ describe('AppListController', function (): void {
 
         $response->assertOk()
             ->assertJsonPath('success.data.apps.0.name', 'marketing')
-            ->assertJsonPath('success.data.apps.0.runtime_kind', 'static');
+            ->assertJsonPath('success.data.apps.0.runtime', 'static')
+            ->assertJsonPath('success.data.apps.0.runtime_config', null);
     });
 
     it('rejects unauthenticated requests', function (): void {

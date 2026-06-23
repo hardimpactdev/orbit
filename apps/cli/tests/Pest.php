@@ -549,3 +549,14 @@ function restoreHostCwd(string|false $previousHostCwd): void
 
     putenv("ORBIT_HOST_CWD={$previousHostCwd}");
 }
+
+function terminateForkedFixtureProcess(): never
+{
+    $pid = getmypid();
+
+    if (is_int($pid) && $pid > 0 && function_exists('posix_kill') && defined('SIGKILL')) {
+        posix_kill($pid, SIGKILL);
+    }
+
+    exit(0);
+}

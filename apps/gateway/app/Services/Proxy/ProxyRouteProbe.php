@@ -14,6 +14,7 @@ use App\Models\ProxyRoute;
 use App\Models\Workspace;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Runtime\OrbitContainerNames;
+use Throwable;
 
 final readonly class ProxyRouteProbe
 {
@@ -23,6 +24,7 @@ final readonly class ProxyRouteProbe
 
     public function __construct(
         private ?RemoteShell $remoteShell = null,
+        private ?ProxyRouteRenderer $renderer = null,
     ) {}
 
     public function key(): string
@@ -665,7 +667,9 @@ BASH;
             ];
         }
 
-        if (($observed['route_hash'] ?? null) !== $route->source_hash) {
+        $expectedHash = $this->expectedSourceHash($route);
+
+        if ($route->source_hash !== $expectedHash || ($observed['route_hash'] ?? null) !== $expectedHash) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -673,7 +677,7 @@ BASH;
                     kind: DriftKind::Divergent,
                     summary: "Proxy backend route {$route->domain} differs from gateway proxy intent.",
                     detail: [
-                        'expected_hash' => $route->source_hash,
+                        'expected_hash' => $expectedHash,
                         'observed_hash' => $observed['route_hash'] ?? null,
                     ],
                 ),
@@ -1066,5 +1070,23 @@ BASH;
         $router = $observed['router'] ?? null;
 
         return is_array($router) ? $router : [];
+    }
+
+    private function expectedSourceHash(ProxyRoute $route): string
+    {
+        if ($this->usesIngressPlacement($route) || ! in_array($route->kind, ['app', 'workspace'], true)) {
+            return is_string($route->source_hash) ? $route->source_hash : '';
+        }
+
+        try {
+            return $this->renderer()->sourceHash($route);
+        } catch (Throwable) {
+            return is_string($route->source_hash) ? $route->source_hash : '';
+        }
+    }
+
+    private function renderer(): ProxyRouteRenderer
+    {
+        return $this->renderer ?? app(ProxyRouteRenderer::class);
     }
 }

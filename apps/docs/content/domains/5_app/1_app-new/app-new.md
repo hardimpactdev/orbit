@@ -40,6 +40,9 @@ The steps below describe what the command does during a successful run.
 - **Registration Pipeline:** Executes the same convergence logic as
   [`app:register`](../2_app-register/app-register.md) to set up runtime container, proxy
   routes, and runtime configuration.
+- **Runtime Transport:** Stores app-dev FrankenPHP proxy transport as `http` by
+  default. Pass `--runtime-proxy-transport=https` to opt the app into inner TLS
+  between `orbit-caddy` and the runtime container.
 - **Production Activation:** When `--domain` is provided, production configuration is
   recorded. If DNS or TLS prerequisites are not yet met, the command still
   succeeds; the inactive domain is reported as a warning with a retry path

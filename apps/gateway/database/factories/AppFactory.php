@@ -25,7 +25,8 @@ class AppFactory extends Factory
             'document_root' => 'public',
             'repository' => null,
             'php_version' => '8.5',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
+            'runtime_config' => null,
             'worker_enabled' => false,
             'worker_config' => null,
             'deploy_warmup_paths' => null,
@@ -37,7 +38,7 @@ class AppFactory extends Factory
     public function static(): static
     {
         return $this->state(fn (): array => [
-            'runtime_kind' => AppRuntimeKind::Static,
+            'runtime' => AppRuntimeKind::Static,
         ]);
     }
 

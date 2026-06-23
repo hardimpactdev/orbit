@@ -16,6 +16,7 @@ final class AppNewCommand extends AppGatewayCommand
         {--root=public : Document root relative to app path}
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
+        {--runtime-proxy-transport=http : FrankenPHP inner proxy transport (http|https)}
         {--json : Output JSON}
         {--stream-json : Stream newline-delimited JSON progress frames}';
 
@@ -44,6 +45,7 @@ final class AppNewCommand extends AppGatewayCommand
                 'root' => $this->stringOption('root') ?? 'public',
                 'php_version' => $this->stringOption('php-version') ?? '8.5',
                 'domain' => $this->stringOption('domain'),
+                'runtime_proxy_transport' => $this->stringOption('runtime-proxy-transport'),
             ],
             fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
         );

@@ -8,6 +8,7 @@ use App\Actions\Apps\EnactAppRuntime;
 use App\Concerns\PromptsForRegistryEntities;
 use App\Contracts\RemoteShell;
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
+use App\Data\Apps\AppRuntimeConfig;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\Apps\AppInstanceDriver;
 use App\Enums\Nodes\NodeStatus;
@@ -166,7 +167,7 @@ final class AppRegistrar
     }
 
     /**
-     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function registerForHuman(
         array $input,
@@ -189,7 +190,7 @@ final class AppRegistrar
     }
 
     /**
-     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function isExplicitMove(array $input, string $path, Node $node, ?App $existingApp): bool
     {
@@ -214,22 +215,28 @@ final class AppRegistrar
     }
 
     /**
-     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function registerAppRecord(array $input, Node $node, string $path, ?App $existingApp): App
     {
+        $attributes = [
+            'node_id' => $node->id,
+            'environment' => $input['domain'] !== null ? 'production' : 'development',
+            'domain' => $input['domain'] ?? $existingApp?->domain,
+            'path' => $path,
+            'document_root' => $input['root'],
+            'repository' => $existingApp?->repository,
+            'php_version' => $input['php_version'],
+            'adopted' => $existingApp instanceof App ? $existingApp->adopted : true,
+        ];
+
+        if ($input['runtime_proxy_transport'] !== null) {
+            $attributes['runtime_config'] = $this->runtimeConfigForStorage($input['runtime_proxy_transport']);
+        }
+
         $app = App::query()->updateOrCreate(
             ['name' => $input['name']],
-            [
-                'node_id' => $node->id,
-                'environment' => $input['domain'] !== null ? 'production' : 'development',
-                'domain' => $input['domain'] ?? $existingApp?->domain,
-                'path' => $path,
-                'document_root' => $input['root'],
-                'repository' => $existingApp?->repository,
-                'php_version' => $input['php_version'],
-                'adopted' => $existingApp instanceof App ? $existingApp->adopted : true,
-            ],
+            $attributes,
         );
 
         $app->setRelation('node', $node);
@@ -257,7 +264,7 @@ final class AppRegistrar
     }
 
     /**
-     * @return array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}|int
+     * @return array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}|int
      */
     private function resolveInput(): array|int
     {
@@ -296,6 +303,16 @@ final class AppRegistrar
             return $this->failValidation('domain', 'Production domain is invalid.');
         }
 
+        $runtimeProxyTransport = $this->stringOption('runtime-proxy-transport');
+
+        if ($runtimeProxyTransport !== null) {
+            try {
+                AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
+            } catch (\InvalidArgumentException) {
+                return $this->failValidation('runtime_proxy_transport', "Runtime proxy transport must be 'http' or 'https'.");
+            }
+        }
+
         return [
             'name' => $name,
             'node' => $this->stringOption('node'),
@@ -303,7 +320,26 @@ final class AppRegistrar
             'root' => $root,
             'php_version' => $phpVersion,
             'domain' => $domain,
+            'runtime_proxy_transport' => $runtimeProxyTransport,
         ];
+    }
+
+    /**
+     * @return array{proxy_transport: string}|null
+     */
+    private function runtimeConfigForStorage(?string $runtimeProxyTransport): ?array
+    {
+        if ($runtimeProxyTransport === null) {
+            return null;
+        }
+
+        $config = AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
+
+        if (! $config->usesInnerHttpsProxyTransport()) {
+            return null;
+        }
+
+        return $config->toArray();
     }
 
     private function resolveTargetNode(?string $nodeName, ?App $existingApp, string $requiredRole): Node|int
@@ -382,7 +418,7 @@ final class AppRegistrar
     }
 
     /**
-     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{name: string, node: ?string, path: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function routeConflict(array $input, Node $node, ?App $existingApp): ?ProxyRoute
     {
@@ -469,19 +505,7 @@ final class AppRegistrar
      */
     private function appPayload(App $app): array
     {
-        return [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime_kind' => $app->runtime_kind->value,
-            'php_version' => $app->php_version,
-            'worker_enabled' => $app->worker_enabled,
-            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
-            'adopted' => $app->adopted,
-        ];
+        return app(AppResponsePayload::class)->forApp($app);
     }
 
     /**

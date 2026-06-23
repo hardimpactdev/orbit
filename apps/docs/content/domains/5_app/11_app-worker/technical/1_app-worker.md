@@ -95,8 +95,8 @@ or `web/frankenphp-worker.php`), and `octane.server=frankenphp`.
 
 Failure reasons that bypass the probe (and never mutate state):
 
-- `runtime_kind != php`: `error.code=app.worker_unsupported_runtime`,
-  `error.meta.runtime_kind` reports the current value.
+- `runtime != php`: `error.code=app.worker_unsupported_runtime`,
+  `error.meta.runtime` reports the current value.
 - Owning node record is missing: `error.code=app.worker_unknown_node`.
 - App source path is empty: `error.code=app.worker_missing_path`.
 
@@ -137,7 +137,7 @@ all other documented `error.code` values, `403` for permission denials.
 4. **Disable preserves configuration.** Set `worker_enabled=false` but keep
    the stored `worker_config` so the next enable restores the prior
    configuration without re-prompting for values.
-5. **PHP-only.** Apps with `runtime_kind != php` always fail readiness.
+5. **PHP-only.** Apps with `runtime != php` always fail readiness.
    Worker mode requires the FrankenPHP app runtime container.
 6. **No source mutation.** `enable` never runs `composer require`, publishes
    Octane config, edits bootstrap files, or otherwise changes the app
@@ -158,7 +158,7 @@ failures below.
 | Validation failed (action) | `action` is missing or not one of `show`, `enable`, `disable`. | Failure |
 | Validation failed (app) | `app` is missing in non-interactive mode. | Failure |
 | App not found | No app record matches `app`. | Failure |
-| Unsupported runtime | `enable` was called for an app with `runtime_kind != php`. State unchanged. | Failure |
+| Unsupported runtime | `enable` was called for an app with `runtime != php`. State unchanged. | Failure |
 | Owning node missing | `enable` was called for an app whose `node` relation is `null`. State unchanged. | Failure |
 | App path missing | `enable` was called for an app with an empty `path`. State unchanged. | Failure |
 | Readiness failed | Probe output is missing at least one required token. State unchanged. | Failure |

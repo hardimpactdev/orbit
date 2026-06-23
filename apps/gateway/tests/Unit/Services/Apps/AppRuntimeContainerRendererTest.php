@@ -24,7 +24,7 @@ function makePhpApp(array $overrides = []): App
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ], $overrides));
 }
 
@@ -83,7 +83,7 @@ it('mounts the owning app-dev node user packages directory at /packages', functi
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $container = rendererForTest()->render($app);
@@ -102,7 +102,7 @@ it('renders configured app runtime mounts after built-in mounts', function (): v
         'path' => '/home/nckrtl/apps/nckrtl',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
     $app->runtimeMounts()->create([
         'source' => '/home/nckrtl/packages',
@@ -131,7 +131,7 @@ it('does not mount the packages directory for app-prod PHP app runtimes', functi
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $container = rendererForTest()->render($app);
@@ -151,7 +151,7 @@ it('renders a production app runtime user from the app source owner but leaves d
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $developmentApp = makePhpApp([
@@ -185,7 +185,7 @@ it('uses the approved glibc-based FrankenPHP image family rather than alpine/mus
 });
 
 it('does not render an app runtime container for static apps', function (): void {
-    $app = makePhpApp(['runtime_kind' => AppRuntimeKind::Static]);
+    $app = makePhpApp(['runtime' => AppRuntimeKind::Static]);
 
     expect(fn () => rendererForTest()->render($app))
         ->toThrow(InvalidArgumentException::class);
@@ -208,7 +208,7 @@ it('changes the spec hash when the app-dev packages mount policy changes', funct
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $withPackagesMount = $renderer->render($app)->specHash();
@@ -300,10 +300,59 @@ it('renders FrankenPHP-consumed SERVER_NAME and SERVER_ROOT so the configured ro
         ->and($publicRoot->specHash())->not->toBe($projectRoot->specHash());
 });
 
-it('uses the internal app runtime upstream on port 8080', function (): void {
+it('uses the internal app-dev runtime upstream on HTTP port 8080 by default', function (): void {
     $app = makePhpApp(['name' => 'docs']);
 
     expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs:8080');
+});
+
+it('renders app-dev PHP runtimes with inner HTTPS on 8443, site cert mounts, and FrankenPHP TLS directives', function (): void {
+    $node = createTestAppHostNode(['user' => 'nckrtl', 'tld' => 'test']);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs',
+        'path' => '/home/nckrtl/apps/docs',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+        'runtime_config' => ['proxy_transport' => 'https'],
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(rendererForTest()->upstreamUrl($app))->toBe('https://orbit-app-docs:8443')
+        ->and($container->environment())->toMatchArray([
+            'SERVER_NAME' => 'https://docs.test:8443',
+            'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key',
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/docs.test.crt',
+            'target' => '/etc/orbit/runtime-tls/tls.crt',
+            'read_only' => true,
+        ])
+        ->and($container->mounts())->toContain([
+            'source' => '/home/nckrtl/.config/orbit/certs/docs.test.key',
+            'target' => '/etc/orbit/runtime-tls/tls.key',
+            'read_only' => true,
+        ]);
+});
+
+it('keeps app-prod PHP runtimes on plain HTTP port 8080 without inner TLS mounts', function (): void {
+    $node = createTestAppHostNode(['user' => 'orbit'], 'app-prod');
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'docs-prod',
+        'environment' => 'production',
+        'path' => '/home/docs/app',
+        'document_root' => 'public',
+        'php_version' => '8.5',
+        'runtime' => AppRuntimeKind::Php,
+    ]);
+
+    $container = rendererForTest()->render($app);
+
+    expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs-prod:8080')
+        ->and($container->environment()['SERVER_NAME'])->toBe(':8080')
+        ->and(array_key_exists('CADDY_SERVER_EXTRA_DIRECTIVES', $container->environment()))->toBeFalse()
+        ->and(collect($container->mounts())->pluck('target'))->not->toContain('/etc/orbit/runtime-tls/tls.crt');
 });
 
 it('exposes the document-root env on the rendered docker run command so the configured root reaches FrankenPHP', function (): void {
@@ -316,6 +365,7 @@ it('exposes the document-root env on the rendered docker run command so the conf
         ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
         ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
         ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
+        ->and($command)->not->toContain('CADDY_SERVER_EXTRA_DIRECTIVES')
         ->and($command)->not->toContain('/home/orbit/apps/docs/.orbit/frankenphp')
         ->and($command)->not->toContain('target=/data')
         ->and($command)->not->toContain('target=/config')
@@ -362,7 +412,7 @@ it('does not render app-dev FrankenPHP thread pool settings for app-prod classic
         'path' => '/home/docs/app',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $container = rendererForTest()->render($app);

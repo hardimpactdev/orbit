@@ -48,7 +48,7 @@ final readonly class WorkspacesProbe
 
         if (
             $workspace->lifecycle_status === WorkspaceLifecycleStatus::Active
-            && $workspace->app->runtime_kind === AppRuntimeKind::Php
+            && $workspace->app->runtime === AppRuntimeKind::Php
             && $this->phpRuntimeCatalog()->supports((string) $workspace->effectivePhpVersion())
         ) {
             $runtimeContainer = $this->workspaceRuntimeContainerRenderer()->render($workspace);
@@ -250,7 +250,7 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app.node');
 
-        if (! $workspace->app instanceof App || $workspace->app->runtime_kind !== AppRuntimeKind::Php) {
+        if (! $workspace->app instanceof App || $workspace->app->runtime !== AppRuntimeKind::Php) {
             return [];
         }
 
@@ -344,7 +344,7 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app');
 
-        if (! $workspace->app instanceof App || $workspace->app->runtime_kind !== AppRuntimeKind::Php) {
+        if (! $workspace->app instanceof App || $workspace->app->runtime !== AppRuntimeKind::Php) {
             return [];
         }
 
@@ -438,7 +438,7 @@ final readonly class WorkspacesProbe
             return [];
         }
 
-        if ($workspace->app->runtime_kind === AppRuntimeKind::Php) {
+        if ($workspace->app->runtime === AppRuntimeKind::Php) {
             return [];
         }
 

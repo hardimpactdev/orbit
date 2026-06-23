@@ -32,6 +32,19 @@ final class GenericGatewayStreamRequest extends GatewayStreamRequest implements 
         return '/'.ltrim($this->path, '/');
     }
 
+    public function methodName(): string
+    {
+        return $this->method->value;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function payload(): array
+    {
+        return $this->payload;
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -702,6 +702,26 @@ BASH;
             return [];
         }
 
+        $observedState = is_string($observed['container_state'] ?? null)
+            ? $observed['container_state']
+            : null;
+
+        if ($observedState !== 'running') {
+            return [
+                new DriftEntry(
+                    family: $this->key(),
+                    key: 'tool.container_not_running',
+                    kind: DriftKind::Divergent,
+                    summary: "Tool {$tool->name} container {$containerName} is not running.",
+                    detail: [
+                        'tool' => $tool->name,
+                        'container' => $containerName,
+                        'observed_state' => $observedState,
+                    ],
+                ),
+            ];
+        }
+
         $observedHash = is_string($observed['container_spec_hash'] ?? null)
             ? $observed['container_spec_hash']
             : null;

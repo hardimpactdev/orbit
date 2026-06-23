@@ -10,9 +10,14 @@ use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    app()->instance(OrbitCaService::class, new EnsureAppProxyRouteTestCa);
+});
 
 final class EnsureAppProxyRouteTestShell implements RemoteShell
 {
@@ -54,12 +59,20 @@ final class EnsureAppProxyRouteTestCertificateInstaller implements SiteCertifica
     }
 }
 
+final readonly class EnsureAppProxyRouteTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
+
 it('creates a PHP app proxy route targeting the FrankenPHP runtime container', function (): void {
     $node = Node::factory()->appDev()->create(['tld' => 'test']);
     $app = App::factory()->for($node, 'node')->create([
         'name' => 'docs',
         'document_root' => 'public',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
@@ -76,8 +89,11 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
 
     expect($route->domain)->toBe('docs.test')
         ->and($route->config['runtime_upstream'])->toBe('http://orbit-app-docs:8080')
+        ->and($route->config['runtime_upstream_tls'] ?? null)->toBeNull()
         ->and($route->config['php_socket'])->toBeNull()
         ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
+        ->and($caddySite)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+        ->and($caddySite)->not->toContain('tls_server_name docs.test')
         ->and($caddySite)->not->toContain('php_fastcgi')
         ->and($caddySite)->not->toContain('file_server');
 });

@@ -177,7 +177,7 @@ it('converges both FPM pool and FrankenPHP runtime container when creating a php
 
 it('skips runtime container convergence for static workspaces during create (runtime)', function (): void {
     App::query()->where('name', 'demo')->update([
-        'runtime_kind' => AppRuntimeKind::Static->value]);
+        'runtime' => AppRuntimeKind::Static->value]);
 
     $shell = new WorkspaceStoreRuntimeContainerShell;
     app()->instance(RemoteShell::class, $shell);

@@ -60,7 +60,7 @@ derived from the default node role.
 - **App runtime kind:** The runtime shape selected for an app. `php` apps run
   in a dedicated FrankenPHP container; `static` apps serve files directly
   through `orbit-caddy` without a PHP runtime container and have no PHP image,
-  worker mode, or worker config. Exposed in JSON as `runtime_kind`.
+  worker mode, or worker config. Exposed in JSON as `runtime`.
 - **App runtime container:** Dedicated Docker container for one PHP app runtime.
   It mounts the app source, uses the selected PHP image, receives app
   environment, and is targeted by `orbit-caddy` over the node Docker network.

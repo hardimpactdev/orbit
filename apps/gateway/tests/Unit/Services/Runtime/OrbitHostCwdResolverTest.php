@@ -19,7 +19,7 @@ function appAtPath(string $name, string $path): App
     return App::factory()->for($node, 'node')->create([
         'name' => $name,
         'path' => $path,
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ]);
 }
 

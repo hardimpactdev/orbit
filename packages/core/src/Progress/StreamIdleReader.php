@@ -18,11 +18,12 @@ final readonly class StreamIdleReader
 
     public function __construct(
         private int $idleIntervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS,
+        private mixed $onIdle = null,
     ) {}
 
     public function read(StreamInterface $stream, int $maxBytes): string
     {
-        if (! ForkedFrameTicker::hasIdleCallback()) {
+        if (! ForkedFrameTicker::hasIdleCallback() && ! is_callable($this->onIdle)) {
             return $stream->read($maxBytes);
         }
 
@@ -32,9 +33,13 @@ final readonly class StreamIdleReader
             return $this->readWithIdlePolling($stream, $maxBytes);
         }
 
+        if (! is_resource($resource)) {
+            return '';
+        }
+
         while (! $stream->eof()) {
             if (! $this->isSelectableStreamResource($resource)) {
-                return '';
+                return $this->readWithIdlePolling($stream, $maxBytes);
             }
 
             $read = [$resource];
@@ -54,7 +59,7 @@ final readonly class StreamIdleReader
             }
 
             if ($ready === false) {
-                ForkedFrameTicker::invokeIdleCallback();
+                $this->invokeIdleCallback();
                 usleep($this->idleIntervalMicroseconds);
 
                 continue;
@@ -67,13 +72,13 @@ final readonly class StreamIdleReader
                     return $chunk;
                 }
 
-                ForkedFrameTicker::invokeIdleCallback();
+                $this->invokeIdleCallback();
                 usleep($this->idleIntervalMicroseconds);
 
                 continue;
             }
 
-            ForkedFrameTicker::invokeIdleCallback();
+            $this->invokeIdleCallback();
         }
 
         return '';
@@ -112,17 +117,28 @@ final readonly class StreamIdleReader
     private function readWithIdlePolling(StreamInterface $stream, int $maxBytes): string
     {
         while (! $stream->eof()) {
-            ForkedFrameTicker::invokeIdleCallback();
-            usleep($this->idleIntervalMicroseconds);
-
             $chunk = $stream->read($maxBytes);
 
             if ($chunk !== '') {
                 return $chunk;
             }
+
+            $this->invokeIdleCallback();
+            usleep($this->idleIntervalMicroseconds);
         }
 
         return '';
+    }
+
+    private function invokeIdleCallback(): void
+    {
+        if (is_callable($this->onIdle)) {
+            ($this->onIdle)();
+
+            return;
+        }
+
+        ForkedFrameTicker::invokeIdleCallback();
     }
 
     private function isSelectableStreamResource(mixed $resource): bool

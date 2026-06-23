@@ -38,7 +38,7 @@ final readonly class ToolsFixer
         $result = match ($entry->key) {
             'tool.config_missing', 'tool.config_mismatch' => $this->runRepairCommand($tool, $this->configRepairCommand($tool), $entry),
             'tool.credentials_missing', 'tool.credentials_mismatch' => $this->runRepairCommand($tool, $this->secretRepairCommand($tool), $entry),
-            'tool.container_missing', 'tool.container_spec_mismatch' => $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry),
+            'tool.container_missing', 'tool.container_not_running', 'tool.container_spec_mismatch' => $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry),
             'tool.agent_route_missing' => $this->fixAgentRoute($tool, $entry),
             'tool.agent_credentials_missing' => $this->fixAgentCredentials($tool, $entry),
             'tool.agent_user_missing' => $this->fixAgentUser($tool, $entry),

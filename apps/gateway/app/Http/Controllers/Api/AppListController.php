@@ -9,6 +9,7 @@ use App\Enums\ActivityLogType;
 use App\Models\App;
 use App\Models\Node;
 use App\Models\Workspace;
+use App\Services\Apps\AppResponsePayload;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use Illuminate\Database\Eloquent\Builder;
@@ -162,18 +163,10 @@ final readonly class AppListController implements Loggable
      */
     private function appPayloads(Collection $apps): array
     {
+        $appPayload = app(AppResponsePayload::class);
+
         return $apps->map(fn (App $app): array => [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime_kind' => $app->runtime_kind->value,
-            'php_version' => $app->php_version,
-            'worker_enabled' => $app->worker_enabled,
-            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
-            'adopted' => $app->adopted,
+            ...$appPayload->forApp($app),
             'workspaces' => $this->workspacePayloads($app),
         ])->all();
     }

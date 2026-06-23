@@ -23,7 +23,7 @@ function makeReadinessApp(array $overrides = []): App
         'path' => '/home/orbit/apps/docs',
         'document_root' => 'public',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
     ], $overrides));
 }
 
@@ -99,13 +99,13 @@ afterEach(function (): void {
 
 describe('AppWorkerReadiness service', function (): void {
     it('refuses worker mode for static apps', function (): void {
-        $app = makeReadinessApp(['runtime_kind' => AppRuntimeKind::Static]);
+        $app = makeReadinessApp(['runtime' => AppRuntimeKind::Static]);
 
         $result = (new AppWorkerReadiness(readinessShell('')))->assess($app);
 
         expect($result->ready)->toBeFalse()
             ->and($result->code)->toBe('app.worker_unsupported_runtime')
-            ->and($result->missing)->toBe(['runtime_kind=php']);
+            ->and($result->missing)->toBe(['runtime=php']);
     });
 
     it('returns app.worker_unknown_node when the app has no owning node relation', function (): void {
@@ -115,7 +115,7 @@ describe('AppWorkerReadiness service', function (): void {
         $app->path = '/home/orbit/apps/docs';
         $app->document_root = 'public';
         $app->php_version = '8.5';
-        $app->runtime_kind = AppRuntimeKind::Php;
+        $app->runtime = AppRuntimeKind::Php;
 
         $result = (new AppWorkerReadiness(readinessShell('')))->assess($app);
 

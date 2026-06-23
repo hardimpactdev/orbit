@@ -64,3 +64,25 @@ it('throttles duplicate idle invocations within one interval window', function (
 
     expect($tickCount)->toBe(1);
 });
+
+it('can register an idle callback without forking a signal child', function (): void {
+    $tickCount = 0;
+
+    ForkedFrameTicker::withoutForking(function () use (&$tickCount): void {
+        $ticker = new ForkedFrameTicker(100_000);
+        $ticker->start(function () use (&$tickCount): void {
+            $tickCount++;
+        });
+
+        usleep(250_000);
+
+        expect($tickCount)->toBe(0)
+            ->and(ForkedFrameTicker::hasIdleCallback())->toBeTrue();
+
+        ForkedFrameTicker::invokeIdleCallback();
+        $ticker->stop();
+    });
+
+    expect($tickCount)->toBe(1)
+        ->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
+});

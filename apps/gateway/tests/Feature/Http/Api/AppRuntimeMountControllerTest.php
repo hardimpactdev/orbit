@@ -85,7 +85,7 @@ describe('AppRuntimeMountController', function (): void {
         App::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
 
         $created = postAppRuntimeMountJson('/api/apps/nckrtl/mounts', [
@@ -153,7 +153,7 @@ describe('AppRuntimeMountController', function (): void {
         App::factory()->for($appNode, 'node')->create([
             'name' => 'nckrtl',
             'path' => '/home/nckrtl/apps/nckrtl',
-            'runtime_kind' => AppRuntimeKind::Php,
+            'runtime' => AppRuntimeKind::Php,
         ]);
 
         $response = postAppRuntimeMountJson('/api/apps/nckrtl/mounts', $payload);
@@ -210,7 +210,7 @@ describe('AppRuntimeMountController', function (): void {
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', $reason);
     })->with([
-        'static app' => [['role' => 'appDev'], ['runtime_kind' => AppRuntimeKind::Static], 'app_runtime_kind_not_php'],
+        'static app' => [['role' => 'appDev'], ['runtime' => AppRuntimeKind::Static], 'app_runtime_not_php'],
         'app-prod app' => [['role' => 'appProd'], ['environment' => 'production'], 'app_mounts_app_dev_only'],
     ]);
 });

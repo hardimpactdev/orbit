@@ -8,6 +8,7 @@ use App\Actions\Apps\CreateAppSourceOnNode;
 use App\Actions\Apps\EnactAppRuntime;
 use App\Contracts\Loggable;
 use App\Data\Apps\AppInstanceRuntimeRequirementsData;
+use App\Data\Apps\AppRuntimeConfig;
 use App\Data\Apps\OrbitAppInstanceDriverConfigData;
 use App\Enums\ActivityLogType;
 use App\Enums\Apps\AppInstanceDriver;
@@ -17,6 +18,7 @@ use App\Models\App;
 use App\Models\Node;
 use App\Models\OperationRun;
 use App\Models\ProxyRoute;
+use App\Services\Apps\AppResponsePayload;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\OperationRunRecorder;
 use App\Services\Php\PhpRuntimeCatalog;
@@ -103,6 +105,7 @@ final class AppStoreController implements Loggable
             'document_root' => $input['root'],
             'repository' => $input['repository'],
             'php_version' => $input['php_version'],
+            'runtime_config' => $this->runtimeConfigForStorage($input['runtime_proxy_transport']),
             'adopted' => false,
         ]);
 
@@ -123,7 +126,7 @@ final class AppStoreController implements Loggable
     }
 
     /**
-     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function stream(
         Request $request,
@@ -193,6 +196,7 @@ final class AppStoreController implements Loggable
                     'document_root' => $input['root'],
                     'repository' => $input['repository'],
                     'php_version' => $input['php_version'],
+                    'runtime_config' => $this->runtimeConfigForStorage($input['runtime_proxy_transport']),
                     'adopted' => false,
                 ]);
 
@@ -261,7 +265,7 @@ final class AppStoreController implements Loggable
     }
 
     /**
-     * @return array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}|JsonResponse
+     * @return array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -271,6 +275,7 @@ final class AppStoreController implements Loggable
         $root = $this->stringInput($request, 'root') ?? 'public';
         $phpVersion = $this->stringInput($request, 'php_version') ?? PhpRuntimeCatalog::DEFAULT;
         $domain = $this->stringInput($request, 'domain');
+        $runtimeProxyTransport = $this->stringInput($request, 'runtime_proxy_transport');
 
         if ($name === null) {
             return $this->validationFailed('name', 'App name is required.');
@@ -300,6 +305,14 @@ final class AppStoreController implements Loggable
             return $this->validationFailed('domain', 'Production domain is invalid.');
         }
 
+        if ($runtimeProxyTransport !== null) {
+            try {
+                AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
+            } catch (\InvalidArgumentException) {
+                return $this->validationFailed('runtime_proxy_transport', "Runtime proxy transport must be 'http' or 'https'.");
+            }
+        }
+
         return [
             'name' => $name,
             'node' => $node,
@@ -307,7 +320,26 @@ final class AppStoreController implements Loggable
             'root' => $root,
             'php_version' => $phpVersion,
             'domain' => $domain,
+            'runtime_proxy_transport' => $runtimeProxyTransport,
         ];
+    }
+
+    /**
+     * @return array{proxy_transport: string}|null
+     */
+    private function runtimeConfigForStorage(?string $runtimeProxyTransport): ?array
+    {
+        if ($runtimeProxyTransport === null) {
+            return null;
+        }
+
+        $config = AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
+
+        if (! $config->usesInnerHttpsProxyTransport()) {
+            return null;
+        }
+
+        return $config->toArray();
     }
 
     private function resolveTargetNode(string $nodeName, string $requiredRole): Node|JsonResponse
@@ -330,7 +362,7 @@ final class AppStoreController implements Loggable
     }
 
     /**
-     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string}  $input
+     * @param  array{name: string, node: string, repository: ?string, root: string, php_version: string, domain: ?string, runtime_proxy_transport: ?string}  $input
      */
     private function proxyRouteDomain(array $input, Node $node): string
     {
@@ -363,19 +395,7 @@ final class AppStoreController implements Loggable
      */
     private function appPayload(App $app): array
     {
-        return [
-            'name' => $app->name,
-            'node' => $app->node?->name,
-            'url' => $app->url(),
-            'path' => $app->path,
-            'root' => $app->document_root,
-            'repository' => $app->repository,
-            'runtime_kind' => $app->runtime_kind->value,
-            'php_version' => $app->php_version,
-            'worker_enabled' => $app->worker_enabled,
-            'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
-            'adopted' => $app->adopted,
-        ];
+        return app(AppResponsePayload::class)->forApp($app);
     }
 
     private function validationFailed(string $field, string $message): JsonResponse

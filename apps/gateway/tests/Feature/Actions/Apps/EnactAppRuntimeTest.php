@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process as OrbitProcess;
 use App\Models\ProxyRoute;
+use App\Services\Ca\OrbitCaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\SiteCertificateInstallerFake;
 
@@ -37,7 +38,7 @@ function makeAppOnDevNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'name' => 'docs',
         'path' => '/home/orbit/apps/docs',
         'php_version' => '8.5',
-        'runtime_kind' => $kind,
+        'runtime' => $kind,
     ]);
 }
 
@@ -69,7 +70,7 @@ function makeAppOnProdNode(AppRuntimeKind $kind = AppRuntimeKind::Php): App
         'environment' => 'production',
         'path' => '/home/docs/app',
         'php_version' => '8.5',
-        'runtime_kind' => $kind,
+        'runtime' => $kind,
     ]);
 }
 
@@ -96,7 +97,16 @@ final class EnactAppRuntimeRecordingShell implements RemoteShell
 
 beforeEach(function (): void {
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
+    app()->instance(OrbitCaService::class, new EnactAppRuntimeTestCa);
 });
+
+final readonly class EnactAppRuntimeTestCa extends OrbitCaService
+{
+    public function rootCert(): string
+    {
+        return 'fake-root-ca';
+    }
+}
 
 it('converges a FrankenPHP runtime container for PHP apps and writes the php.ini config', function (): void {
     $app = makeAppOnDevNode(AppRuntimeKind::Php);
@@ -406,7 +416,7 @@ it('throws when the app has no owning node', function (): void {
         'name' => 'orphan',
         'path' => '/home/orbit/apps/orphan',
         'php_version' => '8.5',
-        'runtime_kind' => AppRuntimeKind::Php,
+        'runtime' => AppRuntimeKind::Php,
         'node_id' => 99999,
     ]);
     $app->setRelation('node', null);
