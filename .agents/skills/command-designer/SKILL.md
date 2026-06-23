@@ -23,7 +23,7 @@ Read only the reference files needed for the task:
 | Convert or review command docs, file structure, external decision tracking, doctor family docs, test mapping, effects, prerequisites | [`references/command-documentation.md`](references/command-documentation.md) |
 | Semantically audit command docs against the blueprint, mission, architecture, family contracts, and sibling command decisions | [`references/semantic-check.md`](references/semantic-check.md) |
 | Design input modes, prompt behavior, `--json`, JSON envelopes, failure metadata, destructive `--force` behavior | [`references/invocation-model.md`](references/invocation-model.md) |
-| Pick which renderer or prompt primitive a command should use (lists, inputs, progress) | [`docs/ux/commands/`](../../../docs/ux/commands/README.md) |
+| Pick which renderer or prompt primitive a command should use (lists, inputs, progress) | [`apps/docs/content/ux/commands/`](../../../apps/docs/content/ux/commands/README.md) |
 | Implement terminal output mechanics — ANSI codes, `WithStepTree`/`WithSpinner` traits, animation patterns, gateway-streamed SSE | [`references/terminal-output.md`](references/terminal-output.md) |
 | Implement commands, DTOs, platform handlers, command bases, app resolution, code-level conventions | [`references/implementation-patterns.md`](references/implementation-patterns.md) |
 
@@ -81,7 +81,7 @@ Read only the reference files needed for the task:
   [`invocation-model.md`](references/invocation-model.md).
 - For a question about which renderer or prompt primitive to use (table vs
   datatable, text vs select vs search, progress tree vs spinner), start with
-  [`docs/ux/commands/`](../../../docs/ux/commands/README.md).
+  [`apps/docs/content/ux/commands/`](../../../apps/docs/content/ux/commands/README.md).
 - For a complaint about blank terminals, progress mechanics, ANSI codes,
   trait APIs, or animation patterns, start with
   [`terminal-output.md`](references/terminal-output.md).

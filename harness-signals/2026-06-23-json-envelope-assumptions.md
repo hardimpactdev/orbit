@@ -1,14 +1,14 @@
 # Signal: JSON Envelope Assumptions Hide Real Command Results
 
-Status: open
+Status: guarded
 First seen: 2026-06-22
 Last seen: 2026-06-23
 Last reviewed: 2026-06-23
 Source worktree: one-time historical Codex backfill
 Source commit: none
 Signal type: command-contract
-Guardrail target: .agents/review-personas/cli-command.md or focused command-contract tests
-Guardrail change: pending
+Guardrail target: .agents/review-personas/cli-command.md
+Guardrail change: current CLI reviewer persona slice
 Related signals: harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md
 Superseded by: none
 Tags: cli, json, command-contract, reviewer-persona
@@ -28,27 +28,28 @@ keys.
 
 ## Missing Guardrail
 
-Orbit has command tests, but the harness does not yet have a CLI reviewer
-persona or deterministic command-contract guard that asks agents to inspect the
-actual JSON shape before summarizing results.
+Orbit has command tests, but the harness did not yet have a CLI reviewer
+persona that asks agents to inspect the actual JSON shape before summarizing
+results.
 
 ## Guardrail Change
 
-Pending. This should feed Slice 7, the first CLI command reviewer persona, or a
-later deterministic command-contract test when the affected command contract is
-clear enough.
+`.agents/review-personas/cli-command.md` now requires reviewers to inspect the
+actual nested JSON shape before summarizing evidence, and to keep human and JSON
+renderer proof separate.
 
 ## Verification
 
-No guardrail is in place yet beyond this searchable signal record.
+`rg -n "success.data|JSON Output|CLI Command Reviewer" .agents/review-personas/cli-command.md harness-signals/2026-06-23-json-envelope-assumptions.md`
+shows the reviewer path and this signal record agree.
 
 ## Reappearance Check
 
-If this affects another command implementation or release report, keep this
-record `open` but add the command and result shape here, then prioritize the
-CLI reviewer persona before broader automation.
+If this affects another command implementation or release report, mark this
+record `recurring`, add the command and result shape here, and consider a
+deterministic command-contract test for the affected command.
 
 ## Curation Notes
 
-This is intentionally not fixed in the first batch because the agreed first
-batch stops before reviewer-persona infrastructure.
+Guarded by the first CLI reviewer persona. Keep open for future deterministic
+sensor work only if the issue recurs.

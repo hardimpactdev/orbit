@@ -53,13 +53,15 @@ Start at the monorepo root and read in this order:
    occurrences, guardrail changes, and recurrence checks
 7. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
-8. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
+8. **`.agents/review-personas/`**: focused review checklists activated by the
+   routing table after implementation evidence exists
+9. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
    changes and reversals
-9. **`apps/docs/content/`**: product authority (behavior contracts, not
+10. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-10. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+11. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-11. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
+12. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
    Rector, and E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
@@ -72,7 +74,7 @@ Use this table to pick the smallest workflow that can prove the change.
 | Surface | Skill | Authority Docs | Test Lane | Reviewer Needed | Loop Depth | Hard Stop |
 |---------|-------|----------------|-----------|-----------------|------------|-----------|
 | Docs-only | `updating-documentation` | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | Human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
-| CLI command | `command-designer`, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; E2E next; retained Incus VM Solo-terminal gate before live or release-candidate deploy | CLI contract reviewer or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained VM proof when CLI behavior needs it, or live topology would be touched without approval |
+| CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; E2E next; PTY capture for terminal UX/cadence issues; retained Incus VM Solo-terminal gate before live or release-candidate deploy | `.agents/review-personas/cli-command.md` or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained VM proof when CLI behavior needs it, or live topology would be touched without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; E2E when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
 | Provisioning/live-node | `e2e-verification-lanes`, `implementing-features` | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Prepared-topology lane, retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |
 | Release | `release` | Release skill, changelog/version files, product docs touched by release | Release gates: doctor before, `update:all`, doctor after, `node:list`, plus exception checks | Human before tag, publish, or merge/push beyond the approved release step | Record release-gate surprises and recurring fleet drift | Any release gate fails or approval boundary is not explicit |

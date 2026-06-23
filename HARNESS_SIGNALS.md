@@ -16,7 +16,7 @@ should become guidance or enforcement.
 | Docs drift audit finding | Finding id, conflicting files, and authority chain | Is authority unclear or is one downstream doc stale? | Product docs, product-decision ledger, banned term, or docs audit skill | `composer docs-lint` and focused drift re-check. |
 | Agent implementation mistake | Prompt, changed files, and correction needed | Did the agent miss routing, ownership, or verification context? | `AGENTS.md`, `HARNESS.md`, `LOOP.md`, or relevant skill | Run through the discovery path and confirm the missing route exists. |
 | Worktree/bootstrap failure | Worktree path, command, and setup output | Is the setup flow broken or did an agent bypass it? | `bin/orbit-prepare-worktree`, `AGENTS.md`, or `implementing-features` | Prepare a fresh worktree or re-run the failed setup step. |
-| Command-contract drift | Command, docs path, test path, and observed output | Is the public contract wrong, under-tested, or just the implementation stale? | `command-designer`, command docs, Pest coverage, or product-decision ledger | Focused Pest for the command plus docs-lint when docs changed. |
+| Command-contract drift | Command, docs path, test path, and observed output | Is the public contract wrong, under-tested, missing reviewer coverage, or just the implementation stale? | `command-designer`, `.agents/review-personas/cli-command.md`, command docs, Pest coverage, or product-decision ledger | Focused Pest for the command plus docs-lint when docs changed. |
 | Security or secret-handling concern | Affected surface and exposure path | Is this a concrete leak, missing review rule, or product policy change? | `spatie-security`, tests/static checks, product docs, or banned term | Focused security regression and relevant quality gate. |
 
 ## Guardrail Target Selection
@@ -30,6 +30,9 @@ should become guidance or enforcement.
   searchable across worktrees.
 - Update a skill when the signal is about workflow, command usage, ownership,
   verification, or environment setup.
+- Update a reviewer persona when the signal is about post-test review criteria,
+  evidence interpretation, or repeated mistakes that a focused review checklist
+  should catch.
 - Update product docs when the signal changes or clarifies user-facing Orbit
   behavior.
 - Update tests or static checks when a future failure can be detected

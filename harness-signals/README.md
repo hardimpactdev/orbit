@@ -115,6 +115,6 @@ Keep the file short. The goal is fast retrieval:
 The signal record is evidence and history. It is not the guardrail.
 
 Durable guardrail targets live in places like `AGENTS.md`, `HARNESS.md`,
-`LOOP.md`, `HARNESS_SIGNALS.md`, `.agents/skills/**`, product docs, tests, or
-static checks. A guarded signal should point to the target that now guides or
-blocks future work.
+`LOOP.md`, `HARNESS_SIGNALS.md`, `.agents/skills/**`,
+`.agents/review-personas/**`, product docs, tests, or static checks. A guarded
+signal should point to the target that now guides or blocks future work.

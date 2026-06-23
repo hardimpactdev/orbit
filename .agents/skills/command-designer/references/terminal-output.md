@@ -4,15 +4,15 @@ Use this reference for the implementation mechanics behind Orbit's terminal
 output: ANSI codes, animation patterns, traits, and the gateway-streamed SSE
 shape. Primitive selection (which renderer or prompt to use, and when) is
 product-authority and lives in
-[`docs/ux/commands/`](../../../../docs/ux/commands/README.md).
+[`apps/docs/content/ux/commands/`](../../../../apps/docs/content/ux/commands/README.md).
 
 For the visible behavior of:
 
-- single-entity detail output → see [`docs/ux/commands/details/show-detail.md`](../../../../docs/ux/commands/details/show-detail.md);
-- read-only list output → see [`docs/ux/commands/lists/table.md`](../../../../docs/ux/commands/lists/table.md);
-- interactive row selection → see [`docs/ux/commands/lists/data-table-prompt.md`](../../../../docs/ux/commands/lists/data-table-prompt.md);
-- prompts (text, confirm, select, etc.) → see [`docs/ux/commands/inputs/`](../../../../docs/ux/commands/inputs/README.md);
-- multi-step progress and spinners → see [`docs/ux/commands/progress/`](../../../../docs/ux/commands/progress/README.md).
+- single-entity detail output → see [`apps/docs/content/ux/commands/details/show-detail.md`](../../../../apps/docs/content/ux/commands/details/show-detail.md);
+- read-only list output → see [`apps/docs/content/ux/commands/lists/table.md`](../../../../apps/docs/content/ux/commands/lists/table.md);
+- interactive row selection → see [`apps/docs/content/ux/commands/lists/data-table-prompt.md`](../../../../apps/docs/content/ux/commands/lists/data-table-prompt.md);
+- prompts (text, confirm, select, etc.) → see [`apps/docs/content/ux/commands/inputs/`](../../../../apps/docs/content/ux/commands/inputs/README.md);
+- multi-step progress and spinners → see [`apps/docs/content/ux/commands/progress/`](../../../../apps/docs/content/ux/commands/progress/README.md).
 
 This file owns implementation patterns only.
 
@@ -163,13 +163,13 @@ Prompting remains a caller-side input-mode concern.
 
 Info/detail commands and list commands do not use progress trees unless they
 do slow external work. Primitive selection lives in
-[`docs/ux/commands/lists/`](../../../../docs/ux/commands/lists/README.md):
+[`apps/docs/content/ux/commands/lists/`](../../../../apps/docs/content/ux/commands/lists/README.md):
 read-only list output uses
-[`Laravel\Prompts\table`](../../../../docs/ux/commands/lists/table.md) and
+[`Laravel\Prompts\table`](../../../../apps/docs/content/ux/commands/lists/table.md) and
 interactive row selection uses
-[`Laravel\Prompts\datatable`](../../../../docs/ux/commands/lists/data-table-prompt.md).
+[`Laravel\Prompts\datatable`](../../../../apps/docs/content/ux/commands/lists/data-table-prompt.md).
 Show/detail commands use the shared
-[`show-detail`](../../../../docs/ux/commands/details/show-detail.md) primitive
+[`show-detail`](../../../../apps/docs/content/ux/commands/details/show-detail.md) primitive
 implemented by `RendersShowDetails`.
 
 ### Display Conventions
@@ -330,10 +330,10 @@ When migrating:
 - Do not use `HasStepOutput`.
 - Do not use `intro()` from Laravel Prompts.
 - Do not use `$this->table()` for list data; use `Laravel\Prompts\table` per
-  [`docs/ux/commands/lists/table.md`](../../../../docs/ux/commands/lists/table.md).
+  [`apps/docs/content/ux/commands/lists/table.md`](../../../../apps/docs/content/ux/commands/lists/table.md).
 - Do not use Symfony `$this->ask`, `$this->confirm`, `$this->choice`, or
   `$this->secret` for prompts; use the matching primitive in
-  [`docs/ux/commands/inputs/`](../../../../docs/ux/commands/inputs/README.md).
+  [`apps/docs/content/ux/commands/inputs/`](../../../../apps/docs/content/ux/commands/inputs/README.md).
 - Do not hardcode spinner frames.
 - Do not block without animation when a step can take more than one second.
 - Do not skip the JSON path.
