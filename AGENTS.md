@@ -63,9 +63,13 @@ product authority and are not linted as product docs.
   request.
 - Actual implementation happens through `.agents/skills/implementing-features`
   in an isolated worktree. That includes documentation updates, product-decision
-  ledger entries, tests, and code changes.
+  ledger entries, tests, and code changes. Read that skill before starting
+  implementation work.
 - Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
-  implementation worktrees. Agents must not recreate that setup flow manually.
+  implementation worktrees. This is Orbit's worktree setup path and takes
+  priority over generic worktree skills or ad hoc `git worktree add`. Agents
+  must not recreate that setup flow manually. If the script cannot be used,
+  stop and report the blocker instead of silently falling back.
 - When a feature is implemented and verified, commit the worktree branch, merge
   it back into `main` from the primary `~/orbit` checkout, remove the completed
   worktree/branch, and leave `~/orbit` on updated `main`. Preserve unrelated
