@@ -24,7 +24,8 @@ final class S3UnpublishCommand extends GatewayCommand
         {host? : Public S3 hostname to remove (e.g. s3.example.com)}
         {--node= : Active s3 node to unpublish from}
         {--force : Confirm destructive removal without prompting}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Remove a public HTTPS hostname from the fleet S3 service.';
@@ -138,7 +139,7 @@ final class S3UnpublishCommand extends GatewayCommand
             return null;
         }
 
-        if ($this->wantsJson() || ! $this->input->isInteractive()) {
+        if ($this->wantsMachineJson() || ! $this->input->isInteractive()) {
             return $this->renderFailure(
                 'validation_failed',
                 '--force is required to unpublish an S3 host in non-interactive mode.',
@@ -178,7 +179,7 @@ final class S3UnpublishCommand extends GatewayCommand
 
     private function isInteractiveInput(): bool
     {
-        return ! $this->wantsJson() && $this->input->isInteractive();
+        return $this->allowsInteractiveInput();
     }
 
     /**

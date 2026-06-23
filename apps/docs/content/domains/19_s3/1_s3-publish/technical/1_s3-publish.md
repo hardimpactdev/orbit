@@ -1,4 +1,4 @@
-# Technical Contract: `orbit s3:publish [host] [--node=<node>] [--json]`
+# Technical Contract: `orbit s3:publish [host] [--node=<node>] [--json|--stream-json]`
 
 [Back to public `s3:publish` documentation.](../s3-publish.md)
 
@@ -16,7 +16,7 @@
 ## Signature
 
 ```bash
-orbit s3:publish [host] [--node=<node>] [--json]
+orbit s3:publish [host] [--node=<node>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `host` | `argument` | Required in non-interactive mode. | Never. | None. | Public DNS hostname, not a URL, not a wildcard, and not already owned by a non-S3 route. |
 | `node` | `--node` | Optional. | Never. | The only visible active s3 node when exactly one exists. | Visible active node with the `s3` role. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
+| `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
 
 ## Input Mode Contracts
 
@@ -66,6 +67,9 @@ or TLS, or render role-local Docker Compose.
 
 - [Human renderer](6.1_s3-publish_output-render_human.md)
 - [JSON renderer](6.2_s3-publish_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 

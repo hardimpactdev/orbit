@@ -92,8 +92,14 @@ final readonly class SpinnerTreeRenderer
             return;
         }
 
+        $output->write($this->updateLineSequence($index, $total, $content));
+    }
+
+    public function updateLineSequence(int $index, int $total, string $content): string
+    {
         $up = 2 * ($total - $index) + 1;
-        $output->write("\e[{$up}A\e[2K\r{$content}\e[{$up}B\r");
+
+        return "\e[{$up}A\e[2K\r{$content}\e[{$up}B\r";
     }
 
     /**

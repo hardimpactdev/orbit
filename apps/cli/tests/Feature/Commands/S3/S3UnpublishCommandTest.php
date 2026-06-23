@@ -29,7 +29,7 @@ describe('S3Unpublish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
             && $request->url() === 'https://gateway.test/api/s3/public-hosts/s3.example.com'
             && $request->hasHeader('Accept', 'text/event-stream')
             && $request->data() === ['node' => 'storage-1']);
@@ -49,7 +49,7 @@ describe('S3Unpublish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
             && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com')
             && (! isset($request->data()['host'])));
 
@@ -57,19 +57,15 @@ describe('S3Unpublish CLI command', function (): void {
     });
 
     it('auto-resolves node from a single s3 node', function (): void {
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame()));
+
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(s3UnpublishFakeNodeListEnvelope(['storage-1']), 200),
-            'https://gateway.test/api/s3/public-hosts/*' => Http::response(
-                gatewayProgressFrame('complete', s3UnpublishCompleteFrame()),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
         ]);
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
 
         [$exitCode] = runCommand($this, 's3:unpublish', [
             'host' => 's3.example.com',
@@ -79,7 +75,7 @@ describe('S3Unpublish CLI command', function (): void {
 
         expect($exitCode)->toBe(0);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
             && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com'));
     });
 
@@ -381,48 +377,40 @@ describe('S3Unpublish CLI command', function (): void {
     // -----------------------------------------------------------------------
 
     it('prompts for the host when the host argument is omitted in interactive mode', function (): void {
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame('prompted.example.com', 'storage-1')));
+
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(s3UnpublishFakeNodeListEnvelope(['storage-1']), 200),
-            'https://gateway.test/api/s3/public-hosts/*' => Http::response(
-                gatewayProgressFrame('complete', s3UnpublishCompleteFrame('prompted.example.com', 'storage-1')),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
         ]);
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
 
         $this->artisan('s3:unpublish', ['--node' => 'storage-1', '--force' => true])
             ->expectsQuestion('Public hostname to remove (e.g. s3.example.com)', 'prompted.example.com')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
             && str_contains($request->url(), '/api/s3/public-hosts/prompted.example.com'));
     });
 
     it('prompts for confirmation in interactive mode without --force', function (): void {
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame('s3.example.com', 'storage-1')));
+
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(s3UnpublishFakeNodeListEnvelope(['storage-1']), 200),
-            'https://gateway.test/api/s3/public-hosts/*' => Http::response(
-                gatewayProgressFrame('complete', s3UnpublishCompleteFrame('s3.example.com', 'storage-1')),
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
         ]);
 
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
-        app()->forgetInstance(GatewayStreamClient::class);
 
         $this->artisan('s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1'])
             ->expectsConfirmation("Remove public S3 host 's3.example.com'?", 'yes')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
             && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com'));
     });
 
@@ -440,7 +428,7 @@ describe('S3Unpublish CLI command', function (): void {
             ->expectsConfirmation("Remove public S3 host 's3.example.com'?", 'no')
             ->assertFailed();
 
-        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/api/s3/public-hosts/'));
+        assertGatewayStreamNotSent(fn (FakeGatewayStreamRequest $request): bool => str_contains($request->url(), '/api/s3/public-hosts/'));
     });
 });
 

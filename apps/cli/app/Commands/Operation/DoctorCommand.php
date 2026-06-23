@@ -13,6 +13,7 @@ use App\Services\Doctor\DoctorPanelRenderer;
 use App\Services\Doctor\DoctorTerminalFrameExtractor;
 use App\Services\Doctor\InteractiveDoctorIssueSelector;
 use App\Services\GatewayStreamClient;
+use App\Services\StreamJsonIdleStepWriter;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEventType;
 use Throwable;
@@ -21,6 +22,8 @@ final class DoctorCommand extends GatewayCommand
 {
     use ResolvesHostContext;
     use StreamsGatewayProgress;
+
+    private const int STREAM_JSON_IDLE_PROGRESS_INTERVAL_MICROSECONDS = 1_000_000;
 
     #[\Override]
     protected $signature = 'doctor
@@ -448,21 +451,46 @@ final class DoctorCommand extends GatewayCommand
     {
         $client = app(GatewayStreamClient::class);
         $streamStarted = false;
+        $idleWriter = app(StreamJsonIdleStepWriter::class);
+
+        $emitFrame = function (ProgressEventType $type, array $eventPayload): void {
+            $this->line(json_encode(
+                $this->doctorStreamFrame($type, $eventPayload),
+                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+            ));
+        };
+
+        $writeIdleLine = function (string $line): void {
+            $this->output->write($line);
+        };
 
         try {
             return $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use (&$streamStarted): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use (&$streamStarted, $emitFrame, $idleWriter, $writeIdleLine): void {
                     $streamStarted = true;
+                    $idleWriter->stop();
 
-                    $this->line(json_encode(
-                        $this->doctorStreamFrame($type, $eventPayload),
-                        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-                    ));
+                    $runningStepPayload = $this->replayableRunningStepPayload($type, $eventPayload);
+
+                    $emitFrame($type, $eventPayload);
+
+                    if ($runningStepPayload !== null) {
+                        $idleWriter->start(
+                            json_encode(
+                                $this->doctorStreamFrame(ProgressEventType::Step, $runningStepPayload),
+                                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
+                            ).PHP_EOL,
+                            $writeIdleLine,
+                            max(1, (int) ceil(self::STREAM_JSON_IDLE_PROGRESS_INTERVAL_MICROSECONDS / 1_000_000)),
+                        );
+                    }
                 },
             );
         } catch (GatewayApiException $exception) {
+            $idleWriter->stop();
+
             if ($streamStarted) {
                 $this->line(json_encode(
                     $this->doctorStreamGatewayFailureFrame($exception),
@@ -473,7 +501,28 @@ final class DoctorCommand extends GatewayCommand
             }
 
             return $this->renderGatewayFailure($exception);
+        } finally {
+            $idleWriter->stop();
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>|null
+     */
+    private function replayableRunningStepPayload(ProgressEventType $type, array $payload): ?array
+    {
+        if ($type !== ProgressEventType::Step) {
+            return null;
+        }
+
+        $status = $payload['status'] ?? null;
+
+        if (! is_string($status) || ! in_array($status, ['running', 'progress', 'checking'], true)) {
+            return null;
+        }
+
+        return $payload;
     }
 
     /**

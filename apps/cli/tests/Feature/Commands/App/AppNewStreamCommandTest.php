@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
-
 describe('AppNewStream command', function (): void {
     it('emits only the final AppNewStream complete frame in json mode', function (): void {
         $complete = [
@@ -29,7 +26,7 @@ describe('AppNewStream command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/apps'
             && $request->hasHeader('Accept', 'text/event-stream'));
 

@@ -22,7 +22,8 @@ final class S3PublishCommand extends GatewayCommand
     protected $signature = 's3:publish
         {host? : Public DNS hostname for S3 (e.g. s3.example.com)}
         {--node= : Active s3 node to publish on}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Publish a public HTTPS hostname for the fleet S3 service.';
@@ -142,7 +143,7 @@ final class S3PublishCommand extends GatewayCommand
 
     private function isInteractiveInput(): bool
     {
-        return ! $this->wantsJson() && $this->input->isInteractive();
+        return $this->allowsInteractiveInput();
     }
 
     /**

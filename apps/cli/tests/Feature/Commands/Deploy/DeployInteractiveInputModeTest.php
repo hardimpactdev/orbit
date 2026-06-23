@@ -42,7 +42,7 @@ describe('deploy interactive input mode', function (): void {
             ->expectsOutputToContain('Deployment completed')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && str_contains($request->url(), '/api/deploy/run')
             && $request->data() === [
                 'app' => 'docs',

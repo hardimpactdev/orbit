@@ -2,24 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Services\GatewayStreamClient;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('workspace write commands', function (): void {
     it('posts workspace:new payloads to the gateway workspaces endpoint', function (): void {
-        config()->set('orbit.gateway.url', 'https://gateway.test');
-        config()->set('orbit.gateway.timeout', 30);
-        app()->forgetInstance(GatewayStreamClient::class);
-
-        Http::fake([
-            'https://gateway.test/*' => Http::response(
-                "event: complete\n"
-                .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs"}}}}'."\n\n",
-                200,
-                ['Content-Type' => 'text/event-stream'],
-            ),
-        ]);
+        fakeGatewayProgressStream(
+            "event: complete\n"
+            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs"}}}}'."\n\n",
+        );
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
             'name' => 'feature-docs',
@@ -31,7 +22,7 @@ describe('workspace write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/workspaces'
             && $request->data() === [
                 'name' => 'feature-docs',
@@ -68,18 +59,10 @@ describe('workspace write commands', function (): void {
         putenv('ORBIT_HOST_CWD=/Users/nckrtl/Sites/docs/.worktrees/feature-docs');
 
         try {
-            config()->set('orbit.gateway.url', 'https://gateway.test');
-            config()->set('orbit.gateway.timeout', 30);
-            app()->forgetInstance(GatewayStreamClient::class);
-
-            Http::fake([
-                'https://gateway.test/*' => Http::response(
-                    "event: complete\n"
-                    .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","action":"set_up"}}}'."\n\n",
-                    200,
-                    ['Content-Type' => 'text/event-stream'],
-                ),
-            ]);
+            fakeGatewayProgressStream(
+                "event: complete\n"
+                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","action":"set_up"}}}'."\n\n",
+            );
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
                 'name' => 'feature-docs',
@@ -91,7 +74,7 @@ describe('workspace write commands', function (): void {
             restoreHostCwd($previousHostCwd);
         }
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/workspaces/setup'
             && $request->data() === [
                 'name' => 'feature-docs',

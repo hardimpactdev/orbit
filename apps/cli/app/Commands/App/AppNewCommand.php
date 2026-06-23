@@ -17,7 +17,8 @@ final class AppNewCommand extends AppGatewayCommand
         {--php-version=8.5 : PHP version}
         {--domain= : Production domain}
         {--runtime-proxy-transport=http : FrankenPHP inner proxy transport (http|https)}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Create a new app on an app node.';

@@ -19,7 +19,8 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
         {--app= : Parent app name}
         {--base=main : Base git ref}
         {--php-version= : PHP version override}
-        {--json : Output JSON}';
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Create a new workspace intent.';
@@ -101,6 +102,6 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
 
     private function isInteractiveInput(): bool
     {
-        return ! $this->wantsJson() && $this->input->isInteractive();
+        return $this->allowsInteractiveInput();
     }
 }

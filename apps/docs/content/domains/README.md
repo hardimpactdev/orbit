@@ -281,11 +281,11 @@ Use this table to determine which input mode applies and how missing input is ha
 
 | Mode | Used when | Missing required input |
 | --- | --- | --- |
-| Interactive input mode | The command is running in a TTY and `--json` is not present. | Prompt before side effects, using the command's prompt mapping. |
-| Non-interactive input mode | The command is running without a TTY, or `--json` is present. | Fail before side effects with a clear validation message. |
+| Interactive input mode | The command is running in a TTY and neither `--json` nor `--stream-json` is present. | Prompt before side effects, using the command's prompt mapping. |
+| Non-interactive input mode | The command is running without a TTY, or `--json`/`--stream-json` is present. | Fail before side effects with a clear validation message. |
 
-`--json` always disables prompts and uses non-interactive input mode, even when
-the process has a TTY.
+`--json` and `--stream-json` always disable prompts and use non-interactive
+input mode, even when the process has a TTY.
 
 ### Destructive Confirmation
 
@@ -305,10 +305,14 @@ side effects begin.
   `meta.reason=destructive_consent_required`.
 - `--force` is explicit destructive consent in any mode and skips the
   interactive confirmation prompt.
-- `--json` selects the JSON renderer and forces non-interactive input mode
-  only. It does not imply destructive consent.
-- `--json` does not change any other semantic: it does not create hidden target
-  fallbacks, skip validation, bypass authorization, or bypass `--force`.
+- `--json` selects the JSON renderer and forces non-interactive input mode only.
+  It does not imply destructive consent.
+- `--stream-json` selects the stream JSON renderer when a command documents it
+  and forces non-interactive input mode only. It does not imply destructive
+  consent.
+- `--json` and `--stream-json` do not change any other semantic: they do not
+  create hidden target fallbacks, skip validation, bypass authorization, or
+  bypass `--force`.
 
 Progress trees for destructive commands still start after input resolution and
 destructive consent, before cleanup side effects. Pre-confirmation gateway reads
@@ -339,10 +343,12 @@ This table maps each invocation context to the input mode and output renderer th
 
 | Invocation | Input mode | Output renderer |
 | --- | --- | --- |
-| TTY without `--json` | Interactive | Human |
+| TTY without `--json`/`--stream-json` | Interactive | Human |
 | TTY with `--json` | Non-interactive | JSON |
-| No TTY without `--json` | Non-interactive | Human |
+| TTY with `--stream-json` | Non-interactive | Stream JSON |
+| No TTY without `--json`/`--stream-json` | Non-interactive | Human |
 | No TTY with `--json` | Non-interactive | JSON |
+| No TTY with `--stream-json` | Non-interactive | Stream JSON |
 
 ### Output Renderers
 
@@ -351,16 +357,16 @@ Every command supports one or both of these renderers, selected by invocation co
 | Renderer | Used when | Contract |
 | --- | --- | --- |
 | Human renderer | Default CLI output. | Progress trees, prose errors, summaries, and next steps. |
-| JSON renderer | `--json` is present. | Stable discriminated JSON envelope with either `success` or `error` as the only top-level key. |
+| JSON renderer | `--json` is present. | Stable final JSON result. Most commands use a discriminated envelope with either `success` or `error` as the only top-level key; streamed commands may document a terminal frame shape. |
+| Stream JSON renderer | `--stream-json` is present on a command that documents support for it. | Newline-delimited JSON progress frames followed by one terminal JSON frame. |
 
 ### JSON Envelope
 
-Every JSON response uses one discriminated top-level command envelope. The
-top-level object must contain exactly one key: `success` or `error`.
-Long-lived stream commands are the exception because they emit multiple frames
-rather than one response. A stream command that supports `--json` must document
-its frame shape, terminal error behavior, and whether failures before the stream
-opens still use the standard envelope.
+Most `--json` responses use one discriminated top-level command envelope. The
+top-level object contains exactly one key: `success` or `error`. `--json` is a
+final-result renderer and may be silent while a long-running command works.
+Commands that already expose a stream terminal frame under `--json` document
+that command-specific shape in their renderer contract.
 
 | Field | Required when | Meaning |
 | --- | --- | --- |
@@ -374,6 +380,36 @@ opens still use the standard envelope.
 `error.meta` replaces loose failure details. Use it only for stable facts
 automation needs to classify or recover from a failure, such as `field`,
 `reason`, `step`, `exit_code`, `conflicts`, or `partial_state`.
+
+### Stream JSON Frames
+
+`--stream-json` is available only on commands whose technical contract documents
+the flag. It is mutually exclusive with `--json`, uses non-interactive input
+mode, and writes one JSON object per line. Commands that do not document
+`--stream-json` must reject the option through the console runtime.
+
+Validation, authorization, and connectivity failures that happen before the
+progress stream opens use the normal JSON error envelope and do not include an
+`event` key. After the stream opens, every output line is a stream frame:
+
+```json
+{"event":"tree","data":{"title":"Working","steps":[]}}
+{"event":"step","data":{"key":"apply","status":"running"}}
+{"event":"complete","success":{"data":{},"meta":{}}}
+```
+
+Non-terminal frames use `event=tree` or `event=step` with the gateway progress
+payload under `data`. Terminal success frames use `event=complete` with the
+command's normal JSON success payload under `success`. Terminal failure frames
+use `event=error` with a canonical error object:
+
+```json
+{"event":"error","error":{"code":"gateway_stream_error","message":"Gateway progress stream failed.","meta":{}}}
+```
+
+If the stream transport fails after any progress frame has been emitted, the
+CLI emits a final `event=error` frame instead of switching back to a plain JSON
+error envelope.
 
 ### JSON Action Fields
 

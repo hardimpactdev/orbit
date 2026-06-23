@@ -8,6 +8,7 @@ use App\Exceptions\GatewayApiException;
 use App\Services\GatewayStreamClient;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
 
 /**
@@ -17,22 +18,17 @@ class TestStreamingCommand extends GatewayCommand
 {
     use StreamsGatewayProgress;
 
-    protected $signature = 'test:streaming-command {--json}';
+    protected $signature = 'test:streaming-command {--json} {--stream-json}';
 
     protected $description = 'Test streaming command';
 
     public function handle(): int
     {
-        return $this->streamProgress('/api/stream', [], function (ProgressEventType $type, array $payload): int {
-            if ($type === ProgressEventType::Error) {
-                return $this->renderFailure(
-                    'stream_error',
-                    $payload['message'] ?? 'Stream error.',
-                );
-            }
-
-            return $this->renderSuccess($payload);
-        });
+        return $this->streamProgress(
+            '/api/stream',
+            [],
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 }
 
@@ -101,12 +97,226 @@ describe('StreamsGatewayProgress', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(0)
-            ->and($decoded)->toHaveKey('success')
-            ->and($decoded['success']['data'])->toBe(['done' => true]);
+            ->and($decoded)->toBe([
+                'event' => 'complete',
+                'data' => ['done' => true],
+            ]);
 
         // Only one JSON line emitted (the final frame).
         expect(count(array_filter(explode("\n", $output))))->toBe(1);
     });
+
+    it('streams newline-delimited JSON frames in --stream-json mode', function (): void {
+        fakeStreamClient([
+            ['type' => ProgressEventType::Tree, 'payload' => [
+                'title' => 'Setting up',
+                'steps' => [
+                    ['key' => 'install', 'label' => 'Install packages'],
+                ],
+            ]],
+            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'install', 'status' => 'running', 'message' => 'installing packages']],
+            ['type' => ProgressEventType::Complete, 'payload' => [
+                'exit_code' => 0,
+                'data' => ['result' => ['id' => 123]],
+            ]],
+        ]);
+
+        [$exitCode, $output] = runStreamingCommand($this, ['--stream-json' => true]);
+
+        $frames = array_map(
+            fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+            array_filter(explode("\n", $output)),
+        );
+
+        expect($exitCode)->toBe(0)
+            ->and($frames)->toHaveCount(3)
+            ->and($frames[0])->toBe([
+                'event' => 'tree',
+                'data' => [
+                    'title' => 'Setting up',
+                    'steps' => [
+                        ['key' => 'install', 'label' => 'Install packages'],
+                    ],
+                ],
+            ])
+            ->and($frames[1])->toBe([
+                'event' => 'step',
+                'data' => ['key' => 'install', 'status' => 'running', 'message' => 'installing packages'],
+            ])
+            ->and($frames[2])->toBe([
+                'event' => 'complete',
+                'success' => [
+                    'data' => ['result' => ['id' => 123]],
+                    'meta' => [],
+                ],
+            ]);
+    });
+
+    it('rejects --json and --stream-json together before opening the stream', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:new', [
+            'name' => 'docs',
+            '--node' => 'app-1',
+            '--json' => true,
+            '--stream-json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->not->toHaveKey('event')
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['fields'])->toBe(['json', 'stream-json']);
+
+        Http::assertNothingSent();
+    });
+
+    it('keeps pre-stream validation failures as plain JSON envelopes in --stream-json mode', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:new', [
+            '--node' => 'app-1',
+            '--stream-json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->not->toHaveKey('event')
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('name');
+
+        Http::assertNothingSent();
+    });
+
+    it('emits stream error frames for gateway transport failures after progress has started', function (): void {
+        fakeStreamClient([
+            ['type' => ProgressEventType::Tree, 'payload' => ['title' => 'Setting up']],
+        ]);
+
+        [$exitCode, $output] = runStreamingCommand($this, ['--stream-json' => true]);
+
+        $frames = array_map(
+            fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+            array_filter(explode("\n", $output)),
+        );
+
+        expect($exitCode)->toBe(1)
+            ->and($frames)->toHaveCount(2)
+            ->and($frames[0]['event'])->toBe('tree')
+            ->and($frames[1]['event'])->toBe('error')
+            ->and($frames[1]['error']['code'])->toBe('gateway_unavailable')
+            ->and($frames[1]['error']['meta'])->toBeArray();
+    });
+
+    it('emits terminal error frames with canonical error payloads in --stream-json mode', function (): void {
+        fakeStreamClient([
+            ['type' => ProgressEventType::Error, 'payload' => [
+                'exit_code' => 1,
+                'message' => 'clone failed',
+                'data' => [
+                    'code' => 'workspace.clone_failed',
+                    'message' => 'clone failed',
+                    'meta' => ['step' => 'clone'],
+                    'data' => ['stdout' => 'fatal'],
+                ],
+            ]],
+        ]);
+
+        [$exitCode, $output] = runStreamingCommand($this, ['--stream-json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->toBe([
+                'event' => 'error',
+                'error' => [
+                    'code' => 'workspace.clone_failed',
+                    'message' => 'clone failed',
+                    'meta' => ['step' => 'clone'],
+                    'data' => ['stdout' => 'fatal'],
+                ],
+            ]);
+    });
+
+    it('accepts --stream-json on eligible gateway streaming commands', function (string $command, array $params, string $method, string $url): void {
+        fakeGatewayProgressStream(
+            gatewayProgressFrame('tree', ['title' => 'Working'])
+            .gatewayProgressFrame('step', ['key' => 'run', 'status' => 'running'])
+            .gatewayProgressFrame('complete', [
+                'exit_code' => 0,
+                'data' => ['result' => ['ok' => true]],
+            ]),
+        );
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            ...$params,
+            '--stream-json' => true,
+        ]);
+
+        $frames = array_map(
+            fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+            array_filter(explode("\n", $output)),
+        );
+
+        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === $method
+            && $request->url() === "https://gateway.test{$url}"
+            && $request->hasHeader('Accept', 'text/event-stream'));
+
+        expect($exitCode)->toBe(0)
+            ->and($frames)->toHaveCount(3)
+            ->and($frames[0]['event'])->toBe('tree')
+            ->and($frames[1]['event'])->toBe('step')
+            ->and($frames[2])->toBe([
+                'event' => 'complete',
+                'success' => [
+                    'data' => ['result' => ['ok' => true]],
+                    'meta' => [],
+                ],
+            ]);
+    })->with([
+        'app:new' => ['app:new', ['name' => 'docs', '--node' => 'app-1'], 'POST', '/api/apps'],
+        'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--app' => 'docs'], 'POST', '/api/workspaces'],
+        'workspace:setup' => ['workspace:setup', ['name' => 'feature-docs', '--app' => 'docs'], 'POST', '/api/workspaces/setup'],
+        'node:new' => ['node:new', ['name' => 'app-1', '--roles' => 'app-dev', '--host' => '192.0.2.20', '--tld' => 'test'], 'POST', '/api/nodes'],
+        'deploy:run' => ['deploy:run', ['app' => 'docs'], 'POST', '/api/deploy/run'],
+        'tool:install' => ['tool:install', ['tool' => 'composer', '--node' => 'app-1'], 'POST', '/api/tools/composer/install'],
+        'tool:update' => ['tool:update', ['tool' => 'composer', '--node' => 'app-1'], 'POST', '/api/tools/composer/update'],
+        'tool:reconfigure' => ['tool:reconfigure', ['tool' => 'opencode-server', '--node' => 'app-1'], 'POST', '/api/tools/opencode-server/reconfigure'],
+        's3:publish' => ['s3:publish', ['host' => 's3.example.com', '--node' => 'storage-1'], 'POST', '/api/s3/public-hosts'],
+        's3:unpublish' => ['s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1', '--force' => true], 'DELETE', '/api/s3/public-hosts/s3.example.com'],
+    ]);
+
+    it('rejects ambiguous JSON mode before gateway IO on eligible commands', function (string $command, array $params): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, $command, [
+            ...$params,
+            '--json' => true,
+            '--stream-json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded)->not->toHaveKey('event')
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['fields'])->toBe(['json', 'stream-json']);
+
+        Http::assertNothingSent();
+    })->with([
+        'app:new' => ['app:new', ['name' => 'docs', '--node' => 'app-1']],
+        'workspace:new' => ['workspace:new', ['name' => 'feature-docs', '--app' => 'docs']],
+        'workspace:setup' => ['workspace:setup', ['name' => 'feature-docs', '--app' => 'docs']],
+        'node:new' => ['node:new', ['name' => 'app-1', '--roles' => 'app-dev', '--host' => '192.0.2.20', '--tld' => 'test']],
+        'deploy:run' => ['deploy:run', ['app' => 'docs']],
+        'tool:install' => ['tool:install', ['tool' => 'composer', '--node' => 'app-1']],
+        'tool:update' => ['tool:update', ['tool' => 'composer', '--node' => 'app-1']],
+        'tool:reconfigure' => ['tool:reconfigure', ['tool' => 'opencode-server', '--node' => 'app-1']],
+        's3:publish' => ['s3:publish', ['host' => 's3.example.com', '--node' => 'storage-1']],
+        's3:unpublish' => ['s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1', '--force' => true]],
+    ]);
 
     it('renders intermediate frames as an animated tree in human mode', function (): void {
         fakeStreamClient([
@@ -155,7 +365,9 @@ describe('StreamsGatewayProgress', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('stream_error')
-            ->and($decoded['error']['message'])->toBe('clone failed');
+            ->and($decoded)->toBe([
+                'event' => 'error',
+                'data' => ['message' => 'clone failed'],
+            ]);
     });
 });

@@ -1,4 +1,4 @@
-# Technical Contract: `orbit s3:unpublish [host] [--node=<node>] [--force] [--json]`
+# Technical Contract: `orbit s3:unpublish [host] [--node=<node>] [--force] [--json|--stream-json]`
 
 [Back to public `s3:unpublish` documentation.](../s3-unpublish.md)
 
@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit s3:unpublish [host] [--node=<node>] [--force] [--json]
+orbit s3:unpublish [host] [--node=<node>] [--force] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -28,6 +28,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `node` | `--node` | Optional. | Never. | The only visible active s3 node when exactly one exists. | Visible active node with the `s3` role. |
 | `force` | `--force` | Required in non-interactive mode. | Never. | `false` | Explicit destructive consent. |
 | `json` | `--json` | Optional. | Never. | `false` | Selects the JSON renderer. |
+| `stream-json` | `--stream-json` | Optional. | Never. | `false` | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`; does not imply destructive consent. |
 
 ## Input Mode Contracts
 
@@ -55,7 +56,7 @@ and returns `success.meta.action=unpublished` with
 
 - Interactive mode requires an explicit confirmation prompt before removal.
 - Non-interactive mode requires `--force`.
-- `--json` does not imply destructive consent.
+- `--json` and `--stream-json` do not imply destructive consent.
 
 ### Scope Boundaries
 
@@ -67,6 +68,9 @@ purge the s3 role data path.
 
 - [Human renderer](6.1_s3-unpublish_output-render_human.md)
 - [JSON renderer](6.2_s3-unpublish_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 

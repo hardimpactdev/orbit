@@ -13,7 +13,7 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
                [--host=<host>] [--operator-name=<name>] [--tld=<tld>]
                [--user=<user>] [--gateway-endpoint=<endpoint>]
                [--ingress=<node>] [--redis-node=<node>]
-               [--s3-data-path=<path>] [--json]
+               [--s3-data-path=<path>] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
@@ -31,6 +31,7 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--redis-node` |  -  | Active database-role node that backs `websocket` Reverb scaling. |
 | `--s3-data-path` | `/srv/orbit/s3/data` | Host path mounted into SeaweedFS as `/data`. |
 | `--json` | off | JSON output. |
+| `--stream-json` | off | JSONL progress for gateway-mediated provisioning. Unsupported for first-gateway bootstrap. Mutually exclusive with `--json`. |
 
 By role:
 

@@ -20,7 +20,7 @@ the app-family registration pipeline.
 ## Signature
 
 ```bash
-orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json]
+orbit app:new [name] [--node=<name>] [--repo=<url>] [--root=<path>] [--php-version=<version>] [--runtime-proxy-transport=<http|https>] [--domain=<host>] [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -38,6 +38,7 @@ This command follows the shared
 | `--runtime-proxy-transport` | string | No | `http` | FrankenPHP app-dev transport between `orbit-caddy` and the runtime container. Accepted values: `http`, `https`. `https` opts the app into inner TLS on app-dev routes. |
 | `--domain` | string | No | null | Valid production domain; implies production activation. |
 | `--json` | flag | No | false | Force non-interactive mode and JSON output. |
+| `--stream-json` | flag | No | false | Force non-interactive mode and emit newline-delimited progress JSON. Mutually exclusive with `--json`. |
 
 ### Input Resolution
 
@@ -141,6 +142,9 @@ If `--domain` is supplied:
 
 - [`6.1_app-new_output-render_human.md`](6.1_app-new_output-render_human.md)
 - [`6.2_app-new_output-render_json.md`](6.2_app-new_output-render_json.md)
+
+`--stream-json` uses the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
