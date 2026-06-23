@@ -22,9 +22,9 @@ without micromanaging every step.
 (failures, reviews, drift), triage what went wrong, distill durable guardrails
 back into the harness. The loop improves the harness over time.
 
-## Non-Goals (Slice 1)
+## Non-Goals
 
-This anchor document is intentionally minimal. Not in scope yet:
+The root harness is intentionally incremental. Not in scope yet:
 
 - Autonomous merge or reviewer-agent automation
 - Customer/product harness (fleet/workspace agent docs)
@@ -32,7 +32,9 @@ This anchor document is intentionally minimal. Not in scope yet:
 - Automation loop (nightly distillation, signal mining)
 - Reviewer-persona framework
 
-Future slices may add root `LOOP.md.example`, `HARNESS_SIGNALS.md`, and `evalc/`.
+`LOOP.md` and `HARNESS_SIGNALS.md` define the manual feedback-loop layer. Later
+slices may add reviewer personas, automation, and `evalc/` only after the manual
+loop is stable.
 
 ## Agent Discovery Path
 
@@ -41,13 +43,15 @@ Start at the monorepo root and read in this order:
 1. **`AGENTS.md`**: repo shape, authority chain, verification commands,
    worktree workflow
 2. **`HARNESS.md`**: this file; repo harness anchor
-3. **`.agents/skills/`**: domain procedures activated just-in-time per change
+3. **`LOOP.md`**: how implementation signals become durable guardrails
+4. **`HARNESS_SIGNALS.md`**: source-to-sink map for feedback-loop signals
+5. **`.agents/skills/`**: domain procedures activated just-in-time per change
    type
-4. **`apps/docs/content/`**: product authority (behavior contracts, not
+6. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-5. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+7. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-6. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
+8. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
    Rector, and E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
