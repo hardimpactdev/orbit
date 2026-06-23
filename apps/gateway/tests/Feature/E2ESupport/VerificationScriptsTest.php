@@ -111,6 +111,23 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('--compact');
 });
 
+it('includes monorepo path packages in the gateway image build context', function (): void {
+    $dockerfile = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
+    $dockerignore = (string) file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
+
+    foreach (['core', 'sdk'] as $package) {
+        expect($dockerfile)
+            ->toContain("COPY packages/{$package}/composer.json packages/{$package}/composer.lock /srv/orbit/packages/{$package}/")
+            ->toContain("COPY packages/{$package}/src /srv/orbit/packages/{$package}/src")
+            ->and($dockerignore)
+            ->toContain("!packages/{$package}/")
+            ->toContain("!packages/{$package}/composer.json")
+            ->toContain("!packages/{$package}/composer.lock")
+            ->toContain("!packages/{$package}/src/")
+            ->toContain("!packages/{$package}/src/**");
+    }
+});
+
 it('keeps default composer tests out of e2e lanes', function (): void {
     $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
     $e2eComposer = json_decode(file_get_contents(repo_path('apps/e2e/composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);

@@ -43,6 +43,7 @@ WORKDIR /srv/orbit/apps/gateway
 
 COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/
 COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/
+COPY packages/sdk/composer.json packages/sdk/composer.lock /srv/orbit/packages/sdk/
 
 RUN install -d "$ORBIT_CONFIG_ROOT" \
     && cp .env.example "$ORBIT_CONFIG_ROOT/.env" \
@@ -66,6 +67,7 @@ COPY apps/gateway/routes /srv/orbit/apps/gateway/routes
 COPY bin/install-orbit /srv/orbit/bin/install-orbit
 COPY docker/orbit-gateway /srv/orbit/docker/orbit-gateway
 COPY packages/core/src /srv/orbit/packages/core/src
+COPY packages/sdk/src /srv/orbit/packages/sdk/src
 COPY VERSION /srv/orbit/VERSION
 
 RUN install -d "$ORBIT_CONFIG_ROOT" \
