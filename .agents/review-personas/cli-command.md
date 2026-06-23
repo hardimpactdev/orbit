@@ -97,8 +97,18 @@ Review `summary.txt` for exit code, duration, maximum idle gap, and artifact
 paths. Review `chunks.jsonl` when cadence matters; visible indicator changes
 for a 300ms blinker should usually be near 0.30s apart, allowing normal
 scheduler noise. Review `transcript.txt` for the final human shape. Use the
-installed binary path when validating release-candidate or live-node behavior,
-not the development launcher.
+source checkout launcher (`./apps/cli/orbit` from `/home/orbit/orbit-run`) for
+source-mounted retained topology proof, unless the report proves
+`/usr/local/bin/orbit` resolves to that source checkout. Use the installed
+binary path when validating release-candidate or live-node behavior, not the
+development launcher.
+
+For human rendering, progress, spinners, blinking indicators, prompts, or
+streaming output, retained Solo-terminal proof means the terminal is attached to
+an interactive shell inside the target VM before the command starts. A one-shot
+host command that wraps `ssh ... incus exec ... <orbit command>` can support a
+transcript, but it does not prove the user-inspection flow for in-progress CLI
+behavior.
 
 ### JSON Output
 
@@ -123,6 +133,12 @@ not the development launcher.
 - CLI command changes that affect real terminal behavior are proven in a Solo
   terminal inside the retained Incus topology before durable E2E or
   release-candidate deployment.
+- Retained Incus proof names the launcher path that was exercised. Source
+  topology evidence from an installed binary is not sufficient unless the
+  installed binary is the artifact under review.
+- Retained Solo-terminal proof for human rendering starts from a VM shell prompt
+  inside the target VM; host-wrapped one-shot `incus exec` output is not enough
+  when in-progress rendering is part of the contract.
 - Live topology mutation, release-candidate deployment, tagging, publishing, or
   merge/push beyond the agreed step has explicit human approval.
 - Failed E2E output is classified before blame: provider pool, auth, bootstrap,

@@ -315,12 +315,21 @@ For CLI changes, use this ordering:
 3. Implement the smallest slice that makes the focused command behavior work.
 4. Spawn or request a Solo terminal.
 5. Acquire a retained Incus topology with the relevant source-mounted VM.
-6. Run the changed command inside the relevant VM, usually the retained ingress
-   VM, from `/home/orbit/orbit-run`.
-7. Prove the observed human output, JSON output, prompts, failure paths, and
+6. Verify which Orbit launcher will be exercised. For source-mounted retained
+   topology proof, run the command through the source checkout
+   (`./apps/cli/orbit` from `/home/orbit/orbit-run`) or prove that
+   `/usr/local/bin/orbit` resolves to that source checkout. For
+   release-candidate or live-node proof, use the installed binary path being
+   validated.
+7. Open an interactive shell inside the relevant retained VM, usually the
+   ingress or operator VM, before running the changed command. The Solo
+   terminal should land at `/home/orbit/orbit-run` inside the VM so the user can
+   watch progress, spinners, blinking indicators, prompts, and streaming output
+   while the command runs.
+8. Prove the observed human output, JSON output, prompts, failure paths, and
    side effects that changed.
-8. Give the user a chance to inspect and confirm the VM-observed CLI behavior.
-9. Only then run durable E2E and any broader quality or release-candidate flow.
+9. Give the user a chance to inspect and confirm the VM-observed CLI behavior.
+10. Only then run durable E2E and any broader quality or release-candidate flow.
 
 Do not spend the live topology or release-candidate path on a CLI change before
 this retained VM proof and user verification point. Do not treat retained Incus
@@ -347,13 +356,22 @@ composer e2e:incus -- --start \
   --json
 ```
 
-Identify the ingress instance from the retained topology output or manifest,
-then open that retained ingress VM in a Solo terminal. Run the exact changed
-command path from `/home/orbit/orbit-run`, covering human and `--json` output
-when either contract is affected, plus the relevant failure or prompt path. If
-the current Solo environment cannot open a terminal directly, use the
-configured Incus host with `incus exec` as the fallback and report that fallback
-explicitly.
+Identify the target instance from the retained topology output or manifest, then
+open that retained VM in a Solo terminal and stop at a VM shell prompt before
+starting the command. Run the exact changed command path from
+`/home/orbit/orbit-run`, covering human and `--json` output when either contract
+is affected, plus the relevant failure or prompt path. Record the launcher proof
+(`command -v orbit`, `readlink -f`, or the explicit `./apps/cli/orbit` source
+launcher command) next to the observed output.
+
+A host-wrapped one-shot command such as
+`ssh <host> 'incus exec <instance> -- ... <orbit command>'` is useful for
+machine transcripts, JSON capture, or fallback diagnosis, but it does not
+satisfy the retained Solo-terminal inspection gate for human rendering. The
+gate is only satisfied when the Solo terminal is attached inside the VM before
+the human command starts. If the current Solo environment cannot open that
+interactive VM shell, use the configured Incus host with `incus exec` as a
+fallback and report that the user-inspection gate was downgraded.
 
 Inspect through the configured Incus host from `.env.e2e`; do not assume a
 host name unless the environment says so. Typical Beast-backed inspection looks
@@ -361,7 +379,9 @@ like:
 
 ```bash
 ssh beast 'incus list --format csv -c ns | grep <retained-id> || true'
-ssh beast 'incus exec <instance> -- sudo -u orbit bash -lc "cd /home/orbit/orbit-run && <orbit command>"'
+ssh -tt beast 'incus exec <instance> -- sudo -iu orbit bash -lc "cd /home/orbit/orbit-run && exec bash -i"'
+# then run inside the VM shell:
+./apps/cli/orbit <command>
 ssh beast 'incus exec <instance> -- bash -lc "<host command such as gh --version>"'
 ```
 
@@ -536,7 +556,10 @@ Normal feature work follows a staged E2E model:
     after focused Pest coverage and durable E2E coverage have been created or
     updated, and before durable E2E execution or live/release-candidate
     deployment. Prove the command behavior manually from
-    `/home/orbit/orbit-run` inside the retained ingress VM, give the user a
+    `/home/orbit/orbit-run` inside the retained ingress VM. Use
+    `./apps/cli/orbit` for source-mounted proof unless you first verify that
+    `/usr/local/bin/orbit` resolves to the source checkout; use the installed
+    binary only for release-candidate or live-node proof. Give the user a
     chance to inspect it, then run the durable E2E lane.
   - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
     or `composer e2e:incus -- --stop --all` when finished.
