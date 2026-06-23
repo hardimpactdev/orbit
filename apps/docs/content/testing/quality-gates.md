@@ -33,6 +33,19 @@ The analyzer reads `.orbit/quality-gates/` only. It reports missing evidence,
 recent run durations, and warning-only baseline observations when a local
 baseline exists. It does not rerun `composer quality-check` or E2E lanes.
 
+Before merging a worktree, inspect the existing timing evidence with:
+
+```bash
+composer quality-gate:final-check
+```
+
+The final check wraps the analyzer and highlights missing or stale evidence,
+latest gate exits that were non-zero, and local baseline observations that
+remain warning-only. It does not rerun `composer quality-check`, Pest, Docker
+E2E, Incus E2E, or provider provision lanes. When no timing artifacts exist, it
+exits successfully and reports that timing regression analysis was skipped so
+the feature owner can decide whether another gate run is needed.
+
 ## Failure and timing triage
 
 When a quality gate fails or slows down, use the root

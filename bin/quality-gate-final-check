@@ -1,0 +1,196 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$options = getopt('', [
+    'artifact-dir::',
+    'gate:',
+    'max-age-hours::',
+]);
+
+try {
+    $artifactDir = optional_string($options, 'artifact-dir', default_artifact_dir());
+    $gates = repeated_values($options, 'gate');
+    $maxAgeHours = optional_positive_int($options, 'max-age-hours', 168);
+    $artifactCount = artifact_count($artifactDir);
+
+    fwrite(STDOUT, 'Quality gate final check'.PHP_EOL);
+    fwrite(STDOUT, 'Artifact directory: '.$artifactDir.PHP_EOL.PHP_EOL);
+
+    if ($artifactCount === 0) {
+        fwrite(STDOUT, 'Timing evidence: missing; no quality-gate artifact exists yet.'.PHP_EOL);
+        fwrite(STDOUT, 'Timing regression analysis skipped. Run the relevant gate first when timing evidence is required.'.PHP_EOL);
+        fwrite(STDOUT, PHP_EOL.'Final check did not rerun quality-check or E2E lanes.'.PHP_EOL);
+
+        exit(0);
+    }
+
+    $analyzer = run_analyzer($artifactDir, $gates, $maxAgeHours);
+
+    fwrite(STDOUT, 'Analyzer report:'.PHP_EOL);
+    fwrite(STDOUT, rtrim($analyzer['output']).PHP_EOL.PHP_EOL);
+
+    if ($analyzer['exit_code'] !== 0) {
+        fwrite(STDERR, rtrim($analyzer['error']).PHP_EOL);
+        exit($analyzer['exit_code']);
+    }
+
+    $warnings = final_check_warnings($analyzer['output']);
+
+    if ($warnings === []) {
+        fwrite(STDOUT, 'Final-check warnings: none detected.'.PHP_EOL);
+    } else {
+        fwrite(STDOUT, 'Final-check warnings:'.PHP_EOL);
+
+        foreach ($warnings as $warning) {
+            fwrite(STDOUT, '- '.$warning.PHP_EOL);
+        }
+    }
+
+    fwrite(STDOUT, PHP_EOL.'Final check did not rerun quality-check or E2E lanes.'.PHP_EOL);
+} catch (Throwable $exception) {
+    fwrite(STDERR, $exception->getMessage().PHP_EOL);
+    exit(1);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_string(array $options, string $key, string $default = ''): string
+{
+    $value = $options[$key] ?? $default;
+
+    if (! is_string($value)) {
+        return $default;
+    }
+
+    return trim($value);
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ */
+function optional_positive_int(array $options, string $key, int $default): int
+{
+    $value = $options[$key] ?? $default;
+
+    if ($value === false || ! is_numeric($value)) {
+        return $default;
+    }
+
+    $parsed = (int) $value;
+
+    return $parsed > 0 ? $parsed : $default;
+}
+
+/**
+ * @param  array<string, mixed>  $options
+ * @return list<string>
+ */
+function repeated_values(array $options, string $key): array
+{
+    $value = $options[$key] ?? [];
+
+    if (is_string($value)) {
+        return [$value];
+    }
+
+    if (! is_array($value)) {
+        return [];
+    }
+
+    return array_values(array_filter($value, fn (mixed $item): bool => is_string($item) && $item !== ''));
+}
+
+function default_artifact_dir(): string
+{
+    $root = dirname(__DIR__);
+
+    return $root.'/.orbit/quality-gates';
+}
+
+function artifact_count(string $artifactDir): int
+{
+    if (! is_dir($artifactDir)) {
+        return 0;
+    }
+
+    return count(glob(rtrim($artifactDir, '/').'/*.json') ?: []);
+}
+
+/**
+ * @param  list<string>  $gates
+ * @return array{exit_code: int, output: string, error: string}
+ */
+function run_analyzer(string $artifactDir, array $gates, int $maxAgeHours): array
+{
+    $root = dirname(__DIR__);
+    $command = [
+        PHP_BINARY,
+        $root.'/bin/quality-gate-analyze',
+        '--artifact-dir='.$artifactDir,
+        '--max-age-hours='.$maxAgeHours,
+    ];
+
+    foreach ($gates as $gate) {
+        $command[] = '--gate='.$gate;
+    }
+
+    $descriptorSpec = [
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = proc_open($command, $descriptorSpec, $pipes, $root);
+
+    if (! is_resource($process)) {
+        throw new RuntimeException('Unable to start quality gate analyzer.');
+    }
+
+    $output = stream_get_contents($pipes[1]);
+    $error = stream_get_contents($pipes[2]);
+
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return [
+        'exit_code' => proc_close($process),
+        'output' => is_string($output) ? $output : '',
+        'error' => is_string($error) ? $error : '',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function final_check_warnings(string $analyzerOutput): array
+{
+    $warnings = [];
+
+    foreach (preg_split('/\R/', $analyzerOutput) ?: [] as $line) {
+        $trimmed = trim($line);
+
+        if ($trimmed === '') {
+            continue;
+        }
+
+        if (str_starts_with($trimmed, 'missing evidence:')) {
+            $warnings[] = $trimmed;
+
+            continue;
+        }
+
+        if (str_starts_with($trimmed, 'warning:')) {
+            $warnings[] = $trimmed;
+
+            continue;
+        }
+
+        if (preg_match('/^recent run: gate=([^ ]+).* exit=([0-9]+)/', $trimmed, $matches) === 1 && (int) $matches[2] !== 0) {
+            $warnings[] = sprintf('latest gate [%s] exited with code %d', $matches[1], (int) $matches[2]);
+        }
+    }
+
+    return array_values(array_unique($warnings));
+}

@@ -106,6 +106,10 @@ Rules:
 - Edit only inside the assigned worktree.
 - Keep docs, tests, and code aligned.
 - Use TDD: failing Pest coverage first, then implementation.
+- After reading the required local files named in this prompt, produce the first narrow diff
+  in the owned test, docs, or code surface before doing broad repository
+  discovery. If the first diff cannot be made from the handoff, report the
+  missing context instead of continuing to search.
 - Run the focused verification assigned to this slice.
 - Capture implementation signals as they appear. When a failure, review
   correction, docs conflict, or setup problem reveals missing durable context,
@@ -463,9 +467,11 @@ moving on to durable E2E.
    and the rule that workers must not commit, merge to `main`, or clean up the
    worktree unless the feature owner explicitly assigns that exact step.
 8. Monitor workers, inspect diffs, and send correction prompts until the
-   acceptance criteria are met or a blocker is explicit. When a correction
-   reveals missing durable context, triage it through `.orbit/loop.md` and
-   `HARNESS_SIGNALS.md`.
+   acceptance criteria are met or a blocker is explicit. The first checkpoint is
+   a narrow owned diff or an explicit missing-context blocker after the required
+   local files are read; broad discovery without a first diff is a process
+   problem to correct. When a correction reveals missing durable context, triage
+   it through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
@@ -530,7 +536,18 @@ moving on to durable E2E.
    composer quality-check
    ```
 
-22. Before committing or reporting completion, run a Post-Feature Session
+22. Before committing or reporting completion, inspect the timing evidence
+    already produced by the applicable gates:
+
+   ```bash
+   composer quality-gate:final-check
+   ```
+
+    This final check must not rerun Pest, `composer quality-check`, Docker E2E,
+    Incus E2E, provision gates, or live-node commands. If timing evidence is
+    missing, report that the timing analysis was skipped and decide whether the
+    feature needs another gate run before merge.
+23. Before committing or reporting completion, run a Post-Feature Session
     Review. Review the feature thread or handoff, Solo worker sessions,
     reviewer output, retained terminal or PTY evidence when applicable,
     verification output, and human corrections. Identify mistakes found after a
@@ -541,12 +558,12 @@ moving on to durable E2E.
     concrete durable signals. If no new durable signal remains, say that in the
     report. Re-run the narrow check that proves any changed guardrail target is
     reachable.
-23. Commit the verified worktree changes on the worktree branch.
-24. Merge the branch back into `main` from the primary `~/orbit` checkout,
+24. Commit the verified worktree changes on the worktree branch.
+25. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
     `main`. Preserve unrelated dirty files in `~/orbit`; if they overlap with
     the merge, stop for direction instead of discarding them.
-25. If release was explicitly agreed or specifically discussed as part of the
+26. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
     the release artifacts are accepted, run `doctor` again, compare the before

@@ -100,6 +100,12 @@ expensive gates as part of analysis. A rerun can be the next command only after
 classification names why the rerun is useful, such as confirming a
 flake on the narrowest lane.
 
+Before a worktree merge, run `composer quality-gate:final-check` when timing
+artifacts exist or when the feature owner needs to know that timing evidence is
+missing. This final check wraps the analyzer, highlights missing or stale
+evidence, latest gate exits that were non-zero, and local baseline observations
+that remain warning-only. It still does not rerun expensive gates.
+
 ## Baseline Rules
 
 - Prefer local, machine-specific, lane-specific baselines before global

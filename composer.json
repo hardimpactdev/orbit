@@ -183,6 +183,9 @@
         ],
         "quality-gate:analyze": [
             "bin/quality-gate-analyze"
+        ],
+        "quality-gate:final-check": [
+            "bin/quality-gate-final-check"
         ]
     },
     "config": {
