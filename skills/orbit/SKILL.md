@@ -58,7 +58,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 
 | Command | What it does |
 |---|---|
-| `orbit doctor` | Diagnose state-family drift; `--fix --restore` reapplies intent, `--fix --adopt` records node reality |
+| `orbit doctor` | Diagnose state-family drift; `--restore` reapplies intent, `--adopt` records node reality, `--all` verifies the fleet |
 | `orbit update` | Update the caller-local Orbit CLI binary, gated by the active gateway version |
 | `orbit update:all` | Update Orbit nodes gateway-first, then caller-local and workload nodes as fan-out targets |
 | `orbit profile [target]` | Profile one HTTP request against an Orbit-managed app (DNS/connect/TLS/TTFB + Toolbar enrichment) |
@@ -279,7 +279,7 @@ orbit node:default beast              # set local default development node (one-
 orbit app:new myapp --repo=acme/myapp # served at myapp.<beast-tld>
 orbit database:add myapp --driver=pgsql --host=10.6.0.50 --database=myapp --username=orbit
 orbit database:attach myapp --app=myapp --env-prefix=DB
-orbit doctor --app=myapp --family=database_connection --fix --restore
+orbit doctor --app=myapp --family=database_connection --restore
 ```
 
 **Deploy a production app**
@@ -304,10 +304,19 @@ orbit s3:publish s3.example.com --node=storage-1
 
 ```bash
 orbit doctor --node=beast                          # report drift across all families
+orbit doctor --all                                 # verify eligible active fleet nodes
 orbit doctor --node=beast --family=proxy --family=process
-orbit doctor --node=beast --fix --restore          # reapply gateway intent
-orbit doctor --node=beast --fix --adopt --family=app  # adopt node reality (DR / fleet adoption)
+orbit doctor --node=beast --restore                # reapply gateway intent
+orbit doctor --node=beast --adopt --family=app     # adopt node reality (DR / fleet adoption)
+orbit doctor --node=beast --stream-json            # long-running agent progress
 ```
+
+Plain `orbit doctor` targets the local `node:default` when configured, then
+falls back to the caller identity. Use `--all` for fleet verification;
+`--node=all` is invalid. For LLM agents or other long-running non-interactive
+operations, prefer `--stream-json` when the command offers it so progress
+arrives as incremental NDJSON frames. Use `--json` when only the final
+machine-readable result is needed.
 
 **Move an app to a different PHP version**
 

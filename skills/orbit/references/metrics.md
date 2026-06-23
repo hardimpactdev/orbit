@@ -36,7 +36,7 @@ Examples:
 orbit metrics:enable --node=gateway --json
 orbit metrics:status --json
 orbit metrics:credentials --node=gateway --json
-orbit doctor --family=process --node=gateway --fix --restore
+orbit doctor --family=process --node=gateway --restore
 ```
 
 `metrics:enable` converges the runtime units it owns immediately. Use

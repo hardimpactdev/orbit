@@ -30,8 +30,8 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--ingress` |  -  | Active ingress node for private `app-prod` placement. |
 | `--redis-node` |  -  | Active database-role node that backs `websocket` Reverb scaling. |
 | `--s3-data-path` | `/srv/orbit/s3/data` | Host path mounted into SeaweedFS as `/data`. |
-| `--json` | off | JSON output. |
-| `--stream-json` | off | JSONL progress for gateway-mediated provisioning. Unsupported for first-gateway bootstrap. Mutually exclusive with `--json`. |
+| `--json` | off | JSON output. Mutually exclusive with `--stream-json`. |
+| `--stream-json` | off | Newline-delimited gateway progress frames for long-running agent runs. Mutually exclusive with `--json`. First-gateway bootstrap keeps its existing bootstrap output path. |
 
 By role:
 
