@@ -1,6 +1,6 @@
 ---
 name: implementing-features
-description: Use when the user says to implement a crystallized Orbit feature or bug fix, or when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff through Grok implementation sub-agents.
+description: Use when the user says to implement a crystallized Orbit feature or bug fix, or when implementing an Orbit feature, bug fix, command behavior change, documentation update, project Orbit skill sync, or scoped Solo todo handoff through Solo-managed workers.
 ---
 
 # Implementing Features
@@ -8,7 +8,9 @@ description: Use when the user says to implement a crystallized Orbit feature or
 ## Overview
 
 Implement a scoped Orbit change from a crystallized discussion, handoff, or Solo
-todo by acting as the Codex orchestrator for Grok implementation sub-agents.
+todo by acting as the feature owner. The feature owner may run in Codex CLI,
+the Codex app, Claude, or another capable LLM surface. Solo is the required
+substrate for spawned workers and retained verification terminals.
 Crystallization happens before this skill is triggered: the feature or bug fix
 has already been discussed into a concrete product contract, scope, and
 verification expectation. This skill starts when the user explicitly moves from
@@ -26,30 +28,34 @@ and code.
 - Owned files or domains are explicit enough to avoid unrelated edits.
 - A dedicated worktree can be created for the change (see Workspace Setup
   below).
-- Grok is available as a Solo agent runtime for implementation. If Grok cannot
-  be spawned, stop and report the blocker instead of quietly implementing the
-  feature yourself.
+- Solo can spawn the workers or retained terminals needed for the slice. If the
+  required Solo worker or verification terminal cannot be spawned, stop and
+  report the blocker instead of quietly replacing that lane with untracked work.
 
 ## Orchestrator Role
 
-The agent using this skill is the feature owner and orchestrator, not the
-primary implementer. Use Grok sub-agents for implementation work.
+The agent using this skill is the feature owner and orchestrator. It may run in
+any LLM app, but delegated implementation, documentation, review, and terminal
+verification lanes must be tracked through Solo when the slice calls for
+subagents or retained VM proof.
 
 Responsibilities:
 
-- Create and own the Codex goal for the crystallized implementation when the
-  user explicitly starts implementation from the current thread.
+- Create and own the goal contract for the crystallized implementation when the
+  user explicitly starts implementation from the current thread or app.
 - Prepare and own the dedicated Orbit worktree.
-- Read the handoff, docs, and existing code enough to define clear Grok tasks.
-- Spawn one Grok worker by default. Spawn multiple Grok workers only for
-  disjoint slices with explicit ownership and merge order.
+- Read the handoff, docs, and existing code enough to define clear worker tasks.
+- Spawn one Solo implementation worker by default. Grok is the default
+  implementation model when available, but another suitable Solo-managed worker
+  may own the slice if that is the active toolchain. Spawn multiple workers only
+  for disjoint slices with explicit ownership and merge order.
 - Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Claude
   documenter/librarian worker for substantial docs-first or documentation-heavy
   slices when its ownership is separable.
 - Keep docs, tests, and code for the same behavior in one worker by default.
-  Split documentation and code only when Codex can accept the docs contract
-  before code relies on it, or when ownership is genuinely independent.
-- Monitor Grok output, inspect diffs, ask for corrections, and keep unrelated
+  Split documentation and code only when the feature owner can accept the docs
+  contract before code relies on it, or when ownership is genuinely independent.
+- Monitor worker output, inspect diffs, ask for corrections, and keep unrelated
   dirty files untouched.
 - Run or require the verification gates and independently read the results.
 - Run applicable reviewer personas from `HARNESS.md` after implementation
@@ -59,16 +65,18 @@ Responsibilities:
 - Own final commit, merge-back, worktree cleanup, and the implementation report.
 
 Do not make substantive implementation edits yourself unless the user explicitly
-approves bypassing Grok. Small orchestration-only edits, conflict resolution
-after review, and mechanical formatting fixes are acceptable only when they do
-not replace the Grok implementation loop.
+approves bypassing the Solo worker lane. Small orchestration-only edits,
+conflict resolution after review, and mechanical formatting fixes are acceptable
+only when they do not replace the tracked worker loop.
 
-## Grok Delegation
+## Solo Implementation Delegation
 
-When running inside Solo, discover the live Grok tool with `list_agent_tools`,
-spawn it with `spawn_agent`, and prepend Solo's returned `agent_instructions` to
-the first prompt. If the current environment exposes a different but equivalent
-Grok spawn mechanism, use that mechanism and record it in the report.
+Discover the available Solo implementation worker for the current environment
+and spawn it through Solo. Prefer Grok for bounded PHP/CLI/Pest implementation
+when available, but the hard requirement is Solo tracking, not the model brand.
+Prepend Solo's returned `agent_instructions` to the first prompt. If the current
+feature owner cannot reach a Solo worker, stop and report the blocker instead of
+using an untracked background model or shell.
 
 Use this prompt shape:
 
@@ -126,10 +134,10 @@ documentation-first handoffs, or focused docs drift analysis inside the changed
 surface. Do not spawn it for routine small copy edits.
 
 The documenter owns documentation artifacts, not final product decisions or code
-implementation. Codex reviews the result and reconciles it with the code worker
-before commit. Routine docs review covers changed files and named authority
-docs; full-repo drift audits use `.agents/skills/auditing-docs-drift/SKILL.md`
-only when explicitly requested.
+implementation. The feature owner reviews the result and reconciles it with the
+code worker before commit. Routine docs review covers changed files and named
+authority docs; full-repo drift audits use
+`.agents/skills/auditing-docs-drift/SKILL.md` only when explicitly requested.
 
 When running inside Solo, discover the live Claude-capable tool with
 `list_agent_tools`, spawn it with `spawn_agent`, and prepend Solo's returned
@@ -141,8 +149,8 @@ Use this prompt shape:
 <prepend the agent_instructions returned by Solo spawn_agent>
 
 You are the documentation/librarian worker for one scoped Orbit feature slice.
-Keep ownership narrow and do not edit code unless Codex explicitly asks for a
-mechanical docs-support change.
+Keep ownership narrow and do not edit code unless the feature owner explicitly
+asks for a mechanical docs-support change.
 
 Worktree:
 <absolute path to .worktrees/<branch-name>>
@@ -423,8 +431,8 @@ moving on to durable E2E.
 
 1. Confirm the request is moving an already-crystallized feature or bug fix into
    implementation. Use the crystallized discussion, handoff, or Solo todo as
-   the concrete implementation handoff. Create a Codex goal for the
-   implementation and proceed as orchestrator. Do not route through retired
+   the concrete implementation handoff. Create a goal contract for the
+   implementation and proceed as feature owner. Do not route through retired
    orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
@@ -434,15 +442,16 @@ moving on to durable E2E.
    `LOOP.md.example` to ignored `LOOP.md` for the active worktree and fill the
    goal contract before implementation.
 4. Confirm owned files or domains and existing dirty work before editing.
-5. Decide the Solo worker plan from `HARNESS.md`. Use one Grok worker by
-   default. Add a Claude documenter/librarian worker only when documentation is
+5. Decide the Solo worker plan from `HARNESS.md`. Use one Solo implementation
+   worker by default; Grok is the default implementation model when available.
+   Add a Claude documenter/librarian worker only when documentation is
    substantial and the docs-owned surface is clear.
 6. If a Claude documenter/librarian worker is used, spawn it first or in
-   parallel only after the docs-owned slice is explicit. Codex must inspect the
-   docs result and accept the docs contract before code relies on it.
-7. Spawn the Grok worker(s) with the worktree path, handoff, owned scope,
+   parallel only after the docs-owned slice is explicit. The feature owner must
+   inspect the docs result and accept the docs contract before code relies on it.
+7. Spawn the Solo implementation worker(s) with the worktree path, handoff, owned scope,
    documentation authority, TDD requirement, focused verification, and the rule
-   that Grok must not merge to `main` or clean up the worktree.
+   that workers must not merge to `main` or clean up the worktree.
 8. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. When a correction
    reveals missing durable context, triage it through `LOOP.md` and
@@ -466,8 +475,8 @@ moving on to durable E2E.
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
-12. Ensure the Grok implementation followed TDD (see Test-Driven Development
-   below): failing Pest tests first, then implementation.
+12. Ensure the implementation worker followed TDD (see Test-Driven Development
+    below): failing Pest tests first, then implementation.
 13. Keep the smallest working vertical slice that makes the tests pass.
 14. For CLI command behavior, ensure durable E2E coverage has been created or
     updated for the integrated behavior, then run the retained ingress VM
@@ -597,10 +606,11 @@ is not required after ordinary `composer test:e2e` runs.
 - Prefer existing Orbit and Laravel patterns.
 - Treat current docs as product authority.
 - Keep docs, tests, and code aligned.
-- Grok performs implementation edits; the Codex feature owner orchestrates,
-  reviews, verifies, commits, merges, cleans up, and reports.
-- Give each Grok worker one clear ownership boundary. If a boundary is hard to
-  state, use one Grok worker serially instead of parallel workers.
+- Solo implementation workers perform substantive implementation edits; the
+  feature owner orchestrates, reviews, verifies, commits, merges, cleans up, and
+  reports.
+- Give each worker one clear ownership boundary. If a boundary is hard to state,
+  use one implementation worker serially instead of parallel workers.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
@@ -641,8 +651,8 @@ is not required after ordinary `composer test:e2e` runs.
 Worktree:
 - `.worktrees/<branch-name>` on branch `<branch>`
 
-Grok delegation:
-- Worker(s): <name/process id and owned scope>
+Solo implementation delegation:
+- Worker(s): <model/tool, name/process id, and owned scope>
 - Corrections requested: <summary or none>
 
 Documenter/librarian delegation:

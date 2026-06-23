@@ -74,21 +74,25 @@ only when ownership can stay clear.
 
 | Role | Default Agent | Owns | Does Not Own |
 |------|---------------|------|--------------|
-| Feature orchestrator | Codex | Goal contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
-| Implementation worker | Grok | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Merge-back, release, broad refactors, unrelated dirty files |
+| Feature orchestrator | Any capable LLM surface; Codex is the usual default | Goal contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
+| Implementation worker | Solo-managed worker; Grok is the usual default | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Merge-back, release, broad refactors, unrelated dirty files |
 | Documenter / librarian worker | Claude | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
 | Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
 
-The main Codex thread is the source of work. Workers receive the active goal
-contract, worktree path, owned files or domains, stop predicates, and reporting
-shape. If those boundaries are hard to state, use one worker serially instead of
-parallel workers.
+The active feature-owner thread is the source of work. It can run in Codex CLI,
+the Codex app, Claude, or another capable LLM surface. Spawned workers and
+retained verification terminals run through Solo so ownership, process ids, and
+terminal proof remain inspectable. Workers receive the active goal contract,
+worktree path, owned files or domains, stop predicates, and reporting shape. If
+those boundaries are hard to state, use one worker serially instead of parallel
+workers.
 
 Documentation-heavy work may start with a Claude documenter/librarian worker.
-Code implementation can run after Codex accepts the docs contract as stable
-enough. Docs and code may proceed in parallel only when the product contract is
-settled, ownership is disjoint, and Codex owns reconciliation before commit.
+Code implementation can run after the feature owner accepts the docs contract as
+stable enough. Docs and code may proceed in parallel only when the product
+contract is settled, ownership is disjoint, and the feature owner owns
+reconciliation before commit.
 
 ## Root Routing
 
