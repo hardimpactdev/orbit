@@ -66,7 +66,7 @@ workflow, the PTY skill, the CLI reviewer, and this signal.
 
 If a future CLI report asks the user to inspect human output without prior PTY
 artifact analysis, keep this record `recurring` and tighten the CLI reviewer
-report template or add an evalc case.
+report template or implementation skill guidance.
 
 ## Curation Notes
 

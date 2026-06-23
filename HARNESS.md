@@ -29,15 +29,12 @@ The root harness is intentionally incremental. Not in scope yet:
 
 - Autonomous merge or reviewer-agent automation
 - Customer/product harness (fleet/workspace agent docs)
-- Eval runner, grading automation, SaaS eval platform, or CI integration for
-  `evalc/`
 - Automation loop (nightly distillation, continuous session mining)
 - Reviewer-persona framework
 
 `LOOP.md.example`, ignored `LOOP.md`, and `HARNESS_SIGNALS.md` define the manual
 feedback-loop layer. Later slices may add or refine reviewer personas and
-automation, including `evalc/` automation, only after the manual loop is
-stable.
+automation only after the manual loop is stable.
 
 ## Agent Discovery Path
 
@@ -57,27 +54,29 @@ Start at the monorepo root and read in this order:
    type
 8. **`.agents/review-personas/`**: focused review checklists activated by the
    routing table after implementation evidence exists
-9. **`evalc/`**: markdown-only harness evaluation cases for manual review of
-   implementation reports or transcripts; no runner exists yet
-10. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
+9. **`PRODUCT_DECISIONS.md`**: dated product intent ledger for direction
    changes and reversals
-11. **`apps/docs/content/`**: product authority (behavior contracts, not
+10. **`apps/docs/content/`**: product authority (behavior contracts, not
    repo-dev procedures)
-12. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
+11. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-13. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
+12. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
    Rector, and E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
 authority and are not the durable harness.
 
-## Manual Eval Cases
+## Post-Feature Session Review
 
-Markdown-only harness evaluation cases live under `evalc/`. Use them to review
-an implementation report or agent transcript against known repo-development
-lessons. These cases evaluate harness workflow behavior only; they are not
-product contracts and they do not imply an automated runner, dependency, CI
-gate, grading service, or SaaS eval platform.
+After a feature completes, the orchestrator reviews the feature thread, Solo
+worker sessions, reviewer output, retained terminal or PTY evidence when
+applicable, verification output, and human corrections.
+
+Distill durable repeated mistakes or missing context into the smallest
+appropriate sink: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
+`.agents/review-personas/*`, `harness-signals/`, deterministic tests or static
+checks, command failure messages, or explicit rejection. Keep one-off local
+cleanup out of the durable harness.
 
 ## Solo Role Matrix
 
