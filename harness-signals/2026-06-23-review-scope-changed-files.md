@@ -21,8 +21,12 @@ context for judging the diff, while full audits are separate tasks.
 
 ## Prior Occurrences
 
-No prior durable signal record existed. This surfaced while designing additional
-review personas and a docs/librarian agent path.
+No prior durable signal record existed when this was first recorded. One-time
+mini Codex-session backfill then found 4 review sessions that asked reviewers
+to inspect the current staged, unstaged, and untracked changes, plus repeated
+docs-audit review prompts that constrained the reviewed docs tree and excluded
+known out-of-scope directories. That history supports the changed-files
+reviewer boundary now written into the harness.
 
 ## Missing Guardrail
 
@@ -49,4 +53,7 @@ specific reviewer persona that drifted.
 
 ## Curation Notes
 
-Keep as the general review-scope guardrail.
+Keep as the general review-scope guardrail. Mini backfill supports the same
+boundary: reviewers may use project-wide rules as context, but the owned review
+surface is the current diff and named evidence unless the user asks for a broad
+audit.

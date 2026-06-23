@@ -27,6 +27,13 @@ stay aligned before a feature is accepted. The first CLI reviewer persona showed
 the value of post-test review criteria, but documentation needed its own
 reviewer because Orbit is contract-heavy.
 
+One-time mini Codex-session backfill found 8 Orbit docs-audit or docs-drift
+review sessions between 2026-05-21 and 2026-06-11, including repeated prompts
+to review docs consistency audit findings from Solo scratchpads and a
+Solo-managed `codex-drift-second-opinion` worker. That supports a dedicated
+docs/librarian role rather than making every implementation worker carry the
+full docs-review job.
+
 ## Missing Guardrail
 
 `implementing-features` required documentation alignment but did not provide a
@@ -51,4 +58,6 @@ contract, mark this record `recurring` and tighten the feature workflow gate.
 
 ## Curation Notes
 
-Keep while the docs/librarian role is being test-driven.
+Keep while the docs/librarian role is being test-driven. Mini backfill supports
+using the role for focused docs consistency and second-opinion work, not for
+unrequested full-project audits.

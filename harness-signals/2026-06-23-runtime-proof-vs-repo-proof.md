@@ -27,6 +27,13 @@ gateway/runtime drift, and release-candidate validation. In each case, the
 useful proof came from the surface that actually runs Orbit, not only from the
 worktree.
 
+One-time mini Codex-session backfill found 5 Orbit session records matching
+runtime-proof or not-proven language. The strongest correction was session
+`019ee688-485d-7303-b0d4-d017222cdf12`, where live user reproduction showed
+v0.1.147 was not proven and the worker was told not to run live fleet
+acceptance or update live nodes. Another CLI rendering session required proof
+from tests and a live Solo terminal run on Mini before acceptance.
+
 ## Missing Guardrail
 
 Agents could finish after repo-local tests without crossing the boundary to the
@@ -54,4 +61,5 @@ matching reviewer persona or release gate.
 ## Curation Notes
 
 This is a broad signal. Split it only if one runtime surface starts needing a
-more specific guardrail.
+more specific guardrail. Mini backfill supports keeping the release/live-node
+approval boundary strict: a live reproduction can invalidate repo-local proof.

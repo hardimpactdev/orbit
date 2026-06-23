@@ -28,6 +28,12 @@ handles PHP/CLI/test implementation, and that `mini` is useful for independent
 feature, review, verification, or investigation work rather than generic shared
 capacity.
 
+One-time mini Codex-session backfill found the same pattern in older Orbit
+work: 68 Orbit sessions were Solo-managed, 7 prompts explicitly warned that
+parallel workers required narrow ownership, and session
+`019ee350-2f88-7333-91e9-5625e089648f` corrected a failed Solo MCP startup by
+stopping the worker instead of letting it shell-spawn an untracked Grok path.
+
 ## Missing Guardrail
 
 The harness referred to Solo, Grok, retained terminals, and reviewer personas,
@@ -52,4 +58,6 @@ templates.
 
 ## Curation Notes
 
-Keep while Solo worker roles are being folded into the harness.
+Keep while Solo worker roles are being folded into the harness. Mini backfill
+confirms the useful rule is not "find any way to spawn a model"; the useful
+rule is "use tracked Solo ownership, or stop with the blocker."
