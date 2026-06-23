@@ -165,7 +165,7 @@ final readonly class SetupWorkspace
         $workspace->loadMissing('app');
         $app = $workspace->app;
 
-        if (! $app instanceof App || $app->runtime !== AppRuntimeKind::Php) {
+        if (! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return null;
         }
 
@@ -398,7 +398,7 @@ final readonly class SetupWorkspace
         $workspace->loadMissing('app');
         $app = $workspace->app;
 
-        if ($app === null || $app->runtime !== AppRuntimeKind::Php) {
+        if ($app === null || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return null;
         }
 

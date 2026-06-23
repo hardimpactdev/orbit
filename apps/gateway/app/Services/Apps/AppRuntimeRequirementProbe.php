@@ -33,7 +33,7 @@ final readonly class AppRuntimeRequirementProbe
         $instance->loadMissing('app.node');
         $app = $instance->app;
 
-        if ($instance->driver !== AppInstanceDriver::Orbit || $app->runtime !== AppRuntimeKind::Php) {
+        if ($instance->driver !== AppInstanceDriver::Orbit || $app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 

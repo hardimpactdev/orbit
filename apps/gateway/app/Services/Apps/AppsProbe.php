@@ -45,7 +45,7 @@ final readonly class AppsProbe
             return new ProbeSnapshot([]);
         }
 
-        $isPhpApp = $app->runtime === AppRuntimeKind::Php;
+        $isPhpApp = $app->runtimeKind() === AppRuntimeKind::Php;
         $containerName = $isPhpApp ? $this->appRuntimeContainerRenderer()->containerName($app) : '';
         $expectedSpecHash = '';
         $expectedRuntimeConfigHash = '';
@@ -71,7 +71,7 @@ final readonly class AppsProbe
             'APP_NAME' => $app->name,
             'APP_PATH' => rtrim((string) $app->path, '/'),
             'APP_DOCUMENT_ROOT' => (string) $app->document_root,
-            'RUNTIME_KIND' => $app->runtime->value,
+            'RUNTIME_KIND' => $app->runtimeKind()->value,
             'RUNTIME_USER' => $this->appRuntimeUser()->forApp($app),
             'RUNTIME_CONTAINER_NAME' => $containerName,
             'EXPECTED_SPEC_HASH' => $expectedSpecHash,
@@ -596,7 +596,7 @@ BASH;
      */
     private function checkRuntimeContainer(App $app, ProbeSnapshot $snapshot): array
     {
-        if ($app->runtime !== AppRuntimeKind::Php) {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 
@@ -681,7 +681,7 @@ BASH;
      */
     private function checkRuntimeConfig(App $app, ProbeSnapshot $snapshot): array
     {
-        if ($app->runtime !== AppRuntimeKind::Php) {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 
@@ -731,7 +731,7 @@ BASH;
      */
     private function checkPhpRuntime(App $app, ProbeSnapshot $snapshot): array
     {
-        if ($app->runtime !== AppRuntimeKind::Php) {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return [];
         }
 
@@ -860,7 +860,7 @@ BASH;
         }
 
         if (
-            $app->runtime === AppRuntimeKind::Php
+            $app->runtimeKind() === AppRuntimeKind::Php
             && ($observed['docker_available'] ?? null) === true
             && (
                 ($observed['container_exists'] ?? null) === false

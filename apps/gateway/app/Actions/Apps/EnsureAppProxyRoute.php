@@ -184,7 +184,7 @@ final readonly class EnsureAppProxyRoute
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
-        if ($app->runtime === AppRuntimeKind::Php) {
+        if ($app->runtimeKind() === AppRuntimeKind::Php) {
             $upstream = $config['runtime_upstream'] ?? null;
 
             if (! is_string($upstream) || $upstream === '') {
@@ -335,7 +335,7 @@ SH,
      */
     private function routeArtifact(App $app, string $domain): array
     {
-        $isPhp = $app->runtime === AppRuntimeKind::Php;
+        $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->appRuntimeContainerRenderer->upstreamUrl($app) : null;
 
         if ($app->environment !== 'production') {

@@ -98,6 +98,21 @@ class App extends Model
         return AppRuntimeConfig::fromArray(is_array($this->runtime_config) ? $this->runtime_config : null);
     }
 
+    public function runtimeKind(): AppRuntimeKind
+    {
+        $runtime = $this->getRawOriginal('runtime') ?? ($this->attributes['runtime'] ?? null);
+
+        if ($runtime instanceof AppRuntimeKind) {
+            return $runtime;
+        }
+
+        if (is_string($runtime)) {
+            return AppRuntimeKind::tryFrom($runtime) ?? AppRuntimeKind::Php;
+        }
+
+        return AppRuntimeKind::Php;
+    }
+
     public function workerConfig(): PhpWorkerConfig
     {
         return PhpWorkerConfig::fromArray(is_array($this->worker_config) ? $this->worker_config : []);

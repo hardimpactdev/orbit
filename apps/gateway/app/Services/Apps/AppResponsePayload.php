@@ -15,6 +15,7 @@ final readonly class AppResponsePayload
     public function forApp(App $app): array
     {
         $app->loadMissing('node');
+        $runtime = $app->runtimeKind();
 
         return [
             'name' => $app->name,
@@ -23,8 +24,8 @@ final readonly class AppResponsePayload
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
-            'runtime' => $app->runtime->value,
-            'runtime_config' => $app->runtime === AppRuntimeKind::Php ? $app->runtimeConfig()->toArray() : null,
+            'runtime' => $runtime->value,
+            'runtime_config' => $runtime === AppRuntimeKind::Php ? $app->runtimeConfig()->toArray() : null,
             'php_version' => $app->php_version,
             'worker_enabled' => $app->worker_enabled,
             'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,

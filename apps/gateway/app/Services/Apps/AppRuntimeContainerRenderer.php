@@ -39,9 +39,11 @@ final readonly class AppRuntimeContainerRenderer
 
     public function render(App $app, ?string $preloadPath = null): AppRuntimeContainer
     {
-        if ($app->runtime !== AppRuntimeKind::Php) {
+        $runtime = $app->runtimeKind();
+
+        if ($runtime !== AppRuntimeKind::Php) {
             throw new InvalidArgumentException(
-                "App '{$app->name}' uses runtime '{$app->runtime->value}' and does not get a FrankenPHP runtime container.",
+                "App '{$app->name}' uses runtime '{$runtime->value}' and does not get a FrankenPHP runtime container.",
             );
         }
 

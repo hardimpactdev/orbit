@@ -46,9 +46,7 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
                     return;
                 }
 
-                $runtimeKindValue = $app->runtime instanceof \BackedEnum
-                    ? $app->runtime->value
-                    : (string) $app->runtime;
+                $runtimeKindValue = $app->runtimeKind()->value;
 
                 if ($runtimeKindValue !== 'php') {
                     return;

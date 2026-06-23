@@ -23,7 +23,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
     public function appliesToApp(App $app): bool
     {
-        if ($app->runtime !== AppRuntimeKind::Php) {
+        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
             return false;
         }
 

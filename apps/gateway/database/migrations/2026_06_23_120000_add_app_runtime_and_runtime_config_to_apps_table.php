@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -13,6 +14,10 @@ return new class extends Migration
         Schema::table('apps', function (Blueprint $table): void {
             $table->renameColumn('runtime_kind', 'runtime');
         });
+
+        DB::table('apps')
+            ->whereNull('runtime')
+            ->update(['runtime' => 'php']);
 
         Schema::table('apps', function (Blueprint $table): void {
             $table->json('runtime_config')->nullable()->after('runtime');

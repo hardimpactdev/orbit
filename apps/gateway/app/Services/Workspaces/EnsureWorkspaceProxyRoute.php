@@ -201,7 +201,7 @@ final readonly class EnsureWorkspaceProxyRoute
             ? 'import path_blocking_project_root'
             : 'import path_blocking_public_root';
 
-        if ($app->runtime === AppRuntimeKind::Php) {
+        if ($app->runtimeKind() === AppRuntimeKind::Php) {
             $upstream = $config['runtime_upstream'] ?? null;
 
             if (! is_string($upstream) || $upstream === '') {
@@ -318,7 +318,7 @@ SH,
      */
     private function routeArtifact(Workspace $workspace, App $app, Node $node, string $domain): array
     {
-        $isPhp = $app->runtime === AppRuntimeKind::Php;
+        $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->runtimeContainerRenderer->upstreamUrl($workspace) : null;
 
         if ($app->environment !== 'production') {

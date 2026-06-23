@@ -269,7 +269,7 @@ final readonly class ProxyRouteFixer
             $route->workspace->loadMissing('app');
             $app = $route->workspace->app;
 
-            if (! $app instanceof App || $app->runtime !== AppRuntimeKind::Php) {
+            if (! $app instanceof App || $app->runtimeKind() !== AppRuntimeKind::Php) {
                 return;
             }
 

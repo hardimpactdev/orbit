@@ -194,7 +194,7 @@ final class AppRuntimeMountController implements Loggable
             'path' => $app->path,
             'root' => $app->document_root,
             'repository' => $app->repository,
-            'runtime' => $app->runtime->value,
+            'runtime' => $app->runtimeKind()->value,
             'runtime_config' => $app->runtimeConfig()->toArray(),
             'php_version' => $app->php_version,
             'worker_enabled' => (bool) $app->worker_enabled,
