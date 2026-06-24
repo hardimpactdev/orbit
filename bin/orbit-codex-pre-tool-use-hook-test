@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 HOOK="$ROOT/bin/orbit-codex-pre-tool-use-hook"
+CHECK="$ROOT/bin/orbit-feature-finalization-check"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/orbit-codex-hook-test.XXXXXX")"
 
 cleanup() {
@@ -24,6 +25,13 @@ run_hook() {
     printf '{"tool_input":{"command":"%s"}}' "$command" | (cd "$repo" && "$HOOK") >/tmp/orbit-hook-test.out 2>/tmp/orbit-hook-test.err
 }
 
+run_check() {
+    local repo="$1"
+    shift
+
+    (cd "$repo" && "$CHECK" "$@") >/tmp/orbit-hook-test.out 2>/tmp/orbit-hook-test.err
+}
+
 expect_pass() {
     local repo="$1"
     local command="$2"
@@ -37,13 +45,35 @@ expect_pass() {
 expect_block() {
     local repo="$1"
     local command="$2"
+    local status=0
 
-    if run_hook "$repo" "$command"; then
+    run_hook "$repo" "$command" || status=$?
+
+    if [ "$status" -eq 0 ]; then
         fail "expected block for [$command]"
     fi
 
+    [ "$status" -eq 2 ] || fail "expected block exit code 2 for [$command], got $status"
+
     grep -q 'Orbit finalization gate blocked' /tmp/orbit-hook-test.err \
         || fail "block message missing for [$command]"
+}
+
+expect_check_block() {
+    local repo="$1"
+    shift
+    local status=0
+
+    run_check "$repo" "$@" || status=$?
+
+    if [ "$status" -eq 0 ]; then
+        fail "expected explicit check block for [$*]"
+    fi
+
+    [ "$status" -eq 2 ] || fail "expected explicit check exit code 2 for [$*], got $status"
+
+    grep -q 'Orbit finalization gate blocked' /tmp/orbit-hook-test.err \
+        || fail "explicit check block message missing for [$*]"
 }
 
 write_loop() {
@@ -114,6 +144,7 @@ expect_pass "$REPO" 'git merge --ff-only finalized'
 expect_block "$REPO" 'git merge --ff-only templated'
 expect_block "$REPO" 'git merge --ff-only missing-loop'
 expect_block "$REPO" 'git worktree remove .worktrees/templated && git branch -d templated'
+expect_check_block "$REPO" git merge --ff-only templated
 expect_pass "$REPO" 'git branch -d finalized'
 
 printf 'orbit-codex-pre-tool-use-hook tests passed\n'

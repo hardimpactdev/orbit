@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+if [ "$#" -eq 0 ]; then
+    cat >&2 <<'EOF'
+Usage:
+  bin/orbit-feature-finalization-check git merge <feature-branch>
+  bin/orbit-feature-finalization-check git worktree remove <worktree-path>
+  bin/orbit-feature-finalization-check git branch -d <feature-branch>
+
+Run this before merge-back or feature cleanup. It applies the same final
+distillation gate as the Codex PreToolUse hook without relying on hook
+interception.
+EOF
+    exit 64
+fi
+
+exec "$ROOT/bin/orbit-codex-pre-tool-use-hook" "$@"

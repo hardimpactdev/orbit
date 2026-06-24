@@ -160,13 +160,15 @@ record.
 
 If future implementation reports omit durable signal triage or the
 post-feature session review summary, keep this record `recurring` and first
-verify whether the project-local Codex hook was loaded/trusted and whether the
-merge/cleanup happened through a Bash command the hook can see. If the hook was
-active but did not block, tighten `bin/orbit-codex-pre-tool-use-hook`. If the
-work happened outside Codex, consider a Git hook or merge wrapper instead of
-adding more prose. If fresh reviewers start promoting weak one-off findings,
-tighten the post-feature distillation reviewer or the promotion gate instead of
-adding more signal records.
+verify whether `bin/orbit-feature-finalization-check` was run before merge or
+cleanup. Treat the project-local Codex hook as best-effort only; it may not
+intercept every shell execution path. If the explicit check was skipped,
+tighten the implementation workflow. If the explicit check ran and allowed
+pending final-distillation state, tighten `bin/orbit-codex-pre-tool-use-hook`
+and add the missing command shape to `bin/orbit-codex-pre-tool-use-hook-test`.
+If fresh reviewers start promoting weak one-off findings, tighten the
+post-feature distillation reviewer or the promotion gate instead of adding more
+signal records.
 
 If a future loop-improver only updates a scratchpad after repeated user
 corrections and does not patch, reject, or explicitly defer the project

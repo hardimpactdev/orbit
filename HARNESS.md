@@ -116,23 +116,41 @@ deferred follow-ups, and the no-new-signal rationale when nothing changes.
 
 ## Merge Boundary Gate
 
-Orbit installs a project-local Codex `PreToolUse` hook for Bash commands in
-`.codex/hooks.json`. The hook is intentionally narrow: it only inspects git
-merge and feature-cleanup boundaries, then blocks when a targeted feature
-worktree has no completed `.orbit/loop.md` `Final Distillation` section.
+Orbit has two merge-boundary checks:
+
+1. `bin/orbit-feature-finalization-check` is the required explicit gate before
+   merge-back or feature cleanup.
+2. `.codex/hooks.json` installs a best-effort Codex `PreToolUse` hook that
+   calls the same gate when Codex intercepts the tool call.
+
+Codex hooks are useful but not a complete enforcement boundary: current Codex
+`PreToolUse` support does not intercept every newer shell execution path. Do
+not rely on the hook alone. Run the explicit gate before `git merge`,
+`git worktree remove`, or `git branch -d`:
+
+```bash
+bin/orbit-feature-finalization-check git merge <feature-branch>
+bin/orbit-feature-finalization-check git worktree remove .worktrees/<feature-branch>
+bin/orbit-feature-finalization-check git branch -d <feature-branch>
+```
+
+The gate is intentionally narrow: it only inspects git merge and
+feature-cleanup boundaries, then blocks when a targeted feature worktree has no
+completed `.orbit/loop.md` `Final Distillation` section.
 
 The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
 feature-session learnings undistilled. It does not run tests, inspect ordinary
-commands, mine old sessions, or promote signals automatically. It only prevents
-the finalization checkpoint from being skipped before `git merge`,
+commands, mine old sessions, or promote signals automatically. It prevents the
+finalization checkpoint from being skipped before `git merge`,
 `git worktree remove`, or `git branch -d` hides the local context.
 
 If the gate blocks, do not delete `.orbit/` or bypass the merge. Review the
 feature evidence, classify candidate learnings through `HARNESS_SIGNALS.md`,
 fill the final-distillation outcomes in `.orbit/loop.md`, and then rerun the
-same git command. For a genuinely tiny local change, the final-distillation
-section can record the no-review/no-new-signal rationale explicitly.
+rerun `bin/orbit-feature-finalization-check`, then rerun the same git command.
+For a genuinely tiny local change, the final-distillation section can record
+the no-review/no-new-signal rationale explicitly.
 
 ## Active Loop Improvement
 

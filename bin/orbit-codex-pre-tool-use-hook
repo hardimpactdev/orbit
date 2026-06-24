@@ -3,8 +3,9 @@
 
 declare(strict_types=1);
 
-$input = stream_get_contents(STDIN);
-$command = extract_command($input);
+const BLOCK_EXIT_CODE = 2;
+
+$command = command_from_argv($argv) ?? extract_command(stream_get_contents(STDIN));
 
 if ($command === null || $command === '') {
     exit(0);
@@ -34,7 +35,19 @@ if ($check['ok']) {
 
 fwrite(STDERR, block_message($check['subject'], $check['reason']));
 
-exit(1);
+exit(BLOCK_EXIT_CODE);
+
+/**
+ * @param  list<string>  $argv
+ */
+function command_from_argv(array $argv): ?string
+{
+    if (count($argv) <= 1) {
+        return null;
+    }
+
+    return implode(' ', array_slice($argv, 1));
+}
 
 function extract_command(string $input): ?string
 {

@@ -88,6 +88,10 @@ Responsibilities:
 - Build the local post-feature distillation packet before completion, request
   fresh-context classification when the loop was non-trivial, and adjudicate
   candidate learnings before any durable guardrail is changed.
+- Run `bin/orbit-feature-finalization-check` for the intended merge-back and
+  cleanup command before executing each boundary. The Codex `PreToolUse` hook is
+  a best-effort guardrail, not the only gate, because it does not intercept every
+  shell execution path.
 - Own final commit, merge-back, worktree cleanup, feature completion cleanup,
   and the implementation report.
 
