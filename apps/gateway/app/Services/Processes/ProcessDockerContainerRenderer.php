@@ -120,6 +120,11 @@ final readonly class ProcessDockerContainerRenderer
         $name = $this->assertIdentitySlug($process->name);
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
         $command = trim($process->command);
+        $volumes = $this->volumes($config['volumes'] ?? []);
+        $mounts = $this->mountsWithoutVolumeTargets(
+            mounts: $this->mounts($config['mounts'] ?? []),
+            volumes: $volumes,
+        );
 
         if ($command === '') {
             throw new InvalidArgumentException(
@@ -138,11 +143,12 @@ final readonly class ProcessDockerContainerRenderer
             workingDirectory: $this->optionalConfigString($config, 'working_directory') ?? '/',
             command: $command,
             environment: $this->stringMap($config['environment'] ?? []),
-            mounts: $this->mounts($config['mounts'] ?? []),
+            mounts: $mounts,
             networkAliases: array_values(array_unique([
                 $name,
                 ...$this->stringList($config['network_aliases'] ?? []),
             ])),
+            volumes: $volumes,
         );
     }
 
@@ -295,6 +301,52 @@ final readonly class ProcessDockerContainerRenderer
                     'source' => $source,
                     'target' => $target,
                     'read_only' => (bool) ($mount['read_only'] ?? false),
+                ];
+            }, $value),
+        ));
+    }
+
+    /**
+     * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
+     * @param  list<array{source: string, target: string, read_only?: bool}>  $volumes
+     * @return list<array{source: string, target: string, read_only?: bool}>
+     */
+    private function mountsWithoutVolumeTargets(array $mounts, array $volumes): array
+    {
+        $volumeTargets = array_flip(array_column($volumes, 'target'));
+
+        return array_values(array_filter(
+            $mounts,
+            fn (array $mount): bool => ! isset($volumeTargets[$mount['target']]),
+        ));
+    }
+
+    /**
+     * @return list<array{source: string, target: string, read_only?: bool}>
+     */
+    private function volumes(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(function (mixed $volume): ?array {
+                if (! is_array($volume)) {
+                    return null;
+                }
+
+                $source = $volume['source'] ?? $volume['name'] ?? null;
+                $target = $volume['target'] ?? null;
+
+                if (! is_string($source) || ! is_string($target)) {
+                    return null;
+                }
+
+                return [
+                    'source' => $source,
+                    'target' => $target,
+                    'read_only' => (bool) ($volume['read_only'] ?? false),
                 ];
             }, $value),
         ));

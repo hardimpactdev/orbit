@@ -1622,9 +1622,12 @@ TXT;
         $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
 
         expect($shell->scripts)->toContain("docker pull 'redis:7.2'")
-            ->and($shell->scripts)->toContain("sudo mkdir -p '/var/lib/orbit/processes/redis'")
             ->and($create)->toContain('docker create')
+            ->and($create)->toContain("--mount 'type=volume,source=orbit-redis,target=/data'")
+            ->and($create)->not->toContain('type=bind,source=/var/lib/orbit/processes/redis,target=/data')
             ->and($create)->toContain("'redis:7.2'");
+
+        expect($shell->scripts)->not->toContain("sudo mkdir -p '/var/lib/orbit/processes/redis'");
     });
 
     it('restores missing and stopped orbit-caddy containers through restore mode family dispatch', function (string $issueKey, string $state, string $containerExists): void {

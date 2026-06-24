@@ -18,6 +18,9 @@ class ProcessDockerContainer
     /** @var list<array{source: string, target: string, read_only: bool}> */
     private readonly array $mounts;
 
+    /** @var list<array{source: string, target: string, read_only: bool}> */
+    private readonly array $volumes;
+
     /** @var list<string> */
     private readonly array $networkAliases;
 
@@ -25,6 +28,7 @@ class ProcessDockerContainer
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      * @param  list<string>  $networkAliases
+     * @param  list<array{source?: string, name?: string, target: string, read_only?: bool}>  $volumes
      */
     public function __construct(
         private readonly string $name,
@@ -39,9 +43,11 @@ class ProcessDockerContainer
         array $environment,
         array $mounts,
         array $networkAliases,
+        array $volumes = [],
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
+        $this->volumes = $this->normalizeVolumes($volumes);
         $this->networkAliases = $this->normalizeNetworkAliases($networkAliases);
     }
 
@@ -102,6 +108,12 @@ class ProcessDockerContainer
         return $this->mounts;
     }
 
+    /** @return list<array{source: string, target: string, read_only: bool}> */
+    public function volumes(): array
+    {
+        return $this->volumes;
+    }
+
     /** @return list<string> */
     public function networkAliases(): array
     {
@@ -146,6 +158,7 @@ class ProcessDockerContainer
      *     command: string,
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
+     *     volumes: list<array{source: string, target: string, read_only: bool}>,
      *     network_aliases: list<string>
      * }
      */
@@ -163,6 +176,7 @@ class ProcessDockerContainer
             'command' => $this->command,
             'environment' => $this->environment,
             'mounts' => $this->mounts,
+            'volumes' => $this->volumes,
             'network_aliases' => $this->networkAliases,
         ];
     }
@@ -198,6 +212,28 @@ class ProcessDockerContainer
                 'read_only' => (bool) ($mount['read_only'] ?? false),
             ];
         }, $mounts);
+    }
+
+    /**
+     * @param  list<array{source?: string, name?: string, target: string, read_only?: bool}>  $volumes
+     * @return list<array{source: string, target: string, read_only: bool}>
+     */
+    private function normalizeVolumes(array $volumes): array
+    {
+        return array_map(function (array $volume): array {
+            $source = trim($volume['source'] ?? $volume['name'] ?? '');
+            $target = trim($volume['target']);
+
+            if ($source === '' || $target === '') {
+                throw new InvalidArgumentException('Process docker container volumes require source or name and target paths.');
+            }
+
+            return [
+                'source' => $source,
+                'target' => $target,
+                'read_only' => (bool) ($volume['read_only'] ?? false),
+            ];
+        }, $volumes);
     }
 
     /**

@@ -157,6 +157,52 @@ it('applies node owned docker service processes from runtime config', function (
     );
 });
 
+it('renders docker service definition data paths as docker named volumes for node owned docker processes', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create(['name' => 'database-1']);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'mysql8',
+        'command' => 'mysqld',
+        'runtime' => ProcessRuntime::Docker,
+        'runtime_config' => [
+            'image' => 'mysql:8.4',
+            'mounts' => [
+                [
+                    'source' => '/var/lib/orbit/processes/mysql8',
+                    'target' => '/var/lib/mysql',
+                ],
+            ],
+            'volumes' => [
+                [
+                    'name' => 'orbit-mysql8',
+                    'target' => '/var/lib/mysql',
+                ],
+            ],
+        ],
+    ]);
+
+    expect(app(DockerProcessRuntimeDriver::class)->apply($node, $app, $process))->toBeTrue();
+
+    $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+
+    expect($create)->toBeString()
+        ->toContain("--mount 'type=volume,source=orbit-mysql8,target=/var/lib/mysql'")
+        ->not->toContain('type=bind,source=/var/lib/orbit/processes/mysql8,target=/var/lib/mysql');
+
+    expect($shell->scripts)
+        ->not->toContain("sudo mkdir -p '/var/lib/orbit/processes/mysql8'");
+});
+
 it('fails docker process apply when the pre apply script fails', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),

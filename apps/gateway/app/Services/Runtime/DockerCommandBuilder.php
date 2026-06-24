@@ -129,6 +129,13 @@ class DockerCommandBuilder
             $parts[] = $this->quote($this->mountSpec($mount));
         }
 
+        if ($container instanceof ProcessDockerContainer) {
+            foreach ($container->volumes() as $volume) {
+                $parts[] = '--mount';
+                $parts[] = $this->quote($this->volumeSpec($volume));
+            }
+        }
+
         $parts[] = $this->quote($container->image());
 
         if ($container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer) {
@@ -219,6 +226,24 @@ class DockerCommandBuilder
         ];
 
         if ($mount['read_only']) {
+            $fields[] = 'readonly';
+        }
+
+        return implode(',', $fields);
+    }
+
+    /**
+     * @param  array{source: string, target: string, read_only: bool}  $volume
+     */
+    private function volumeSpec(array $volume): string
+    {
+        $fields = [
+            'type=volume',
+            $this->mountField('source', $volume['source']),
+            $this->mountField('target', $volume['target']),
+        ];
+
+        if ($volume['read_only']) {
             $fields[] = 'readonly';
         }
 
