@@ -38,6 +38,8 @@ use Symfony\Component\Console\Output\ConsoleOutputInterface;
 #[Description('Run prepared-topology E2E lanes')]
 class E2ETestCommand extends Command
 {
+    private const string E2E_PLAN_PREFIX = '[orbit-e2e-plan] ';
+
     #[\Override]
     protected $hidden = true;
 
@@ -1122,6 +1124,7 @@ class E2ETestCommand extends Command
         try {
             foreach ($plans as $lane => $plan) {
                 $laneStartedAt[$lane] = microtime(true);
+                $this->emitPlanMetadata($plan, laneExecutionMode: 'parallel');
                 $this->emitCheckpoint("e2e.lane.{$lane}", 'started');
 
                 $this->runningProcesses[$lane] = Process::path(base_path())
@@ -1597,6 +1600,7 @@ class E2ETestCommand extends Command
             foreach ($plans as $lane => $plan) {
                 $startedAt = microtime(true);
 
+                $this->emitPlanMetadata($plan, laneExecutionMode: 'sequential');
                 $this->emitCheckpoint("e2e.lane.{$lane}", 'started');
 
                 $this->runningProcesses[$lane] = Process::path(base_path())
@@ -1956,6 +1960,118 @@ class E2ETestCommand extends Command
         }
 
         fwrite(STDERR, "{$line}\n");
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function emitPlanMetadata(array $plan, string $laneExecutionMode): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
+
+        $metadataFile = getenv('ORBIT_E2E_PLAN_METADATA_FILE');
+
+        if (! is_string($metadataFile) || trim($metadataFile) === '') {
+            return;
+        }
+
+        $line = $this->planMetadataLine($plan, $laneExecutionMode);
+
+        @file_put_contents(trim($metadataFile), "{$line}\n", FILE_APPEND | LOCK_EX);
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function planMetadataLine(array $plan, string $laneExecutionMode): string
+    {
+        return self::E2E_PLAN_PREFIX.json_encode(
+            $this->planMetadata($plan, $laneExecutionMode),
+            JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+        );
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     * @return array<string, mixed>
+     */
+    private function planMetadata(array $plan, string $laneExecutionMode): array
+    {
+        $commandProcesses = $this->commandProcessCount($plan['command']);
+        $environment = $this->planMetadataEnvironment($plan['environment']);
+        $metadata = [
+            'schema_version' => 1,
+            'lane' => $plan['lane'],
+            'provider' => $plan['environment']['ORBIT_E2E_TOPOLOGY_PROVIDER'] ?? $plan['lane'],
+            'lane_execution_mode' => $laneExecutionMode,
+            'test_execution_mode' => $commandProcesses === null ? 'sequential' : 'parallel',
+        ];
+
+        if ($commandProcesses !== null) {
+            $metadata['command_processes'] = $commandProcesses;
+        }
+
+        if (isset($plan['test_files'])) {
+            $metadata['test_file_count'] = count($plan['test_files']);
+        }
+
+        if ($environment !== []) {
+            $metadata['environment'] = $environment;
+        }
+
+        return $metadata;
+    }
+
+    /**
+     * @param  list<string>  $command
+     */
+    private function commandProcessCount(array $command): ?int
+    {
+        foreach ($command as $index => $argument) {
+            if (str_starts_with($argument, '--processes=')) {
+                $value = substr($argument, strlen('--processes='));
+
+                return is_numeric($value) ? (int) $value : null;
+            }
+
+            if ($argument === '--processes' && isset($command[$index + 1]) && is_numeric($command[$index + 1])) {
+                return (int) $command[$index + 1];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, string>  $environment
+     * @return array<string, string>
+     */
+    private function planMetadataEnvironment(array $environment): array
+    {
+        $keys = [
+            'ORBIT_E2E_PARALLEL_PROCESSES',
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS',
+            'ORBIT_E2E_DOCKER_MIN_PROCESSES',
+            'ORBIT_E2E_INCUS_HOSTS',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS',
+            'ORBIT_E2E_INCUS_PARALLEL_PROCESSES',
+            'ORBIT_E2E_INCUS_STORAGE_POOL',
+        ];
+        $metadata = [];
+
+        foreach ($keys as $key) {
+            $value = $environment[$key] ?? getenv($key);
+
+            if (! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $metadata[$key] = trim($value);
+        }
+
+        return $metadata;
     }
 
     private function writeProcessOutput(string $type, string $output): void

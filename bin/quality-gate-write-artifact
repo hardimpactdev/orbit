@@ -14,6 +14,8 @@ $options = getopt('', [
     'git-commit::',
     'subgate:',
     'subgate-duration:',
+    'e2e-plan-line:',
+    'test-summary-line::',
     'timing-raw-path::',
     'timing-summary-path::',
     'artifact-dir::',
@@ -31,6 +33,8 @@ try {
     $gitCommit = optional_string($options, 'git-commit', '');
     $subgates = subgates(repeated_values($options, 'subgate'));
     $subgateDurations = subgate_durations(repeated_values($options, 'subgate-duration'));
+    $testSummary = test_summary(optional_string($options, 'test-summary-line', ''));
+    $e2eContext = e2e_context(repeated_values($options, 'e2e-plan-line'));
     $timingSummary = timing_summary(
         optional_string($options, 'timing-raw-path', ''),
         optional_string($options, 'timing-summary-path', ''),
@@ -65,6 +69,14 @@ try {
 
     if ($subgateDurations !== []) {
         $artifact['subgate_durations'] = $subgateDurations;
+    }
+
+    if ($e2eContext !== null) {
+        $artifact['e2e_context'] = $e2eContext;
+    }
+
+    if ($testSummary !== null) {
+        $artifact['test_summary'] = $testSummary;
     }
 
     if ($timingSummary !== null) {
@@ -207,6 +219,176 @@ function subgate_durations(array $values): array
     ksort($durations);
 
     return $durations;
+}
+
+/**
+ * @param  list<string>  $planLines
+ * @return array{plans: list<array<string, mixed>>}|null
+ */
+function e2e_context(array $planLines): ?array
+{
+    $plans = [];
+
+    foreach ($planLines as $line) {
+        $plan = e2e_plan($line);
+
+        if ($plan !== null) {
+            $plans[] = $plan;
+        }
+    }
+
+    if ($plans === []) {
+        return null;
+    }
+
+    return ['plans' => $plans];
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function e2e_plan(string $line): ?array
+{
+    $prefix = '[orbit-e2e-plan] ';
+    $line = trim($line);
+
+    if (! str_starts_with($line, $prefix)) {
+        return null;
+    }
+
+    $decoded = json_decode(substr($line, strlen($prefix)), true);
+
+    if (! is_array($decoded)) {
+        return null;
+    }
+
+    if (! isset($decoded['lane'], $decoded['provider']) || ! is_string($decoded['lane']) || ! is_string($decoded['provider'])) {
+        return null;
+    }
+
+    $plan = [
+        'schema_version' => numeric_int($decoded['schema_version'] ?? null) ?? 1,
+        'lane' => trim($decoded['lane']),
+        'provider' => trim($decoded['provider']),
+    ];
+
+    foreach (['lane_execution_mode', 'test_execution_mode'] as $key) {
+        if (isset($decoded[$key]) && is_string($decoded[$key]) && trim($decoded[$key]) !== '') {
+            $plan[$key] = trim($decoded[$key]);
+        }
+    }
+
+    foreach (['command_processes', 'test_file_count'] as $key) {
+        $value = numeric_int($decoded[$key] ?? null);
+
+        if ($value !== null) {
+            $plan[$key] = $value;
+        }
+    }
+
+    $environment = e2e_plan_environment($decoded['environment'] ?? null);
+
+    if ($environment !== []) {
+        $plan['environment'] = $environment;
+    }
+
+    return $plan;
+}
+
+function numeric_int(mixed $value): ?int
+{
+    return is_numeric($value) ? (int) $value : null;
+}
+
+/**
+ * @return array<string, string>
+ */
+function e2e_plan_environment(mixed $environment): array
+{
+    if (! is_array($environment)) {
+        return [];
+    }
+
+    $allowedKeys = [
+        'ORBIT_E2E_PARALLEL_PROCESSES',
+        'ORBIT_E2E_DOCKER_TEST_RUNNERS',
+        'ORBIT_E2E_DOCKER_MIN_PROCESSES',
+        'ORBIT_E2E_INCUS_HOSTS',
+        'ORBIT_E2E_INCUS_HOST_VM_CAPS',
+        'ORBIT_E2E_INCUS_PARALLEL_PROCESSES',
+        'ORBIT_E2E_INCUS_STORAGE_POOL',
+    ];
+    $metadata = [];
+
+    foreach ($allowedKeys as $key) {
+        $value = $environment[$key] ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            continue;
+        }
+
+        $metadata[$key] = trim($value);
+    }
+
+    return $metadata;
+}
+
+/**
+ * @return array{tests: int, assertions: int, status: string, counts: array<string, int>}|null
+ */
+function test_summary(string $line): ?array
+{
+    if ($line === '') {
+        return null;
+    }
+
+    if (! preg_match('/Tests:\s+(?<details>.+?)\s+\(\s*(?<assertions>\d+)\s+assertions?\s*\)/i', $line, $matches)) {
+        return null;
+    }
+
+    $details = (string) $matches['details'];
+    $assertions = (int) $matches['assertions'];
+    $counts = [];
+
+    if (! preg_match_all('/(?<count>\d+)\s+(?<label>[a-z][a-z_-]*)/i', $details, $countMatches, PREG_SET_ORDER)) {
+        return null;
+    }
+
+    foreach ($countMatches as $countMatch) {
+        $label = strtolower(str_replace('-', '_', (string) $countMatch['label']));
+        $counts[$label] = (int) $countMatch['count'];
+    }
+
+    $tests = array_sum($counts);
+
+    if ($tests <= 0) {
+        return null;
+    }
+
+    return [
+        'tests' => $tests,
+        'assertions' => $assertions,
+        'status' => test_summary_status($counts),
+        'counts' => $counts,
+    ];
+}
+
+/**
+ * @param  array<string, int>  $counts
+ */
+function test_summary_status(array $counts): string
+{
+    foreach (['failed', 'failures', 'errored', 'errors'] as $failureLabel) {
+        if (($counts[$failureLabel] ?? 0) > 0) {
+            return 'failed';
+        }
+    }
+
+    if (($counts['passed'] ?? 0) > 0) {
+        return 'passed';
+    }
+
+    return 'unknown';
 }
 
 function default_command(string $gate, string $mode): string

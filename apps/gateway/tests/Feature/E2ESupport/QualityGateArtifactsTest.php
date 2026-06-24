@@ -164,6 +164,176 @@ it('captures e2e timing summaries from wrapped command stderr', function (): voi
     }
 });
 
+it('writes e2e compatibility metadata and surfaces it during analysis', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-e2e-context-'.bin2hex(random_bytes(6));
+
+    try {
+        $dockerPlanMetadata = json_encode([
+            'schema_version' => 1,
+            'lane' => 'docker',
+            'provider' => 'docker',
+            'lane_execution_mode' => 'parallel',
+            'test_execution_mode' => 'parallel',
+            'command_processes' => 2,
+            'test_file_count' => 3,
+            'environment' => [
+                'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '2',
+                'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2,sidecar2:2',
+                'ORBIT_E2E_PARALLEL_PROCESSES' => '2',
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $incusPlanMetadata = json_encode([
+            'schema_version' => 1,
+            'lane' => 'incus',
+            'provider' => 'incus',
+            'lane_execution_mode' => 'parallel',
+            'test_execution_mode' => 'parallel',
+            'command_processes' => 1,
+            'test_file_count' => 2,
+            'environment' => [
+                'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+                'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:8',
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $process = new Process([
+            repo_path('bin/quality-gate-run'),
+            '--gate=e2e',
+            '--command=composer test:e2e',
+            "--artifact-dir={$artifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'fwrite(STDOUT, "Tests:    3 passed (12 assertions)\n"); file_put_contents(getenv("ORBIT_E2E_PLAN_METADATA_FILE"), "[orbit-e2e-plan] ".getenv("ORBIT_TEST_DOCKER_PLAN_METADATA")."\n", FILE_APPEND); file_put_contents(getenv("ORBIT_E2E_PLAN_METADATA_FILE"), "[orbit-e2e-plan] ".getenv("ORBIT_TEST_INCUS_PLAN_METADATA")."\n", FILE_APPEND); fwrite(STDERR, "[orbit-e2e] docker start gateway 1.200s\n");',
+        ], repo_path(), [
+            'ORBIT_TEST_DOCKER_PLAN_METADATA' => $dockerPlanMetadata,
+            'ORBIT_TEST_INCUS_PLAN_METADATA' => $incusPlanMetadata,
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toContain('Tests:    3 passed (12 assertions)')
+            ->and($process->getErrorOutput())->toContain('[orbit-e2e] docker start gateway 1.200s')
+            ->and($process->getErrorOutput())->not->toContain('[orbit-e2e-plan]');
+
+        $artifacts = glob("{$artifactDir}/e2e-*.json") ?: [];
+
+        expect($artifacts)->toHaveCount(1);
+
+        $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($artifact['e2e_context'])->toMatchArray([
+            'plans' => [
+                [
+                    'schema_version' => 1,
+                    'lane' => 'docker',
+                    'provider' => 'docker',
+                    'lane_execution_mode' => 'parallel',
+                    'test_execution_mode' => 'parallel',
+                    'command_processes' => 2,
+                    'test_file_count' => 3,
+                    'environment' => [
+                        'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '2',
+                        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2,sidecar2:2',
+                        'ORBIT_E2E_PARALLEL_PROCESSES' => '2',
+                    ],
+                ],
+                [
+                    'schema_version' => 1,
+                    'lane' => 'incus',
+                    'provider' => 'incus',
+                    'lane_execution_mode' => 'parallel',
+                    'test_execution_mode' => 'parallel',
+                    'command_processes' => 1,
+                    'test_file_count' => 2,
+                    'environment' => [
+                        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+                        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:8',
+                    ],
+                ],
+            ],
+        ])->and($artifact['test_summary'])->toMatchArray([
+            'assertions' => 12,
+            'status' => 'passed',
+            'tests' => 3,
+        ]);
+
+        $analyzer = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+            '--gate=e2e',
+        ], repo_path());
+        $analyzer->run();
+
+        expect($analyzer->getExitCode())->toBe(0, $analyzer->getErrorOutput())
+            ->and($analyzer->getOutput())
+            ->toContain('e2e plan: lane=docker provider=docker lane_mode=parallel test_mode=parallel command_processes=2 test_files=3')
+            ->toContain('e2e plan env: ORBIT_E2E_PARALLEL_PROCESSES=2 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:2,sidecar2:2 ORBIT_E2E_DOCKER_MIN_PROCESSES=2')
+            ->toContain('e2e plan: lane=incus provider=incus lane_mode=parallel test_mode=parallel command_processes=1 test_files=2')
+            ->toContain('e2e plan env: ORBIT_E2E_INCUS_HOSTS=beast ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:8')
+            ->toContain('test summary: 3 tests, 12 assertions, passed')
+            ->toContain('timing phase: docker/start.gateway n=1 p50=1.2 p95=1.2')
+            ->not->toContain('effective_parallelism');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('falls back to streamed e2e plan metadata when the metadata file is empty', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-e2e-plan-fallback-'.bin2hex(random_bytes(6));
+
+    try {
+        $planMetadata = json_encode([
+            'schema_version' => 1,
+            'lane' => 'docker',
+            'provider' => 'docker',
+            'lane_execution_mode' => 'parallel',
+            'test_execution_mode' => 'parallel',
+            'command_processes' => 2,
+            'test_file_count' => 3,
+        ], JSON_THROW_ON_ERROR);
+
+        $process = new Process([
+            repo_path('bin/quality-gate-run'),
+            '--gate=e2e-docker',
+            '--command=composer test:e2e:docker',
+            "--artifact-dir={$artifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'fwrite(STDOUT, "Tests:    1 passed (2 assertions)\n"); fwrite(STDERR, "[orbit-e2e-plan] ".getenv("ORBIT_TEST_PLAN_METADATA")."\n");',
+        ], repo_path(), [
+            'ORBIT_TEST_PLAN_METADATA' => $planMetadata,
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $artifacts = glob("{$artifactDir}/e2e-docker-*.json") ?: [];
+
+        expect($artifacts)->toHaveCount(1);
+
+        $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($artifact['e2e_context'])->toMatchArray([
+            'plans' => [
+                [
+                    'schema_version' => 1,
+                    'lane' => 'docker',
+                    'provider' => 'docker',
+                    'lane_execution_mode' => 'parallel',
+                    'test_execution_mode' => 'parallel',
+                    'command_processes' => 2,
+                    'test_file_count' => 3,
+                ],
+            ],
+        ]);
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
 it('preserves the wrapped quality gate command exit code', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-run-fail-'.bin2hex(random_bytes(6));
 

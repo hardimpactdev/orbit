@@ -76,6 +76,42 @@ it('passes GitHub auth to lane workers without exposing it in dry-run plans', fu
     });
 });
 
+it('formats parseable plan metadata before e2e lanes run', function (): void {
+    $line = invokeE2ETestCommandMethod(app(E2ETestCommand::class), 'planMetadataLine', [[
+        'lane' => 'docker',
+        'command' => ['php', 'artisan', 'test', '--parallel', '--processes=4'],
+        'environment' => [
+            'ORBIT_E2E_TOPOLOGY_PROVIDER' => 'docker',
+            'ORBIT_E2E_PARALLEL_PROCESSES' => '4',
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:28,sidecar2:2:28',
+            'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '2',
+        ],
+        'test_files' => [
+            'tests/Feature/Commands/AppNewCommandTest.php',
+            'tests/Feature/Commands/DoctorCommandTest.php',
+        ],
+    ], 'parallel']);
+
+    expect($line)->toStartWith('[orbit-e2e-plan] ');
+
+    $payload = json_decode(substr($line, strlen('[orbit-e2e-plan] ')), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload)->toMatchArray([
+        'schema_version' => 1,
+        'lane' => 'docker',
+        'provider' => 'docker',
+        'lane_execution_mode' => 'parallel',
+        'test_execution_mode' => 'parallel',
+        'command_processes' => 4,
+        'test_file_count' => 2,
+        'environment' => [
+            'ORBIT_E2E_PARALLEL_PROCESSES' => '4',
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2:28,sidecar2:2:28',
+            'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '2',
+        ],
+    ]);
+});
+
 it('uses selected lanes from the environment', function (): void {
     withE2EEnvironment(['ORBIT_E2E_LANES'], [
         'ORBIT_E2E_LANES' => 'incus',

@@ -200,6 +200,18 @@ files through `timing_summary`, and `composer quality-gate:analyze` prints the
 captured `timing phase` lines so final-check review can see slow provider
 phases without rerunning Docker or Incus.
 
+E2E artifacts also record planner metadata when the lane runs through
+`bin/orbit-e2e-artisan e2e:test`. The wrapper passes a local metadata file path
+to the E2E command so raw plan JSON stays out of the human-visible terminal
+output.
+
+The resulting `e2e_context.plans` entries record the selected lane, provider,
+lane execution mode, test execution mode, command process count, test file
+count, and allowlisted E2E runner environment values. The analyzer prints those
+entries as `e2e plan` and `e2e plan env` lines. It also prints the final Pest
+`Tests:` summary when it was captured from stdout. Use that metadata to compare
+E2E timings only against runs with compatible Docker or Incus runner shape.
+
 Run feature E2E before any affected provider artifact/provision gate. The
 prepared-topology lanes exercise the current source checkout and are the normal
 behavior signal. Incus provision is final verification for fresh VM topology

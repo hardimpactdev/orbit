@@ -8,12 +8,23 @@ COMMAND=""
 MODE="check"
 ARTIFACT_DIR="${ORBIT_QUALITY_GATES_DIR:-${ROOT}/.orbit/quality-gates}"
 TIMING_RAW_TMP=""
+TIMING_STDOUT_TMP=""
+TIMING_STDOUT_FIFO=""
 TIMING_STDERR_TMP=""
 TIMING_STDERR_FIFO=""
+PLAN_METADATA_TMP=""
 
 cleanup() {
     if [ -n "$TIMING_RAW_TMP" ]; then
         rm -f "$TIMING_RAW_TMP"
+    fi
+
+    if [ -n "$TIMING_STDOUT_TMP" ]; then
+        rm -f "$TIMING_STDOUT_TMP"
+    fi
+
+    if [ -n "$TIMING_STDOUT_FIFO" ]; then
+        rm -f "$TIMING_STDOUT_FIFO"
     fi
 
     if [ -n "$TIMING_STDERR_TMP" ]; then
@@ -22,6 +33,10 @@ cleanup() {
 
     if [ -n "$TIMING_STDERR_FIFO" ]; then
         rm -f "$TIMING_STDERR_FIFO"
+    fi
+
+    if [ -n "$PLAN_METADATA_TMP" ]; then
+        rm -f "$PLAN_METADATA_TMP"
     fi
 }
 
@@ -99,26 +114,36 @@ GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
 CAPTURE_E2E_TIMINGS=0
 TIMING_RAW_PATH=""
 TIMING_SUMMARY_PATH=""
+TEST_SUMMARY_LINE=""
 
 case "$GATE" in
     e2e*)
         CAPTURE_E2E_TIMINGS=1
         TIMING_RAW_TMP="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-e2e-timings.XXXXXX")"
+        TIMING_STDOUT_TMP="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-stdout.XXXXXX")"
+        TIMING_STDOUT_FIFO="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-stdout-fifo.XXXXXX")"
         TIMING_STDERR_TMP="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-stderr.XXXXXX")"
         TIMING_STDERR_FIFO="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-stderr-fifo.XXXXXX")"
+        PLAN_METADATA_TMP="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-e2e-plan.XXXXXX")"
+        rm -f "$TIMING_STDOUT_FIFO"
         rm -f "$TIMING_STDERR_FIFO"
+        mkfifo "$TIMING_STDOUT_FIFO" || CAPTURE_E2E_TIMINGS=0
         mkfifo "$TIMING_STDERR_FIFO" || CAPTURE_E2E_TIMINGS=0
         ;;
 esac
 
 set +e
 if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ]; then
+    tee "$TIMING_STDOUT_TMP" < "$TIMING_STDOUT_FIFO" &
+    TIMING_STDOUT_TEE_PID="$!"
+
     tee "$TIMING_STDERR_TMP" >&2 < "$TIMING_STDERR_FIFO" &
     TIMING_STDERR_TEE_PID="$!"
 
-    "$@" 2> "$TIMING_STDERR_FIFO"
+    ORBIT_E2E_PLAN_METADATA_FILE="$PLAN_METADATA_TMP" "$@" > "$TIMING_STDOUT_FIFO" 2> "$TIMING_STDERR_FIFO"
     EXIT_CODE="$?"
 
+    wait "$TIMING_STDOUT_TEE_PID" || true
     wait "$TIMING_STDERR_TEE_PID" || true
     awk '$1 == "[orbit-e2e]" { print }' "$TIMING_STDERR_TMP" > "$TIMING_RAW_TMP" 2>/dev/null || true
 else
@@ -153,6 +178,10 @@ if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ] && [ -s "$TIMING_RAW_TMP" ]; then
     fi
 fi
 
+if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ] && [ -s "$TIMING_STDOUT_TMP" ]; then
+    TEST_SUMMARY_LINE="$(grep -E '(^|[[:space:]])Tests:[[:space:]]+.*\([[:space:]]*[0-9]+ assertions?\)' "$TIMING_STDOUT_TMP" | tail -n 1 || true)"
+fi
+
 ARTIFACT_ARGS=(
     "${ROOT}/bin/quality-gate-write-artifact"
     "--gate=$GATE"
@@ -172,6 +201,28 @@ fi
 
 if [ -n "$TIMING_RAW_PATH" ]; then
     ARTIFACT_ARGS+=("--timing-raw-path=$TIMING_RAW_PATH")
+fi
+
+if [ -n "$TEST_SUMMARY_LINE" ]; then
+    ARTIFACT_ARGS+=("--test-summary-line=$TEST_SUMMARY_LINE")
+fi
+
+if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ]; then
+    E2E_PLAN_LINES="$(grep -E '^\[orbit-e2e-plan\] ' "$PLAN_METADATA_TMP" 2>/dev/null || true)"
+
+    if [ -z "$E2E_PLAN_LINES" ]; then
+        E2E_PLAN_LINES="$(grep -E '^\[orbit-e2e-plan\] ' "$TIMING_STDOUT_TMP" 2>/dev/null || true)"
+    fi
+
+    if [ -z "$E2E_PLAN_LINES" ]; then
+        E2E_PLAN_LINES="$(grep -E '^\[orbit-e2e-plan\] ' "$TIMING_STDERR_TMP" 2>/dev/null || true)"
+    fi
+
+    while IFS= read -r E2E_PLAN_LINE; do
+        if [ -n "$E2E_PLAN_LINE" ]; then
+            ARTIFACT_ARGS+=("--e2e-plan-line=$E2E_PLAN_LINE")
+        fi
+    done <<< "$E2E_PLAN_LINES"
 fi
 
 php "${ARTIFACT_ARGS[@]}" >/dev/null 2>&1 || true

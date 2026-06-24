@@ -62,6 +62,8 @@ try {
         ));
 
         write_subgate_durations($latest);
+        write_e2e_context($latest);
+        write_test_summary($latest);
         write_timing_summary($latest);
 
         $baseline = load_baseline($artifactDir, $gate);
@@ -435,6 +437,101 @@ function write_timing_summary(array $artifact): void
 
         fwrite(STDOUT, 'timing phase: '.trim($line).PHP_EOL);
     }
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function write_e2e_context(array $artifact): void
+{
+    $context = $artifact['e2e_context'] ?? null;
+
+    if (! is_array($context)) {
+        return;
+    }
+
+    $plans = $context['plans'] ?? null;
+
+    if (! is_array($plans)) {
+        return;
+    }
+
+    foreach ($plans as $plan) {
+        if (! is_array($plan)) {
+            continue;
+        }
+
+        fwrite(STDOUT, sprintf(
+            'e2e plan: lane=%s provider=%s lane_mode=%s test_mode=%s command_processes=%s test_files=%s%s',
+            metadata_string($plan['lane'] ?? null, 'unknown'),
+            metadata_string($plan['provider'] ?? null, 'unknown'),
+            metadata_string($plan['lane_execution_mode'] ?? null, 'unknown'),
+            metadata_string($plan['test_execution_mode'] ?? null, 'unknown'),
+            metadata_string($plan['command_processes'] ?? null, 'none'),
+            metadata_string($plan['test_file_count'] ?? null, 'unknown'),
+            PHP_EOL,
+        ));
+
+        $environment = is_array($plan['environment'] ?? null) ? $plan['environment'] : [];
+        $environmentParts = [];
+
+        foreach ($environment as $key => $value) {
+            if (! is_string($key) || trim($key) === '') {
+                continue;
+            }
+
+            $environmentParts[] = trim($key).'='.metadata_string($value, 'unknown');
+        }
+
+        if ($environmentParts !== []) {
+            fwrite(STDOUT, 'e2e plan env: '.implode(' ', $environmentParts).PHP_EOL);
+        }
+    }
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function write_test_summary(array $artifact): void
+{
+    $summary = $artifact['test_summary'] ?? null;
+
+    if (! is_array($summary)) {
+        return;
+    }
+
+    $tests = $summary['tests'] ?? null;
+    $assertions = $summary['assertions'] ?? null;
+    $status = $summary['status'] ?? null;
+
+    if (! is_numeric($tests) || ! is_numeric($assertions) || ! is_string($status) || trim($status) === '') {
+        return;
+    }
+
+    fwrite(STDOUT, sprintf(
+        'test summary: %d tests, %d assertions, %s%s',
+        (int) $tests,
+        (int) $assertions,
+        trim($status),
+        PHP_EOL,
+    ));
+}
+
+function metadata_string(mixed $value, string $default): string
+{
+    if (is_int($value) || is_float($value)) {
+        return (string) $value;
+    }
+
+    if (is_bool($value)) {
+        return $value ? 'true' : 'false';
+    }
+
+    if (! is_string($value) || trim($value) === '') {
+        return $default;
+    }
+
+    return trim($value);
 }
 
 /**
