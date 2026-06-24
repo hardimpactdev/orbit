@@ -42,6 +42,10 @@ worktree without the hook firing, losing `.orbit/` evidence before distillation.
   pre-cleanup command that does not depend on hook interception.
 - `HARNESS.md`, `AGENTS.md`, and the implementation skill now say the explicit
   finalization check is required and the Codex hook is best-effort.
+- The finalization check intentionally treats the exact
+  `LOOP.md.example` outcome labels as the contract. Equivalent custom headings
+  such as `Harness Signals` or prose such as `accepted/promoted by parent loop`
+  are not enough unless one of the required labels records the outcome.
 - The gate permits historical final-distillation prose that mentions a past
   pending state. It blocks placeholders and missing/non-meaningful outcome
   values, not every occurrence of words like `pending` in the evidence summary.
