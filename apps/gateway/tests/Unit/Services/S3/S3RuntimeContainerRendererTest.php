@@ -61,8 +61,7 @@ it('binds the S3 API only to the node WireGuard address on port 8333', function 
     $node = s3RuntimeNode(['wireguard_address' => '10.6.0.10']);
     $container = s3RuntimeRenderer()->render($node, new S3RoleSettings);
 
-    expect($container->publishedPorts())->toBe(['10.6.0.10:8333:8333'])
-        ->and($container->environment())->toBe([]);
+    expect($container->publishedPorts())->toBe(['10.6.0.10:8333:8333'])->and($container->environment())->toBe([]);
 });
 
 it('renders the SeaweedFS server command with the S3 config path', function (): void {
@@ -82,28 +81,38 @@ it('does not bind to 0.0.0.0 or a public interface', function (): void {
     $ports = implode(' ', $container->publishedPorts());
     $envValues = implode(' ', $container->environment());
 
-    expect($ports)->not->toContain('0.0.0.0')
-        ->and($envValues)->not->toContain('0.0.0.0')
-        ->and($ports)->not->toContain(':8333:8333', 2);
+    expect($ports)
+        ->not->toContain('0.0.0.0')->and($envValues)
+        ->not->toContain('0.0.0.0')->and($ports)
+        ->not->toContain(':8333:8333', 2);
 });
 
 it('renders a deterministic S3 runtime container', function (): void {
     $node = s3RuntimeNode();
     $container = s3RuntimeRenderer()->render($node, new S3RoleSettings);
 
-    expect($container)->toBeInstanceOf(S3RuntimeContainer::class)
-        ->and($container->name())->toBe('orbit-seaweedfs')
-        ->and($container->image())->toBe('chrislusf/seaweedfs:4.33')
-        ->and($container->network())->toBe('orbit-network')
-        ->and($container->restartPolicy())->toBe('unless-stopped')
-        ->and($container->wireGuardAddress())->toBe('10.6.0.10')
-        ->and($container->mounts())->toHaveCount(2)
-        ->and($container->mounts())->toContain([
+    expect($container)
+        ->toBeInstanceOf(S3RuntimeContainer::class)
+        ->and($container->name())
+        ->toBe('orbit-seaweedfs')
+        ->and($container->image())
+        ->toBe('chrislusf/seaweedfs:4.33')
+        ->and($container->network())
+        ->toBe('orbit-network')
+        ->and($container->restartPolicy())
+        ->toBe('unless-stopped')
+        ->and($container->wireGuardAddress())
+        ->toBe('10.6.0.10')
+        ->and($container->mounts())
+        ->toHaveCount(2)
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/srv/orbit/s3/data',
             'target' => '/data',
             'read_only' => false,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/srv/orbit/s3/data/s3.json',
             'target' => '/etc/seaweedfs/s3.json',
             'read_only' => true,
@@ -113,11 +122,13 @@ it('renders a deterministic S3 runtime container', function (): void {
 it('exposes labels with the spec hash and s3-runtime', function (): void {
     $container = s3RuntimeRenderer()->render(s3RuntimeNode(), new S3RoleSettings);
 
-    expect($container->labels())->toMatchArray([
-        'orbit.managed' => 'true',
-        'orbit.container.kind' => 's3-runtime',
-    ])
-        ->and($container->labels()[S3RuntimeContainer::SpecHashLabel] ?? null)->toBe($container->specHash());
+    expect($container->labels())
+        ->toMatchArray([
+            'orbit.managed' => 'true',
+            'orbit.container.kind' => 's3-runtime',
+        ])
+        ->and($container->labels()[S3RuntimeContainer::SpecHashLabel] ?? null)
+        ->toBe($container->specHash());
 });
 
 it('changes the spec hash when the data path changes', function (): void {
@@ -143,5 +154,8 @@ it('throws when the node has no WireGuard address', function (): void {
     $node = s3RuntimeNode(['wireguard_address' => null]);
 
     expect(fn () => s3RuntimeRenderer()->render($node, new S3RoleSettings))
-        ->toThrow(RuntimeException::class, 'The s3 role requires a WireGuard address before runtime config can be rendered.');
+        ->toThrow(
+            RuntimeException::class,
+            'The s3 role requires a WireGuard address before runtime config can be rendered.',
+        );
 });

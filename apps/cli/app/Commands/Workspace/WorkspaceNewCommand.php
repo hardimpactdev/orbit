@@ -45,12 +45,16 @@ final class WorkspaceNewCommand extends WorkspaceGatewayCommand
             return $this->failValidation('app', 'Parent app is required. Pass --app= or run from an app directory.');
         }
 
-        return $this->streamProgress('/api/workspaces', [
-            'name' => $name,
-            'app' => $app,
-            'base' => $this->stringOption('base') ?? 'main',
-            'php_version' => $this->stringOption('php-version'),
-        ], fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload));
+        return $this->streamProgress(
+            '/api/workspaces',
+            [
+                'name' => $name,
+                'app' => $app,
+                'base' => $this->stringOption('base') ?? 'main',
+                'php_version' => $this->stringOption('php-version'),
+            ],
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 
     private function resolveName(): ?string

@@ -13,8 +13,11 @@ describe('DeployRunStream command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable')
-            ->and($decoded['error']['message'])->toContain('malformed');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('gateway_unavailable')
+            ->and($decoded['error']['message'])
+            ->toContain('malformed');
     });
 });

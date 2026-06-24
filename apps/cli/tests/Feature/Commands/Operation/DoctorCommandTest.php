@@ -23,8 +23,12 @@ function stripAnsi(string $value): string
  * @param  array<string, mixed>  $scopeOverrides
  * @return array<string, mixed>
  */
-function doctorVerifyReport(array $issues, array $scopeOverrides = [], string $mode = 'verify', array $actions = []): array
-{
+function doctorVerifyReport(
+    array $issues,
+    array $scopeOverrides = [],
+    string $mode = 'verify',
+    array $actions = [],
+): array {
     $families = $scopeOverrides['families'] ?? ['node'];
 
     return [
@@ -106,16 +110,22 @@ function doctorFleetReport(): array
  */
 function doctorRunCompleteStream(array $doctor, array $families = ['node']): string
 {
-    return gatewayProgressFrame('tree', [
-        'title' => 'Running Doctor',
-        'steps' => array_map(fn (string $family): array => ['key' => $family, 'label' => "Check {$family}"], $families),
-    ]).gatewayProgressFrame('complete', [
-        'exit_code' => 0,
-        'data' => [
-            'footer' => 'Doctor completed.',
-            'doctor' => $doctor,
-        ],
-    ]);
+    return (
+        gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => array_map(fn (string $family): array => [
+                'key' => $family,
+                'label' => "Check {$family}",
+            ], $families),
+        ])
+        .gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'footer' => 'Doctor completed.',
+                'doctor' => $doctor,
+            ],
+        ])
+    );
 }
 
 /**
@@ -123,20 +133,26 @@ function doctorRunCompleteStream(array $doctor, array $families = ['node']): str
  */
 function doctorRunDriftStream(array $doctor, array $families = ['node']): string
 {
-    return gatewayProgressFrame('tree', [
-        'title' => 'Running Doctor',
-        'steps' => array_map(fn (string $family): array => ['key' => $family, 'label' => "Check {$family}"], $families),
-    ]).gatewayProgressFrame('error', [
-        'exit_code' => 1,
-        'message' => 'Doctor detected drift.',
-        'data' => [
-            'code' => 'drift_detected',
+    return (
+        gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => array_map(fn (string $family): array => [
+                'key' => $family,
+                'label' => "Check {$family}",
+            ], $families),
+        ])
+        .gatewayProgressFrame('error', [
+            'exit_code' => 1,
             'message' => 'Doctor detected drift.',
-            'meta' => [],
-            'data' => ['doctor' => $doctor],
-            'footer' => 'Doctor detected drift.',
-        ],
-    ]);
+            'data' => [
+                'code' => 'drift_detected',
+                'message' => 'Doctor detected drift.',
+                'meta' => [],
+                'data' => ['doctor' => $doctor],
+                'footer' => 'Doctor detected drift.',
+            ],
+        ])
+    );
 }
 
 /**
@@ -203,9 +219,8 @@ describe('doctor human panel', function (): void {
         $finalReport = doctorVerifyReport([$appIssue], ['families' => $families]);
 
         fakeDoctorRunStream(
-            doctorRunProgressFrame($initialProgress)
-            .doctorRunProgressFrame($partialProgress, 'app', 'done')
-            .doctorRunDriftStream($finalReport, $families),
+            doctorRunProgressFrame($initialProgress).doctorRunProgressFrame($partialProgress, 'app', 'done')
+                .doctorRunDriftStream($finalReport, $families),
         );
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
@@ -215,11 +230,16 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(1)
-            ->and(substr_count($plain, 'D O C T O R I N G'))->toBe(0)
-            ->and(substr_count($plain, 'D O C T O R  R E S U L T'))->toBe(1)
-            ->and($plain)->toContain('Successfully performed check-up on beast')
-            ->and($plain)->toContain('Runtime container for nckrtl is missing.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and(substr_count($plain, 'D O C T O R I N G'))
+            ->toBe(0)
+            ->and(substr_count($plain, 'D O C T O R  R E S U L T'))
+            ->toBe(1)
+            ->and($plain)
+            ->toContain('Successfully performed check-up on beast')
+            ->and($plain)
+            ->toContain('Runtime container for nckrtl is missing.');
     });
 
     it('repaints the single live doctor panel in decorated human output', function (): void {
@@ -237,16 +257,18 @@ describe('doctor human panel', function (): void {
         fakeDoctorRunStream(
             gatewayProgressFrame('tree', [
                 'title' => 'Running Doctor',
-                'steps' => array_map(fn (string $family): array => ['key' => $family, 'label' => "Check {$family}"], $families),
-            ])
-            .doctorRunProgressFrame($initialProgress)
-            .gatewayProgressFrame('complete', [
-                'exit_code' => 0,
-                'data' => [
-                    'footer' => 'Doctor completed.',
-                    'doctor' => $finalReport,
-                ],
-            ]),
+                'steps' => array_map(fn (string $family): array => [
+                    'key' => $family,
+                    'label' => "Check {$family}",
+                ], $families),
+            ]).doctorRunProgressFrame($initialProgress)
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => [
+                        'footer' => 'Doctor completed.',
+                        'doctor' => $finalReport,
+                    ],
+                ]),
         );
 
         [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
@@ -254,11 +276,14 @@ describe('doctor human panel', function (): void {
             '--family' => $families,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("\e[2K")
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("\e[2K")
             ->and(substr($output, 0, (int) strrpos($output, 'D O C T O R  R E S U L T')))
             ->toContain("\e[?25h\n\e[".($initialPanelLineCount + 1).'A')
-            ->and($output)->toContain('D O C T O R  R E S U L T');
+            ->and($output)
+            ->toContain('D O C T O R  R E S U L T');
     });
 
     it('keeps the doctor progress panel spinner blinking during idle waits', function (): void {
@@ -273,8 +298,7 @@ describe('doctor human panel', function (): void {
         $finalReport = doctorVerifyReport([], ['families' => $families]);
 
         app()->forgetInstance(GatewayStreamClient::class);
-        app()->instance(GatewayStreamClient::class, new class($initialProgress, $finalReport)
-        {
+        app()->instance(GatewayStreamClient::class, new class($initialProgress, $finalReport) {
             /**
              * @param  array<string, mixed>  $initialProgress
              * @param  array<string, mixed>  $finalReport
@@ -318,10 +342,14 @@ describe('doctor human panel', function (): void {
             '--family' => $families,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("\e[36m○\e[39m  Node          Checking")
-            ->and($output)->toContain("\e[36m◉\e[39m  Node          Checking")
-            ->and($output)->toContain('D O C T O R  R E S U L T');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("\e[36m○\e[39m  Node          Checking")
+            ->and($output)
+            ->toContain("\e[36m◉\e[39m  Node          Checking")
+            ->and($output)
+            ->toContain('D O C T O R  R E S U L T');
     });
 
     it('renders a healthy result panel for a single-node verify run', function (): void {
@@ -334,16 +362,23 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(0)
-            ->and($plain)->toContain('D O C T O R  R E S U L T')
-            ->and($plain)->toContain('Successfully performed check-up on beast')
-            ->and($plain)->toContain('Node')
-            ->and($plain)->toContain('OK')
-            ->and($plain)->toContain("\n●  Node          OK")
-            ->and($plain)->not->toContain("\n│ ●  Node")
-            ->and($plain)->toContain('S U M M A R Y')
-            ->and($plain)->toContain('No issues detected')
-            ->and($plain)->not->toContain('Run doctor --fix');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($plain)
+            ->toContain('D O C T O R  R E S U L T')
+            ->and($plain)
+            ->toContain('Successfully performed check-up on beast')
+            ->and($plain)
+            ->toContain('Node')
+            ->and($plain)
+            ->toContain('OK')
+            ->and($plain)
+            ->toContain("\n●  Node          OK")
+            ->and($plain)
+            ->not->toContain("\n│ ●  Node")->and($plain)->toContain('S U M M A R Y')->and($plain)->toContain(
+                'No issues detected',
+            )->and($plain)
+            ->not->toContain('Run doctor --fix');
     });
 
     it('renders fleet human output for --all without a fake single-node target', function (): void {
@@ -356,11 +391,16 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(0)
-            ->and($plain)->toContain('F L E E T  D O C T O R  R E S U L T')
-            ->and($plain)->toContain('app-1')
-            ->and($plain)->toContain('gateway-1')
-            ->and($plain)->not->toContain('this node');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($plain)
+            ->toContain('F L E E T  D O C T O R  R E S U L T')
+            ->and($plain)
+            ->toContain('app-1')
+            ->and($plain)
+            ->toContain('gateway-1')
+            ->and($plain)
+            ->not->toContain('this node');
     });
 
     it('renders verify issues as readable bullet details and summary next-action line', function (): void {
@@ -387,17 +427,25 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(1)
-            ->and($plain)->toContain('D O C T O R  R E S U L T')
-            ->and($plain)->toContain("\n●  Node          1 issue detected:")
-            ->and($plain)->toContain('               -------------------------------------------------------------')
-            ->and($plain)->toContain('               - WireGuard peer for node beast is missing.')
-            ->and($plain)->toContain('S U M M A R Y')
-            ->and($plain)->toContain('Run doctor --fix manually or through an LLM to resolve issues')
+        expect($exitCode)
+            ->toBe(1)
+            ->and($plain)
+            ->toContain('D O C T O R  R E S U L T')
+            ->and($plain)
+            ->toContain("\n●  Node          1 issue detected:")
+            ->and($plain)
+            ->toContain('               -------------------------------------------------------------')
+            ->and($plain)
+            ->toContain('               - WireGuard peer for node beast is missing.')
+            ->and($plain)
+            ->toContain('S U M M A R Y')
+            ->and($plain)
+            ->toContain('Run doctor --fix manually or through an LLM to resolve issues')
             // node family table must not carry a NODE column.
-            ->and($plain)->not->toContain('NODE')
-            ->and($plain)->not->toContain('ISSUE')
-            ->and($plain)->not->toContain('node.wireguard_peer_missing');
+            ->and($plain)
+            ->not->toContain('NODE')->and($plain)
+            ->not->toContain('ISSUE')->and($plain)
+            ->not->toContain('node.wireguard_peer_missing');
     });
 
     it('renders verify-mode family issues as readable bullet details in active-role order', function (): void {
@@ -481,10 +529,30 @@ describe('doctor human panel', function (): void {
                     'adoptable' => false,
                 ],
             ],
-            scopeOverrides: ['families' => ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection']],
+            scopeOverrides: ['families' => [
+                'node',
+                'app',
+                'workspace',
+                'process',
+                'proxy',
+                'firewall_rule',
+                'tool',
+                'schedule',
+                'database_connection',
+            ]],
         );
 
-        fakeDoctorRunStream(doctorRunDriftStream($report, ['node', 'app', 'workspace', 'process', 'proxy', 'firewall_rule', 'tool', 'schedule', 'database_connection']));
+        fakeDoctorRunStream(doctorRunDriftStream($report, [
+            'node',
+            'app',
+            'workspace',
+            'process',
+            'proxy',
+            'firewall_rule',
+            'tool',
+            'schedule',
+            'database_connection',
+        ]));
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
             '--node' => 'beast',
@@ -492,35 +560,55 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(1)
+        expect($exitCode)
+            ->toBe(1)
             // Category labels from the catalog, role-derived order.
-            ->and($plain)->toContain('Apps')
-            ->and($plain)->toContain('Workspaces')
-            ->and($plain)->toContain('Proxy routes')
-            ->and($plain)->toContain('Firewall')
+            ->and($plain)
+            ->toContain('Apps')
+            ->and($plain)
+            ->toContain('Workspaces')
+            ->and($plain)
+            ->toContain('Proxy routes')
+            ->and($plain)
+            ->toContain('Firewall')
             // Verify mode renders issue details as readable bullets, not nested tables.
-            ->and($plain)->toContain("\n●  Apps          1 issue detected:")
-            ->and($plain)->toContain('- App nckrtl: https://nckrtl.test returned a 500 error')
-            ->and($plain)->toContain("\n●  Workspaces    2 issues found:")
-            ->and($plain)->toContain('- Workspace abc123.nckrtl.test: Workspace should exist')
-            ->and($plain)->toContain('- Workspace ui-redesign.hauser.test: Workspace exists')
-            ->and($plain)->toContain("\n●  Processes     1 issue detected:")
-            ->and($plain)->toContain('- Process queue-worker for app nckrtl: Runtime unit missing.')
-            ->and($plain)->toContain("\n●  Scheduling    1 issue detected:")
-            ->and($plain)->toContain('- Schedule app:docs:laravel-scheduler: Lock stuck.')
-            ->and($plain)->toContain("\n●  Databases     2 issues found:")
-            ->and($plain)->toContain('- Database connection ditis_hr: Environment mismatch.')
-            ->and($plain)->toContain('- Database connection REPORTING for app nckrtl: Environment')
+            ->and($plain)
+            ->toContain("\n●  Apps          1 issue detected:")
+            ->and($plain)
+            ->toContain('- App nckrtl: https://nckrtl.test returned a 500 error')
+            ->and($plain)
+            ->toContain("\n●  Workspaces    2 issues found:")
+            ->and($plain)
+            ->toContain('- Workspace abc123.nckrtl.test: Workspace should exist')
+            ->and($plain)
+            ->toContain('- Workspace ui-redesign.hauser.test: Workspace exists')
+            ->and($plain)
+            ->toContain("\n●  Processes     1 issue detected:")
+            ->and($plain)
+            ->toContain('- Process queue-worker for app nckrtl: Runtime unit missing.')
+            ->and($plain)
+            ->toContain("\n●  Scheduling    1 issue detected:")
+            ->and($plain)
+            ->toContain('- Schedule app:docs:laravel-scheduler: Lock stuck.')
+            ->and($plain)
+            ->toContain("\n●  Databases     2 issues found:")
+            ->and($plain)
+            ->toContain('- Database connection ditis_hr: Environment mismatch.')
+            ->and($plain)
+            ->toContain('- Database connection REPORTING for app nckrtl: Environment')
             // Categories with no issues render OK.
-            ->and($plain)->toContain('OK')
+            ->and($plain)
+            ->toContain('OK')
             // Total count summary, never "across N categories".
-            ->and($plain)->toContain('7 issues detected')
-            ->and($plain)->not->toContain('APP')
-            ->and($plain)->not->toContain('WORKSPACE')
-            ->and($plain)->not->toContain('ISSUE')
-            ->and($plain)->not->toContain('database_connection.env_mismatch')
-            ->and($plain)->not->toContain('schedule.lock_stuck')
-            ->and($plain)->not->toContain('across');
+            ->and($plain)
+            ->toContain('7 issues detected')
+            ->and($plain)
+            ->not->toContain('APP')->and($plain)
+            ->not->toContain('WORKSPACE')->and($plain)
+            ->not->toContain('ISSUE')->and($plain)
+            ->not->toContain('database_connection.env_mismatch')->and($plain)
+            ->not->toContain('schedule.lock_stuck')->and($plain)
+            ->not->toContain('across');
     });
 
     it('dims the outer border and dashed issue separator when a category has issues', function (): void {
@@ -550,21 +638,30 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(1)
-            ->and($plain)->toContain("\n●  Node          OK")
-            ->and($plain)->toContain("\n●  Databases     1 issue detected:")
-            ->and($plain)->toContain('               -------------------------------------------------------------')
-            ->and($plain)->toContain('               - Database connection ditis_hr is missing from the node.')
-            ->and($plain)->not->toContain("\n│ ●  Databases")
-            ->and($plain)->not->toContain('ISSUE')
-            ->and($plain)->not->toContain('database_connection.missing')
-            ->and($output)->toMatch('/\e\[31m●\e\[39m  Databases\s+1 issue detected:\s+\e\[38;5;242m│\e\[39m/')
-            ->and($output)->toMatch('/\e\[38;5;242m│\e\[39m\s+\e\[38;5;242m-{20,}\e\[39m\s+\e\[38;5;242m│\e\[39m/')
-            ->and($output)->not->toContain("\e[38;5;242m- Database connection ditis_hr is missing from the node.");
+        expect($exitCode)
+            ->toBe(1)
+            ->and($plain)
+            ->toContain("\n●  Node          OK")
+            ->and($plain)
+            ->toContain("\n●  Databases     1 issue detected:")
+            ->and($plain)
+            ->toContain('               -------------------------------------------------------------')
+            ->and($plain)
+            ->toContain('               - Database connection ditis_hr is missing from the node.')
+            ->and($plain)
+            ->not->toContain("\n│ ●  Databases")->and($plain)
+            ->not->toContain('ISSUE')->and($plain)
+            ->not->toContain('database_connection.missing')->and($output)->toMatch(
+                '/\e\[31m●\e\[39m  Databases\s+1 issue detected:\s+\e\[38;5;242m│\e\[39m/',
+            )->and($output)->toMatch(
+                '/\e\[38;5;242m│\e\[39m\s+\e\[38;5;242m-{20,}\e\[39m\s+\e\[38;5;242m│\e\[39m/',
+            )->and($output)
+            ->not->toContain("\e[38;5;242m- Database connection ditis_hr is missing from the node.");
     });
 
     it('wraps the node reboot-required guidance instead of truncating it', function (): void {
-        $guidance = 'This node requires an explicit reboot to finish installed updates. '
+        $guidance =
+            'This node requires an explicit reboot to finish installed updates. '
             .'Orbit will not reboot it automatically. Reboot this server as soon as possible.';
 
         $report = doctorVerifyReport([
@@ -590,13 +687,19 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(1)
-            ->and($plain)->toContain('- This node requires an explicit reboot to finish installed')
-            ->and($plain)->toContain('  updates.')
-            ->and($plain)->toContain('Orbit will not reboot it automatically.')
-            ->and($plain)->toContain('Reboot this server as soon as possible.')
+        expect($exitCode)
+            ->toBe(1)
+            ->and($plain)
+            ->toContain('- This node requires an explicit reboot to finish installed')
+            ->and($plain)
+            ->toContain('  updates.')
+            ->and($plain)
+            ->toContain('Orbit will not reboot it automatically.')
+            ->and($plain)
+            ->toContain('Reboot this server as soon as possible.')
             // Long node summaries wrap rather than truncate with an ellipsis.
-            ->and($plain)->not->toContain('…');
+            ->and($plain)
+            ->not->toContain('…');
     });
 
     it('renders restore-mode action results and title', function (): void {
@@ -627,10 +730,14 @@ describe('doctor human panel', function (): void {
 
         $plain = stripAnsi($output);
 
-        expect($exitCode)->toBe(0)
-            ->and($plain)->toContain('D O C T O R  R E S T O R E')
-            ->and($plain)->toContain('Node config restored.')
-            ->and($plain)->toContain('No issues remaining; 1 actions completed');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($plain)
+            ->toContain('D O C T O R  R E S T O R E')
+            ->and($plain)
+            ->toContain('Node config restored.')
+            ->and($plain)
+            ->toContain('No issues remaining; 1 actions completed');
     });
 
     it('keeps --json output exactly unchanged', function (): void {
@@ -638,15 +745,14 @@ describe('doctor human panel', function (): void {
             gatewayProgressFrame('tree', [
                 'title' => 'Running Doctor',
                 'steps' => [['key' => 'node', 'label' => 'Check node']],
-            ])
-            .gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
-            .gatewayProgressFrame('complete', [
-                'exit_code' => 0,
-                'data' => [
-                    'footer' => 'Doctor completed.',
-                    'doctor' => doctorVerifyReport([]),
-                ],
-            ]),
+            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => [
+                        'footer' => 'Doctor completed.',
+                        'doctor' => doctorVerifyReport([]),
+                    ],
+                ]),
         );
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
@@ -659,14 +765,19 @@ describe('doctor human panel', function (): void {
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($payload['event'])->toBe('complete')
-            ->and($payload['data']['data']['doctor']['healthy'])->toBeTrue()
-            ->and($payload['data']['data']['doctor']['scope']['node'])->toBe('beast')
-            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
+        expect($payload['event'])
+            ->toBe('complete')
+            ->and($payload['data']['data']['doctor']['healthy'])
+            ->toBeTrue()
+            ->and($payload['data']['data']['doctor']['scope']['node'])
+            ->toBe('beast')
+            ->and(count(array_filter(explode("\n", $output))))
+            ->toBe(1)
             // No framed panel must leak into JSON output.
-            ->and($output)->not->toContain('D O C T O R')
-            ->and($output)->not->toContain('Checking node')
-            ->and($output)->not->toContain('S U M M A R Y');
+            ->and($output)
+            ->not->toContain('D O C T O R')->and($output)
+            ->not->toContain('Checking node')->and($output)
+            ->not->toContain('S U M M A R Y');
     });
 
     it('keeps --json drift output exactly unchanged', function (): void {
@@ -696,9 +807,12 @@ describe('doctor human panel', function (): void {
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($payload['event'])->toBe('error')
-            ->and($payload['data']['data']['data']['doctor']['issues'])->toHaveCount(1)
-            ->and($output)->not->toContain('S U M M A R Y');
+        expect($payload['event'])
+            ->toBe('error')
+            ->and($payload['data']['data']['data']['doctor']['issues'])
+            ->toHaveCount(1)
+            ->and($output)
+            ->not->toContain('S U M M A R Y');
     });
 
     it('streams doctor progress frames as newline-delimited JSON', function (): void {
@@ -708,15 +822,14 @@ describe('doctor human panel', function (): void {
             gatewayProgressFrame('tree', [
                 'title' => 'Running Doctor',
                 'steps' => [['key' => 'node', 'label' => 'Check node']],
-            ])
-            .gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
-            .gatewayProgressFrame('complete', [
-                'exit_code' => 0,
-                'data' => [
-                    'footer' => 'Doctor completed.',
-                    'doctor' => $report,
-                ],
-            ]),
+            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Checking node'])
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => [
+                        'footer' => 'Doctor completed.',
+                        'doctor' => $report,
+                    ],
+                ]),
         );
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
@@ -727,8 +840,10 @@ describe('doctor human panel', function (): void {
 
         $frames = decodeDoctorNdjson($output);
 
-        expect($exitCode)->toBe(0)
-            ->and($frames)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($frames)
+            ->toBe([
                 [
                     'event' => 'tree',
                     'data' => [
@@ -748,8 +863,9 @@ describe('doctor human panel', function (): void {
                     ],
                 ],
             ])
-            ->and($output)->not->toContain("\e[")
-            ->and($output)->not->toContain('D O C T O R');
+            ->and($output)
+            ->not->toContain("\e[")->and($output)
+            ->not->toContain('D O C T O R');
     });
 
     it('streams doctor bulk resolution modes through the fix endpoint', function (string $mode): void {
@@ -766,19 +882,27 @@ describe('doctor human panel', function (): void {
 
         $frames = decodeDoctorNdjson($output);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/fix'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'mode' => $mode,
-                'families' => ['node'],
-                'node' => 'beast',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/fix'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'mode' => $mode,
+                    'families' => ['node'],
+                    'node' => 'beast',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($frames)->toHaveCount(2)
-            ->and($frames[1]['event'])->toBe('complete')
-            ->and($frames[1]['success']['data']['doctor']['mode'])->toBe($mode);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($frames)
+            ->toHaveCount(2)
+            ->and($frames[1]['event'])
+            ->toBe('complete')
+            ->and($frames[1]['success']['data']['doctor']['mode'])
+            ->toBe($mode);
     })->with(['restore', 'adopt']);
 
     it('sends the configured default node when plain doctor has no explicit scope', function (): void {
@@ -795,14 +919,18 @@ describe('doctor human panel', function (): void {
             '--family' => ['node'],
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['node'],
-                'node' => 'default-app',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['node'],
+                    'node' => 'default-app',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
 
@@ -823,13 +951,17 @@ describe('doctor human panel', function (): void {
             '--family' => ['node'],
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['node'],
-                'self' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['node'],
+                    'self' => true,
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
 
@@ -852,13 +984,17 @@ describe('doctor human panel', function (): void {
             '--family' => ['node'],
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['node'],
-                'self' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['node'],
+                    'self' => true,
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
 
@@ -881,13 +1017,17 @@ describe('doctor human panel', function (): void {
             '--family' => ['workspace'],
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['workspace'],
-                'workspace' => 'docs-api',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['workspace'],
+                    'workspace' => 'docs-api',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
 
@@ -907,14 +1047,18 @@ describe('doctor human panel', function (): void {
             '--stream-json' => true,
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['node'],
-                'all' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['node'],
+                    'all' => true,
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -931,10 +1075,14 @@ describe('doctor human panel', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node')
-            ->and($decoded['error']['meta']['value'])->toBe('all');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node')
+            ->and($decoded['error']['meta']['value'])
+            ->toBe('all');
     });
 
     it('streams doctor terminal errors with the doctor payload as a JSON error sibling', function (): void {
@@ -956,19 +1104,18 @@ describe('doctor human panel', function (): void {
             gatewayProgressFrame('tree', [
                 'title' => 'Running Doctor',
                 'steps' => [['key' => 'node', 'label' => 'Check node']],
-            ])
-            .gatewayProgressFrame('step', ['key' => 'node', 'status' => 'failed', 'message' => 'Drift detected'])
-            .gatewayProgressFrame('error', [
-                'exit_code' => 1,
-                'message' => 'Doctor detected drift.',
-                'data' => [
-                    'code' => 'drift_detected',
+            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'failed', 'message' => 'Drift detected'])
+                .gatewayProgressFrame('error', [
+                    'exit_code' => 1,
                     'message' => 'Doctor detected drift.',
-                    'meta' => [],
-                    'data' => ['doctor' => $report],
-                    'footer' => 'Doctor detected drift.',
-                ],
-            ]),
+                    'data' => [
+                        'code' => 'drift_detected',
+                        'message' => 'Doctor detected drift.',
+                        'meta' => [],
+                        'data' => ['doctor' => $report],
+                        'footer' => 'Doctor detected drift.',
+                    ],
+                ]),
         );
 
         [$exitCode, $output] = runCommand($this, 'doctor', [
@@ -979,9 +1126,12 @@ describe('doctor human panel', function (): void {
 
         $frames = decodeDoctorNdjson($output);
 
-        expect($exitCode)->toBe(1)
-            ->and($frames)->toHaveCount(3)
-            ->and($frames[2])->toBe([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($frames)
+            ->toHaveCount(3)
+            ->and($frames[2])
+            ->toBe([
                 'event' => 'error',
                 'error' => [
                     'code' => 'drift_detected',
@@ -995,8 +1145,7 @@ describe('doctor human panel', function (): void {
     it('replays the last running step during stream-json idle waits', function (): void {
         config()->set('orbit.gateway.url', 'https://gateway.test');
         config()->set('orbit.gateway.timeout', 30);
-        app()->instance(StreamJsonIdleStepWriter::class, new class extends StreamJsonIdleStepWriter
-        {
+        app()->instance(StreamJsonIdleStepWriter::class, new class extends StreamJsonIdleStepWriter {
             /**
              * @param  callable(string): void  $write
              */
@@ -1008,8 +1157,7 @@ describe('doctor human panel', function (): void {
             public function stop(): void {}
         });
         app()->forgetInstance(GatewayStreamClient::class);
-        app()->instance(GatewayStreamClient::class, new class
-        {
+        app()->instance(GatewayStreamClient::class, new class {
             /**
              * @param  array<string, mixed>  $payload
              * @param  callable(ProgressEventType, array<string, mixed>): void  $onEvent
@@ -1045,14 +1193,19 @@ describe('doctor human panel', function (): void {
         $frames = decodeDoctorNdjson($output);
         $runningFrames = array_values(array_filter(
             $frames,
-            static fn (array $frame): bool => ($frame['event'] ?? null) === 'step'
-                && (($frame['data']['key'] ?? null) === 'beast')
-                && (($frame['data']['status'] ?? null) === 'running'),
+            static fn (array $frame): bool => (
+                ($frame['event'] ?? null) === 'step'
+                && ($frame['data']['key'] ?? null) === 'beast'
+                && ($frame['data']['status'] ?? null) === 'running'
+            ),
         ));
 
-        expect($exitCode)->toBe(0)
-            ->and($runningFrames)->toHaveCount(2)
-            ->and($frames[count($frames) - 1]['event'])->toBe('complete');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($runningFrames)
+            ->toHaveCount(2)
+            ->and($frames[count($frames) - 1]['event'])
+            ->toBe('complete');
     });
 
     it('streams transport failures as error frames after progress has started', function (): void {
@@ -1069,12 +1222,18 @@ describe('doctor human panel', function (): void {
 
         $frames = decodeDoctorNdjson($output);
 
-        expect($exitCode)->toBe(1)
-            ->and($frames)->toHaveCount(2)
-            ->and($frames[0]['event'])->toBe('tree')
-            ->and($frames[1]['event'])->toBe('error')
-            ->and($frames[1]['error']['code'])->toBe('gateway_unavailable')
-            ->and($frames[1]['error']['message'])->toBe('Gateway progress stream closed without a terminal frame.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($frames)
+            ->toHaveCount(2)
+            ->and($frames[0]['event'])
+            ->toBe('tree')
+            ->and($frames[1]['event'])
+            ->toBe('error')
+            ->and($frames[1]['error']['code'])
+            ->toBe('gateway_unavailable')
+            ->and($frames[1]['error']['message'])
+            ->toBe('Gateway progress stream closed without a terminal frame.');
     });
 
     it('rejects ambiguous doctor JSON renderers before contacting the gateway', function (): void {
@@ -1089,10 +1248,14 @@ describe('doctor human panel', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('doctor --json and --stream-json cannot be combined.')
-            ->and($decoded['error']['meta']['fields'])->toBe(['json', 'stream-json']);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('doctor --json and --stream-json cannot be combined.')
+            ->and($decoded['error']['meta']['fields'])
+            ->toBe(['json', 'stream-json']);
     });
 
     it('rejects interactive doctor fix mode with stream JSON before contacting the gateway', function (): void {
@@ -1107,9 +1270,13 @@ describe('doctor human panel', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('doctor --fix cannot run with --stream-json because it requires interactive prompts.')
-            ->and($decoded['error']['meta']['field'])->toBe('stream-json');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('doctor --fix cannot run with --stream-json because it requires interactive prompts.')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('stream-json');
     });
 });

@@ -168,28 +168,77 @@ final class NodeCreationRoleResolver
         return match ($template) {
             'operator' => new NodeCreationRoleSelection(false, true, false, [], $template, 'operator'),
             'gateway' => new NodeCreationRoleSelection(true, false, false, [], $template, 'gateway'),
-            'app-development' => new NodeCreationRoleSelection(false, false, false, [
+            'app-development' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::AppDevelopment->value,
+                    NodeRoleName::Database->value,
+                ],
+                $template,
                 NodeRoleName::AppDevelopment->value,
-                NodeRoleName::Database->value,
-            ], $template, NodeRoleName::AppDevelopment->value),
-            'app-production' => new NodeCreationRoleSelection(false, false, false, [
+            ),
+            'app-production' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::AppProduction->value,
+                ],
+                $template,
                 NodeRoleName::AppProduction->value,
-            ], $template, NodeRoleName::AppProduction->value),
-            'ingress' => new NodeCreationRoleSelection(false, false, false, [
+            ),
+            'ingress' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::Ingress->value,
+                ],
+                $template,
                 NodeRoleName::Ingress->value,
-            ], $template, NodeRoleName::Ingress->value),
-            'database' => new NodeCreationRoleSelection(false, false, false, [
+            ),
+            'database' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::Database->value,
+                ],
+                $template,
                 NodeRoleName::Database->value,
-            ], $template, NodeRoleName::Database->value),
-            'metrics' => new NodeCreationRoleSelection(false, false, false, [
+            ),
+            'metrics' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::Metrics->value,
+                ],
+                $template,
                 NodeRoleName::Metrics->value,
-            ], $template, NodeRoleName::Metrics->value),
-            'agent' => new NodeCreationRoleSelection(false, false, false, [
+            ),
+            'agent' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::Agent->value,
+                ],
+                $template,
                 NodeRoleName::Agent->value,
-            ], $template, NodeRoleName::Agent->value),
-            'analytics' => new NodeCreationRoleSelection(false, false, false, [
+            ),
+            'analytics' => new NodeCreationRoleSelection(
+                false,
+                false,
+                false,
+                [
+                    NodeRoleName::Analytics->value,
+                ],
+                $template,
                 NodeRoleName::Analytics->value,
-            ], $template, NodeRoleName::Analytics->value),
+            ),
         };
     }
 

@@ -20,8 +20,7 @@ describe('node permission normalizer', function (): void {
         $result = $this->normalizer->normalize(['tool:read', 'tool:list', 'tool:show']);
 
         expect($result->permissions)->toBe(['tool:read']);
-        expect($result->removed)->toContain('tool:list')
-            ->and($result->removed)->toContain('tool:show');
+        expect($result->removed)->toContain('tool:list')->and($result->removed)->toContain('tool:show');
     });
 
     it('does not remove tool:credentials under tool:read', function (): void {
@@ -53,16 +52,14 @@ describe('node permission normalizer', function (): void {
         $result = $this->normalizer->normalize(['tool:read', 'node:read', '*']);
 
         expect($result->permissions)->toBe(['*']);
-        expect($result->removed)->toContain('node:read')
-            ->and($result->removed)->toContain('tool:read');
+        expect($result->removed)->toContain('node:read')->and($result->removed)->toContain('tool:read');
     });
 
     it('collapses namespace wildcard over specific permissions', function (): void {
         $result = $this->normalizer->normalize(['node:read', 'node:show', 'node:*']);
 
         expect($result->permissions)->toBe(['node:*']);
-        expect($result->removed)->toContain('node:read')
-            ->and($result->removed)->toContain('node:show');
+        expect($result->removed)->toContain('node:read')->and($result->removed)->toContain('node:show');
     });
 
     it('rejects unknown permissions', function (): void {
@@ -73,8 +70,7 @@ describe('node permission normalizer', function (): void {
     it('returns empty for empty input', function (): void {
         $result = $this->normalizer->normalize([]);
 
-        expect($result->permissions)->toBe([])
-            ->and($result->removed)->toBe([]);
+        expect($result->permissions)->toBe([])->and($result->removed)->toBe([]);
     });
 
     it('reports removed permissions in the warnings list', function (): void {
@@ -87,9 +83,12 @@ describe('node permission normalizer', function (): void {
         ]);
 
         expect($result->permissions)->toBe(['node:read', 'tool:read']);
-        expect($result->removed)->toContain('node:show')
-            ->and($result->removed)->toContain('tool:list')
-            ->and($result->removed)->toContain('tool:show');
+        expect($result->removed)
+            ->toContain('node:show')
+            ->and($result->removed)
+            ->toContain('tool:list')
+            ->and($result->removed)
+            ->toContain('tool:show');
     });
 
     it('does not remove unrelated permissions', function (): void {
@@ -126,17 +125,19 @@ describe('node permission normalizer', function (): void {
         ]);
 
         expect($result->permissions)->toBe(['app:read', 'node:read', 'tool:read']);
-        expect($result->removed)->toContain('app:show')
-            ->and($result->removed)->toContain('node:show')
-            ->and($result->removed)->toContain('tool:list');
+        expect($result->removed)
+            ->toContain('app:show')
+            ->and($result->removed)
+            ->toContain('node:show')
+            ->and($result->removed)
+            ->toContain('tool:list');
     });
 
     it('handles node namespace wildcard', function (): void {
         $result = $this->normalizer->normalize(['node:*', 'node:read', 'node:grant']);
 
         expect($result->permissions)->toBe(['node:*']);
-        expect($result->removed)->toContain('node:grant')
-            ->and($result->removed)->toContain('node:read');
+        expect($result->removed)->toContain('node:grant')->and($result->removed)->toContain('node:read');
     });
 
     it('preserves tool:update:agent-tools without tool:update', function (): void {

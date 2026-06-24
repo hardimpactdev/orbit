@@ -99,8 +99,7 @@ final class ProxyAddCommand extends ProxyGatewayCommand
                 return $response = $this->addRouteForHuman($payload);
             },
             doneFooter: function () use ($domain, &$response): string {
-                return "Proxy route '{$domain}' "
-                    .($this->action($response) === 'updated' ? 'updated' : 'added');
+                return "Proxy route '{$domain}' ".($this->action($response) === 'updated' ? 'updated' : 'added');
             },
         );
 
@@ -239,7 +238,7 @@ final class ProxyAddCommand extends ProxyGatewayCommand
     private function routeData(array $response): array
     {
         $data = $response['success']['data'] ?? null;
-        $route = is_array($data) ? ($data['route'] ?? null) : null;
+        $route = is_array($data) ? $data['route'] ?? null : null;
 
         return is_array($route) ? $route : [];
     }
@@ -250,7 +249,7 @@ final class ProxyAddCommand extends ProxyGatewayCommand
     private function action(array $response): ?string
     {
         $meta = $response['success']['meta'] ?? null;
-        $action = is_array($meta) ? ($meta['action'] ?? null) : null;
+        $action = is_array($meta) ? $meta['action'] ?? null : null;
 
         return is_string($action) ? $action : null;
     }

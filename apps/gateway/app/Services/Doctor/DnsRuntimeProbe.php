@@ -77,12 +77,16 @@ final readonly class DnsRuntimeProbe
 
     public function isRestorable(string $driftKey): bool
     {
-        return in_array($driftKey, [
-            'dns.container_missing',
-            'dns.port_not_listening',
-            'dns.config_drift',
-            'dns.client_dns_drift',
-        ], true);
+        return in_array(
+            $driftKey,
+            [
+                'dns.container_missing',
+                'dns.port_not_listening',
+                'dns.config_drift',
+                'dns.client_dns_drift',
+            ],
+            true,
+        );
     }
 
     public function isAdoptable(string $driftKey): bool
@@ -257,12 +261,16 @@ final readonly class DnsRuntimeProbe
             $expectedDns = $this->expectedDnsJson();
 
             $database->beginTransaction();
-            $database->prepare('update user_configs_table set default_dns = :default_dns')->execute([
-                'default_dns' => $expectedDns,
-            ]);
-            $database->prepare('update clients_table set dns = :dns')->execute([
-                'dns' => $expectedDns,
-            ]);
+            $database
+                ->prepare('update user_configs_table set default_dns = :default_dns')
+                ->execute([
+                    'default_dns' => $expectedDns,
+                ]);
+            $database
+                ->prepare('update clients_table set dns = :dns')
+                ->execute([
+                    'dns' => $expectedDns,
+                ]);
             $database->commit();
 
             return true;
@@ -330,7 +338,9 @@ final readonly class DnsRuntimeProbe
                 return null;
             }
 
-            $statement = $database->query('select name, ipv4_address, dns from clients_table where enabled = 1 order by name');
+            $statement = $database->query(
+                'select name, ipv4_address, dns from clients_table where enabled = 1 order by name',
+            );
 
             if ($statement === false) {
                 return null;

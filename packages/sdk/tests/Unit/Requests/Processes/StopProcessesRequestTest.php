@@ -17,9 +17,12 @@ uses(TestCase::class);
 it('targets the process stop gateway endpoint with optional filters', function (): void {
     $request = new StopProcessesRequest(app: 'docs', workspace: 'feature-docs', name: 'vite');
 
-    expect($request->getMethod())->toBe(Method::POST)
-        ->and($request->resolveEndpoint())->toBe('/api/processes/stop')
-        ->and($request->body()->all())->toBe([
+    expect($request->getMethod())
+        ->toBe(Method::POST)
+        ->and($request->resolveEndpoint())
+        ->toBe('/api/processes/stop')
+        ->and($request->body()->all())
+        ->toBe([
             'app' => 'docs',
             'workspace' => 'feature-docs',
             'name' => 'vite',
@@ -52,6 +55,5 @@ it('returns a ProcessStopResponse DTO', function (): void {
 
     $dto = $connector->send(new StopProcessesRequest(app: 'docs', workspace: null, name: 'vite'))->dto();
 
-    expect($dto)->toBeInstanceOf(ProcessStopResponse::class)
-        ->and($dto->data['runtimes'][0]['state'])->toBe('stopped');
+    expect($dto)->toBeInstanceOf(ProcessStopResponse::class)->and($dto->data['runtimes'][0]['state'])->toBe('stopped');
 });

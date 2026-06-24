@@ -25,13 +25,17 @@ final readonly class ProcessDockerContainerResource
 
     public function ensureNetwork(Node $node, RemoteShell $remoteShell): void
     {
-        $result = $remoteShell->run($node, $this->commands->networkInspect($this->container->network()), ['throw' => false]);
+        $result = $remoteShell->run($node, $this->commands->networkInspect($this->container->network()), [
+            'throw' => false,
+        ]);
 
         if ($result->successful()) {
             return;
         }
 
-        $create = $remoteShell->run($node, $this->commands->networkCreate($this->container->network()), ['throw' => false]);
+        $create = $remoteShell->run($node, $this->commands->networkCreate($this->container->network()), [
+            'throw' => false,
+        ]);
 
         if ($create->successful()) {
             return;
@@ -46,7 +50,9 @@ final readonly class ProcessDockerContainerResource
 
     public function probe(Node $node, RemoteShell $remoteShell): ProcessDockerContainerProbe
     {
-        $result = $remoteShell->run($node, $this->commands->containerInspect($this->container->name()), ['throw' => false]);
+        $result = $remoteShell->run($node, $this->commands->containerInspect($this->container->name()), [
+            'throw' => false,
+        ]);
 
         if (! $result->successful()) {
             return new ProcessDockerContainerProbe(
@@ -68,7 +74,9 @@ final readonly class ProcessDockerContainerResource
         $inspection = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
 
         if (! is_array($inspection)) {
-            throw new RuntimeException("Docker returned an invalid inspect payload for {$this->container->name()} on {$node->name}.");
+            throw new RuntimeException(
+                "Docker returned an invalid inspect payload for {$this->container->name()} on {$node->name}.",
+            );
         }
 
         return new ProcessDockerContainerProbe(
@@ -125,8 +133,11 @@ final readonly class ProcessDockerContainerResource
         );
     }
 
-    public function apply(Node $node, RemoteShell $remoteShell, ProcessDockerContainerPlan $plan): ConvergenceApplyResult
-    {
+    public function apply(
+        Node $node,
+        RemoteShell $remoteShell,
+        ProcessDockerContainerPlan $plan,
+    ): ConvergenceApplyResult {
         if (! $plan->shouldApply()) {
             return new ConvergenceApplyResult(
                 status: $plan->status,
@@ -136,10 +147,17 @@ final readonly class ProcessDockerContainerResource
         }
 
         if ($plan->outcome === ProcessDockerContainerApplyOutcome::Recreated) {
-            $remove = $remoteShell->run($node, $this->commands->containerRemove($this->container->name()), ['throw' => false]);
+            $remove = $remoteShell->run($node, $this->commands->containerRemove($this->container->name()), [
+                'throw' => false,
+            ]);
 
             if (! $remove->successful()) {
-                return $this->failedResult($node, "remove drifted {$this->container->name()} container", $remove, $plan);
+                return $this->failedResult(
+                    $node,
+                    "remove drifted {$this->container->name()} container",
+                    $remove,
+                    $plan,
+                );
             }
         }
 
@@ -172,8 +190,12 @@ final readonly class ProcessDockerContainerResource
         return is_string($hash) ? $hash : null;
     }
 
-    private function failedResult(Node $node, string $step, RemoteShellResult $result, ProcessDockerContainerPlan $plan): ConvergenceApplyResult
-    {
+    private function failedResult(
+        Node $node,
+        string $step,
+        RemoteShellResult $result,
+        ProcessDockerContainerPlan $plan,
+    ): ConvergenceApplyResult {
         return new ConvergenceApplyResult(
             status: ConvergenceStatus::Failed,
             summary: $this->failureMessage($node, $step, $result),

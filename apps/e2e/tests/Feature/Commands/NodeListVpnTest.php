@@ -34,8 +34,7 @@ it('lists the gateway-coupled vpn node from a operator caller through the gatewa
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $nodes = $payload['success']['data']['nodes'] ?? null;
 
-        expect($nodes)->toBeArray()
-            ->and(array_column($nodes, 'name'))->toContain('gateway');
+        expect($nodes)->toBeArray()->and(array_column($nodes, 'name'))->toContain('gateway');
     } finally {
         $topology->cleanup();
     }

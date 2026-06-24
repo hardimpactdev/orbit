@@ -13,8 +13,11 @@ use Symfony\Component\Console\Output\BufferedOutput;
 /**
  * @return array<string, mixed>
  */
-function agentIdeMessageSuccess(string $adapter = 'opencode', ?string $workspace = null, string $input = 'argument'): array
-{
+function agentIdeMessageSuccess(
+    string $adapter = 'opencode',
+    ?string $workspace = null,
+    string $input = 'argument',
+): array {
     return fakeSuccessEnvelope([
         'agent_ide' => [
             'adapter' => $adapter,
@@ -71,16 +74,23 @@ describe('agent-ide:message', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/agent-ide/message'
-            && $request->data() === [
-                'message' => 'Ship the docs',
-                'app' => 'docs',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/agent-ide/message'
+                && $request->data() === [
+                    'message' => 'Ship the docs',
+                    'app' => 'docs',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['agent_ide']['target']['app'])->toBe('docs')
-            ->and($decoded['success']['data']['agent_ide']['delivery']['input'])->toBe('argument');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['agent_ide']['target']['app'])
+            ->toBe('docs')
+            ->and($decoded['success']['data']['agent_ide']['delivery']['input'])
+            ->toBe('argument');
     });
 
     it('posts workspace-target messages to the gateway agent ide endpoint', function (): void {
@@ -94,15 +104,21 @@ describe('agent-ide:message', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/agent-ide/message'
-            && $request->data() === [
-                'message' => 'Ship the docs',
-                'workspace' => 'feature-docs',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/agent-ide/message'
+                && $request->data() === [
+                    'message' => 'Ship the docs',
+                    'workspace' => 'feature-docs',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['agent_ide']['target']['workspace'])->toBe('feature-docs');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['agent_ide']['target']['workspace'])
+            ->toBe('feature-docs');
     });
 
     it('uses host cwd for current-directory target resolution when no explicit target is supplied', function (): void {
@@ -120,12 +136,16 @@ describe('agent-ide:message', function (): void {
             restoreHostCwd($previousHostCwd);
         }
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/agent-ide/message'
-            && $request->data() === [
-                'message' => 'Ship the docs',
-                'path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/agent-ide/message'
+                && $request->data() === [
+                    'message' => 'Ship the docs',
+                    'path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -145,14 +165,17 @@ describe('agent-ide:message', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->data() === [
-                'message' => "Ship the docs\nwith context",
-                'app' => 'docs',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->data() === [
+                    'message' => "Ship the docs\nwith context",
+                    'app' => 'docs',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['agent_ide']['delivery']['input'])->toBe('stdin');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['agent_ide']['delivery']['input'])->toBe('stdin');
     });
 
     it('fails before opening a gateway request when message inputs conflict', function (): void {
@@ -169,9 +192,12 @@ describe('agent-ide:message', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toBe([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toBe([
                 'field' => 'message',
                 'reason' => 'conflicting_message_inputs',
             ]);
@@ -191,9 +217,12 @@ describe('agent-ide:message', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toBe([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toBe([
                 'field' => 'target',
                 'reason' => 'conflicting_target_options',
             ]);
@@ -211,9 +240,12 @@ describe('agent-ide:message', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toBe([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toBe([
                 'field' => 'message',
                 'reason' => 'missing_required_input',
             ]);
@@ -245,9 +277,12 @@ describe('agent-ide:message', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('adapter_delivery_failed')
-            ->and($decoded['error']['data']['adapter_error']['message'])->toBe('Request timed out');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('adapter_delivery_failed')
+            ->and($decoded['error']['data']['adapter_error']['message'])
+            ->toBe('Request timed out');
     });
 
     it('renders the human success summary for accepted delivery', function (): void {
@@ -258,15 +293,24 @@ describe('agent-ide:message', function (): void {
             '--app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('┌ Sending Agent IDE message to docs')
-            ->and($output)->toContain('● Resolved target')
-            ->and($output)->toContain('● Resolved effective adapter')
-            ->and($output)->toContain('● Found active session')
-            ->and($output)->toContain('● Delivered message')
-            ->and($output)->toContain('└ Sent Agent IDE message to docs through opencode')
-            ->and($output)->toContain('Sent message to docs through opencode.')
-            ->and($output)->not->toContain('"success"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('┌ Sending Agent IDE message to docs')
+            ->and($output)
+            ->toContain('● Resolved target')
+            ->and($output)
+            ->toContain('● Resolved effective adapter')
+            ->and($output)
+            ->toContain('● Found active session')
+            ->and($output)
+            ->toContain('● Delivered message')
+            ->and($output)
+            ->toContain('└ Sent Agent IDE message to docs through opencode')
+            ->and($output)
+            ->toContain('Sent message to docs through opencode.')
+            ->and($output)
+            ->not->toContain('"success"');
     });
 
     it('renders the human success summary for workspace delivery', function (): void {
@@ -277,28 +321,40 @@ describe('agent-ide:message', function (): void {
             '--workspace' => 'feature-docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('┌ Sending Agent IDE message to docs/feature-docs')
-            ->and($output)->toContain('● Resolved target')
-            ->and($output)->toContain('● Resolved effective adapter')
-            ->and($output)->toContain('● Found active session')
-            ->and($output)->toContain('● Delivered message')
-            ->and($output)->toContain('└ Sent Agent IDE message to docs/feature-docs through polyscope')
-            ->and($output)->toContain('Sent message to docs/feature-docs through polyscope.')
-            ->and($output)->not->toContain('"success"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('┌ Sending Agent IDE message to docs/feature-docs')
+            ->and($output)
+            ->toContain('● Resolved target')
+            ->and($output)
+            ->toContain('● Resolved effective adapter')
+            ->and($output)
+            ->toContain('● Found active session')
+            ->and($output)
+            ->toContain('● Delivered message')
+            ->and($output)
+            ->toContain('└ Sent Agent IDE message to docs/feature-docs through polyscope')
+            ->and($output)
+            ->toContain('Sent message to docs/feature-docs through polyscope.')
+            ->and($output)
+            ->not->toContain('"success"');
     });
 
     it('prompts for a missing message in interactive mode', function (): void {
         fakeGateway(agentIdeMessageSuccess());
 
-        $this->artisan('agent-ide:message', ['--app' => 'docs'])
+        $this
+            ->artisan('agent-ide:message', ['--app' => 'docs'])
             ->expectsQuestion('Message', 'Ship the docs')
             ->expectsOutputToContain('Sent message to docs through opencode.')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->data() === [
-            'message' => 'Ship the docs',
-            'app' => 'docs',
-        ]);
+        Http::assertSent(
+            fn (Request $request): bool => $request->data() === [
+                'message' => 'Ship the docs',
+                'app' => 'docs',
+            ],
+        );
     });
 });

@@ -163,9 +163,13 @@ class CurlRequestProfiler implements RequestProfiler
      */
     private function tlsMilliseconds(array $info): float
     {
-        return $this->durationMilliseconds($info, 'connect', 'appconnect')
-            ?? $this->durationMilliseconds($info, 'connect', 'pretransfer')
-            ?? 0.0;
+        return (
+            $this->durationMilliseconds($info, 'connect', 'appconnect') ?? $this->durationMilliseconds(
+                $info,
+                'connect',
+                'pretransfer',
+            ) ?? 0.0
+        );
     }
 
     /**
@@ -206,7 +210,7 @@ class CurlRequestProfiler implements RequestProfiler
 
     private function requestUri(string $url): string
     {
-        $path = (string) (parse_url($url, PHP_URL_PATH) ?: '/');
+        $path = parse_url($url, PHP_URL_PATH) ?: '/';
         $query = parse_url($url, PHP_URL_QUERY);
 
         return is_string($query) && $query !== ''

@@ -60,9 +60,17 @@ describe('WorkspaceStepListController', function (): void {
             'command' => 'composer install',
         ]);
 
-        $response = $this->call('GET', '/api/workspaces/steps/setup?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/steps/setup?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.steps.0.command', 'composer install')
             ->assertJsonPath('success.data.steps.0.app', 'docs')
             ->assertJsonPath('success.data.steps.0.phase', 'setup');
@@ -74,9 +82,20 @@ describe('WorkspaceStepListController', function (): void {
         grantWorkspaceStepListAccess($caller, $node);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
         Workspace::factory()->create(['app_id' => $app->id, 'path' => '/srv/docs/.worktrees/feature-docs']);
-        WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown, 'command' => 'dropdb docs']);
+        WorkspaceStep::factory()->create([
+            'app_id' => $app->id,
+            'phase' => WorkspaceLifecyclePhase::Teardown,
+            'command' => 'dropdb docs',
+        ]);
 
-        $response = $this->call('GET', '/api/workspaces/steps/teardown?path=/srv/docs/.worktrees/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/steps/teardown?path=/srv/docs/.worktrees/feature-docs/app',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.steps.0.command', 'dropdb docs');
@@ -85,9 +104,17 @@ describe('WorkspaceStepListController', function (): void {
     it('returns app not found for unknown apps', function (): void {
         createWorkspaceStepListCallerNode(role: 'gateway');
 
-        $response = $this->call('GET', '/api/workspaces/steps/setup?app=missing', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/steps/setup?app=missing',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'workspace.app_not_found')
             ->assertJsonPath('error.meta.app', 'missing');
     });
@@ -97,9 +124,17 @@ describe('WorkspaceStepListController', function (): void {
         $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
-        $response = $this->call('GET', '/api/workspaces/steps/setup?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/steps/setup?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_STEP_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'workspace:read');

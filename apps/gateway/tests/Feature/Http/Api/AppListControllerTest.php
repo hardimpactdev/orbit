@@ -90,9 +90,17 @@ describe('AppListController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $devNode->id, 'environment' => 'development']);
         App::factory()->create(['name' => 'site', 'node_id' => $prodNode->id, 'environment' => 'production']);
 
-        $response = $this->call('GET', '/api/apps?node=prod-1&environment=production', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps?node=prod-1&environment=production',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.apps')
             ->assertJsonPath('success.data.apps.0.name', 'site');
     });
@@ -109,7 +117,8 @@ describe('AppListController', function (): void {
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.apps')
             ->assertJsonPath('success.data.apps.0.name', 'visible');
     });
@@ -148,7 +157,8 @@ describe('AppListController', function (): void {
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'This node is not authorized to read the app registry.')
             ->assertJsonPath('error.meta.missing_permission', 'app:read');
@@ -158,9 +168,17 @@ describe('AppListController', function (): void {
         $caller = createAppListCallerNode();
         assignAppListGatewayRole($caller);
 
-        $response = $this->call('GET', '/api/apps?environment=staging', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps?environment=staging',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'environment')
             ->assertJsonPath('error.meta.allowed', ['development', 'production']);
@@ -217,19 +235,22 @@ describe('AppListController', function (): void {
         assignAppListGatewayRole($caller);
         $node = createAppListAppNode(['name' => 'app-1', 'tld' => 'test']);
 
-        App::factory()->static()->create([
-            'name' => 'marketing',
-            'node_id' => $node->id,
-            'domain' => null,
-            'path' => '/srv/marketing',
-            'document_root' => 'public',
-            'php_version' => '8.5',
-            'adopted' => false,
-        ]);
+        App::factory()
+            ->static()
+            ->create([
+                'name' => 'marketing',
+                'node_id' => $node->id,
+                'domain' => null,
+                'path' => '/srv/marketing',
+                'document_root' => 'public',
+                'php_version' => '8.5',
+                'adopted' => false,
+            ]);
 
         $response = $this->call('GET', '/api/apps', [], [], [], ['REMOTE_ADDR' => APP_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.apps.0.name', 'marketing')
             ->assertJsonPath('success.data.apps.0.runtime', 'static')
             ->assertJsonPath('success.data.apps.0.runtime_config', null);
@@ -238,7 +259,8 @@ describe('AppListController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/apps');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

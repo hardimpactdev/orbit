@@ -203,7 +203,11 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
             return [
                 'code' => 'node.gateway_api_error',
                 'message' => 'Gateway returned invalid CA material.',
-                'meta' => ['gateway_ip' => $gatewayIp, 'endpoint' => '/api/ca/root', 'reason' => 'invalid_trust_material'],
+                'meta' => [
+                    'gateway_ip' => $gatewayIp,
+                    'endpoint' => '/api/ca/root',
+                    'reason' => 'invalid_trust_material',
+                ],
             ];
         }
 
@@ -421,8 +425,12 @@ final class GatewayAddCommand extends BootstrapGatewayCommand
      * @param  array{gateway_name: string, gateway_ip: string, gateway_status: string, gateway_platform: string, local_node_name: string, local_node_status: string, local_node_platform: string, local_node_wg_ip: string}  $verifyResult
      * @return array<string, mixed>
      */
-    private function buildSuccessData(array $verifyResult, string $action, string $gatewayIp, string $gatewayName): array
-    {
+    private function buildSuccessData(
+        array $verifyResult,
+        string $action,
+        string $gatewayIp,
+        string $gatewayName,
+    ): array {
         return [
             'result' => [
                 'action' => $action,

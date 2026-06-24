@@ -41,7 +41,9 @@ class E2EPrepareDockerHostsCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failCommand("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
+            return $this->failCommand(
+                "Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.',
+            );
         }
 
         if ((bool) $this->option('runtime-only') && (bool) $this->option('topology-only')) {
@@ -61,7 +63,9 @@ class E2EPrepareDockerHostsCommand extends Command
         $config = E2EConfig::fromEnvironment();
 
         if (count($config->dockerImageBuildHosts) > 1) {
-            return $this->failCommand('Configure exactly one Docker image build host. Use ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast and keep test runners in ORBIT_E2E_DOCKER_TEST_RUNNERS only.');
+            return $this->failCommand(
+                'Configure exactly one Docker image build host. Use ORBIT_E2E_DOCKER_IMAGE_BUILD_HOSTS=beast and keep test runners in ORBIT_E2E_DOCKER_TEST_RUNNERS only.',
+            );
         }
 
         $hosts = $this->hosts($config);
@@ -111,7 +115,14 @@ class E2EPrepareDockerHostsCommand extends Command
             $distributionHosts = $this->availableDistributionHosts($config, $hosts, $buildHosts, $results);
 
             foreach ($pendingImagesByHost as $buildHost => $images) {
-                if (! $this->distributeImages($buildHost, $config, $images, $distributionHosts, 'distribution', $results)) {
+                if (! $this->distributeImages(
+                    $buildHost,
+                    $config,
+                    $images,
+                    $distributionHosts,
+                    'distribution',
+                    $results,
+                )) {
                     $failed = true;
 
                     break;
@@ -267,7 +278,11 @@ class E2EPrepareDockerHostsCommand extends Command
 
         return array_values(array_filter(
             $roles,
-            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForDockerRole($role), $artifactRoles, true),
+            fn (string $role): bool => in_array(
+                E2EPreparedTopology::artifactRoleForDockerRole($role),
+                $artifactRoles,
+                true,
+            ),
         ));
     }
 
@@ -291,8 +306,15 @@ class E2EPrepareDockerHostsCommand extends Command
             throw new InvalidArgumentException('--all-roles can only be used when topology images are prepared.');
         }
 
-        if ($includeTopology && E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
-            throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
+        if (
+            $includeTopology
+            && E2ETopologyArtifactNamespace::hasCustomArtifactSet()
+            && $roles === null
+            && ! $allRoles
+        ) {
+            throw new InvalidArgumentException(
+                'Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.',
+            );
         }
 
         if ($roles === null) {
@@ -350,7 +372,9 @@ class E2EPrepareDockerHostsCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->line('Dry run. Pass --force to build missing Docker images on the build host and distribute them to configured runners.');
+        $this->line(
+            'Dry run. Pass --force to build missing Docker images on the build host and distribute them to configured runners.',
+        );
 
         foreach ($buildHosts as $buildHost) {
             $this->line("builder: {$buildHost}");
@@ -515,8 +539,14 @@ class E2EPrepareDockerHostsCommand extends Command
      * @param  list<string>  $hosts
      * @param  list<array<string, mixed>>  $results
      */
-    private function distributeImages(string $buildHost, E2EConfig $config, array $images, array $hosts, string $step, array &$results): bool
-    {
+    private function distributeImages(
+        string $buildHost,
+        E2EConfig $config,
+        array $images,
+        array $hosts,
+        string $step,
+        array &$results,
+    ): bool {
         try {
             $imports = $this->imageDistributorFor($buildHost, $config)->distribute($images, $hosts);
         } catch (Throwable $exception) {
@@ -547,8 +577,12 @@ class E2EPrepareDockerHostsCommand extends Command
      * @param  list<array<string, mixed>>  $results
      * @return list<string>
      */
-    private function availableDistributionHosts(E2EConfig $config, array $hosts, array $buildHosts, array &$results): array
-    {
+    private function availableDistributionHosts(
+        E2EConfig $config,
+        array $hosts,
+        array $buildHosts,
+        array &$results,
+    ): array {
         $availableHosts = [];
 
         foreach ($hosts as $host) {

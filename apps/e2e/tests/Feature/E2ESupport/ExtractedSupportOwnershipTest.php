@@ -181,12 +181,16 @@ it('classifies the former gateway support layer for the next extraction batches'
         ->toHaveCount(49);
 
     foreach ($extractedToE2e as $class) {
-        expect(repo_path("apps/e2e/app/E2E/Support/{$class}.php"))->toBeFile()
-            ->and(repo_path("apps/gateway/app/E2E/Support/{$class}.php"))->not->toBeFile();
+        expect(repo_path("apps/e2e/app/E2E/Support/{$class}.php"))
+            ->toBeFile()
+            ->and(repo_path("apps/gateway/app/E2E/Support/{$class}.php"))
+            ->not->toBeFile();
     }
 
     foreach ($stillInGatewayForLaterBatches as $class) {
-        expect(repo_path("apps/gateway/app/E2E/Support/{$class}.php"))->toBeFile()
-            ->and(repo_path("apps/e2e/app/E2E/Support/{$class}.php"))->not->toBeFile();
+        expect(repo_path("apps/gateway/app/E2E/Support/{$class}.php"))
+            ->toBeFile()
+            ->and(repo_path("apps/e2e/app/E2E/Support/{$class}.php"))
+            ->not->toBeFile();
     }
 });

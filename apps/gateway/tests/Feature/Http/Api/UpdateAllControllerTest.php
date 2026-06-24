@@ -21,13 +21,15 @@ function createUpdateAllAppHostNode(array $attributes, string $role = 'app-dev')
 {
     $node = Node::factory()->create([
         'status' => 'active',
-        ...$attributes]);
+        ...$attributes,
+    ]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
         'status' => 'active',
-        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : []]);
+        'settings' => $role === 'app-dev' ? ['tld' => 'test'] : [],
+    ]);
 
     return $node;
 }
@@ -38,12 +40,14 @@ beforeEach(function (): void {
         'host' => 'gateway',
         'orbit_path' => '/home/gateway/orbit',
         'status' => 'active',
-        'wireguard_address' => UPDATE_ALL_CALLER_WG_IP]);
+        'wireguard_address' => UPDATE_ALL_CALLER_WG_IP,
+    ]);
 });
 
 it('updates local checkout and returns updates array for gateway caller', function (): void {
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
@@ -66,7 +70,8 @@ it('returns local_update_failed when git pull fails', function (): void {
             output: '',
             errorOutput: 'merge conflict',
             exitCode: 1,
-        )]);
+        ),
+    ]);
     Process::preventStrayProcesses();
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
@@ -83,10 +88,12 @@ it('includes active app host nodes in updates and uses RemoteShell', function ()
     createUpdateAllAppHostNode([
         'name' => 'beast',
         'host' => 'beast',
-        'orbit_path' => '/home/nckrtl/orbit']);
+        'orbit_path' => '/home/nckrtl/orbit',
+    ]);
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-shell-');
@@ -96,7 +103,10 @@ it('includes active app host nodes in updates and uses RemoteShell', function ()
     }
 
     try {
-        app()->instance(RemoteShell::class, new UpdateAllControllerTimedRemoteShell($logPath, pullDelayMicroseconds: 0));
+        app()->instance(
+            RemoteShell::class,
+            new UpdateAllControllerTimedRemoteShell($logPath, pullDelayMicroseconds: 0),
+        );
 
         $response = $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP]);
 
@@ -115,7 +125,8 @@ it('includes active app host nodes in updates and uses RemoteShell', function ()
         expect(array_column($events, 'node'))->toBe([
             'beast',
             'beast',
-            'beast']);
+            'beast',
+        ]);
     } finally {
         @unlink($logPath);
     }
@@ -125,14 +136,17 @@ it('updates app nodes in parallel after gateway checkout succeeds', function ():
     createUpdateAllAppHostNode([
         'name' => 'beast',
         'host' => 'beast',
-        'orbit_path' => '/home/nckrtl/orbit']);
+        'orbit_path' => '/home/nckrtl/orbit',
+    ]);
     createUpdateAllAppHostNode([
         'name' => 'sidecar',
         'host' => 'sidecar',
-        'orbit_path' => '/home/nckrtl/orbit'], 'app-prod');
+        'orbit_path' => '/home/nckrtl/orbit',
+    ], 'app-prod');
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-parallel-');
@@ -177,14 +191,17 @@ it('starts app node updates concurrently in the streamed gateway path without pc
     createUpdateAllAppHostNode([
         'name' => 'beast',
         'host' => 'beast',
-        'orbit_path' => '/home/nckrtl/orbit']);
+        'orbit_path' => '/home/nckrtl/orbit',
+    ]);
     createUpdateAllAppHostNode([
         'name' => 'main1',
         'host' => 'main1',
-        'orbit_path' => '/home/nckrtl/orbit'], 'app-prod');
+        'orbit_path' => '/home/nckrtl/orbit',
+    ], 'app-prod');
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     $logPath = tempnam(sys_get_temp_dir(), 'orbit-update-all-stream-async-');
@@ -204,7 +221,8 @@ it('starts app node updates concurrently in the streamed gateway path without pc
             [],
             [
                 'HTTP_ACCEPT' => 'text/event-stream',
-                'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP],
+                'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+            ],
         );
 
         $response->assertOk();
@@ -234,8 +252,10 @@ it('starts app node updates concurrently in the streamed gateway path without pc
 
         $mainPullIndex = array_find_key(
             $events,
-            fn (array $event): bool => ($event['node'] ?? null) === 'main1'
-                && ($event['script'] ?? null) === 'git pull --ff-only',
+            fn (array $event): bool => (
+                ($event['node'] ?? null) === 'main1'
+                && ($event['script'] ?? null) === 'git pull --ff-only'
+            ),
         );
 
         expect($mainPullIndex)->not->toBeNull();
@@ -250,15 +270,18 @@ it('excludes control nodes from remote updates', function (): void {
         'name' => 'mini',
         'host' => 'mini',
         'orbit_path' => '/Users/nckrtl/orbit',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     Node::factory()->create([
         'name' => 'legacy-app-only',
         'host' => 'legacy-app-only',
         'orbit_path' => '/home/nckrtl/orbit',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     $shell = new UpdateAllControllerRemoteShell;
@@ -276,10 +299,12 @@ it('reports remote_update_failed when an app host node fails', function (): void
     createUpdateAllAppHostNode([
         'name' => 'beast',
         'host' => 'beast',
-        'orbit_path' => '/home/nckrtl/orbit']);
+        'orbit_path' => '/home/nckrtl/orbit',
+    ]);
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell(exitCode: 255, stderr: 'Permission denied'));
@@ -296,7 +321,8 @@ it('reports remote_update_failed when an app host node fails', function (): void
 });
 
 it('rejects unauthenticated requests', function (): void {
-    $this->call('POST', '/api/update/all')
+    $this
+        ->call('POST', '/api/update/all')
         ->assertStatus(403)
         ->assertJsonPath('error.code', 'authorization_failed');
 });
@@ -305,9 +331,11 @@ it('requires gateway-admin authority for non-gateway callers', function (): void
     Node::factory()->create([
         'name' => 'control-1',
         'status' => 'active',
-        'wireguard_address' => '10.6.0.90']);
+        'wireguard_address' => '10.6.0.90',
+    ]);
 
-    $this->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => '10.6.0.90'])
+    $this
+        ->call('POST', '/api/update/all', [], [], [], ['REMOTE_ADDR' => '10.6.0.90'])
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
         ->assertJsonPath('error.meta.missing_permission', '*')
@@ -319,15 +347,18 @@ it('allows non-gateway callers with gateway-admin authority', function (): void 
     $caller = Node::factory()->create([
         'name' => 'control-1',
         'status' => 'active',
-        'wireguard_address' => '10.6.0.90']);
+        'wireguard_address' => '10.6.0.90',
+    ]);
     NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $gateway->id,
         'permissions' => ['*'],
-        'custom_permissions' => ['*']]);
+        'custom_permissions' => ['*'],
+    ]);
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
@@ -342,10 +373,12 @@ it('streams progress events for gateway-owned update targets', function (): void
     createUpdateAllAppHostNode([
         'name' => 'beast',
         'host' => 'beast',
-        'orbit_path' => '/home/nckrtl/orbit']);
+        'orbit_path' => '/home/nckrtl/orbit',
+    ]);
 
     Process::fake([
-        '*' => Process::result(output: '', errorOutput: '', exitCode: 0)]);
+        '*' => Process::result(output: '', errorOutput: '', exitCode: 0),
+    ]);
     Process::preventStrayProcesses();
 
     app()->instance(RemoteShell::class, new UpdateAllControllerRemoteShell);
@@ -358,7 +391,8 @@ it('streams progress events for gateway-owned update targets', function (): void
         [],
         [
             'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP],
+            'REMOTE_ADDR' => UPDATE_ALL_CALLER_WG_IP,
+        ],
     );
 
     $response->assertOk();
@@ -366,15 +400,24 @@ it('streams progress events for gateway-owned update targets', function (): void
     $response->assertHeader('X-Accel-Buffering', 'no');
     $content = $response->streamedContent();
 
-    expect($content)->toContain('event: tree')
-        ->and($content)->toContain('"key":"gateway"')
-        ->and($content)->toContain('"label":"Pulling source - gateway"')
-        ->and($content)->toContain('"key":"beast"')
-        ->and($content)->toContain('"status":"pulling_source"')
-        ->and($content)->toContain('"status":"installing_dependencies"')
-        ->and($content)->toContain('"status":"running_migrations"')
-        ->and($content)->toContain('"status":"done"')
-        ->and($content)->toContain('event: complete');
+    expect($content)
+        ->toContain('event: tree')
+        ->and($content)
+        ->toContain('"key":"gateway"')
+        ->and($content)
+        ->toContain('"label":"Pulling source - gateway"')
+        ->and($content)
+        ->toContain('"key":"beast"')
+        ->and($content)
+        ->toContain('"status":"pulling_source"')
+        ->and($content)
+        ->toContain('"status":"installing_dependencies"')
+        ->and($content)
+        ->toContain('"status":"running_migrations"')
+        ->and($content)
+        ->toContain('"status":"done"')
+        ->and($content)
+        ->toContain('event: complete');
 });
 
 final class UpdateAllControllerRemoteShell implements RemoteShell
@@ -422,7 +465,9 @@ final readonly class UpdateAllControllerTimedRemoteShell implements RemoteShell
                 'node' => $node->name,
                 'script' => $script,
                 'started_at' => $startedAt,
-                'ended_at' => $endedAt], JSON_THROW_ON_ERROR).PHP_EOL,
+                'ended_at' => $endedAt,
+            ], JSON_THROW_ON_ERROR)
+                .PHP_EOL,
             FILE_APPEND | LOCK_EX,
         );
 
@@ -452,13 +497,17 @@ final readonly class UpdateAllControllerAsyncOnlyRemoteShell implements RemoteSh
             $this->logPath,
             json_encode([
                 'node' => $node->name,
-                'script' => $script], JSON_THROW_ON_ERROR).PHP_EOL,
+                'script' => $script,
+            ], JSON_THROW_ON_ERROR)
+                .PHP_EOL,
             FILE_APPEND | LOCK_EX,
         );
 
         return new FakeInvokedProcess(
             $script,
-            Process::describe()->iterations($script === 'git pull --ff-only' ? 3 : 0)->exitCode(0),
+            Process::describe()
+                ->iterations($script === 'git pull --ff-only' ? 3 : 0)
+                ->exitCode(0),
         );
     }
 }

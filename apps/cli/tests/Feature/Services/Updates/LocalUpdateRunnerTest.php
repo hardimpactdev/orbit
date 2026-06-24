@@ -98,7 +98,9 @@ function runnerManifest(string $version): array
 function fakeRunnerLatest(string $latest): void
 {
     Http::fake([
-        'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(runnerManifest($latest)),
+        'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(runnerManifest(
+            $latest,
+        )),
         'https://github.com/hardimpactdev/orbit/releases/download/*' => Http::response(runnerManifest($latest)),
         'https://api.github.com/*' => Http::response([], 404),
     ]);
@@ -150,9 +152,12 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE)
-            ->and($result->checkoutPath)->toBe('/nonexistent/orbit-runner-test-install')
-            ->and($updater->calls)->toBe([]);
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE)
+            ->and($result->checkoutPath)
+            ->toBe('/nonexistent/orbit-runner-test-install')
+            ->and($updater->calls)
+            ->toBe([]);
     });
 
     it('fails the check when the latest release cannot be resolved', function (): void {
@@ -163,10 +168,14 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_CHECK_FAILED)
-            ->and($result->failedStep)->toBe('check')
-            ->and($updater->calls)->toBe([])
-            ->and($result->stepResults)->toBe(['check' => 'failed']);
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_CHECK_FAILED)
+            ->and($result->failedStep)
+            ->toBe('check')
+            ->and($updater->calls)
+            ->toBe([])
+            ->and($result->stepResults)
+            ->toBe(['check' => 'failed']);
     });
 
     it('skips when the installed version already equals the latest release', function (): void {
@@ -177,11 +186,16 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
-            ->and($result->latestVersion)->toBe('0.1.131')
-            ->and($result->fromVersion)->toBe('0.1.131')
-            ->and($updater->calls)->toBe([])
-            ->and($result->stepResults)->toBe(['check' => 'skipped']);
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
+            ->and($result->latestVersion)
+            ->toBe('0.1.131')
+            ->and($result->fromVersion)
+            ->toBe('0.1.131')
+            ->and($updater->calls)
+            ->toBe([])
+            ->and($result->stepResults)
+            ->toBe(['check' => 'skipped']);
     });
 
     it('skips with gateway-behind when the gateway is older than the latest release', function (): void {
@@ -193,10 +207,14 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND)
-            ->and($result->latestVersion)->toBe('0.1.131')
-            ->and($updater->calls)->toBe([])
-            ->and($result->stepResults)->toBe(['check' => 'completed']);
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND)
+            ->and($result->latestVersion)
+            ->toBe('0.1.131')
+            ->and($updater->calls)
+            ->toBe([])
+            ->and($result->stepResults)
+            ->toBe(['check' => 'completed']);
     });
 
     it('emits a blink-only check step without a textual in-progress message', function (): void {
@@ -205,7 +223,9 @@ describe('LocalUpdateRunner', function (): void {
         fakeGateway(['gateway' => ['version' => '0.1.131']]);
 
         $steps = [];
-        makeRunner(new RunnerFakeUpdater)->run(function (string $step, string $status, ?string $message) use (&$steps): void {
+        makeRunner(new RunnerFakeUpdater)->run(function (string $step, string $status, ?string $message) use (
+            &$steps,
+        ): void {
             $steps[] = [$step, $status, $message];
         });
 
@@ -221,17 +241,24 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($result->fromVersion)->toBe('0.1.130')
-            ->and($result->toVersion)->toBe('0.1.131')
-            ->and($result->latestVersion)->toBe('0.1.131')
-            ->and($result->doctorIssues)->toBe(0)
-            ->and($updater->calls)->toBe([
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->fromVersion)
+            ->toBe('0.1.130')
+            ->and($result->toVersion)
+            ->toBe('0.1.131')
+            ->and($result->latestVersion)
+            ->toBe('0.1.131')
+            ->and($result->doctorIssues)
+            ->toBe(0)
+            ->and($updater->calls)
+            ->toBe([
                 'download',
                 'replace:/tmp/staged-orbit:0.1.131',
                 'doctor',
             ])
-            ->and($result->stepResults)->toBe([
+            ->and($result->stepResults)
+            ->toBe([
                 'check' => 'completed',
                 'download' => 'completed',
                 'replace' => 'completed',
@@ -248,9 +275,12 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($result->toVersion)->toBe('0.1.131')
-            ->and($updater->calls)->toBe([
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->toVersion)
+            ->toBe('0.1.131')
+            ->and($updater->calls)
+            ->toBe([
                 'download',
                 'replace:/tmp/staged-orbit:0.1.131',
                 'doctor',
@@ -265,7 +295,9 @@ describe('LocalUpdateRunner', function (): void {
 
         // Manifest resolves; the gateway status probe times out (unknown ceiling).
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(runnerManifest('0.1.131')),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(runnerManifest(
+                '0.1.131',
+            )),
             'https://github.com/hardimpactdev/orbit/releases/download/*' => Http::response(runnerManifest('0.1.131')),
             'https://api.github.com/*' => Http::response([], 404),
             'https://gateway.test/*' => fn () => throw new ConnectionException('Connection timed out'),
@@ -275,9 +307,12 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($result->toVersion)->toBe('0.1.131')
-            ->and($updater->calls)->toBe([
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->toVersion)
+            ->toBe('0.1.131')
+            ->and($updater->calls)
+            ->toBe([
                 'download',
                 'replace:/tmp/staged-orbit:0.1.131',
                 'doctor',
@@ -294,9 +329,12 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($result->doctorIssues)->toBe(3)
-            ->and($result->stepResults)->toBe([
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->doctorIssues)
+            ->toBe(3)
+            ->and($result->stepResults)
+            ->toBe([
                 'check' => 'completed',
                 'download' => 'completed',
                 'replace' => 'completed',
@@ -313,12 +351,16 @@ describe('LocalUpdateRunner', function (): void {
         $updater->replaceResult = ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => true];
 
         $steps = [];
-        $result = makeRunner($updater)->run(function (string $step, string $status, ?string $message) use (&$steps): void {
+        $result = makeRunner($updater)->run(function (string $step, string $status, ?string $message) use (
+            &$steps,
+        ): void {
             $steps[] = [$step, $status, $message];
         });
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($result->stepResults['replace'])->toBe('completed')
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_COMPLETED)
+            ->and($result->stepResults['replace'])
+            ->toBe('completed')
             ->and(collect($steps)->first(fn (array $step): bool => $step[0] === 'replace' && $step[1] === 'done'))
             ->toBe(['replace', 'done', 'Done']);
     });
@@ -333,17 +375,19 @@ describe('LocalUpdateRunner', function (): void {
 
         $first = makeRunner($updater)->run();
 
-        expect($first->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)
-            ->and($first->toVersion)->toBe('0.1.131');
+        expect($first->status)->toBe(LocalUpdateResult::STATUS_COMPLETED)->and($first->toVersion)->toBe('0.1.131');
 
         config()->set('app.version', '0.1.131');
 
         $updaterForSecondRun = new RunnerFakeUpdater;
         $second = makeRunner($updaterForSecondRun)->run();
 
-        expect($second->status)->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
-            ->and($updaterForSecondRun->calls)->toBe([])
-            ->and($second->stepResults)->toBe(['check' => 'skipped']);
+        expect($second->status)
+            ->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
+            ->and($updaterForSecondRun->calls)
+            ->toBe([])
+            ->and($second->stepResults)
+            ->toBe(['check' => 'skipped']);
     });
 
     it('returns failed step metadata when the download fails', function (): void {
@@ -362,11 +406,16 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_FAILED)
-            ->and($result->failedStep)->toBe('download')
-            ->and($result->output)->toBe('curl: (6) Could not resolve host')
-            ->and($updater->calls)->toBe(['download'])
-            ->and($result->stepResults)->toBe([
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_FAILED)
+            ->and($result->failedStep)
+            ->toBe('download')
+            ->and($result->output)
+            ->toBe('curl: (6) Could not resolve host')
+            ->and($updater->calls)
+            ->toBe(['download'])
+            ->and($result->stepResults)
+            ->toBe([
                 'check' => 'completed',
                 'download' => 'failed',
             ]);
@@ -387,9 +436,13 @@ describe('LocalUpdateRunner', function (): void {
 
         $result = makeRunner($updater)->run();
 
-        expect($result->status)->toBe(LocalUpdateResult::STATUS_FAILED)
-            ->and($result->failedStep)->toBe('replace')
-            ->and($result->output)->toBe('ln: Permission denied')
-            ->and($updater->calls)->toBe(['download', 'replace:/tmp/staged-orbit:0.1.131']);
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_FAILED)
+            ->and($result->failedStep)
+            ->toBe('replace')
+            ->and($result->output)
+            ->toBe('ln: Permission denied')
+            ->and($updater->calls)
+            ->toBe(['download', 'replace:/tmp/staged-orbit:0.1.131']);
     });
 });

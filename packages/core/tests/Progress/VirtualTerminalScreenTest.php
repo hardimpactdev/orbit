@@ -22,8 +22,7 @@ it('reconstructs alternating cyan spinner states for in-place progress repaints'
 
     $rows = $screen->rowsMatching('gateway', 'Replacing cli binary');
 
-    expect($rows)->toHaveCount(1)
-        ->and($rows[0]['spinner'])->toBe(VirtualTerminalScreen::SPINNER_CYAN_OPEN);
+    expect($rows)->toHaveCount(1)->and($rows[0]['spinner'])->toBe(VirtualTerminalScreen::SPINNER_CYAN_OPEN);
 
     $states = [];
 
@@ -63,9 +62,12 @@ it('collects spinner state transitions while replaying transcript chunks', funct
         }
     }
 
-    expect($observed)->toHaveCount(4)
-        ->and(array_values(array_unique(array_column($observed, 'row'))))->toBe([$targetRow])
-        ->and(array_column($observed, 'spinner'))->toBe([
+    expect($observed)
+        ->toHaveCount(4)
+        ->and(array_values(array_unique(array_column($observed, 'row'))))
+        ->toBe([$targetRow])
+        ->and(array_column($observed, 'spinner'))
+        ->toBe([
             VirtualTerminalScreen::SPINNER_CYAN_OPEN,
             VirtualTerminalScreen::SPINNER_CYAN_FILLED,
             VirtualTerminalScreen::SPINNER_CYAN_OPEN,

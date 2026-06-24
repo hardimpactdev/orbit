@@ -20,27 +20,27 @@ it('runs local nodes through bash without ssh', function (): void {
         '*' => Process::result(output: "ok\n"),
     ]);
 
-    $node = Node::factory()->create([
-    ]);
+    $node = Node::factory()->create([]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 'gateway',
         'status' => 'active',
     ]);
 
-    $result = (new SshRemoteShell)->run($node, 'pwd', [
+    $result = new SshRemoteShell()->run($node, 'pwd', [
         'cwd' => '/srv/example',
         'metadata' => ['ORBIT_NODE_ID' => 'testing'],
         'timeout' => 45,
     ]);
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->stdout)->toBe("ok\n");
+    expect($result->successful())->toBeTrue()->and($result->stdout)->toBe("ok\n");
 
     Process::assertRan(function (PendingProcess $process, ProcessResultContract $processResult): bool {
-        return $process->command === "bash -c 'export ORBIT_NODE_ID='\\''testing'\\''; cd '\\''/srv/example'\\'' && pwd'"
+        return (
+            $process->command === "bash -c 'export ORBIT_NODE_ID='\\''testing'\\''; cd '\\''/srv/example'\\'' && pwd'"
             && $process->timeout === 45
-            && $processResult->output() === "ok\n";
+            && $processResult->output() === "ok\n"
+        );
     });
 });
 
@@ -50,8 +50,7 @@ it('runs nodes with an assigned gateway role through bash without ssh', function
         '*' => Process::result(output: "ok\n"),
     ]);
 
-    $node = Node::factory()->create([
-    ]);
+    $node = Node::factory()->create([]);
 
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
@@ -59,10 +58,9 @@ it('runs nodes with an assigned gateway role through bash without ssh', function
         'status' => 'active',
     ]);
 
-    $result = (new SshRemoteShell)->run($node, 'pwd');
+    $result = new SshRemoteShell()->run($node, 'pwd');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->stdout)->toBe("ok\n");
+    expect($result->successful())->toBeTrue()->and($result->stdout)->toBe("ok\n");
 
     Process::assertRan(fn (PendingProcess $process): bool => $process->command === "bash -c 'pwd'");
 });
@@ -92,17 +90,19 @@ it('runs gateway host work over ssh when dispatched from orbit-gateway', functio
             'status' => 'active',
         ]);
 
-        $result = (new SshRemoteShell)->run($node, 'pwd');
+        $result = new SshRemoteShell()->run($node, 'pwd');
 
         expect($result->successful())->toBeTrue();
 
         Process::assertRan(function (PendingProcess $process): bool {
             $command = (string) $process->command;
 
-            return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+            return (
+                str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
                 && str_contains($command, "'orbit'@'10.6.0.2'")
                 && str_contains($command, 'bash -lc')
-                && ! str_starts_with($command, 'bash -c ');
+                && ! str_starts_with($command, 'bash -c ')
+            );
         });
     } finally {
         if ($previousHostPath === false) {
@@ -123,15 +123,14 @@ it('rejects invalid metadata keys before composing shell commands', function ():
     Process::preventStrayProcesses();
     Process::fake();
 
-    $node = Node::factory()->create([
-    ]);
+    $node = Node::factory()->create([]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 'gateway',
         'status' => 'active',
     ]);
 
-    expect(fn () => (new SshRemoteShell)->run($node, 'pwd', [
+    expect(fn () => new SshRemoteShell()->run($node, 'pwd', [
         'metadata' => ['APP_ENV; touch /tmp/orbit-pwned' => 'testing'],
     ]))->toThrow(InvalidArgumentException::class, 'Remote shell metadata key');
 
@@ -151,19 +150,20 @@ it('runs remote nodes over ssh using wireguard address and steady state user', f
         ...sshRemoteShellPinnedHostKey(),
     ]);
 
-    $result = (new SshRemoteShell)->run($node, 'git clone git@github.com:acme/site.git site');
+    $result = new SshRemoteShell()->run($node, 'git clone git@github.com:acme/site.git site');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->stdout)->toBe("cloned\n");
+    expect($result->successful())->toBeTrue()->and($result->stdout)->toBe("cloned\n");
 
     Process::assertRan(function (PendingProcess $process): bool {
-        return str_contains((string) $process->command, 'ssh -o StrictHostKeyChecking=yes')
+        return (
+            str_contains((string) $process->command, 'ssh -o StrictHostKeyChecking=yes')
             && str_contains((string) $process->command, '-o UserKnownHostsFile=')
             && str_contains((string) $process->command, '-o GlobalKnownHostsFile=')
             && str_contains((string) $process->command, '-o UpdateHostKeys=no')
             && str_contains((string) $process->command, "'deploy'@'10.44.0.20'")
             && str_contains((string) $process->command, 'bash -lc')
-            && str_contains((string) $process->command, 'git clone git@github.com:acme/site.git site');
+            && str_contains((string) $process->command, 'git clone git@github.com:acme/site.git site')
+        );
     });
 });
 
@@ -183,11 +183,13 @@ it('uses the host in Docker topology runs', function (): void {
             ...sshRemoteShellPinnedHostKey(),
         ]);
 
-        (new SshRemoteShell)->run($node, 'hostname');
+        new SshRemoteShell()->run($node, 'hostname');
 
         Process::assertRan(function (PendingProcess $process): bool {
-            return str_contains((string) $process->command, "'deploy'@'dev'")
-                && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'");
+            return (
+                str_contains((string) $process->command, "'deploy'@'dev'")
+                && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'")
+            );
         });
     } finally {
         putenv('ORBIT_E2E_TOPOLOGY_PROVIDER');
@@ -214,11 +216,13 @@ it('uses the host when the Docker topology provider is loaded from laravel env',
             ...sshRemoteShellPinnedHostKey(),
         ]);
 
-        (new SshRemoteShell)->run($node, 'hostname');
+        new SshRemoteShell()->run($node, 'hostname');
 
         Process::assertRan(function (PendingProcess $process): bool {
-            return str_contains((string) $process->command, "'deploy'@'dev'")
-                && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'");
+            return (
+                str_contains((string) $process->command, "'deploy'@'dev'")
+                && ! str_contains((string) $process->command, "'deploy'@'10.6.0.4'")
+            );
         });
     } finally {
         if ($previousEnv === null) {
@@ -250,11 +254,13 @@ it('uses the wireguard address by default outside Docker topology runs', functio
         ...sshRemoteShellPinnedHostKey(),
     ]);
 
-    (new SshRemoteShell)->run($node, 'hostname');
+    new SshRemoteShell()->run($node, 'hostname');
 
     Process::assertRan(function (PendingProcess $process): bool {
-        return str_contains((string) $process->command, "'deploy'@'10.6.0.4'")
-            && ! str_contains((string) $process->command, "'deploy'@'dev'");
+        return (
+            str_contains((string) $process->command, "'deploy'@'10.6.0.4'")
+            && ! str_contains((string) $process->command, "'deploy'@'dev'")
+        );
     });
 });
 
@@ -270,9 +276,12 @@ it('falls back to ssh user when steady state user is not recorded', function ():
         ...sshRemoteShellPinnedHostKey(),
     ]);
 
-    (new SshRemoteShell)->run($node, 'whoami');
+    new SshRemoteShell()->run($node, 'whoami');
 
-    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, "'orbit'@'10.44.0.21'"));
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        "'orbit'@'10.44.0.21'",
+    ));
 });
 
 it('throws failed remote shell results when requested', function (): void {
@@ -292,7 +301,7 @@ it('throws failed remote shell results when requested', function (): void {
         ...sshRemoteShellPinnedHostKey(),
     ]);
 
-    expect(fn () => (new SshRemoteShell)->run($node, 'mkdir /srv/example', ['throw' => true]))
+    expect(fn () => new SshRemoteShell()->run($node, 'mkdir /srv/example', ['throw' => true]))
         ->toThrow(RemoteShellFailed::class, 'RemoteShell failed on app-a (exit 13): permission denied');
 });
 
@@ -309,7 +318,7 @@ it('audits remote shell executions without raw scripts or output', function (): 
         ...sshRemoteShellPinnedHostKey(),
     ]);
 
-    (new SshRemoteShell)->run($node, 'printf "%s" "raw-command-secret"', [
+    new SshRemoteShell()->run($node, 'printf "%s" "raw-command-secret"', [
         'metadata' => ['ORBIT_REQUEST_ID' => 'req-123'],
         'input' => 'stdin-secret',
         'timeout' => 33,
@@ -324,8 +333,10 @@ it('audits remote shell executions without raw scripts or output', function (): 
 
     $properties = json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR);
 
-    expect($activity->log_name)->toBe('remote_shell')
-        ->and($properties)->toMatchArray([
+    expect($activity->log_name)
+        ->toBe('remote_shell')
+        ->and($properties)
+        ->toMatchArray([
             'type' => 'remote_execution',
             'node' => 'app-audit',
             'metadata_keys' => ['ORBIT_REQUEST_ID'],
@@ -333,10 +344,12 @@ it('audits remote shell executions without raw scripts or output', function (): 
             'exit_code' => 0,
             'status' => 'succeeded',
         ])
-        ->and($properties)->toHaveKeys(['script_sha256', 'input_sha256'])
-        ->and((string) $activity->properties)->not->toContain('raw-command-secret')
-        ->and((string) $activity->properties)->not->toContain('secret-output')
-        ->and((string) $activity->properties)->not->toContain('stdin-secret');
+        ->and($properties)
+        ->toHaveKeys(['script_sha256', 'input_sha256'])
+        ->and((string) $activity->properties)
+        ->not->toContain('raw-command-secret')->and((string) $activity->properties)
+        ->not->toContain('secret-output')->and((string) $activity->properties)
+        ->not->toContain('stdin-secret');
 });
 
 /**

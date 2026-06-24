@@ -9,7 +9,9 @@ final readonly class IncusHostPool
     /**
      * @param  list<IncusHost>  $hosts
      */
-    public function __construct(private array $hosts) {}
+    public function __construct(
+        private array $hosts,
+    ) {}
 
     public static function fromEnvironment(E2EConfig $config): self
     {

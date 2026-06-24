@@ -44,7 +44,12 @@ final class CloudflareController implements Loggable
         $content = $this->stringInput($request, 'content');
 
         if ($name === null || $content === null) {
-            return $this->error('validation_failed', 'DNS record name and content are required.', ['field' => $name === null ? 'name' : 'content'], 422);
+            return $this->error(
+                'validation_failed',
+                'DNS record name and content are required.',
+                ['field' => $name === null ? 'name' : 'content'],
+                422,
+            );
         }
 
         return $this->run(fn (): array => $cloudflare->addDnsRecord(
@@ -57,15 +62,24 @@ final class CloudflareController implements Loggable
     }
 
     #[RequiresPermission('cf:dns:remove', servingNode: ServingNode::Gateway)]
-    public function removeDnsRecord(string $zone, string $record, Request $request, CloudflareManager $cloudflare): JsonResponse
-    {
+    public function removeDnsRecord(
+        string $zone,
+        string $record,
+        Request $request,
+        CloudflareManager $cloudflare,
+    ): JsonResponse {
         $this->captureActivitySubject($request);
 
         if (! $request->boolean('destructive_consent')) {
-            return $this->error('validation_failed', 'Removing a Cloudflare DNS record requires --force in non-interactive mode.', [
-                'field' => 'force',
-                'reason' => 'destructive_consent_required',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Removing a Cloudflare DNS record requires --force in non-interactive mode.',
+                [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                ],
+                422,
+            );
         }
 
         return $this->run(fn (): array => $cloudflare->removeDnsRecord($record, $zone));
@@ -99,10 +113,15 @@ final class CloudflareController implements Loggable
         $this->captureActivitySubject($request);
 
         if (! $request->boolean('destructive_consent')) {
-            return $this->error('validation_failed', 'Removing a Cloudflare cache rule requires --force in non-interactive mode.', [
-                'field' => 'force',
-                'reason' => 'destructive_consent_required',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Removing a Cloudflare cache rule requires --force in non-interactive mode.',
+                [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                ],
+                422,
+            );
         }
 
         return $this->run(fn (): array => $cloudflare->removeCacheRule($app));
@@ -124,10 +143,15 @@ final class CloudflareController implements Loggable
         $this->captureActivitySubject($request);
 
         if (! $request->boolean('destructive_consent')) {
-            return $this->error('validation_failed', 'Disabling Cloudflare SSL requires --force in non-interactive mode.', [
-                'field' => 'force',
-                'reason' => 'destructive_consent_required',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Disabling Cloudflare SSL requires --force in non-interactive mode.',
+                [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                ],
+                422,
+            );
         }
 
         return $this->run(fn (): array => $cloudflare->disableSsl($zone));

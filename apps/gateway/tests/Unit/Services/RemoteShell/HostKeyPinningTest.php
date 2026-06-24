@@ -21,11 +21,16 @@ it('pins the preferred ssh host key in tofu mode', function (): void {
 
     $key = app(SshHostKeyPinner::class)->pin('203.0.113.10');
 
-    expect($key->host)->toBe('203.0.113.10')
-        ->and($key->type)->toBe('ssh-ed25519')
-        ->and($key->publicKey)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests')
-        ->and($key->fingerprint)->toStartWith('SHA256:')
-        ->and($key->pinMode)->toBe('tofu');
+    expect($key->host)
+        ->toBe('203.0.113.10')
+        ->and($key->type)
+        ->toBe('ssh-ed25519')
+        ->and($key->publicKey)
+        ->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests')
+        ->and($key->fingerprint)
+        ->toStartWith('SHA256:')
+        ->and($key->pinMode)
+        ->toBe('tofu');
 });
 
 it('marks the pin verified when the expected fingerprint matches', function (): void {
@@ -39,8 +44,7 @@ it('marks the pin verified when the expected fingerprint matches', function (): 
 
     $key = app(SshHostKeyPinner::class)->pin('203.0.113.10', $expected);
 
-    expect($key->fingerprint)->toBe($expected)
-        ->and($key->pinMode)->toBe('verified');
+    expect($key->fingerprint)->toBe($expected)->and($key->pinMode)->toBe('verified');
 });
 
 it('retries transient empty ssh-keyscan failures before pinning', function (): void {
@@ -55,13 +59,14 @@ it('retries transient empty ssh-keyscan failures before pinning', function (): v
 
     $key = new SshHostKeyPinner(scanRetryDelayMicroseconds: 0)->pin('203.0.113.10');
 
-    expect($key->publicKey)->toBe($publicKey)
-        ->and($key->pinMode)->toBe('tofu');
+    expect($key->publicKey)->toBe($publicKey)->and($key->pinMode)->toBe('tofu');
 });
 
 it('fails closed when the expected fingerprint does not match', function (): void {
     Process::fake([
-        'ssh-keyscan*' => Process::result(output: "203.0.113.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests\n"),
+        'ssh-keyscan*' => Process::result(
+            output: "203.0.113.10 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMockEd25519KeyForOrbitTests\n",
+        ),
     ]);
     Process::preventStrayProcesses();
 

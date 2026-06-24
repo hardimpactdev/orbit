@@ -33,23 +33,32 @@ it('starts the durable update operation and follows its event stream in json mod
 
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-    Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-        && $request->url() === 'https://gateway.test/api/update/all/start'
-        && $request->data() === []);
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/update/all/start'
+            && $request->data() === []
+        ),
+    );
 
-    expect($exitCode)->toBe(0)
+    expect($exitCode)
+        ->toBe(0)
         // local update runs AFTER gateway in json mode; uses downloadBinary/replaceBinary/runDoctor
-        ->and($this->localUpdater->calls)->toBe([
+        ->and($this->localUpdater->calls)
+        ->toBe([
             'download',
             'replace',
             'doctor',
         ])
-        ->and($follower->eventsUrls)->toBe(['/api/operations/run-1/events'])
-        ->and($decoded)->toBe([
+        ->and($follower->eventsUrls)
+        ->toBe(['/api/operations/run-1/events'])
+        ->and($decoded)
+        ->toBe([
             'event' => 'complete',
             'data' => ['exit_code' => 0, 'data' => ['updates' => []]],
         ])
-        ->and($output)->not->toContain('runner started');
+        ->and($output)
+        ->not->toContain('runner started');
 });
 
 it('sends the configured release manifest inline when starting the durable update operation', function (): void {
@@ -80,12 +89,15 @@ it('sends the configured release manifest inline when starting the durable updat
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/update/all/start'
-            && $request->data() === ['manifest' => $manifest]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/update/all/start'
+                && $request->data() === ['manifest' => $manifest]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($follower->eventsUrls)->toBe(['/api/operations/run-1/events']);
+        expect($exitCode)->toBe(0)->and($follower->eventsUrls)->toBe(['/api/operations/run-1/events']);
     } finally {
         $previousManifestUrl === false
             ? putenv('ORBIT_RELEASE_MANIFEST_URL')
@@ -103,7 +115,10 @@ it('reports partial failure in json mode when the local update fails after the g
     ];
 
     $follower = new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3']],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3'],
+        ],
     ]);
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, $follower);
@@ -115,17 +130,32 @@ it('reports partial failure in json mode when the local update fails after the g
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
     // Gateway WAS started (gateway-first ordering)
-    Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-        && $request->url() === 'https://gateway.test/api/update/all/start');
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/update/all/start'
+        ),
+    );
 
-    expect($exitCode)->toBe(1)
-        ->and($decoded['error']['code'])->toBe('local_update_failed')
-        ->and($decoded['error']['message'])->toBe('Failed to update local Orbit checkout.');
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('local_update_failed')
+        ->and($decoded['error']['message'])
+        ->toBe('Failed to update local Orbit checkout.');
 });
 
 it('captures alternating local-row spinner frames from a pseudo-tty before replace completes', function (): void {
-    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
-        $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
+    if (
+        ! function_exists('pcntl_fork')
+        || ! function_exists('posix_kill')
+        || ! function_exists('posix_getppid')
+        || ! function_exists('pcntl_async_signals')
+        || ! function_exists('pcntl_signal')
+    ) {
+        $this->markTestSkipped(
+            'pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.',
+        );
     }
 
     $scriptBinary = findPseudoTtyScriptBinary();
@@ -138,10 +168,14 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
     $typescriptPath = sys_get_temp_dir().'/orbit-update-all-pty-'.uniqid('', true).'.typescript';
     $pendingTranscriptPath = sys_get_temp_dir().'/orbit-update-all-pending-'.uniqid('', true).'.typescript';
 
-    $command = pseudoTtyWrappedCommand($scriptBinary, $typescriptPath, [
-        PHP_BINARY,
-        $captureScript,
-    ]);
+    $command = pseudoTtyWrappedCommand(
+        $scriptBinary,
+        $typescriptPath,
+        [
+            PHP_BINARY,
+            $captureScript,
+        ],
+    );
 
     $process = proc_open(
         $command,
@@ -185,9 +219,7 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
 
     try {
         while (microtime(true) < $deadline) {
-            $stillRunning = is_int($processPid)
-                && function_exists('posix_kill')
-                && posix_kill($processPid, 0);
+            $stillRunning = is_int($processPid) && function_exists('posix_kill') && posix_kill($processPid, 0);
 
             clearstatcache(true, $typescriptPath);
 
@@ -208,9 +240,11 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
                         updateAllLivenessObserveSpinner($cadenceState, $observation['spinner'], $nowUs);
                     }
 
-                    if ($rowIdentityStable
+                    if (
+                        $rowIdentityStable
                         && isset($observedStates[VirtualTerminalScreen::SPINNER_CYAN_OPEN])
-                        && isset($observedStates[VirtualTerminalScreen::SPINNER_CYAN_FILLED])) {
+                        && isset($observedStates[VirtualTerminalScreen::SPINNER_CYAN_FILLED])
+                    ) {
                         $pendingTranscript = $capture;
                         file_put_contents($pendingTranscriptPath, $pendingTranscript);
                         $capturedWhileRunning = true;
@@ -240,22 +274,35 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
 
     $cadence = validateUpdateAllLivenessCadence($cadenceState['first_transition_us']);
 
-    expect($capturedWhileRunning)->toBeTrue(sprintf(
-        'Expected both spinner frames on the same local Replacing cli binary virtual-screen row while the delayed replace step was still running; row=%s stable=%s states=[%s] first_transition_us=%s cadence_ok=%s.',
-        $targetRow === null ? 'none' : (string) $targetRow,
-        $rowIdentityStable ? 'true' : 'false',
-        implode(',', array_keys($observedStates)),
-        $cadenceState['first_transition_us'] < 0 ? 'none' : (string) $cadenceState['first_transition_us'],
-        $cadence['cadence_ok'] ? 'true' : 'false',
-    ))
-        ->and($pendingTranscript)->not->toBe('')
-        ->and($cadenceState['first_transition_us'])->toBeGreaterThanOrEqual(250_000)
-        ->and($cadence['cadence_ok'])->toBeTrue($cadence['reason'] ?? 'spinner cadence was invalid');
+    expect($capturedWhileRunning)
+        ->toBeTrue(sprintf(
+            'Expected both spinner frames on the same local Replacing cli binary virtual-screen row while the delayed replace step was still running; row=%s stable=%s states=[%s] first_transition_us=%s cadence_ok=%s.',
+            $targetRow === null ? 'none' : (string) $targetRow,
+            $rowIdentityStable ? 'true' : 'false',
+            implode(',', array_keys($observedStates)),
+            $cadenceState['first_transition_us'] < 0 ? 'none' : (string) $cadenceState['first_transition_us'],
+            $cadence['cadence_ok'] ? 'true' : 'false',
+        ))
+        ->and($pendingTranscript)
+        ->not
+        ->toBe('')
+        ->and($cadenceState['first_transition_us'])
+        ->toBeGreaterThanOrEqual(250_000)
+        ->and($cadence['cadence_ok'])
+        ->toBeTrue($cadence['reason'] ?? 'spinner cadence was invalid');
 })->group('slow');
 
 it('keeps update-all rows blinking while the gateway event stream is quiet', function (): void {
-    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
-        $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
+    if (
+        ! function_exists('pcntl_fork')
+        || ! function_exists('posix_kill')
+        || ! function_exists('posix_getppid')
+        || ! function_exists('pcntl_async_signals')
+        || ! function_exists('pcntl_signal')
+    ) {
+        $this->markTestSkipped(
+            'pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.',
+        );
     }
 
     $scriptBinary = findPseudoTtyScriptBinary();
@@ -272,10 +319,14 @@ it('keeps update-all rows blinking while the gateway event stream is quiet', fun
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
     $typescriptPath = sys_get_temp_dir().'/orbit-update-all-gateway-pty-'.uniqid('', true).'.typescript';
-    $command = pseudoTtyWrappedCommand($scriptBinary, $typescriptPath, [
-        PHP_BINARY,
-        $captureScript,
-    ]);
+    $command = pseudoTtyWrappedCommand(
+        $scriptBinary,
+        $typescriptPath,
+        [
+            PHP_BINARY,
+            $captureScript,
+        ],
+    );
 
     $process = proc_open(
         $command,
@@ -348,30 +399,49 @@ it('keeps update-all rows blinking while the gateway event stream is quiet', fun
     $fleetCheckCadence = validateUpdateAllLivenessCadenceState($fleetCheck['cadence_state']);
     $gatewayCadence = validateUpdateAllLivenessCadenceState($gateway['cadence_state']);
 
-    expect($timedOut)->toBeFalse('The pseudo-tty update:all gateway liveness command did not finish.')
-        ->and($fleetCheck['captured'])->toBeTrue(sprintf(
+    expect($timedOut)
+        ->toBeFalse('The pseudo-tty update:all gateway liveness command did not finish.')
+        ->and($fleetCheck['captured'])
+        ->toBeTrue(sprintf(
             'Expected Checking fleet versions to alternate while the event stream was quiet; row=%s stable=%s states=[%s] first_transition_us=%s.',
             $fleetCheck['target_row'] === null ? 'none' : (string) $fleetCheck['target_row'],
             $fleetCheck['row_identity_stable'] ? 'true' : 'false',
             implode(',', array_keys($fleetCheck['observed_states'])),
-            $fleetCheck['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $fleetCheck['cadence_state']['first_transition_us'],
+            $fleetCheck['cadence_state']['first_transition_us'] < 0
+                ? 'none'
+                : (string) $fleetCheck['cadence_state']['first_transition_us'],
         ))
-        ->and($fleetCheckCadence['cadence_ok'])->toBeTrue($fleetCheckCadence['reason'] ?? 'fleet-check spinner cadence was invalid')
-        ->and($fleetCheck['cadence_state']['first_transition_us'])->toBeLessThan(900_000)
-        ->and($gateway['captured'])->toBeTrue(sprintf(
+        ->and($fleetCheckCadence['cadence_ok'])
+        ->toBeTrue($fleetCheckCadence['reason'] ?? 'fleet-check spinner cadence was invalid')
+        ->and($fleetCheck['cadence_state']['first_transition_us'])
+        ->toBeLessThan(900_000)
+        ->and($gateway['captured'])
+        ->toBeTrue(sprintf(
             'Expected gateway to alternate while the event stream was quiet; row=%s stable=%s states=[%s] first_transition_us=%s.',
             $gateway['target_row'] === null ? 'none' : (string) $gateway['target_row'],
             $gateway['row_identity_stable'] ? 'true' : 'false',
             implode(',', array_keys($gateway['observed_states'])),
-            $gateway['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $gateway['cadence_state']['first_transition_us'],
+            $gateway['cadence_state']['first_transition_us'] < 0
+                ? 'none'
+                : (string) $gateway['cadence_state']['first_transition_us'],
         ))
-        ->and($gatewayCadence['cadence_ok'])->toBeTrue($gatewayCadence['reason'] ?? 'gateway spinner cadence was invalid')
-        ->and($gateway['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
+        ->and($gatewayCadence['cadence_ok'])
+        ->toBeTrue($gatewayCadence['reason'] ?? 'gateway spinner cadence was invalid')
+        ->and($gateway['cadence_state']['first_transition_us'])
+        ->toBeLessThan(900_000);
 })->group('slow');
 
 it('keeps the check-updates row blinking while the gateway start request is pending', function (): void {
-    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
-        $this->markTestSkipped('pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.');
+    if (
+        ! function_exists('pcntl_fork')
+        || ! function_exists('posix_kill')
+        || ! function_exists('posix_getppid')
+        || ! function_exists('pcntl_async_signals')
+        || ! function_exists('pcntl_signal')
+    ) {
+        $this->markTestSkipped(
+            'pcntl_fork, posix_kill, posix_getppid, pcntl_async_signals, and pcntl_signal are required to drive parent-process progress ticks during blocking work.',
+        );
     }
 
     $scriptBinary = findPseudoTtyScriptBinary();
@@ -388,10 +458,14 @@ it('keeps the check-updates row blinking while the gateway start request is pend
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
     $typescriptPath = sys_get_temp_dir().'/orbit-update-all-start-pty-'.uniqid('', true).'.typescript';
-    $command = pseudoTtyWrappedCommand($scriptBinary, $typescriptPath, [
-        PHP_BINARY,
-        $captureScript,
-    ]);
+    $command = pseudoTtyWrappedCommand(
+        $scriptBinary,
+        $typescriptPath,
+        [
+            PHP_BINARY,
+            $captureScript,
+        ],
+    );
 
     $process = proc_open(
         $command,
@@ -441,9 +515,11 @@ it('keeps the check-updates row blinking while the gateway start request is pend
                 ? $nowUs - $checkUpdates['cadence_state']['anchor_us']
                 : 0;
 
-            if ($stillRunning
+            if (
+                $stillRunning
                 && $observedForUs >= 1_200_000
-                && $checkUpdates['cadence_state']['transition_count'] >= 4) {
+                && $checkUpdates['cadence_state']['transition_count'] >= 4
+            ) {
                 $capturedContinuousBlinkWhilePending = true;
 
                 break;
@@ -469,70 +545,110 @@ it('keeps the check-updates row blinking while the gateway start request is pend
 
     $checkUpdatesCadence = validateUpdateAllLivenessCadence($checkUpdates['cadence_state']['first_transition_us']);
 
-    expect($capturedContinuousBlinkWhilePending)->toBeTrue(sprintf(
-        'Expected continuous Checking for updates blinking while the gateway start request was still pending; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
-        $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
-        $checkUpdates['row_identity_stable'] ? 'true' : 'false',
-        implode(',', array_keys($checkUpdates['observed_states'])),
-        $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
-        (string) $checkUpdates['cadence_state']['transition_count'],
-        (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
-    ))
-        ->and($checkUpdates['captured'])->toBeTrue(sprintf(
+    expect($capturedContinuousBlinkWhilePending)
+        ->toBeTrue(sprintf(
+            'Expected continuous Checking for updates blinking while the gateway start request was still pending; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
+            $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
+            $checkUpdates['row_identity_stable'] ? 'true' : 'false',
+            implode(',', array_keys($checkUpdates['observed_states'])),
+            $checkUpdates['cadence_state']['first_transition_us'] < 0
+                ? 'none'
+                : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            (string) $checkUpdates['cadence_state']['transition_count'],
+            (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
+        ))
+        ->and($checkUpdates['captured'])
+        ->toBeTrue(sprintf(
             'Expected Checking for updates to alternate while the gateway start request was pending; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
             $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
             $checkUpdates['row_identity_stable'] ? 'true' : 'false',
             implode(',', array_keys($checkUpdates['observed_states'])),
-            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            $checkUpdates['cadence_state']['first_transition_us'] < 0
+                ? 'none'
+                : (string) $checkUpdates['cadence_state']['first_transition_us'],
             (string) $checkUpdates['cadence_state']['transition_count'],
             (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
         ))
-        ->and($checkUpdates['cadence_state']['transition_count'])->toBeGreaterThanOrEqual(4, sprintf(
+        ->and($checkUpdates['cadence_state']['transition_count'])
+        ->toBeGreaterThanOrEqual(4, sprintf(
             'Expected Checking for updates to keep alternating through the delayed start request; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
             $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
             $checkUpdates['row_identity_stable'] ? 'true' : 'false',
             implode(',', array_keys($checkUpdates['observed_states'])),
-            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            $checkUpdates['cadence_state']['first_transition_us'] < 0
+                ? 'none'
+                : (string) $checkUpdates['cadence_state']['first_transition_us'],
             (string) $checkUpdates['cadence_state']['transition_count'],
             (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
         ))
-        ->and($checkUpdates['cadence_state']['max_transition_gap_us'])->toBeLessThan(900_000, sprintf(
+        ->and($checkUpdates['cadence_state']['max_transition_gap_us'])
+        ->toBeLessThan(900_000, sprintf(
             'Expected Checking for updates transition gaps below 900ms; row=%s stable=%s states=[%s] first_transition_us=%s transition_count=%s max_transition_gap_us=%s.',
             $checkUpdates['target_row'] === null ? 'none' : (string) $checkUpdates['target_row'],
             $checkUpdates['row_identity_stable'] ? 'true' : 'false',
             implode(',', array_keys($checkUpdates['observed_states'])),
-            $checkUpdates['cadence_state']['first_transition_us'] < 0 ? 'none' : (string) $checkUpdates['cadence_state']['first_transition_us'],
+            $checkUpdates['cadence_state']['first_transition_us'] < 0
+                ? 'none'
+                : (string) $checkUpdates['cadence_state']['first_transition_us'],
             (string) $checkUpdates['cadence_state']['transition_count'],
             (string) $checkUpdates['cadence_state']['max_transition_gap_us'],
         ))
-        ->and($checkUpdatesCadence['cadence_ok'])->toBeTrue($checkUpdatesCadence['reason'] ?? 'check-updates spinner cadence was invalid')
-        ->and($checkUpdates['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
+        ->and($checkUpdatesCadence['cadence_ok'])
+        ->toBeTrue($checkUpdatesCadence['reason'] ?? 'check-updates spinner cadence was invalid')
+        ->and($checkUpdates['cadence_state']['first_transition_us'])
+        ->toBeLessThan(900_000);
 })->group('slow');
 
 it('does not mark the fleet check row active before gateway progress events arrive', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit nodes')
-        ->and($output)->toContain('Checking for updates')
-        ->and($output)->toContain('Checking fleet versions')
-        ->and($output)->toMatch('/Checking for updates\s+Checking\b/')
-        ->and($output)->not->toMatch('/Checking fleet versions\s+Checking\b/');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toContain('Updating Orbit nodes')
+        ->and($output)
+        ->toContain('Checking for updates')
+        ->and($output)
+        ->toContain('Checking fleet versions')
+        ->and($output)
+        ->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)
+        ->not->toMatch('/Checking fleet versions\s+Checking\b/');
 });
 
 it('aligns check-row settled status with node stage columns', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 1 outdated node found',
+                'update_targets' => ['gateway', 'local', 'beast'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
@@ -543,9 +659,9 @@ it('aligns check-row settled status with node stage columns', function (): void 
 
     foreach ([
         ['Done: latest version is 1.2.3', 'Done:'],
-        ['Done: 1 outdated node found', 'Done:'],
-        ['beast', 'Replacing'],
-        ['local', 'Replacing'],
+        ['Done: 1 outdated node found',   'Done:'],
+        ['beast',                         'Replacing'],
+        ['local',                         'Replacing'],
     ] as [$needle, $statusNeedle]) {
         $line = findStrippedProgressLine($lines, $needle, $statusNeedle);
 
@@ -554,134 +670,274 @@ it('aligns check-row settled status with node stage columns', function (): void 
         $columns[] = strpos($line, $statusNeedle);
     }
 
-    expect($exitCode)->toBe(0)
-        ->and(array_values(array_unique($columns)))->toHaveCount(1);
+    expect($exitCode)
+        ->toBe(0)
+        ->and(array_values(array_unique($columns)))
+        ->toHaveCount(1);
 });
 
 it('renders initial check rows before gateway stream events arrive', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.cache', 'status' => 'done', 'message' => 'Workload node cache updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.cache', 'status' => 'done', 'message' => 'Workload node cache updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit nodes')
-        ->and($output)->toContain('│')
-        ->and($output)->toContain('Checking for updates')
-        ->and($output)->toContain('Checking fleet versions')
-        ->and($output)->toContain('└');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toContain('Updating Orbit nodes')
+        ->and($output)
+        ->toContain('│')
+        ->and($output)
+        ->toContain('Checking for updates')
+        ->and($output)
+        ->toContain('Checking fleet versions')
+        ->and($output)
+        ->toContain('└');
 });
 
 it('renders every workload node from the gateway stream fixture', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 3 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast', 'cache']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 3 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'agent', 'beast', 'cache'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.cache', 'status' => 'done', 'message' => 'Workload node cache updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.cache', 'status' => 'done', 'message' => 'Workload node cache updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toMatch('/gateway\s+Done/')
-        ->and($output)->toMatch('/agent\s+Done/')
-        ->and($output)->toMatch('/beast\s+Done/')
-        ->and($output)->toMatch('/cache\s+Done/')
-        ->and($output)->toMatch('/local\s+Done/');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toMatch('/gateway\s+Done/')
+        ->and($output)
+        ->toMatch('/agent\s+Done/')
+        ->and($output)
+        ->toMatch('/beast\s+Done/')
+        ->and($output)
+        ->toMatch('/cache\s+Done/')
+        ->and($output)
+        ->toMatch('/local\s+Done/');
 });
 
 it('rejects the legacy final-only node summary shape in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'agent', 'beast'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('│')
-        ->and($output)->toContain('Checking for updates')
-        ->and($output)->toContain('Checking fleet versions')
-        ->and($output)->toContain('Success: All nodes are running on version 1.2.3')
-        ->and($output)->not->toContain('Successfully updated 2 nodes')
-        ->and($output)->not->toMatch('/^local\s+Done$/m')
-        ->and($output)->not->toMatch('/^gateway\s+Done$/m');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toContain('│')
+        ->and($output)
+        ->toContain('Checking for updates')
+        ->and($output)
+        ->toContain('Checking fleet versions')
+        ->and($output)
+        ->toContain('Success: All nodes are running on version 1.2.3')
+        ->and($output)
+        ->not->toContain('Successfully updated 2 nodes')->and($output)
+        ->not->toMatch('/^local\s+Done$/m')->and($output)
+        ->not->toMatch('/^gateway\s+Done$/m');
 });
 
 it('renders update-all target progress in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Tree, 'payload' => ['title' => 'Update all', 'steps' => [['label' => 'Update gateway']]]],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
+        [
+            'type' => ProgressEventType::Tree,
+            'payload' => ['title' => 'Update all', 'steps' => [['label' => 'Update gateway']]],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'agent', 'beast'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Downloading 1.2.3 assets']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Updating gateway app']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Running doctor']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Downloading 1.2.3 assets'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Updating gateway app'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Running doctor'],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
         // Workload sub-steps
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Running doctor']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated (2 issues)']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast skipped: already up to date']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Downloading 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Running doctor'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'workload.agent',
+                'status' => 'done',
+                'message' => 'Workload node agent updated (2 issues)',
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'workload.beast',
+                'status' => 'done',
+                'message' => 'Workload node beast skipped: already up to date',
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Verifying fleet update']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update verified']],
         // local sub-steps arrive after the gateway phase
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.local', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.local', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.local', 'status' => 'running', 'message' => 'Running doctor']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.local', 'status' => 'done', 'message' => 'Local node updated']],
-        ['type' => ProgressEventType::Complete, 'payload' => [
-            'status' => 'succeeded',
-            'target_version' => '1.2.3',
-            'manifest_version' => '1.2.3',
-        ]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.local', 'status' => 'running', 'message' => 'Downloading 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.local', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.local', 'status' => 'running', 'message' => 'Running doctor'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.local', 'status' => 'done', 'message' => 'Local node updated'],
+        ],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'status' => 'succeeded',
+                'target_version' => '1.2.3',
+                'manifest_version' => '1.2.3',
+            ],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit nodes')
-        ->and($output)->toContain('│')
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toContain('Updating Orbit nodes')
+        ->and($output)
+        ->toContain('│')
         // No preamble local row before gateway
-        ->and($output)->not->toMatch('/local\s+Updating CLI/')
-        ->and($output)->toMatch('/Checking for updates\s+Checking\b/')
-        ->and($output)->toMatch('/Checking fleet versions\s+Checking\b/')
-        ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
-        ->and($output)->toMatch('/Checking fleet versions\s+Done: 2 outdated nodes found/')
-        ->and($output)->toMatch('/gateway\s+Downloading 1\.2\.3 assets/')
-        ->and($output)->toMatch('/gateway\s+Updating gateway app/')
-        ->and($output)->toMatch('/gateway\s+Replacing cli binary/')
-        ->and($output)->toMatch('/gateway\s+Running doctor/')
-        ->and($output)->toMatch('/gateway\s+Done/')
-        ->and($output)->toMatch('/local\s+Waiting\b/')
-        ->and($output)->toMatch('/agent\s+Done \(2 issues\)/')
-        ->and($output)->toMatch('/beast\s+Skipped: already up to date/')
-        ->and($output)->toMatch('/local\s+Done/')
-        ->and($output)->toContain('Success: All nodes are running on version 1.2.3')
-        ->and($output)->not->toContain('[tree]')
-        ->and($output)->not->toContain('[step]')
-        ->and($output)->not->toContain('status: succeeded')
-        ->and($output)->not->toContain('"success"');
+        ->and($output)
+        ->not->toMatch('/local\s+Updating CLI/')->and($output)->toMatch('/Checking for updates\s+Checking\b/')->and(
+            $output,
+        )->toMatch('/Checking fleet versions\s+Checking\b/')->and($output)->toMatch(
+            '/Checking for updates\s+Done: latest version is 1.2.3/',
+        )->and($output)->toMatch('/Checking fleet versions\s+Done: 2 outdated nodes found/')->and($output)->toMatch(
+            '/gateway\s+Downloading 1\.2\.3 assets/',
+        )->and($output)->toMatch('/gateway\s+Updating gateway app/')->and($output)->toMatch(
+            '/gateway\s+Replacing cli binary/',
+        )->and($output)->toMatch('/gateway\s+Running doctor/')->and($output)->toMatch('/gateway\s+Done/')->and(
+            $output,
+        )->toMatch('/local\s+Waiting\b/')->and($output)->toMatch('/agent\s+Done \(2 issues\)/')->and($output)->toMatch(
+            '/beast\s+Skipped: already up to date/',
+        )->and($output)->toMatch('/local\s+Done/')->and($output)->toContain(
+            'Success: All nodes are running on version 1.2.3',
+        )->and($output)
+        ->not->toContain('[tree]')->and($output)
+        ->not->toContain('[step]')->and($output)
+        ->not->toContain('status: succeeded')->and($output)
+        ->not->toContain('"success"');
 });
 
 it('renders all-current short-circuit footer when 0 outdated nodes', function (): void {
@@ -691,87 +947,164 @@ it('renders all-current short-circuit footer when 0 outdated nodes', function ()
         // create a spurious gateway row in the short-circuit.
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Update runner started']],
         ['type' => ProgressEventType::Step, 'payload' => ['message' => 'Fleet update lease acquired']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: all nodes running on 1.2.3']],
-        ['type' => ProgressEventType::Complete, 'payload' => [
-            'status' => 'skipped',
-            'target_version' => '1.2.3',
-            'manifest_version' => '1.2.3',
-            'skipped' => true,
-        ]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'running', 'message' => 'Checking'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-fleet-versions', 'status' => 'running', 'message' => 'Checking'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: all nodes running on 1.2.3',
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'status' => 'skipped',
+                'target_version' => '1.2.3',
+                'manifest_version' => '1.2.3',
+                'skipped' => true,
+            ],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit nodes')
-        ->and($output)->toContain('│')
-        ->and($output)->toMatch('/Checking for updates\s+Checking\b/')
-        ->and($output)->toMatch('/Checking fleet versions\s+Checking\b/')
-        ->and($output)->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
-        ->and($output)->toMatch('/Checking fleet versions\s+Done: all nodes running on 1.2.3/')
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toContain('Updating Orbit nodes')
+        ->and($output)
+        ->toContain('│')
+        ->and($output)
+        ->toMatch('/Checking for updates\s+Checking\b/')
+        ->and($output)
+        ->toMatch('/Checking fleet versions\s+Checking\b/')
+        ->and($output)
+        ->toMatch('/Checking for updates\s+Done: latest version is 1.2.3/')
+        ->and($output)
+        ->toMatch('/Checking fleet versions\s+Done: all nodes running on 1.2.3/')
         // No gateway/local/workload rows appear
-        ->and($output)->not->toMatch('/gateway\s+/')
-        ->and($output)->not->toMatch('/local\s+/')
-        ->and($output)->not->toMatch('/\bagent\s+/')
-        ->and($output)->not->toMatch('/\bbeast\s+/')
-        ->and($output)->toContain('Skipped: 1.2.3 is already installed on all nodes');
+        ->and($output)
+        ->not->toMatch('/gateway\s+/')->and($output)
+        ->not->toMatch('/local\s+/')->and($output)
+        ->not->toMatch('/\bagent\s+/')->and($output)
+        ->not->toMatch('/\bbeast\s+/')->and($output)->toContain('Skipped: 1.2.3 is already installed on all nodes');
 });
 
 it('renders per-node sub-stages for workload nodes', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 1 outdated node found',
+                'update_targets' => ['gateway', 'local', 'beast'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Running doctor']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Running doctor'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit nodes')
-        ->and($output)->toContain('│')
-        ->and($output)->toMatch('/beast\s+Downloading 1\.2\.3/')
-        ->and($output)->toMatch('/beast\s+Replacing cli binary/')
-        ->and($output)->toMatch('/beast\s+Running doctor/')
-        ->and($output)->toMatch('/beast\s+Done/');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toContain('Updating Orbit nodes')
+        ->and($output)
+        ->toContain('│')
+        ->and($output)
+        ->toMatch('/beast\s+Downloading 1\.2\.3/')
+        ->and($output)
+        ->toMatch('/beast\s+Replacing cli binary/')
+        ->and($output)
+        ->toMatch('/beast\s+Running doctor/')
+        ->and($output)
+        ->toMatch('/beast\s+Done/');
 });
 
 it('renders the initial idle tree with a spacer before every row and the footer', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toMatch('/Updating Orbit nodes.*│.*Checking for updates.*│.*Checking fleet versions.*│.*Working\.\.\./s');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toMatch('/Updating Orbit nodes.*│.*Checking for updates.*│.*Checking fleet versions.*│.*Working\.\.\./s');
 });
 
 it('reveals fan-out rows after outdated fleet check before any gateway step in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'beast', 'agent']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'beast', 'agent'],
+            ],
+        ],
         ['type' => ProgressEventType::Error, 'payload' => ['message' => 'Update aborted']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(1)
-        ->and($output)->toMatch('/local\s+Waiting\b/')
-        ->and($output)->toMatch('/beast\s+Waiting\b/')
-        ->and($output)->toMatch('/agent\s+Waiting\b/')
-        ->and($output)->not->toMatch('/gateway\s+Downloading/')
-        ->and($output)->not->toMatch('/gateway\s+Done/');
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toMatch('/local\s+Waiting\b/')
+        ->and($output)
+        ->toMatch('/beast\s+Waiting\b/')
+        ->and($output)
+        ->toMatch('/agent\s+Waiting\b/')
+        ->and($output)
+        ->not->toMatch('/gateway\s+Downloading/')->and($output)
+        ->not->toMatch('/gateway\s+Done/');
 
     assertProgressTargetOrder($output, ['gateway', 'local', 'beast', 'agent']);
 });
@@ -779,57 +1112,118 @@ it('reveals fan-out rows after outdated fleet check before any gateway step in h
 it('keeps workload rows on Waiting while the gateway row is active in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'fail', 'message' => 'Gateway health failed']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'agent', 'beast'],
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'fail', 'message' => 'Gateway health failed'],
+        ],
         ['type' => ProgressEventType::Error, 'payload' => ['message' => 'Gateway health failed']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(1)
-        ->and($output)->toMatch('/gateway\s+Replacing cli binary/')
-        ->and($output)->toMatch('/local\s+Waiting\b/')
-        ->and($output)->toMatch('/beast\s+Waiting\b/')
-        ->and($output)->not->toMatch('/beast\s+Downloading 1\.2\.3/');
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toMatch('/gateway\s+Replacing cli binary/')
+        ->and($output)
+        ->toMatch('/local\s+Waiting\b/')
+        ->and($output)
+        ->toMatch('/beast\s+Waiting\b/')
+        ->and($output)
+        ->not->toMatch('/beast\s+Downloading 1\.2\.3/');
 });
 
 it('shows parallel fan-out rows with distinct active sub-stages in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'agent', 'beast'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'running', 'message' => 'Downloading 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Replacing cli binary'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toMatch('/agent\s+Downloading 1\.2\.3/')
-        ->and($output)->toMatch('/beast\s+Replacing cli binary/');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toMatch('/agent\s+Downloading 1\.2\.3/')
+        ->and($output)
+        ->toMatch('/beast\s+Replacing cli binary/');
 });
 
 it('renders every settled fan-out node row after workloads finish out of order in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'beast', 'agent']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'beast', 'agent'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.agent', 'status' => 'done', 'message' => 'Workload node agent updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toMatch('/gateway\s+Done/')
-        ->and($output)->toMatch('/local\s+Done/')
-        ->and($output)->toMatch('/agent\s+Done/')
-        ->and($output)->toMatch('/beast\s+Done/');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toMatch('/gateway\s+Done/')
+        ->and($output)
+        ->toMatch('/local\s+Done/')
+        ->and($output)
+        ->toMatch('/agent\s+Done/')
+        ->and($output)
+        ->toMatch('/beast\s+Done/');
 
     assertProgressTargetOrder($output, ['gateway', 'local', 'beast', 'agent']);
 });
@@ -837,38 +1231,45 @@ it('renders every settled fan-out node row after workloads finish out of order i
 it('renders the Updating Orbit nodes title in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toContain('Updating Orbit nodes');
+    expect($exitCode)->toBe(0)->and($output)->toContain('Updating Orbit nodes');
 });
 
 it('reports fleet lease conflicts in json mode with the gateway terminal frame', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Error, 'payload' => [
-            'exit_code' => 1,
-            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
-            'data' => [
-                'code' => 'update_lease_conflict',
-                'resource' => 'fleet:update-all',
-                'resource_type' => 'fleet',
-                'resource_key' => 'update-all',
-                'conflicting_operation_id' => 'other-run',
-                'expires_at' => '2026-06-21T12:00:00+00:00',
+        [
+            'type' => ProgressEventType::Error,
+            'payload' => [
+                'exit_code' => 1,
+                'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+                'data' => [
+                    'code' => 'update_lease_conflict',
+                    'resource' => 'fleet:update-all',
+                    'resource_type' => 'fleet',
+                    'resource_key' => 'update-all',
+                    'conflicting_operation_id' => 'other-run',
+                    'expires_at' => '2026-06-21T12:00:00+00:00',
+                ],
             ],
-        ]],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
 
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($decoded)->toBe([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded)
+        ->toBe([
             'event' => 'error',
             'data' => [
                 'exit_code' => 1,
@@ -888,78 +1289,134 @@ it('reports fleet lease conflicts in json mode with the gateway terminal frame',
 it('renders a friendly fleet lease conflict without local waiting rows in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found']],
-        ['type' => ProgressEventType::Error, 'payload' => [
-            'exit_code' => 1,
-            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
-            'data' => [
-                'code' => 'update_lease_conflict',
-                'resource' => 'fleet:update-all',
-                'resource_type' => 'fleet',
-                'resource_key' => 'update-all',
-                'conflicting_operation_id' => 'other-run',
-                'conflicting_node' => 'ingress',
-                'expires_at' => '2026-06-21T12:00:00+00:00',
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
             ],
-        ]],
+        ],
+        [
+            'type' => ProgressEventType::Error,
+            'payload' => [
+                'exit_code' => 1,
+                'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+                'data' => [
+                    'code' => 'update_lease_conflict',
+                    'resource' => 'fleet:update-all',
+                    'resource_type' => 'fleet',
+                    'resource_key' => 'update-all',
+                    'conflicting_operation_id' => 'other-run',
+                    'conflicting_node' => 'ingress',
+                    'expires_at' => '2026-06-21T12:00:00+00:00',
+                ],
+            ],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(1)
-        ->and($output)->toMatch('/gateway\s+Failed: update:all is still being performed by ingress/')
-        ->and($output)->not->toContain('already leased')
-        ->and($output)->not->toMatch('/local\s+Waiting/')
-        ->and($output)->not->toMatch('/\bbeast\s+Waiting/')
-        ->and($output)->toContain('Failed')
-        ->and($this->localUpdater->calls)->toBe([]);
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toMatch('/gateway\s+Failed: update:all is still being performed by ingress/')
+        ->and($output)
+        ->not->toContain('already leased')->and($output)
+        ->not->toMatch('/local\s+Waiting/')->and($output)
+        ->not->toMatch('/\bbeast\s+Waiting/')->and($output)->toContain(
+            'Failed',
+        )->and($this->localUpdater->calls)->toBe([]);
 });
 
 it('falls back to another node when fleet lease conflict data omits conflicting_node in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: all nodes running on 1.2.3']],
-        ['type' => ProgressEventType::Error, 'payload' => [
-            'exit_code' => 1,
-            'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
-            'data' => [
-                'code' => 'update_lease_conflict',
-                'resource' => 'fleet:update-all',
-                'resource_type' => 'fleet',
-                'resource_key' => 'update-all',
-                'conflicting_operation_id' => 'other-run',
-                'expires_at' => '2026-06-21T12:00:00+00:00',
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: all nodes running on 1.2.3',
             ],
-        ]],
+        ],
+        [
+            'type' => ProgressEventType::Error,
+            'payload' => [
+                'exit_code' => 1,
+                'message' => 'Update resource [fleet:update-all] is already leased by operation [other-run] until 2026-06-21T12:00:00+00:00.',
+                'data' => [
+                    'code' => 'update_lease_conflict',
+                    'resource' => 'fleet:update-all',
+                    'resource_type' => 'fleet',
+                    'resource_key' => 'update-all',
+                    'conflicting_operation_id' => 'other-run',
+                    'expires_at' => '2026-06-21T12:00:00+00:00',
+                ],
+            ],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(1)
-        ->and($output)->toMatch('/gateway\s+Failed: update:all is still being performed by another node/');
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toMatch('/gateway\s+Failed: update:all is still being performed by another node/');
 });
 
 it('keeps fan-out rows on Waiting and fails the footer when the gateway row fails in human mode', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 2 outdated nodes found', 'update_targets' => ['gateway', 'local', 'agent', 'beast']]],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'fail', 'message' => 'Gateway health failed']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 2 outdated nodes found',
+                'update_targets' => ['gateway', 'local', 'agent', 'beast'],
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'running', 'message' => 'Downloading 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'gateway', 'status' => 'fail', 'message' => 'Gateway health failed'],
+        ],
         ['type' => ProgressEventType::Error, 'payload' => ['message' => 'Gateway health failed']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(1)
-        ->and($output)->toMatch('/gateway\s+Failed\b.*Gateway health failed/')
-        ->and($output)->toMatch('/local\s+Waiting\b/')
-        ->and($output)->toMatch('/beast\s+Waiting\b/')
-        ->and($output)->not->toMatch('/beast\s+Downloading 1\.2\.3/')
-        ->and($output)->toContain('Failed')
-        ->and($this->localUpdater->calls)->toBe([]);
+    expect($exitCode)
+        ->toBe(1)
+        ->and($output)
+        ->toMatch('/gateway\s+Failed\b.*Gateway health failed/')
+        ->and($output)
+        ->toMatch('/local\s+Waiting\b/')
+        ->and($output)
+        ->toMatch('/beast\s+Waiting\b/')
+        ->and($output)
+        ->not
+        ->toMatch('/beast\s+Downloading 1\.2\.3/')
+        ->and($output)
+        ->toContain('Failed')
+        ->and($this->localUpdater->calls)
+        ->toBe([]);
 });
 
 it('succeeds with a success footer when only doctor issue counts are reported', function (): void {
@@ -967,19 +1424,41 @@ it('succeeds with a success footer when only doctor issue counts are reported', 
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 1 outdated node found',
+                'update_targets' => ['gateway', 'local', 'beast'],
+            ],
+        ],
         ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'done', 'message' => '']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated (4 issues)']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'workload.beast',
+                'status' => 'done',
+                'message' => 'Workload node beast updated (4 issues)',
+            ],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($output)->toMatch('/beast\s+Done \(4 issues\)/')
-        ->and($output)->toMatch('/local\s+Done \(2 issues\)/')
-        ->and($output)->toContain('Success: All nodes are running on version 1.2.3');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($output)
+        ->toMatch('/beast\s+Done \(4 issues\)/')
+        ->and($output)
+        ->toMatch('/local\s+Done \(2 issues\)/')
+        ->and($output)
+        ->toContain('Success: All nodes are running on version 1.2.3');
 });
 
 it('settles the local fan-out node to Done with the issue count when the local doctor reports drift', function (): void {
@@ -987,37 +1466,63 @@ it('settles the local fan-out node to Done with the issue count when the local d
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 1 outdated node found',
+                'update_targets' => ['gateway', 'local', 'beast'],
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
+    expect($exitCode)
+        ->toBe(0)
         // Local runs as a fan-out target after the gateway phase.
-        ->and($this->localUpdater->calls)->toBe(['download', 'replace', 'doctor'])
-        ->and($output)->toMatch('/local\s+Done \(2 issues\)/');
+        ->and($this->localUpdater->calls)
+        ->toBe(['download', 'replace', 'doctor'])
+        ->and($output)
+        ->toMatch('/local\s+Done \(2 issues\)/');
 });
 
 it('skips the local update in json mode on the all-current short-circuit', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => [
-            'exit_code' => 0,
-            'data' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true],
-        ]],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'exit_code' => 0,
+                'data' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true],
+            ],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all', ['--json' => true]);
 
-    expect($exitCode)->toBe(0)
+    expect($exitCode)
+        ->toBe(0)
         // No local download/replace/doctor when the fleet is all-current.
-        ->and($this->localUpdater->calls)->toBe([])
-        ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe([
+        ->and($this->localUpdater->calls)
+        ->toBe([])
+        ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+        ->toBe([
             'event' => 'complete',
-            'data' => ['exit_code' => 0, 'data' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true]],
+            'data' => [
+                'exit_code' => 0,
+                'data' => ['status' => 'skipped', 'target_version' => '1.2.3', 'skipped' => true],
+            ],
         ]);
 });
 
@@ -1026,18 +1531,35 @@ it('renders the local fan-out node as skipped when the caller is already on the 
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: 1 outdated node found',
+                'update_targets' => ['gateway', 'local', 'beast'],
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
         ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
+    expect($exitCode)
+        ->toBe(0)
         // Local is already current → no download/replace/doctor; row settles skipped.
-        ->and($this->localUpdater->calls)->toBe([])
-        ->and($output)->toMatch('/local\s+Skipped: already up to date/');
+        ->and($this->localUpdater->calls)
+        ->toBe([])
+        ->and($output)
+        ->toMatch('/local\s+Skipped: already up to date/');
 });
 
 it('runs the local fan-out for topology candidate manifests when the caller is already on the target version', function (): void {
@@ -1045,24 +1567,46 @@ it('runs the local fan-out for topology candidate manifests when the caller is a
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: release candidate assets will be reapplied to 1.2.3', 'update_targets' => ['gateway', 'local', 'beast']]],
-        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
-        ['type' => ProgressEventType::Complete, 'payload' => [
-            'status' => 'succeeded',
-            'target_version' => '1.2.3',
-            'manifest_source' => 'topology-candidate',
-            'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
-        ]],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3'],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => [
+                'key' => 'check-fleet-versions',
+                'status' => 'done',
+                'message' => 'Done: release candidate assets will be reapplied to 1.2.3',
+                'update_targets' => ['gateway', 'local', 'beast'],
+            ],
+        ],
+        [
+            'type' => ProgressEventType::Step,
+            'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated'],
+        ],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'status' => 'succeeded',
+                'target_version' => '1.2.3',
+                'manifest_source' => 'topology-candidate',
+                'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+            ],
+        ],
     ]));
 
     [$exitCode, $output] = runCommand($this, 'update:all');
 
-    expect($exitCode)->toBe(0)
-        ->and($this->localUpdater->calls)->toBe(['download', 'replace', 'doctor'])
-        ->and($this->localUpdater->binaryUrls[0] ?? '')->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-')
-        ->and($output)->toMatch('/local\s+Done/')
-        ->and($output)->not->toMatch('/local\s+Skipped: already up to date/');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($this->localUpdater->calls)
+        ->toBe(['download', 'replace', 'doctor'])
+        ->and($this->localUpdater->binaryUrls[0] ?? '')
+        ->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-')
+        ->and($output)
+        ->toMatch('/local\s+Done/')
+        ->and($output)
+        ->not->toMatch('/local\s+Skipped: already up to date/');
 });
 
 it('skips the local download in json mode when the caller is already on the target version', function (): void {
@@ -1070,13 +1614,15 @@ it('skips the local download in json mode when the caller is already on the targ
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3']],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3'],
+        ],
     ]));
 
     [$exitCode] = runCommand($this, 'update:all', ['--json' => true]);
 
-    expect($exitCode)->toBe(0)
-        ->and($this->localUpdater->calls)->toBe([]);
+    expect($exitCode)->toBe(0)->and($this->localUpdater->calls)->toBe([]);
 });
 
 it('runs the local download in json mode for topology candidate manifests when the caller is already on the target version', function (): void {
@@ -1084,22 +1630,28 @@ it('runs the local download in json mode for topology candidate manifests when t
 
     fakeGateway(fakeUpdateAllStartEnvelope());
     app()->instance(GatewayOperationFollower::class, new UpdateAllCommandFakeFollower([
-        ['type' => ProgressEventType::Complete, 'payload' => [
-            'exit_code' => 0,
-            'data' => [
-                'updates' => [],
-                'target_version' => '1.2.3',
-                'manifest_source' => 'topology-candidate',
-                'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => [
+                'exit_code' => 0,
+                'data' => [
+                    'updates' => [],
+                    'target_version' => '1.2.3',
+                    'manifest_source' => 'topology-candidate',
+                    'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+                ],
             ],
-        ]],
+        ],
     ]));
 
     [$exitCode] = runCommand($this, 'update:all', ['--json' => true]);
 
-    expect($exitCode)->toBe(0)
-        ->and($this->localUpdater->calls)->toBe(['download', 'replace', 'doctor'])
-        ->and($this->localUpdater->binaryUrls[0] ?? '')->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($this->localUpdater->calls)
+        ->toBe(['download', 'replace', 'doctor'])
+        ->and($this->localUpdater->binaryUrls[0] ?? '')
+        ->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-');
 });
 
 it('returns failure exit code and json output for terminal operation errors', function (): void {
@@ -1114,8 +1666,10 @@ it('returns failure exit code and json output for terminal operation errors', fu
 
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($decoded)->toBe([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded)
+        ->toBe([
             'event' => 'error',
             'data' => ['message' => 'Gateway health failed'],
         ]);
@@ -1130,12 +1684,19 @@ it('surfaces gateway start failures after the local update preflight succeeds', 
 
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-    Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-        && $request->url() === 'https://gateway.test/api/update/all/start');
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/update/all/start'
+        ),
+    );
 
-    expect($exitCode)->toBe(1)
-        ->and($decoded['error']['code'])->toBe('authorization_failed')
-        ->and($decoded['error']['message'])->toBe('Missing gateway admin authority.');
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('authorization_failed')
+        ->and($decoded['error']['message'])
+        ->toBe('Missing gateway admin authority.');
 });
 
 it('follows the durable operation through reconnects in the command path', function (): void {
@@ -1158,18 +1719,14 @@ it('follows the durable operation through reconnects in the command path', funct
 
             if (count($lastEventIds) === 1) {
                 return Http::response(
-                    "id: 5\n"
-                    ."event: step\n"
-                    ."data: {\"message\":\"runner started\"}\n\n",
+                    "id: 5\n"."event: step\n"."data: {\"message\":\"runner started\"}\n\n",
                     200,
                     ['Content-Type' => 'text/event-stream'],
                 );
             }
 
             return Http::response(
-                "id: 6\n"
-                ."event: complete\n"
-                ."data: {\"exit_code\":0}\n\n",
+                "id: 6\n"."event: complete\n"."data: {\"exit_code\":0}\n\n",
                 200,
                 ['Content-Type' => 'text/event-stream'],
             );
@@ -1184,9 +1741,12 @@ it('follows the durable operation through reconnects in the command path', funct
 
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($lastEventIds)->toBe([null, '5'])
-        ->and($decoded)->toBe([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($lastEventIds)
+        ->toBe([null, '5'])
+        ->and($decoded)
+        ->toBe([
             'event' => 'complete',
             'data' => ['exit_code' => 0],
         ]);
@@ -1203,8 +1763,7 @@ it('returns gateway failure when the start response does not include an events u
 
     $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+    expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
 });
 
 /**
@@ -1291,9 +1850,13 @@ function newUpdateAllPtyTargetState(): array
  * }  $state
  * @param  array{row: int, spinner: string}|null  $observation
  */
-function recordUpdateAllPtyTargetState(array &$state, ?array $observation, string $capture, bool $continueAfterCaptured = false): void
-{
-    if ($observation === null || ($state['captured'] && ! $continueAfterCaptured)) {
+function recordUpdateAllPtyTargetState(
+    array &$state,
+    ?array $observation,
+    string $capture,
+    bool $continueAfterCaptured = false,
+): void {
+    if ($observation === null || $state['captured'] && ! $continueAfterCaptured) {
         return;
     }
 
@@ -1308,9 +1871,11 @@ function recordUpdateAllPtyTargetState(array &$state, ?array $observation, strin
         updateAllLivenessObserveSpinner($state['cadence_state'], $observation['spinner'], updateAllLivenessNowUs());
     }
 
-    if ($state['row_identity_stable']
+    if (
+        $state['row_identity_stable']
         && isset($state['observed_states'][VirtualTerminalScreen::SPINNER_CYAN_OPEN])
-        && isset($state['observed_states'][VirtualTerminalScreen::SPINNER_CYAN_FILLED])) {
+        && isset($state['observed_states'][VirtualTerminalScreen::SPINNER_CYAN_FILLED])
+    ) {
         $state['captured'] = true;
         $state['transcript'] = $capture;
     }
@@ -1348,8 +1913,11 @@ function unusedUpdateAllGatewayLivenessPort(): int
 /**
  * @return array{process: resource, pipes: array<int, resource>}
  */
-function startUpdateAllGatewayLivenessRouter(int $port, int $startDelayMicroseconds, int $silentDelayMicroseconds): array
-{
+function startUpdateAllGatewayLivenessRouter(
+    int $port,
+    int $startDelayMicroseconds,
+    int $silentDelayMicroseconds,
+): array {
     $environment = getenv();
 
     if (! is_array($environment)) {
@@ -1461,131 +2029,131 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
     $delay = max(0, $replaceDelayMicroseconds);
 
     $source = <<<PHP
-<?php
+        <?php
 
-declare(strict_types=1);
+        declare(strict_types=1);
 
-use App\Services\GatewayApiClient;
-use App\Services\GatewayOperationEventStreamClient;
-use App\Services\GatewayOperationFollower;
-use App\Services\Updates\RunsLocalUpdate;
-use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Support\Facades\Http;
-use Orbit\Core\Http\JsonEnvelope;
-use Orbit\Core\Progress\ProgressEventType;
-use Orbit\Core\Progress\VirtualTerminalScreen;
-use Symfony\Component\Console\Input\ArgvInput;
-use Symfony\Component\Console\Output\StreamOutput;
+        use App\Services\GatewayApiClient;
+        use App\Services\GatewayOperationEventStreamClient;
+        use App\Services\GatewayOperationFollower;
+        use App\Services\Updates\RunsLocalUpdate;
+        use Illuminate\Contracts\Console\Kernel;
+        use Illuminate\Support\Facades\Http;
+        use Orbit\Core\Http\JsonEnvelope;
+        use Orbit\Core\Progress\ProgressEventType;
+        use Orbit\Core\Progress\VirtualTerminalScreen;
+        use Symfony\Component\Console\Input\ArgvInput;
+        use Symfony\Component\Console\Output\StreamOutput;
 
-define('LARAVEL_START', microtime(true));
+        define('LARAVEL_START', microtime(true));
 
-require '{$escapedCliRoot}/vendor/autoload.php';
+        require '{$escapedCliRoot}/vendor/autoload.php';
 
-/** @var \LaravelZero\Framework\Application \$app */
-\$app = require '{$escapedCliRoot}/bootstrap/app.php';
-/** @var Kernel \$kernel */
-\$kernel = \$app->make(Kernel::class);
-\$kernel->bootstrap();
+        /** @var \LaravelZero\Framework\Application \$app */
+        \$app = require '{$escapedCliRoot}/bootstrap/app.php';
+        /** @var Kernel \$kernel */
+        \$kernel = \$app->make(Kernel::class);
+        \$kernel->bootstrap();
 
-config()->set('orbit.gateway.url', 'https://gateway.test');
-config()->set('orbit.gateway.timeout', 30);
-config()->set('app.version', '0.0.0');
-\$app->forgetInstance(GatewayApiClient::class);
-\$app->forgetInstance(GatewayOperationEventStreamClient::class);
-\$app->forgetInstance(GatewayOperationFollower::class);
+        config()->set('orbit.gateway.url', 'https://gateway.test');
+        config()->set('orbit.gateway.timeout', 30);
+        config()->set('app.version', '0.0.0');
+        \$app->forgetInstance(GatewayApiClient::class);
+        \$app->forgetInstance(GatewayOperationEventStreamClient::class);
+        \$app->forgetInstance(GatewayOperationFollower::class);
 
-Http::fake(['https://gateway.test/*' => Http::response(
-    JsonEnvelope::success([
-        'operation_run' => ['id' => 'run-1', 'type' => 'update:all', 'status' => 'queued'],
-        'update_plan' => [
-            'target_version' => '1.2.3',
-            'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', 64),
-            'manifest_source' => 'github-release',
-            'manifest_version' => '1.2.3',
-        ],
-        'events_url' => '/api/operations/run-1/events',
-    ]),
-    200,
-)]);
+        Http::fake(['https://gateway.test/*' => Http::response(
+            JsonEnvelope::success([
+                'operation_run' => ['id' => 'run-1', 'type' => 'update:all', 'status' => 'queued'],
+                'update_plan' => [
+                    'target_version' => '1.2.3',
+                    'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:'.str_repeat('a', 64),
+                    'manifest_source' => 'github-release',
+                    'manifest_version' => '1.2.3',
+                ],
+                'events_url' => '/api/operations/run-1/events',
+            ]),
+            200,
+        )]);
 
-\$app->instance(GatewayOperationFollower::class, new class extends GatewayOperationFollower
-{
-    public function __construct() {}
+        \$app->instance(GatewayOperationFollower::class, new class extends GatewayOperationFollower
+        {
+            public function __construct() {}
 
-    /** @param  callable(ProgressEventType, array<string, mixed>): void  \$onEvent */
-    public function follow(string \$eventsUrl, callable \$onEvent): array
-    {
-        foreach ([
-            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
-            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
-            ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
-            ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
-        ] as \$event) {
-            \$onEvent(\$event['type'], \$event['payload']);
-        }
+            /** @param  callable(ProgressEventType, array<string, mixed>): void  \$onEvent */
+            public function follow(string \$eventsUrl, callable \$onEvent): array
+            {
+                foreach ([
+                    ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-updates', 'status' => 'done', 'message' => 'Done: latest version is 1.2.3']],
+                    ['type' => ProgressEventType::Step, 'payload' => ['key' => 'check-fleet-versions', 'status' => 'done', 'message' => 'Done: 1 outdated node found', 'update_targets' => ['gateway', 'local', 'beast']]],
+                    ['type' => ProgressEventType::Step, 'payload' => ['key' => 'workload.beast', 'status' => 'done', 'message' => 'Workload node beast updated']],
+                    ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']],
+                ] as \$event) {
+                    \$onEvent(\$event['type'], \$event['payload']);
+                }
 
-        return ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']];
-    }
-});
-
-\$app->instance(RunsLocalUpdate::class, new class({$delay}) implements RunsLocalUpdate
-{
-    public function __construct(private int \$replaceDelayMicroseconds) {}
-
-    public function pullSource(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
-    public function downloadBinary(): array
-    {
-        return [
-            'successful' => true,
-            'exit_code' => 0,
-            'output' => '',
-            'staged_path' => '/tmp/staged-orbit',
-            'version' => '1.2.3',
-        ];
-    }
-
-    public function replaceBinary(string \$stagedPath, string \$version): array
-    {
-        if (\$this->replaceDelayMicroseconds > 0) {
-            \$deadline = hrtime(true) + (\$this->replaceDelayMicroseconds * 1000);
-
-            while (hrtime(true) < \$deadline) {
-                usleep(50_000);
+                return ['type' => ProgressEventType::Complete, 'payload' => ['status' => 'succeeded', 'target_version' => '1.2.3']];
             }
+        });
+
+        \$app->instance(RunsLocalUpdate::class, new class({$delay}) implements RunsLocalUpdate
+        {
+            public function __construct(private int \$replaceDelayMicroseconds) {}
+
+            public function pullSource(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+
+            public function downloadBinary(): array
+            {
+                return [
+                    'successful' => true,
+                    'exit_code' => 0,
+                    'output' => '',
+                    'staged_path' => '/tmp/staged-orbit',
+                    'version' => '1.2.3',
+                ];
+            }
+
+            public function replaceBinary(string \$stagedPath, string \$version): array
+            {
+                if (\$this->replaceDelayMicroseconds > 0) {
+                    \$deadline = hrtime(true) + (\$this->replaceDelayMicroseconds * 1000);
+
+                    while (hrtime(true) < \$deadline) {
+                        usleep(50_000);
+                    }
+                }
+
+                return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
+            }
+
+            public function runDoctor(): array
+            {
+                return ['issues' => 0];
+            }
+
+            public function installDependencies(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+
+            public function runMigrations(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+        });
+
+        if (function_exists('stream_set_write_buffer') && defined('STDOUT') && is_resource(STDOUT)) {
+            stream_set_write_buffer(STDOUT, 0);
         }
 
-        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
-    }
+        \$output = new StreamOutput(STDOUT, Symfony\Component\Console\Output\OutputInterface::VERBOSITY_NORMAL, true);
 
-    public function runDoctor(): array
-    {
-        return ['issues' => 0];
-    }
+        exit(\$kernel->handle(new ArgvInput(['orbit', 'update:all']), \$output));
 
-    public function installDependencies(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-
-    public function runMigrations(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-});
-
-if (function_exists('stream_set_write_buffer') && defined('STDOUT') && is_resource(STDOUT)) {
-    stream_set_write_buffer(STDOUT, 0);
-}
-
-\$output = new StreamOutput(STDOUT, Symfony\Component\Console\Output\OutputInterface::VERBOSITY_NORMAL, true);
-
-exit(\$kernel->handle(new ArgvInput(['orbit', 'update:all']), \$output));
-
-PHP;
+        PHP;
 
     file_put_contents($captureScript, $source);
 
@@ -1604,84 +2172,84 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
     $escapedGatewayUrl = addslashes($gatewayUrl);
 
     $source = <<<PHP
-<?php
+        <?php
 
-declare(strict_types=1);
+        declare(strict_types=1);
 
-use App\Services\GatewayApiClient;
-use App\Services\GatewayOperationEventStreamClient;
-use App\Services\GatewayOperationFollower;
-use App\Services\Updates\RunsLocalUpdate;
-use Illuminate\Contracts\Console\Kernel;
-use Symfony\Component\Console\Input\ArgvInput;
-use Symfony\Component\Console\Output\StreamOutput;
+        use App\Services\GatewayApiClient;
+        use App\Services\GatewayOperationEventStreamClient;
+        use App\Services\GatewayOperationFollower;
+        use App\Services\Updates\RunsLocalUpdate;
+        use Illuminate\Contracts\Console\Kernel;
+        use Symfony\Component\Console\Input\ArgvInput;
+        use Symfony\Component\Console\Output\StreamOutput;
 
-define('LARAVEL_START', microtime(true));
+        define('LARAVEL_START', microtime(true));
 
-require '{$escapedCliRoot}/vendor/autoload.php';
+        require '{$escapedCliRoot}/vendor/autoload.php';
 
-/** @var \LaravelZero\Framework\Application \$app */
-\$app = require '{$escapedCliRoot}/bootstrap/app.php';
-/** @var Kernel \$kernel */
-\$kernel = \$app->make(Kernel::class);
-\$kernel->bootstrap();
+        /** @var \LaravelZero\Framework\Application \$app */
+        \$app = require '{$escapedCliRoot}/bootstrap/app.php';
+        /** @var Kernel \$kernel */
+        \$kernel = \$app->make(Kernel::class);
+        \$kernel->bootstrap();
 
-config()->set('orbit.gateway.url', '{$escapedGatewayUrl}');
-config()->set('orbit.gateway.timeout', 10);
-config()->set('orbit.gateway.operation_follow_reconnect_sleep_ms', 0);
-config()->set('app.version', '0.0.0');
-\$app->forgetInstance(GatewayApiClient::class);
-\$app->forgetInstance(GatewayOperationEventStreamClient::class);
-\$app->forgetInstance(GatewayOperationFollower::class);
+        config()->set('orbit.gateway.url', '{$escapedGatewayUrl}');
+        config()->set('orbit.gateway.timeout', 10);
+        config()->set('orbit.gateway.operation_follow_reconnect_sleep_ms', 0);
+        config()->set('app.version', '0.0.0');
+        \$app->forgetInstance(GatewayApiClient::class);
+        \$app->forgetInstance(GatewayOperationEventStreamClient::class);
+        \$app->forgetInstance(GatewayOperationFollower::class);
 
-\$app->instance(RunsLocalUpdate::class, new class implements RunsLocalUpdate
-{
-    public function pullSource(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
+        \$app->instance(RunsLocalUpdate::class, new class implements RunsLocalUpdate
+        {
+            public function pullSource(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
 
-    public function downloadBinary(): array
-    {
-        return [
-            'successful' => true,
-            'exit_code' => 0,
-            'output' => '',
-            'staged_path' => '/tmp/staged-orbit',
-            'version' => '9.9.9',
-        ];
-    }
+            public function downloadBinary(): array
+            {
+                return [
+                    'successful' => true,
+                    'exit_code' => 0,
+                    'output' => '',
+                    'staged_path' => '/tmp/staged-orbit',
+                    'version' => '9.9.9',
+                ];
+            }
 
-    public function replaceBinary(string \$stagedPath, string \$version): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
-    }
+            public function replaceBinary(string \$stagedPath, string \$version): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
+            }
 
-    public function runDoctor(): array
-    {
-        return ['issues' => 0];
-    }
+            public function runDoctor(): array
+            {
+                return ['issues' => 0];
+            }
 
-    public function installDependencies(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
+            public function installDependencies(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
 
-    public function runMigrations(): array
-    {
-        return ['successful' => true, 'exit_code' => 0, 'output' => ''];
-    }
-});
+            public function runMigrations(): array
+            {
+                return ['successful' => true, 'exit_code' => 0, 'output' => ''];
+            }
+        });
 
-if (function_exists('stream_set_write_buffer') && defined('STDOUT') && is_resource(STDOUT)) {
-    stream_set_write_buffer(STDOUT, 0);
-}
+        if (function_exists('stream_set_write_buffer') && defined('STDOUT') && is_resource(STDOUT)) {
+            stream_set_write_buffer(STDOUT, 0);
+        }
 
-\$output = new StreamOutput(STDOUT, Symfony\Component\Console\Output\OutputInterface::VERBOSITY_NORMAL, true);
+        \$output = new StreamOutput(STDOUT, Symfony\Component\Console\Output\OutputInterface::VERBOSITY_NORMAL, true);
 
-exit(\$kernel->handle(new ArgvInput(['orbit', 'update:all']), \$output));
+        exit(\$kernel->handle(new ArgvInput(['orbit', 'update:all']), \$output));
 
-PHP;
+        PHP;
 
     file_put_contents($captureScript, $source);
 
@@ -1841,7 +2409,13 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
      */
     public array $results = [
         'pull_source' => ['successful' => true, 'exit_code' => 0, 'output' => ''],
-        'download' => ['successful' => true, 'exit_code' => 0, 'output' => '', 'staged_path' => '/tmp/staged-orbit', 'version' => '1.2.3'],
+        'download' => [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'staged_path' => '/tmp/staged-orbit',
+            'version' => '1.2.3',
+        ],
         'install_dependencies' => ['successful' => true, 'exit_code' => 0, 'output' => ''],
         'run_migrations' => ['successful' => true, 'exit_code' => 0, 'output' => ''],
     ];

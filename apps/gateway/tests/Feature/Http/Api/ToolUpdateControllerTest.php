@@ -56,20 +56,32 @@ it('updates host capability expected versions without service instance fields', 
     $shell = new ToolUpdateApiRecordingShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/tools/php-cli/update', [
-        'node' => 'app-update-api-1',
-        'version' => '8.5',
-    ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/tools/php-cli/update',
+        [
+            'node' => 'app-update-api-1',
+            'version' => '8.5',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP],
+    );
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.tool.name', 'php-cli')
         ->assertJsonPath('success.data.tool.version', '8.5');
 
     $tool = NodeTool::query()->where('name', 'php-cli')->firstOrFail();
 
-    expect($tool->expected_version)->toBe('8.5')
-        ->and($tool->getAttributes())->not->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
-        ->and($shell->scripts)->toHaveCount(1);
+    expect($tool->expected_version)
+        ->toBe('8.5')
+        ->and($tool->getAttributes())
+        ->not
+        ->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
+        ->and($shell->scripts)
+        ->toHaveCount(1);
 });
 
 it('does not update database and cache services through tool updates', function (string $tool): void {
@@ -80,18 +92,25 @@ it('does not update database and cache services through tool updates', function 
     $shell = new ToolUpdateApiRecordingShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', "/api/tools/{$tool}/update", [
-        'node' => 'app-update-api-1',
-        'version' => '8',
-    ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        "/api/tools/{$tool}/update",
+        [
+            'node' => 'app-update-api-1',
+            'version' => '8',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP],
+    );
 
-    $response->assertStatus(400)
+    $response
+        ->assertStatus(400)
         ->assertJsonPath('error.code', 'tool.unsupported_action')
         ->assertJsonPath('error.meta.tool', $tool)
         ->assertJsonPath('error.meta.action', 'update');
 
-    expect(NodeTool::query()->count())->toBe(0)
-        ->and($shell->scripts)->toBe([]);
+    expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
 })->with([
     'mysql',
     'postgres',
@@ -110,10 +129,17 @@ it('treats service-style instance selectors as missing tool rows', function (): 
     $shell = new ToolUpdateApiRecordingShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/tools/php-cli/update', [
-        'node' => 'app-update-api-1',
-        'instance' => 'php-cli:8.5',
-    ], [], [], ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/tools/php-cli/update',
+        [
+            'node' => 'app-update-api-1',
+            'instance' => 'php-cli:8.5',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => TOOL_UPDATE_API_CALLER_WG_IP],
+    );
 
     $response->assertNotFound()
         ->assertJsonPath('error.code', 'tool.not_found');

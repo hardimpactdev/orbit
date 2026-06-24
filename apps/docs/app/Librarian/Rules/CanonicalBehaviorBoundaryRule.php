@@ -102,13 +102,20 @@ final readonly class CanonicalBehaviorBoundaryRule implements GroupedRule
      */
     private function section(string $contents, string $heading): ?array
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+        if (
+            preg_match(
+                '/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms',
+                $contents,
+                $matches,
+                PREG_OFFSET_CAPTURE,
+            ) !== 1
+        ) {
             return null;
         }
 
         return [
             'contents' => $matches['section'][0],
-            'line' => $this->lineForOffset($contents, $matches['section'][1]),
+            'line' => $this->lineForOffset($contents, (int) $matches['section'][1]),
         ];
     }
 

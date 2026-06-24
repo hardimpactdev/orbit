@@ -32,16 +32,21 @@ describe('process:logs', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/processes/vite/log')
                 && str_contains($url, 'app=docs')
                 && str_contains($url, 'workspace=feature-docs')
-                && str_contains($url, 'lines=5');
+                && str_contains($url, 'lines=5')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['logs']['runtime_unit'])->toBe('orbit_docs_main_vite')
-            ->and($decoded['success']['meta']['line_count'])->toBe(1);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['logs']['runtime_unit'])
+            ->toBe('orbit_docs_main_vite')
+            ->and($decoded['success']['meta']['line_count'])
+            ->toBe(1);
     });
 
     it('renders bounded log lines for human output', function (): void {
@@ -60,9 +65,12 @@ describe('process:logs', function (): void {
             '--app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('2026-04-30T12:00:00Z Vite ready')
-            ->and($output)->toContain('plain line');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('2026-04-30T12:00:00Z Vite ready')
+            ->and($output)
+            ->toContain('plain line');
     });
 
     it('forwards node context for bounded logs', function (): void {
@@ -88,14 +96,15 @@ describe('process:logs', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/processes/opencode-server/log')
                 && str_contains($url, 'node=app-1')
-                && str_contains($url, 'lines=5');
+                && str_contains($url, 'lines=5')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['logs']['node'])->toBe('app-1');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['logs']['node'])->toBe('app-1');
     });
 
     it('streams followed logs as text and requests the gateway stream endpoint', function (): void {
@@ -118,16 +127,17 @@ describe('process:logs', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/processes/vite/log')
                 && str_contains($url, 'app=docs')
                 && str_contains($url, 'lines=5')
                 && str_contains($url, 'follow=1')
-                && $request->hasHeader('Accept', 'text/plain');
+                && $request->hasHeader('Accept', 'text/plain')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("one\ntwo");
+        expect($exitCode)->toBe(0)->and($output)->toBe("one\ntwo");
     });
 
     it('rejects json output for followed logs before opening a gateway stream', function (): void {
@@ -144,9 +154,12 @@ describe('process:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('json');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('json');
     });
 
     it('fails validation before opening the gateway request when name is missing', function (): void {
@@ -158,9 +171,12 @@ describe('process:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('name');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('name');
     });
 
     it('fails validation before opening the gateway request when lines is invalid', function (): void {
@@ -177,9 +193,12 @@ describe('process:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('lines');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('lines');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -193,7 +212,6 @@ describe('process:logs', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

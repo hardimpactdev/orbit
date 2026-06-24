@@ -10,6 +10,8 @@ class HostKeyMismatch extends RuntimeException
 {
     public static function forHost(string $host, string $expected, string $actual): self
     {
-        return new self("SSH host key fingerprint mismatch for [{$host}]. Expected [{$expected}], observed [{$actual}].");
+        return new self(
+            "SSH host key fingerprint mismatch for [{$host}]. Expected [{$expected}], observed [{$actual}].",
+        );
     }
 }

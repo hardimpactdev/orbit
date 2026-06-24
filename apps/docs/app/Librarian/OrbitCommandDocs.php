@@ -174,16 +174,20 @@ final readonly class OrbitCommandDocs
 
     private function isFamilyDirectory(string $directory): bool
     {
-        return is_dir($directory)
+        return (
+            is_dir($directory)
             && dirname($this->normalizePath($directory)) === $this->normalizePath($this->commandsRoot())
-            && preg_match('/^[1-9]\d*_[a-z0-9]+(?:-[a-z0-9]+)*$/', basename($directory)) === 1;
+            && preg_match('/^[1-9]\d*_[a-z0-9]+(?:-[a-z0-9]+)*$/', basename($directory)) === 1
+        );
     }
 
     private function isCommandDirectory(string $directory, string $familyDirectory): bool
     {
-        return is_dir($directory)
+        return (
+            is_dir($directory)
             && dirname($this->normalizePath($directory)) === $this->normalizePath($familyDirectory)
-            && preg_match('/^[1-9]\d*_[a-z0-9]+(?:-[a-z0-9]+)*$/', basename($directory)) === 1;
+            && preg_match('/^[1-9]\d*_[a-z0-9]+(?:-[a-z0-9]+)*$/', basename($directory)) === 1
+        );
     }
 
     private function normalizePath(string $path): string

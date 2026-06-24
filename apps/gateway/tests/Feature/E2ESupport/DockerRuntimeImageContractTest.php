@@ -11,45 +11,67 @@ pest()->group('e2e', 'e2e-docker-image-contract');
 it('keeps a gateway image build context that excludes host secrets and local artifacts', function (): void {
     $ignore = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile.dockerignore'));
 
-    expect(file_exists(repo_path('docker/orbit-gateway/Dockerfile')))->toBeTrue()
-        ->and(file_exists(repo_path('docker/orbit-gateway/Dockerfile.dockerignore')))->toBeTrue()
-        ->and(file_exists(repo_path('docker/orbit-gateway/entrypoint.sh')))->toBeTrue()
-        ->and($ignore)->toContain('**/.env')
-        ->and($ignore)->toContain('**/vendor')
-        ->and($ignore)->toContain('**/node_modules')
-        ->and($ignore)->toContain('**/tests')
-        ->and($ignore)->toContain('**/build')
-        ->and($ignore)->toContain('**/builds')
-        ->and($ignore)->toContain('!apps/gateway/app/**')
-        ->and($ignore)->toContain('!apps/gateway/resources/views/**')
-        ->and($ignore)->toContain('!packages/core/src/**')
-        ->and($ignore)->toContain('!packages/sdk/src/**')
-        ->and($ignore)->not->toContain('!apps/gateway/**')
-        ->and($ignore)->not->toContain('!apps/reverb/**')
-        ->and($ignore)->not->toContain('!packages/core/**')
-        ->and($ignore)->not->toContain('!packages/sdk/**')
-        ->and($ignore)->toContain('.git')
-        ->and($ignore)->toContain('apps/gateway/database/*.sqlite')
-        ->and($ignore)->toContain('apps/gateway/storage/*.sqlite')
-        ->and($ignore)->toContain('apps/gateway/storage/logs')
-        ->and($ignore)->toContain('apps/gateway/storage/framework')
-        ->and($ignore)->toContain('apps/gateway/storage/app/orbit/ca')
-        ->and($ignore)->toContain('apps/gateway/storage/app/orbit/certs')
-        ->and($ignore)->toContain('apps/gateway/storage/app/orbit/keys');
+    expect(file_exists(repo_path('docker/orbit-gateway/Dockerfile')))
+        ->toBeTrue()
+        ->and(file_exists(repo_path('docker/orbit-gateway/Dockerfile.dockerignore')))
+        ->toBeTrue()
+        ->and(file_exists(repo_path('docker/orbit-gateway/entrypoint.sh')))
+        ->toBeTrue()
+        ->and($ignore)
+        ->toContain('**/.env')
+        ->and($ignore)
+        ->toContain('**/vendor')
+        ->and($ignore)
+        ->toContain('**/node_modules')
+        ->and($ignore)
+        ->toContain('**/tests')
+        ->and($ignore)
+        ->toContain('**/build')
+        ->and($ignore)
+        ->toContain('**/builds')
+        ->and($ignore)
+        ->toContain('!apps/gateway/app/**')
+        ->and($ignore)
+        ->toContain('!apps/gateway/resources/views/**')
+        ->and($ignore)
+        ->toContain('!packages/core/src/**')
+        ->and($ignore)
+        ->toContain('!packages/sdk/src/**')
+        ->and($ignore)
+        ->not->toContain('!apps/gateway/**')->and($ignore)
+        ->not->toContain('!apps/reverb/**')->and($ignore)
+        ->not->toContain('!packages/core/**')->and($ignore)
+        ->not->toContain('!packages/sdk/**')->and($ignore)->toContain('.git')->and($ignore)->toContain(
+            'apps/gateway/database/*.sqlite',
+        )->and($ignore)->toContain('apps/gateway/storage/*.sqlite')->and($ignore)->toContain(
+            'apps/gateway/storage/logs',
+        )->and($ignore)->toContain('apps/gateway/storage/framework')->and($ignore)->toContain(
+            'apps/gateway/storage/app/orbit/ca',
+        )->and($ignore)->toContain('apps/gateway/storage/app/orbit/certs')->and($ignore)->toContain(
+            'apps/gateway/storage/app/orbit/keys',
+        );
 });
 
 it('keeps a self-contained Reverb image build context separate from gateway', function (): void {
     $dockerfile = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile'));
     $ignore = file_get_contents(repo_path('docker/orbit-reverb/Dockerfile.dockerignore'));
 
-    expect(file_exists(repo_path('docker/orbit-reverb/Dockerfile')))->toBeTrue()
-        ->and(file_exists(repo_path('docker/orbit-reverb/Dockerfile.dockerignore')))->toBeTrue()
-        ->and($dockerfile)->toContain('COPY apps/reverb /app')
-        ->and($dockerfile)->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts')
-        ->and($dockerfile)->toContain('LABEL orbit.websocket.self_contained="true"')
-        ->and($ignore)->toContain('!apps/reverb/**')
-        ->and($ignore)->toContain('**/vendor')
-        ->and($ignore)->not->toContain('!apps/gateway/**');
+    expect(file_exists(repo_path('docker/orbit-reverb/Dockerfile')))
+        ->toBeTrue()
+        ->and(file_exists(repo_path('docker/orbit-reverb/Dockerfile.dockerignore')))
+        ->toBeTrue()
+        ->and($dockerfile)
+        ->toContain('COPY apps/reverb /app')
+        ->and($dockerfile)
+        ->toContain('composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-scripts')
+        ->and($dockerfile)
+        ->toContain('LABEL orbit.websocket.self_contained="true"')
+        ->and($ignore)
+        ->toContain('!apps/reverb/**')
+        ->and($ignore)
+        ->toContain('**/vendor')
+        ->and($ignore)
+        ->not->toContain('!apps/gateway/**');
 });
 
 it('uses the orbit-gateway image for source-dev gateway sibling execution', function (): void {
@@ -75,10 +97,9 @@ it('keeps the gateway image capable of mounted source commands for source-dev to
         ->toContain('openssh-client')
         ->toContain('procps')
         ->not->toContain('COPY --from=composer')
-        ->not->toContain('COPY --from=docker')
-        ->and($entrypoint)
-        ->toContain('ORBIT_GATEWAY_APP_ROOT:-/srv/orbit/apps/gateway')
-        ->toContain('run_artisan "$@"');
+        ->not->toContain('COPY --from=docker')->and($entrypoint)->toContain(
+            'ORBIT_GATEWAY_APP_ROOT:-/srv/orbit/apps/gateway',
+        )->toContain('run_artisan "$@"');
 });
 
 it('loads gateway app classes ahead of stale root Composer autoload mappings', function (): void {
@@ -96,82 +117,82 @@ it('loads gateway app classes ahead of stale root Composer autoload mappings', f
     chmod("{$gateway}/artisan", 0755);
 
     file_put_contents("{$gateway}/bootstrap/app.php", <<<'PHP'
-<?php
+        <?php
 
-return new App\Console\Kernel;
-PHP);
+        return new App\Console\Kernel;
+        PHP);
 
     file_put_contents("{$gateway}/app/Console/Kernel.php", <<<'PHP'
-<?php
+        <?php
 
-namespace App\Console;
+        namespace App\Console;
 
-class Kernel
-{
-    public function handleCommand(object $input): int
-    {
-        echo 'gateway';
+        class Kernel
+        {
+            public function handleCommand(object $input): int
+            {
+                echo 'gateway';
 
-        return 0;
-    }
-}
-PHP);
+                return 0;
+            }
+        }
+        PHP);
 
     file_put_contents("{$root}/stale/app/Console/Kernel.php", <<<'PHP'
-<?php
+        <?php
 
-namespace App\Console;
+        namespace App\Console;
 
-class Kernel
-{
-    public function handleCommand(object $input): int
-    {
-        echo 'stale';
+        class Kernel
+        {
+            public function handleCommand(object $input): int
+            {
+                echo 'stale';
 
-        return 0;
-    }
-}
-PHP);
+                return 0;
+            }
+        }
+        PHP);
 
     file_put_contents("{$gateway}/symfony/Input/ArgvInput.php", <<<'PHP'
-<?php
+        <?php
 
-namespace Symfony\Component\Console\Input;
+        namespace Symfony\Component\Console\Input;
 
-class ArgvInput {}
-PHP);
+        class ArgvInput {}
+        PHP);
 
     file_put_contents("{$gateway}/vendor/autoload.php", <<<'PHP'
-<?php
+        <?php
 
-spl_autoload_register(static function (string $class): void {
-    if ($class === 'Symfony\\Component\\Console\\Input\\ArgvInput') {
-        require __DIR__.'/../symfony/Input/ArgvInput.php';
+        spl_autoload_register(static function (string $class): void {
+            if ($class === 'Symfony\\Component\\Console\\Input\\ArgvInput') {
+                require __DIR__.'/../symfony/Input/ArgvInput.php';
 
-        return;
-    }
+                return;
+            }
 
-    if ($class === 'App\\Console\\Kernel') {
-        require __DIR__.'/../app/Console/Kernel.php';
-    }
-}, prepend: true);
-PHP);
+            if ($class === 'App\\Console\\Kernel') {
+                require __DIR__.'/../app/Console/Kernel.php';
+            }
+        }, prepend: true);
+        PHP);
 
     file_put_contents("{$root}/vendor/autoload.php", <<<'PHP'
-<?php
+        <?php
 
-spl_autoload_register(static function (string $class): void {
-    if ($class === 'Symfony\\Component\\Console\\Input\\ArgvInput') {
-        require __DIR__.'/../apps/gateway/symfony/Input/ArgvInput.php';
+        spl_autoload_register(static function (string $class): void {
+            if ($class === 'Symfony\\Component\\Console\\Input\\ArgvInput') {
+                require __DIR__.'/../apps/gateway/symfony/Input/ArgvInput.php';
 
-        return;
-    }
+                return;
+            }
 
-    if ($class === 'App\\Console\\Kernel') {
-        require __DIR__.'/../stale/app/Console/Kernel.php';
-    }
-}, prepend: true);
-PHP);
+            if ($class === 'App\\Console\\Kernel') {
+                require __DIR__.'/../stale/app/Console/Kernel.php';
+            }
+        }, prepend: true);
+        PHP);
 
     try {
         $process = new Process(['php', "{$gateway}/artisan"]);
@@ -182,7 +203,7 @@ PHP);
             ->and($process->getOutput())
             ->toBe('gateway');
     } finally {
-        (new Process(['rm', '-rf', $root]))->run();
+        new Process(['rm', '-rf', $root])->run();
     }
 });
 
@@ -231,7 +252,11 @@ it('does not ship persisted orbit certificate material in the runtime image', fu
     ];
 
     $assertions = collect($forbiddenPaths)
-        ->map(fn (string $path): string => sprintf('test ! -e %s || { echo "FORBIDDEN PATH PRESENT: %s"; exit 1; }', escapeshellarg($path), $path))
+        ->map(fn (string $path): string => sprintf(
+            'test ! -e %s || { echo "FORBIDDEN PATH PRESENT: %s"; exit 1; }',
+            escapeshellarg($path),
+            $path,
+        ))
         ->implode('; ');
 
     $process = new Process([
@@ -280,7 +305,9 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
     $label->run();
 
     if (trim($label->getOutput()) !== 'docker-first') {
-        test()->markTestSkipped("Docker runtime image {$image} was not built from the Docker-first topology Dockerfile.");
+        test()->markTestSkipped(
+            "Docker runtime image {$image} was not built from the Docker-first topology Dockerfile.",
+        );
     }
 
     $sourceLabel = new Process([
@@ -295,7 +322,9 @@ it('provides Docker CLI and host PHP CLI baseline without ad hoc helper tools in
     $sourceLabel->run();
 
     if (trim($sourceLabel->getOutput()) !== 'prepared-checkout') {
-        test()->markTestSkipped("Docker runtime image {$image} was not built from the source-less topology Dockerfile.");
+        test()->markTestSkipped(
+            "Docker runtime image {$image} was not built from the source-less topology Dockerfile.",
+        );
     }
 
     $process = new Process([

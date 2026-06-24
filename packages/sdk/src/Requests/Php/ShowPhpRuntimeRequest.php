@@ -31,12 +31,15 @@ final class ShowPhpRuntimeRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'node' => $this->node,
-            'live' => $this->live ? true : null,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'node' => $this->node,
+                'live' => $this->live ? true : null,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): PhpRuntimeResponse
@@ -44,7 +47,7 @@ final class ShowPhpRuntimeRequest extends GatewayRequest
         $data = $this->unwrapData($response);
 
         return new PhpRuntimeResponse(
-            php: is_array($data['php'] ?? null) ? $data['php'] : [],
+            php: $this->stringKeyedArray($data['php'] ?? []),
             meta: $this->unwrapMeta($response),
         );
     }

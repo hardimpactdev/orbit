@@ -120,7 +120,10 @@ final class GatewayNodeCreator
             return $requestedRoles;
         }
 
-        if ($this->arrayOption('agent-tool') !== [] && ! in_array(NodeRoleName::Agent->value, $requestedRoles->hosted, true)) {
+        if (
+            $this->arrayOption('agent-tool') !== []
+            && ! in_array(NodeRoleName::Agent->value, $requestedRoles->hosted, true)
+        ) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: 'Agent tools can only be specified for agent nodes.',
@@ -191,7 +194,10 @@ final class GatewayNodeCreator
             $forbiddenInput = $this->forbiddenClientIdentityInput();
 
             if ($forbiddenInput !== null) {
-                return $this->validationFailed($forbiddenInput, 'Client identities do not use workload or SSH/bootstrap-only input.');
+                return $this->validationFailed(
+                    $forbiddenInput,
+                    'Client identities do not use workload or SSH/bootstrap-only input.',
+                );
             }
 
             return $this->enrollClientNode($wireGuardKeyGenerator, $name, $requestedRoles->operator);
@@ -232,7 +238,10 @@ final class GatewayNodeCreator
             );
         }
 
-        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()) {
+        if (
+            $inputs['tld'] !== null
+            && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()
+        ) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node TLD '{$inputs['tld']}' is already assigned to another node.",
@@ -508,12 +517,17 @@ final class GatewayNodeCreator
                 ],
                 'status' => 'active',
             ],
-            'roles' => $node->fresh()->roleAssignments->map(fn (NodeRoleAssignment $assignment): array => [
-                'role' => $assignment->role,
-                'status' => $assignment->status->value,
-                'settings' => $assignment->settings ?? [],
-                'last_error' => $assignment->last_error,
-            ])->values()->all(),
+            'roles' => $node
+                ->fresh()
+                ?->roleAssignments
+                ->map(fn (NodeRoleAssignment $assignment): array => [
+                    'role' => $assignment->role,
+                    'status' => $assignment->status->value,
+                    'settings' => $assignment->settings ?? [],
+                    'last_error' => $assignment->last_error,
+                ])
+                ->values()
+                ->all(),
             'provisioning' => [
                 'transport' => $requiresHostProvisioning ? 'ssh' : 'none',
                 'host' => $requiresHostProvisioning ? $inputs['host'] : null,
@@ -548,8 +562,11 @@ final class GatewayNodeCreator
     /**
      * @param  list<string>  $roles
      */
-    private function ensureAgentWireGuardPeer(Node $node, array $roles, WireGuardKeyGenerator $wireGuardKeyGenerator): ?int
-    {
+    private function ensureAgentWireGuardPeer(
+        Node $node,
+        array $roles,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+    ): ?int {
         if (! in_array(NodeRoleName::Agent->value, $roles, true)) {
             return null;
         }
@@ -673,8 +690,11 @@ final class GatewayNodeCreator
         return $this->waitForProvisionedNodeWireGuard($node, $wireguardAddress);
     }
 
-    private function ensureProvisionedNodeWireGuardPeer(Node $node, WireGuardKeyGenerator $wireGuardKeyGenerator, string $wireguardAddress): WireGuardPeer|int
-    {
+    private function ensureProvisionedNodeWireGuardPeer(
+        Node $node,
+        WireGuardKeyGenerator $wireGuardKeyGenerator,
+        string $wireguardAddress,
+    ): WireGuardPeer|int {
         $peer = WireGuardPeer::query()->where('node_id', $node->id)->first();
 
         if ($peer instanceof WireGuardPeer && $peer->private_key !== '') {
@@ -714,8 +734,11 @@ final class GatewayNodeCreator
         );
     }
 
-    private function configureGatewayWireGuardServerPeer(Node $node, WireGuardPeer $peer, string $wireguardAddress): string|int
-    {
+    private function configureGatewayWireGuardServerPeer(
+        Node $node,
+        WireGuardPeer $peer,
+        string $wireguardAddress,
+    ): string|int {
         if ($peer->public_key === '' || $peer->pre_shared_key === null || $peer->pre_shared_key === '') {
             return $this->failCommand(
                 code: 'node.provisioning_incomplete',
@@ -756,21 +779,21 @@ final class GatewayNodeCreator
     private function installProvisionedNodeWireGuard(Node $node, string $wireguardConfig): ?int
     {
         $runtimeUser = $node->user ?: self::DEFAULT_RUNTIME_USER;
-        $host = (string) $node->host;
+        $host = $node->host;
         $script = <<<'SH'
-set -euo pipefail
-CONFIG_FILE="$(mktemp)"
-trap 'rm -f "$CONFIG_FILE"' EXIT
-cat > "$CONFIG_FILE"
-if ! command -v wg >/dev/null 2>&1 || ! command -v wg-quick >/dev/null 2>&1; then
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq wireguard wireguard-tools
-fi
-sudo install -d -m 0700 /etc/wireguard
-sudo install -m 0600 -o root -g root "$CONFIG_FILE" /etc/wireguard/wg-orbit.conf
-sudo systemctl enable wg-quick@wg-orbit >/dev/null
-sudo systemctl restart wg-quick@wg-orbit
-SH;
+            set -euo pipefail
+            CONFIG_FILE="$(mktemp)"
+            trap 'rm -f "$CONFIG_FILE"' EXIT
+            cat > "$CONFIG_FILE"
+            if ! command -v wg >/dev/null 2>&1 || ! command -v wg-quick >/dev/null 2>&1; then
+                sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq wireguard wireguard-tools
+            fi
+            sudo install -d -m 0700 /etc/wireguard
+            sudo install -m 0600 -o root -g root "$CONFIG_FILE" /etc/wireguard/wg-orbit.conf
+            sudo systemctl enable wg-quick@wg-orbit >/dev/null
+            sudo systemctl restart wg-quick@wg-orbit
+            SH;
 
         $result = Process::timeout(240)
             ->input($wireguardConfig)
@@ -811,7 +834,7 @@ SH;
 
             $e2e = getenv('ORBIT_E2E');
 
-            if (! app()->runningUnitTests() || (is_string($e2e) && $e2e !== '' && $e2e !== '0')) {
+            if (! app()->runningUnitTests() || is_string($e2e) && $e2e !== '' && $e2e !== '0') {
                 sleep(2);
             }
         }
@@ -876,12 +899,13 @@ SH;
 
     private function gatewayPublicEndpoint(Node $gateway): ?string
     {
-        $vpnRole = $gateway->roleAssignments()
+        $vpnRole = $gateway
+            ->roleAssignments()
             ->where('role', NodeRoleName::Vpn->value)
             ->first();
 
         $settings = $vpnRole?->settings;
-        $publicEndpoint = is_array($settings) ? ($settings['public_endpoint'] ?? null) : null;
+        $publicEndpoint = is_array($settings) ? $settings['public_endpoint'] ?? null : null;
 
         if (is_string($publicEndpoint) && $publicEndpoint !== '') {
             return $publicEndpoint;
@@ -908,7 +932,8 @@ SH;
             return $this->validationFailed('host', 'Host must be a valid IP address or dotted DNS name.');
         }
 
-        $gateway = $this->gatewayQuery()
+        $gateway = $this
+            ->gatewayQuery()
             ->where('name', $name)
             ->first();
 
@@ -980,9 +1005,10 @@ SH;
             );
         }
 
-        $wireguardAddress = $existing instanceof Node && is_string($existing->wireguard_address) && $existing->wireguard_address !== ''
-            ? $existing->wireguard_address
-            : $this->nextWireguardAddress();
+        $wireguardAddress =
+            $existing instanceof Node && is_string($existing->wireguard_address) && $existing->wireguard_address !== ''
+                ? $existing->wireguard_address
+                : $this->nextWireguardAddress();
 
         $gateway = $this->gatewayQuery()->first();
 
@@ -1132,7 +1158,15 @@ SH;
             && app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($existing)
             && ! WireGuardPeer::query()->where('node_id', $existing->id)->exists()
         ) {
-            return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+            return $this->adoptExistingAppNode(
+                $nodesProbe,
+                $nodeConverger,
+                $existing,
+                $inputs,
+                $roleAssignmentService,
+                $initialHostedRoles,
+                $appProductionIngressNodeId,
+            );
         }
 
         if ($existing instanceof Node && $existing->isActive()) {
@@ -1144,10 +1178,21 @@ SH;
         }
 
         if ($existing instanceof Node) {
-            return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $existing, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+            return $this->adoptExistingAppNode(
+                $nodesProbe,
+                $nodeConverger,
+                $existing,
+                $inputs,
+                $roleAssignmentService,
+                $initialHostedRoles,
+                $appProductionIngressNodeId,
+            );
         }
 
-        if ($inputs['tld'] !== null && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()) {
+        if (
+            $inputs['tld'] !== null
+            && Node::query()->where('tld', $inputs['tld'])->where('status', NodeStatus::Active->value)->exists()
+        ) {
             return $this->failCommand(
                 code: 'node.incompatible',
                 message: "Node TLD '{$inputs['tld']}' is already assigned to another node.",
@@ -1158,7 +1203,16 @@ SH;
             );
         }
 
-        $adoption = $this->materializeUnknownAppNode($nodesProbe, $registryWriter, $nodeConverger, $name, $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+        $adoption = $this->materializeUnknownAppNode(
+            $nodesProbe,
+            $registryWriter,
+            $nodeConverger,
+            $name,
+            $inputs,
+            $roleAssignmentService,
+            $initialHostedRoles,
+            $appProductionIngressNodeId,
+        );
 
         if (is_int($adoption)) {
             return $adoption;
@@ -1265,7 +1319,13 @@ SH;
                 return $wireGuardProvisioning;
             }
 
-            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
+            $roleAssignmentFailure = $this->ensureInitialHostedRoles(
+                $node,
+                $roleAssignmentService,
+                $initialHostedRoles,
+                $inputs['tld'],
+                $appProductionIngressNodeId,
+            );
 
             if (is_int($roleAssignmentFailure)) {
                 $this->rollbackProvisioningNode($node, 'role_assignment_failed', [
@@ -1409,7 +1469,10 @@ SH;
         $wireguardAddress = $artifact->wireguardAddress;
 
         if (is_string($wireguardAddress) && $wireguardAddress !== '') {
-            $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable($inputs['tld'], $wireguardAddress);
+            $developmentDnsMappingFailure = $this->guardDevelopmentDnsMappingAvailable(
+                $inputs['tld'],
+                $wireguardAddress,
+            );
 
             if (is_int($developmentDnsMappingFailure)) {
                 return $developmentDnsMappingFailure;
@@ -1459,25 +1522,38 @@ SH;
             'platform' => $artifact->platform,
         ]);
 
-        return $this->adoptExistingAppNode($nodesProbe, $nodeConverger, $node->refresh(), $inputs, $roleAssignmentService, $initialHostedRoles, $appProductionIngressNodeId);
+        return $this->adoptExistingAppNode(
+            $nodesProbe,
+            $nodeConverger,
+            $node->refresh(),
+            $inputs,
+            $roleAssignmentService,
+            $initialHostedRoles,
+            $appProductionIngressNodeId,
+        );
     }
 
     /**
      * @param  list<string>  $initialHostedRoles
      */
-    private function identityArtifactMatchesAppRequest(NodeIdentityArtifact $artifact, string $name, array $initialHostedRoles): bool
-    {
+    private function identityArtifactMatchesAppRequest(
+        NodeIdentityArtifact $artifact,
+        string $name,
+        array $initialHostedRoles,
+    ): bool {
         $requestedAppRoles = array_values(array_intersect($initialHostedRoles, [
             NodeRoleName::AppDevelopment->value,
             NodeRoleName::AppProduction->value,
         ]));
 
-        return $artifact->name === $name
+        return (
+            $artifact->name === $name
             && in_array($artifact->role, $requestedAppRoles, true)
             && in_array($artifact->localRole, $requestedAppRoles, true)
             && $artifact->status === 'active'
             && is_string($artifact->platform)
-            && str_starts_with($artifact->platform, 'ubuntu_');
+            && str_starts_with($artifact->platform, 'ubuntu_')
+        );
     }
 
     /**
@@ -1520,7 +1596,13 @@ SH;
         }
 
         if ($node->isActive()) {
-            $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
+            $roleAssignmentFailure = $this->ensureInitialHostedRoles(
+                $node,
+                $roleAssignmentService,
+                $initialHostedRoles,
+                $inputs['tld'],
+                $appProductionIngressNodeId,
+            );
 
             if (is_int($roleAssignmentFailure)) {
                 return $roleAssignmentFailure;
@@ -1555,13 +1637,22 @@ SH;
                 meta: [
                     'node' => $node->name,
                     'step' => 'node_adoption',
-                    'error' => 'Run `orbit doctor --family=node --adopt --node='.$node->name.'` after resolving the reported node drift.',
+                    'error' =>
+                        'Run `orbit doctor --family=node --adopt --node='
+                            .$node->name
+                            .'` after resolving the reported node drift.',
                     'adoption_results' => array_map(fn ($result): array => $result->toArray(), $results),
                 ],
             );
         }
 
-        $roleAssignmentFailure = $this->ensureInitialHostedRoles($node, $roleAssignmentService, $initialHostedRoles, $inputs['tld'], $appProductionIngressNodeId);
+        $roleAssignmentFailure = $this->ensureInitialHostedRoles(
+            $node,
+            $roleAssignmentService,
+            $initialHostedRoles,
+            $inputs['tld'],
+            $appProductionIngressNodeId,
+        );
 
         if (is_int($roleAssignmentFailure)) {
             return $roleAssignmentFailure;
@@ -1627,17 +1718,21 @@ SH;
     private function nodeCanAdoptAppHostingRole(Node $node, array $initialHostedRoles): bool
     {
         if (app(NodeRoleAssignments::class)->nodeHasActiveAppHostRole($node)) {
-            return $this->nodeHasAnyActiveRole($node, array_values(array_intersect($initialHostedRoles, [
-                NodeRoleName::AppDevelopment->value,
-                NodeRoleName::AppProduction->value,
-            ])));
+            return $this->nodeHasAnyActiveRole(
+                $node,
+                array_values(array_intersect($initialHostedRoles, [
+                    NodeRoleName::AppDevelopment->value,
+                    NodeRoleName::AppProduction->value,
+                ])),
+            );
         }
 
         if (! $this->containsAppHostingRole($initialHostedRoles)) {
             return false;
         }
 
-        return ! $node->roleAssignments()
+        return ! $node
+            ->roleAssignments()
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();
     }
@@ -1659,7 +1754,8 @@ SH;
             return false;
         }
 
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->whereIn('role', $roles)
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();
@@ -1667,7 +1763,8 @@ SH;
 
     private function nodeHasActiveRole(Node $node, string $role): bool
     {
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('role', $role)
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();
@@ -1717,25 +1814,25 @@ SH;
     {
         $script = sprintf(
             <<<'SCRIPT'
-set -e
-RUNTIME_USER=%s
-sudo install -d -m 0755 /etc/ssh/sshd_config.d
-sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
-# Managed by Orbit.
-# Provisioned nodes accept operator SSH only through the orbit system user.
-PermitRootLogin no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-ChallengeResponseAuthentication no
-PubkeyAuthentication yes
-AllowUsers ${RUNTIME_USER}
-EOF
-sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
-sudo sshd -t
-sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
-sudo passwd -l root > /dev/null 2>&1 || true
-sudo rm -f /root/.ssh/authorized_keys
-SCRIPT,
+                set -e
+                RUNTIME_USER=%s
+                sudo install -d -m 0755 /etc/ssh/sshd_config.d
+                sudo tee /etc/ssh/sshd_config.d/99-orbit-hardening.conf > /dev/null <<EOF
+                # Managed by Orbit.
+                # Provisioned nodes accept operator SSH only through the orbit system user.
+                PermitRootLogin no
+                PasswordAuthentication no
+                KbdInteractiveAuthentication no
+                ChallengeResponseAuthentication no
+                PubkeyAuthentication yes
+                AllowUsers ${RUNTIME_USER}
+                EOF
+                sudo chmod 0644 /etc/ssh/sshd_config.d/99-orbit-hardening.conf
+                sudo sshd -t
+                sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd
+                sudo passwd -l root > /dev/null 2>&1 || true
+                sudo rm -f /root/.ssh/authorized_keys
+                SCRIPT,
             escapeshellarg($runtimeUser),
         );
 
@@ -1878,9 +1975,11 @@ SCRIPT,
 
     private function isSshAuthorizationFailure(string $error): bool
     {
-        return str_contains($error, 'Permission denied')
+        return (
+            str_contains($error, 'Permission denied')
             || str_contains($error, 'publickey')
-            || str_contains($error, 'Authentication failed');
+            || str_contains($error, 'Authentication failed')
+        );
     }
 
     private function gatewayConfigured(): bool
@@ -1994,7 +2093,18 @@ SCRIPT,
 
     private function forbiddenClientIdentityInput(): ?string
     {
-        foreach (['host', 'operator-name', 'tld', 'ingress', 'redis-node', 'postgres-node', 'clickhouse-node', 's3-data-path', 'gateway-endpoint', 'host-key-fingerprint'] as $option) {
+        foreach ([
+            'host',
+            'operator-name',
+            'tld',
+            'ingress',
+            'redis-node',
+            'postgres-node',
+            'clickhouse-node',
+            's3-data-path',
+            'gateway-endpoint',
+            'host-key-fingerprint',
+        ] as $option) {
             if ($this->stringOption($option) !== null) {
                 return $option;
             }
@@ -2006,7 +2116,14 @@ SCRIPT,
             }
         }
 
-        foreach (['self-grant', 'self-grant-permissions', 'grant-to-preset', 'grant-to-permissions', 'grant-from-preset', 'grant-from-permissions'] as $option) {
+        foreach ([
+            'self-grant',
+            'self-grant-permissions',
+            'grant-to-preset',
+            'grant-to-permissions',
+            'grant-from-preset',
+            'grant-from-permissions',
+        ] as $option) {
             if ($this->stringOption($option) !== null) {
                 return $option;
             }
@@ -2062,25 +2179,35 @@ SCRIPT,
         ]) !== [];
 
         if (! $needsHost && $this->stringOption('host') !== null) {
-            return $this->validationFailed('host', 'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host provisioning.');
+            return $this->validationFailed(
+                'host',
+                'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host provisioning.',
+            );
         }
 
         if (! $needsHost && $this->stringOption('host-key-fingerprint') !== null) {
-            return $this->validationFailed('host_key_fingerprint', 'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host-key fingerprint pinning.');
+            return $this->validationFailed(
+                'host_key_fingerprint',
+                'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use host-key fingerprint pinning.',
+            );
         }
 
         if (! $needsHost && $this->stringOption('gateway-endpoint') !== null) {
-            return $this->validationFailed('gateway_endpoint', 'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use WireGuard endpoint overrides.');
+            return $this->validationFailed(
+                'gateway_endpoint',
+                'Only app-dev, app-prod, database, ingress, agent, analytics, and gateway use WireGuard endpoint overrides.',
+            );
         }
 
-        $hostRole = array_first(array_intersect($roles, [
-            NodeRoleName::AppDevelopment->value,
-            NodeRoleName::AppProduction->value,
-            NodeRoleName::Database->value,
-            NodeRoleName::Ingress->value,
-            NodeRoleName::Agent->value,
-            NodeRoleName::Analytics->value,
-        ])) ?? NodeRoleName::Agent->value;
+        $hostRole =
+            array_first(array_intersect($roles, [
+                NodeRoleName::AppDevelopment->value,
+                NodeRoleName::AppProduction->value,
+                NodeRoleName::Database->value,
+                NodeRoleName::Ingress->value,
+                NodeRoleName::Agent->value,
+                NodeRoleName::Analytics->value,
+            ])) ?? NodeRoleName::Agent->value;
 
         $host = $needsHost ? $this->resolveHost($hostRole) : null;
 
@@ -2095,7 +2222,10 @@ SCRIPT,
         $gatewayEndpoint = $this->stringOption('gateway-endpoint');
 
         if ($gatewayEndpoint !== null && ! $this->isValidHost($gatewayEndpoint)) {
-            return $this->validationFailed('gateway_endpoint', 'Gateway endpoint must be a valid IP address or dotted DNS name.');
+            return $this->validationFailed(
+                'gateway_endpoint',
+                'Gateway endpoint must be a valid IP address or dotted DNS name.',
+            );
         }
 
         $tld = $this->stringOption('tld');
@@ -2167,13 +2297,19 @@ SCRIPT,
         $postgresNode = $this->findActiveDatabaseNodeByName($postgresNodeName);
 
         if (! $postgresNode instanceof Node) {
-            return $this->validationFailed('postgres_node', 'Analytics nodes require an active database node for PostgreSQL.');
+            return $this->validationFailed(
+                'postgres_node',
+                'Analytics nodes require an active database node for PostgreSQL.',
+            );
         }
 
         $clickhouseNode = $this->findActiveDatabaseNodeByName($clickhouseNodeName);
 
         if (! $clickhouseNode instanceof Node) {
-            return $this->validationFailed('clickhouse_node', 'Analytics nodes require an active database node for ClickHouse.');
+            return $this->validationFailed(
+                'clickhouse_node',
+                'Analytics nodes require an active database node for ClickHouse.',
+            );
         }
 
         return [
@@ -2187,10 +2323,12 @@ SCRIPT,
      */
     private function containsAppHostingRole(array $roles): bool
     {
-        return array_intersect($roles, [
-            NodeRoleName::AppDevelopment->value,
-            NodeRoleName::AppProduction->value,
-        ]) !== [];
+        return (
+            array_intersect($roles, [
+                NodeRoleName::AppDevelopment->value,
+                NodeRoleName::AppProduction->value,
+            ]) !== []
+        );
     }
 
     /**
@@ -2208,8 +2346,12 @@ SCRIPT,
     /**
      * @return array<string, mixed>
      */
-    private function settingsForRole(string $role, ?string $tld, ?int $postgresNodeId = null, ?int $clickhouseNodeId = null): array
-    {
+    private function settingsForRole(
+        string $role,
+        ?string $tld,
+        ?int $postgresNodeId = null,
+        ?int $clickhouseNodeId = null,
+    ): array {
         if (in_array($role, [NodeRoleName::AppDevelopment->value, NodeRoleName::Agent->value], true)) {
             return ['tld' => $tld];
         }
@@ -2305,7 +2447,11 @@ SCRIPT,
         $roles = array_values(array_unique($roles));
         $ingressNodeName = $this->stringOption('ingress');
 
-        if ($ingressNodeName !== null && (! in_array(NodeRoleName::AppProduction->value, $roles, true) || in_array(NodeRoleName::Ingress->value, $roles, true))) {
+        if (
+            $ingressNodeName !== null
+            && (! in_array(NodeRoleName::AppProduction->value, $roles, true)
+            || in_array(NodeRoleName::Ingress->value, $roles, true))
+        ) {
             return $this->failCommand(
                 code: 'validation_failed',
                 message: '--ingress is only supported for private app-prod placement.',
@@ -3004,10 +3150,13 @@ SCRIPT,
      */
     private function wireguardAddressesFromAllowedIps(string $allowedIps): array
     {
-        return array_values(array_filter(array_map(
-            fn (string $allowedIp): string => trim(explode('/', trim($allowedIp), 2)[0]),
-            explode(',', $allowedIps),
-        ), fn (string $address): bool => $address !== ''));
+        return array_values(array_filter(
+            array_map(
+                fn (string $allowedIp): string => trim(explode('/', trim($allowedIp), 2)[0]),
+                explode(',', $allowedIps),
+            ),
+            fn (string $address): bool => $address !== '',
+        ));
     }
 
     private function e2eReservedWireguardAddress(): ?string
@@ -3035,11 +3184,7 @@ SCRIPT,
 
         $parts = array_map(intval(...), explode('.', $address));
 
-        return $parts[0] === 10
-            && $parts[1] === 6
-            && $parts[2] === 0
-            && $parts[3] >= 3
-            && $parts[3] <= 254;
+        return $parts[0] === 10 && $parts[1] === 6 && $parts[2] === 0 && $parts[3] >= 3 && $parts[3] <= 254;
     }
 
     private function validationFailed(string $field, string $message): int

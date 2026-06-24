@@ -30,17 +30,22 @@ describe('php:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/php/runtime')
                 && str_contains($url, 'app=docs')
                 && str_contains($url, 'workspace=feature-docs')
                 && str_contains($url, 'node=app-1')
-                && str_contains($url, 'live=1');
+                && str_contains($url, 'live=1')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['php']['node'])->toBe('app-1')
-            ->and($decoded['success']['meta']['live'])->toBeTrue();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['php']['node'])
+            ->toBe('app-1')
+            ->and($decoded['success']['meta']['live'])
+            ->toBeTrue();
     });
 
     it('uses cwd-inferred app when no explicit app is provided', function (): void {
@@ -87,8 +92,7 @@ describe('php:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, 'node=default-app')
-                && ! str_contains($url, 'app=');
+            return str_contains($url, 'node=default-app') && ! str_contains($url, 'app=');
         });
 
         expect($exitCode)->toBe(0);
@@ -110,22 +114,38 @@ describe('php:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'php:list', ['--node' => 'app-1']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('ATTRIBUTE')
-            ->and($output)->toContain('VALUE')
-            ->and($output)->toContain('NODE')
-            ->and($output)->toContain('SUPPORTED')
-            ->and($output)->toContain('AVAILABLE IMAGES')
-            ->and($output)->toContain('CLI')
-            ->and($output)->toContain('APP')
-            ->and($output)->toContain('WORKSPACE')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('8.3, 8.4, 8.5')
-            ->and($output)->toContain('8.4, 8.5')
-            ->and($output)->toContain('docs')
-            ->and($output)->toContain('feature-docs')
-            ->and($output)->toContain('inherited')
-            ->and($output)->not->toContain('php: {');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('ATTRIBUTE')
+            ->and($output)
+            ->toContain('VALUE')
+            ->and($output)
+            ->toContain('NODE')
+            ->and($output)
+            ->toContain('SUPPORTED')
+            ->and($output)
+            ->toContain('AVAILABLE IMAGES')
+            ->and($output)
+            ->toContain('CLI')
+            ->and($output)
+            ->toContain('APP')
+            ->and($output)
+            ->toContain('WORKSPACE')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('8.3, 8.4, 8.5')
+            ->and($output)
+            ->toContain('8.4, 8.5')
+            ->and($output)
+            ->toContain('docs')
+            ->and($output)
+            ->toContain('feature-docs')
+            ->and($output)
+            ->toContain('inherited')
+            ->and($output)
+            ->not->toContain('php: {');
     });
 
     it('renders em dash for absent runtime context cells in human output', function (): void {
@@ -142,22 +162,29 @@ describe('php:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'php:list', ['--node' => 'app-1']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('NODE')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('—')
-            ->and($output)->not->toContain('php: {');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('NODE')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('—')
+            ->and($output)
+            ->not->toContain('php: {');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {
-        fakeGateway(fakeErrorEnvelope('authorization_failed', 'This node is not authorized to inspect PHP runtime.'), 403);
+        fakeGateway(
+            fakeErrorEnvelope('authorization_failed', 'This node is not authorized to inspect PHP runtime.'),
+            403,
+        );
 
         [$exitCode, $output] = runCommand($this, 'php:list', ['--node' => 'app-1', '--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('authorization_failed');
     });
 
     it('surfaces config store failures when resolving the default node', function (): void {
@@ -172,8 +199,7 @@ describe('php:list', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('config_invalid_json');
+            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('config_invalid_json');
         } finally {
             @unlink($path);
         }
@@ -186,7 +212,6 @@ describe('php:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

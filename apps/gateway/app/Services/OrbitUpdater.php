@@ -23,7 +23,15 @@ class OrbitUpdater
     {
         return Process::path(repo_path())
             ->timeout(120)
-            ->run(['docker', 'exec', 'orbit-gateway', 'composer', '--working-dir=apps/gateway', 'install', '--no-interaction']);
+            ->run([
+                'docker',
+                'exec',
+                'orbit-gateway',
+                'composer',
+                '--working-dir=apps/gateway',
+                'install',
+                '--no-interaction',
+            ]);
     }
 
     public function runMigrations(): ProcessResult
@@ -74,7 +82,11 @@ class OrbitUpdater
 
     public function installRemoteDependencies(Node $node): RemoteShellResult
     {
-        return $this->runRemote($node, 'docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction', 120);
+        return $this->runRemote(
+            $node,
+            'docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction',
+            120,
+        );
     }
 
     public function runRemoteMigrations(Node $node): RemoteShellResult
@@ -86,7 +98,8 @@ class OrbitUpdater
     {
         return match ($stage) {
             'pulling_source' => 'git pull --ff-only',
-            'installing_dependencies' => 'docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction',
+            'installing_dependencies'
+                => 'docker exec orbit-gateway composer --working-dir=apps/gateway install --no-interaction',
             'running_migrations' => 'docker exec orbit-gateway php apps/gateway/artisan migrate --force',
             default => throw new \InvalidArgumentException("Unknown remote update stage [{$stage}]."),
         };

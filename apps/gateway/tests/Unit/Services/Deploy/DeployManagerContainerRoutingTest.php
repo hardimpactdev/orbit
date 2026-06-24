@@ -42,9 +42,11 @@ final class DeployManagerRecordingShell implements RemoteShell
 
 function createDeployManagerTestApp(array $overrides = []): App
 {
-    $node = Node::factory()->appProd()->create([
-        'name' => 'app-prod-1',
-    ]);
+    $node = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-prod-1',
+        ]);
 
     return App::factory()->create(array_merge([
         'name' => 'docs',
@@ -79,12 +81,18 @@ it('routes php commands through the host php toolchain for php apps', function (
     $manager->run('docs');
 
     // user step + composer install warmup + php artisan optimize warmup
-    expect($shell->runs)->toHaveCount(3)
-        ->and($shell->runs[0]['script'])->toContain("'sudo'")
-        ->and($shell->runs[0]['script'])->toContain("'bash'")
-        ->and($shell->runs[0]['script'])->toContain("'-lc'")
-        ->and($shell->runs[0]['script'])->toContain('/opt/orbit/php/')
-        ->and($shell->runs[0]['script'])->toContain('php artisan migrate --force');
+    expect($shell->runs)
+        ->toHaveCount(3)
+        ->and($shell->runs[0]['script'])
+        ->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])
+        ->toContain("'bash'")
+        ->and($shell->runs[0]['script'])
+        ->toContain("'-lc'")
+        ->and($shell->runs[0]['script'])
+        ->toContain('/opt/orbit/php/')
+        ->and($shell->runs[0]['script'])
+        ->toContain('php artisan migrate --force');
 });
 
 it('runs routed php deploy commands as the path-derived production app user', function (): void {
@@ -100,9 +108,13 @@ it('runs routed php deploy commands as the path-derived production app user', fu
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->toContain("'sudo' '-u' 'docs'")
-        ->and($shell->runs[0]['script'])->not->toContain("'sudo' '-u' 'orbit'")
-        ->and($shell->runs[0]['script'])->toContain('/home/docs/app');
+    expect($shell->runs[0]['script'])
+        ->toContain("'sudo' '-u' 'docs'")
+        ->and($shell->runs[0]['script'])
+        ->not
+        ->toContain("'sudo' '-u' 'orbit'")
+        ->and($shell->runs[0]['script'])
+        ->toContain('/home/docs/app');
 });
 
 it('routes composer commands through the host php toolchain for php apps', function (): void {
@@ -116,9 +128,12 @@ it('routes composer commands through the host php toolchain for php apps', funct
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->toContain("'sudo'")
-        ->and($shell->runs[0]['script'])->toContain('/opt/orbit/php/')
-        ->and($shell->runs[0]['script'])->toContain('composer install --no-interaction');
+    expect($shell->runs[0]['script'])
+        ->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])
+        ->toContain('/opt/orbit/php/')
+        ->and($shell->runs[0]['script'])
+        ->toContain('composer install --no-interaction');
 });
 
 it('routes artisan commands through the host php toolchain for php apps', function (): void {
@@ -132,9 +147,12 @@ it('routes artisan commands through the host php toolchain for php apps', functi
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->toContain("'sudo'")
-        ->and($shell->runs[0]['script'])->toContain('/opt/orbit/php/')
-        ->and($shell->runs[0]['script'])->toContain('php artisan optimize');
+    expect($shell->runs[0]['script'])
+        ->toContain("'sudo'")
+        ->and($shell->runs[0]['script'])
+        ->toContain('/opt/orbit/php/')
+        ->and($shell->runs[0]['script'])
+        ->toContain('php artisan optimize');
 });
 
 it('runs non-php commands on the host for php apps', function (): void {
@@ -147,9 +165,13 @@ it('runs non-php commands on the host for php apps', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->not->toContain('docker exec')
-        ->and($shell->runs[0]['script'])->toBe('git pull origin main')
-        ->and($shell->runs[0]['options']['cwd'])->toBe('/srv/docs');
+    expect($shell->runs[0]['script'])
+        ->not
+        ->toContain('docker exec')
+        ->and($shell->runs[0]['script'])
+        ->toBe('git pull origin main')
+        ->and($shell->runs[0]['options']['cwd'])
+        ->toBe('/srv/docs');
 });
 
 it('runs all commands on the host for static apps', function (): void {
@@ -162,8 +184,11 @@ it('runs all commands on the host for static apps', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->not->toContain('docker exec')
-        ->and($shell->runs[0]['script'])->toBe('php artisan migrate --force');
+    expect($shell->runs[0]['script'])
+        ->not
+        ->toContain('docker exec')
+        ->and($shell->runs[0]['script'])
+        ->toBe('php artisan migrate --force');
 });
 
 it('does not transform host paths to container paths when routing through host', function (): void {
@@ -178,9 +203,12 @@ it('does not transform host paths to container paths when routing through host',
     $manager->run('docs');
 
     $script = $shell->runs[0]['script'];
-    expect($script)->toContain("'sudo'")
-        ->and($script)->toContain("'-lc'")
-        ->and($script)->not->toContain("'/app'");
+    expect($script)
+        ->toContain("'sudo'")
+        ->and($script)
+        ->toContain("'-lc'")
+        ->and($script)
+        ->not->toContain("'/app'");
 });
 
 it('passes deploy environment variables to the host command', function (): void {
@@ -212,8 +240,7 @@ it('sets the working directory to the app source path for host commands', functi
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->toContain("'sudo'")
-        ->and($shell->runs[0]['script'])->toContain('/srv/docs');
+    expect($shell->runs[0]['script'])->toContain("'sudo'")->and($shell->runs[0]['script'])->toContain('/srv/docs');
 });
 
 it('does not route php-fpm systemctl commands through host php toolchain', function (): void {
@@ -226,8 +253,11 @@ it('does not route php-fpm systemctl commands through host php toolchain', funct
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs[0]['script'])->not->toContain('docker exec')
-        ->and($shell->runs[0]['script'])->toBe('sudo systemctl reload php8.5-fpm');
+    expect($shell->runs[0]['script'])
+        ->not
+        ->toContain('docker exec')
+        ->and($shell->runs[0]['script'])
+        ->toBe('sudo systemctl reload php8.5-fpm');
 });
 
 it('runs built-in warmup steps on the host after user steps for php apps', function (): void {
@@ -242,11 +272,16 @@ it('runs built-in warmup steps on the host after user steps for php apps', funct
     $manager->run('docs');
 
     // user step (git) + composer install warmup + php artisan optimize warmup
-    expect($shell->runs)->toHaveCount(3)
-        ->and($shell->runs[1]['script'])->toContain('composer install --no-dev --optimize-autoloader')
-        ->and($shell->runs[2]['script'])->toContain('php artisan optimize')
-        ->and($shell->runs[1]['script'])->toContain("'sudo'")
-        ->and($shell->runs[2]['script'])->toContain("'sudo'");
+    expect($shell->runs)
+        ->toHaveCount(3)
+        ->and($shell->runs[1]['script'])
+        ->toContain('composer install --no-dev --optimize-autoloader')
+        ->and($shell->runs[2]['script'])
+        ->toContain('php artisan optimize')
+        ->and($shell->runs[1]['script'])
+        ->toContain("'sudo'")
+        ->and($shell->runs[2]['script'])
+        ->toContain("'sudo'");
 });
 
 it('skips warmup steps when a user step fails', function (): void {
@@ -267,8 +302,7 @@ it('skips warmup steps when a user step fails', function (): void {
         // Expected
     }
 
-    expect($shell->runs)->toHaveCount(1)
-        ->and($shell->runs[0]['script'])->toBe('git pull origin main');
+    expect($shell->runs)->toHaveCount(1)->and($shell->runs[0]['script'])->toBe('git pull origin main');
 });
 
 it('does not run warmup steps for static apps', function (): void {
@@ -281,8 +315,7 @@ it('does not run warmup steps for static apps', function (): void {
     $manager = app(DeployManager::class);
     $manager->run('docs');
 
-    expect($shell->runs)->toHaveCount(1)
-        ->and($shell->runs[0]['script'])->toBe('git pull origin main');
+    expect($shell->runs)->toHaveCount(1)->and($shell->runs[0]['script'])->toBe('git pull origin main');
 });
 
 it('runs http warmup when deploy_warmup_paths is configured', function (): void {
@@ -297,11 +330,16 @@ it('runs http warmup when deploy_warmup_paths is configured', function (): void 
     $manager->run('docs');
 
     // user step + composer optimize + artisan optimize + 2 HTTP warmups
-    expect($shell->runs)->toHaveCount(5)
-        ->and($shell->runs[3]['script'])->toContain('curl')
-        ->and($shell->runs[3]['script'])->toContain('/api/health')
-        ->and($shell->runs[4]['script'])->toContain('curl')
-        ->and($shell->runs[4]['script'])->toContain('/');
+    expect($shell->runs)
+        ->toHaveCount(5)
+        ->and($shell->runs[3]['script'])
+        ->toContain('curl')
+        ->and($shell->runs[3]['script'])
+        ->toContain('/api/health')
+        ->and($shell->runs[4]['script'])
+        ->toContain('curl')
+        ->and($shell->runs[4]['script'])
+        ->toContain('/');
 });
 
 it('skips http warmup when deploy_warmup_paths is empty', function (): void {
@@ -331,8 +369,7 @@ it('uses version-matched php path in host commands', function (): void {
 
     $script = $shell->runs[0]['script'];
 
-    expect($script)->toContain('/opt/orbit/php/')
-        ->and($script)->toContain("'8.4'");
+    expect($script)->toContain('/opt/orbit/php/')->and($script)->toContain("'8.4'");
 });
 
 it('marks run failed when built-in warmup step fails', function (): void {
@@ -356,11 +393,12 @@ it('marks run failed when built-in warmup step fails', function (): void {
         $manager->run('docs');
         $this->fail('Expected GatewayApiException');
     } catch (GatewayApiException $e) {
-        expect($e->errorCode())->toBe('deploy.warmup_failed')
-            ->and($e->errorMeta()['warmup_command'])->toBe('php artisan optimize');
+        expect($e->errorCode())
+            ->toBe('deploy.warmup_failed')
+            ->and($e->errorMeta()['warmup_command'])
+            ->toBe('php artisan optimize');
     }
 
     $run = DeploymentRun::query()->sole();
-    expect($run->status)->toBe('failed')
-        ->and($run->exit_code)->toBe(1);
+    expect($run->status)->toBe('failed')->and($run->exit_code)->toBe(1);
 });

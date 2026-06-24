@@ -45,8 +45,8 @@ final readonly class DatabaseConnectionAdopter
                 $baseSlug = sprintf(
                     '%s-%s%s',
                     Str::slug($workspace->name),
-                    Str::slug($workspace->app->name),
-                    $prefix === 'DB' ? '' : '-'.Str::slug($prefix)
+                    Str::slug($workspace->app?->name),
+                    $prefix === 'DB' ? '' : '-'.Str::slug($prefix),
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
@@ -61,7 +61,13 @@ final readonly class DatabaseConnectionAdopter
                     key: $key,
                     action: $action,
                     summary: "Adopted database connection for workspace '{$workspace->name}'.",
-                    detail: ['target_type' => 'workspace', 'target_id' => $workspace->id, 'workspace' => $workspace->name, 'app' => $workspace->app->name, 'env_prefix' => $prefix],
+                    detail: [
+                        'target_type' => 'workspace',
+                        'target_id' => $workspace->id,
+                        'workspace' => $workspace->name,
+                        'app' => $workspace->app?->name,
+                        'env_prefix' => $prefix,
+                    ],
                 );
             }
         }
@@ -76,7 +82,7 @@ final readonly class DatabaseConnectionAdopter
                 $baseSlug = sprintf(
                     '%s%s',
                     Str::slug($app->name),
-                    $prefix === 'DB' ? '' : '-'.Str::slug($prefix)
+                    $prefix === 'DB' ? '' : '-'.Str::slug($prefix),
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
@@ -91,7 +97,12 @@ final readonly class DatabaseConnectionAdopter
                     key: $key,
                     action: $action,
                     summary: "Adopted database connection for app '{$app->name}'.",
-                    detail: ['target_type' => 'app', 'target_id' => $app->id, 'app' => $app->name, 'env_prefix' => $prefix],
+                    detail: [
+                        'target_type' => 'app',
+                        'target_id' => $app->id,
+                        'app' => $app->name,
+                        'env_prefix' => $prefix,
+                    ],
                 );
             }
         }
@@ -106,7 +117,9 @@ final readonly class DatabaseConnectionAdopter
     {
         $contents = $this->shouldUseLocalFilesystem($node) && is_file($path)
             ? file_get_contents($path)
-            : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), ['throw' => false])->stdout;
+            : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), [
+                'throw' => false,
+            ])->stdout;
 
         if (! is_string($contents) || $contents === '') {
             return [];
@@ -156,16 +169,32 @@ final readonly class DatabaseConnectionAdopter
     /**
      * @return array{0: DatabaseConnection, 1: AdoptAction, 2: string}
      */
-    private function persistObservedConnection(?DatabaseConnectionTarget $target, string $baseSlug, DatabaseConnectionPayload $payload, Node $node): array
-    {
-        if ($target?->connection instanceof DatabaseConnection) {
-            if ($this->connectionMatchesPayload($target->connection, $payload, $node)) {
-                return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
+    private function persistObservedConnection(
+        ?DatabaseConnectionTarget $target,
+        string $baseSlug,
+        DatabaseConnectionPayload $payload,
+        Node $node,
+    ): array {
+        $targetConnection = $target instanceof DatabaseConnectionTarget
+            ? $target->connection()->first()
+            : null;
+
+        if ($targetConnection instanceof DatabaseConnection) {
+            if ($this->connectionMatchesPayload($targetConnection, $payload, $node)) {
+                return [
+                    $this->freshConnection($targetConnection),
+                    AdoptAction::Updated,
+                    'database_connection.env_mismatch',
+                ];
             }
 
-            $target->connection->fill($this->attributesFromPayload($payload, $target->connection, $node))->save();
+            $targetConnection->fill($this->attributesFromPayload($payload, $targetConnection, $node))->save();
 
-            return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
+            return [
+                $this->freshConnection($targetConnection),
+                AdoptAction::Updated,
+                'database_connection.env_mismatch',
+            ];
         }
 
         if (! $this->payloadHasMeaningfulValues($payload)) {
@@ -184,8 +213,11 @@ final readonly class DatabaseConnectionAdopter
     /**
      * @return array<string, mixed>
      */
-    private function attributesFromPayload(DatabaseConnectionPayload $payload, ?DatabaseConnection $existing = null, ?Node $node = null): array
-    {
+    private function attributesFromPayload(
+        DatabaseConnectionPayload $payload,
+        ?DatabaseConnection $existing = null,
+        ?Node $node = null,
+    ): array {
         $credentials = $this->mergeCredentials($existing, $payload);
 
         if ($payload->driver === 'sqlite') {
@@ -218,11 +250,13 @@ final readonly class DatabaseConnectionAdopter
             return ($payload->path ?? $payload->database) !== null;
         }
 
-        return $payload->host !== null
+        return (
+            $payload->host !== null
             || $payload->port !== null
             || $payload->database !== null
             || $payload->username !== null
-            || $payload->password !== null;
+            || $payload->password !== null
+        );
     }
 
     /**
@@ -230,13 +264,32 @@ final readonly class DatabaseConnectionAdopter
      */
     private function mergeCredentials(?DatabaseConnection $connection, DatabaseConnectionPayload $payload): array
     {
-        $credentials = is_array($connection?->credentials) ? $connection->credentials : [];
+        $credentials = $connection?->credentials;
+
+        if (! is_array($credentials)) {
+            $credentials = [];
+        }
 
         if ($payload->password !== null) {
             $credentials['password'] = $payload->password;
         }
 
-        return $credentials;
+        return (
+            is_string($credentials['password'] ?? null)
+                ? ['password' => $credentials['password']]
+                : []
+        );
+    }
+
+    private function freshConnection(DatabaseConnection $connection): DatabaseConnection
+    {
+        $fresh = $connection->fresh();
+
+        if (! $fresh instanceof DatabaseConnection) {
+            throw new \RuntimeException('Database connection no longer exists.');
+        }
+
+        return $fresh;
     }
 
     /**
@@ -281,11 +334,11 @@ final readonly class DatabaseConnectionAdopter
 
         return DatabaseConnectionPayload::fromArray([
             'driver' => $driver,
-            'host' => $driver === 'sqlite' ? null : ($values["{$prefix}_HOST"] ?? null),
-            'port' => $driver === 'sqlite' ? null : ($values["{$prefix}_PORT"] ?? null),
-            'database' => $driver === 'sqlite' ? null : ($values["{$prefix}_DATABASE"] ?? null),
-            'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
-            'username' => $driver === 'sqlite' ? null : ($values["{$prefix}_USERNAME"] ?? null),
+            'host' => $driver === 'sqlite' ? null : $values["{$prefix}_HOST"] ?? null,
+            'port' => $driver === 'sqlite' ? null : $values["{$prefix}_PORT"] ?? null,
+            'database' => $driver === 'sqlite' ? null : $values["{$prefix}_DATABASE"] ?? null,
+            'path' => $driver === 'sqlite' ? $values["{$prefix}_DATABASE"] ?? null : null,
+            'username' => $driver === 'sqlite' ? null : $values["{$prefix}_USERNAME"] ?? null,
             'password' => $values["{$prefix}_PASSWORD"] ?? null,
         ]);
     }
@@ -328,8 +381,11 @@ final readonly class DatabaseConnectionAdopter
         return null;
     }
 
-    private function connectionMatchesPayload(DatabaseConnection $connection, DatabaseConnectionPayload $payload, Node $node): bool
-    {
+    private function connectionMatchesPayload(
+        DatabaseConnection $connection,
+        DatabaseConnectionPayload $payload,
+        Node $node,
+    ): bool {
         if ($payload->driver === 'sqlite') {
             return $connection->node_id === $node->id && $connection->path === $payload->path;
         }
@@ -341,11 +397,13 @@ final readonly class DatabaseConnectionAdopter
             return false;
         }
 
-        return $endpoint['host'] === $payload->host
+        return (
+            $endpoint['host'] === $payload->host
             && $endpoint['port'] === $payload->port
             && $connection->database === $payload->database
             && $connection->username === $payload->username
-            && (! is_string($payload->password) || $password === $payload->password);
+            && (! is_string($payload->password) || $password === $payload->password)
+        );
     }
 
     private function validEnvPrefix(string $value): bool
@@ -366,7 +424,11 @@ final readonly class DatabaseConnectionAdopter
      */
     private function workspacesForNode(Node $node): array
     {
-        return Workspace::query()->with('app')->whereHas('app', fn ($query) => $query->where('node_id', $node->id))->get()->all();
+        return Workspace::query()
+            ->with('app')
+            ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
+            ->get()
+            ->all();
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool

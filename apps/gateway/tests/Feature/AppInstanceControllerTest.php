@@ -81,7 +81,8 @@ describe('AppInstanceController', function (): void {
             'php_extensions' => ['redis', 'intl'],
         ]);
 
-        $created->assertOk()
+        $created
+            ->assertOk()
             ->assertJsonPath('success.data.instance.app', 'billing')
             ->assertJsonPath('success.data.instance.name', 'production-cloud')
             ->assertJsonPath('success.data.instance.driver', 'laravel-cloud')
@@ -91,7 +92,8 @@ describe('AppInstanceController', function (): void {
 
         $list = appInstanceApiJson('GET', '/api/apps/billing/instances');
 
-        $list->assertOk()
+        $list
+            ->assertOk()
             ->assertJsonPath('success.meta.count', 1)
             ->assertJsonPath('success.data.instances.0.name', 'production-cloud');
 
@@ -102,7 +104,8 @@ describe('AppInstanceController', function (): void {
 
         $withoutForce = appInstanceApiJson('DELETE', '/api/apps/billing/instances/production-cloud');
 
-        $withoutForce->assertUnprocessable()
+        $withoutForce
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force');
 
@@ -134,7 +137,8 @@ describe('AppInstanceController', function (): void {
             ],
         ]);
 
-        $created->assertOk()
+        $created
+            ->assertOk()
             ->assertJsonPath('success.data.instance.driver_config.environment_id', 'env_main')
             ->assertJsonPath('success.data.instance.driver_config.environment_name', 'main')
             ->assertJsonPath('success.data.instance.driver_config.environment_reused', true)
@@ -158,7 +162,8 @@ describe('AppInstanceController', function (): void {
             ],
         ]);
 
-        $created->assertOk()
+        $created
+            ->assertOk()
             ->assertJsonPath('success.data.instance.driver_config.environment_id', 'env_main')
             ->assertJsonPath('success.data.instance.driver_config.environment_name', 'main')
             ->assertJsonPath('success.data.instance.driver_config.environment_reused', true)
@@ -182,7 +187,8 @@ describe('AppInstanceController', function (): void {
             ],
         ]);
 
-        $created->assertUnprocessable()
+        $created
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'cloud_environment')
             ->assertJsonPath('error.meta.reason', 'ambiguous_cloud_environment')
@@ -206,15 +212,19 @@ describe('AppInstanceController', function (): void {
             'domain' => 'billing.example.com',
         ]);
 
-        $created->assertOk()
+        $created
+            ->assertOk()
             ->assertJsonPath('success.data.instance.driver_config.node', 'app-prod-1')
             ->assertJsonPath('success.data.instance.driver_config.path', '/srv/billing/current');
 
         $instance = $app->instances()->where('name', 'production-orbit')->firstOrFail();
 
-        expect($instance->driver)->toBe(AppInstanceDriver::Orbit)
-            ->and($instance->driver_config)->toBeInstanceOf(OrbitAppInstanceDriverConfigData::class)
-            ->and($instance->driver_config->node_id)->toBe($prodNode->id);
+        expect($instance->driver)
+            ->toBe(AppInstanceDriver::Orbit)
+            ->and($instance->driver_config)
+            ->toBeInstanceOf(OrbitAppInstanceDriverConfigData::class)
+            ->and($instance->driver_config->node_id)
+            ->toBe($prodNode->id);
 
         $invalid = appInstanceApiJson('POST', '/api/apps/billing/instances', [
             'name' => 'broken-cloud',
@@ -222,7 +232,8 @@ describe('AppInstanceController', function (): void {
             'cloud_application_id' => 'app_123',
         ]);
 
-        $invalid->assertUnprocessable()
+        $invalid
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'cloud_environment');
     });

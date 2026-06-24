@@ -26,8 +26,8 @@ the harness differs from the feedback loop. Product behavior contracts remain in
   into the `hardimpact/orbit-reverb` image for websocket role nodes.
 - `packages/core/` is the shared Orbit package for contracts, helpers, and
   cross-application primitives.
-- Each app/package owns its own `composer.json`, test config, Pint config,
-  PHPStan config, and Rector config. Root Composer commands only orchestrate
+- Each app/package owns its own `composer.json`, test config, Mago config,
+  and Rector config. Root Composer commands only orchestrate
   those app/package-local commands.
 - The gateway entry point is `php apps/gateway/artisan` from the repository
   root, or `php artisan` from `apps/gateway/`. The host `orbit` launcher
@@ -102,8 +102,7 @@ product authority and are not linted as product docs.
 
 - Use `declare(strict_types=1)` in PHP files.
 - Tests use Pest.
-- Style uses Laravel Pint.
-- Static analysis uses Larastan/PHPStan.
+- Style, linting, and static analysis use Mago.
 - Refactoring uses Rector.
 - Follow the project-local Boost and Spatie skills in `.agents/skills/`.
 
@@ -118,7 +117,7 @@ Run the narrowest useful check while developing:
 
 ```bash
 bin/orbit-gateway-pest --compact
-bin/orbit-gateway-vendor-bin pint --dirty --format agent
+bin/orbit-gateway-vendor-bin mago format --check
 ```
 
 Before handing off a code change that should be broadly safe, run:
@@ -127,7 +126,7 @@ Before handing off a code change that should be broadly safe, run:
 composer quality-check
 ```
 
-`composer quality-check` fans out docs linting, Pest, Pint, PHPStan, and Rector
+`composer quality-check` fans out docs linting, Pest, Mago, and Rector
 across every app/package.
 
 When behavior touches the integrated topology, run the ephemeral E2E lane:

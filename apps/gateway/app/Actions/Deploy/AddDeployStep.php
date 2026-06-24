@@ -17,8 +17,15 @@ final readonly class AddDeployStep
         ?int $order = null,
         ?int $retention = null,
     ): DeployStep {
-        return DB::transaction(function () use ($appId, $title, $command, $timeoutSeconds, $order, $retention): DeployStep {
-            $nextOrder = ((int) DeployStep::query()->where('app_id', $appId)->max('sort_order')) + 1;
+        return DB::transaction(function () use (
+            $appId,
+            $title,
+            $command,
+            $timeoutSeconds,
+            $order,
+            $retention,
+        ): DeployStep {
+            $nextOrder = (int) DeployStep::query()->where('app_id', $appId)->max('sort_order') + 1;
             $targetOrder = max(1, min($order ?? $nextOrder, $nextOrder));
 
             DeployStep::query()

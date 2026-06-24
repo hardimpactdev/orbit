@@ -21,17 +21,27 @@ final readonly class AddSchedule
     /**
      * @return array{data: array<string, mixed>}
      */
-    public function handle(App|Node $target, string $name, string $interval, string $timezone, string $executionType, string $executionValue): array
-    {
+    public function handle(
+        App|Node $target,
+        string $name,
+        string $interval,
+        string $timezone,
+        string $executionType,
+        string $executionValue,
+    ): array {
         $scope = $target instanceof App ? 'app' : 'node';
         $targetName = $target->name;
         $scheduleKey = "{$scope}:{$targetName}:{$name}";
 
         if (Schedule::query()->where('schedule_key', $scheduleKey)->exists()) {
-            throw new GatewayApiException("Schedule '{$name}' already exists for {$scope} '{$targetName}'.", 'schedule.name_collision', [
-                'name' => $name,
-                $scope => $targetName,
-            ]);
+            throw new GatewayApiException(
+                "Schedule '{$name}' already exists for {$scope} '{$targetName}'.",
+                'schedule.name_collision',
+                [
+                    'name' => $name,
+                    $scope => $targetName,
+                ],
+            );
         }
 
         $schedule = Schedule::query()->create([

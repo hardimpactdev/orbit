@@ -19,15 +19,21 @@ it('stages secrets through stdin and removes the remote file after use', functio
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
 
-    $path = (new RemoteSecretFile($shell))->stage($node, 'super-secret-token', function (string $path): string {
+    $path = new RemoteSecretFile($shell)->stage($node, 'super-secret-token', function (string $path): string {
         return $path;
     });
 
-    expect($path)->toBe('/tmp/orbit-secret.abcd')
-        ->and($shell->scripts[0])->toContain('mktemp')
-        ->and($shell->scripts[0])->not->toContain('super-secret-token')
-        ->and($shell->options[0]['input'])->toBe(base64_encode('super-secret-token'))
-        ->and($shell->scripts[1])->toBe("rm -f '/tmp/orbit-secret.abcd'");
+    expect($path)
+        ->toBe('/tmp/orbit-secret.abcd')
+        ->and($shell->scripts[0])
+        ->toContain('mktemp')
+        ->and($shell->scripts[0])
+        ->not
+        ->toContain('super-secret-token')
+        ->and($shell->options[0]['input'])
+        ->toBe(base64_encode('super-secret-token'))
+        ->and($shell->scripts[1])
+        ->toBe("rm -f '/tmp/orbit-secret.abcd'");
 });
 
 it('removes the remote secret file when the callback fails', function (): void {
@@ -37,7 +43,7 @@ it('removes the remote secret file when the callback fails', function (): void {
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
     ]);
 
-    expect(fn () => (new RemoteSecretFile($shell))->stage($node, 'secret', function (): never {
+    expect(fn () => new RemoteSecretFile($shell)->stage($node, 'secret', function (): never {
         throw new RuntimeException('callback failed');
     }))->toThrow(RuntimeException::class, 'callback failed');
 
@@ -55,7 +61,9 @@ final class RemoteSecretFileRecordingShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

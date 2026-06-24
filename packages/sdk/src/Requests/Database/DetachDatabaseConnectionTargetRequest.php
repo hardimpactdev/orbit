@@ -44,7 +44,7 @@ final class DetachDatabaseConnectionTargetRequest extends GatewayRequest impleme
         $data = $this->unwrapData($response);
 
         return new DatabaseConnectionResultResponse(
-            result: is_array($data['result'] ?? null) ? $data['result'] : [],
+            result: $this->stringKeyedArray($data['result'] ?? []),
         );
     }
 }

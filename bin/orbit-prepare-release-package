@@ -153,6 +153,10 @@ function should_skip(string $relative, SplFileInfo $item): bool
         return true;
     }
 
+    if (str_contains(basename($relative), '.tmp.')) {
+        return true;
+    }
+
     if (is_path_or_child($relative, 'storage/logs')
         || is_path_or_child($relative, 'storage/framework/cache')
         || is_path_or_child($relative, 'storage/framework/sessions')

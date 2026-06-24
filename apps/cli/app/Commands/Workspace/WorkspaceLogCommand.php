@@ -39,7 +39,10 @@ final class WorkspaceLogCommand extends GatewayCommand
         $run = $this->runPayload($response);
 
         if ($run === []) {
-            return $this->renderWorkspaceLogFailure('gateway_unavailable', 'Gateway response did not include workspace run log data.');
+            return $this->renderWorkspaceLogFailure(
+                'gateway_unavailable',
+                'Gateway response did not include workspace run log data.',
+            );
         }
 
         foreach ($renderer->lines($run) as $line) {
@@ -80,8 +83,8 @@ final class WorkspaceLogCommand extends GatewayCommand
     private function runPayload(array $response): array
     {
         $success = $response['success'] ?? null;
-        $data = is_array($success) ? ($success['data'] ?? null) : null;
-        $run = is_array($data) ? ($data['run'] ?? null) : null;
+        $data = is_array($success) ? $success['data'] ?? null : null;
+        $run = is_array($data) ? $data['run'] ?? null : null;
 
         return is_array($run) ? $run : [];
     }

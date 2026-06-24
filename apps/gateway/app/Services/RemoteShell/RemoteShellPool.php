@@ -196,7 +196,7 @@ final readonly class RemoteShellPool
         RemoteShellPoolJob $job,
         RemoteShellResult $result,
     ): RemoteShellPoolResult {
-        if ((bool) ($job->options['throw'] ?? false) && ! $result->successful()) {
+        if (($job->options['throw'] ?? false) && ! $result->successful()) {
             return new RemoteShellPoolResult(
                 key: $job->key,
                 job: $job,

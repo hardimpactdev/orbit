@@ -9,7 +9,8 @@ describe('workspace write commands', function (): void {
     it('posts workspace:new payloads to the gateway workspaces endpoint', function (): void {
         fakeGatewayProgressStream(
             "event: complete\n"
-            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs"}}}}'."\n\n",
+            .'data: {"exit_code":0,"data":{"result":{"result":{"action":"created"},"workspace":{"name":"feature-docs","app":"docs"}}}}'
+            ."\n\n",
         );
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
@@ -22,18 +23,25 @@ describe('workspace write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/workspaces'
-            && $request->data() === [
-                'name' => 'feature-docs',
-                'app' => 'docs',
-                'base' => 'main',
-                'php_version' => '8.5',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/workspaces'
+                && $request->data() === [
+                    'name' => 'feature-docs',
+                    'app' => 'docs',
+                    'base' => 'main',
+                    'php_version' => '8.5',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['result']['result']['action'])->toBe('created');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['result']['result']['action'])
+            ->toBe('created');
     });
 
     it('validates workspace:new names before contacting the gateway', function (): void {
@@ -49,9 +57,12 @@ describe('workspace write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('name');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('name');
     });
 
     it('posts workspace:setup payloads with caller cwd context', function (): void {
@@ -61,7 +72,8 @@ describe('workspace write commands', function (): void {
         try {
             fakeGatewayProgressStream(
                 "event: complete\n"
-                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","action":"set_up"}}}'."\n\n",
+                .'data: {"exit_code":0,"data":{"result":{"workspace":"feature-docs","app":"docs","action":"set_up"}}}'
+                ."\n\n",
             );
 
             [$exitCode] = runCommand($this, 'workspace:setup', [
@@ -74,14 +86,18 @@ describe('workspace write commands', function (): void {
             restoreHostCwd($previousHostCwd);
         }
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/workspaces/setup'
-            && $request->data() === [
-                'name' => 'feature-docs',
-                'app' => 'docs',
-                'path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
-                'caller_cwd' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/workspaces/setup'
+                && $request->data() === [
+                    'name' => 'feature-docs',
+                    'app' => 'docs',
+                    'path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
+                    'caller_cwd' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -98,9 +114,12 @@ describe('workspace write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('deletes workspace:remove targets with destructive consent when forced', function (): void {
@@ -125,17 +144,18 @@ describe('workspace write commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && $url === 'https://gateway.test/api/workspaces/feature-docs?app=docs'
                 && $request->data() === [
                     'keep_files' => true,
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['action'])->toBe('removed');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['action'])->toBe('removed');
     });
 
     it('prompts for workspace:remove name and confirmation in interactive mode', function (): void {
@@ -145,7 +165,8 @@ describe('workspace write commands', function (): void {
             'action' => 'removed',
         ]));
 
-        $this->artisan('workspace:remove', ['--app' => 'docs'])
+        $this
+            ->artisan('workspace:remove', ['--app' => 'docs'])
             ->expectsQuestion('Workspace name', 'feature-docs')
             ->expectsConfirmation("Remove workspace 'feature-docs'?", 'yes')
             ->expectsOutputToContain('removed')
@@ -154,13 +175,15 @@ describe('workspace write commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && $url === 'https://gateway.test/api/workspaces/feature-docs?app=docs'
                 && $request->data() === [
                     'keep_files' => false,
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
-                ];
+                ]
+            );
         });
     });
 
@@ -180,13 +203,19 @@ describe('workspace write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Removing Workspace')
-            ->and($output)->toContain('Apply and verify workspace removal')
-            ->and($output)->toContain('Removing worktree')
-            ->and($output)->toContain("Workspace 'feature-api' removed")
-            ->and($output)->not->toContain('action:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Removing Workspace')
+            ->and($output)
+            ->toContain('Apply and verify workspace removal')
+            ->and($output)
+            ->toContain('Removing worktree')
+            ->and($output)
+            ->toContain("Workspace 'feature-api' removed")
+            ->and($output)
+            ->not->toContain('action:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders workspace:remove drift warnings after the tree', function (): void {
@@ -211,11 +240,18 @@ describe('workspace write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Workspace 'feature-api' removed with drift")
-            ->and($output)->toContain('Drift detected:')
-            ->and($output)->toContain('workspace: Workspace worktree could not be removed during cleanup. (run `doctor --family=workspace --restore`)')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Workspace 'feature-api' removed with drift")
+            ->and($output)
+            ->toContain('Drift detected:')
+            ->and($output)
+            ->toContain(
+                'workspace: Workspace worktree could not be removed during cleanup. (run `doctor --family=workspace --restore`)',
+            )
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders workspace:remove gateway failures as prose in human mode', function (): void {
@@ -227,9 +263,12 @@ describe('workspace write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("Workspace 'feature-api' not found")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("Workspace 'feature-api' not found")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('validates workspace:setup paths before opening a gateway stream', function (): void {
@@ -246,9 +285,11 @@ describe('workspace write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('path');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('path');
     });
-
 });

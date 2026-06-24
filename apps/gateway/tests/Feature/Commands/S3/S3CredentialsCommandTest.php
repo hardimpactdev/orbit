@@ -88,15 +88,17 @@ function s3CredCmdSeaweedfsTool(Node $storage, array $credentials = [], array $c
             'backend_host' => "{$storage->name}.s3.orbit",
             'public_hosts' => [],
         ], $config),
-        'credentials' => $credentials !== [] ? $credentials : [
-            'fields' => [
-                'access_key_id' => 'TESTACCESSKEYID12345',
-                'secret_access_key' => 'test-secret-access-key-value',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        'credentials' => $credentials !== []
+            ? $credentials
+            : [
+                'fields' => [
+                    'access_key_id' => 'TESTACCESSKEYID12345',
+                    'secret_access_key' => 'test-secret-access-key-value',
+                    'region' => 'orbit',
+                    'endpoint' => 'https://s3.orbit',
+                    'bucket_style' => 'path',
+                ],
             ],
-        ],
     ]);
 }
 
@@ -200,7 +202,8 @@ describe('S3Credentials prerequisites', function (): void {
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node')
             ->assertJsonPath('error.meta.required_role', 's3');
@@ -212,7 +215,8 @@ describe('S3Credentials prerequisites', function (): void {
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'router')
             ->assertJsonPath('error.meta.required_role', 'router');
@@ -238,7 +242,8 @@ describe('S3Credentials prerequisites', function (): void {
 
         $response = s3CredCmdGet($this);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node')
             ->assertJsonPath('error.meta.required_role', 's3');
@@ -254,23 +259,28 @@ describe('S3Credentials payload shape', function (): void {
         s3CredCmdCallerNode(role: 'gateway');
         $storage = s3CredCmdStorageNode();
         $router = s3CredCmdRouterNode();
-        s3CredCmdSeaweedfsTool($storage, credentials: [
-            'fields' => [
-                'access_key_id' => 'MYACCESSKEYID12345678',
-                'secret_access_key' => 'my-secret-access-key-value',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        s3CredCmdSeaweedfsTool(
+            $storage,
+            credentials: [
+                'fields' => [
+                    'access_key_id' => 'MYACCESSKEYID12345678',
+                    'secret_access_key' => 'my-secret-access-key-value',
+                    'region' => 'orbit',
+                    'endpoint' => 'https://s3.orbit',
+                    'bucket_style' => 'path',
+                ],
             ],
-        ], config: [
-            'backend_host' => 'storage-1.s3.orbit',
-            'public_hosts' => ['s3.example.com'],
-        ]);
+            config: [
+                'backend_host' => 'storage-1.s3.orbit',
+                'public_hosts' => ['s3.example.com'],
+            ],
+        );
         s3CredCmdServiceRoute($router);
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'storage-1')
             ->assertJsonPath('success.data.credentials.private_endpoint', 'https://s3.orbit')
             ->assertJsonPath('success.data.credentials.public_endpoints', ['https://s3.example.com'])
@@ -359,8 +369,7 @@ describe('S3Credentials no mutation', function (): void {
 
         $tool->refresh();
 
-        expect($tool->credentials)->toBe($beforeCredentials)
-            ->and($tool->config)->toBe($beforeConfig);
+        expect($tool->credentials)->toBe($beforeCredentials)->and($tool->config)->toBe($beforeConfig);
     });
 });
 
@@ -384,7 +393,8 @@ describe('S3Credentials missing credentials', function (): void {
 
         $response = s3CredCmdGet($this, ['node' => 'storage-1']);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 's3.credentials_missing')
             ->assertJsonPath('error.meta.node', 'storage-1')
             ->assertJsonPath('error.meta.tool', 'seaweedfs');

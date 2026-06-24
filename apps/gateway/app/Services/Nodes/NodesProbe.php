@@ -134,13 +134,15 @@ final readonly class NodesProbe
     {
         $rawStatus = $node->getRawOriginal('status');
 
-        return ! is_string($rawStatus)
+        return (
+            ! is_string($rawStatus)
             || $rawStatus === ''
             || ! is_string($node->platform)
             || $node->platform === ''
             || ! is_string($node->wireguard_address)
             || $node->wireguard_address === ''
-            || $this->nodeIsMissingRequiredHost($node);
+            || $this->nodeIsMissingRequiredHost($node)
+        );
     }
 
     private function nodeIsMissingRequiredHost(Node $node): bool
@@ -154,17 +156,18 @@ final readonly class NodesProbe
 
     private function nodeRequiresHost(Node $node): bool
     {
-        return $node->hasActiveRole(NodeRoleName::Gateway->value)
+        return (
+            $node->hasActiveRole(NodeRoleName::Gateway->value)
             || $node->hasActiveRole(NodeRoleName::AppDevelopment->value)
-            || $node->hasActiveRole(NodeRoleName::AppProduction->value);
+            || $node->hasActiveRole(NodeRoleName::AppProduction->value)
+        );
     }
 
     private function nodeRequiresGatewaySshReachability(Node $node): bool
     {
         $roles = app(NodeRoleAssignments::class);
 
-        return $roles->nodeHasActiveAppHostRole($node)
-            || $roles->nodeHasActiveAgentRole($node);
+        return $roles->nodeHasActiveAppHostRole($node) || $roles->nodeHasActiveAgentRole($node);
     }
 
     /**
@@ -314,11 +317,15 @@ final readonly class NodesProbe
 
     private function assignmentStatusIsUnresolved(NodeRoleAssignment $assignment): bool
     {
-        return in_array($assignment->status, [
-            NodeRoleStatus::Active,
-            NodeRoleStatus::Pending,
-            NodeRoleStatus::Error,
-        ], true);
+        return in_array(
+            $assignment->status,
+            [
+                NodeRoleStatus::Active,
+                NodeRoleStatus::Pending,
+                NodeRoleStatus::Error,
+            ],
+            true,
+        );
     }
 
     /**
@@ -339,7 +346,7 @@ final readonly class NodesProbe
     private function baselineDriftForAppDevelopment(Node $node, NodeRoleAssignment $assignment): array
     {
         $settings = $assignment->settings ?? [];
-        $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+        $tld = is_array($settings) ? $settings['tld'] ?? null : null;
 
         if (! is_string($tld) || trim($tld) === '') {
             return [];
@@ -397,7 +404,7 @@ final readonly class NodesProbe
         $drift = [];
 
         $settings = $assignment->settings ?? [];
-        $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+        $tld = is_array($settings) ? $settings['tld'] ?? null : null;
 
         if (! is_string($tld) || trim($tld) === '') {
             $tld = is_string($node->tld) ? trim($node->tld) : null;
@@ -896,10 +903,14 @@ final readonly class NodesProbe
 
     private function runtimeBackendProbe(): RuntimeBackendProbe
     {
-        return $this->runtimeBackendProbe
-            ?? ($this->remoteShell instanceof RemoteShell
-                ? new RuntimeBackendProbe($this->remoteShell)
-                : app(RuntimeBackendProbe::class));
+        return (
+            $this->runtimeBackendProbe
+            ?? (
+                $this->remoteShell instanceof RemoteShell
+                    ? new RuntimeBackendProbe($this->remoteShell)
+                    : app(RuntimeBackendProbe::class)
+            )
+        );
     }
 
     private function wireGuardPeerRealityProbe(): WireGuardPeerRealityProbe
@@ -909,9 +920,14 @@ final readonly class NodesProbe
 
     private function nodeIdentityArtifactProbe(): NodeIdentityArtifactProbe
     {
-        return $this->nodeIdentityArtifactProbe ?? ($this->remoteShell instanceof RemoteShell
-            ? new NodeIdentityArtifactProbe($this->remoteShell)
-            : app(NodeIdentityArtifactProbe::class));
+        return (
+            $this->nodeIdentityArtifactProbe
+            ?? (
+                $this->remoteShell instanceof RemoteShell
+                    ? new NodeIdentityArtifactProbe($this->remoteShell)
+                    : app(NodeIdentityArtifactProbe::class)
+            )
+        );
     }
 
     /**
@@ -1154,7 +1170,8 @@ final readonly class NodesProbe
             return null;
         }
 
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('role', $role)
             ->where('status', $status)
             ->first();
@@ -1295,15 +1312,20 @@ final readonly class NodesProbe
         return new ProbeSnapshot($items);
     }
 
-    private function identityArtifactMatchesNode(Node $node, NodeIdentityArtifact $artifact, string $observedAddress): bool
-    {
-        return $artifact->name === $node->name
+    private function identityArtifactMatchesNode(
+        Node $node,
+        NodeIdentityArtifact $artifact,
+        string $observedAddress,
+    ): bool {
+        return (
+            $artifact->name === $node->name
             && $artifact->role === $node->displayRole()
             && $artifact->localRole === $node->displayRole()
             && $artifact->status === 'active'
             && $artifact->platform === $node->platform
             && $artifact->wireguardAddress === $node->wireguard_address
-            && $observedAddress === $node->wireguard_address;
+            && $observedAddress === $node->wireguard_address
+        );
     }
 
     /**

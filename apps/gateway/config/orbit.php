@@ -46,7 +46,10 @@ return [
     ],
 
     'updates' => [
-        'release_manifest_url' => env('ORBIT_RELEASE_MANIFEST_URL', 'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json'),
+        'release_manifest_url' => env(
+            'ORBIT_RELEASE_MANIFEST_URL',
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json',
+        ),
         'release_manifest_timeout_seconds' => env('ORBIT_RELEASE_MANIFEST_TIMEOUT_SECONDS', 10),
         'allow_request_image_override' => env('ORBIT_UPDATE_ALLOW_REQUEST_IMAGE_OVERRIDE', false),
         'artifact_base_url' => env('ORBIT_UPDATE_ARTIFACT_BASE_URL', env('APP_URL', 'http://localhost')),

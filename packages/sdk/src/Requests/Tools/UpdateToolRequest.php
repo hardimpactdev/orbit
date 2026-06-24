@@ -35,11 +35,14 @@ final class UpdateToolRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-            'version' => $this->version,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+                'version' => $this->version,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolUpdateResponse
@@ -48,7 +51,7 @@ final class UpdateToolRequest extends GatewayRequest implements HasBody
         $tool = $data['tool'] ?? [];
 
         return new ToolUpdateResponse(
-            tool: is_array($tool) ? $tool : [],
+            tool: $this->stringKeyedArray($tool),
         );
     }
 }

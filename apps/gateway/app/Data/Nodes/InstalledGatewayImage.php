@@ -69,8 +69,7 @@ final readonly class InstalledGatewayImage implements Arrayable, JsonSerializabl
             return hash_equals($this->digest, $digest);
         }
 
-        return ltrim($this->version, 'v') === ltrim($version, 'v')
-            && $this->image === $image;
+        return ltrim($this->version, 'v') === ltrim($version, 'v') && $this->image === $image;
     }
 
     /**

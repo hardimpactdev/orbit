@@ -17,8 +17,7 @@ use Orbit\Core\Enums\OperationStatus;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
-    {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         #[Override]
         public function stage(OperationRun $operationRun, OperationUpdatePlan $plan): void
         {
@@ -46,22 +45,28 @@ it('loads the immutable update plan and writes runner start events', function ()
         ),
     );
 
-    $this->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
+    $this
+        ->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
         ->expectsOutputToContain("Update runner started for operation run {$run->id}.")
         ->assertSuccessful();
 
     $run->refresh();
     $event = $run->events()->firstOrFail();
 
-    expect($run->status)->toBe(OperationStatus::Succeeded)
-        ->and($run->events()->pluck('event_type')->last())->toBe('complete')
-        ->and($event->event_type)->toBe('step')
-        ->and($event->payload)->toMatchArray([
+    expect($run->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and($run->events()->pluck('event_type')->last())
+        ->toBe('complete')
+        ->and($event->event_type)
+        ->toBe('step')
+        ->and($event->payload)
+        ->toMatchArray([
             'key' => 'runner',
             'status' => 'running',
             'message' => 'Update runner started',
         ])
-        ->and($event->metadata)->toMatchArray([
+        ->and($event->metadata)
+        ->toMatchArray([
             'target_version' => '1.2.3',
             'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'manifest_version' => '1.2.3',
@@ -71,12 +76,15 @@ it('loads the immutable update plan and writes runner start events', function ()
 it('fails fast when the operation run has no persisted update plan or deferred start payload', function (): void {
     $run = updateRunnerCommandRun();
 
-    $this->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
+    $this
+        ->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
         ->expectsOutputToContain('Deferred update start request payload was not found on the operation run.')
         ->assertFailed();
 
-    expect($run->refresh()->status)->toBe(OperationStatus::Failed)
-        ->and($run->events()->where('event_type', 'step')->count())->toBeGreaterThan(0);
+    expect($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->events()->where('event_type', 'step')->count())
+        ->toBeGreaterThan(0);
 });
 
 it('fails fast when the operation run is already terminal', function (): void {
@@ -85,16 +93,17 @@ it('fails fast when the operation run is already terminal', function (): void {
     app(OperationUpdatePlanStore::class)->create($run, updateRunnerCommandSnapshot());
     app(OperationRunRecorder::class)->succeeded($run->id, result: ['done' => true]);
 
-    $this->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
+    $this
+        ->artisan('orbit:update-runner', ['--operation-run-id' => $run->id])
         ->expectsOutputToContain("Operation run [{$run->id}] is already terminal.")
         ->assertFailed();
 
-    expect($run->refresh()->status)->toBe(OperationStatus::Succeeded)
-        ->and($run->events()->count())->toBe(0);
+    expect($run->refresh()->status)->toBe(OperationStatus::Succeeded)->and($run->events()->count())->toBe(0);
 });
 
 it('requires an operation run id', function (): void {
-    $this->artisan('orbit:update-runner')
+    $this
+        ->artisan('orbit:update-runner')
         ->expectsOutputToContain('The --operation-run-id option is required.')
         ->assertFailed();
 });

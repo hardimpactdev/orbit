@@ -23,10 +23,14 @@ describe(OrbitConfigStore::class, function (): void {
 
         $config = $store->read();
 
-        expect($config['schema_version'])->toBe(OrbitConfigStore::CURRENT_SCHEMA_VERSION)
-            ->and($config['active_gateway'])->toBeNull()
-            ->and($config['gateways'])->toBe([])
-            ->and($config['defaults'])->toBe(['node' => null, 'profile' => null]);
+        expect($config['schema_version'])
+            ->toBe(OrbitConfigStore::CURRENT_SCHEMA_VERSION)
+            ->and($config['active_gateway'])
+            ->toBeNull()
+            ->and($config['gateways'])
+            ->toBe([])
+            ->and($config['defaults'])
+            ->toBe(['node' => null, 'profile' => null]);
     });
 
     it('honours the ORBIT_CONFIG_PATH override path', function (): void {
@@ -116,9 +120,12 @@ describe(OrbitConfigStore::class, function (): void {
         expect($perms)->toBe(OrbitConfigStore::FILE_MODE);
 
         $config = $store->read();
-        expect($config['active_gateway'])->toBe('default')
-            ->and($config['defaults']['node'])->toBe('agent-1')
-            ->and($config['schema_version'])->toBe(OrbitConfigStore::CURRENT_SCHEMA_VERSION);
+        expect($config['active_gateway'])
+            ->toBe('default')
+            ->and($config['defaults']['node'])
+            ->toBe('agent-1')
+            ->and($config['schema_version'])
+            ->toBe(OrbitConfigStore::CURRENT_SCHEMA_VERSION);
     });
 
     it('returns the active gateway entry through activeGateway()', function (): void {
@@ -132,8 +139,11 @@ describe(OrbitConfigStore::class, function (): void {
 
         $entry = $store->activeGateway();
 
-        expect($entry)->not->toBeNull()
-            ->and($entry['url'])->toBe('https://10.6.0.1');
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry['url'])
+            ->toBe('https://10.6.0.1');
     });
 
     it('returns active gateway name and sorted gateway entries', function (): void {
@@ -148,9 +158,12 @@ describe(OrbitConfigStore::class, function (): void {
             ],
         ]);
 
-        expect($store->activeGatewayName())->toBe('zulu')
-            ->and(array_keys($store->gatewayEntries()))->toBe(['alpha', 'zulu'])
-            ->and($store->gatewayEntry('alpha')['url'])->toBe('https://10.6.0.2');
+        expect($store->activeGatewayName())
+            ->toBe('zulu')
+            ->and(array_keys($store->gatewayEntries()))
+            ->toBe(['alpha', 'zulu'])
+            ->and($store->gatewayEntry('alpha')['url'])
+            ->toBe('https://10.6.0.2');
     });
 
     it('switches active gateway when the entry exists', function (): void {
@@ -165,9 +178,12 @@ describe(OrbitConfigStore::class, function (): void {
             ],
         ]);
 
-        expect($store->setActiveGateway('incus-dev'))->toBeTrue()
-            ->and($store->activeGatewayName())->toBe('incus-dev')
-            ->and($store->activeGateway()['url'])->toBe('https://10.6.0.12');
+        expect($store->setActiveGateway('incus-dev'))
+            ->toBeTrue()
+            ->and($store->activeGatewayName())
+            ->toBe('incus-dev')
+            ->and($store->activeGateway()['url'])
+            ->toBe('https://10.6.0.12');
     });
 
     it('rejects invalid and unknown gateway names', function (): void {
@@ -181,10 +197,14 @@ describe(OrbitConfigStore::class, function (): void {
             ],
         ]);
 
-        expect(OrbitConfigStore::isValidGatewayName('incus-dev'))->toBeTrue()
-            ->and(OrbitConfigStore::isValidGatewayName('../prod'))->toBeFalse()
-            ->and($store->setActiveGateway('missing'))->toBeFalse()
-            ->and($store->gatewayEntry('../prod'))->toBeNull();
+        expect(OrbitConfigStore::isValidGatewayName('incus-dev'))
+            ->toBeTrue()
+            ->and(OrbitConfigStore::isValidGatewayName('../prod'))
+            ->toBeFalse()
+            ->and($store->setActiveGateway('missing'))
+            ->toBeFalse()
+            ->and($store->gatewayEntry('../prod'))
+            ->toBeNull();
     });
 
     it('returns null from activeGateway() when active_gateway is missing', function (): void {
@@ -248,8 +268,7 @@ describe(OrbitConfigStore::class, function (): void {
 
         $wasSet = $store->clearDefaultNode();
 
-        expect($wasSet)->toBeTrue()
-            ->and($store->defaultNode())->toBeNull();
+        expect($wasSet)->toBeTrue()->and($store->defaultNode())->toBeNull();
     });
 
     it('clearDefaultNode() returns false when no default was set', function (): void {
@@ -259,8 +278,7 @@ describe(OrbitConfigStore::class, function (): void {
 
         $wasSet = $store->clearDefaultNode();
 
-        expect($wasSet)->toBeFalse()
-            ->and($store->defaultNode())->toBeNull();
+        expect($wasSet)->toBeFalse()->and($store->defaultNode())->toBeNull();
     });
 
     it('clearDefaultNode() is idempotent on a fresh config', function (): void {

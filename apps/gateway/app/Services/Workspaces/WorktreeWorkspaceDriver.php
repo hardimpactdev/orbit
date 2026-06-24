@@ -53,21 +53,21 @@ final readonly class WorktreeWorkspaceDriver implements WorkspaceSourceDriver
     {
         return sprintf(
             <<<'SH'
-set -Eeuo pipefail
-app_path=%s
-workspace_name=%s
-relative_path=".worktrees/${workspace_name}"
-workspace_path="${app_path}/${relative_path}"
-base_ref=%s
+                set -Eeuo pipefail
+                app_path=%s
+                workspace_name=%s
+                relative_path=".worktrees/${workspace_name}"
+                workspace_path="${app_path}/${relative_path}"
+                base_ref=%s
 
-if [ -e "$workspace_path" ]; then
-    echo "workspace path already exists: $workspace_path" >&2
-    exit 2
-fi
+                if [ -e "$workspace_path" ]; then
+                    echo "workspace path already exists: $workspace_path" >&2
+                    exit 2
+                fi
 
-mkdir -p "${app_path}/.worktrees"
-git -C "$app_path" worktree add "$relative_path" -b "$workspace_name" "$base_ref"
-SH,
+                mkdir -p "${app_path}/.worktrees"
+                git -C "$app_path" worktree add "$relative_path" -b "$workspace_name" "$base_ref"
+                SH,
             escapeshellarg(rtrim($app->path, '/')),
             escapeshellarg($workspaceName),
             escapeshellarg($base),

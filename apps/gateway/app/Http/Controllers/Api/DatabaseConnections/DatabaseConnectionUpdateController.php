@@ -23,14 +23,21 @@ final class DatabaseConnectionUpdateController extends DatabaseConnectionApiCont
         $payload = $this->connectionPayload($request, allowPartial: true);
 
         if ($payload === []) {
-            return $this->validationFailed('payload', 'At least one mutable field is required.', ['field' => 'payload']);
+            return $this->validationFailed('payload', 'At least one mutable field is required.', [
+                'field' => 'payload',
+            ]);
         }
 
         if (isset($payload['__invalid_node'])) {
-            return $this->validationFailed('node', "Invalid value for --node: '{$payload['__invalid_node']}'.", [
-                'field' => 'node',
-                'value' => $payload['__invalid_node'],
-            ], 422);
+            return $this->validationFailed(
+                'node',
+                "Invalid value for --node: '{$payload['__invalid_node']}'.",
+                [
+                    'field' => 'node',
+                    'value' => $payload['__invalid_node'],
+                ],
+                422,
+            );
         }
 
         $existing = $this->registry->show($connection);
@@ -46,7 +53,9 @@ final class DatabaseConnectionUpdateController extends DatabaseConnectionApiCont
         }
 
         if (array_key_exists('node_id', $payload)) {
-            $newServingNode = $payload['node_id'] !== null ? Node::query()->find($payload['node_id']) : $this->gatewayNode();
+            $newServingNode = $payload['node_id'] !== null
+                ? Node::query()->find($payload['node_id'])
+                : $this->gatewayNode();
             $authorization = $this->authorizeNodePermission($auth, $newServingNode, 'database:write');
 
             if ($authorization instanceof JsonResponse) {

@@ -27,14 +27,16 @@ it('requires dig before resolving DNS over WireGuard', function (): void {
     $instance = m::mock(E2EInstance::class);
     $key = new SshKeyPair('/tmp/private', '/tmp/public');
 
-    $instance->shouldReceive('ssh')
+    $instance
+        ->shouldReceive('ssh')
         ->once()
-        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use ($key, &$command): bool {
+        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use (
+            $key,
+            &$command,
+        ): bool {
             $command = $sshCommand;
 
-            return $user === 'orbit'
-                && $sshKey === $key
-                && $timeoutSeconds === 120;
+            return $user === 'orbit' && $sshKey === $key && $timeoutSeconds === 120;
         })
         ->andReturn(e2eReachabilityResult(output: "10.6.0.2\n"));
 
@@ -46,9 +48,13 @@ it('requires dig before resolving DNS over WireGuard', function (): void {
         expectedIp: '10.6.0.2',
     );
 
-    expect($command)->toContain('command -v dig')
-        ->and($command)->not->toContain('apt-get')
-        ->and($command)->toContain("dig +time=15 +short 'gateway-1.gateway' @'10.6.0.1'");
+    expect($command)
+        ->toContain('command -v dig')
+        ->and($command)
+        ->not
+        ->toContain('apt-get')
+        ->and($command)
+        ->toContain("dig +time=15 +short 'gateway-1.gateway' @'10.6.0.1'");
 });
 
 it('resolves URL hostnames through gateway DNS before curl reachability checks', function (): void {
@@ -56,14 +62,16 @@ it('resolves URL hostnames through gateway DNS before curl reachability checks',
     $instance = m::mock(E2EInstance::class);
     $key = new SshKeyPair('/tmp/private', '/tmp/public');
 
-    $instance->shouldReceive('ssh')
+    $instance
+        ->shouldReceive('ssh')
         ->once()
-        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use ($key, &$command): bool {
+        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use (
+            $key,
+            &$command,
+        ): bool {
             $command = $sshCommand;
 
-            return $user === 'orbit'
-                && $sshKey === $key
-                && $timeoutSeconds === 120;
+            return $user === 'orbit' && $sshKey === $key && $timeoutSeconds === 120;
         })
         ->andReturn(e2eReachabilityResult(output: '200'));
 
@@ -74,11 +82,16 @@ it('resolves URL hostnames through gateway DNS before curl reachability checks',
         url: 'https://gateway-1.gateway/',
     );
 
-    expect($command)->toContain("dig +time=15 +short 'gateway-1.gateway' @'10.6.0.1'")
-        ->and($command)->toContain('--resolve')
-        ->and($command)->toContain("'gateway-1.gateway:443:'\"\$resolved_ip\"")
-        ->and($command)->toContain('curl -k -s -o /dev/null -w "%{http_code}" --max-time 15')
-        ->and($command)->toContain("'https://gateway-1.gateway/'");
+    expect($command)
+        ->toContain("dig +time=15 +short 'gateway-1.gateway' @'10.6.0.1'")
+        ->and($command)
+        ->toContain('--resolve')
+        ->and($command)
+        ->toContain("'gateway-1.gateway:443:'\"\$resolved_ip\"")
+        ->and($command)
+        ->toContain('curl -k -s -o /dev/null -w "%{http_code}" --max-time 15')
+        ->and($command)
+        ->toContain("'https://gateway-1.gateway/'");
 });
 
 it('allows removed apps to become unreachable instead of returning an HTTP status', function (): void {
@@ -86,14 +99,16 @@ it('allows removed apps to become unreachable instead of returning an HTTP statu
     $instance = m::mock(E2EInstance::class);
     $key = new SshKeyPair('/tmp/private', '/tmp/public');
 
-    $instance->shouldReceive('ssh')
+    $instance
+        ->shouldReceive('ssh')
         ->once()
-        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use ($key, &$command): bool {
+        ->withArgs(function (string $user, SshKeyPair $sshKey, string $sshCommand, ?int $timeoutSeconds) use (
+            $key,
+            &$command,
+        ): bool {
             $command = $sshCommand;
 
-            return $user === 'orbit'
-                && $sshKey === $key
-                && $timeoutSeconds === 120;
+            return $user === 'orbit' && $sshKey === $key && $timeoutSeconds === 120;
         })
         ->andReturn(e2eReachabilityResult(output: '000'));
 
@@ -104,6 +119,5 @@ it('allows removed apps to become unreachable instead of returning an HTTP statu
         url: 'https://docs.test/',
     );
 
-    expect($command)->toContain(' || true')
-        ->and($command)->toContain("'docs.test:443:'\"\$resolved_ip\"");
+    expect($command)->toContain(' || true')->and($command)->toContain("'docs.test:443:'\"\$resolved_ip\"");
 });

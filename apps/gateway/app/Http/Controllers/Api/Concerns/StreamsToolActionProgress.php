@@ -30,7 +30,14 @@ trait StreamsToolActionProgress
         callable $data,
         callable $exitCode,
     ): StreamedResponse {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($title, $doneFooter, $failFooter, $operation, $data, $exitCode): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use (
+            $title,
+            $doneFooter,
+            $failFooter,
+            $operation,
+            $data,
+            $exitCode,
+        ): void {
             try {
                 $result = app(ToolActionProgressRunner::class)->run(
                     reporter: app(ProgressReporter::class),

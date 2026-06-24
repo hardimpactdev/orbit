@@ -35,12 +35,15 @@ final class SetupWorkspaceRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'name' => $this->name,
-            'app' => $this->app,
-            'path' => $this->path,
-            'caller_cwd' => $this->callerCwd,
-        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'name' => $this->name,
+                'app' => $this->app,
+                'path' => $this->path,
+                'caller_cwd' => $this->callerCwd,
+            ],
+            static fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): SetupWorkspaceResponse
@@ -54,10 +57,10 @@ final class SetupWorkspaceRequest extends GatewayRequest implements HasBody
             node: is_string($data['node'] ?? null) ? $data['node'] : '',
             url: is_string($data['url'] ?? null) ? $data['url'] : '',
             action: is_string($data['action'] ?? null) ? $data['action'] : 'set_up',
-            warnings: is_array($meta['warnings'] ?? null) ? array_values($meta['warnings']) : [],
-            setupSteps: is_array($data['setup_steps'] ?? null) ? $data['setup_steps'] : [],
-            processes: is_array($data['processes'] ?? null) ? $data['processes'] : [],
-            httpProbe: is_array($data['http_probe'] ?? null) ? $data['http_probe'] : [],
+            warnings: $this->listOfStringArrays($meta['warnings'] ?? []),
+            setupSteps: $this->stringKeyedArray($data['setup_steps'] ?? []),
+            processes: $this->stringKeyedArray($data['processes'] ?? []),
+            httpProbe: $this->stringKeyedArray($data['http_probe'] ?? []),
         );
     }
 }

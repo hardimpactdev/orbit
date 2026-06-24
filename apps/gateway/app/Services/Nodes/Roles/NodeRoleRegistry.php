@@ -28,8 +28,7 @@ final class NodeRoleRegistry
 
     public function definition(string $role): NodeRoleDefinition
     {
-        return $this->definitionMap()[$role]
-            ?? throw new InvalidArgumentException("Unknown node role [{$role}].");
+        return $this->definitionMap()[$role] ?? throw new InvalidArgumentException("Unknown node role [{$role}].");
     }
 
     /**

@@ -114,10 +114,17 @@ function s3UnpublishSeaweedfsTool(Node $storage, array $config = []): NodeTool
  */
 function s3UnpublishStream(object $test, string $host = 's3.example.com', array $payload = []): TestResponse
 {
-    return $test->call('DELETE', "/api/s3/public-hosts/{$host}", $payload, [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => S3_UNPUBLISH_CALLER_WG_IP,
-    ]);
+    return $test->call(
+        'DELETE',
+        "/api/s3/public-hosts/{$host}",
+        $payload,
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => S3_UNPUBLISH_CALLER_WG_IP,
+        ],
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -126,10 +133,17 @@ function s3UnpublishStream(object $test, string $host = 's3.example.com', array 
 
 describe('S3Unpublish authorization', function (): void {
     it('rejects unauthenticated callers', function (): void {
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => '192.168.99.99',
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => '192.168.99.99',
+            ],
+        );
 
         $response->assertStatus(403)
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -146,7 +160,8 @@ describe('S3Unpublish input validation', function (): void {
 
         $response = s3UnpublishStream($this, 's3.example.com');
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node')
             ->assertJsonPath('error.meta.required_role', 's3');
@@ -172,7 +187,8 @@ describe('S3Unpublish input validation', function (): void {
 
         $response = s3UnpublishStream($this);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node');
     });
@@ -189,9 +205,12 @@ describe('S3Unpublish prerequisites', function (): void {
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 
         $content = $response->streamedContent();
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"s3"');
     });
 
     it('fails when no active router exists', function (): void {
@@ -203,9 +222,12 @@ describe('S3Unpublish prerequisites', function (): void {
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 
         $content = $response->streamedContent();
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"router"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"router"');
     });
 
     it('fails when the s3 node has no seaweedfs tool row', function (): void {
@@ -217,8 +239,7 @@ describe('S3Unpublish prerequisites', function (): void {
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 
         $content = $response->streamedContent();
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed');
+        expect($content)->toContain('event: error')->and($content)->toContain('validation_failed');
     });
 });
 
@@ -245,9 +266,12 @@ describe('S3Unpublish owned-route denial', function (): void {
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 
         $content = $response->streamedContent();
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('proxy.owned_route_denied')
-            ->and($content)->toContain('"owner_type":"app"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('proxy.owned_route_denied')
+            ->and($content)
+            ->toContain('"owner_type":"app"');
     });
 });
 
@@ -265,9 +289,12 @@ describe('S3Unpublish absent idempotency', function (): void {
         $response = s3UnpublishStream($this, 's3.example.com', ['node' => 'storage-1']);
 
         $content = $response->streamedContent();
-        expect($content)->toContain('event: complete')
-            ->and($content)->toContain('"already_absent":true')
-            ->and($content)->toContain('"action":"unpublished"');
+        expect($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"already_absent":true')
+            ->and($content)
+            ->toContain('"action":"unpublished"');
     });
 });
 
@@ -287,17 +314,26 @@ describe('S3Unpublish success', function (): void {
         $response->assertOk();
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: complete')
-            ->and($content)->toContain('"node":"storage-1"')
-            ->and($content)->toContain('"host":"s3.example.com"')
-            ->and($content)->toContain('"action":"unpublished"')
-            ->and($content)->toContain('"already_absent":false');
+        expect($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"node":"storage-1"')
+            ->and($content)
+            ->toContain('"host":"s3.example.com"')
+            ->and($content)
+            ->toContain('"action":"unpublished"')
+            ->and($content)
+            ->toContain('"already_absent":false');
 
         $frame = s3UnpublishParseCompleteFrame($content);
-        expect($frame['data']['s3']['node'])->toBe('storage-1')
-            ->and($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($frame['data']['s3']['public_endpoints'])->toBeArray()
-            ->and($frame['data']['s3']['public_endpoints'])->not->toContain('https://s3.example.com');
+        expect($frame['data']['s3']['node'])
+            ->toBe('storage-1')
+            ->and($frame['data']['s3']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->toBeArray()
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->not->toContain('https://s3.example.com');
     });
 
     it('removes the public host from the seaweedfs tool row', function (): void {
@@ -348,8 +384,10 @@ describe('S3Unpublish success', function (): void {
         $response->streamedContent();
 
         $tool->refresh();
-        expect($tool->config['public_hosts'])->toContain('s3.other.com')
-            ->and($tool->config['public_hosts'])->not->toContain('s3.example.com');
+        expect($tool->config['public_hosts'])
+            ->toContain('s3.other.com')
+            ->and($tool->config['public_hosts'])
+            ->not->toContain('s3.example.com');
     });
 });
 

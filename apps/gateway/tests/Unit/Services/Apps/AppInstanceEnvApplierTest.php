@@ -27,9 +27,9 @@ describe('AppInstanceEnvApplier', function (): void {
         $path = storage_path('framework/testing/app-instance-env-applier');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', <<<'ENV'
-APP_NAME=Docs
-MAIL_MAILER=log
-ENV);
+            APP_NAME=Docs
+            MAIL_MAILER=log
+            ENV);
 
         $app = App::factory()->create([
             'node_id' => $node->id,
@@ -39,11 +39,16 @@ ENV);
 
         $result = app(AppInstanceEnvApplier::class)->apply($app, 'MAIL_MAILER', 'smtp');
 
-        expect($result->envPath)->toBe($path.'/.env')
-            ->and($result->cacheCleared)->toBeFalse()
-            ->and($result->runtimeOutcome)->toBeNull()
-            ->and(File::get($path.'/.env'))->toContain('APP_NAME=Docs')
-            ->and(File::get($path.'/.env'))->toContain('MAIL_MAILER=smtp');
+        expect($result->envPath)
+            ->toBe($path.'/.env')
+            ->and($result->cacheCleared)
+            ->toBeFalse()
+            ->and($result->runtimeOutcome)
+            ->toBeNull()
+            ->and(File::get($path.'/.env'))
+            ->toContain('APP_NAME=Docs')
+            ->and(File::get($path.'/.env'))
+            ->toContain('MAIL_MAILER=smtp');
     });
 
     it('clears Laravel caches and reapplies the runtime container for PHP apps', function (): void {
@@ -63,10 +68,14 @@ ENV);
 
         $result = app(AppInstanceEnvApplier::class)->apply($app, 'MAIL_MAILER', 'smtp');
 
-        expect($result->cacheCleared)->toBeTrue()
-            ->and($result->runtimeOutcome)->toBe(AppRuntimeContainerApplyOutcome::Created)
-            ->and($shell->scripts[2])->toContain('php artisan config:clear')
-            ->and($shell->scripts[2])->toContain('bootstrap/cache');
+        expect($result->cacheCleared)
+            ->toBeTrue()
+            ->and($result->runtimeOutcome)
+            ->toBe(AppRuntimeContainerApplyOutcome::Created)
+            ->and($shell->scripts[2])
+            ->toContain('php artisan config:clear')
+            ->and($shell->scripts[2])
+            ->toContain('bootstrap/cache');
     });
 });
 
@@ -85,10 +94,10 @@ function appAndNodeForEnvApplierTest(): array
 
 function renderEnvApplierTestContainer(App $app): AppRuntimeContainer
 {
-    return (new AppRuntimeContainerRenderer(
+    return new AppRuntimeContainerRenderer(
         new PhpRuntimePolicy(new PhpRuntimeCatalog),
         new OrbitContainerNames,
-    ))->render($app);
+    )->render($app);
 }
 
 final class AppInstanceEnvApplierRecordingRemoteShell implements RemoteShell

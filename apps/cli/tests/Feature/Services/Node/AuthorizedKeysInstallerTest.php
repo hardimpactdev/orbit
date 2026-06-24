@@ -18,11 +18,16 @@ describe(AuthorizedKeysInstaller::class, function (): void {
 
         $contents = file("{$home}/.ssh/authorized_keys", FILE_IGNORE_NEW_LINES);
 
-        expect($first)->toBeTrue()
-            ->and($second)->toBeFalse()
-            ->and($contents)->toBe([$key])
-            ->and(substr(sprintf('%o', fileperms("{$home}/.ssh")), -4))->toBe('0700')
-            ->and(substr(sprintf('%o', fileperms("{$home}/.ssh/authorized_keys")), -4))->toBe('0600');
+        expect($first)
+            ->toBeTrue()
+            ->and($second)
+            ->toBeFalse()
+            ->and($contents)
+            ->toBe([$key])
+            ->and(substr(sprintf('%o', fileperms("{$home}/.ssh")), -4))
+            ->toBe('0700')
+            ->and(substr(sprintf('%o', fileperms("{$home}/.ssh/authorized_keys")), -4))
+            ->toBe('0600');
     });
 
     it('fails clearly when an existing authorized keys file cannot be read', function (): void {
@@ -35,10 +40,13 @@ describe(AuthorizedKeysInstaller::class, function (): void {
         chmod($authorizedKeys, 0000);
 
         try {
-            expect(fn (): bool => app(AuthorizedKeysInstaller::class)->install(
-                $home,
-                'ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway',
-            ))->toThrow(RuntimeException::class, "Could not read {$authorizedKeys}.");
+            expect(
+                fn (): bool => app(AuthorizedKeysInstaller::class)->install(
+                    $home,
+                    'ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway',
+                ),
+            )
+                ->toThrow(RuntimeException::class, "Could not read {$authorizedKeys}.");
         } finally {
             chmod($authorizedKeys, 0600);
         }

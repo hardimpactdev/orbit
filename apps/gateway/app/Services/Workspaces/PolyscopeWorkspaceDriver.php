@@ -113,9 +113,10 @@ final readonly class PolyscopeWorkspaceDriver implements WorkspaceSourceDriver
         $polyscopeAppConfig = is_array($appConfig['polyscope'] ?? null) ? $appConfig['polyscope'] : [];
 
         $config = [
-            'api_token' => $this->stringValue($polyscopeNodeConfig['api_token'] ?? null)
-                ?? $this->stringValue($polyscopeNodeConfig['api_key'] ?? null)
-                ?? $this->stringValue($polyscopeNodeConfig['auth_token'] ?? null),
+            'api_token' =>
+                $this->stringValue($polyscopeNodeConfig['api_token'] ?? null) ?? $this->stringValue(
+                    $polyscopeNodeConfig['api_key'] ?? null,
+                ) ?? $this->stringValue($polyscopeNodeConfig['auth_token'] ?? null),
             'server_id' => $this->stringValue($polyscopeNodeConfig['server_id'] ?? null),
             'repository_id' => $this->stringValue($polyscopeAppConfig['repository_id'] ?? null),
             'base_url' => $this->stringValue($polyscopeNodeConfig['base_url'] ?? null),

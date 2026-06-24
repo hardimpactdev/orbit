@@ -76,14 +76,14 @@ final class PhpCliTool extends BaseTool
             $patch = self::PATCH_PINS[$minor];
 
             $versionBlocks[] = <<<BASH
-    # --- PHP {$minor} ---
-    sudo mkdir -p {$root}/{$minor}/bin
-    curl -fsSL {$this->curlRetryFlags()} "{$base}/php-{$patch}-cli-\${OS}-\${ARCH}.tar.gz" -o /tmp/orbit-php-{$minor}.tar.gz
-    sudo tar -xzf /tmp/orbit-php-{$minor}.tar.gz -C {$root}/{$minor}/bin
-    sudo chmod +x {$root}/{$minor}/bin/php
-    sudo ln -sf {$root}/{$minor}/bin/php /usr/local/bin/php{$minor}
-    rm -f /tmp/orbit-php-{$minor}.tar.gz
-BASH;
+                    # --- PHP {$minor} ---
+                    sudo mkdir -p {$root}/{$minor}/bin
+                    curl -fsSL {$this->curlRetryFlags()} "{$base}/php-{$patch}-cli-\${OS}-\${ARCH}.tar.gz" -o /tmp/orbit-php-{$minor}.tar.gz
+                    sudo tar -xzf /tmp/orbit-php-{$minor}.tar.gz -C {$root}/{$minor}/bin
+                    sudo chmod +x {$root}/{$minor}/bin/php
+                    sudo ln -sf {$root}/{$minor}/bin/php /usr/local/bin/php{$minor}
+                    rm -f /tmp/orbit-php-{$minor}.tar.gz
+                BASH;
         }
 
         $blocks = implode("\n", $versionBlocks);
@@ -93,27 +93,27 @@ BASH;
             : '#!/usr/bin/env bash'."\n".'# orbit update php-cli'."\n".'set -e';
 
         return <<<BASH
-{$header}
+            {$header}
 
-# Detect OS
-case "\$(uname -s)" in
-    Linux)  OS=linux  ;;
-    Darwin) OS=macos  ;;
-    *)      echo "unsupported os" >&2; exit 1 ;;
-esac
+            # Detect OS
+            case "\$(uname -s)" in
+                Linux)  OS=linux  ;;
+                Darwin) OS=macos  ;;
+                *)      echo "unsupported os" >&2; exit 1 ;;
+            esac
 
-# Detect architecture
-case "\$(uname -m)" in
-    x86_64|amd64)   ARCH=x86_64   ;;
-    aarch64|arm64)  ARCH=aarch64  ;;
-    *)              echo "unsupported arch" >&2; exit 1 ;;
-esac
+            # Detect architecture
+            case "\$(uname -m)" in
+                x86_64|amd64)   ARCH=x86_64   ;;
+                aarch64|arm64)  ARCH=aarch64  ;;
+                *)              echo "unsupported arch" >&2; exit 1 ;;
+            esac
 
-{$blocks}
+            {$blocks}
 
-# Set php8.5 as the default php
-sudo ln -sf {$root}/8.5/bin/php /usr/local/bin/php
-BASH;
+            # Set php8.5 as the default php
+            sudo ln -sf {$root}/8.5/bin/php /usr/local/bin/php
+            BASH;
     }
 
     private function curlRetryFlags(): string

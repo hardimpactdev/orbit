@@ -41,12 +41,16 @@ final class ProcessListCommand extends GatewayCommand
         $workspace = $this->stringOption('workspace');
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->renderFailure('validation_failed', 'A node context cannot be combined with app or workspace context.', [
-                'field' => 'context',
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-            ]);
+            return $this->renderFailure(
+                'validation_failed',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'field' => 'context',
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
+                ],
+            );
         }
 
         try {
@@ -142,7 +146,7 @@ final class ProcessListCommand extends GatewayCommand
     private function statusLabel(array $process): string
     {
         $event = $process['last_event'] ?? null;
-        $type = is_array($event) ? ($event['type'] ?? null) : null;
+        $type = is_array($event) ? $event['type'] ?? null : null;
 
         if (is_string($type) && isset(self::StatusForEvent[$type])) {
             return self::StatusForEvent[$type];

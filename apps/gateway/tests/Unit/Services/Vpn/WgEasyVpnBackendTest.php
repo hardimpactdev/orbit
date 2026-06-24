@@ -46,15 +46,20 @@ it('mints client configs with the wireguard server dns address', function (): vo
         if ($request->method() === 'GET' && $request->url() === 'http://127.0.0.1:51821/api/client') {
             $clientListCalls++;
 
-            return Http::response($clientListCalls === 1 ? [] : [
-                [
-                    'id' => 'client-7',
-                    'name' => 'laptop',
-                    'ipv4Address' => '10.6.0.7',
-                    'enabled' => true,
-                    'latestHandshakeAt' => null,
-                ],
-            ], 200);
+            return Http::response(
+                $clientListCalls === 1
+                    ? []
+                    : [
+                        [
+                            'id' => 'client-7',
+                            'name' => 'laptop',
+                            'ipv4Address' => '10.6.0.7',
+                            'enabled' => true,
+                            'latestHandshakeAt' => null,
+                        ],
+                    ],
+                200,
+            );
         }
 
         if ($request->method() === 'POST' && $request->url() === 'http://127.0.0.1:51821/api/client') {
@@ -141,31 +146,39 @@ it('routes password and session secret updates through wg-easy state actions wit
         return Process::result();
     });
 
-    $result = (new WgEasyVpnBackend(
+    $result = new WgEasyVpnBackend(
         username: 'orbit',
         password: 'current-secret-password',
         localExecutor: wgEasyVpnBackendExecutor($transport),
         vpnNodeResolver: app(VpnNodeResolver::class),
-    ))
+    )
         ->changeWebUiPassword('new-secret-password');
 
-    expect($result->passwordChanged)->toBeTrue()
-        ->and($result->sessionsInvalidated)->toBeTrue();
+    expect($result->passwordChanged)->toBeTrue()->and($result->sessionsInvalidated)->toBeTrue();
 
     $scripts = array_column($transport->calls, 'script');
 
-    expect($scripts)->toHaveCount(3)
-        ->and($scripts[0])->toContain('internal:wg-easy:state')
-        ->and($scripts[0])->toContain("--action='ensure-writable'")
-        ->and($scripts[0])->toContain('--operation-token=')
-        ->and($scripts[1])->toContain("--action='update-user-password'")
-        ->and($scripts[1])->toContain("--password-hash='{$hash}'")
-        ->and($scripts[2])->toContain("--action='update-session-password'")
-        ->and($scripts[2])->toContain("--password-hash='{$hash}'");
+    expect($scripts)
+        ->toHaveCount(3)
+        ->and($scripts[0])
+        ->toContain('internal:wg-easy:state')
+        ->and($scripts[0])
+        ->toContain("--action='ensure-writable'")
+        ->and($scripts[0])
+        ->toContain('--operation-token=')
+        ->and($scripts[1])
+        ->toContain("--action='update-user-password'")
+        ->and($scripts[1])
+        ->toContain("--password-hash='{$hash}'")
+        ->and($scripts[2])
+        ->toContain("--action='update-session-password'")
+        ->and($scripts[2])
+        ->toContain("--password-hash='{$hash}'");
 
     foreach ($scripts as $script) {
-        expect($script)->not->toContain('sqlite3')
-            ->and($script)->not->toContain('sudo sqlite3');
+        expect($script)
+            ->not->toContain('sqlite3')->and($script)
+            ->not->toContain('sudo sqlite3');
     }
 
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'sqlite3'));
@@ -174,27 +187,37 @@ it('routes password and session secret updates through wg-easy state actions wit
     $completed = wgEasyVpnBackendLocalExecutorCompletedProperties();
     $passwordActionLogs = [$dispatching[1], $dispatching[2]];
 
-    expect($dispatching)->toHaveCount(3)
-        ->and($dispatching[1]['command_options']['password-hash'])->toBe('<redacted>')
-        ->and($dispatching[1]['command_line'])->toContain('--password-hash=<redacted>')
-        ->and($dispatching[2]['command_options']['password-hash'])->toBe('<redacted>')
-        ->and($dispatching[2]['command_line'])->toContain('--password-hash=<redacted>')
-        ->and(json_encode($passwordActionLogs, JSON_THROW_ON_ERROR))->not->toContain($hash)
-        ->and(json_encode($passwordActionLogs, JSON_THROW_ON_ERROR))->not->toContain('new-secret-password')
-        ->and($completed)->toHaveCount(3)
-        ->and($completed[1]['stdout_summary'])->toBe('<suppressed>')
-        ->and($completed[1]['stderr_summary'])->toBe('<suppressed>')
-        ->and($completed[2]['stdout_summary'])->toBe('<suppressed>')
-        ->and($completed[2]['stderr_summary'])->toBe('<suppressed>')
-        ->and(json_encode([$completed[1], $completed[2]], JSON_THROW_ON_ERROR))->not->toContain($hash)
-        ->and(json_encode([$completed[1], $completed[2]], JSON_THROW_ON_ERROR))->not->toContain('new-secret-password');
+    expect($dispatching)
+        ->toHaveCount(3)
+        ->and($dispatching[1]['command_options']['password-hash'])
+        ->toBe('<redacted>')
+        ->and($dispatching[1]['command_line'])
+        ->toContain('--password-hash=<redacted>')
+        ->and($dispatching[2]['command_options']['password-hash'])
+        ->toBe('<redacted>')
+        ->and($dispatching[2]['command_line'])
+        ->toContain('--password-hash=<redacted>')
+        ->and(json_encode($passwordActionLogs, JSON_THROW_ON_ERROR))
+        ->not->toContain($hash)->and(json_encode($passwordActionLogs, JSON_THROW_ON_ERROR))
+        ->not->toContain('new-secret-password')->and($completed)->toHaveCount(3)->and(
+            $completed[1]['stdout_summary'],
+        )->toBe('<suppressed>')->and($completed[1]['stderr_summary'])->toBe('<suppressed>')->and(
+            $completed[2]['stdout_summary'],
+        )->toBe('<suppressed>')->and($completed[2]['stderr_summary'])->toBe('<suppressed>')->and(json_encode(
+            [$completed[1], $completed[2]],
+            JSON_THROW_ON_ERROR,
+        ))
+        ->not->toContain($hash)->and(json_encode([$completed[1], $completed[2]], JSON_THROW_ON_ERROR))
+        ->not->toContain('new-secret-password');
 });
 
 it('writes WG_EASY_PASSWORD to the active gateway environment file instead of the source tree env', function (): void {
     $transport = new WgEasyVpnBackendStateTransport(
         static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
             exitCode: 0,
-            stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+            stdout: json_encode(JsonEnvelope::success([
+                'updated' => true,
+            ]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
             stderr: '',
             durationMs: 1,
         ),
@@ -232,7 +255,12 @@ it('does not leak backend password action values from wg-easy state failures', f
     $hash = '$argon2id$v=19$m=65536,t=3,p=4$hash$hash';
     $newPassword = 'new-secret-password';
     $transport = new WgEasyVpnBackendStateTransport(
-        static function (Node $node, string $script, array $options) use ($failingAction, $hash, $newPassword, $remoteCode): RemoteShellResult {
+        static function (Node $node, string $script, array $options) use (
+            $failingAction,
+            $hash,
+            $newPassword,
+            $remoteCode,
+        ): RemoteShellResult {
             if (str_contains($script, $failingAction)) {
                 return new RemoteShellResult(
                     exitCode: 1,
@@ -252,7 +280,9 @@ it('does not leak backend password action values from wg-easy state failures', f
 
             return new RemoteShellResult(
                 exitCode: 0,
-                stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                stdout: json_encode(JsonEnvelope::success([
+                    'updated' => true,
+                ]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 stderr: '',
                 durationMs: 1,
             );
@@ -273,17 +303,23 @@ it('does not leak backend password action values from wg-easy state failures', f
             fn (array $properties): bool => ($properties['status'] ?? null) === 'failed',
         ));
 
-        expect($exception->getMessage())->toBe($failureMessage)
-            ->and($probe)->not->toContain($newPassword)
-            ->and($probe)->not->toContain($hash)
-            ->and($meta)->toHaveKey('wg_easy_state_error_code', $remoteCode)
-            ->and($failed)->toHaveCount(1)
-            ->and($failed[0]['stdout_summary'])->toBe('<suppressed>')
-            ->and($failed[0]['stderr_summary'])->toBe('<suppressed>');
+        expect($exception->getMessage())
+            ->toBe($failureMessage)
+            ->and($probe)
+            ->not->toContain($newPassword)->and($probe)
+            ->not->toContain($hash)->and($meta)->toHaveKey('wg_easy_state_error_code', $remoteCode)->and(
+                $failed,
+            )->toHaveCount(1)->and($failed[0]['stdout_summary'])->toBe('<suppressed>')->and(
+                $failed[0]['stderr_summary'],
+            )->toBe('<suppressed>');
     }
 })->with([
     'user password update' => ['update-user-password', 'Could not update VPN web UI password.', 'user_not_found'],
-    'session password update' => ['update-session-password', 'Could not rotate VPN web UI sessions.', 'session_password_not_found'],
+    'session password update' => [
+        'update-session-password',
+        'Could not rotate VPN web UI sessions.',
+        'session_password_not_found',
+    ],
 ]);
 
 it('does not leak password action values from transport exception messages or metadata', function (): void {
@@ -294,13 +330,14 @@ it('does not leak password action values from transport exception messages or me
             if (str_contains($script, "--action='update-user-password'")) {
                 $metadata = ['script' => $script, 'password-hash' => $hash];
 
-                throw new class("transport failed while running {$script}", $metadata) extends RuntimeException
-                {
+                throw new class("transport failed while running {$script}", $metadata) extends RuntimeException {
                     /**
                      * @param  array<string, mixed>  $meta
                      */
-                    public function __construct(string $message, public readonly array $meta)
-                    {
+                    public function __construct(
+                        string $message,
+                        public readonly array $meta,
+                    ) {
                         parent::__construct($message);
                     }
                 };
@@ -308,7 +345,9 @@ it('does not leak password action values from transport exception messages or me
 
             return new RemoteShellResult(
                 exitCode: 0,
-                stdout: json_encode(JsonEnvelope::success(['updated' => true]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                stdout: json_encode(JsonEnvelope::success([
+                    'updated' => true,
+                ]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
                 stderr: '',
                 durationMs: 1,
             );
@@ -329,15 +368,17 @@ it('does not leak password action values from transport exception messages or me
             fn (array $properties): bool => ($properties['status'] ?? null) === 'failed',
         ));
 
-        expect($exception->getMessage())->toBe('Remote local executor transport failed: <suppressed>')
-            ->and($probe)->not->toContain($newPassword)
-            ->and($probe)->not->toContain($hash)
-            ->and($meta)->not->toBeEmpty()
-            ->and(json_encode($meta, JSON_THROW_ON_ERROR))->not->toContain($hash)
-            ->and($failed)->toHaveCount(1)
-            ->and($failed[0]['exception_message'])->toBe('<suppressed>')
-            ->and(json_encode($failed, JSON_THROW_ON_ERROR))->not->toContain($hash)
-            ->and(json_encode($completed, JSON_THROW_ON_ERROR))->not->toContain($newPassword);
+        expect($exception->getMessage())
+            ->toBe('Remote local executor transport failed: <suppressed>')
+            ->and($probe)
+            ->not->toContain($newPassword)->and($probe)
+            ->not->toContain($hash)->and($meta)
+            ->not->toBeEmpty()->and(json_encode($meta, JSON_THROW_ON_ERROR))
+            ->not->toContain($hash)->and($failed)->toHaveCount(1)->and($failed[0]['exception_message'])->toBe(
+                '<suppressed>',
+            )->and(json_encode($failed, JSON_THROW_ON_ERROR))
+            ->not->toContain($hash)->and(json_encode($completed, JSON_THROW_ON_ERROR))
+            ->not->toContain($newPassword);
     }
 });
 
@@ -356,9 +397,11 @@ it('raises a generic exception when backend wg-easy state output is not parseabl
 
         $this->fail('Expected backend wg-easy state parsing to fail.');
     } catch (RuntimeException $exception) {
-        expect($exception->getMessage())->toBe('Could not verify VPN web UI database writability.')
-            ->and(wgEasyVpnBackendExceptionProbe($exception))->not->toContain($secret)
-            ->and(wgEasyVpnBackendExceptionProbe($exception))->not->toContain('not-json');
+        expect($exception->getMessage())
+            ->toBe('Could not verify VPN web UI database writability.')
+            ->and(wgEasyVpnBackendExceptionProbe($exception))
+            ->not->toContain($secret)->and(wgEasyVpnBackendExceptionProbe($exception))
+            ->not->toContain('not-json');
     }
 });
 
@@ -387,9 +430,11 @@ it('does not expose backend wg-easy state error messages from remote failure env
     } catch (RuntimeException $exception) {
         $probe = wgEasyVpnBackendExceptionProbe($exception);
 
-        expect($exception->getMessage())->toBe('Could not verify VPN web UI database writability.')
-            ->and($probe)->not->toContain($secret)
-            ->and($probe)->not->toContain('remote leak');
+        expect($exception->getMessage())
+            ->toBe('Could not verify VPN web UI database writability.')
+            ->and($probe)
+            ->not->toContain($secret)->and($probe)
+            ->not->toContain('remote leak');
     }
 });
 
@@ -417,8 +462,10 @@ it('only exposes whitelisted backend wg-easy state error codes in exception meta
     } catch (RuntimeException $exception) {
         $meta = wgEasyVpnBackendExceptionMeta($exception);
 
-        expect($exception->getMessage())->toBe('Could not verify VPN web UI database writability.')
-            ->and($exception->getMessage())->not->toContain($remoteCode);
+        expect($exception->getMessage())
+            ->toBe('Could not verify VPN web UI database writability.')
+            ->and($exception->getMessage())
+            ->not->toContain($remoteCode);
 
         if ($expectedCode === null) {
             expect($meta)->not->toHaveKey('wg_easy_state_error_code');
@@ -504,7 +551,11 @@ function wgEasyVpnBackendLocalExecutorDispatchingProperties(): array
         ->where('event', 'local_executor.dispatching')
         ->orderBy('id')
         ->get()
-        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->map(fn (object $activity): array => json_decode(
+            (string) $activity->properties,
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        ))
         ->all();
 }
 
@@ -518,7 +569,11 @@ function wgEasyVpnBackendLocalExecutorCompletedProperties(): array
         ->where('event', 'local_executor.completed')
         ->orderBy('id')
         ->get()
-        ->map(fn (object $activity): array => json_decode((string) $activity->properties, true, flags: JSON_THROW_ON_ERROR))
+        ->map(fn (object $activity): array => json_decode(
+            (string) $activity->properties,
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        ))
         ->all();
 }
 

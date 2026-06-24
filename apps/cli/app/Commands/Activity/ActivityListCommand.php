@@ -36,7 +36,10 @@ final class ActivityListCommand extends GatewayCommand
         }
 
         try {
-            $response = $this->gatewayGet('/api/activity', array_filter($filters, fn (mixed $value): bool => $value !== null));
+            $response = $this->gatewayGet('/api/activity', array_filter(
+                $filters,
+                fn (mixed $value): bool => $value !== null,
+            ));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -165,13 +168,13 @@ final class ActivityListCommand extends GatewayCommand
 
         $effect = $this->stringFilter('effect');
 
-        if ($effect === false || ($effect !== null && ! in_array($effect, self::VALID_EFFECTS, true))) {
+        if ($effect === false || $effect !== null && ! in_array($effect, self::VALID_EFFECTS, true)) {
             return $this->invalidFilter('effect', 'unsupported_value');
         }
 
         $correlation = $this->stringFilter('correlation');
 
-        if ($correlation === false || ($correlation !== null && ! Str::isUuid($correlation))) {
+        if ($correlation === false || $correlation !== null && ! Str::isUuid($correlation)) {
             return $this->invalidFilter('correlation', 'invalid');
         }
 

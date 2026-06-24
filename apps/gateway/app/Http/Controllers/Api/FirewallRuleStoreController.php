@@ -46,7 +46,12 @@ final class FirewallRuleStoreController implements Loggable
                 caller: $caller,
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $caller;
@@ -70,7 +75,12 @@ final class FirewallRuleStoreController implements Loggable
         $port = $this->optionalString($request, 'port');
 
         if ($action === null || $name === null || $node === null || $port === null) {
-            return $this->error('validation_failed', 'Required firewall rule input is missing.', ['fields' => ['action', 'name', 'node', 'port']], 422);
+            return $this->error(
+                'validation_failed',
+                'Required firewall rule input is missing.',
+                ['fields' => ['action', 'name', 'node', 'port']],
+                422,
+            );
         }
 
         return [

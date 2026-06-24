@@ -16,24 +16,31 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
 
         $add = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit proxy:add ".escapeshellarg($domain).' --node=app-dev-1 --upstream=http://127.0.0.1:5173 --json',
+            "cd {$checkout} && orbit proxy:add "
+            .escapeshellarg($domain)
+            .' --node=app-dev-1 --upstream=http://127.0.0.1:5173 --json',
             timeoutSeconds: 120,
         );
         $addPayload = proxyCommandPayload($add->output());
 
-        expect($add->successful())->toBeTrue()
-            ->and($addPayload['success']['data']['route'])->toMatchArray([
+        expect($add->successful())
+            ->toBeTrue()
+            ->and($addPayload['success']['data']['route'])
+            ->toMatchArray([
                 'domain' => $domain,
                 'kind' => 'proxy',
                 'node' => 'app-dev-1',
                 'status' => 'expected',
             ])
-            ->and($addPayload['success']['data']['route']['owner']['type'])->toBe('custom')
-            ->and($addPayload['success']['data']['route']['target'])->toBe([
+            ->and($addPayload['success']['data']['route']['owner']['type'])
+            ->toBe('custom')
+            ->and($addPayload['success']['data']['route']['target'])
+            ->toBe([
                 'type' => 'upstream',
                 'value' => 'http://127.0.0.1:5173',
             ])
-            ->and($addPayload['success']['meta']['warnings'][0]['code'])->toBe('proxy.enactment_deferred');
+            ->and($addPayload['success']['meta']['warnings'][0]['code'])
+            ->toBe('proxy.enactment_deferred');
 
         $list = $topology->ssh(
             'gateway',
@@ -60,14 +67,17 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
         );
         $removePayload = proxyCommandPayload($remove->output());
 
-        expect($remove->successful())->toBeTrue()
-            ->and($removePayload['success']['data']['route'])->toMatchArray([
+        expect($remove->successful())
+            ->toBeTrue()
+            ->and($removePayload['success']['data']['route'])
+            ->toMatchArray([
                 'domain' => $domain,
                 'kind' => 'proxy',
                 'node' => 'app-dev-1',
                 'status' => 'removed_with_drift',
             ])
-            ->and($removePayload['success']['meta']['warnings'][0]['code'])->toBe('proxy.cleanup_deferred');
+            ->and($removePayload['success']['meta']['warnings'][0]['code'])
+            ->toBe('proxy.cleanup_deferred');
 
         $after = $topology->ssh(
             'gateway',
@@ -85,13 +95,21 @@ it('writes lists and removes custom proxy intent on a prepared app node', functi
         );
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+})->group(
+    'e2e-feature',
+    'e2e-feature-canary',
+    'e2e-feature-operator_gateway_app-dev',
+    'e2e-feature-operator-gateway-dev',
+);
 
 function proxyCommandPrepareAppNode(E2ETopologyHarness $topology, string $checkout): void
 {
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && php apps/gateway/artisan tinker --execute=".escapeshellarg('$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["status" => "active"]); echo "prepared";'),
+        "cd {$checkout} && php apps/gateway/artisan tinker --execute="
+            .escapeshellarg(
+                '$node = \App\Models\Node::query()->where("name", "app-dev-1")->firstOrFail(); $node->update(["status" => "active"]); echo "prepared";',
+            ),
         timeoutSeconds: 120,
     );
 }

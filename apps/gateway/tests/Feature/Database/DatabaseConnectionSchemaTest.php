@@ -19,7 +19,8 @@ it('creates the database connection tables with the expected columns and broad t
     expect(Schema::getColumnType('database_connections', 'credentials'))->toBe('text');
     expect(Schema::getColumnType('database_connection_targets', 'env_prefix'))->toBeIn(['string', 'varchar']);
 
-    expect(Schema::hasTable('database_connections'))->toBeTrue()
+    expect(Schema::hasTable('database_connections'))
+        ->toBeTrue()
         ->and(Schema::hasColumns('database_connections', [
             'id',
             'node_id',
@@ -33,8 +34,10 @@ it('creates the database connection tables with the expected columns and broad t
             'credentials',
             'created_at',
             'updated_at',
-        ]))->toBeTrue()
-        ->and(Schema::hasTable('database_connection_targets'))->toBeTrue()
+        ]))
+        ->toBeTrue()
+        ->and(Schema::hasTable('database_connection_targets'))
+        ->toBeTrue()
         ->and(Schema::hasColumns('database_connection_targets', [
             'id',
             'database_connection_id',
@@ -43,7 +46,8 @@ it('creates the database connection tables with the expected columns and broad t
             'env_prefix',
             'created_at',
             'updated_at',
-        ]))->toBeTrue();
+        ]))
+        ->toBeTrue();
 });
 
 it('enforces unique database connection slugs at the database level', function (): void {
@@ -68,7 +72,8 @@ it('enforces unique database connection slugs at the database level', function (
         'username' => 'orbit',
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });
 
 it('enforces env prefix uniqueness per app target', function (): void {
@@ -103,7 +108,8 @@ it('enforces env prefix uniqueness per app target', function (): void {
         'env_prefix' => 'DB',
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });
 
 it('enforces env prefix uniqueness per workspace target', function (): void {
@@ -138,7 +144,8 @@ it('enforces env prefix uniqueness per workspace target', function (): void {
         'env_prefix' => 'DB',
         'created_at' => now(),
         'updated_at' => now(),
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });
 
 it('requires each target row to belong to exactly one app or workspace', function (): void {
@@ -167,8 +174,10 @@ it('requires each target row to belong to exactly one app or workspace', functio
         $neitherOwner = $exception;
     }
 
-    expect($neitherOwner)->toBeInstanceOf(QueryException::class)
-        ->and($neitherOwner->getMessage())->toContain('database_connection_targets_owner_check');
+    expect($neitherOwner)
+        ->toBeInstanceOf(QueryException::class)
+        ->and($neitherOwner->getMessage())
+        ->toContain('database_connection_targets_owner_check');
 
     $bothOwners = null;
 
@@ -185,8 +194,10 @@ it('requires each target row to belong to exactly one app or workspace', functio
         $bothOwners = $exception;
     }
 
-    expect($bothOwners)->toBeInstanceOf(QueryException::class)
-        ->and($bothOwners->getMessage())->toContain('database_connection_targets_owner_check');
+    expect($bothOwners)
+        ->toBeInstanceOf(QueryException::class)
+        ->and($bothOwners->getMessage())
+        ->toContain('database_connection_targets_owner_check');
 });
 
 it('cascades target rows when the database connection is deleted', function (): void {
@@ -254,10 +265,13 @@ it('cascades target rows when the owning app or workspace is deleted', function 
 
     $workspace->delete();
 
-    expect(DB::table('database_connection_targets')->where('database_connection_id', $workspaceConnectionId)->count())->toBe(0)
-        ->and(DB::table('database_connection_targets')->where('database_connection_id', $appConnectionId)->count())->toBe(1);
+    expect(DB::table('database_connection_targets')->where('database_connection_id', $workspaceConnectionId)->count())
+        ->toBe(0)
+        ->and(DB::table('database_connection_targets')->where('database_connection_id', $appConnectionId)->count())
+        ->toBe(1);
 
     $app->delete();
 
-    expect(DB::table('database_connection_targets')->where('database_connection_id', $appConnectionId)->count())->toBe(0);
+    expect(DB::table('database_connection_targets')->where('database_connection_id', $appConnectionId)->count())
+        ->toBe(0);
 });

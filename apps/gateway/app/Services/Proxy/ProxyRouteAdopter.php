@@ -128,7 +128,7 @@ final readonly class ProxyRouteAdopter
             ->where('node_id', $node->id)
             ->get();
 
-        $tld = (string) ($node->tld ?? '');
+        $tld = $node->tld ?? '';
         $tldSuffix = $tld !== '' ? '.'.$tld : '';
 
         foreach ($apps as $app) {

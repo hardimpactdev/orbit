@@ -80,11 +80,19 @@ it('lists Cloudflare zones through the gateway API', function (): void {
         ]),
     ]);
 
-    $response = $this->call('GET', '/api/cloudflare/zones', [], [], [], [
-        'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
-    ]);
+    $response = $this->call(
+        'GET',
+        '/api/cloudflare/zones',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.zones.0.name', 'lindaretel.nl')
         ->assertJsonPath('success.meta.count', 1);
 });
@@ -107,11 +115,19 @@ it('lists Cloudflare zones for a caller with a gateway grant', function (): void
         ]),
     ]);
 
-    $response = $this->call('GET', '/api/cloudflare/zones', [], [], [], [
-        'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
-    ]);
+    $response = $this->call(
+        'GET',
+        '/api/cloudflare/zones',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.zones.0.name', 'lindaretel.nl')
         ->assertJsonPath('success.meta.count', 1);
 });
@@ -120,11 +136,19 @@ it('denies callers without the required Cloudflare grant before provider request
     $gateway = createTestGatewayNode(['name' => 'gateway-1']);
     createCloudflareApiCallerNode('app-dev');
 
-    $response = $this->call('GET', '/api/cloudflare/zones', [], [], [], [
-        'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
-    ]);
+    $response = $this->call(
+        'GET',
+        '/api/cloudflare/zones',
+        [],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
 
-    $response->assertForbidden()
+    $response
+        ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
         ->assertJsonPath('error.meta.missing_permission', 'cf:zone:list')
         ->assertJsonPath('error.meta.serving_node', $gateway->name);
@@ -137,13 +161,21 @@ it('requires the disable permission for the Cloudflare SSL disable API route', f
     $caller = createCloudflareApiCallerNode('control');
     grantCloudflareApiAccess($caller, $gateway, ['cf:ssl:enable']);
 
-    $response = $this->call('PUT', '/api/cloudflare/zones/lindaretel.nl/ssl/disable', [
-        'destructive_consent' => true,
-    ], [], [], [
-        'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
-    ]);
+    $response = $this->call(
+        'PUT',
+        '/api/cloudflare/zones/lindaretel.nl/ssl/disable',
+        [
+            'destructive_consent' => true,
+        ],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => CLOUDFLARE_API_CALLER_WG_IP,
+        ],
+    );
 
-    $response->assertForbidden()
+    $response
+        ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
         ->assertJsonPath('error.meta.missing_permission', 'cf:ssl:disable');
 

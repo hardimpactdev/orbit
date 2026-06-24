@@ -15,7 +15,12 @@ it('updates node metadata from a operator caller through the gateway api', funct
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-update');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
         e2eGrantNodeAccess($topology);
 
         $updateResult = $topology->ssh(
@@ -29,9 +34,12 @@ it('updates node metadata from a operator caller through the gateway api', funct
 
         $updatePayload = json_decode(trim($updateResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($updatePayload['success']['data']['name'])->toBe('app-dev-1')
-            ->and($updatePayload['success']['data']['changed'])->toBe(['public_ipv4'])
-            ->and($updatePayload['success']['data']['action'])->toBe('updated');
+        expect($updatePayload['success']['data']['name'])
+            ->toBe('app-dev-1')
+            ->and($updatePayload['success']['data']['changed'])
+            ->toBe(['public_ipv4'])
+            ->and($updatePayload['success']['data']['action'])
+            ->toBe('updated');
 
         $metadataResult = $topology->ssh(
             'gateway',

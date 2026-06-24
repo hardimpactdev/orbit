@@ -61,10 +61,18 @@ final readonly class WebSocketRuntimeContainerManager
 
     public function remove(Node $node, string $containerName): bool
     {
-        $inspect = $this->run($node, $this->commands->containerInspect($containerName), 'websocket-runtime-container-inspect');
+        $inspect = $this->run(
+            $node,
+            $this->commands->containerInspect($containerName),
+            'websocket-runtime-container-inspect',
+        );
 
         if ($inspect->successful() && trim($inspect->stdout) !== '') {
-            return $this->run($node, $this->commands->containerRemove($containerName), 'websocket-runtime-container-remove')->successful();
+            return $this->run(
+                $node,
+                $this->commands->containerRemove($containerName),
+                'websocket-runtime-container-remove',
+            )->successful();
         }
 
         return $this->isDockerNoSuchObject($inspect);
@@ -72,7 +80,11 @@ final readonly class WebSocketRuntimeContainerManager
 
     private function ensureNetwork(Node $node, WebSocketRuntimeContainer $container): void
     {
-        $result = $this->run($node, $this->commands->networkInspect($container->network()), 'websocket-runtime-network-inspect');
+        $result = $this->run(
+            $node,
+            $this->commands->networkInspect($container->network()),
+            'websocket-runtime-network-inspect',
+        );
 
         if ($result->successful()) {
             return;
@@ -91,7 +103,11 @@ final readonly class WebSocketRuntimeContainerManager
      */
     private function inspect(Node $node, WebSocketRuntimeContainer $container): ?array
     {
-        $result = $this->run($node, $this->commands->containerInspect($container->name()), 'websocket-runtime-container-inspect');
+        $result = $this->run(
+            $node,
+            $this->commands->containerInspect($container->name()),
+            'websocket-runtime-container-inspect',
+        );
 
         if (! $result->successful()) {
             return null;
@@ -106,7 +122,9 @@ final readonly class WebSocketRuntimeContainerManager
         $inspection = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
 
         if (! is_array($inspection)) {
-            throw new RuntimeException("Docker returned an invalid inspect payload for {$container->name()} on {$node->name}.");
+            throw new RuntimeException(
+                "Docker returned an invalid inspect payload for {$container->name()} on {$node->name}.",
+            );
         }
 
         return $inspection;

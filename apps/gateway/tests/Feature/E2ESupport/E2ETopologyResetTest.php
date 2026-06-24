@@ -121,10 +121,14 @@ it('returns new instances after reset', function (): void {
 
     $lease->reset();
 
-    expect($lease->operator())->toBe($newOperator)
-        ->and($lease->gateway())->toBe($newGateway)
-        ->and($lease->devApp())->toBe($newDev)
-        ->and($lease->prodApp())->toBe($newProd);
+    expect($lease->operator())
+        ->toBe($newOperator)
+        ->and($lease->gateway())
+        ->toBe($newGateway)
+        ->and($lease->devApp())
+        ->toBe($newDev)
+        ->and($lease->prodApp())
+        ->toBe($newProd);
 });
 
 it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-restore', function (): void {
@@ -156,8 +160,7 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is snapshot-re
 
         $lease->reset();
 
-        expect($callCount)->toBe(1)
-            ->and($lease->operator())->toBe($operator);
+        expect($callCount)->toBe(1)->and($lease->operator())->toBe($operator);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -195,8 +198,7 @@ it('runs the snapshot reset closure when ORBIT_E2E_TOPOLOGY_RESET is stateful-re
 
         $lease->reset();
 
-        expect($callCount)->toBe(1)
-            ->and($lease->operator())->toBe($operator);
+        expect($callCount)->toBe(1)->and($lease->operator())->toBe($operator);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -235,8 +237,7 @@ it('falls back to fresh-clone when snapshot-restore is requested without a snaps
 
         $lease->reset();
 
-        expect($lease->operator())->toBe($newOperator)
-            ->and($teardownCalls)->toBe(0);
+        expect($lease->operator())->toBe($newOperator)->and($teardownCalls)->toBe(0);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -337,8 +338,7 @@ it('fresh-clone reset uses a prepared rebuild state', function (): void {
 
     $lease->reset();
 
-    expect($prepared)->toBeTrue()
-        ->and($lease->operator())->toBe($newOperator);
+    expect($prepared)->toBeTrue()->and($lease->operator())->toBe($newOperator);
 });
 
 it('falls back to fresh-clone for unknown reset mode values', function (): void {

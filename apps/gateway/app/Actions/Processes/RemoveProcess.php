@@ -25,12 +25,17 @@ final readonly class RemoveProcess
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
 
-        $process = $context->ownerProcesses()
+        $process = $context
+            ->ownerProcesses()
             ->where('name', $name)
             ->first();
 
         if (! $process instanceof Process) {
-            throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
+            throw new GatewayApiException(
+                "Process '{$name}' not found for {$context->label()}.",
+                'process.not_found',
+                $context->errorMeta($name),
+            );
         }
 
         $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process, $context->runtimeWorkspaceFor($process));

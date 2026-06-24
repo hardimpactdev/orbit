@@ -29,10 +29,14 @@ describe(CodexAppConfigMerger::class, function (): void {
         $added = $merger->addProject($config, 'Docs', 'app-node', '/home/orbit/apps/docs');
         $updated = $merger->addProject($added, 'Docs', 'app-node', '/home/orbit/apps/docs-api');
 
-        expect($updated['theme'])->toBe('system')
-            ->and($updated['remoteConnections'])->toHaveCount(2)
-            ->and($updated['remoteConnections'][1]['sshAlias'])->toBe('app-node')
-            ->and($updated['remoteConnections'][1]['projects'])->toBe([
+        expect($updated['theme'])
+            ->toBe('system')
+            ->and($updated['remoteConnections'])
+            ->toHaveCount(2)
+            ->and($updated['remoteConnections'][1]['sshAlias'])
+            ->toBe('app-node')
+            ->and($updated['remoteConnections'][1]['projects'])
+            ->toBe([
                 [
                     'remotePath' => '/home/orbit/apps/docs-api',
                     'label' => 'Docs',
@@ -62,10 +66,12 @@ describe(CodexAppConfigMerger::class, function (): void {
 
         $result = app(CodexAppConfigMerger::class)->removeProject($config, 'Docs', 'app-node');
 
-        expect($result['remoteConnections'][0]['projects'])->toBe([
-            ['remotePath' => '/home/orbit/apps/billing', 'label' => 'Billing'],
-        ])
-            ->and($result['remoteConnections'][1]['projects'])->toBe([
+        expect($result['remoteConnections'][0]['projects'])
+            ->toBe([
+                ['remotePath' => '/home/orbit/apps/billing', 'label' => 'Billing'],
+            ])
+            ->and($result['remoteConnections'][1]['projects'])
+            ->toBe([
                 ['remotePath' => '/srv/docs', 'label' => 'Docs'],
             ]);
     });

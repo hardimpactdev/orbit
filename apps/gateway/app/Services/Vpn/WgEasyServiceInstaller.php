@@ -93,7 +93,7 @@ class WgEasyServiceInstaller
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to start wg-easy: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to start wg-easy: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
 
@@ -113,7 +113,7 @@ class WgEasyServiceInstaller
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to read wg-easy WireGuard public key: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to read wg-easy WireGuard public key: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
 
@@ -157,10 +157,10 @@ class WgEasyServiceInstaller
 
         $script = sprintf(
             <<<'SH'
-set -eu
-%s
-%s
-SH,
+                set -eu
+                %s
+                %s
+                SH,
             $this->dockerShellPrefix(),
             implode("\n", $runtimeCommands),
         );
@@ -169,7 +169,7 @@ SH,
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to configure wg-easy peers: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to configure wg-easy peers: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
     }
@@ -178,13 +178,13 @@ SH,
     {
         $result = Process::timeout(75)->run(sprintf(
             <<<'SH'
-%s
-for i in $(seq 1 60); do
-    $ORBIT_DOCKER exec wg-easy test -f /etc/wireguard/wg-easy.db && $ORBIT_DOCKER exec wg-easy ip link show wg0 >/dev/null 2>&1 && exit 0
-    sleep 1
-done
-exit 1
-SH,
+                %s
+                for i in $(seq 1 60); do
+                    $ORBIT_DOCKER exec wg-easy test -f /etc/wireguard/wg-easy.db && $ORBIT_DOCKER exec wg-easy ip link show wg0 >/dev/null 2>&1 && exit 0
+                    sleep 1
+                done
+                exit 1
+                SH,
             $this->dockerShellPrefix(),
         ));
 
@@ -197,7 +197,7 @@ SH,
         }
 
         throw new RuntimeException(
-            'wg-easy did not become ready: '.trim($result->errorOutput().' '.$result->output())
+            'wg-easy did not become ready: '.trim($result->errorOutput().' '.$result->output()),
         );
     }
 
@@ -208,10 +208,10 @@ SH,
 
         $result = Process::timeout(30)->run(sprintf(
             <<<'SH'
-%s
-$ORBIT_DOCKER exec wg-easy ip addr replace %s dev wg0
-$ORBIT_DOCKER exec wg-easy ip route replace %s dev wg0
-SH,
+                %s
+                $ORBIT_DOCKER exec wg-easy ip addr replace %s dev wg0
+                $ORBIT_DOCKER exec wg-easy ip route replace %s dev wg0
+                SH,
             $this->dockerShellPrefix(),
             escapeshellarg($serverAddress),
             escapeshellarg($wireguardCidr),
@@ -219,7 +219,7 @@ SH,
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to converge wg-easy server address: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to converge wg-easy server address: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
 
@@ -232,13 +232,13 @@ SH,
     {
         $result = Process::timeout(30)->run(sprintf(
             <<<'SH'
-set -e
-if command -v sudo >/dev/null 2>&1; then
-    sudo chown -R "$(id -u):$(id -g)" %s
-else
-    chown -R "$(id -u):$(id -g)" %s
-fi
-SH,
+                set -e
+                if command -v sudo >/dev/null 2>&1; then
+                    sudo chown -R "$(id -u):$(id -g)" %s
+                else
+                    chown -R "$(id -u):$(id -g)" %s
+                fi
+                SH,
             $this->statePathForShell(),
             $this->statePathForShell(),
         ));
@@ -248,7 +248,7 @@ SH,
         }
 
         throw new RuntimeException(
-            'Failed to make wg-easy state writable: '.trim($result->errorOutput().' '.$result->output())
+            'Failed to make wg-easy state writable: '.trim($result->errorOutput().' '.$result->output()),
         );
     }
 
@@ -263,37 +263,37 @@ SH,
         $image = self::Image;
 
         return <<<YAML
-services:
-  wg-easy:
-    image: {$image}
-    container_name: wg-easy
-    restart: unless-stopped
-    environment:
-{$this->composeEnvironmentLine('INIT_ENABLED', 'true')}
-{$this->composeEnvironmentLine('INIT_USERNAME', $username)}
-{$this->composeEnvironmentLine('INIT_PASSWORD', $password)}
-{$this->composeEnvironmentLine('INIT_HOST', $publicHost)}
-{$this->composeEnvironmentLine('INIT_PORT', (string) $wireguardPort)}
-{$this->composeEnvironmentLine('INIT_DNS', $dnsIp)}
-{$this->composeEnvironmentLine('INIT_ALLOWED_IPS', $wireguardCidr)}
-{$this->composeEnvironmentLine('INSECURE', 'true')}
-{$this->composeEnvironmentLine('PORT', '51821')}
-{$this->composeEnvironmentLine('HOST', '0.0.0.0')}
-{$this->composeEnvironmentLine('DISABLE_IPV6', 'true')}
-    ports:
-      - "{$wireguardPort}:{$wireguardPort}/udp"
-      - "127.0.0.1:51821:51821/tcp"
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    sysctls:
-      - net.ipv4.conf.all.src_valid_mark=1
-      - net.ipv4.ip_forward=1
-    volumes:
-      - {$this->statePath()}:/etc/wireguard
-      - /lib/modules:/lib/modules:ro
+            services:
+              wg-easy:
+                image: {$image}
+                container_name: wg-easy
+                restart: unless-stopped
+                environment:
+            {$this->composeEnvironmentLine('INIT_ENABLED', 'true')}
+            {$this->composeEnvironmentLine('INIT_USERNAME', $username)}
+            {$this->composeEnvironmentLine('INIT_PASSWORD', $password)}
+            {$this->composeEnvironmentLine('INIT_HOST', $publicHost)}
+            {$this->composeEnvironmentLine('INIT_PORT', (string) $wireguardPort)}
+            {$this->composeEnvironmentLine('INIT_DNS', $dnsIp)}
+            {$this->composeEnvironmentLine('INIT_ALLOWED_IPS', $wireguardCidr)}
+            {$this->composeEnvironmentLine('INSECURE', 'true')}
+            {$this->composeEnvironmentLine('PORT', '51821')}
+            {$this->composeEnvironmentLine('HOST', '0.0.0.0')}
+            {$this->composeEnvironmentLine('DISABLE_IPV6', 'true')}
+                ports:
+                  - "{$wireguardPort}:{$wireguardPort}/udp"
+                  - "127.0.0.1:51821:51821/tcp"
+                cap_add:
+                  - NET_ADMIN
+                  - SYS_MODULE
+                sysctls:
+                  - net.ipv4.conf.all.src_valid_mark=1
+                  - net.ipv4.ip_forward=1
+                volumes:
+                  - {$this->statePath()}:/etc/wireguard
+                  - /lib/modules:/lib/modules:ro
 
-YAML;
+            YAML;
     }
 
     protected function cidrPrefix(string $wireguardCidr): int
@@ -557,8 +557,10 @@ final class WgEasyStateInstallerFailed extends RuntimeException
     /**
      * @param  array<string, mixed>  $meta
      */
-    public function __construct(string $message, public readonly array $meta = [])
-    {
+    public function __construct(
+        string $message,
+        public readonly array $meta = [],
+    ) {
         parent::__construct($message);
     }
 }

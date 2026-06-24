@@ -328,12 +328,17 @@ final readonly class SchedulesProbe
     {
         $observed = $snapshot->get('gateway');
 
-        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+        if (
+            ($observed['runtime_available'] ?? null) !== true
+            || ($observed['scheduler_status'] ?? null) !== 'running'
+        ) {
             return [];
         }
 
         $observedImage = is_string($observed['scheduler_image'] ?? null) ? trim($observed['scheduler_image']) : '';
-        $expectedImage = is_string($observed['scheduler_desired_image'] ?? null) ? trim($observed['scheduler_desired_image']) : '';
+        $expectedImage = is_string($observed['scheduler_desired_image'] ?? null)
+            ? trim($observed['scheduler_desired_image'])
+            : '';
 
         if ($expectedImage === '' || $observedImage === '' || $observedImage === $expectedImage) {
             return [];
@@ -361,7 +366,10 @@ final readonly class SchedulesProbe
     {
         $observed = $snapshot->get('gateway');
 
-        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+        if (
+            ($observed['runtime_available'] ?? null) !== true
+            || ($observed['scheduler_status'] ?? null) !== 'running'
+        ) {
             return [];
         }
 
@@ -393,7 +401,10 @@ final readonly class SchedulesProbe
     {
         $observed = $snapshot->get('gateway');
 
-        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+        if (
+            ($observed['runtime_available'] ?? null) !== true
+            || ($observed['scheduler_status'] ?? null) !== 'running'
+        ) {
             return [];
         }
 
@@ -420,7 +431,10 @@ final readonly class SchedulesProbe
     {
         $observed = $snapshot->get('gateway');
 
-        if (($observed['runtime_available'] ?? null) !== true || ($observed['scheduler_status'] ?? null) !== 'running') {
+        if (
+            ($observed['runtime_available'] ?? null) !== true
+            || ($observed['scheduler_status'] ?? null) !== 'running'
+        ) {
             return [];
         }
 
@@ -523,13 +537,18 @@ final readonly class SchedulesProbe
             : null;
     }
 
-    private function runtimeOutput(string $schedulerService, ?string $schedulerImage, ?string $schedulerReplicas): string
-    {
+    private function runtimeOutput(
+        string $schedulerService,
+        ?string $schedulerImage,
+        ?string $schedulerReplicas,
+    ): string {
         return collect([
             "scheduler_service={$schedulerService}",
             $schedulerImage === null ? null : "scheduler_image={$schedulerImage}",
             $schedulerReplicas === null ? null : "scheduler_replicas={$schedulerReplicas}",
-        ])->filter()->implode("\n");
+        ])
+            ->filter()
+            ->implode("\n");
     }
 
     private function dateValue(mixed $value): ?CarbonInterface

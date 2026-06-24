@@ -69,8 +69,10 @@ class DockerCommandBuilder
         return $this->buildRunOrCreate('docker create', $container);
     }
 
-    private function buildRunOrCreate(string $prefix, OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string
-    {
+    private function buildRunOrCreate(
+        string $prefix,
+        OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container,
+    ): string {
         $parts = [
             $prefix,
             '--pull',
@@ -195,8 +197,14 @@ class DockerCommandBuilder
 
     private function usesE2eNodeNetwork(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool
     {
-        return ($container instanceof OrbitCaddyContainer || $container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer)
-            && $this->e2eNodeContainerFor($container) !== null;
+        return (
+            (
+                $container instanceof OrbitCaddyContainer
+                || $container instanceof ProcessDockerContainer
+                || $container instanceof WebSocketRuntimeContainer
+            )
+            && $this->e2eNodeContainerFor($container) !== null
+        );
     }
 
     private function e2eNodeContainerFor(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): ?string

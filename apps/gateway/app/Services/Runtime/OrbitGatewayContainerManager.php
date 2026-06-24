@@ -26,14 +26,22 @@ class OrbitGatewayContainerManager
         }
 
         if (! $this->matchesSpec($inspection, $container)) {
-            $this->runRequired($this->commands->containerRemove($container->name()), "remove drifted {$container->name()} container", 60);
+            $this->runRequired(
+                $this->commands->containerRemove($container->name()),
+                "remove drifted {$container->name()} container",
+                60,
+            );
             $this->runRequired($this->commands->runDetached($container), "create {$container->name()} container", 120);
 
             return;
         }
 
         if (! $this->isRunning($inspection)) {
-            $this->runRequired($this->commands->containerStart($container->name()), "start {$container->name()} container", 60);
+            $this->runRequired(
+                $this->commands->containerStart($container->name()),
+                "start {$container->name()} container",
+                60,
+            );
         }
     }
 
@@ -50,7 +58,11 @@ class OrbitGatewayContainerManager
             return;
         }
 
-        $this->runRequired($this->commands->networkCreate($container->network()), "create {$container->network()} Docker network", 60);
+        $this->runRequired(
+            $this->commands->networkCreate($container->network()),
+            "create {$container->network()} Docker network",
+            60,
+        );
     }
 
     /**

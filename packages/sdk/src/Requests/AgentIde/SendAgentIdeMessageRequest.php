@@ -35,12 +35,15 @@ final class SendAgentIdeMessageRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'message' => $this->message,
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'path' => $this->path,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'message' => $this->message,
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'path' => $this->path,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): AgentIdeMessageResponse

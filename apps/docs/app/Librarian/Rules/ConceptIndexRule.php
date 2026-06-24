@@ -33,7 +33,12 @@ final readonly class ConceptIndexRule implements GroupedRule
         $findings = [];
 
         foreach ($this->familyConceptFiles() as $familyDirectory => $conceptFile) {
-            array_push($findings, ...$this->checkConceptFile($concepts, $conceptsRelativePath, $conceptFile, $familyDirectory));
+            array_push($findings, ...$this->checkConceptFile(
+                $concepts,
+                $conceptsRelativePath,
+                $conceptFile,
+                $familyDirectory,
+            ));
         }
 
         return $findings;
@@ -42,8 +47,12 @@ final readonly class ConceptIndexRule implements GroupedRule
     /**
      * @return list<Finding>
      */
-    private function checkConceptFile(string $concepts, string $conceptsRelativePath, string $conceptFile, string $familyDirectory): array
-    {
+    private function checkConceptFile(
+        string $concepts,
+        string $conceptsRelativePath,
+        string $conceptFile,
+        string $familyDirectory,
+    ): array {
         $conceptContents = file_get_contents($conceptFile) ?: '';
         $expectedTerms = $this->definedTerms($conceptContents);
         $relativeConceptFile = $this->docs->relativePath($conceptFile);
@@ -97,7 +106,9 @@ final readonly class ConceptIndexRule implements GroupedRule
         if ($actualTerms !== $expectedTerms) {
             $findings[] = $this->finding(
                 $conceptsRelativePath,
-                "Top-level {$sectionHeading} index must match {$relativeConceptFile}. Expected: {$this->termList($expectedTerms)}. Found: {$this->termList($actualTerms)}.",
+                "Top-level {$sectionHeading} index must match {$relativeConceptFile}. Expected: {$this->termList(
+                    $expectedTerms,
+                )}. Found: {$this->termList($actualTerms)}.",
                 $section['line'],
             );
         }
@@ -131,11 +142,11 @@ final readonly class ConceptIndexRule implements GroupedRule
      */
     private function definedTerms(string $contents): array
     {
-        preg_match_all('/^\s*-\s+\*\*(?<term>[^*\n]+)\*\*/m', $contents, $matches);
+        preg_match_all('/^\s*-\s+\*\*(?<term>[^*\n]+)\*\*/m', $contents, $matches, PREG_SET_ORDER);
 
         return array_values(array_unique(array_map(
             fn (string $term): string => rtrim(trim($term), ':'),
-            $matches['term'],
+            array_filter(array_column($matches, 'term'), is_string(...)),
         )));
     }
 
@@ -148,11 +159,11 @@ final readonly class ConceptIndexRule implements GroupedRule
             return null;
         }
 
-        $start = $match[0][1];
+        $start = (int) $match[0][1];
         $afterHeading = $start + strlen($match[0][0]);
         $remaining = substr($contents, $afterHeading);
         $nextHeadingOffset = preg_match('/^##\s+/m', $remaining, $nextMatch, PREG_OFFSET_CAPTURE) === 1
-            ? $nextMatch[0][1]
+            ? (int) $nextMatch[0][1]
             : strlen($remaining);
 
         return [
@@ -202,11 +213,11 @@ final readonly class ConceptIndexRule implements GroupedRule
      */
     private function indexedTerms(string $block): array
     {
-        preg_match_all('/^\s*-\s+\*\*(?<term>[^*\n]+)\*\*\s*$/m', $block, $matches);
+        preg_match_all('/^\s*-\s+\*\*(?<term>[^*\n]+)\*\*\s*$/m', $block, $matches, PREG_SET_ORDER);
 
         return array_values(array_map(
             trim(...),
-            $matches['term'],
+            array_filter(array_column($matches, 'term'), is_string(...)),
         ));
     }
 

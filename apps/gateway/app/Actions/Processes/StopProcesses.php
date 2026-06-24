@@ -28,10 +28,18 @@ final readonly class StopProcesses
 
         if ($processes->isEmpty()) {
             if ($name !== null) {
-                throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
+                throw new GatewayApiException(
+                    "Process '{$name}' not found for {$context->label()}.",
+                    'process.not_found',
+                    $context->errorMeta($name),
+                );
             }
 
-            throw new GatewayApiException("{$context->label()} has no configured processes.", 'process.none_configured', $context->errorMeta());
+            throw new GatewayApiException(
+                "{$context->label()} has no configured processes.",
+                'process.none_configured',
+                $context->errorMeta(),
+            );
         }
 
         $runtimes = [];
@@ -46,7 +54,14 @@ final readonly class StopProcesses
             $event = null;
 
             if ($ok) {
-                $event = $this->recordProcessEvent->handle(ProcessEventType::Stopped, $context->eventApp(), $workspace, $process, $context->node, $runtimeUnit);
+                $event = $this->recordProcessEvent->handle(
+                    ProcessEventType::Stopped,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit,
+                );
                 $stopped++;
             }
 
@@ -58,10 +73,12 @@ final readonly class StopProcesses
                 'workspace' => $workspace?->name,
                 'runtime_unit' => $runtimeUnit,
                 'state' => $ok ? 'stopped' : 'failed',
-                'event' => $event === null ? null : [
-                    'id' => $event->id,
-                    'type' => $event->event->value,
-                ],
+                'event' => $event === null
+                    ? null
+                    : [
+                        'id' => $event->id,
+                        'type' => $event->event->value,
+                    ],
                 ...($ok ? [] : ['message' => 'The runtime backend reported a stop failure.']),
             ];
         }

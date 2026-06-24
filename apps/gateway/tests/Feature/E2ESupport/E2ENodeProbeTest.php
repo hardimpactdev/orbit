@@ -18,11 +18,13 @@ it('checks for the relocated gateway artisan when probing Orbit installs', funct
     $result->shouldReceive('errorOutput')->andReturn('');
 
     $instance = m::mock(E2EInstance::class);
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->with('test -d /home/orbit/orbit && test -f /home/orbit/orbit/apps/gateway/artisan')
         ->andReturn($result);
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->with("sudo -iu orbit bash -lc 'orbit --version --local >/dev/null'")
         ->andReturn($result);

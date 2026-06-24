@@ -25,7 +25,9 @@ final readonly class VpnDnsSwarmManager
             return;
         }
 
-        throw new RuntimeException('Failed to converge VPN/DNS forwarding: '.trim($result->errorOutput().' '.$result->output()));
+        throw new RuntimeException(
+            'Failed to converge VPN/DNS forwarding: '.trim($result->errorOutput().' '.$result->output()),
+        );
     }
 
     public function restartDnsService(string $stack = 'orbit'): void
@@ -37,7 +39,9 @@ final readonly class VpnDnsSwarmManager
             return;
         }
 
-        throw new RuntimeException("Failed to restart DNS Swarm service [{$dnsService}]: ".trim($result->errorOutput().' '.$result->output()));
+        throw new RuntimeException(
+            "Failed to restart DNS Swarm service [{$dnsService}]: ".trim($result->errorOutput().' '.$result->output()),
+        );
     }
 
     public function restartDnsServiceIfPresent(string $stack = 'orbit'): bool
@@ -73,7 +77,10 @@ final readonly class VpnDnsSwarmManager
         );
 
         if (! $result->successful()) {
-            throw new RuntimeException("Failed to inspect VPN Swarm task container for [{$vpnService}]: ".trim($result->errorOutput().' '.$result->output()));
+            throw new RuntimeException(
+                "Failed to inspect VPN Swarm task container for [{$vpnService}]: "
+                    .trim($result->errorOutput().' '.$result->output()),
+            );
         }
 
         $containerIds = array_values(array_filter(explode("\n", trim($result->output()))));

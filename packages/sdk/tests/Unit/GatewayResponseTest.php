@@ -15,9 +15,12 @@ it('reports status and body from gateway responses', function (): void {
         body: '{"success":{"data":{"ok":true}}}',
     );
 
-    expect($response->successful())->toBeTrue()
-        ->and($response->status())->toBe(201)
-        ->and($response->body())->toBe('{"success":{"data":{"ok":true}}}');
+    expect($response->successful())
+        ->toBeTrue()
+        ->and($response->status())
+        ->toBe(201)
+        ->and($response->body())
+        ->toBe('{"success":{"data":{"ok":true}}}');
 });
 
 it('returns scalar headers case insensitively', function (): void {
@@ -30,8 +33,10 @@ it('returns scalar headers case insensitively', function (): void {
         ],
     );
 
-    expect($response->header('Location'))->toBe('https://10.6.0.2/api/ca/root')
-        ->and($response->header('X-Orbit-Node'))->toBe('gateway');
+    expect($response->header('Location'))
+        ->toBe('https://10.6.0.2/api/ca/root')
+        ->and($response->header('X-Orbit-Node'))
+        ->toBe('gateway');
 });
 
 it('treats non 2xx statuses as unsuccessful', function (): void {

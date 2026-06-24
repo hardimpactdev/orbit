@@ -99,7 +99,11 @@ trait ResolvesVisibleToolNodes
             }
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
-                return $this->toolTargetValidationFailed('app', $app, "Invalid value for --app: '{$app}'. App is not owned by the selected node.");
+                return $this->toolTargetValidationFailed(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                );
             }
 
             if ($this->shouldRejectUnsupportedToolNode($tool, $appNode)) {
@@ -127,7 +131,7 @@ trait ResolvesVisibleToolNodes
 
             if ($nodes->count() === 1) {
                 return [
-                    'node' => $nodes->first()->name,
+                    'node' => $nodes->first()?->name,
                     'app' => null,
                 ];
             }
@@ -152,7 +156,10 @@ trait ResolvesVisibleToolNodes
         $query = Node::query()
             ->where('name', $node)
             ->where('status', NodeStatus::Active->value)
-            ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds));
+            ->when(
+                ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereIn('id', $visibleNodeIds),
+            );
 
         if (! $allowAnyActiveNode) {
             $query->whereIn('id', $this->visibleManagedToolNodeIds($includeMetricsExporterNodes));
@@ -170,7 +177,10 @@ trait ResolvesVisibleToolNodes
     {
         $model = App::query()
             ->with('node')
-            ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when(
+                ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds),
+            )
             ->where(function (Builder $query) use ($app): void {
                 $query->where('name', $app)
                     ->orWhere('domain', $app);
@@ -183,7 +193,10 @@ trait ResolvesVisibleToolNodes
             if ($appName !== '' && $nodeTld !== '') {
                 $model = App::query()
                     ->with('node')
-                    ->when(! $this->nodeRoleAssignments()->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+                    ->when(
+                        ! $this->nodeRoleAssignments()->nodeIsGateway($caller),
+                        fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds),
+                    )
                     ->where('name', $appName)
                     ->whereHas('node', function (Builder $query) use ($nodeTld): void {
                         $query
@@ -232,24 +245,38 @@ trait ResolvesVisibleToolNodes
             );
         }
 
-        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $this->toolTargetExists($field, $value, $visibleNodeIds, $allowAnyActiveNode)) {
-            return $this->toolTargetAuthorizationFailed("This node is not authorized to manage tools for the selected {$field}.", [
-                $field => $value,
-            ]);
+        if (
+            ! $this->nodeRoleAssignments()->nodeIsGateway($caller)
+            && $this->toolTargetExists($field, $value, $visibleNodeIds, $allowAnyActiveNode)
+        ) {
+            return $this->toolTargetAuthorizationFailed(
+                "This node is not authorized to manage tools for the selected {$field}.",
+                [
+                    $field => $value,
+                ],
+            );
         }
 
         $expected = $field === 'node'
             ? ($allowAnyActiveNode ? 'Expected a visible node name.' : 'Expected a visible tool node name.')
             : 'Expected a visible app name or domain.';
 
-        return $this->toolTargetValidationFailed($field, $value, "Invalid value for --{$field}: '{$value}'. {$expected}");
+        return $this->toolTargetValidationFailed(
+            $field,
+            $value,
+            "Invalid value for --{$field}: '{$value}'. {$expected}",
+        );
     }
 
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function toolTargetExists(string $field, string $value, array $visibleNodeIds, bool $allowAnyActiveNode = false): bool
-    {
+    private function toolTargetExists(
+        string $field,
+        string $value,
+        array $visibleNodeIds,
+        bool $allowAnyActiveNode = false,
+    ): bool {
         if ($field === 'node') {
             $query = Node::query()
                 ->where('name', $value)
@@ -285,7 +312,8 @@ trait ResolvesVisibleToolNodes
                 }
             })
             ->whereHas('node', function (Builder $query) use ($visibleNodeIds): void {
-                $query->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds())
+                $query
+                    ->whereIn('id', $this->nodeRoleAssignments()->activeAppHostNodeIds())
                     ->where('status', NodeStatus::Active->value)
                     ->whereNotIn('id', $visibleNodeIds);
             })
@@ -319,7 +347,9 @@ trait ResolvesVisibleToolNodes
      */
     private function gatewayNodeIds(): array
     {
-        return $this->nodeRoleAssignments()->activeGatewayNodeQuery()
+        return $this
+            ->nodeRoleAssignments()
+            ->activeGatewayNodeQuery()
             ->pluck('id')
             ->map(fn (mixed $nodeId): int => (int) $nodeId)
             ->all();
@@ -327,7 +357,9 @@ trait ResolvesVisibleToolNodes
 
     private function gatewayToolTargetExists(string $node): bool
     {
-        return $this->nodeRoleAssignments()->activeGatewayNodeQuery()
+        return $this
+            ->nodeRoleAssignments()
+            ->activeGatewayNodeQuery()
             ->where('name', $node)
             ->exists();
     }
@@ -348,8 +380,12 @@ trait ResolvesVisibleToolNodes
     /**
      * Check agent self authorization for tool actions.
      */
-    private function authorizeAgentToolAction(Node $caller, ?string $targetNodeName, string $tool, string $action): ?JsonResponse
-    {
+    private function authorizeAgentToolAction(
+        Node $caller,
+        ?string $targetNodeName,
+        string $tool,
+        string $action,
+    ): ?JsonResponse {
         $authorizer = app(AgentToolAuthorizer::class);
 
         if (! $authorizer->isAgentSelf($caller, $targetNodeName)) {
@@ -359,7 +395,9 @@ trait ResolvesVisibleToolNodes
         $result = $authorizer->authorizeAgentSelfAction($caller, $tool, $action);
 
         if (! $result['authorized']) {
-            return $this->toolTargetAuthorizationFailed($result['reason'] ?? 'Agent self is not authorized to perform this action.');
+            return $this->toolTargetAuthorizationFailed(
+                $result['reason'] ?? 'Agent self is not authorized to perform this action.',
+            );
         }
 
         return null;
@@ -379,8 +417,12 @@ trait ResolvesVisibleToolNodes
         ], 403);
     }
 
-    private function toolTargetValidationFailed(string $field, string $value, string $message, array $meta = []): JsonResponse
-    {
+    private function toolTargetValidationFailed(
+        string $field,
+        string $value,
+        string $message,
+        array $meta = [],
+    ): JsonResponse {
         return response()->json([
             'error' => [
                 'code' => 'validation_failed',

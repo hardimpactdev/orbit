@@ -31,7 +31,11 @@ final class ScheduleLogsCommand extends GatewayCommand
     public function handle(): int
     {
         if ($this->hasMutuallyExclusiveOptions('app', 'node')) {
-            return $this->renderFailure('validation_failed', 'The schedule filters are mutually exclusive.', ['fields' => ['app', 'node']]);
+            return $this->renderFailure(
+                'validation_failed',
+                'The schedule filters are mutually exclusive.',
+                ['fields' => ['app', 'node']],
+            );
         }
 
         $name = $this->resolveScheduleName();
@@ -43,13 +47,17 @@ final class ScheduleLogsCommand extends GatewayCommand
         $run = $this->positiveIntegerOption('run');
 
         if ($run === false) {
-            return $this->renderFailure('validation_failed', 'The --run value must be a positive integer.', ['field' => 'run']);
+            return $this->renderFailure('validation_failed', 'The --run value must be a positive integer.', [
+                'field' => 'run',
+            ]);
         }
 
         $lines = $this->positiveIntegerOption('lines');
 
         if ($lines === false || $lines === null) {
-            return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', ['field' => 'lines']);
+            return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', [
+                'field' => 'lines',
+            ]);
         }
 
         try {

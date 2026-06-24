@@ -34,7 +34,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:executor:verify',
-        ])->assertOk()
+        ])
+            ->assertOk()
             ->assertJsonPath('success.data.allowed', true)
             ->assertJsonPath('success.data.reason', null)
             ->assertJsonPath('success.data.operation_id', 'operation-123');
@@ -46,7 +47,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => 'not-a-token',
             'command' => 'internal:executor:verify',
-        ])->assertOk()
+        ])
+            ->assertOk()
             ->assertJsonPath('success.data.allowed', false)
             ->assertJsonPath('success.data.reason', 'invalid_token')
             ->assertJsonPath('success.data.operation_id', null);
@@ -64,7 +66,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:executor:verify',
-        ])->assertOk()
+        ])
+            ->assertOk()
             ->assertJsonPath('success.data.allowed', false)
             ->assertJsonPath('success.data.reason', 'target_node_mismatch')
             ->assertJsonPath('success.data.operation_id', 'operation-123');
@@ -82,7 +85,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => $operationToken->toString(),
             'command' => 'internal:executor:verify',
-        ])->assertOk()
+        ])
+            ->assertOk()
             ->assertJsonPath('success.data.allowed', false)
             ->assertJsonPath('success.data.reason', 'command_mismatch')
             ->assertJsonPath('success.data.operation_id', 'operation-123');
@@ -94,7 +98,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => 'not-a-token',
             'command' => 'deploy:run',
-        ])->assertUnprocessable()
+        ])
+            ->assertUnprocessable()
             ->assertInvalid(['command']);
     });
 
@@ -102,7 +107,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => 'not-a-token',
             'command' => 'internal:executor:verify',
-        ])->assertForbidden()
+        ])
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });
@@ -115,7 +121,8 @@ describe('InternalExecutorTokenController', function (): void {
         internalExecutorVerifyTokenRequest([
             'operation_token' => 'not-a-token',
             'command' => 'internal:executor:verify',
-        ])->assertForbidden()
+        ])
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

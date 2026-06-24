@@ -96,9 +96,7 @@ final class ToolCredentialsCommand extends GatewayCommand
 
     private function resolvedToolNode(): ?string
     {
-        return $this->stringOption('node')
-            ?? $this->resolvedToolNode
-            ?? $this->targetNodeOptionOrDefault();
+        return $this->stringOption('node') ?? $this->resolvedToolNode ?? $this->targetNodeOptionOrDefault();
     }
 
     /**
@@ -119,9 +117,10 @@ final class ToolCredentialsCommand extends GatewayCommand
             }
 
             $node = $this->toolString($tool['node'] ?? null);
-            $label = $nameCounts[$name] > 1 && $node !== null
-                ? "{$name} (node: {$node})"
-                : $name;
+            $label =
+                $nameCounts[$name] > 1 && $node !== null
+                    ? "{$name} (node: {$node})"
+                    : $name;
 
             $choices[$this->uniqueToolChoiceLabel($label, $choices)] = [
                 'name' => $name,

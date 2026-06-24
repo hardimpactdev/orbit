@@ -94,8 +94,12 @@ class BakeAppNodeCommand extends Command
         return self::SUCCESS;
     }
 
-    private function setupDevelopmentNode(NodeConverger $nodeConverger, Node $node, string $role, string $timingRole): void
-    {
+    private function setupDevelopmentNode(
+        NodeConverger $nodeConverger,
+        Node $node,
+        string $role,
+        string $timingRole,
+    ): void {
         if ($role !== NodeRoleName::AppDevelopment->value) {
             return;
         }
@@ -114,7 +118,10 @@ class BakeAppNodeCommand extends Command
         );
 
         if (! $nodeResult->successful()) {
-            throw new RuntimeException('Could not converge baked app-dev node baseline: '.json_encode($nodeResult->toArray(), JSON_THROW_ON_ERROR));
+            throw new RuntimeException(
+                'Could not converge baked app-dev node baseline: '
+                    .json_encode($nodeResult->toArray(), JSON_THROW_ON_ERROR),
+            );
         }
 
         $freshNode = $node->fresh();
@@ -131,7 +138,10 @@ class BakeAppNodeCommand extends Command
         );
 
         if (! $toolResult->successful()) {
-            throw new RuntimeException('Could not converge baked app-dev node tools: '.json_encode($toolResult->toArray(), JSON_THROW_ON_ERROR));
+            throw new RuntimeException(
+                'Could not converge baked app-dev node tools: '
+                    .json_encode($toolResult->toArray(), JSON_THROW_ON_ERROR),
+            );
         }
     }
 
@@ -149,8 +159,7 @@ class BakeAppNodeCommand extends Command
                 ->whereHas('roleAssignments', fn ($query) => $query
                     ->where('role', NodeRoleName::Ingress->value)
                     ->where('status', NodeRoleStatus::Active->value))
-                ->value('id')
-                ?? throw new RuntimeException("Active ingress node [{$ingressNode}] was not found.");
+                ->value('id') ?? throw new RuntimeException("Active ingress node [{$ingressNode}] was not found.");
 
             $settings['ingress_node_id'] = $ingressNodeId;
 

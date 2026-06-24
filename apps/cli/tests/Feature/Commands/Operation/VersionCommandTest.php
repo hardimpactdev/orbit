@@ -26,7 +26,9 @@ describe('version', function (): void {
 
     afterEach(function (): void {
         date_default_timezone_set($this->previousTimezone);
-        $this->previousDisplayTimezone === false ? putenv('ORBIT_DISPLAY_TIMEZONE') : putenv("ORBIT_DISPLAY_TIMEZONE={$this->previousDisplayTimezone}");
+        $this->previousDisplayTimezone === false
+            ? putenv('ORBIT_DISPLAY_TIMEZONE')
+            : putenv("ORBIT_DISPLAY_TIMEZONE={$this->previousDisplayTimezone}");
         $this->previousBinPath === false ? putenv('ORBIT_BIN_PATH') : putenv("ORBIT_BIN_PATH={$this->previousBinPath}");
         $this->previousHome === false ? putenv('HOME') : putenv("HOME={$this->previousHome}");
         putenv('ORBIT_INSTALL_METADATA_PATH');
@@ -46,16 +48,24 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest(
+                '0.1.105',
+                '2026-06-17T10:47:00Z',
+            )),
         ]);
 
         [$exitCode, $output] = runCommand($this, 'version');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Version       0.1.105')
-            ->and($output)->toContain('Released at   17-06-2026 - 12:47')
-            ->and($output)->toContain('Installed at  17-06-2026 - 12:54')
-            ->and($output)->not->toContain('new version available');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Version       0.1.105')
+            ->and($output)
+            ->toContain('Released at   17-06-2026 - 12:47')
+            ->and($output)
+            ->toContain('Installed at  17-06-2026 - 12:54')
+            ->and($output)
+            ->not->toContain('new version available');
     });
 
     it('annotates the human version line when a newer release exists', function (): void {
@@ -66,16 +76,26 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.108', '2026-06-17T11:04:00Z')),
-            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest(
+                '0.1.108',
+                '2026-06-17T11:04:00Z',
+            )),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(releaseManifest(
+                '0.1.105',
+                '2026-06-17T10:47:00Z',
+            )),
         ]);
 
         [$exitCode, $output] = runCommand($this, 'version');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Version       0.1.105 (new version available: 0.1.108)')
-            ->and($output)->toContain('Released at   17-06-2026 - 12:47')
-            ->and($output)->toContain('Installed at  17-06-2026 - 12:54');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Version       0.1.105 (new version available: 0.1.108)')
+            ->and($output)
+            ->toContain('Released at   17-06-2026 - 12:47')
+            ->and($output)
+            ->toContain('Installed at  17-06-2026 - 12:54');
     });
 
     it('returns the same metadata in the JSON envelope', function (): void {
@@ -86,16 +106,24 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.108', '2026-06-17T11:04:00Z')),
-            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest(
+                '0.1.108',
+                '2026-06-17T11:04:00Z',
+            )),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(releaseManifest(
+                '0.1.105',
+                '2026-06-17T10:47:00Z',
+            )),
         ]);
 
         [$exitCode, $output] = runCommand($this, 'version', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data'])
+            ->toBe([
                 'version' => '0.1.105',
                 'latest_version' => '0.1.108',
                 'update_available' => true,
@@ -122,8 +150,10 @@ describe('version', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data'])
+            ->toBe([
                 'version' => '0.1.105',
                 'latest_version' => null,
                 'update_available' => false,
@@ -142,8 +172,14 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response([], 503),
-            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response([], 503),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(
+                [],
+                503,
+            ),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.105/orbit-release-manifest.json' => Http::response(
+                [],
+                503,
+            ),
             'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([], 503),
             'https://api.github.com/repos/hardimpactdev/orbit/releases/tags/v0.1.105' => Http::response([], 503),
         ]);
@@ -152,8 +188,10 @@ describe('version', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data'])
+            ->toBe([
                 'version' => '0.1.105',
                 'latest_version' => null,
                 'update_available' => false,
@@ -170,7 +208,10 @@ describe('version', function (): void {
         ], JSON_THROW_ON_ERROR));
 
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response([], 404),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(
+                [],
+                404,
+            ),
             'https://api.github.com/repos/hardimpactdev/orbit/releases/latest' => Http::response([
                 'tag_name' => 'v0.1.105',
                 'published_at' => '2026-06-17T10:47:00Z',
@@ -181,9 +222,12 @@ describe('version', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['latest_version'])->toBe('0.1.105')
-            ->and($decoded['success']['data']['released_at'])->toBe('2026-06-17T10:47:00+00:00');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['latest_version'])
+            ->toBe('0.1.105')
+            ->and($decoded['success']['data']['released_at'])
+            ->toBe('2026-06-17T10:47:00+00:00');
     });
 
     it('falls back to the user-local binary mtime when install metadata is missing', function (): void {
@@ -200,7 +244,10 @@ describe('version', function (): void {
         $_SERVER['argv'][0] = $this->versionTempRoot.'/missing-orbit';
 
         Http::fake([
-            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest('0.1.105', '2026-06-17T10:47:00Z')),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest(
+                '0.1.105',
+                '2026-06-17T10:47:00Z',
+            )),
         ]);
 
         try {
@@ -208,8 +255,10 @@ describe('version', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['installed_at'])->toBe(CarbonImmutable::createFromTimestamp($installedAt->timestamp)->toIso8601String());
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['installed_at'])
+                ->toBe(CarbonImmutable::createFromTimestamp($installedAt->timestamp)->toIso8601String());
         } finally {
             @unlink($binaryPath);
             @rmdir(dirname($binaryPath));
@@ -237,7 +286,7 @@ describe('version', function (): void {
         $_SERVER['argv'][0] = $invokedLauncher;
 
         try {
-            $installedAt = (new InstallMetadataStore)->installedAtFor('0.1.105');
+            $installedAt = new InstallMetadataStore()->installedAtFor('0.1.105');
 
             expect($installedAt)->toBe($actualInstalledAt->toIso8601String());
         } finally {
@@ -274,7 +323,7 @@ describe('version', function (): void {
         chdir($this->versionTempRoot);
 
         try {
-            $installedAt = (new InstallMetadataStore)->installedAtFor('0.1.105');
+            $installedAt = new InstallMetadataStore()->installedAtFor('0.1.105');
 
             expect($installedAt)->toBe($actualInstalledAt->toIso8601String());
         } finally {

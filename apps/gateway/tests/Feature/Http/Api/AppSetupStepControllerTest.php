@@ -50,15 +50,24 @@ describe('AppSetupStepController', function (): void {
         $caller = createAppSetupStepCallerNode();
         grantAppSetupStepAccess($caller, $node, ['app:write']);
 
-        $response = $this->call('POST', '/api/apps/docs/setup-steps', [], [], [], [
-            'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode([
-            'command' => 'composer install',
-            'timeout' => 900,
-        ], JSON_THROW_ON_ERROR));
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/setup-steps',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'command' => 'composer install',
+                'timeout' => 900,
+            ], JSON_THROW_ON_ERROR),
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
             ->assertJsonPath('success.data.step.app', 'docs')
             ->assertJsonPath('success.data.step.order', 1)
@@ -75,11 +84,19 @@ describe('AppSetupStepController', function (): void {
             'sort_order' => 1,
         ]);
 
-        $response = $this->call('GET', '/api/apps/docs/setup-steps', [], [], [], [
-            'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs/setup-steps',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
+            ],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.steps.0.app', 'docs')
             ->assertJsonPath('success.data.steps.0.command', 'php artisan migrate');
     });
@@ -93,14 +110,23 @@ describe('AppSetupStepController', function (): void {
             'sort_order' => 1,
         ]);
 
-        $response = $this->call('DELETE', "/api/apps/docs/setup-steps/{$step->id}", [], [], [], [
-            'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode([
-            'destructive_consent' => true,
-        ], JSON_THROW_ON_ERROR));
+        $response = $this->call(
+            'DELETE',
+            "/api/apps/docs/setup-steps/{$step->id}",
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SETUP_STEP_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'destructive_consent' => true,
+            ], JSON_THROW_ON_ERROR),
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.meta.remaining_step_count', 0);
 

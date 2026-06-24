@@ -27,13 +27,23 @@ final class ProxyRouteDestroyController implements Loggable
         }
 
         if ($request->boolean('destructive_consent') !== true) {
-            return $this->error('destructive_consent_required', 'Use --force to remove this proxy route.', ['field' => 'force'], 422);
+            return $this->error(
+                'destructive_consent_required',
+                'Use --force to remove this proxy route.',
+                ['field' => 'force'],
+                422,
+            );
         }
 
         try {
             $result = $intent->remove($domain, $caller);
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $caller;

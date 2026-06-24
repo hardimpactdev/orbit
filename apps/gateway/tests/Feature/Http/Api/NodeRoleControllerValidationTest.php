@@ -150,7 +150,8 @@ describe('node role api validation envelopes', function (): void {
     it('returns the orbit error envelope for missing role', function (): void {
         $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.message', 'Role is required.')
@@ -158,12 +159,17 @@ describe('node role api validation envelopes', function (): void {
     });
 
     it('returns the orbit error envelope for non-array settings on add', function (): void {
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
-            'settings' => 'invalid',
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'database',
+                'settings' => 'invalid',
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'settings')
             ->assertJsonPath('error.message', 'Settings must be an object.')
@@ -171,12 +177,17 @@ describe('node role api validation envelopes', function (): void {
     });
 
     it('returns the orbit error envelope for non-string ingress node on add', function (): void {
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-prod',
-            'ingress_node' => ['edge-1'],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'app-prod',
+                'ingress_node' => ['edge-1'],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node')
             ->assertJsonPath('error.message', 'Ingress node must be a string.')
@@ -184,12 +195,17 @@ describe('node role api validation envelopes', function (): void {
     });
 
     it('rejects ingress node for non-app-prod add requests', function (): void {
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'ingress',
-            'ingress_node' => 'edge-1',
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'ingress',
+                'ingress_node' => 'edge-1',
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node')
             ->assertJsonPath('error.meta.role', 'ingress')
@@ -204,26 +220,39 @@ describe('node role api validation envelopes', function (): void {
 
         assignNodeRoleApiRole($targetId, 'ingress');
 
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-prod',
-            'ingress_node' => 'edge-1',
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'app-prod',
+                'ingress_node' => 'edge-1',
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node')
             ->assertJsonPath('error.meta.role', 'app-prod')
-            ->assertJsonPath('error.message', 'The app-prod role does not accept ingress_node when the target node already hosts ingress.')
+            ->assertJsonPath(
+                'error.message',
+                'The app-prod role does not accept ingress_node when the target node already hosts ingress.',
+            )
             ->assertJsonMissingPath('success');
     });
 
     it('rejects path-like app-dev tld settings on add', function (): void {
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'app-dev',
-            'settings' => ['tld' => '../../orbit'],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'app-dev',
+                'settings' => ['tld' => '../../orbit'],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'The app-dev role requires a valid tld setting.')
             ->assertJsonMissingPath('success');
@@ -236,12 +265,17 @@ describe('node role api validation envelopes', function (): void {
 
         assignNodeRoleApiRole($targetId, 'database');
 
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
-            'settings' => [],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'database',
+                'settings' => [],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', "Role 'database' is already assigned to node 'target-1'.")
             ->assertJsonPath('error.meta.role', 'database')
@@ -257,28 +291,40 @@ describe('node role api validation envelopes', function (): void {
 
         assignNodeRoleApiRole($targetId, 'database');
 
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'gateway',
-            'settings' => [],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'gateway',
+                'settings' => [],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', "Role 'gateway' is gateway-coupled and cannot be assigned independently.")
             ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.meta.role', 'gateway')
             ->assertJsonMissingPath('success');
 
-        expect(DB::table('node_role')->where('node_id', $targetId)->where('role', 'gateway')->exists())->toBeFalse()
-            ->and(DB::table('node_role')->where('node_id', $targetId)->where('role', 'database')->count())->toBe(1);
+        expect(DB::table('node_role')->where('node_id', $targetId)->where('role', 'gateway')->exists())
+            ->toBeFalse()
+            ->and(DB::table('node_role')->where('node_id', $targetId)->where('role', 'database')->count())
+            ->toBe(1);
     });
 
     it('returns the orbit error envelope for invalid force on remove', function (): void {
-        $response = deleteNodeRoleApiJson('/api/nodes/target-1/roles/database', [
-            'force' => 'invalid',
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = deleteNodeRoleApiJson(
+            '/api/nodes/target-1/roles/database',
+            [
+                'force' => 'invalid',
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force')
             ->assertJsonPath('error.message', 'force must be true or false.')
@@ -286,12 +332,17 @@ describe('node role api validation envelopes', function (): void {
     });
 
     it('returns the orbit error envelope for invalid purge_data on remove', function (): void {
-        $response = deleteNodeRoleApiJson('/api/nodes/target-1/roles/database', [
-            'force' => true,
-            'purge_data' => 'invalid',
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = deleteNodeRoleApiJson(
+            '/api/nodes/target-1/roles/database',
+            [
+                'force' => true,
+                'purge_data' => 'invalid',
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'purge_data')
             ->assertJsonPath('error.message', 'purge_data must be true or false.')
@@ -307,10 +358,14 @@ describe('node role api validation envelopes', function (): void {
 
         assignNodeRoleApiRole($callerId, 'gateway');
 
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
-            'settings' => [],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'database',
+                'settings' => [],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.assignment.role', 'database');
@@ -319,12 +374,17 @@ describe('node role api validation envelopes', function (): void {
     it('reports missing role permission against the target node', function (): void {
         DB::table('node_access')->delete();
 
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
-            'settings' => [],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'database',
+                'settings' => [],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'role:add')
@@ -344,10 +404,14 @@ describe('node role api validation envelopes', function (): void {
 
         grantNodeRoleApiAccess($callerId, $gatewayId, ['*']);
 
-        $response = postNodeRoleApiJson('/api/nodes/target-1/roles', [
-            'role' => 'database',
-            'settings' => [],
-        ], ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP]);
+        $response = postNodeRoleApiJson(
+            '/api/nodes/target-1/roles',
+            [
+                'role' => 'database',
+                'settings' => [],
+            ],
+            ['REMOTE_ADDR' => NODE_ROLE_API_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.assignment.role', 'database');

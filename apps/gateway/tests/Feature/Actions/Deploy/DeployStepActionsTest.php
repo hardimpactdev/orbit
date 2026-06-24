@@ -36,25 +36,31 @@ it('inserts deploy steps at the requested order and compacts after removal', fun
         retention: 5,
     );
 
-    expect(DeployStep::query()
-        ->where('app_id', $app->id)
-        ->orderBy('sort_order')
-        ->pluck('title', 'sort_order')
-        ->all())->toBe([
+    expect(
+        DeployStep::query()
+            ->where('app_id', $app->id)
+            ->orderBy('sort_order')
+            ->pluck('title', 'sort_order')
+            ->all(),
+    )
+        ->toBe([
             1 => 'Install dependencies',
             2 => 'Build assets',
             3 => 'Run migrations',
         ])
-        ->and($inserted->retention)->toBe(5);
+        ->and($inserted->retention)
+        ->toBe(5);
 
     $removeStep->handle($inserted);
 
-    expect(DeployStep::query()
-        ->where('app_id', $app->id)
-        ->orderBy('sort_order')
-        ->pluck('sort_order', 'title')
-        ->all())->toBe([
-            'Install dependencies' => 1,
-            'Run migrations' => 2,
-        ]);
+    expect(
+        DeployStep::query()
+            ->where('app_id', $app->id)
+            ->orderBy('sort_order')
+            ->pluck('sort_order', 'title')
+            ->all(),
+    )->toBe([
+        'Install dependencies' => 1,
+        'Run migrations' => 2,
+    ]);
 });

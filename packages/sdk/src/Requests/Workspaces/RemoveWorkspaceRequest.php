@@ -34,9 +34,12 @@ final class RemoveWorkspaceRequest extends GatewayRequest implements HasBody
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     /**

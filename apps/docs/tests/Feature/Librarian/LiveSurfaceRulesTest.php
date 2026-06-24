@@ -37,10 +37,14 @@ it('reports a public command without a command doc directory', function (): void
 
     $findings = liveSurfaceFindings($payload, 'command_docs.live_surface_coverage');
 
-    expect($payload['result'])->toBe('failed')
-        ->and($findings)->toHaveCount(1)
-        ->and($findings[0]['message'])->toContain('gateway:status')
-        ->and($findings[0]['message'])->toContain('gateway-status');
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['message'])
+        ->toContain('gateway:status')
+        ->and($findings[0]['message'])
+        ->toContain('gateway-status');
 });
 
 it('reports a command doc directory without a public command', function (): void {
@@ -52,10 +56,14 @@ it('reports a command doc directory without a public command', function (): void
 
     $findings = liveSurfaceFindings($payload, 'command_docs.live_surface_coverage');
 
-    expect($payload['result'])->toBe('failed')
-        ->and($findings)->toHaveCount(1)
-        ->and($findings[0]['path'])->toBe('docs/domains/1_node/1_node-new')
-        ->and($findings[0]['message'])->toContain('node-new');
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['path'])
+        ->toBe('docs/domains/1_node/1_node-new')
+        ->and($findings[0]['message'])
+        ->toContain('node-new');
 });
 
 it('allows an offline command doc directory marked removed or reserved', function (): void {
@@ -113,11 +121,16 @@ it('reports signature drift against the live command definition', function (): v
 
     $findings = liveSurfaceFindings($payload, 'command_docs.signature_live_surface');
 
-    expect($payload['result'])->toBe('failed')
-        ->and($findings)->toHaveCount(1)
-        ->and($findings[0]['path'])->toBe('docs/domains/1_node/1_node-new/technical/1_node-new.md')
-        ->and($findings[0]['message'])->toContain('--legacy-flag')
-        ->and($findings[0]['message'])->toContain('--template');
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['path'])
+        ->toBe('docs/domains/1_node/1_node-new/technical/1_node-new.md')
+        ->and($findings[0]['message'])
+        ->toContain('--legacy-flag')
+        ->and($findings[0]['message'])
+        ->toContain('--template');
 });
 
 it('reports argument drift against the live command definition', function (): void {
@@ -131,9 +144,12 @@ it('reports argument drift against the live command definition', function (): vo
 
     $findings = liveSurfaceFindings($payload, 'command_docs.signature_live_surface');
 
-    expect($payload['result'])->toBe('failed')
-        ->and($findings)->toHaveCount(1)
-        ->and($findings[0]['message'])->toContain('name, host');
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['message'])
+        ->toContain('name, host');
 });
 
 it('passes signatures that match the live command definition', function (): void {
@@ -141,7 +157,10 @@ it('passes signatures that match the live command definition', function (): void
     bindLiveSurfaceFake([
         new CliCommand(name: 'node:new', arguments: ['name'], options: ['json', 'with-process', 'no-process']),
     ]);
-    writeLiveSurfaceFamily($this->fixtureRoot, signature: 'orbit node:new <name> [--with-process|--no-process] [--json]');
+    writeLiveSurfaceFamily(
+        $this->fixtureRoot,
+        signature: 'orbit node:new <name> [--with-process|--no-process] [--json]',
+    );
 
     $payload = runLiveSurfaceLint();
 
@@ -171,7 +190,21 @@ it('maps process add internal service version option onto the public signature',
         new CliCommand(
             name: 'process:add',
             arguments: ['name', 'process_command'],
-            options: ['node', 'app', 'workspace', 'tool', 'service', 'service-version', 'image', 'restart-policy', 'crash-notification', 'runtime', 'start', 'no-start', 'json'],
+            options: [
+                'node',
+                'app',
+                'workspace',
+                'tool',
+                'service',
+                'service-version',
+                'image',
+                'restart-policy',
+                'crash-notification',
+                'runtime',
+                'start',
+                'no-start',
+                'json',
+            ],
         ),
     ]);
     writeLiveSurfaceCommandDirectory(
@@ -207,18 +240,28 @@ it('reports banned terms outside their allow paths', function (): void {
         ],
     ]);
     bindLiveSurfaceFake([]);
-    writeLiveSurfaceFile($this->fixtureRoot, 'content/domains/7_process/process-concepts.md', "# Process Concepts\n\nUse `tool:start` to start tools.\n");
+    writeLiveSurfaceFile(
+        $this->fixtureRoot,
+        'content/domains/7_process/process-concepts.md',
+        "# Process Concepts\n\nUse `tool:start` to start tools.\n",
+    );
 
     $payload = runLiveSurfaceLint();
 
     $findings = liveSurfaceFindings($payload, 'command_docs.banned_terms');
 
-    expect($payload['result'])->toBe('failed')
-        ->and($findings)->toHaveCount(1)
-        ->and($findings[0]['path'])->toBe('docs/domains/7_process/process-concepts.md')
-        ->and($findings[0]['line'])->toBe(3)
-        ->and($findings[0]['message'])->toContain('tool:start')
-        ->and($findings[0]['message'])->toContain('process:start');
+    expect($payload['result'])
+        ->toBe('failed')
+        ->and($findings)
+        ->toHaveCount(1)
+        ->and($findings[0]['path'])
+        ->toBe('docs/domains/7_process/process-concepts.md')
+        ->and($findings[0]['line'])
+        ->toBe(3)
+        ->and($findings[0]['message'])
+        ->toContain('tool:start')
+        ->and($findings[0]['message'])
+        ->toContain('process:start');
 });
 
 it('does not flag terms that only embed a banned term as a substring', function (): void {
@@ -232,7 +275,11 @@ it('does not flag terms that only embed a banned term as a substring', function 
         ],
     ]);
     bindLiveSurfaceFake([]);
-    writeLiveSurfaceFile($this->fixtureRoot, 'content/domains/3_tool/tool-concepts.md', "# Tool Concepts\n\nThe `tool:started-elsewhere` token is unrelated, as is `mytool:start`.\n");
+    writeLiveSurfaceFile(
+        $this->fixtureRoot,
+        'content/domains/3_tool/tool-concepts.md',
+        "# Tool Concepts\n\nThe `tool:started-elsewhere` token is unrelated, as is `mytool:start`.\n",
+    );
 
     $payload = runLiveSurfaceLint();
 
@@ -250,7 +297,11 @@ it('allows banned terms under an allowed directory path', function (): void {
         ],
     ]);
     bindLiveSurfaceFake([]);
-    writeLiveSurfaceFile($this->fixtureRoot, 'content/domains/5_app/README.md', "# App Commands\n\n10. Reserved. `app:exec` was removed.\n");
+    writeLiveSurfaceFile(
+        $this->fixtureRoot,
+        'content/domains/5_app/README.md',
+        "# App Commands\n\n10. Reserved. `app:exec` was removed.\n",
+    );
 
     $payload = runLiveSurfaceLint();
 
@@ -259,9 +310,10 @@ it('allows banned terms under an allowed directory path', function (): void {
 
 function bindLiveSurfaceFake(array $commands): void
 {
-    app()->instance(CliSurface::class, new readonly class($commands) implements CliSurface
-    {
-        public function __construct(private array $commands) {}
+    app()->instance(CliSurface::class, new readonly class($commands) implements CliSurface {
+        public function __construct(
+            private array $commands,
+        ) {}
 
         public function publicCommands(): array
         {
@@ -286,7 +338,11 @@ function writeLiveSurfaceFamily(
     string $publicPage = "# `orbit node:new`\n\n[Technical](technical/1_node-new.md)\n",
 ): void {
     writeLiveSurfaceFile($root, 'content/domains/1_node/README.md', "# Node Commands\n");
-    writeLiveSurfaceFile($root, 'content/domains/1_node/node.md', "# Node\n\n## Purpose\n\nNode command contracts describe node behavior.\n");
+    writeLiveSurfaceFile(
+        $root,
+        'content/domains/1_node/node.md',
+        "# Node\n\n## Purpose\n\nNode command contracts describe node behavior.\n",
+    );
     writeLiveSurfaceCommandDirectory($root, 'domains/1_node/1_node-new', 'node-new', $signature, $publicPage);
 }
 

@@ -66,32 +66,34 @@ final readonly class VpnDnsSwarmStackRenderer
         ]);
     }
 
-    public function renderDnsForwardingScript(string $dnsService = self::DnsService, string $wireguardInterface = 'wg0'): string
-    {
+    public function renderDnsForwardingScript(
+        string $dnsService = self::DnsService,
+        string $wireguardInterface = 'wg0',
+    ): string {
         $this->assertFilled($dnsService, 'DNS service');
         $this->assertLinuxInterface($wireguardInterface);
 
         return sprintf(
             <<<'SH'
-set -eu
+                set -eu
 
-dns_ip="$(getent hosts %s | awk '{ print $1; exit }')"
+                dns_ip="$(getent hosts %s | awk '{ print $1; exit }')"
 
-if [ -z "$dns_ip" ]; then
-    echo "Unable to resolve %s on the shared Swarm network" >&2
-    exit 1
-fi
+                if [ -z "$dns_ip" ]; then
+                    echo "Unable to resolve %s on the shared Swarm network" >&2
+                    exit 1
+                fi
 
-iptables -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
-    || iptables -t nat -A PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
-iptables -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
-    || iptables -t nat -A PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -t nat -C PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
+                    || iptables -t nat -A PREROUTING -i %s -p udp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
+                iptables -t nat -C PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53" 2>/dev/null \
+                    || iptables -t nat -A PREROUTING -i %s -p tcp --dport 53 -j DNAT --to-destination "${dns_ip}:53"
 
-iptables -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
-    || iptables -t nat -A POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
-iptables -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
-    || iptables -t nat -A POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
-SH,
+                iptables -t nat -C POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
+                    || iptables -t nat -A POSTROUTING -p udp -d "$dns_ip" --dport 53 -j MASQUERADE
+                iptables -t nat -C POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE 2>/dev/null \
+                    || iptables -t nat -A POSTROUTING -p tcp -d "$dns_ip" --dport 53 -j MASQUERADE
+                SH,
             escapeshellarg($dnsService),
             $dnsService,
             $wireguardInterface,

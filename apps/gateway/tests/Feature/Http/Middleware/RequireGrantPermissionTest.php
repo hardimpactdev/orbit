@@ -18,6 +18,7 @@ use Tests\TestCase;
 uses(RefreshDatabase::class);
 
 const REQUIRE_GRANT_CALLER_WG_IP = '10.6.30.10';
+
 const REQUIRE_GRANT_GATEWAY_WG_IP = '10.6.30.1';
 
 final class RequireGrantPermissionOpenController

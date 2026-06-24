@@ -16,14 +16,14 @@ final class JsonExampleParser
         $examples = [];
 
         foreach ($matches as $index => $match) {
-            $raw = trim((string) $match['json'][0]);
+            $raw = trim($match['json'][0]);
             $decoded = json_decode($raw, true);
             $parseError = json_last_error() === JSON_ERROR_NONE ? null : json_last_error_msg();
 
             $examples[] = new JsonExample(
                 path: $path,
                 blockIndex: $index,
-                line: $this->lineForOffset($contents, $match[0][1]),
+                line: $this->lineForOffset($contents, (int) $match[0][1]),
                 raw: $raw,
                 decoded: $decoded,
                 parseError: $parseError,

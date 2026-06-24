@@ -37,13 +37,25 @@ describe('PHP runtime API controllers', function (): void {
         $caller = createPhpApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
         grantPhpApiAccess($caller, $node);
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php', 'config' => ['versions' => ['8.5'], 'cli_version' => '8.5']]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'php',
+            'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
+        ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
 
-        $response = $this->call('GET', '/api/php/runtime?app=docs&workspace=feature-docs', [], [], [], ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/php/runtime?app=docs&workspace=feature-docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.php.node', 'app-1')
             ->assertJsonPath('success.data.php.workspace.inherits', true);
     });
@@ -66,10 +78,17 @@ describe('PHP runtime API controllers', function (): void {
         ]);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.4']);
 
-        $response = $this->call('POST', '/api/php/use', [
-            'version' => '8.5',
-            'app' => 'docs',
-        ], [], [], ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/php/use',
+            [
+                'version' => '8.5',
+                'app' => 'docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.result.target', 'app');
@@ -80,9 +99,20 @@ describe('PHP runtime API controllers', function (): void {
     it('returns authorization failure for hidden nodes', function (): void {
         createPhpApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php', 'config' => ['versions' => ['8.5'], 'cli_version' => '8.5']]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'php',
+            'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
+        ]);
 
-        $response = $this->call('GET', '/api/php/runtime?node=app-1', [], [], [], ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/php/runtime?node=app-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -91,10 +121,21 @@ describe('PHP runtime API controllers', function (): void {
     it('authorizes app-selected targets against their owning node', function (): void {
         createPhpApiCaller();
         $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-        NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php', 'config' => ['versions' => ['8.5'], 'cli_version' => '8.5']]);
+        NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'php',
+            'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
+        ]);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
-        $response = $this->call('GET', '/api/php/runtime?app=docs', [], [], [], ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/php/runtime?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PHP_API_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');

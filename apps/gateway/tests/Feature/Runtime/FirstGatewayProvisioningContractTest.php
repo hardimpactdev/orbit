@@ -76,17 +76,22 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
         File::ensureDirectoryExists($certsDir);
         File::put("{$caDir}/root.key", 'test-root-key');
         File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
-        File::put("{$certsDir}/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n");
+        File::put(
+            "{$certsDir}/10.6.0.2.crt",
+            "-----BEGIN CERTIFICATE-----\ntest-leaf-cert\n-----END CERTIFICATE-----\n",
+        );
         File::put("{$certsDir}/10.6.0.2.key", 'test-leaf-key');
 
-        Node::factory()->gateway()->create([
-            'name' => 'gateway-1',
-            'host' => '10.6.0.2',
-            'wireguard_address' => '10.6.0.2',
-            'user' => 'orbit',
-            'orbit_path' => base_path(),
-            'status' => 'active',
-        ]);
+        Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'gateway-1',
+                'host' => '10.6.0.2',
+                'wireguard_address' => '10.6.0.2',
+                'user' => 'orbit',
+                'orbit_path' => base_path(),
+                'status' => 'active',
+            ]);
     });
 
     afterEach(function (): void {
@@ -129,7 +134,9 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
             ->toContain('orbit-caddy')
             ->toContain('10.6.0.2:80:80')
             ->toContain('10.6.0.2:443:443')
-            ->toContain('10.6.0.2:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort);
+            ->toContain(
+                '10.6.0.2:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort,
+            );
 
         Process::assertRan('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites');
         Process::assertRan('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null');
@@ -179,8 +186,14 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
         config()->set('orbit.paths.config_root', $containerConfigRoot);
 
         File::put("{$containerConfigRoot}/ca/root.key", 'test-root-key');
-        File::put("{$containerConfigRoot}/ca/root.crt", "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n");
-        File::put("{$containerConfigRoot}/certs/10.6.0.2.crt", "-----BEGIN CERTIFICATE-----\ntest-leaf\n-----END CERTIFICATE-----\n");
+        File::put(
+            "{$containerConfigRoot}/ca/root.crt",
+            "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n",
+        );
+        File::put(
+            "{$containerConfigRoot}/certs/10.6.0.2.crt",
+            "-----BEGIN CERTIFICATE-----\ntest-leaf\n-----END CERTIFICATE-----\n",
+        );
         File::put("{$containerConfigRoot}/certs/10.6.0.2.key", 'test-key');
 
         Process::fake(function ($process) use (&$writtenGatewayApiCaddyfile) {
@@ -223,21 +236,33 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
             return false;
         };
 
-        expect($reachable($caddyCertPath))->toBeTrue('gateway API cert must live under an orbit-caddy bind mount target')
-            ->and($reachable($caddyKeyPath))->toBeTrue('gateway API key must live under an orbit-caddy bind mount target')
-            ->and($reachable('/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt'))->toBeFalse('gateway-container-private /opt/orbit paths must NOT be rendered into orbit-caddy config');
+        expect($reachable($caddyCertPath))
+            ->toBeTrue('gateway API cert must live under an orbit-caddy bind mount target')
+            ->and($reachable($caddyKeyPath))
+            ->toBeTrue('gateway API key must live under an orbit-caddy bind mount target')
+            ->and($reachable('/opt/orbit/storage/app/orbit/certs/10.6.0.2.crt'))
+            ->toBeFalse('gateway-container-private /opt/orbit paths must NOT be rendered into orbit-caddy config');
 
         expect($writtenGatewayApiCaddyfile)->not->toBeNull();
         preg_match('#^\s+tls\s+(\S+)\s+(\S+)\s*$#m', $writtenGatewayApiCaddyfile, $matches);
         expect($matches)->toHaveCount(3, 'rendered Caddyfile must include a tls cert and key directive');
 
-        expect($matches[1])->toBe($caddyCertPath)
-            ->and($matches[2])->toBe($caddyKeyPath)
-            ->and($writtenGatewayApiCaddyfile)->not->toContain($containerConfigRoot);
+        expect($matches[1])
+            ->toBe($caddyCertPath)
+            ->and($matches[2])
+            ->toBe($caddyKeyPath)
+            ->and($writtenGatewayApiCaddyfile)
+            ->not->toContain($containerConfigRoot);
 
         Process::assertRan('sudo install -d -m 0755 /etc/orbit/certs');
-        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.crt").' '.escapeshellarg($caddyCertPath));
-        Process::assertRan('sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.key").' '.escapeshellarg($caddyKeyPath));
+        Process::assertRan(
+            'sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.crt").' '
+                .escapeshellarg($caddyCertPath),
+        );
+        Process::assertRan(
+            'sudo install -m 0644 '.escapeshellarg("{$containerConfigRoot}/certs/10.6.0.2.key").' '
+                .escapeshellarg($caddyKeyPath),
+        );
     });
 
     it('writes the gateway API Caddyfile through the host bind mount that orbit-caddy reads', function (): void {
@@ -270,28 +295,34 @@ describe('GatewayApiContainerInstaller orbit-caddy convergence', function (): vo
         expect($orbitCaddyMounts)->toContain('/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home');
     });
 
-    it('ships sudo inside orbit-gateway so gateway installer scripts can sudo install-d and sudo tee through bind-mounted host paths', function (): void {
-        $dockerfile = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
+    it(
+        'ships sudo inside orbit-gateway so gateway installer scripts can sudo install-d and sudo tee through bind-mounted host paths',
+        function (): void {
+            $dockerfile = file_get_contents(repo_path('docker/orbit-gateway/Dockerfile'));
 
-        expect($dockerfile)
-            ->toContain('sudo');
-    });
+            expect($dockerfile)
+                ->toContain('sudo');
+        },
+    );
 
     it('keeps the additive global Caddyfile preservation step from previous fixes', function (): void {
         // Ensure the prior behavior survives: a non-empty /etc/caddy/Caddyfile
         // gets its imports/snippets ensured rather than overwritten.
         $existingCaddyfile = <<<'CADDY'
-{
-    admin off
-}
+            {
+                admin off
+            }
 
-import /etc/caddy/sites/*.caddy
-import /etc/caddy/orbit/orbit-web.caddy
-CADDY;
+            import /etc/caddy/sites/*.caddy
+            import /etc/caddy/orbit/orbit-web.caddy
+            CADDY;
         $writtenGlobalCaddyfile = null;
 
         Process::fake(function ($process) use ($existingCaddyfile, &$writtenGlobalCaddyfile) {
-            if (str_contains($process->command, "sudo test -f '/etc/caddy/Caddyfile' && sudo cat '/etc/caddy/Caddyfile'")) {
+            if (str_contains(
+                $process->command,
+                "sudo test -f '/etc/caddy/Caddyfile' && sudo cat '/etc/caddy/Caddyfile'",
+            )) {
                 return Process::result($existingCaddyfile);
             }
 
@@ -322,7 +353,7 @@ CADDY;
             ->not->toContain('admin off');
 
         // Force-touch CaddyGlobalConfig so the imports list is the source of truth.
-        expect((new CaddyGlobalConfig)->fresh())
+        expect(new CaddyGlobalConfig()->fresh())
             ->toContain('import /etc/caddy/orbit/*.caddy')
             ->toContain('import /etc/caddy/sites/*.caddy');
     });

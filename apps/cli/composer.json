@@ -17,6 +17,7 @@
         "laravel-zero/framework": "^12.0"
     },
     "require-dev": {
+        "carthage-software/mago": "^1.40.1",
         "laravel/pint": "^1.29",
         "mockery/mockery": "^1.6",
         "pestphp/pest": "^4.6",
@@ -55,11 +56,15 @@
         }
     },
     "scripts": {
-        "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
-        "format": "vendor/bin/pint",
+        "analyse": "vendor/bin/mago analyze app config --reporting-format=medium",
+        "format": "vendor/bin/mago format",
         "rector": "vendor/bin/rector process",
         "test": "vendor/bin/pest --exclude-group=slow --compact",
-        "test:slow": "vendor/bin/pest --compact"
+        "test:slow": "vendor/bin/pest --compact",
+        "mago:analyze": "vendor/bin/mago analyze app config --reporting-format=medium",
+        "mago:lint": "vendor/bin/mago lint --reporting-format=medium",
+        "mago:format": "vendor/bin/mago format",
+        "mago:format:check": "vendor/bin/mago format --check"
     },
     "extra": {
         "laravel": {

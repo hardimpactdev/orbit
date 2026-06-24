@@ -48,9 +48,11 @@ final class DatabaseConnectionDetachController extends DatabaseConnectionApiCont
 
         $result = $type === 'app'
             ? $this->registry->detachFromApp($connection, $owner, $envPrefix)
-            : ($type === 'app_instance'
-                ? $this->registry->detachFromAppInstance($connection, $owner, $envPrefix)
-                : $this->registry->detachFromWorkspace($connection, $owner, $envPrefix));
+            : (
+                $type === 'app_instance'
+                    ? $this->registry->detachFromAppInstance($connection, $owner, $envPrefix)
+                    : $this->registry->detachFromWorkspace($connection, $owner, $envPrefix)
+            );
 
         if ($result instanceof DatabaseConnectionRegistryFailure) {
             return $this->failureResponse($result);

@@ -61,33 +61,51 @@ it('streams app creation from an operation_run source', function (): void {
     app()->instance(RemoteShell::class, new AppStoreStreamRecordingRemoteShell);
     app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
-    $response = $this->call('POST', '/api/apps', [
-        'name' => 'docs',
-        'node' => 'app-1',
-        'root' => 'public',
-        'php_version' => '8.5',
-        'runtime_proxy_transport' => 'https',
-    ], [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => APP_STORE_STREAM_CALLER_WG_IP,
-    ]);
+    $response = $this->call(
+        'POST',
+        '/api/apps',
+        [
+            'name' => 'docs',
+            'node' => 'app-1',
+            'root' => 'public',
+            'php_version' => '8.5',
+            'runtime_proxy_transport' => 'https',
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => APP_STORE_STREAM_CALLER_WG_IP,
+        ],
+    );
 
     $response->assertOk();
 
     $content = $response->streamedContent();
     $operationRun = OperationRun::query()->where('operation_type', 'app:new')->firstOrFail();
 
-    expect($content)->toContain('event: tree')
-        ->and($content)->toContain('Record operation state')
-        ->and($content)->toContain('Create app source')
-        ->and($content)->toContain('event: complete')
-        ->and($content)->toContain($operationRun->id)
-        ->and($operationRun->status->value)->toBe('succeeded')
-        ->and($operationRun->caller_node_id)->toBe($caller->id)
-        ->and($operationRun->target_node_id)->toBe($targetNode->id)
-        ->and($operationRun->result['app']['name'])->toBe('docs')
-        ->and($operationRun->result['app']['runtime_config']['proxy_transport'])->toBe('https')
-        ->and(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)->toBe(['proxy_transport' => 'https']);
+    expect($content)
+        ->toContain('event: tree')
+        ->and($content)
+        ->toContain('Record operation state')
+        ->and($content)
+        ->toContain('Create app source')
+        ->and($content)
+        ->toContain('event: complete')
+        ->and($content)
+        ->toContain($operationRun->id)
+        ->and($operationRun->status->value)
+        ->toBe('succeeded')
+        ->and($operationRun->caller_node_id)
+        ->toBe($caller->id)
+        ->and($operationRun->target_node_id)
+        ->toBe($targetNode->id)
+        ->and($operationRun->result['app']['name'])
+        ->toBe('docs')
+        ->and($operationRun->result['app']['runtime_config']['proxy_transport'])
+        ->toBe('https')
+        ->and(App::query()->where('name', 'docs')->firstOrFail()->runtime_config)
+        ->toBe(['proxy_transport' => 'https']);
 });
 
 final class AppStoreStreamRecordingRemoteShell implements RemoteShell

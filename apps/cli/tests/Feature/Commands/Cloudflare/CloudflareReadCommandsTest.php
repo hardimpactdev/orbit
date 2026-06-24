@@ -21,12 +21,17 @@ describe('cf-zone:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/cloudflare/zones'));
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/api/cloudflare/zones'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['zones'][0]['name'])->toBe('example.com')
-            ->and($decoded['success']['meta']['count'])->toBe(1);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['zones'][0]['name'])
+            ->toBe('example.com')
+            ->and($decoded['success']['meta']['count'])
+            ->toBe(1);
     });
 
     it('renders human output as a table with uppercase headers and zone fields', function (): void {
@@ -47,16 +52,26 @@ describe('cf-zone:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'cf-zone:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('ZONE ID')
-            ->and($output)->toContain('DOMAIN')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('zone-1')
-            ->and($output)->toContain('example.com')
-            ->and($output)->toContain('active')
-            ->and($output)->toContain('pending.test')
-            ->and($output)->toContain('—')
-            ->and($output)->not->toContain('zones: [');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('ZONE ID')
+            ->and($output)
+            ->toContain('DOMAIN')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('zone-1')
+            ->and($output)
+            ->toContain('example.com')
+            ->and($output)
+            ->toContain('active')
+            ->and($output)
+            ->toContain('pending.test')
+            ->and($output)
+            ->toContain('—')
+            ->and($output)
+            ->not->toContain('zones: [');
     });
 
     it('renders the documented empty state when no zones are visible', function (): void {
@@ -64,8 +79,7 @@ describe('cf-zone:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'cf-zone:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No Cloudflare zones found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No Cloudflare zones found.');
     });
 
     it('passes through Cloudflare gateway error codes', function (): void {
@@ -77,9 +91,12 @@ describe('cf-zone:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('cloudflare_unavailable')
-            ->and($decoded['error']['meta']['reason'])->toBe('token_missing');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('cloudflare_unavailable')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('token_missing');
     });
 });
 
@@ -109,12 +126,17 @@ describe('cf-dns:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/cloudflare/zones/example.com/dns'));
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/api/cloudflare/zones/example.com/dns'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['records'][0]['id'])->toBe('record-1')
-            ->and($decoded['success']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['records'][0]['id'])
+            ->toBe('record-1')
+            ->and($decoded['success']['meta'])
+            ->toMatchArray([
                 'zone' => 'example.com',
                 'count' => 1,
             ]);
@@ -146,19 +168,32 @@ describe('cf-dns:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['zone' => 'example.com']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('RECORD ID')
-            ->and($output)->toContain('TYPE')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('CONTENT')
-            ->and($output)->toContain('PROXIED')
-            ->and($output)->toContain('record-1')
-            ->and($output)->toContain('docs.example.com')
-            ->and($output)->toContain('203.0.113.10')
-            ->and($output)->toContain('yes')
-            ->and($output)->toContain('www.example.com')
-            ->and($output)->toContain('no')
-            ->and($output)->not->toContain('records: [');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('RECORD ID')
+            ->and($output)
+            ->toContain('TYPE')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('CONTENT')
+            ->and($output)
+            ->toContain('PROXIED')
+            ->and($output)
+            ->toContain('record-1')
+            ->and($output)
+            ->toContain('docs.example.com')
+            ->and($output)
+            ->toContain('203.0.113.10')
+            ->and($output)
+            ->toContain('yes')
+            ->and($output)
+            ->toContain('www.example.com')
+            ->and($output)
+            ->toContain('no')
+            ->and($output)
+            ->not->toContain('records: [');
     });
 
     it('renders the documented empty state with the requested zone when no records exist', function (): void {
@@ -166,8 +201,7 @@ describe('cf-dns:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'cf-dns:list', ['zone' => 'example.com']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No Cloudflare DNS records found for example.com.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No Cloudflare DNS records found for example.com.');
     });
 
     it('requires the zone argument in JSON mode before calling the gateway', function (): void {
@@ -179,9 +213,12 @@ describe('cf-dns:list', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('zone');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('zone');
     });
 
     it('passes through authorization failures from the gateway', function (): void {
@@ -196,9 +233,12 @@ describe('cf-dns:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('cf:dns:list');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('cf:dns:list');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -211,7 +251,6 @@ describe('cf-dns:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

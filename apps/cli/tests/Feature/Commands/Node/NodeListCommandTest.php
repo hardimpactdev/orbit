@@ -20,13 +20,16 @@ describe('node:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/nodes')
-            && str_contains($request->url(), 'role=app-dev')
-            && ! str_contains($request->url(), 'environment='));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains($request->url(), '/api/nodes')
+                && str_contains($request->url(), 'role=app-dev')
+                && ! str_contains($request->url(), 'environment=')
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['nodes'][0]['name'])->toBe('app-1');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['nodes'][0]['name'])->toBe('app-1');
     });
 
     it('renders human output as a node table', function (): void {
@@ -68,24 +71,26 @@ describe('node:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'node:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('ROLES')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('PEER IP')
-            ->and($output)->toContain('PLATFORM')
-            ->and($output)->not->toContain('STATUS')
-            ->and($output)->toContain('●')
-            ->and($output)->toContain('app-dev, database (error)')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('10.6.0.4')
-            ->and($output)->not->toContain('203.0.113.10')
-            ->and($output)->toContain('ubuntu')
-            ->and($output)->toContain('operator-1')
-            ->and($output)->toContain('10.6.0.3')
-            ->and($output)->not->toContain('198.51.100.20')
-            ->and($output)->toContain('gateway, vpn, router')
-            ->and($output)->not->toContain('188.245.156.201')
-            ->and($output)->not->toContain('nodes: [');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('ROLES')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('PEER IP')
+            ->and($output)
+            ->toContain('PLATFORM')
+            ->and($output)
+            ->not->toContain('STATUS')->and($output)->toContain('●')->and($output)->toContain(
+                'app-dev, database (error)',
+            )->and($output)->toContain('app-1')->and($output)->toContain('10.6.0.4')->and($output)
+            ->not->toContain('203.0.113.10')->and($output)->toContain('ubuntu')->and($output)->toContain(
+                'operator-1',
+            )->and($output)->toContain('10.6.0.3')->and($output)
+            ->not->toContain('198.51.100.20')->and($output)->toContain('gateway, vpn, router')->and($output)
+            ->not->toContain('188.245.156.201')->and($output)
+            ->not->toContain('nodes: [');
     });
 
     it('does not render a bootstrap host as peer ip when the WireGuard address is missing', function (): void {
@@ -104,10 +109,14 @@ describe('node:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'node:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('unknown')
-            ->and($output)->not->toContain('203.0.113.10');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('unknown')
+            ->and($output)
+            ->not->toContain('203.0.113.10');
     });
 
     it('renders human empty output when no nodes are visible', function (): void {
@@ -117,8 +126,7 @@ describe('node:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'node:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No nodes found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No nodes found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
@@ -128,8 +136,7 @@ describe('node:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('preserves structured gateway validation failures for retired filters', function (): void {
@@ -145,10 +152,14 @@ describe('node:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('role')
-            ->and($decoded['error']['meta']['value'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('role')
+            ->and($decoded['error']['meta']['value'])
+            ->toBe('app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -158,7 +169,6 @@ describe('node:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

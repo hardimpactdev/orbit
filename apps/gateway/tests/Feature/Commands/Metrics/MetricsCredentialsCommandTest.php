@@ -55,36 +55,38 @@ function metricsCredMetricsNode(): Node
 
 function metricsCredGrafanaProcess(Node $node, string $password = 'old-admin-password'): Process
 {
-    return Process::factory()->forOwner($node)->create([
-        'name' => 'grafana',
-        'command' => '/run.sh',
-        'restart_policy' => ProcessRestartPolicy::Always,
-        'runtime' => ProcessRuntime::DockerSwarm,
-        'runtime_config' => [
-            'service' => 'grafana',
-            'version_family' => '13',
-            'version' => '13.0.2',
-            'endpoint' => [
-                'name' => 'grafana',
-                'kind' => 'tcp',
-                'host' => '10.6.0.55',
-                'port' => 3000,
+    return Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'grafana',
+            'command' => '/run.sh',
+            'restart_policy' => ProcessRestartPolicy::Always,
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'service' => 'grafana',
+                'version_family' => '13',
+                'version' => '13.0.2',
+                'endpoint' => [
+                    'name' => 'grafana',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.55',
+                    'port' => 3000,
+                ],
+                'environment' => [
+                    'GF_SECURITY_ADMIN_USER' => 'admin',
+                    'GF_SECURITY_ADMIN_PASSWORD' => $password,
+                    'GF_SERVER_ROOT_URL' => 'https://metrics.orbit',
+                ],
+                'credentials' => [
+                    'admin_user' => 'admin',
+                    'admin_password' => $password,
+                    'url' => 'https://metrics.orbit',
+                ],
+                'labels' => [
+                    'orbit.process.spec_hash' => 'oldhash',
+                ],
             ],
-            'environment' => [
-                'GF_SECURITY_ADMIN_USER' => 'admin',
-                'GF_SECURITY_ADMIN_PASSWORD' => $password,
-                'GF_SERVER_ROOT_URL' => 'https://metrics.orbit',
-            ],
-            'credentials' => [
-                'admin_user' => 'admin',
-                'admin_password' => $password,
-                'url' => 'https://metrics.orbit',
-            ],
-            'labels' => [
-                'orbit.process.spec_hash' => 'oldhash',
-            ],
-        ],
-    ]);
+        ]);
 }
 
 /**
@@ -138,7 +140,8 @@ describe('MetricsCredentials authorization', function (): void {
 
         $response = metricsCredGet($this, ['node' => 'metrics-1']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'metrics-1')
             ->assertJsonPath('success.data.credentials.url', 'https://metrics.orbit')
             ->assertJsonPath('success.data.credentials.admin_user', 'admin')
@@ -153,7 +156,8 @@ describe('MetricsCredentials authorization', function (): void {
 
         $response = metricsCredGet($this, ['node' => 'metrics-1']);
 
-        $response->assertStatus(403)
+        $response
+            ->assertStatus(403)
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'tool:credentials')
             ->assertJsonPath('error.meta.serving_node', 'metrics-1')
@@ -188,7 +192,8 @@ describe('MetricsStatus authorization', function (): void {
 
         $response = metricsStatusGet($this, ['node' => 'metrics-1']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.metrics.0.node', 'metrics-1')
             ->assertJsonPath('success.data.metrics.0.processes.0.name', 'grafana');
     });
@@ -199,7 +204,8 @@ describe('MetricsStatus authorization', function (): void {
 
         $response = metricsStatusGet($this, ['node' => 'metrics-1']);
 
-        $response->assertStatus(403)
+        $response
+            ->assertStatus(403)
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'process:read');
     });
@@ -241,7 +247,8 @@ describe('MetricsCredentials payload and rotation', function (): void {
 
         $response = metricsCredGet($this, ['node' => 'metrics-1']);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'metrics.credentials_missing')
             ->assertJsonPath('error.meta.next_command', 'doctor --family=process --restore --node=metrics-1');
     });
@@ -253,7 +260,8 @@ describe('MetricsCredentials payload and rotation', function (): void {
 
         $response = metricsCredReset($this, ['node' => 'metrics-1']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'metrics-1')
             ->assertJsonPath('success.data.credentials.admin_user', 'admin');
 
@@ -261,10 +269,13 @@ describe('MetricsCredentials payload and rotation', function (): void {
         $process = Process::query()->where('node_id', $metrics->id)->where('name', 'grafana')->sole();
         $runtimeConfig = $process->runtime_config;
 
-        expect($newPassword)->toBeString()
-            ->not->toBe('old-admin-password')
-            ->and($runtimeConfig['credentials']['admin_password'])->toBe($newPassword)
-            ->and($runtimeConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'])->toBe($newPassword)
-            ->and($runtimeConfig['labels']['orbit.process.spec_hash'])->not->toBe('oldhash');
+        expect($newPassword)
+            ->toBeString()
+            ->not->toBe('old-admin-password')->and($runtimeConfig['credentials']['admin_password'])->toBe(
+                $newPassword,
+            )->and($runtimeConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'])->toBe($newPassword)->and(
+                $runtimeConfig['labels']['orbit.process.spec_hash'],
+            )
+            ->not->toBe('oldhash');
     });
 });

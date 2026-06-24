@@ -58,12 +58,20 @@ describe('ToolInstallController', function (): void {
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/tools/php-cli/install', [
-            'node' => 'app-install-api-1',
-            'version' => '8.5',
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-1',
+                'version' => '8.5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.tool.name', 'php-cli')
             ->assertJsonPath('success.data.tool.node', 'app-install-api-1')
             ->assertJsonPath('success.data.tool.state', 'installed')
@@ -74,9 +82,13 @@ describe('ToolInstallController', function (): void {
             ->where('name', 'php-cli')
             ->firstOrFail();
 
-        expect($tool->expected_version)->toBe('8.5')
-            ->and($tool->getAttributes())->not->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
-            ->and($shell->scripts)->toHaveCount(1);
+        expect($tool->expected_version)
+            ->toBe('8.5')
+            ->and($tool->getAttributes())
+            ->not
+            ->toHaveKeys(['instance_key', 'version_family', 'runtime', 'runtime_config'])
+            ->and($shell->scripts)
+            ->toHaveCount(1);
     });
 
     it('configures the related singleton process by default when installing a service tool', function (): void {
@@ -86,11 +98,19 @@ describe('ToolInstallController', function (): void {
         assignToolInstallApiRole($node, 'app-dev');
         app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
 
-        $response = $this->call('POST', '/api/tools/opencode-server/install', [
-            'node' => 'app-oc-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/opencode-server/install',
+            [
+                'node' => 'app-oc-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.tool.name', 'opencode-server')
             ->assertJsonPath('success.data.tool.process.name', 'opencode-server')
             ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
@@ -102,10 +122,15 @@ describe('ToolInstallController', function (): void {
             ->where('name', 'opencode-server')
             ->first();
 
-        expect($process)->not->toBeNull()
-            ->and($process->command)->toBe('opencode serve -a')
-            ->and($process->runtime)->toBe('systemd')
-            ->and($process->tool)->toBe('opencode');
+        expect($process)
+            ->not
+            ->toBeNull()
+            ->and($process->command)
+            ->toBe('opencode serve -a')
+            ->and($process->runtime)
+            ->toBe('systemd')
+            ->and($process->tool)
+            ->toBe('opencode');
     });
 
     it('skips process configuration when with_process is false', function (): void {
@@ -115,15 +140,24 @@ describe('ToolInstallController', function (): void {
         assignToolInstallApiRole($node, 'app-dev');
         app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
 
-        $response = $this->call('POST', '/api/tools/opencode-server/install', [
-            'node' => 'app-oc-2',
-            'with_process' => false,
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/opencode-server/install',
+            [
+                'node' => 'app-oc-2',
+                'with_process' => false,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.tool.process', null);
 
-        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->exists())->toBeFalse();
+        expect(
+            DB::table('processes')->where('node_id', $node->id)->where('name', 'opencode-server')->exists(),
+        )->toBeFalse();
     });
 
     it('converges the related process idempotently on re-install', function (): void {
@@ -153,11 +187,19 @@ describe('ToolInstallController', function (): void {
         assignToolInstallApiRole($node, 'app-dev');
         app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
 
-        $response = $this->call('POST', '/api/tools/polyscope-server/install', [
-            'node' => 'app-ps-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/polyscope-server/install',
+            [
+                'node' => 'app-ps-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.tool.name', 'polyscope-server')
             ->assertJsonPath('success.data.tool.process.name', 'polyscope-server')
             ->assertJsonPath('success.data.tool.process.runtime', 'systemd')
@@ -169,10 +211,15 @@ describe('ToolInstallController', function (): void {
             ->where('name', 'polyscope-server')
             ->first();
 
-        expect($process)->not->toBeNull()
-            ->and($process->command)->toBe('polyscope-server')
-            ->and($process->runtime)->toBe('systemd')
-            ->and($process->tool)->toBe('polyscope');
+        expect($process)
+            ->not
+            ->toBeNull()
+            ->and($process->command)
+            ->toBe('polyscope-server')
+            ->and($process->runtime)
+            ->toBe('systemd')
+            ->and($process->tool)
+            ->toBe('polyscope');
     });
 
     it('skips polyscope server process configuration when with_process is false', function (): void {
@@ -182,15 +229,24 @@ describe('ToolInstallController', function (): void {
         assignToolInstallApiRole($node, 'app-dev');
         app()->instance(RemoteShell::class, new ToolInstallApiRecordingShell);
 
-        $response = $this->call('POST', '/api/tools/polyscope-server/install', [
-            'node' => 'app-ps-2',
-            'with_process' => false,
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/polyscope-server/install',
+            [
+                'node' => 'app-ps-2',
+                'with_process' => false,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.tool.process', null);
 
-        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->exists())->toBeFalse();
+        expect(
+            DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->exists(),
+        )->toBeFalse();
     });
 
     it('converges the polyscope server related process idempotently on re-install', function (): void {
@@ -210,7 +266,8 @@ describe('ToolInstallController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.tool.process.action', 'converged');
 
-        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->count())->toBe(1);
+        expect(DB::table('processes')->where('node_id', $node->id)->where('name', 'polyscope-server')->count())
+            ->toBe(1);
     });
 
     it('does not treat an unassigned caller as gateway tool authority', function (): void {
@@ -225,15 +282,21 @@ describe('ToolInstallController', function (): void {
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/tools/php-cli/install', [
-            'node' => 'app-install-api-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
 
-        expect(NodeTool::query()->count())->toBe(0)
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     });
 
     it('rejects invalid status before row writes or remote shell actions', function (): void {
@@ -244,22 +307,32 @@ describe('ToolInstallController', function (): void {
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/tools/php-cli/install', [
-            'node' => 'app-install-api-1',
-            'status' => 'foo',
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-1',
+                'status' => 'foo',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'status')
             ->assertJsonPath('error.meta.value', 'foo')
             ->assertJsonPath('error.meta.reason', 'unsupported_value');
 
-        expect(NodeTool::query()->count())->toBe(0)
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     });
 
-    it('rejects runtime and instance options for tool installs before side effects', function (array $payload, string $field): void {
+    it('rejects runtime and instance options for tool installs before side effects', function (
+        array $payload,
+        string $field,
+    ): void {
         $caller = createToolInstallApiCallerNode();
         $node = Node::factory()->create(['name' => 'app-install-api-1', 'status' => 'active']);
         assignToolInstallApiRole($node, 'app-dev');
@@ -267,18 +340,25 @@ describe('ToolInstallController', function (): void {
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/tools/php-cli/install', [
-            'node' => 'app-install-api-1',
-            ...$payload,
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-1',
+                ...$payload,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', $field)
             ->assertJsonPath('error.meta.reason', 'unsupported_field');
 
-        expect(NodeTool::query()->count())->toBe(0)
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     })->with([
         'runtime' => [['runtime' => 'docker'], 'runtime'],
         'instance' => [['instance' => 'php-cli:8.5'], 'instance'],
@@ -292,17 +372,24 @@ describe('ToolInstallController', function (): void {
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', "/api/tools/{$tool}/install", [
-            'node' => 'app-install-api-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            "/api/tools/{$tool}/install",
+            [
+                'node' => 'app-install-api-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'tool.unsupported_action')
             ->assertJsonPath('error.meta.tool', $tool)
             ->assertJsonPath('error.meta.action', 'install');
 
-        expect(NodeTool::query()->count())->toBe(0)
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     })->with([
         'mysql',
         'postgres',
@@ -317,17 +404,24 @@ describe('ToolInstallController', function (): void {
         $shell = new ToolInstallApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/tools/php-cli/install', [
-            'node' => 'app-install-api-1',
-            ...$payload,
-        ], [], [], ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/tools/php-cli/install',
+            [
+                'node' => 'app-install-api-1',
+                ...$payload,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_INSTALL_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'unsupported_field');
 
-        expect(NodeTool::query()->count())->toBe(0)
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::query()->count())->toBe(0)->and($shell->scripts)->toBe([]);
     })->with([
         'expected_version' => [['expected_version' => '1.0.0']],
         'expected-version' => [['expected-version' => '1.0.0']],

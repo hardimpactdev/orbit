@@ -31,7 +31,7 @@ it('rejects metadata keys outside the closed whitelist', function (): void {
     Process::fake();
     Process::preventStrayProcesses();
 
-    expect(fn () => (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'echo ok', [
+    expect(fn () => new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'echo ok', [
         'metadata' => ['APP_ENV' => 'production'],
     ]))->toThrow(InvalidArgumentException::class, 'Remote shell metadata key');
 
@@ -42,7 +42,7 @@ it('rejects invalid metadata values at the call site', function (string $value):
     Process::fake();
     Process::preventStrayProcesses();
 
-    expect(fn () => (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'echo ok', [
+    expect(fn () => new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'echo ok', [
         'metadata' => ['ORBIT_REQUEST_ID' => $value],
     ]))->toThrow(InvalidArgumentException::class);
 
@@ -62,17 +62,19 @@ it('keeps metadata in a shell-escaped prologue and preserves the user command bo
     $body = 'printf "%s" "$ORBIT_REQUEST_ID"; test ! -f /tmp/orbit-metadata-pwned';
     $metadata = '; | & $ ( ) < > '."'".' " ` space';
 
-    (new SshRemoteShell)->run($node, $body, [
+    new SshRemoteShell()->run($node, $body, [
         'metadata' => ['ORBIT_REQUEST_ID' => $metadata],
     ]);
 
     Process::assertRan(function (PendingProcess $process, ProcessResultContract $result): bool {
         $command = (string) $process->command;
 
-        return str_contains($command, 'export ORBIT_REQUEST_ID=')
+        return (
+            str_contains($command, 'export ORBIT_REQUEST_ID=')
             && str_contains($command, 'printf "%s" "$ORBIT_REQUEST_ID"')
             && str_contains($command, 'test ! -f /tmp/orbit-metadata-pwned')
-            && $result->output() === "ok\n";
+            && $result->output() === "ok\n"
+        );
     });
 });
 
@@ -80,30 +82,39 @@ it('allows local executor operation id metadata', function (): void {
     Process::fake(['*' => Process::result(output: "ok\n")]);
     Process::preventStrayProcesses();
 
-    (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_OPERATION_ID"', [
+    new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_OPERATION_ID"', [
         'metadata' => ['ORBIT_OPERATION_ID' => '00000000-0000-4000-8000-000000000402'],
     ]);
 
-    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_OPERATION_ID='));
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        'export ORBIT_OPERATION_ID=',
+    ));
 });
 
 it('allows proxy route suffix metadata used by doctor probes', function (): void {
     Process::fake(['*' => Process::result(output: "ok\n")]);
     Process::preventStrayProcesses();
 
-    (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_PROXY_SUFFIX"', [
+    new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'echo "$ORBIT_PROXY_SUFFIX"', [
         'metadata' => ['ORBIT_PROXY_SUFFIX' => '.backend'],
     ]);
 
-    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_PROXY_SUFFIX='));
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        'export ORBIT_PROXY_SUFFIX=',
+    ));
 });
 
 it('allows wg-easy database path metadata used by vpn state commands', function (): void {
     Process::fake();
 
-    (new SshRemoteShell)->run(nodeWithPinnedHostKeyForMetadata(), 'test -n "$ORBIT_WG_EASY_DB_PATH"', [
+    new SshRemoteShell()->run(nodeWithPinnedHostKeyForMetadata(), 'test -n "$ORBIT_WG_EASY_DB_PATH"', [
         'metadata' => ['ORBIT_WG_EASY_DB_PATH' => '/home/orbit/.config/orbit/wg-easy/wg-easy.db'],
     ]);
 
-    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, 'export ORBIT_WG_EASY_DB_PATH='));
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        'export ORBIT_WG_EASY_DB_PATH=',
+    ));
 });

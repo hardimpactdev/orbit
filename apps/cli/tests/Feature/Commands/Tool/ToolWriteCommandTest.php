@@ -25,19 +25,24 @@ describe('tool write commands', function (): void {
             ],
         ]));
 
-        $this->artisan('tool:install')
+        $this
+            ->artisan('tool:install')
             ->expectsQuestion('Tool name', 'composer')
             ->expectsQuestion('Target node', 'app-1')
             ->expectsOutputToContain('composer')
             ->assertSuccessful();
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/composer/install'
-            && $request->data() === [
-                'node' => 'app-1',
-                'status' => 'installed',
-                'with_process' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/composer/install'
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'status' => 'installed',
+                    'with_process' => true,
+                ]
+            ),
+        );
     });
 
     it('streams tool:install payloads to the gateway', function (): void {
@@ -57,18 +62,25 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/composer/install'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'app-1',
-                'status' => 'running',
-                'with_process' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/composer/install'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'status' => 'running',
+                    'with_process' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['state'])->toBe('running');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['tool']['state'])
+            ->toBe('running');
     });
 
     it('streams host tool version intent without runtime fields', function (): void {
@@ -93,19 +105,26 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/composer/install'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'database-1',
-                'version' => '2.8',
-                'status' => 'installed',
-                'with_process' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/composer/install'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'node' => 'database-1',
+                    'version' => '2.8',
+                    'status' => 'installed',
+                    'with_process' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool'])->not->toHaveKeys(['instance', 'version_family', 'runtime']);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['tool'])
+            ->not->toHaveKeys(['instance', 'version_family', 'runtime']);
     });
 
     it('uses the local default node for tool:install when no target is supplied', function (): void {
@@ -128,18 +147,25 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/composer/install'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'default-app',
-                'status' => 'installed',
-                'with_process' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/composer/install'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'node' => 'default-app',
+                    'status' => 'installed',
+                    'with_process' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['node'])->toBe('default-app');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['tool']['node'])
+            ->toBe('default-app');
 
         @unlink($store->path());
     });
@@ -158,10 +184,14 @@ describe('tool write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('status')
-            ->and($decoded['error']['meta']['reason'])->toBe('unsupported_value');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('status')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('unsupported_value');
     });
 
     it('uses --json as destructive consent for tool:remove', function (): void {
@@ -177,16 +207,19 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/tools/composer'
-            && $request->data() === [
-                'node' => 'app-1',
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'json',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/tools/composer'
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'json',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['tool']['state'])->toBe('removed');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['tool']['state'])->toBe('removed');
     });
 
     it('prompts before removing a tool in interactive mode', function (): void {
@@ -194,21 +227,26 @@ describe('tool write commands', function (): void {
             'tool' => ['name' => 'composer', 'node' => 'app-1', 'state' => 'removed'],
         ]));
 
-        $this->artisan('tool:remove', [
-            'tool' => 'composer',
-            '--node' => 'app-1',
-        ])
+        $this
+            ->artisan('tool:remove', [
+                'tool' => 'composer',
+                '--node' => 'app-1',
+            ])
             ->expectsConfirmation("Remove tool 'composer'?", 'yes')
             ->expectsOutputToContain('removed')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/tools/composer'
-            && $request->data() === [
-                'node' => 'app-1',
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'interactive_confirm',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/tools/composer'
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'interactive_confirm',
+                ]
+            ),
+        );
     });
 
     it('requires force before tool:remove in non-json non-interactive mode', function (): void {
@@ -222,8 +260,7 @@ describe('tool write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Use --force or --json to remove this tool.');
+        expect($exitCode)->toBe(1)->and($output)->toContain('Use --force or --json to remove this tool.');
     });
 
     it('streams tool:update payloads to the single-tool gateway endpoint', function (): void {
@@ -243,17 +280,24 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/composer/update'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'node' => 'app-1',
-                'version' => '2.8',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/composer/update'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'version' => '2.8',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['version'])->toBe('2.8');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['tool']['version'])
+            ->toBe('2.8');
     });
 
     it('streams tool:update bulk payloads when the tool argument is omitted', function (): void {
@@ -275,14 +319,21 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/update'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === ['node' => 'app-1']);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/update'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === ['node' => 'app-1']
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['skipped'])->toHaveCount(1);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['skipped'])
+            ->toHaveCount(1);
     });
 
     it('streams tool:reconfigure password payloads to the gateway', function (): void {
@@ -302,24 +353,35 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/tools/opencode-server/reconfigure'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'app' => 'docs',
-                'password' => 'newpass',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/tools/opencode-server/reconfigure'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'app' => 'docs',
+                    'password' => 'newpass',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($decoded['data']['data']['tool']['action'])->toBe('reconfigured');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($decoded['data']['data']['tool']['action'])
+            ->toBe('reconfigured');
     });
 
     it('preserves gateway error envelopes for tool write commands', function (): void {
-        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope('tool.unsupported_action', "Tool 'docker' does not support install.", [
-            'tool' => 'docker',
-            'action' => 'install',
-        ]), JSON_THROW_ON_ERROR), 422);
+        fakeGatewayProgressStream(json_encode(fakeErrorEnvelope(
+            'tool.unsupported_action',
+            "Tool 'docker' does not support install.",
+            [
+                'tool' => 'docker',
+                'action' => 'install',
+            ],
+        ), JSON_THROW_ON_ERROR), 422);
 
         [$exitCode, $output] = runCommand($this, 'tool:install', [
             'tool' => 'docker',
@@ -329,8 +391,11 @@ describe('tool write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('tool.unsupported_action')
-            ->and($decoded['error']['meta']['tool'])->toBe('docker');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('tool.unsupported_action')
+            ->and($decoded['error']['meta']['tool'])
+            ->toBe('docker');
     });
 });

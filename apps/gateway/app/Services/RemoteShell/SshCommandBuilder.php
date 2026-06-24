@@ -46,11 +46,15 @@ final class SshCommandBuilder
      *     update_host_keys?: bool,
      * }  $options
      */
-    public function sshForNode(Node $node, string $remoteCommand, ?string $loginUser = null, array $options = []): string
-    {
+    public function sshForNode(
+        Node $node,
+        string $remoteCommand,
+        ?string $loginUser = null,
+        array $options = [],
+    ): string {
         return $this->ssh(
             user: $loginUser ?: ($node->user ?: 'orbit'),
-            host: $this->hostForNode($node, (bool) ($options['prefer_public_host'] ?? false)),
+            host: $this->hostForNode($node, $options['prefer_public_host'] ?? false),
             remoteCommand: $remoteCommand,
             options: $options,
         );
@@ -66,8 +70,12 @@ final class SshCommandBuilder
      *     prefer_public_host?: bool,
      * }  $options
      */
-    public function enforceForNode(Node $node, string $remoteCommand, ?string $loginUser = null, array $options = []): string
-    {
+    public function enforceForNode(
+        Node $node,
+        string $remoteCommand,
+        ?string $loginUser = null,
+        array $options = [],
+    ): string {
         $knownHostsFile = $this->knownHostsFileForNode($node);
 
         return $this->sshForNode(
@@ -114,9 +122,14 @@ final class SshCommandBuilder
      *     update_host_keys?: bool,
      * }  $options
      */
-    public function scpToNode(Node $node, string $source, string $destination, ?string $loginUser = null, array $options = []): string
-    {
-        $host = $this->hostForNode($node, (bool) ($options['prefer_public_host'] ?? false));
+    public function scpToNode(
+        Node $node,
+        string $source,
+        string $destination,
+        ?string $loginUser = null,
+        array $options = [],
+    ): string {
+        $host = $this->hostForNode($node, $options['prefer_public_host'] ?? false);
         $user = $loginUser ?: ($node->user ?: 'orbit');
 
         if (($options['strict_host_key_checking'] ?? null) === 'yes') {
@@ -169,11 +182,11 @@ final class SshCommandBuilder
         $resolved[] = '-o StrictHostKeyChecking='.($options['strict_host_key_checking'] ?? 'accept-new');
 
         if (isset($options['user_known_hosts_file'])) {
-            $resolved[] = '-o UserKnownHostsFile='.escapeshellarg((string) $options['user_known_hosts_file']);
+            $resolved[] = '-o UserKnownHostsFile='.escapeshellarg($options['user_known_hosts_file']);
         }
 
         if (isset($options['global_known_hosts_file'])) {
-            $resolved[] = '-o GlobalKnownHostsFile='.escapeshellarg((string) $options['global_known_hosts_file']);
+            $resolved[] = '-o GlobalKnownHostsFile='.escapeshellarg($options['global_known_hosts_file']);
         }
 
         if (($options['update_host_keys'] ?? null) === false) {
@@ -219,11 +232,11 @@ final class SshCommandBuilder
         $resolved[] = '-o StrictHostKeyChecking='.($options['strict_host_key_checking'] ?? 'accept-new');
 
         if (isset($options['user_known_hosts_file'])) {
-            $resolved[] = '-o UserKnownHostsFile='.escapeshellarg((string) $options['user_known_hosts_file']);
+            $resolved[] = '-o UserKnownHostsFile='.escapeshellarg($options['user_known_hosts_file']);
         }
 
         if (isset($options['global_known_hosts_file'])) {
-            $resolved[] = '-o GlobalKnownHostsFile='.escapeshellarg((string) $options['global_known_hosts_file']);
+            $resolved[] = '-o GlobalKnownHostsFile='.escapeshellarg($options['global_known_hosts_file']);
         }
 
         if (($options['update_host_keys'] ?? null) === false) {
@@ -267,11 +280,14 @@ final class SshCommandBuilder
 
     private function knownHostsContent(Node $node): string
     {
-        $hosts = array_values(array_unique(array_filter([
-            $node->host,
-            $node->wireguard_address,
-            $this->usesDockerTopology() ? $node->host : null,
-        ], fn ($host): bool => is_string($host) && $host !== '')));
+        $hosts = array_values(array_unique(array_filter(
+            [
+                $node->host,
+                $node->wireguard_address,
+                $this->usesDockerTopology() ? $node->host : null,
+            ],
+            fn ($host): bool => is_string($host) && $host !== '',
+        )));
 
         return collect($hosts)
             ->map(fn (string $host): string => "{$host} {$node->host_key_type} {$node->host_key_public}")
@@ -292,10 +308,14 @@ final class SshCommandBuilder
             return false;
         }
 
-        return in_array('docker', array_map(
-            static fn (string $value): string => strtolower(trim($value)),
-            explode(',', $providers),
-        ), true);
+        return in_array(
+            'docker',
+            array_map(
+                static fn (string $value): string => strtolower(trim($value)),
+                explode(',', $providers),
+            ),
+            true,
+        );
     }
 
     private function e2eEnvironmentValue(string $key): ?string

@@ -3,11 +3,15 @@
 declare(strict_types=1);
 
 $appsConfigPath = env('ORBIT_WEBSOCKET_APPS_CONFIG', '/etc/orbit/websocket/apps.php');
-$apps = is_file($appsConfigPath) ? require $appsConfigPath : [];
-$tlsOptions = array_filter([
-    'local_cert' => env('REVERB_TLS_CERT'),
-    'local_pk' => env('REVERB_TLS_KEY'),
-], fn (mixed $value): bool => is_string($value) && $value !== '');
+$appsConfigPath = is_string($appsConfigPath) ? $appsConfigPath : '/etc/orbit/websocket/apps.php';
+$apps = is_file($appsConfigPath) ? (require $appsConfigPath) : [];
+$tlsOptions = array_filter(
+    [
+        'local_cert' => env('REVERB_TLS_CERT'),
+        'local_pk' => env('REVERB_TLS_KEY'),
+    ],
+    fn (mixed $value): bool => is_string($value) && $value !== '',
+);
 
 return [
     'default' => env('REVERB_SERVER', 'reverb'),

@@ -1,0 +1,379 @@
+variant = "loose"
+
+[[issues]]
+file = "src/Progress/ForkedFrameTicker.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Progress/LifecycleSummaryRenderer.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "src/Progress/ProgressEventDecoder.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\r"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "src/Progress/ProgressEventDecoder.php"
+code = "literal-named-argument"
+message = "Literal argument `5` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/ProgressEventDecoder.php"
+code = "literal-named-argument"
+message = "Literal argument `6` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/ProgressEventDecoder.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/SpinnerTreeRenderer.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StepTree.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StepTree.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/Progress/StepTree.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "src/Progress/StepTree.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "literal-named-argument"
+message = "Literal argument `1_000_000` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "no-else-clause"
+message = "Avoid `else` clauses."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamIdleReader.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "src/Progress/StreamedStepProcessTicker.php"
+code = "literal-named-argument"
+message = "Literal argument `'.'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepProcessTicker.php"
+code = "literal-named-argument"
+message = "Literal argument `'0'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "halstead"
+message = "Method has a high halstead difficulty"
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "src/Progress/StreamedStepTree.php"
+code = "too-many-properties"
+message = "Class has too many properties."
+count = 1
+
+[[issues]]
+file = "src/Progress/VirtualTerminalScreen.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Progress/VirtualTerminalScreen.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/Progress/VirtualTerminalScreen.php"
+code = "no-else-clause"
+message = "Avoid `elseif` clauses."
+count = 1
+
+[[issues]]
+file = "src/Progress/VirtualTerminalScreen.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationToken.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationToken.php"
+code = "literal-named-argument"
+message = "Literal argument `'+/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "src/Security/OperationToken.php"
+code = "literal-named-argument"
+message = "Literal argument `'-_'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "src/Security/OperationToken.php"
+code = "literal-named-argument"
+message = "Literal argument `'='` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationToken.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenSigner.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenSigner.php"
+code = "literal-named-argument"
+message = "Literal argument `'+/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenSigner.php"
+code = "literal-named-argument"
+message = "Literal argument `'-_'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenSigner.php"
+code = "literal-named-argument"
+message = "Literal argument `'='` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenSigner.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenSigner.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 1
+
+[[issues]]
+file = "src/Security/OperationTokenVerifier.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 2
+
+[[issues]]
+file = "tests/Progress/LiveRepaintOutputTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'w+'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Progress/ProgressEventTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "function-name"
+message = "Function name `orbitCorePollingOnlyStream` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"event: keepalive\n\n"` should be passed as a named argument for clarity.'
+count = 2
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"event: ready\n\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 8
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "too-many-methods"
+message = "Anonymous class has too many methods."
+count = 6
+
+[[issues]]
+file = "tests/Progress/StreamIdleReaderTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Progress/StreamedStepTreeTest.php"
+code = "function-name"
+message = "Function name `ageStreamedStepTreeFrame` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Progress/StreamedStepTreeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `100_000` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Progress/StreamedStepTreeTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 4
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "function-name"
+message = "Function name `base64UrlEncodeForOperationTokenTest` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "function-name"
+message = "Function name `operationTokenVerifier` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "function-name"
+message = "Function name `validOperationToken` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'+/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'-_'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'='` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "literal-named-argument"
+message = "Literal argument `30` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Security/OperationTokenTest.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 11

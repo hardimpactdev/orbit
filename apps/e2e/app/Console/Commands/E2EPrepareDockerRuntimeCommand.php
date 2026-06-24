@@ -139,7 +139,7 @@ class E2EPrepareDockerRuntimeCommand extends Command
             throw new \RuntimeException("Could not create CLI binary artifact directory: {$directory}");
         }
 
-        (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($directory);
+        new OrbitCliBinaryBundle()->buildLinuxBinaryInto($directory);
     }
 
     private function imageIdFor(string $image): ?string

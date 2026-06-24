@@ -26,7 +26,11 @@ class FirewallRuleQuery
         $node = $node !== null && trim($node) !== '' ? trim($node) : null;
         $visibleNodeIds = $this->visibleNodeIds($caller);
 
-        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
+        if (
+            $caller instanceof Node
+            && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller)
+            && $visibleNodeIds === []
+        ) {
             throw new GatewayApiException(
                 message: 'This node is not authorized to read the firewall rule registry.',
                 errorCode: 'authorization_failed',
@@ -43,18 +47,25 @@ class FirewallRuleQuery
         $firewallRules = FirewallRule::query()
             ->with('node')
             ->whereHas('node', fn (Builder $query): Builder => $this->eligibleNodeQuery($query))
-            ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when(
+                $caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds),
+            )
             ->when($nodeId !== null, fn (Builder $query): Builder => $query->where('node_id', $nodeId))
             ->get();
 
         $rules = $firewallRules
-            ->sort(fn (FirewallRule $first, FirewallRule $second): int => [
-                mb_strtolower($first->node->name),
-                mb_strtolower($first->name),
-            ] <=> [
-                mb_strtolower($second->node->name),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (FirewallRule $first, FirewallRule $second): int => (
+                    [
+                        mb_strtolower($first->node->name),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        mb_strtolower($second->node->name),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->values()
             ->map(fn (FirewallRule $rule): array => $this->toRuleEntity($rule))
             ->all();

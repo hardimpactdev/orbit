@@ -60,7 +60,7 @@ final readonly class ToolsProbe
         $binary = $metadata['binary'] ?? $tool->name;
         $versionCommand = $metadata['version_command'] ?? null;
         $service = $metadata['service'] ?? null;
-        $container = $this->expectedContainerName($tool) ?? ($metadata['container'] ?? null);
+        $container = $this->expectedContainerName($tool) ?? $metadata['container'] ?? null;
         $script = $this->toolCapabilityProbeScript(
             binary: $binary,
             versionCommand: is_string($versionCommand) ? $versionCommand : '',
@@ -70,7 +70,7 @@ final readonly class ToolsProbe
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
-            'input' => (string) json_encode([
+            'input' => json_encode([
                 'binary' => $binary,
                 'version_command' => is_string($versionCommand) ? $versionCommand : '',
                 'service' => is_string($service) ? $service : '',
@@ -120,7 +120,10 @@ final readonly class ToolsProbe
             $metadata = ($this->catalog ?? app(ToolCatalog::class))->probeMetadata($tool->name);
 
             if (($metadata['probe'] ?? null) === 'docker_images') {
-                $snapshots[$tool->name] = $this->withManagedFileProbes($tool, $this->introspectDockerImages($tool, $metadata));
+                $snapshots[$tool->name] = $this->withManagedFileProbes($tool, $this->introspectDockerImages(
+                    $tool,
+                    $metadata,
+                ));
 
                 continue;
             }
@@ -134,9 +137,13 @@ final readonly class ToolsProbe
             $node = $tool->node;
             $batch[$tool->name] = [
                 'binary' => $metadata['binary'] ?? $tool->name,
-                'version_command' => is_string($metadata['version_command'] ?? null) ? $metadata['version_command'] : '',
+                'version_command' => is_string($metadata['version_command'] ?? null)
+                    ? $metadata['version_command']
+                    : '',
                 'service' => is_string($metadata['service'] ?? null) ? $metadata['service'] : '',
-                'container' => $this->expectedContainerName($tool) ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
+                'container' =>
+                    $this->expectedContainerName($tool)
+                        ?? (is_string($metadata['container'] ?? null) ? $metadata['container'] : ''),
             ];
             $batchedTools[$tool->name] = $tool;
         }
@@ -148,7 +155,7 @@ final readonly class ToolsProbe
         $script = $this->batchedToolCapabilityProbeScript($batch);
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
             'throw' => false,
-            'input' => (string) json_encode(['tools' => $batch], JSON_THROW_ON_ERROR),
+            'input' => json_encode(['tools' => $batch], JSON_THROW_ON_ERROR),
         ]);
 
         if (! $result->successful()) {
@@ -187,80 +194,84 @@ final readonly class ToolsProbe
         return $snapshots;
     }
 
-    private function toolCapabilityProbeScript(string $binary, string $versionCommand, string $service, string $container): string
-    {
+    private function toolCapabilityProbeScript(
+        string $binary,
+        string $versionCommand,
+        string $service,
+        string $container,
+    ): string {
         $script = <<<'SH'
-set -eu
-# orbit-tool-probe:capability
+            set -eu
+            # orbit-tool-probe:capability
 
-binary=__BINARY__
-version_command=__VERSION_COMMAND__
-service=__SERVICE__
-container=__CONTAINER__
+            binary=__BINARY__
+            version_command=__VERSION_COMMAND__
+            service=__SERVICE__
+            container=__CONTAINER__
 
-path=''
-version=''
-state='unknown'
-config_exists=''
-config_hash=''
-secret_exists=''
-secret_hash=''
-container_exists=''
-container_state=''
-container_spec_hash=''
-
-case "$binary" in
-    */*)
-        if [ -x "$binary" ]; then
-            path=$binary
-        fi
-        ;;
-    *)
-        path=$(command -v "$binary" 2>/dev/null || true)
-        ;;
-esac
-
-if [ -z "$path" ]; then
-    exit 1
-fi
-
-if [ -n "$version_command" ]; then
-    version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
-fi
-
-if [ -n "$service" ]; then
-    if systemctl is-active --quiet "$service" 2>/dev/null; then
-        state='running'
-    else
-        state='stopped'
-    fi
-fi
-
-if [ -n "$container" ]; then
-    if docker container inspect "$container" >/dev/null 2>&1; then
-        container_exists='1'
-        running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
-
-        if [ "$running" = "true" ]; then
-            container_state='running'
-        else
-            container_state='stopped'
-        fi
-
-        state=$container_state
-        container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
-
-        if [ "$container_spec_hash" = "<no value>" ]; then
+            path=''
+            version=''
+            state='unknown'
+            config_exists=''
+            config_hash=''
+            secret_exists=''
+            secret_hash=''
+            container_exists=''
+            container_state=''
             container_spec_hash=''
-        fi
-    else
-        container_exists='0'
-        container_state='missing'
-    fi
-fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash"
-SH;
+            case "$binary" in
+                */*)
+                    if [ -x "$binary" ]; then
+                        path=$binary
+                    fi
+                    ;;
+                *)
+                    path=$(command -v "$binary" 2>/dev/null || true)
+                    ;;
+            esac
+
+            if [ -z "$path" ]; then
+                exit 1
+            fi
+
+            if [ -n "$version_command" ]; then
+                version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
+            fi
+
+            if [ -n "$service" ]; then
+                if systemctl is-active --quiet "$service" 2>/dev/null; then
+                    state='running'
+                else
+                    state='stopped'
+                fi
+            fi
+
+            if [ -n "$container" ]; then
+                if docker container inspect "$container" >/dev/null 2>&1; then
+                    container_exists='1'
+                    running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
+
+                    if [ "$running" = "true" ]; then
+                        container_state='running'
+                    else
+                        container_state='stopped'
+                    fi
+
+                    state=$container_state
+                    container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
+
+                    if [ "$container_spec_hash" = "<no value>" ]; then
+                        container_spec_hash=''
+                    fi
+                else
+                    container_exists='0'
+                    container_state='missing'
+                fi
+            fi
+
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$path" "$version" "$state" "$config_exists" "$config_hash" "$secret_exists" "$secret_hash" "$container_exists" "$container_state" "$container_spec_hash"
+            SH;
 
         return strtr($script, [
             '__BINARY__' => escapeshellarg($binary),
@@ -291,110 +302,110 @@ SH;
         }
 
         $script = <<<'SH'
-set -eu
-# orbit-tool-probe:capability-batch
+            set -eu
+            # orbit-tool-probe:capability-batch
 
-json_escape() {
-    printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); print }'
-}
+            json_escape() {
+                printf '%s' "$1" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r"); gsub(/\n/, "\\n"); print }'
+            }
 
-json_string_or_null() {
-    if [ -n "$1" ]; then
-        printf '"%s"' "$(json_escape "$1")"
-    else
-        printf 'null'
-    fi
-}
+            json_string_or_null() {
+                if [ -n "$1" ]; then
+                    printf '"%s"' "$(json_escape "$1")"
+                else
+                    printf 'null'
+                fi
+            }
 
-while IFS= read -r name; do
-    if [ -z "$name" ]; then
-        continue
-    fi
+            while IFS= read -r name; do
+                if [ -z "$name" ]; then
+                    continue
+                fi
 
-    binary=''
-    version_command=''
-    service=''
-    container=''
+                binary=''
+                version_command=''
+                service=''
+                container=''
 
-    case "$name" in
-__CASES__
-        *)
-            continue
-            ;;
-    esac
+                case "$name" in
+            __CASES__
+                    *)
+                        continue
+                        ;;
+                esac
 
-    path=''
-    version=''
-    state='unknown'
-    container_exists='null'
-    container_state=''
-    container_spec_hash=''
-
-    case "$binary" in
-        */*)
-            if [ -x "$binary" ]; then
-                path=$binary
-            fi
-            ;;
-        *)
-            path=$(command -v "$binary" 2>/dev/null || true)
-            ;;
-    esac
-
-    if [ -n "$path" ] && [ -n "$version_command" ]; then
-        version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
-    fi
-
-    if [ -n "$path" ] && [ -n "$service" ]; then
-        if systemctl is-active --quiet "$service" 2>/dev/null; then
-            state='running'
-        else
-            state='stopped'
-        fi
-    fi
-
-    if [ -n "$path" ] && [ -n "$container" ]; then
-        if docker container inspect "$container" >/dev/null 2>&1; then
-            container_exists='true'
-            running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
-
-            if [ "$running" = "true" ]; then
-                container_state='running'
-            else
-                container_state='stopped'
-            fi
-
-            state=$container_state
-            container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
-
-            if [ "$container_spec_hash" = "<no value>" ]; then
+                path=''
+                version=''
+                state='unknown'
+                container_exists='null'
+                container_state=''
                 container_spec_hash=''
-            fi
-        else
-            container_exists='false'
-            container_state='missing'
-        fi
-    fi
 
-    if [ -n "$path" ]; then
-        installed='true'
-    else
-        installed='false'
-    fi
+                case "$binary" in
+                    */*)
+                        if [ -x "$binary" ]; then
+                            path=$binary
+                        fi
+                        ;;
+                    *)
+                        path=$(command -v "$binary" 2>/dev/null || true)
+                        ;;
+                esac
 
-    printf '{"name":"%s","installed":%s,"path":%s,"version":%s,"state":%s,"container_exists":%s,"container_state":%s,"container_spec_hash":%s}\n' \
-        "$(json_escape "$name")" \
-        "$installed" \
-        "$(json_string_or_null "$path")" \
-        "$(json_string_or_null "$version")" \
-        "$(json_string_or_null "$state")" \
-        "$container_exists" \
-        "$(json_string_or_null "$container_state")" \
-        "$(json_string_or_null "$container_spec_hash")"
-done <<'ORBIT_TOOLS'
-__NAMES__
-ORBIT_TOOLS
-SH;
+                if [ -n "$path" ] && [ -n "$version_command" ]; then
+                    version=$(sh -c "$version_command" 2>/dev/null | sed -n '1p' || true)
+                fi
+
+                if [ -n "$path" ] && [ -n "$service" ]; then
+                    if systemctl is-active --quiet "$service" 2>/dev/null; then
+                        state='running'
+                    else
+                        state='stopped'
+                    fi
+                fi
+
+                if [ -n "$path" ] && [ -n "$container" ]; then
+                    if docker container inspect "$container" >/dev/null 2>&1; then
+                        container_exists='true'
+                        running=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')
+
+                        if [ "$running" = "true" ]; then
+                            container_state='running'
+                        else
+                            container_state='stopped'
+                        fi
+
+                        state=$container_state
+                        container_spec_hash=$(docker container inspect --format '{{index .Config.Labels "orbit.caddy.spec_hash"}}' "$container" 2>/dev/null || true)
+
+                        if [ "$container_spec_hash" = "<no value>" ]; then
+                            container_spec_hash=''
+                        fi
+                    else
+                        container_exists='false'
+                        container_state='missing'
+                    fi
+                fi
+
+                if [ -n "$path" ]; then
+                    installed='true'
+                else
+                    installed='false'
+                fi
+
+                printf '{"name":"%s","installed":%s,"path":%s,"version":%s,"state":%s,"container_exists":%s,"container_state":%s,"container_spec_hash":%s}\n' \
+                    "$(json_escape "$name")" \
+                    "$installed" \
+                    "$(json_string_or_null "$path")" \
+                    "$(json_string_or_null "$version")" \
+                    "$(json_string_or_null "$state")" \
+                    "$container_exists" \
+                    "$(json_string_or_null "$container_state")" \
+                    "$(json_string_or_null "$container_spec_hash")"
+            done <<'ORBIT_TOOLS'
+            __NAMES__
+            ORBIT_TOOLS
+            SH;
 
         return strtr($script, [
             '__CASES__' => implode("\n", $cases),
@@ -411,17 +422,17 @@ SH;
             ? array_values(array_filter($metadata['images'], is_string(...)))
             : [];
         $script = <<<'BASH'
-found=0
-while IFS= read -r image; do
-    [ -n "$image" ] || continue
-    if docker image inspect "$image" >/dev/null 2>&1; then
-        printf '%s\n' "$image"
-        found=1
-    fi
-done
+            found=0
+            while IFS= read -r image; do
+                [ -n "$image" ] || continue
+                if docker image inspect "$image" >/dev/null 2>&1; then
+                    printf '%s\n' "$image"
+                    found=1
+                fi
+            done
 
-[ "$found" -eq 1 ]
-BASH;
+            [ "$found" -eq 1 ]
+            BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($tool->node, $script, [
             'throw' => false,
@@ -542,8 +553,7 @@ BASH;
             ];
         }
 
-        $allowedStatus = $tool->node->isActive()
-            || ($allowProvisioning && $tool->node->isProvisioning());
+        $allowedStatus = $tool->node->isActive() || $allowProvisioning && $tool->node->isProvisioning();
 
         if (! $allowedStatus || ! $this->isToolNode($tool)) {
             return [
@@ -873,7 +883,12 @@ BASH;
 
         return $intent === null
             ? null
-            : $this->managedFileIntentError($intent, defaultMode: '0600', defaultDirectoryMode: '0700', sensitive: true);
+            : $this->managedFileIntentError(
+                $intent,
+                defaultMode: '0600',
+                defaultDirectoryMode: '0700',
+                sensitive: true,
+            );
     }
 
     /**
@@ -1090,7 +1105,7 @@ BASH;
                     summary: "Tool {$tool->name} cannot verify proxy route because the node has no active agent role TLD.",
                     detail: [
                         'tool' => $tool->name,
-                        'node' => $tool->node->name,
+                        'node' => $tool->node?->name,
                     ],
                 ),
             ];
@@ -1098,7 +1113,7 @@ BASH;
 
         $domain = "{$tool->name}.{$tld}";
         $route = ProxyRoute::query()
-            ->where('node_id', $tool->node->id)
+            ->where('node_id', $tool->node?->id)
             ->where('domain', $domain)
             ->where('owner_type', 'tool')
             ->first();
@@ -1112,14 +1127,14 @@ BASH;
                     summary: "Tool {$tool->name} is missing the internal proxy route under the agent role TLD.",
                     detail: [
                         'tool' => $tool->name,
-                        'node' => $tool->node->name,
+                        'node' => $tool->node?->name,
                         'domain' => $domain,
                     ],
                 ),
             ];
         }
 
-        $routeOwner = is_array($route->config) ? ($route->config['owner_name'] ?? null) : null;
+        $routeOwner = is_array($route->config) ? $route->config['owner_name'] ?? null : null;
 
         if ($routeOwner !== $tool->name) {
             return [
@@ -1130,7 +1145,7 @@ BASH;
                     summary: "Tool {$tool->name} proxy route is owned by a different tool.",
                     detail: [
                         'tool' => $tool->name,
-                        'node' => $tool->node->name,
+                        'node' => $tool->node?->name,
                         'domain' => $domain,
                         'route_owner' => $routeOwner,
                     ],
@@ -1157,7 +1172,7 @@ BASH;
                     summary: "Tool {$tool->name} proxy route does not match Orbit's managed agent route shape.",
                     detail: [
                         'tool' => $tool->name,
-                        'node' => $tool->node->name,
+                        'node' => $tool->node?->name,
                         'domain' => $domain,
                         'expected_kind' => 'proxy',
                         'observed_kind' => $route->kind,
@@ -1250,7 +1265,7 @@ BASH;
             return [];
         }
 
-        if (! ($this->remoteShell instanceof RemoteShell)) {
+        if (! $this->remoteShell instanceof RemoteShell) {
             return [];
         }
 
@@ -1269,7 +1284,7 @@ BASH;
                         summary: "Tool {$tool->name} is installed on a node whose agent runtime user is absent.",
                         detail: [
                             'tool' => $tool->name,
-                            'node' => $tool->node->name,
+                            'node' => $tool->node?->name,
                         ],
                     ),
                 ];
@@ -1289,7 +1304,7 @@ BASH;
                         summary: "Tool {$tool->name} is installed on a node whose agent runtime user cannot execute the Orbit CLI.",
                         detail: [
                             'tool' => $tool->name,
-                            'node' => $tool->node->name,
+                            'node' => $tool->node?->name,
                         ],
                     ),
                 ];
@@ -1312,7 +1327,7 @@ BASH;
 
         if ($assignment instanceof NodeRoleAssignment) {
             $settings = $assignment->settings ?? [];
-            $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+            $tld = is_array($settings) ? $settings['tld'] ?? null : null;
 
             if (is_string($tld) && trim($tld) !== '') {
                 return trim($tld);

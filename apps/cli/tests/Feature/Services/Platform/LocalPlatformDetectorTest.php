@@ -11,9 +11,9 @@ describe(LocalPlatformDetector::class, function (): void {
 
     it('normalizes Linux os-release values into platform identifiers', function (): void {
         $osRelease = <<<'TEXT'
-ID=ubuntu
-VERSION_ID="24.04"
-TEXT;
+            ID=ubuntu
+            VERSION_ID="24.04"
+            TEXT;
 
         expect(app(LocalPlatformDetector::class)->linuxIdentifier($osRelease))->toBe('ubuntu_24-04');
     });

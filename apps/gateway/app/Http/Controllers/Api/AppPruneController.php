@@ -98,9 +98,13 @@ final class AppPruneController implements Loggable
         return App::query()
             ->with('node')
             ->get()
-            ->filter(fn (App $app): bool => $app->name === $name
-                || $app->domain === $name
-                || $app->url() === "https://{$name}")
+            ->filter(
+                fn (App $app): bool => (
+                    $app->name === $name
+                    || $app->domain === $name
+                    || $app->url() === "https://{$name}"
+                ),
+            )
             ->values()
             ->first();
     }

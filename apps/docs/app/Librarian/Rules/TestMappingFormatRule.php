@@ -60,7 +60,10 @@ final readonly class TestMappingFormatRule implements GroupedRule
             }
 
             return [
-                $this->finding($file, 'Test Mapping must include at least one table row with an `apps/gateway/tests/...Test.php` path and coverage description, or state why there is no gateway-side coverage.'),
+                $this->finding(
+                    $file,
+                    'Test Mapping must include at least one table row with an `apps/gateway/tests/...Test.php` path and coverage description, or state why there is no gateway-side coverage.',
+                ),
             ];
         }
 
@@ -68,7 +71,10 @@ final readonly class TestMappingFormatRule implements GroupedRule
 
         foreach ($rows as $row) {
             if (! str_starts_with($row['path'], 'apps/gateway/tests/')) {
-                $findings[] = $this->finding($file, "Mapped test path must live under apps/gateway/tests/: {$row['path']}.");
+                $findings[] = $this->finding(
+                    $file,
+                    "Mapped test path must live under apps/gateway/tests/: {$row['path']}.",
+                );
             }
 
             if (! str_ends_with($row['path'], 'Test.php')) {
@@ -81,7 +87,10 @@ final readonly class TestMappingFormatRule implements GroupedRule
         }
 
         if ($this->containsMissingFileInstruction($section)) {
-            $findings[] = $this->finding($file, 'Test Mapping sections must not repeat missing-file process guidance; list the planned test file and coverage only.');
+            $findings[] = $this->finding(
+                $file,
+                'Test Mapping sections must not repeat missing-file process guidance; list the planned test file and coverage only.',
+            );
         }
 
         return $findings;
@@ -89,7 +98,9 @@ final readonly class TestMappingFormatRule implements GroupedRule
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 
@@ -104,7 +115,13 @@ final readonly class TestMappingFormatRule implements GroupedRule
         $rows = [];
 
         foreach (explode("\n", $section) as $line) {
-            if (preg_match('/^\|\s*`(?<path>apps\/gateway\/tests\/[^`]+\.php)`\s*\|\s*(?<coverage>.+?)\s*\|$/', $line, $matches) !== 1) {
+            if (
+                preg_match(
+                    '/^\|\s*`(?<path>apps\/gateway\/tests\/[^`]+\.php)`\s*\|\s*(?<coverage>.+?)\s*\|$/',
+                    $line,
+                    $matches,
+                ) !== 1
+            ) {
                 continue;
             }
 

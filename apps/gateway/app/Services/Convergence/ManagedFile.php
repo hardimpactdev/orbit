@@ -91,7 +91,9 @@ final readonly class ManagedFile
             return new ManagedFileProbe(
                 reachable: false,
                 exists: false,
-                error: trim($result->stderr) !== '' ? trim($result->stderr) : "Probe exited with code {$result->exitCode}.",
+                error: trim($result->stderr) !== ''
+                    ? trim($result->stderr)
+                    : "Probe exited with code {$result->exitCode}.",
             );
         }
 
@@ -199,11 +201,11 @@ final readonly class ManagedFile
     {
         return sprintf(
             <<<'SH'
-set -euo pipefail
-sudo install -d -m %s %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod %s %s
-SH,
+                set -euo pipefail
+                sudo install -d -m %s %s
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                sudo chmod %s %s
+                SH,
             $this->directoryMode,
             escapeshellarg(dirname($this->path)),
             escapeshellarg(base64_encode($this->content)),
@@ -217,26 +219,26 @@ SH,
     {
         return sprintf(
             <<<'SH'
-path=%s
+                path=%s
 
-if ! sudo test -f "$path"; then
-    printf '{"exists":false,"hash":null,"mode":null}\n'
-    exit 0
-fi
+                if ! sudo test -f "$path"; then
+                    printf '{"exists":false,"hash":null,"mode":null}\n'
+                    exit 0
+                fi
 
-hash=""
-mode=""
+                hash=""
+                mode=""
 
-if command -v sha256sum >/dev/null 2>&1; then
-    hash="$(sudo sha256sum "$path" | awk '{print $1}')"
-elif command -v shasum >/dev/null 2>&1; then
-    hash="$(sudo shasum -a 256 "$path" | awk '{print $1}')"
-fi
+                if command -v sha256sum >/dev/null 2>&1; then
+                    hash="$(sudo sha256sum "$path" | awk '{print $1}')"
+                elif command -v shasum >/dev/null 2>&1; then
+                    hash="$(sudo shasum -a 256 "$path" | awk '{print $1}')"
+                fi
 
-mode="$(sudo stat -c '%%a' "$path" 2>/dev/null || sudo stat -f '%%Lp' "$path" 2>/dev/null || true)"
+                mode="$(sudo stat -c '%%a' "$path" 2>/dev/null || sudo stat -f '%%Lp' "$path" 2>/dev/null || true)"
 
-printf '{"exists":true,"hash":"%%s","mode":"%%s"}\n' "$hash" "$mode"
-SH,
+                printf '{"exists":true,"hash":"%%s","mode":"%%s"}\n' "$hash" "$mode"
+                SH,
             escapeshellarg($this->path),
         );
     }

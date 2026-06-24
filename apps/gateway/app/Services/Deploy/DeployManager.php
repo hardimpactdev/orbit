@@ -35,8 +35,14 @@ final readonly class DeployManager
     /**
      * @return array{step: array<string, mixed>, meta: array<string, mixed>}
      */
-    public function addStep(string $app, string $command, ?string $title, ?int $order, int $timeout, ?int $retention): array
-    {
+    public function addStep(
+        string $app,
+        string $command,
+        ?string $title,
+        ?int $order,
+        int $timeout,
+        ?int $retention,
+    ): array {
         $model = $this->productionApp($app);
 
         $step = $this->addDeployStep->handle(
@@ -165,16 +171,20 @@ final readonly class DeployManager
             $command = $this->renderCommand($step->command, $context);
             $routedCommand = $this->appCommandRouter->route($model, $command, $this->environment($context));
             $progress?->stepStart($this->progressKey($step));
-            $result = $this->remoteShell->run($model->node ?? throw new GatewayApiException(
-                message: "App '{$model->name}' has no owning node.",
-                errorCode: 'deploy.execution_failed',
-                errorMeta: ['app' => $model->name],
-            ), $routedCommand, [
-                'cwd' => $model->path,
-                'timeout' => $step->timeout_seconds,
-                'strict' => true,
-                'metadata' => $this->environment($context),
-            ]);
+            $result = $this->remoteShell->run(
+                $model->node ?? throw new GatewayApiException(
+                    message: "App '{$model->name}' has no owning node.",
+                    errorCode: 'deploy.execution_failed',
+                    errorMeta: ['app' => $model->name],
+                ),
+                $routedCommand,
+                [
+                    'cwd' => $model->path,
+                    'timeout' => $step->timeout_seconds,
+                    'strict' => true,
+                    'metadata' => $this->environment($context),
+                ],
+            );
             $stepFinishedAt = now();
             $stepStatus = $result->successful() ? 'completed' : 'failed';
             $stdout .= $result->stdout;
@@ -367,7 +377,7 @@ final readonly class DeployManager
             $command = sprintf(
                 'docker exec %s curl -sSf http://localhost%s',
                 escapeshellarg($containerName),
-                escapeshellarg((string) $path),
+                escapeshellarg($path),
             );
 
             $this->remoteShell->run($node, $command, [
@@ -502,9 +512,7 @@ final readonly class DeployManager
             ->map(function (DeploymentRunStep $step) use ($lines, &$truncated): array {
                 $stdout = $this->tailLines((string) $step->stdout, $lines);
                 $stderr = $this->tailLines((string) $step->stderr, $lines);
-                $truncated = $truncated
-                    || $stdout !== (string) $step->stdout
-                    || $stderr !== (string) $step->stderr;
+                $truncated = $truncated || $stdout !== (string) $step->stdout || $stderr !== (string) $step->stderr;
 
                 return $this->runStepLogEntity($step, $stdout, $stderr);
             })
@@ -578,7 +586,8 @@ final readonly class DeployManager
             'started_at' => $run->started_at?->toJSON(),
             'finished_at' => $run->finished_at?->toJSON(),
             'context' => $run->context ?? [],
-            'steps' => $run->steps
+            'steps' => $run
+                ->steps
                 ->map(fn (DeploymentRunStep $step): array => [
                     'id' => $step->id,
                     'title' => $step->title,
@@ -689,15 +698,19 @@ final readonly class DeployManager
      */
     private function renderCommand(string $command, array $context): string
     {
-        return preg_replace_callback('/{{\s*([A-Za-z0-9_.-]+)\s*}}/', function (array $matches) use ($context): string {
-            $value = Arr::get($context, $matches[1]);
+        return preg_replace_callback(
+            '/{{\s*([A-Za-z0-9_.-]+)\s*}}/',
+            function (array $matches) use ($context): string {
+                $value = Arr::get($context, $matches[1]);
 
-            if (is_scalar($value) || $value === null) {
-                return (string) $value;
-            }
+                if (is_scalar($value) || $value === null) {
+                    return (string) $value;
+                }
 
-            return $matches[0];
-        }, $command) ?? $command;
+                return $matches[0];
+            },
+            $command,
+        ) ?? $command;
     }
 
     /**
@@ -713,7 +726,7 @@ final readonly class DeployManager
                 continue;
             }
 
-            $environment['ORBIT_DEPLOY_'.Str::upper((string) $key)] = (string) $value;
+            $environment['ORBIT_DEPLOY_'.Str::upper($key)] = (string) $value;
         }
 
         return $environment;

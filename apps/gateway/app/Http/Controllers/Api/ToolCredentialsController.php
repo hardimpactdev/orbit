@@ -35,7 +35,13 @@ final class ToolCredentialsController implements Loggable
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds, allowAnyActiveNode: true, tool: $tool);
+        $target = $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowAnyActiveNode: true,
+            tool: $tool,
+        );
 
         if ($target instanceof JsonResponse) {
             return $target;

@@ -17,7 +17,6 @@ final readonly class RemoteShellPoolResult
 
     public function successful(): bool
     {
-        return $this->exception === null
-            && $this->result?->successful() === true;
+        return $this->exception === null && $this->result?->successful() === true;
     }
 }

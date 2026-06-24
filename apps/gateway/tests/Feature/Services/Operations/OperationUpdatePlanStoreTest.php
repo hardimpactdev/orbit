@@ -26,12 +26,20 @@ it('creates and reads an immutable operation update plan by operation run', func
     $plan = $store->create($this->run, $snapshot);
     $read = $store->forOperationRun($this->run);
 
-    expect($plan)->toBeInstanceOf(OperationUpdatePlan::class)
-        ->and($plan->operation_run_id)->toBe($this->run->id)
-        ->and($plan->target_version)->toBe('1.2.3')
-        ->and($plan->gateway_image)->toBe('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-        ->and($read?->id)->toBe($plan->id)
-        ->and($read?->toSnapshot()->toArray())->toBe($snapshot->toArray());
+    expect($plan)
+        ->toBeInstanceOf(OperationUpdatePlan::class)
+        ->and($plan->operation_run_id)
+        ->toBe($this->run->id)
+        ->and($plan->target_version)
+        ->toBe('1.2.3')
+        ->and($plan->gateway_image)
+        ->toBe(
+            'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        )
+        ->and($read?->id)
+        ->toBe($plan->id)
+        ->and($read?->toSnapshot()->toArray())
+        ->toBe($snapshot->toArray());
 });
 
 it('enforces one update plan per operation run', function (): void {
@@ -71,11 +79,16 @@ it('serializes manifest cli artifacts and role image references exactly', functi
 
     $plan = app(OperationUpdatePlanStore::class)->create($this->run, $snapshot);
 
-    expect($plan->manifest_snapshot)->toBe($snapshot->manifestSnapshot)
-        ->and($plan->cli_artifacts)->toBe($snapshot->cliArtifacts)
-        ->and($plan->role_images)->toBe($snapshot->roleImages)
-        ->and($plan->toSnapshot()->cliArtifacts)->toBe($snapshot->cliArtifacts)
-        ->and($plan->toSnapshot()->roleImages)->toBe($snapshot->roleImages);
+    expect($plan->manifest_snapshot)
+        ->toBe($snapshot->manifestSnapshot)
+        ->and($plan->cli_artifacts)
+        ->toBe($snapshot->cliArtifacts)
+        ->and($plan->role_images)
+        ->toBe($snapshot->roleImages)
+        ->and($plan->toSnapshot()->cliArtifacts)
+        ->toBe($snapshot->cliArtifacts)
+        ->and($plan->toSnapshot()->roleImages)
+        ->toBe($snapshot->roleImages);
 });
 
 it('builds a digest-pinned update plan snapshot from request manifest data', function (): void {
@@ -88,13 +101,22 @@ it('builds a digest-pinned update plan snapshot from request manifest data', fun
 
     $snapshot = app(UpdatePlanBuilder::class)->fromRequest($this->run, $request);
 
-    expect($snapshot)->toBeInstanceOf(OperationUpdatePlanSnapshot::class)
-        ->and($snapshot->targetVersion)->toBe('1.2.3')
-        ->and($snapshot->gatewayImage)->toBe('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-        ->and($snapshot->manifestSource)->toBe('github-release')
-        ->and($snapshot->manifestVersion)->toBe('1.2.3')
-        ->and($snapshot->cliArtifacts['linux-amd64']['sha256'])->toBe(str_repeat('b', 64))
-        ->and($snapshot->roleImages['orbit-caddy'])->toBe('caddy:2-alpine');
+    expect($snapshot)
+        ->toBeInstanceOf(OperationUpdatePlanSnapshot::class)
+        ->and($snapshot->targetVersion)
+        ->toBe('1.2.3')
+        ->and($snapshot->gatewayImage)
+        ->toBe(
+            'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        )
+        ->and($snapshot->manifestSource)
+        ->toBe('github-release')
+        ->and($snapshot->manifestVersion)
+        ->toBe('1.2.3')
+        ->and($snapshot->cliArtifacts['linux-amd64']['sha256'])
+        ->toBe(str_repeat('b', 64))
+        ->and($snapshot->roleImages['orbit-caddy'])
+        ->toBe('caddy:2-alpine');
 });
 
 it('rejects raw request gateway image overrides unless explicitly allowed', function (): void {
@@ -121,7 +143,10 @@ it('allows configured local testing gateway image overrides when digest pinned',
 
     $snapshot = app(UpdatePlanBuilder::class)->fromRequest($this->run, $request);
 
-    expect($snapshot->gatewayImage)->toBe('ghcr.io/hardimpactdev/orbit-gateway:testing@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
+    expect($snapshot->gatewayImage)
+        ->toBe(
+            'ghcr.io/hardimpactdev/orbit-gateway:testing@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        );
 });
 
 it('rejects gateway images that are not digest pinned', function (): void {
@@ -159,8 +184,10 @@ it('accepts topology candidate update plans with a captured candidate manifest b
         ],
     );
 
-    expect($snapshot->manifestSource)->toBe('topology-candidate')
-        ->and($snapshot->manifestSnapshot['build_id'])->toBe('candidate-20260621');
+    expect($snapshot->manifestSource)
+        ->toBe('topology-candidate')
+        ->and($snapshot->manifestSnapshot['build_id'])
+        ->toBe('candidate-20260621');
 });
 
 function operationUpdatePlanRun(): OperationRun

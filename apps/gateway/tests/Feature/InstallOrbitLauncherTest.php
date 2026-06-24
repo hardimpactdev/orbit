@@ -58,41 +58,56 @@ describe('install-orbit always-cli launcher contract', function (): void {
     it('dispatches public commands through the source CLI entrypoint', function (): void {
         $capture = orbitLauncherProbe(arguments: ['node:list', '--json']);
 
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['args'])->toBe('[node:list][--json]');
+        expect($capture['target'])
+            ->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['args'])
+            ->toBe('[node:list][--json]');
     });
 
     it('dispatches internal commands through the same source CLI entrypoint', function (): void {
         $capture = orbitLauncherProbe(arguments: ['internal:wg-easy:state', '--json']);
 
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['args'])->toBe('[internal:wg-easy:state][--json]');
+        expect($capture['target'])
+            ->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['args'])
+            ->toBe('[internal:wg-easy:state][--json]');
     });
 
     it('routes internal commands through the same wrapper path without special handling', function (): void {
         $capture = orbitLauncherProbe(arguments: ['internal:database-query-local', '--json']);
 
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['args'])->toBe('[internal:database-query-local][--json]');
+        expect($capture['target'])
+            ->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['args'])
+            ->toBe('[internal:database-query-local][--json]');
     });
 
     it('defaults unconfigured nodes to the source CLI entrypoint', function (): void {
         $capture = orbitLauncherProbe(arguments: ['node:doctor']);
 
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['args'])->toBe('[node:doctor]');
+        expect($capture['target'])
+            ->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['args'])
+            ->toBe('[node:doctor]');
     });
 
     it('propagates wrapper arguments even when flags are present', function (): void {
         $capture = orbitLauncherProbe(arguments: ['--json', 'node:list', '--no-interaction']);
 
-        expect($capture['target'])->toBe($capture['repo'].'/apps/cli/orbit')
-            ->and($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['args'])->toBe('[--json][node:list][--no-interaction]');
+        expect($capture['target'])
+            ->toBe($capture['repo'].'/apps/cli/orbit')
+            ->and($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['args'])
+            ->toBe('[--json][node:list][--no-interaction]');
     });
 
     it('resolves the repo root from the wrapper location instead of using a production default', function (): void {
@@ -137,7 +152,6 @@ describe('install-orbit always-cli launcher contract', function (): void {
 
         expect(array_keys($config))->toBe(['gateway']);
     });
-
 });
 
 /**
@@ -165,16 +179,20 @@ function orbitLauncherProbe(array $arguments): array
 
         $process->run();
 
-        expect($process->getExitCode())->toBe(
-            0,
-            $process->getErrorOutput().$process->getOutput(),
-        );
+        expect($process->getExitCode())
+            ->toBe(
+                0,
+                $process->getErrorOutput().$process->getOutput(),
+            );
         expect(File::exists($capturePath))->toBeTrue('expected the launcher to execute a fake Orbit artifact');
 
-        return orbitLauncherReadCapture($capturePath) + [
-            'repo' => $repo,
-            'host_cwd' => $hostCwd,
-        ];
+        return (
+            orbitLauncherReadCapture($capturePath)
+            + [
+                'repo' => $repo,
+                'host_cwd' => $hostCwd,
+            ]
+        );
     } finally {
         if (is_dir($root)) {
             File::deleteDirectory($root);
@@ -202,18 +220,18 @@ function orbitLauncherWriteExecutable(string $path, string $contents): void
 function orbitLauncherCaptureScript(): string
 {
     return <<<'BASH'
-#!/usr/bin/env bash
-set -Eeuo pipefail
-{
-    printf 'target=%s\n' "$0"
-    printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
-    printf 'args='
-    for arg in "$@"; do
-        printf '[%s]' "$arg"
-    done
-    printf '\n'
-} > "$ORBIT_LAUNCHER_CAPTURE"
-BASH;
+        #!/usr/bin/env bash
+        set -Eeuo pipefail
+        {
+            printf 'target=%s\n' "$0"
+            printf 'ORBIT_APP=%s\n' "${ORBIT_APP:-}"
+            printf 'args='
+            for arg in "$@"; do
+                printf '[%s]' "$arg"
+            done
+            printf '\n'
+        } > "$ORBIT_LAUNCHER_CAPTURE"
+        BASH;
 }
 
 /**

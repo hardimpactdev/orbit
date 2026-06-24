@@ -50,7 +50,11 @@ class E2EDevTopologyReleaseCommand extends Command
         $id = $this->argument('id');
 
         if (! is_string($id) || trim($id) === '') {
-            return $this->renderError('validation_failed', 'A retained E2E topology id is required (or pass --all).', $json);
+            return $this->renderError(
+                'validation_failed',
+                'A retained E2E topology id is required (or pass --all).',
+                $json,
+            );
         }
 
         $id = trim($id);
@@ -120,7 +124,9 @@ class E2EDevTopologyReleaseCommand extends Command
             $result = $incusHost->deleteInstancesIfPresent($names);
 
             if (! $result->successful()) {
-                throw new \RuntimeException("Failed to reap retained topology [{$id}] on {$host}: {$result->errorOutput()}");
+                throw new \RuntimeException(
+                    "Failed to reap retained topology [{$id}] on {$host}: {$result->errorOutput()}",
+                );
             }
 
             $this->removeSshKey($incusHost, $manifest);

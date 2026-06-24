@@ -15,8 +15,10 @@ final readonly class DatabaseConnectionSelector
         private DatabaseConnectionTargetResolver $resolver,
     ) {}
 
-    public function resolve(string $target, ?string $connectionSlug = null): DatabaseConnection|DatabaseConnectionRegistryFailure
-    {
+    public function resolve(
+        string $target,
+        ?string $connectionSlug = null,
+    ): DatabaseConnection|DatabaseConnectionRegistryFailure {
         $app = $this->resolver->resolveApp($target);
 
         if ($app instanceof App) {
@@ -55,15 +57,22 @@ final readonly class DatabaseConnectionSelector
         return $connection;
     }
 
-    private function resolveForOwner(string $target, string $ownerType, string $ownerColumn, int $ownerId, ?string $connectionSlug): DatabaseConnection|DatabaseConnectionRegistryFailure
-    {
+    private function resolveForOwner(
+        string $target,
+        string $ownerType,
+        string $ownerColumn,
+        int $ownerId,
+        ?string $connectionSlug,
+    ): DatabaseConnection|DatabaseConnectionRegistryFailure {
         $targets = DatabaseConnectionTarget::query()
             ->with(['connection.node', 'connection.targets.app', 'connection.targets.workspace'])
             ->where($ownerColumn, $ownerId)
             ->get();
 
         if ($connectionSlug !== null) {
-            $selected = $targets->first(fn (DatabaseConnectionTarget $target): bool => $target->connection?->slug === $connectionSlug);
+            $selected = $targets->first(
+                fn (DatabaseConnectionTarget $target): bool => $target->connection->slug === $connectionSlug,
+            );
 
             if ($selected instanceof DatabaseConnectionTarget && $selected->connection instanceof DatabaseConnection) {
                 return $selected->connection;
@@ -77,7 +86,7 @@ final readonly class DatabaseConnectionSelector
         }
 
         if ($targets->count() === 1) {
-            return $targets->first()->connection;
+            return $targets->first()?->connection;
         }
 
         $default = $targets->first(fn (DatabaseConnectionTarget $target): bool => $target->env_prefix === 'DB');
@@ -89,7 +98,9 @@ final readonly class DatabaseConnectionSelector
         return DatabaseConnectionRegistryFailure::ambiguousTarget(
             $target,
             $targets
-                ->map(fn (DatabaseConnectionTarget $target): string => $target->connection instanceof DatabaseConnection ? $target->connection->slug : '')
+                ->map(fn (DatabaseConnectionTarget $target): string => $target->connection instanceof DatabaseConnection
+                    ? $target->connection->slug
+                    : '')
                 ->filter()
                 ->values()
                 ->all(),

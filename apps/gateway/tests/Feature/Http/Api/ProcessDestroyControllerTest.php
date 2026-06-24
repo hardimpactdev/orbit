@@ -53,12 +53,20 @@ describe('ProcessDestroyController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('DELETE', '/api/processes/vite', [
-            'app' => 'docs',
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process', [
                 'name' => 'vite',
                 'node' => $appNode->name,
@@ -75,21 +83,31 @@ describe('ProcessDestroyController', function (): void {
         $caller = createProcessDestroyCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantProcessDestroyAccess($caller, $node);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'opencode-server',
-            'runtime' => 'systemd',
-            'tool' => 'opencode',
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'opencode-server',
+                'runtime' => 'systemd',
+                'tool' => 'opencode',
+            ]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('DELETE', '/api/processes/opencode-server', [
-            'node' => 'app-1',
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/opencode-server',
+            [
+                'node' => 'app-1',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process', [
                 'name' => 'opencode-server',
                 'node' => 'app-1',
@@ -107,21 +125,31 @@ describe('ProcessDestroyController', function (): void {
         grantProcessDestroyAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
-        Process::factory()->forOwner($workspace)->create([
-            'name' => 'worker',
-            'runtime' => 'systemd',
-        ]);
+        Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'worker',
+                'runtime' => 'systemd',
+            ]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('DELETE', '/api/processes/worker', [
-            'app' => 'docs',
-            'workspace' => 'feature-docs',
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/worker',
+            [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process', [
                 'name' => 'worker',
                 'node' => $appNode->name,
@@ -133,7 +161,12 @@ describe('ProcessDestroyController', function (): void {
         expect($workspace->processes()->where('name', 'worker')->exists())->toBeFalse();
     });
 
-    it('requires authorization and destructive consent before deleting intent', function (array $payload, bool $grantAccess, int $status, string $code): void {
+    it('requires authorization and destructive consent before deleting intent', function (
+        array $payload,
+        bool $grantAccess,
+        int $status,
+        string $code,
+    ): void {
         $caller = createProcessDestroyCallerNode();
         $appNode = createTestAppHostNode();
         if ($grantAccess) {
@@ -143,7 +176,14 @@ describe('ProcessDestroyController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/processes/vite', $payload, [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/vite',
+            $payload,
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
 
         $response->assertStatus($status)
             ->assertJsonPath('error.code', $code);
@@ -160,12 +200,20 @@ describe('ProcessDestroyController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/processes/vite', [
-            'app' => 'docs',
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:remove');
@@ -177,10 +225,17 @@ describe('ProcessDestroyController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessDestroyRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/processes/vite', [
-            'app' => 'docs',
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_DESTROY_CALLER_WG_IP],
+        );
 
         $response->assertNotFound()
             ->assertJsonPath('error.code', 'process.not_found');

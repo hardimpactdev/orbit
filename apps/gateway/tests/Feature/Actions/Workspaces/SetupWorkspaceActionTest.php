@@ -109,9 +109,17 @@ it('does not render PHP-FPM pool config for PHP workspaces in the steady-state p
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    expect(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeFalse()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "PHP_FPM_SERVICE='php8.5-fpm'")))->toBeFalse()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, 'sudo systemctl restart')))->toBeFalse();
+    expect(collect($shell->scripts)
+        ->contains(
+            fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf'),
+        ))
+        ->toBeFalse()
+        ->and(collect($shell->scripts)
+            ->contains(fn (string $script): bool => str_contains($script, "PHP_FPM_SERVICE='php8.5-fpm'")))
+        ->toBeFalse()
+        ->and(collect($shell->scripts)
+            ->contains(fn (string $script): bool => str_contains($script, 'sudo systemctl restart')))
+        ->toBeFalse();
 });
 
 it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', function (): void {
@@ -132,16 +140,33 @@ it('enacts the FrankenPHP runtime container for PHP workspaces without FPM', fun
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
     $runScript = collect($shell->scripts)
-        ->first(fn (string $script): bool => str_contains($script, 'docker run -d')
-            && str_contains($script, "'orbit-ws-demo-feature-a'"));
+        ->first(
+            fn (string $script): bool => (
+                str_contains($script, 'docker run -d') && str_contains($script, "'orbit-ws-demo-feature-a'")
+            ),
+        );
 
     expect($runScript)
         ->toContain('docker run -d')
-        ->and($runScript)->toContain("'orbit-ws-demo-feature-a'")
-        ->and($runScript)->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
-        ->and($runScript)->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")))->toBeTrue()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf')))->toBeFalse();
+        ->and($runScript)
+        ->toContain("'orbit-ws-demo-feature-a'")
+        ->and($runScript)
+        ->toContain("'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ->and($runScript)
+        ->toContain('/etc/orbit/workspaces/demo-feature-a.ini')
+        ->and(collect($shell->scripts)
+            ->contains(
+                fn (string $script): bool => str_contains(
+                    $script,
+                    "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'",
+                ),
+            ))
+        ->toBeTrue()
+        ->and(collect($shell->scripts)
+            ->contains(
+                fn (string $script): bool => str_contains($script, '/etc/php/8.5/fpm/pool.d/orbit-demo-feature-a.conf'),
+            ))
+        ->toBeFalse();
 
     expectWorkspaceFrankenPhpRuntimeProcess($workspace);
 });
@@ -154,17 +179,19 @@ it('reconciles an existing FrankenPHP workspace runtime process row', function (
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    OrbitProcess::factory()->forOwner($workspace)->create([
-        'name' => 'frankenphp-demo-feature-a',
-        'command' => 'stale command',
-        'restart_policy' => ProcessRestartPolicy::Never,
-        'crash_notification' => ProcessCrashNotification::AgentIde,
-        'runtime' => ProcessRuntime::Systemd,
-        'runtime_config' => [
-            'container_name' => 'stale-container',
-            'php_ini_path' => '/stale.ini',
-        ],
-    ]);
+    OrbitProcess::factory()
+        ->forOwner($workspace)
+        ->create([
+            'name' => 'frankenphp-demo-feature-a',
+            'command' => 'stale command',
+            'restart_policy' => ProcessRestartPolicy::Never,
+            'crash_notification' => ProcessCrashNotification::AgentIde,
+            'runtime' => ProcessRuntime::Systemd,
+            'runtime_config' => [
+                'container_name' => 'stale-container',
+                'php_ini_path' => '/stale.ini',
+            ],
+        ]);
 
     $app = App::query()->with('node')->first();
     $node = $app->node;
@@ -201,23 +228,30 @@ it('registers workspace proxy routes against the FrankenPHP runtime container', 
     $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
     $route = $workspace->proxyRoutes()->first();
 
-    expect($caddySite)->toContain('tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key')
-        ->and($caddySite)->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
-        ->and($caddySite)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-        ->and($caddySite)->not->toContain('tls_server_name feature-a.demo')
-        ->and($caddySite)->not->toContain('php_fastcgi')
-        ->and((string) $siteScript)->toContain(CaddyTool::reloadCommand())
-        ->and((string) $siteScript)->not->toContain("docker restart 'orbit-caddy'")
-        ->and((string) $siteScript)->not->toContain('sudo systemctl reload caddy')
-        ->and($route?->config['runtime_upstream'])->toBe('http://orbit-ws-demo-feature-a')
-        ->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()
-        ->and($route?->config['php_socket'])->toBeNull()
-        ->and($route?->config['tls'])->toBe([
+    expect($caddySite)
+        ->toContain(
+            'tls /home/gateway/.config/orbit/certs/feature-a.demo.crt /home/gateway/.config/orbit/certs/feature-a.demo.key',
+        )
+        ->and($caddySite)
+        ->toContain('reverse_proxy http://orbit-ws-demo-feature-a')
+        ->and($caddySite)
+        ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
+        ->not->toContain('tls_server_name feature-a.demo')->and($caddySite)
+        ->not->toContain('php_fastcgi')->and((string) $siteScript)->toContain(CaddyTool::reloadCommand())->and(
+            (string) $siteScript,
+        )
+        ->not->toContain("docker restart 'orbit-caddy'")->and((string) $siteScript)
+        ->not->toContain('sudo systemctl reload caddy')->and($route?->config['runtime_upstream'])->toBe(
+            'http://orbit-ws-demo-feature-a',
+        )->and($route?->config['runtime_upstream_tls'] ?? null)->toBeNull()->and(
+            $route?->config['php_socket'],
+        )->toBeNull()->and($route?->config['tls'])->toBe([
             'cert_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.crt',
             'key_path' => '/home/gateway/.config/orbit/certs/feature-a.demo.key',
-        ])
-        ->and($certificates->hosts)->toBe(['feature-a.demo'])
-        ->and($route?->source_hash)->toBe(hash('sha256', $caddySite));
+        ])->and($certificates->hosts)->toBe(['feature-a.demo'])->and($route?->source_hash)->toBe(hash(
+            'sha256',
+            $caddySite,
+        ));
 });
 
 it('registers production workspace routes on ingress with a private backend site', function (): void {
@@ -258,15 +292,19 @@ it('registers production workspace routes on ingress with a private backend site
         'settings' => ['ingress_node_id' => $edge->id],
     ]);
 
-    App::query()->whereKey(1)->update([
-        'domain' => 'demo.example.com',
-        'environment' => 'production',
-    ]);
+    App::query()
+        ->whereKey(1)
+        ->update([
+            'domain' => 'demo.example.com',
+            'environment' => 'production',
+        ]);
 
-    Node::query()->whereKey($appHost->id)->update([
-        'wireguard_address' => '10.6.0.21',
-        'user' => 'orbit',
-    ]);
+    Node::query()
+        ->whereKey($appHost->id)
+        ->update([
+            'wireguard_address' => '10.6.0.21',
+            'user' => 'orbit',
+        ]);
 
     $workspace = Workspace::create([
         'app_id' => 1,
@@ -286,53 +324,157 @@ it('registers production workspace routes on ingress with a private backend site
 
     $route = ProxyRoute::query()->where('workspace_id', $workspace->id)->firstOrFail();
 
-    expect($route->node_id)->toBe($edge->id)
-        ->and($route->config['placement'])->toBe('ingress')
-        ->and($route->config['router_upstream'])->toBe([
+    expect($route->node_id)
+        ->toBe($edge->id)
+        ->and($route->config['placement'])
+        ->toBe('ingress')
+        ->and($route->config['router_upstream'])
+        ->toBe([
             'node_id' => $router->id,
             'node' => 'gateway-1',
             'url' => 'http://10.6.0.2:80',
         ])
-        ->and($route->config['router_artifact']['node_id'])->toBe($router->id)
-        ->and($route->config['router_artifact']['source_hash'])->toHaveLength(64)
-        ->and($route->config['router_backend_pool'])->toBe([
+        ->and($route->config['router_artifact']['node_id'])
+        ->toBe($router->id)
+        ->and($route->config['router_artifact']['source_hash'])
+        ->toHaveLength(64)
+        ->and($route->config['router_backend_pool'])
+        ->toBe([
             [
                 'node_id' => $appHost->id,
                 'node' => 'gateway',
                 'url' => 'http://10.6.0.21:8081',
             ],
         ])
-        ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')
-        ->and($route->config['backend_artifacts'][0]['source_hash'])->toHaveLength(64)
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $edge->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $edge->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $edge->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $appHost->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $appHost->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-        ->and(collect($shell->runs)->contains(fn (array $run): bool => $run['node'] === $appHost->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.caddy')))->toBeTrue()
-        ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy')))->toBeTrue()
-        ->and((function () use ($shell): bool {
-            foreach ($shell->scripts as $script) {
-                if (! str_contains($script, 'feature-a.demo.example.com.backend.caddy')) {
-                    continue;
-                }
+        ->and($route->config['backend_artifacts'][0]['bind'])
+        ->toBe('10.6.0.21')
+        ->and($route->config['backend_artifacts'][0]['source_hash'])
+        ->toHaveLength(64)
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $edge->id
+                        && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $edge->id
+                        && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $edge->id
+                        && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $router->id
+                        && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $router->id
+                        && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $router->id
+                        && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $appHost->id
+                        && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $appHost->id
+                        && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(
+            collect($shell->runs)
+                ->contains(
+                    fn (array $run): bool => (
+                        $run['node'] === $appHost->id
+                        && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
+                    ),
+                ),
+        )
+        ->toBeTrue()
+        ->and(collect($shell->scripts)
+            ->contains(
+                fn (string $script): bool => str_contains($script, '/etc/caddy/sites/feature-a.demo.example.com.caddy'),
+            ))
+        ->toBeTrue()
+        ->and(collect($shell->scripts)
+            ->contains(
+                fn (string $script): bool => str_contains(
+                    $script,
+                    '/etc/caddy/sites/feature-a.demo.example.com.backend.caddy',
+                ),
+            ))
+        ->toBeTrue()
+        ->and(
+            (function () use ($shell): bool {
+                foreach ($shell->scripts as $script) {
+                    if (! str_contains($script, 'feature-a.demo.example.com.backend.caddy')) {
+                        continue;
+                    }
 
-                if (preg_match("/printf %s '([^']+)' | base64 -d/", $script, $matches) === 1) {
-                    $decoded = base64_decode($matches[1]);
+                    if (preg_match("/printf %s '([^']+)' | base64 -d/", $script, $matches) === 1) {
+                        $decoded = base64_decode($matches[1]);
 
-                    if (str_contains($decoded, 'reverse_proxy http://orbit-ws-demo-feature-a')) {
-                        return true;
+                        if (str_contains($decoded, 'reverse_proxy http://orbit-ws-demo-feature-a')) {
+                            return true;
+                        }
                     }
                 }
-            }
 
-            return false;
-        })())->toBeTrue()
-        ->and($certificates->hosts)->toBe(['feature-a.demo.example.com']);
+                return false;
+            })(),
+        )
+        ->toBeTrue()
+        ->and($certificates->hosts)
+        ->toBe(['feature-a.demo.example.com']);
 });
 
 it('starts configured app processes for the workspace after rendering runtime units', function (): void {
@@ -345,13 +487,15 @@ it('starts configured app processes for the workspace after rendering runtime un
 
     $app = App::query()->with('node')->firstOrFail();
 
-    OrbitProcess::factory()->forOwner($app)->create([
-        'name' => 'vite',
-        'command' => 'npm run dev -- --host=0.0.0.0',
-        'restart_policy' => 'always',
-        'crash_notification' => 'none',
-        'sort_order' => 1,
-    ]);
+    OrbitProcess::factory()
+        ->forOwner($app)
+        ->create([
+            'name' => 'vite',
+            'command' => 'npm run dev -- --host=0.0.0.0',
+            'restart_policy' => 'always',
+            'crash_notification' => 'none',
+            'sort_order' => 1,
+        ]);
 
     $node = $app->node;
     $shell = new SetupWorkspaceActionTestShell;
@@ -361,16 +505,24 @@ it('starts configured app processes for the workspace after rendering runtime un
 
     $result = app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    expect($result['processes'])->toMatchArray([
-        'status' => 'started',
-        'count' => 1,
-        'names' => ['vite'],
-    ])
-        ->and($certificates->hosts)->toBe(['feature-a.demo', 'feature-a.demo.beast'])
-        ->and(collect($shell->scripts)->contains(
-            fn (string $script): bool => str_contains($script, '/etc/systemd/system/orbit_demo_feature-a_vite.service')
-        ))->toBeTrue()
-        ->and($shell->scripts)->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
+    expect($result['processes'])
+        ->toMatchArray([
+            'status' => 'started',
+            'count' => 1,
+            'names' => ['vite'],
+        ])
+        ->and($certificates->hosts)
+        ->toBe(['feature-a.demo', 'feature-a.demo.beast'])
+        ->and(collect($shell->scripts)
+            ->contains(
+                fn (string $script): bool => str_contains(
+                    $script,
+                    '/etc/systemd/system/orbit_demo_feature-a_vite.service',
+                ),
+            ))
+        ->toBeTrue()
+        ->and($shell->scripts)
+        ->toContain("sudo systemctl start 'orbit_demo_feature-a_vite.service'");
 });
 
 it('reports converged for already-active workspace', function (): void {
@@ -496,10 +648,10 @@ it('reports progress while setup steps are running', function (): void {
     );
 
     expect($events)->toBe([
-        ['running', 'composer install --no-interaction', 1, 2],
+        ['running',   'composer install --no-interaction', 1, 2],
         ['completed', 'composer install --no-interaction', 1, 2],
-        ['running', 'npm ci', 2, 2],
-        ['completed', 'npm ci', 2, 2],
+        ['running',   'npm ci',                            2, 2],
+        ['completed', 'npm ci',                            2, 2],
     ]);
 });
 
@@ -534,7 +686,11 @@ it('routes php and composer setup steps through the workspace runtime container'
 
     app(SetupWorkspace::class)->handle($app, $workspace, $node);
 
-    $stepRuns = array_values(array_filter($shell->runs, fn (array $run): bool => str_contains($run['script'], 'composer install') || str_contains($run['script'], 'php artisan')
+    $stepRuns = array_values(array_filter(
+        $shell->runs,
+        fn (array $run): bool => (
+            str_contains($run['script'], 'composer install') || str_contains($run['script'], 'php artisan')
+        ),
     ));
 
     expect($stepRuns)->toHaveCount(2);
@@ -703,11 +859,17 @@ final class SetupWorkspaceActionTestShell implements RemoteShell
         $this->scripts[] = $script;
 
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
-            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'exists' => false,
-                'hash' => null,
-                'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => false,
+                    'hash' => null,
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
@@ -762,14 +924,23 @@ function expectWorkspaceFrankenPhpRuntimeProcess(Workspace $workspace): void
         ->where('name', "frankenphp-{$workspace->app->name}-{$workspace->name}")
         ->first();
 
-    expect($process)->not->toBeNull()
-        ->and($process?->node_id)->toBe($workspace->app->node_id)
-        ->and($process?->command)->toBe('frankenphp')
-        ->and($process?->restart_policy)->toBe(ProcessRestartPolicy::Always)
-        ->and($process?->crash_notification)->toBe(ProcessCrashNotification::None)
-        ->and($process?->runtime)->toBe(ProcessRuntime::Docker)
-        ->and($process?->tool)->toBeNull()
-        ->and($process?->runtime_config)->toMatchArray([
+    expect($process)
+        ->not
+        ->toBeNull()
+        ->and($process?->node_id)
+        ->toBe($workspace->app->node_id)
+        ->and($process?->command)
+        ->toBe('frankenphp')
+        ->and($process?->restart_policy)
+        ->toBe(ProcessRestartPolicy::Always)
+        ->and($process?->crash_notification)
+        ->toBe(ProcessCrashNotification::None)
+        ->and($process?->runtime)
+        ->toBe(ProcessRuntime::Docker)
+        ->and($process?->tool)
+        ->toBeNull()
+        ->and($process?->runtime_config)
+        ->toMatchArray([
             'container_name' => 'orbit-ws-demo-feature-a',
             'php_ini_path' => '/etc/orbit/workspaces/demo-feature-a.ini',
             'container_spec_hash_label' => 'orbit.workspace.spec_hash',

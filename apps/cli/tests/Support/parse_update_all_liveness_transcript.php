@@ -48,12 +48,14 @@ foreach (repaintChunks($transcript) as $chunk) {
         $message,
         $lastObservation,
     ) as $observation) {
-        echo sprintf(
-            "row=%d|%s|%s|%s\n",
-            $observation['row'],
-            $observation['label'],
-            $observation['message'],
-            $observation['spinner'],
-        );
+        echo
+            sprintf(
+                "row=%d|%s|%s|%s\n",
+                $observation['row'],
+                $observation['label'],
+                $observation['message'],
+                $observation['spinner'],
+            )
+        ;
     }
 }

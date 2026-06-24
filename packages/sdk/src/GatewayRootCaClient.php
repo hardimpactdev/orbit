@@ -44,8 +44,10 @@ final readonly class GatewayRootCaClient
     {
         $parts = parse_url($location);
 
-        return ($parts['scheme'] ?? null) === 'https'
+        return (
+            ($parts['scheme'] ?? null) === 'https'
             && ($parts['host'] ?? null) === $gatewayIp
-            && ($parts['path'] ?? null) === '/api/ca/root';
+            && ($parts['path'] ?? null) === '/api/ca/root'
+        );
     }
 }

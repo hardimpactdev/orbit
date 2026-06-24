@@ -52,6 +52,7 @@
 /apps/gateway/storage/*.key
 /apps/gateway/storage/pail
 /apps/gateway/vendor
+/apps/reverb/vendor
 /apps/e2e/tests/Feature/Commands/.docker-feature-tests/
 /apps/e2e/tests/Feature/Commands/.incus-feature-tests/
 /apps/e2e/tests/Feature/Commands/.topology-scheduling-fixtures/

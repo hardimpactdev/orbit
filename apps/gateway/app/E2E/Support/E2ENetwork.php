@@ -19,8 +19,12 @@ final readonly class E2ENetwork
         );
     }
 
-    public static function routeWireGuardPeer(E2EInstance $instance, string $wireGuardIp, string $providerIp, string $sourceWireGuardIp): void
-    {
+    public static function routeWireGuardPeer(
+        E2EInstance $instance,
+        string $wireGuardIp,
+        string $providerIp,
+        string $sourceWireGuardIp,
+    ): void {
         E2ECommand::exec(
             $instance,
             sprintf(

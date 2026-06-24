@@ -9,99 +9,99 @@ function registryPromptE2ESeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('schedule_runs')->delete();
-\Illuminate\Support\Facades\DB::table('schedule_locks')->delete();
-\App\Models\Schedule::query()->delete();
-\Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspaces')->delete();
-\Illuminate\Support\Facades\DB::table('proxy_routes')->delete();
-\App\Models\App::query()->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('schedule_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('schedule_locks')->delete();
+        \App\Models\Schedule::query()->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspaces')->delete();
+        \Illuminate\Support\Facades\DB::table('proxy_routes')->delete();
+        \App\Models\App::query()->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->insert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-$app = \App\Models\App::query()->create([
-    'name' => 'docs',
-    'node_id' => $nodes->get('app-dev-1'),
-    'path' => '/home/orbit/apps/docs',
-    'document_root' => 'public',
-    'php_version' => '8.5',
-    'adopted' => true,
-]);
+        $app = \App\Models\App::query()->create([
+            'name' => 'docs',
+            'node_id' => $nodes->get('app-dev-1'),
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => true,
+        ]);
 
-\App\Models\App::query()->create([
-    'name' => 'api',
-    'node_id' => $nodes->get('app-dev-1'),
-    'path' => '/home/orbit/apps/api',
-    'document_root' => 'public',
-    'php_version' => '8.5',
-    'adopted' => true,
-]);
+        \App\Models\App::query()->create([
+            'name' => 'api',
+            'node_id' => $nodes->get('app-dev-1'),
+            'path' => '/home/orbit/apps/api',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => true,
+        ]);
 
-\App\Models\Workspace::query()->create([
-    'app_id' => $app->id,
-    'name' => 'feature-docs',
-    'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
-    'php_version' => null,
-    'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
-]);
+        \App\Models\Workspace::query()->create([
+            'app_id' => $app->id,
+            'name' => 'feature-docs',
+            'path' => '/home/orbit/apps/docs/.worktrees/feature-docs',
+            'php_version' => null,
+            'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
+        ]);
 
-\App\Models\Workspace::query()->create([
-    'app_id' => $app->id,
-    'name' => 'bugfix-docs',
-    'path' => '/home/orbit/apps/docs/.worktrees/bugfix-docs',
-    'php_version' => null,
-    'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
-]);
+        \App\Models\Workspace::query()->create([
+            'app_id' => $app->id,
+            'name' => 'bugfix-docs',
+            'path' => '/home/orbit/apps/docs/.worktrees/bugfix-docs',
+            'php_version' => null,
+            'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
+        ]);
 
-\App\Models\Schedule::query()->create([
-    'schedule_key' => 'app:docs:daily-docs',
-    'name' => 'daily-docs',
-    'scope' => 'app',
-    'app_id' => $app->id,
-    'node_id' => null,
-    'target_name' => 'docs',
-    'interval' => 'daily',
-    'timezone' => 'UTC',
-    'execution_type' => 'command',
-    'execution_value' => 'orbit docs:build',
-    'enabled' => true,
-    'status' => 'expected',
-]);
+        \App\Models\Schedule::query()->create([
+            'schedule_key' => 'app:docs:daily-docs',
+            'name' => 'daily-docs',
+            'scope' => 'app',
+            'app_id' => $app->id,
+            'node_id' => null,
+            'target_name' => 'docs',
+            'interval' => 'daily',
+            'timezone' => 'UTC',
+            'execution_type' => 'command',
+            'execution_value' => 'orbit docs:build',
+            'enabled' => true,
+            'status' => 'expected',
+        ]);
 
-\App\Models\Schedule::query()->create([
-    'schedule_key' => 'app:docs:weekly-docs',
-    'name' => 'weekly-docs',
-    'scope' => 'app',
-    'app_id' => $app->id,
-    'node_id' => null,
-    'target_name' => 'docs',
-    'interval' => 'weekly',
-    'timezone' => 'UTC',
-    'execution_type' => 'command',
-    'execution_value' => 'orbit docs:weekly',
-    'enabled' => true,
-    'status' => 'expected',
-]);
+        \App\Models\Schedule::query()->create([
+            'schedule_key' => 'app:docs:weekly-docs',
+            'name' => 'weekly-docs',
+            'scope' => 'app',
+            'app_id' => $app->id,
+            'node_id' => null,
+            'target_name' => 'docs',
+            'interval' => 'weekly',
+            'timezone' => 'UTC',
+            'execution_type' => 'command',
+            'execution_value' => 'orbit docs:weekly',
+            'enabled' => true,
+            'status' => 'expected',
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -110,8 +110,12 @@ PHP;
     );
 }
 
-function registryPromptE2ECapture(E2ETopologyHarness $topology, string $commandArguments, string $label, string $input = "\n"): string
-{
+function registryPromptE2ECapture(
+    E2ETopologyHarness $topology,
+    string $commandArguments,
+    string $label,
+    string $input = "\n",
+): string {
     $checkout = $topology->checkout('gateway');
     $transcript = '/tmp/orbit-registry-prompt-'.$label.'-'.strtolower(bin2hex(random_bytes(3))).'.log';
     $command = registryPromptE2ECommand($topology, $checkout, $commandArguments);
@@ -182,4 +186,9 @@ it('renders finite registry prompts as data tables in a real terminal session', 
     } finally {
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+})->group(
+    'e2e-feature',
+    'e2e-feature-canary',
+    'e2e-feature-operator_gateway_app-dev',
+    'e2e-feature-operator-gateway-dev',
+);

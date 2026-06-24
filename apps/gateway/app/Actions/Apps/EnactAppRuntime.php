@@ -101,7 +101,7 @@ final readonly class EnactAppRuntime
         return [
             'code' => $code,
             'family' => 'app',
-            'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$app->node->name}': {$exception->getMessage()}",
+            'message' => "FrankenPHP runtime container for '{$app->name}' could not be {$action} on '{$app->node?->name}': {$exception->getMessage()}",
             'next_command' => 'doctor --family=app --restore',
         ];
     }
@@ -114,7 +114,7 @@ final readonly class EnactAppRuntime
         return [
             'code' => 'app.php_version_unavailable',
             'family' => 'app',
-            'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node->name}'. Make the image available, then run doctor.",
+            'message' => "PHP {$app->php_version} runtime image '{$exception->image}' is not available on node '{$app->node?->name}'. Make the image available, then run doctor.",
             'next_command' => 'doctor --family=app --restore',
         ];
     }
@@ -127,7 +127,7 @@ final readonly class EnactAppRuntime
         return [
             'code' => 'app.security.system_user',
             'family' => 'app',
-            'message' => "Production runtime user '{$exception->runtimeUser}' for app '{$app->name}' is missing on '{$app->node->name}': {$exception->getMessage()}",
+            'message' => "Production runtime user '{$exception->runtimeUser}' for app '{$app->name}' is missing on '{$app->node?->name}': {$exception->getMessage()}",
             'next_command' => 'doctor --family=app --restore',
         ];
     }

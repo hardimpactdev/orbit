@@ -56,7 +56,9 @@ final class InstalledCliArtifactCast implements CastsAttributes
         }
 
         if (! $value instanceof InstalledCliArtifact) {
-            throw new InvalidArgumentException('installed_cli must be an InstalledCliArtifact instance, array, or null.');
+            throw new InvalidArgumentException(
+                'installed_cli must be an InstalledCliArtifact instance, array, or null.',
+            );
         }
 
         return [$key => json_encode($value->toArray(), JSON_THROW_ON_ERROR)];

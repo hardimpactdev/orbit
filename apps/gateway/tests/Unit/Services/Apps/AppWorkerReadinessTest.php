@@ -29,9 +29,10 @@ function makeReadinessApp(array $overrides = []): App
 
 function readinessShell(string $stdout): RemoteShell
 {
-    return new class($stdout) implements RemoteShell
-    {
-        public function __construct(public string $stdout) {}
+    return new class($stdout) implements RemoteShell {
+        public function __construct(
+            public string $stdout,
+        ) {}
 
         public function run(Node $node, string $script, array $options = []): RemoteShellResult
         {
@@ -47,9 +48,10 @@ function readinessShell(string $stdout): RemoteShell
 
 function runReadinessProbeAgainstFixture(string $fixtureDir, string $documentRoot = 'public'): string
 {
-    $workerFileRelative = $documentRoot === '' || $documentRoot === '.'
-        ? 'frankenphp-worker.php'
-        : trim($documentRoot, '/').'/frankenphp-worker.php';
+    $workerFileRelative =
+        $documentRoot === '' || $documentRoot === '.'
+            ? 'frankenphp-worker.php'
+            : trim($documentRoot, '/').'/frankenphp-worker.php';
 
     $probe = new AppWorkerReadiness(readinessShell(''));
     $script = $probe->probeScript($fixtureDir, $workerFileRelative);
@@ -101,11 +103,14 @@ describe('AppWorkerReadiness service', function (): void {
     it('refuses worker mode for static apps', function (): void {
         $app = makeReadinessApp(['runtime' => AppRuntimeKind::Static]);
 
-        $result = (new AppWorkerReadiness(readinessShell('')))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell(''))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->code)->toBe('app.worker_unsupported_runtime')
-            ->and($result->missing)->toBe(['runtime=php']);
+        expect($result->ready)
+            ->toBeFalse()
+            ->and($result->code)
+            ->toBe('app.worker_unsupported_runtime')
+            ->and($result->missing)
+            ->toBe(['runtime=php']);
     });
 
     it('returns app.worker_unknown_node when the app has no owning node relation', function (): void {
@@ -117,81 +122,89 @@ describe('AppWorkerReadiness service', function (): void {
         $app->php_version = '8.5';
         $app->runtime = AppRuntimeKind::Php;
 
-        $result = (new AppWorkerReadiness(readinessShell('')))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell(''))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->code)->toBe('app.worker_unknown_node')
-            ->and($result->missing)->toBe(['owning_node'])
-            ->and($result->message)->toContain("App 'docs' has no owning node");
+        expect($result->ready)
+            ->toBeFalse()
+            ->and($result->code)
+            ->toBe('app.worker_unknown_node')
+            ->and($result->missing)
+            ->toBe(['owning_node'])
+            ->and($result->message)
+            ->toContain("App 'docs' has no owning node");
     });
 
     it('returns app.worker_missing_path when the app has an empty source path', function (): void {
         $app = makeReadinessApp(['path' => '']);
 
-        $result = (new AppWorkerReadiness(readinessShell('')))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell(''))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->code)->toBe('app.worker_missing_path')
-            ->and($result->missing)->toBe(['app_path']);
+        expect($result->ready)
+            ->toBeFalse()
+            ->and($result->code)
+            ->toBe('app.worker_missing_path')
+            ->and($result->missing)
+            ->toBe(['app_path']);
     });
 
     it('reports missing vendor/laravel/octane when the probe omits the installed token', function (): void {
         $app = makeReadinessApp();
         $stdout = "frankenphp-worker-file:present\nfrankenphp:configured\n";
 
-        $result = (new AppWorkerReadiness(readinessShell($stdout)))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell($stdout))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->missing)->toContain('vendor/laravel/octane');
+        expect($result->ready)->toBeFalse()->and($result->missing)->toContain('vendor/laravel/octane');
     });
 
     it('reports the document-root-relative worker file path when the probe omits the worker-file token', function (): void {
         $app = makeReadinessApp();
         $stdout = "octane:installed\nfrankenphp:configured\n";
 
-        $result = (new AppWorkerReadiness(readinessShell($stdout)))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell($stdout))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->missing)->toContain('public/frankenphp-worker.php');
+        expect($result->ready)->toBeFalse()->and($result->missing)->toContain('public/frankenphp-worker.php');
     });
 
     it('reports the configured document_root in the missing worker file path, not always public/', function (): void {
         $app = makeReadinessApp(['document_root' => 'web']);
         $stdout = "octane:installed\nfrankenphp:configured\n";
 
-        $result = (new AppWorkerReadiness(readinessShell($stdout)))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell($stdout))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->missing)->toContain('web/frankenphp-worker.php')
-            ->and($result->missing)->not->toContain('public/frankenphp-worker.php')
-            ->and($result->meta['worker_file'] ?? null)->toBe('web/frankenphp-worker.php');
+        expect($result->ready)
+            ->toBeFalse()
+            ->and($result->missing)
+            ->toContain('web/frankenphp-worker.php')
+            ->and($result->missing)
+            ->not
+            ->toContain('public/frankenphp-worker.php')
+            ->and($result->meta['worker_file'] ?? null)
+            ->toBe('web/frankenphp-worker.php');
     });
 
     it('reports the app-root-relative worker file when document_root is empty or "."', function (): void {
         $app = makeReadinessApp(['document_root' => '.']);
         $stdout = "octane:installed\nfrankenphp:configured\n";
 
-        $result = (new AppWorkerReadiness(readinessShell($stdout)))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell($stdout))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->missing)->toContain('frankenphp-worker.php');
+        expect($result->ready)->toBeFalse()->and($result->missing)->toContain('frankenphp-worker.php');
     });
 
     it('reports missing octane.server=frankenphp when the probe omits the configured token', function (): void {
         $app = makeReadinessApp();
         $stdout = "octane:installed\nfrankenphp-worker-file:present\n";
 
-        $result = (new AppWorkerReadiness(readinessShell($stdout)))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell($stdout))->assess($app);
 
-        expect($result->ready)->toBeFalse()
-            ->and($result->missing)->toContain('octane.server=frankenphp');
+        expect($result->ready)->toBeFalse()->and($result->missing)->toContain('octane.server=frankenphp');
     });
 
     it('passes only when every required token is present', function (): void {
         $app = makeReadinessApp();
         $stdout = "octane:installed\nfrankenphp-worker-file:present\nfrankenphp:configured\n";
 
-        $result = (new AppWorkerReadiness(readinessShell($stdout)))->assess($app);
+        $result = new AppWorkerReadiness(readinessShell($stdout))->assess($app);
 
         expect($result->ready)->toBeTrue();
     });
@@ -208,9 +221,10 @@ describe('AppWorkerReadiness probe script (executed against fixture filesystem)'
 
         $output = runReadinessProbeAgainstFixture($fixture);
 
-        expect($output)->not->toContain('octane:installed')
-            ->and($output)->not->toContain('frankenphp-worker-file:present')
-            ->and($output)->not->toContain('frankenphp:configured');
+        expect($output)
+            ->not->toContain('octane:installed')->and($output)
+            ->not->toContain('frankenphp-worker-file:present')->and($output)
+            ->not->toContain('frankenphp:configured');
     });
 
     it('does not emit octane:installed when vendor/laravel/octane is missing', function (): void {
@@ -232,23 +246,26 @@ describe('AppWorkerReadiness probe script (executed against fixture filesystem)'
             'vendor/laravel/octane/composer.json' => '{}',
             'public/frankenphp-worker.php' => '<?php',
             'config/octane.php' => <<<'PHP'
-<?php
+                <?php
 
-return [
-    // Default server: 'frankenphp' is what Laravel ships with, but our app
-    // overrides it below. The example below is commented out.
-    # 'server' => 'frankenphp',
-    /* 'server' => 'frankenphp', */
-    'server' => env('OCTANE_SERVER', 'swoole'),
-];
-PHP,
+                return [
+                    // Default server: 'frankenphp' is what Laravel ships with, but our app
+                    // overrides it below. The example below is commented out.
+                    # 'server' => 'frankenphp',
+                    /* 'server' => 'frankenphp', */
+                    'server' => env('OCTANE_SERVER', 'swoole'),
+                ];
+                PHP,
         ]);
 
         $output = runReadinessProbeAgainstFixture($fixture);
 
-        expect($output)->toContain('octane:installed')
-            ->and($output)->toContain('frankenphp-worker-file:present')
-            ->and($output)->not->toContain('frankenphp:configured');
+        expect($output)
+            ->toContain('octane:installed')
+            ->and($output)
+            ->toContain('frankenphp-worker-file:present')
+            ->and($output)
+            ->not->toContain('frankenphp:configured');
     });
 
     it('does not emit frankenphp:configured when only multi-line block comments mention frankenphp', function (): void {
@@ -257,17 +274,17 @@ PHP,
             'vendor/laravel/octane/composer.json' => '{}',
             'public/frankenphp-worker.php' => '<?php',
             'config/octane.php' => <<<'PHP'
-<?php
+                <?php
 
-/*
- * We tried 'frankenphp' but rolled back to swoole;
- * keeping the note here for historical context.
- */
+                /*
+                 * We tried 'frankenphp' but rolled back to swoole;
+                 * keeping the note here for historical context.
+                 */
 
-return [
-    'server' => env('OCTANE_SERVER', 'swoole'),
-];
-PHP,
+                return [
+                    'server' => env('OCTANE_SERVER', 'swoole'),
+                ];
+                PHP,
         ]);
 
         $output = runReadinessProbeAgainstFixture($fixture);
@@ -281,19 +298,22 @@ PHP,
             'vendor/laravel/octane/composer.json' => '{}',
             'public/frankenphp-worker.php' => '<?php',
             'config/octane.php' => <<<'PHP'
-<?php
+                <?php
 
-return [
-    'server' => env('OCTANE_SERVER', 'frankenphp'),
-];
-PHP,
+                return [
+                    'server' => env('OCTANE_SERVER', 'frankenphp'),
+                ];
+                PHP,
         ]);
 
         $output = runReadinessProbeAgainstFixture($fixture);
 
-        expect($output)->toContain('octane:installed')
-            ->and($output)->toContain('frankenphp-worker-file:present')
-            ->and($output)->toContain('frankenphp:configured');
+        expect($output)
+            ->toContain('octane:installed')
+            ->and($output)
+            ->toContain('frankenphp-worker-file:present')
+            ->and($output)
+            ->toContain('frankenphp:configured');
     });
 
     it('still emits frankenphp:configured when frankenphp appears on a line with a trailing comment', function (): void {
@@ -302,12 +322,12 @@ PHP,
             'vendor/laravel/octane/composer.json' => '{}',
             'public/frankenphp-worker.php' => '<?php',
             'config/octane.php' => <<<'PHP'
-<?php
+                <?php
 
-return [
-    'server' => 'frankenphp', // primary octane server for production
-];
-PHP,
+                return [
+                    'server' => 'frankenphp', // primary octane server for production
+                ];
+                PHP,
         ]);
 
         $output = runReadinessProbeAgainstFixture($fixture);
@@ -321,9 +341,10 @@ PHP,
 
         $output = runReadinessProbeAgainstFixture($fixture);
 
-        expect($output)->not->toContain('octane:installed')
-            ->and($output)->not->toContain('frankenphp-worker-file:present')
-            ->and($output)->not->toContain('frankenphp:configured');
+        expect($output)
+            ->not->toContain('octane:installed')->and($output)
+            ->not->toContain('frankenphp-worker-file:present')->and($output)
+            ->not->toContain('frankenphp:configured');
     });
 
     it('does not emit frankenphp-worker-file:present when document_root=web but only public/frankenphp-worker.php exists', function (): void {
@@ -338,9 +359,13 @@ PHP,
 
         $output = runReadinessProbeAgainstFixture($fixture, documentRoot: 'web');
 
-        expect($output)->toContain('octane:installed')
-            ->and($output)->not->toContain('frankenphp-worker-file:present')
-            ->and($output)->toContain('frankenphp:configured');
+        expect($output)
+            ->toContain('octane:installed')
+            ->and($output)
+            ->not
+            ->toContain('frankenphp-worker-file:present')
+            ->and($output)
+            ->toContain('frankenphp:configured');
     });
 
     it('emits frankenphp-worker-file:present when document_root=web and web/frankenphp-worker.php exists', function (): void {
@@ -353,9 +378,12 @@ PHP,
 
         $output = runReadinessProbeAgainstFixture($fixture, documentRoot: 'web');
 
-        expect($output)->toContain('octane:installed')
-            ->and($output)->toContain('frankenphp-worker-file:present')
-            ->and($output)->toContain('frankenphp:configured');
+        expect($output)
+            ->toContain('octane:installed')
+            ->and($output)
+            ->toContain('frankenphp-worker-file:present')
+            ->and($output)
+            ->toContain('frankenphp:configured');
     });
 
     it('emits frankenphp-worker-file:present when document_root=. and frankenphp-worker.php is at the app root', function (): void {

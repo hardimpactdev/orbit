@@ -19,8 +19,7 @@ afterEach(function (): void {
 it('adds X-Orbit-Request-Id header when correlation id is set', function (): void {
     $expected = '11111111-1111-1111-1111-111111111111';
 
-    $trait = new class($expected)
-    {
+    $trait = new class($expected) {
         use HasCorrelationHeader;
 
         public function __construct(
@@ -48,8 +47,7 @@ it('adds X-Orbit-Request-Id header when correlation id is set', function (): voi
 });
 
 it('omits X-Orbit-Request-Id header when no correlation id is active', function (): void {
-    $trait = new class
-    {
+    $trait = new class {
         use HasCorrelationHeader;
 
         protected function orbitClientName(): string
@@ -68,8 +66,7 @@ it('omits X-Orbit-Request-Id header when no correlation id is active', function 
 });
 
 it('uses an overridden client name when a gateway caller supplies one', function (): void {
-    $trait = new class
-    {
+    $trait = new class {
         use HasCorrelationHeader;
 
         protected function orbitClientName(): string

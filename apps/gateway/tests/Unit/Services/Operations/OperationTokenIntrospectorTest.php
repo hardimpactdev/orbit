@@ -119,11 +119,12 @@ describe(OperationTokenIntrospector::class, function (): void {
             expiresAt: 1_798_105_201,
         );
 
-        expect(operationTokenIntrospector(now: 1_798_105_202)->introspect(
-            compactToken: $token->toString(),
-            expectedNode: 'app-dev',
-            expectedCommand: 'internal:executor:verify',
-        ))->toBe([
+        expect(operationTokenIntrospector(now: 1_798_105_202)
+            ->introspect(
+                compactToken: $token->toString(),
+                expectedNode: 'app-dev',
+                expectedCommand: 'internal:executor:verify',
+            ))->toBe([
             'allowed' => false,
             'reason' => 'invalid_token',
             'operation_id' => 'operation-123',

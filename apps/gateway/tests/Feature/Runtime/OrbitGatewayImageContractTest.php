@@ -9,7 +9,9 @@ it('packages the gateway app in a FrankenPHP image without relying on host PHP s
         ->toContain('FROM dunglas/frankenphp:')
         ->toContain('FROM base AS dependencies')
         ->toContain('FROM dependencies AS application')
-        ->toContain('COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/')
+        ->toContain(
+            'COPY apps/gateway/artisan apps/gateway/composer.json apps/gateway/composer.lock apps/gateway/.env.example /srv/orbit/apps/gateway/',
+        )
         ->toContain('COPY packages/core/composer.json packages/core/composer.lock /srv/orbit/packages/core/')
         ->toContain('composer install --no-dev --no-interaction --prefer-dist --no-autoloader --no-scripts')
         ->toContain('COPY apps/gateway/app /srv/orbit/apps/gateway/app')
@@ -73,8 +75,7 @@ it('keeps the orbit gateway image build context free of host secrets and generat
         ->toContain('**/builds')
         ->not->toContain('!apps/gateway/**')
         ->not->toContain('!apps/reverb/**')
-        ->not->toContain('!packages/core/**')
-        ->toContain('!docker/orbit-gateway/**');
+        ->not->toContain('!packages/core/**')->toContain('!docker/orbit-gateway/**');
 });
 
 it('packages the Reverb runtime as a self-contained image', function (): void {

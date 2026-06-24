@@ -30,21 +30,24 @@ describe('process:add managed service selector contract', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/processes'
-            && $request->data() === [
-                'node' => 'beast',
-                'name' => 'mysql8',
-                'restart_policy' => 'never',
-                'crash_notification' => 'none',
-                'start' => true,
-                'runtime' => 'docker',
-                'service' => 'mysql',
-                'version' => '8.3',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data() === [
+                    'node' => 'beast',
+                    'name' => 'mysql8',
+                    'restart_policy' => 'never',
+                    'crash_notification' => 'none',
+                    'start' => true,
+                    'runtime' => 'docker',
+                    'service' => 'mysql',
+                    'version' => '8.3',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['process']['name'])->toBe('mysql8');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['process']['name'])->toBe('mysql8');
     });
 
     it('posts optional image overrides for managed service processes', function (): void {
@@ -69,19 +72,23 @@ describe('process:add managed service selector contract', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/processes'
-            && $request->data() === [
-                'node' => 'beast',
-                'name' => 'mysql8',
-                'restart_policy' => 'never',
-                'crash_notification' => 'none',
-                'start' => true,
-                'runtime' => 'docker',
-                'service' => 'mysql',
-                'version' => '8.3',
-                'image' => 'docker.io/library/mysql:8.3',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data() === [
+                    'node' => 'beast',
+                    'name' => 'mysql8',
+                    'restart_policy' => 'never',
+                    'crash_notification' => 'none',
+                    'start' => true,
+                    'runtime' => 'docker',
+                    'service' => 'mysql',
+                    'version' => '8.3',
+                    'image' => 'docker.io/library/mysql:8.3',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -109,20 +116,24 @@ describe('process:add managed service selector contract', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/processes'
-            && $request->data() === [
-                'node' => 'beast',
-                'name' => 'mailpit',
-                'restart_policy' => 'never',
-                'crash_notification' => 'none',
-                'start' => true,
-                'runtime' => 'docker',
-                'service' => 'mailpit',
-                'replace_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'force',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/processes'
+                && $request->data() === [
+                    'node' => 'beast',
+                    'name' => 'mailpit',
+                    'restart_policy' => 'never',
+                    'crash_notification' => 'none',
+                    'start' => true,
+                    'runtime' => 'docker',
+                    'service' => 'mailpit',
+                    'replace_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'force',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -143,10 +154,14 @@ describe('process:add managed service selector contract', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force')
-            ->and($decoded['error']['meta']['reason'])->toBe('destructive_consent_required');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('destructive_consent_required');
     });
 
     it('sends start false only when no-start is present', function (): void {
@@ -171,8 +186,9 @@ describe('process:add managed service selector contract', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->data()['start'] === false);
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'POST' && $request->data()['start'] === false,
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -192,10 +208,14 @@ describe('process:add managed service selector contract', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('version')
-            ->and($decoded['error']['meta']['reason'])->toBe('process_service_version_requires_service');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('version')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('process_service_version_requires_service');
     });
 
     it('rejects image overrides without service before contacting the gateway', function (): void {
@@ -213,10 +233,14 @@ describe('process:add managed service selector contract', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('image')
-            ->and($decoded['error']['meta']['reason'])->toBe('process_service_image_requires_service');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('image')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('process_service_image_requires_service');
     });
 
     it('rejects image overrides for systemd managed services before contacting the gateway', function (): void {
@@ -235,10 +259,14 @@ describe('process:add managed service selector contract', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('image')
-            ->and($decoded['error']['meta']['reason'])->toBe('process_service_image_requires_docker_runtime');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('image')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('process_service_image_requires_docker_runtime');
     });
 
     it('shows the start step by default in human mode', function (): void {
@@ -257,8 +285,11 @@ describe('process:add managed service selector contract', function (): void {
             '--runtime' => 'docker',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Start runtime units')
-            ->and($output)->toContain("Process 'mysql8' added for node 'beast'");
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Start runtime units')
+            ->and($output)
+            ->toContain("Process 'mysql8' added for node 'beast'");
     });
 });

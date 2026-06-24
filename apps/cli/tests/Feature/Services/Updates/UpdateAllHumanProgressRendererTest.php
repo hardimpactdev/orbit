@@ -17,8 +17,10 @@ it('renders begin on non-decorated output with one check row and footer last', f
     $text = rtrim($output->fetch(), "\n");
     $lines = explode("\n", $text);
 
-    expect(substr_count($text, 'Checking for updates'))->toBe(1)
-        ->and($lines[array_key_last($lines)])->toContain('Working...');
+    expect(substr_count($text, 'Checking for updates'))
+        ->toBe(1)
+        ->and($lines[array_key_last($lines)])
+        ->toContain('Working...');
 });
 
 it('renders both idle check rows with vertical spacers and a Working footer', function (): void {
@@ -34,7 +36,8 @@ it('renders both idle check rows with vertical spacers and a Working footer', fu
         ->toContain('Checking for updates')
         ->toContain('Checking fleet versions')
         ->toContain('Working...')
-        ->and(assertProgressTreeSpacerContract($text))->toBeTrue();
+        ->and(assertProgressTreeSpacerContract($text))
+        ->toBeTrue();
 });
 
 it('aligns settled check-row status with node stage columns', function (): void {
@@ -71,9 +74,9 @@ it('aligns settled check-row status with node stage columns', function (): void 
 
     foreach ([
         ['Done: latest version is 1.2.3', 'Done:'],
-        ['Done: 1 outdated node found', 'Done:'],
-        ['beast', 'Replacing'],
-        ['local', 'Replacing'],
+        ['Done: 1 outdated node found',   'Done:'],
+        ['beast',                         'Replacing'],
+        ['local',                         'Replacing'],
     ] as [$needle, $statusNeedle]) {
         $line = findRendererProgressLine($text, $needle, $statusNeedle);
 
@@ -146,10 +149,14 @@ it('reveals gateway, local, and workload rows as Waiting when outdated nodes are
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/local\s+Waiting\b/')
-        ->and($text)->toMatch('/beast\s+Waiting\b/')
-        ->and($text)->toMatch('/agent\s+Waiting\b/')
-        ->and($text)->not->toMatch('/gateway\s+Downloading/');
+    expect($text)
+        ->toMatch('/local\s+Waiting\b/')
+        ->and($text)
+        ->toMatch('/beast\s+Waiting\b/')
+        ->and($text)
+        ->toMatch('/agent\s+Waiting\b/')
+        ->and($text)
+        ->not->toMatch('/gateway\s+Downloading/');
 
     assertProgressTargetOrder($text, ['gateway', 'local', 'beast', 'agent']);
 
@@ -181,9 +188,10 @@ it('does not reveal node rows before outdated nodes are found', function (): voi
 
     $text = $output->fetch();
 
-    expect($text)->not->toMatch('/\bgateway\b/')
-        ->and($text)->not->toMatch('/\blocal\b/')
-        ->and($text)->not->toMatch('/\bagent\b/');
+    expect($text)
+        ->not->toMatch('/\bgateway\b/')->and($text)
+        ->not->toMatch('/\blocal\b/')->and($text)
+        ->not->toMatch('/\bagent\b/');
 });
 
 it('reveals local as Waiting while the gateway row is active', function (): void {
@@ -210,10 +218,14 @@ it('reveals local as Waiting while the gateway row is active', function (): void
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/gateway\s+Downloading 1\.2\.3 assets/')
-        ->and($text)->toMatch('/local\s+Waiting\b/')
-        ->and($text)->toMatch('/agent\s+Waiting\b/')
-        ->and($text)->toMatch('/beast\s+Waiting\b/');
+    expect($text)
+        ->toMatch('/gateway\s+Downloading 1\.2\.3 assets/')
+        ->and($text)
+        ->toMatch('/local\s+Waiting\b/')
+        ->and($text)
+        ->toMatch('/agent\s+Waiting\b/')
+        ->and($text)
+        ->toMatch('/beast\s+Waiting\b/');
 });
 
 it('fails the gateway row for a fleet lease conflict without revealing local waiting rows', function (): void {
@@ -236,10 +248,11 @@ it('fails the gateway row for a fleet lease conflict without revealing local wai
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/gateway\s+Failed: update:all is still being performed by ingress/')
-        ->and($text)->not->toMatch('/local\s+Waiting/')
-        ->and($text)->not->toMatch('/\bbeast\s+Waiting/')
-        ->and($text)->toContain('Failed');
+    expect($text)
+        ->toMatch('/gateway\s+Failed: update:all is still being performed by ingress/')
+        ->and($text)
+        ->not->toMatch('/local\s+Waiting/')->and($text)
+        ->not->toMatch('/\bbeast\s+Waiting/')->and($text)->toContain('Failed');
 });
 
 it('strips revealed fan-out rows when a fleet lease conflict fails after an outdated fleet check', function (): void {
@@ -280,10 +293,13 @@ it('clears revealed fan-out rows from a decorated fleet lease conflict screen', 
     $screen->feed($output->fetch());
     $text = implode("\n", $screen->lines());
 
-    expect($text)->toContain('gateway')
-        ->and($text)->toContain('Failed: update:all is still being performed by ingress')
-        ->and($text)->not->toContain('local')
-        ->and($text)->not->toContain('beast');
+    expect($text)
+        ->toContain('gateway')
+        ->and($text)
+        ->toContain('Failed: update:all is still being performed by ingress')
+        ->and($text)
+        ->not->toContain('local')->and($text)
+        ->not->toContain('beast');
 });
 
 it('keeps local and workload rows on Waiting when the gateway row fails', function (): void {
@@ -311,10 +327,14 @@ it('keeps local and workload rows on Waiting when the gateway row fails', functi
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/gateway\s+Failed\b.*Gateway health failed/')
-        ->and($text)->toMatch('/local\s+Waiting\b/')
-        ->and($text)->toMatch('/beast\s+Waiting\b/')
-        ->and($text)->not->toMatch('/beast\s+Downloading 1\.2\.3/');
+    expect($text)
+        ->toMatch('/gateway\s+Failed\b.*Gateway health failed/')
+        ->and($text)
+        ->toMatch('/local\s+Waiting\b/')
+        ->and($text)
+        ->toMatch('/beast\s+Waiting\b/')
+        ->and($text)
+        ->not->toMatch('/beast\s+Downloading 1\.2\.3/');
 });
 
 it('can show multiple active fan-out rows with distinct sub-stages after gateway succeeds', function (): void {
@@ -346,8 +366,7 @@ it('can show multiple active fan-out rows with distinct sub-stages after gateway
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/agent\s+Downloading 1\.2\.3/')
-        ->and($text)->toMatch('/beast\s+Replacing cli binary/');
+    expect($text)->toMatch('/agent\s+Downloading 1\.2\.3/')->and($text)->toMatch('/beast\s+Replacing cli binary/');
 });
 
 it('preserves payload workload order before gateway succeeds and after out-of-order completion', function (): void {
@@ -414,8 +433,10 @@ it('settles the gateway row with doctor issue counts without failing the footer'
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/gateway\s+Done \(2 issues\)/')
-        ->and($text)->toContain('Success: All nodes are running on version 1.2.3');
+    expect($text)
+        ->toMatch('/gateway\s+Done \(2 issues\)/')
+        ->and($text)
+        ->toContain('Success: All nodes are running on version 1.2.3');
 });
 
 it('treats doctor issue counts as non-fatal row results with a success footer', function (): void {
@@ -443,8 +464,10 @@ it('treats doctor issue counts as non-fatal row results with a success footer', 
 
     $text = $output->fetch();
 
-    expect($text)->toMatch('/beast\s+Done \(3 issues\)/')
-        ->and($text)->toContain('Success: All nodes are running on version 1.2.3');
+    expect($text)
+        ->toMatch('/beast\s+Done \(3 issues\)/')
+        ->and($text)
+        ->toContain('Success: All nodes are running on version 1.2.3');
 });
 
 it('throttles active row alternation to about 300ms on decorated output', function (): void {
@@ -513,8 +536,7 @@ it('does not emit ansi spinner noise or duplicate rows in non-decorated output',
 
     $text = $output->fetch();
 
-    expect($text)->toContain('Checking for updates')
-        ->and($text)->toMatch('/Checking for updates\s+Checking\b/');
+    expect($text)->toContain('Checking for updates')->and($text)->toMatch('/Checking for updates\s+Checking\b/');
 
     expect($text)->not->toMatch('/\e\[/');
 });
@@ -535,7 +557,7 @@ function setUpdateAllHumanProgressLastFrameAge(UpdateAllHumanProgressRenderer $r
 {
     $property = new ReflectionProperty(UpdateAllHumanProgressRenderer::class, 'lastFrameAtUs');
     $property->setAccessible(true);
-    $property->setValue($renderer, ((int) (microtime(true) * 1_000_000)) - $ageUs);
+    $property->setValue($renderer, (int) (microtime(true) * 1_000_000) - $ageUs);
 }
 
 function stripRendererAnsi(string $text): string

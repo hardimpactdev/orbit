@@ -59,7 +59,7 @@ final readonly class SshRemoteShellStream implements RemoteShellStream
             $metadata = [];
 
             foreach ($options['metadata'] as $key => $value) {
-                $metadata[(string) $key] = (string) $value;
+                $metadata[$key] = $value;
             }
 
             $prefix .= app(RemoteShellMetadata::class)->prologue($metadata);

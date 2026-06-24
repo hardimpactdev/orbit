@@ -104,15 +104,21 @@ it('uses the root VERSION file as the single release version source', function (
     $gatewayWorkflow = file_get_contents(repo_path('.github/workflows/orbit-gateway-image.yml'));
     $binaryWorkflow = file_get_contents(repo_path('.github/workflows/orbit-cli-binary.yml'));
 
-    expect($version)->toMatch('/^\d+\.\d+\.\d+$/')
-        ->and(config('app.version'))->toBe($version)
-        ->and(repo_path('bin/orbit-version'))->toBeFile()
-        ->and($cliConfig)->toContain('VERSION')
-        ->and($gatewayConfig)->toContain('VERSION')
-        ->and($cliConfig)->not->toContain("'version' => '")
-        ->and($gatewayConfig)->not->toContain("'version' => '")
-        ->and($gatewayWorkflow)->toContain('bin/orbit-version')
-        ->and($binaryWorkflow)->toContain('bin/orbit-version');
+    expect($version)
+        ->toMatch('/^\d+\.\d+\.\d+$/')
+        ->and(config('app.version'))
+        ->toBe($version)
+        ->and(repo_path('bin/orbit-version'))
+        ->toBeFile()
+        ->and($cliConfig)
+        ->toContain('VERSION')
+        ->and($gatewayConfig)
+        ->toContain('VERSION')
+        ->and($cliConfig)
+        ->not->toContain("'version' => '")->and($gatewayConfig)
+        ->not->toContain("'version' => '")->and($gatewayWorkflow)->toContain('bin/orbit-version')->and(
+            $binaryWorkflow,
+        )->toContain('bin/orbit-version');
 });
 
 it('builds local e2e cli binary artifacts through the shared helper', function (): void {
@@ -179,15 +185,23 @@ it('prepares the gateway release split package manifest with the exact monorepo 
     try {
         prepareReleaseWorkflowPackage('gateway', '1.2.3', "{$root}/gateway");
 
-        $gateway = json_decode((string) file_get_contents("{$root}/gateway/composer.json"), true, flags: JSON_THROW_ON_ERROR);
+        $gateway = json_decode(
+            (string) file_get_contents("{$root}/gateway/composer.json"),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
-        expect($gateway['name'])->toBe('hardimpactdev/orbit-gateway')
-            ->and($gateway['version'])->toBe('1.2.3')
-            ->and($gateway['require']['hardimpactdev/orbit-core'])->toBe('1.2.3')
-            ->and($gateway['require']['hardimpactdev/orbit-sdk-laravel'])->toBe('1.2.3')
-            ->and($gateway)->not->toHaveKey('repositories')
-            ->and("{$root}/gateway/composer.lock")->not->toBeFile()
-            ->and(is_executable("{$root}/gateway/artisan"))->toBeTrue();
+        expect($gateway['name'])
+            ->toBe('hardimpactdev/orbit-gateway')
+            ->and($gateway['version'])
+            ->toBe('1.2.3')
+            ->and($gateway['require']['hardimpactdev/orbit-core'])
+            ->toBe('1.2.3')
+            ->and($gateway['require']['hardimpactdev/orbit-sdk-laravel'])
+            ->toBe('1.2.3')
+            ->and($gateway)
+            ->not->toHaveKey('repositories')->and("{$root}/gateway/composer.lock")
+            ->not->toBeFile()->and(is_executable("{$root}/gateway/artisan"))->toBeTrue();
     } finally {
         File::deleteDirectory($root);
     }
@@ -195,7 +209,9 @@ it('prepares the gateway release split package manifest with the exact monorepo 
 
 it('does not descend into skipped gateway runtime directories while packaging', function (): void {
     $root = sys_get_temp_dir().'/orbit-release-package-'.bin2hex(random_bytes(6));
-    $skippedDirectory = repo_path('apps/gateway/storage/framework/testing/release-package-unreadable-'.bin2hex(random_bytes(6)));
+    $skippedDirectory = repo_path(
+        'apps/gateway/storage/framework/testing/release-package-unreadable-'.bin2hex(random_bytes(6)),
+    );
 
     try {
         mkdir($skippedDirectory, 0000, true);
@@ -224,28 +240,33 @@ it('prepares every release split package manifest with the exact monorepo versio
         $core = json_decode((string) file_get_contents("{$root}/core/composer.json"), true, flags: JSON_THROW_ON_ERROR);
         $sdk = json_decode((string) file_get_contents("{$root}/sdk/composer.json"), true, flags: JSON_THROW_ON_ERROR);
         $cli = json_decode((string) file_get_contents("{$root}/cli/composer.json"), true, flags: JSON_THROW_ON_ERROR);
-        $gateway = json_decode((string) file_get_contents("{$root}/gateway/composer.json"), true, flags: JSON_THROW_ON_ERROR);
+        $gateway = json_decode(
+            (string) file_get_contents("{$root}/gateway/composer.json"),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
-        expect($core['name'])->toBe('hardimpactdev/orbit-core')
-            ->and($core['version'])->toBe('1.2.3')
-            ->and("{$root}/core/composer.lock")->not->toBeFile()
-            ->and($sdk['name'])->toBe('hardimpactdev/orbit-sdk-laravel')
-            ->and($sdk['version'])->toBe('1.2.3')
-            ->and("{$root}/sdk/composer.lock")->not->toBeFile()
-            ->and($cli['name'])->toBe('hardimpactdev/orbit-cli')
-            ->and($cli['version'])->toBe('1.2.3')
-            ->and($cli['require']['hardimpactdev/orbit-core'])->toBe('1.2.3')
-            ->and($cli['require']['hardimpactdev/orbit-sdk-laravel'])->toBe('1.2.3')
-            ->and($cli)->not->toHaveKey('repositories')
-            ->and("{$root}/cli/composer.lock")->not->toBeFile()
-            ->and(is_executable("{$root}/cli/orbit"))->toBeTrue()
-            ->and($gateway['name'])->toBe('hardimpactdev/orbit-gateway')
-            ->and($gateway['version'])->toBe('1.2.3')
-            ->and($gateway['require']['hardimpactdev/orbit-core'])->toBe('1.2.3')
-            ->and($gateway['require']['hardimpactdev/orbit-sdk-laravel'])->toBe('1.2.3')
-            ->and($gateway)->not->toHaveKey('repositories')
-            ->and("{$root}/gateway/composer.lock")->not->toBeFile()
-            ->and(is_executable("{$root}/gateway/artisan"))->toBeTrue();
+        expect($core['name'])
+            ->toBe('hardimpactdev/orbit-core')
+            ->and($core['version'])
+            ->toBe('1.2.3')
+            ->and("{$root}/core/composer.lock")
+            ->not->toBeFile()->and($sdk['name'])->toBe('hardimpactdev/orbit-sdk-laravel')->and($sdk['version'])->toBe(
+                '1.2.3',
+            )->and("{$root}/sdk/composer.lock")
+            ->not->toBeFile()->and($cli['name'])->toBe('hardimpactdev/orbit-cli')->and($cli['version'])->toBe(
+                '1.2.3',
+            )->and($cli['require']['hardimpactdev/orbit-core'])->toBe('1.2.3')->and(
+                $cli['require']['hardimpactdev/orbit-sdk-laravel'],
+            )->toBe('1.2.3')->and($cli)
+            ->not->toHaveKey('repositories')->and("{$root}/cli/composer.lock")
+            ->not->toBeFile()->and(is_executable("{$root}/cli/orbit"))->toBeTrue()->and($gateway['name'])->toBe(
+                'hardimpactdev/orbit-gateway',
+            )->and($gateway['version'])->toBe('1.2.3')->and($gateway['require']['hardimpactdev/orbit-core'])->toBe(
+                '1.2.3',
+            )->and($gateway['require']['hardimpactdev/orbit-sdk-laravel'])->toBe('1.2.3')->and($gateway)
+            ->not->toHaveKey('repositories')->and("{$root}/gateway/composer.lock")
+            ->not->toBeFile()->and(is_executable("{$root}/gateway/artisan"))->toBeTrue();
     } finally {
         File::deleteDirectory($root);
     }

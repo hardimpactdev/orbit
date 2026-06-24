@@ -140,29 +140,29 @@ final readonly class OpenCodeWorkspaceDriver implements WorkspaceSourceDriver
     private function alignBranchScript(): string
     {
         return <<<'SH'
-set -Eeuo pipefail
-workspace_path="${ORBIT_WORKSPACE_PATH:?}"
-workspace_name="${ORBIT_WORKSPACE_NAME:?}"
-base_ref="${ORBIT_WORKSPACE_BASE:?}"
+            set -Eeuo pipefail
+            workspace_path="${ORBIT_WORKSPACE_PATH:?}"
+            workspace_name="${ORBIT_WORKSPACE_NAME:?}"
+            base_ref="${ORBIT_WORKSPACE_BASE:?}"
 
-if [ ! -d "$workspace_path/.git" ] && [ ! -f "$workspace_path/.git" ]; then
-    echo "workspace path is not a git worktree: $workspace_path" >&2
-    exit 2
-fi
+            if [ ! -d "$workspace_path/.git" ] && [ ! -f "$workspace_path/.git" ]; then
+                echo "workspace path is not a git worktree: $workspace_path" >&2
+                exit 2
+            fi
 
-current_branch="$(git -C "$workspace_path" branch --show-current)"
+            current_branch="$(git -C "$workspace_path" branch --show-current)"
 
-if [ "$current_branch" != "$workspace_name" ]; then
-    if git -C "$workspace_path" rev-parse --verify --quiet "$workspace_name" >/dev/null; then
-        echo "git branch already exists: $workspace_name" >&2
-        exit 2
-    fi
+            if [ "$current_branch" != "$workspace_name" ]; then
+                if git -C "$workspace_path" rev-parse --verify --quiet "$workspace_name" >/dev/null; then
+                    echo "git branch already exists: $workspace_name" >&2
+                    exit 2
+                fi
 
-    git -C "$workspace_path" branch -m "$workspace_name"
-fi
+                git -C "$workspace_path" branch -m "$workspace_name"
+            fi
 
-git -C "$workspace_path" reset --hard "$base_ref"
-SH;
+            git -C "$workspace_path" reset --hard "$base_ref"
+            SH;
     }
 
     private function createSession(OpenCode $client, string $name, string $path): ?string

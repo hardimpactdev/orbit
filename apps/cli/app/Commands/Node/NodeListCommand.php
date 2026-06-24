@@ -39,9 +39,12 @@ final class NodeListCommand extends GatewayCommand
     public function handle(): int
     {
         try {
-            $response = $this->gatewayGet('/api/nodes', array_filter([
-                'role' => $this->option('role'),
-            ], fn (mixed $v): bool => $v !== null));
+            $response = $this->gatewayGet('/api/nodes', array_filter(
+                [
+                    'role' => $this->option('role'),
+                ],
+                fn (mixed $v): bool => $v !== null,
+            ));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -107,13 +110,18 @@ final class NodeListCommand extends GatewayCommand
                 : "{$role['role']} ({$status})";
         }
 
-        usort($labels, fn (string $first, string $second): int => [
-            $this->roleSortIndex($first),
-            $first,
-        ] <=> [
-            $this->roleSortIndex($second),
-            $second,
-        ]);
+        usort(
+            $labels,
+            fn (string $first, string $second): int => (
+                [
+                    $this->roleSortIndex($first),
+                    $first,
+                ] <=> [
+                    $this->roleSortIndex($second),
+                    $second,
+                ]
+            ),
+        );
 
         return $labels === [] ? '—' : implode(', ', $labels);
     }
@@ -155,7 +163,7 @@ final class NodeListCommand extends GatewayCommand
     private function peerIp(array $node): string
     {
         $addresses = $node['addresses'] ?? null;
-        $wireguardAddress = is_array($addresses) ? ($addresses['wireguard'] ?? null) : null;
+        $wireguardAddress = is_array($addresses) ? $addresses['wireguard'] ?? null : null;
 
         if (is_scalar($wireguardAddress) && (string) $wireguardAddress !== '') {
             return (string) $wireguardAddress;

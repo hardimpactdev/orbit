@@ -17,11 +17,17 @@ it('reports unsupported_platform on Linux when given valid arguments', function 
         $operator = $topology->instance('operator');
         $key = $topology->lease()->sshKeyPair();
 
-        $result = $operator->ssh($config->operatorUser, $key, "cd {$checkout} && orbit dns:resolve-tld test 10.6.0.7 --json");
-
-        expect($result->successful())->toBeFalse(
-            'Expected dns:resolve-tld to fail on Linux, but it succeeded. Output: '.$result->output().$result->errorOutput()
+        $result = $operator->ssh(
+            $config->operatorUser,
+            $key,
+            "cd {$checkout} && orbit dns:resolve-tld test 10.6.0.7 --json",
         );
+
+        expect($result->successful())
+            ->toBeFalse(
+                'Expected dns:resolve-tld to fail on Linux, but it succeeded. Output: '.$result->output()
+                    .$result->errorOutput(),
+            );
 
         $output = trim($result->output());
         $json = json_decode($output, true);
@@ -32,9 +38,11 @@ it('reports unsupported_platform on Linux when given valid arguments', function 
 
         $result = $operator->ssh($config->operatorUser, $key, "cd {$checkout} && orbit dns:resolve-tld --json");
 
-        expect($result->successful())->toBeFalse(
-            'Expected dns:resolve-tld without args to fail validation, but it succeeded. Output: '.$result->output().$result->errorOutput()
-        );
+        expect($result->successful())
+            ->toBeFalse(
+                'Expected dns:resolve-tld without args to fail validation, but it succeeded. Output: '.$result->output()
+                    .$result->errorOutput(),
+            );
 
         $output = trim($result->output());
         $json = json_decode($output, true);

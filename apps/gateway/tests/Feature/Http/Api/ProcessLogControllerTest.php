@@ -54,12 +54,20 @@ describe('ProcessLogController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: "Vite ready\n", stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('GET', '/api/processes/vite/log', [
-            'app' => 'docs',
-            'lines' => 5,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/vite/log',
+            [
+                'app' => 'docs',
+                'lines' => 5,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.logs.runtime_unit', 'orbit_docs_main_vite')
             ->assertJsonPath('success.data.logs.lines.0.message', 'Vite ready')
             ->assertJsonPath('success.meta.line_count', 1);
@@ -70,21 +78,31 @@ describe('ProcessLogController', function (): void {
         grantProcessLogAccess($appNode, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
-        Process::factory()->forOwner($workspace)->create([
-            'name' => 'frankenphp-docs-feature-docs',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
-        ]);
+        Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'frankenphp-docs-feature-docs',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
+            ]);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "FrankenPHP ready\n", stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('GET', '/api/processes/frankenphp-docs-feature-docs/log', [
-            'workspace' => 'feature-docs',
-            'lines' => 5,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/frankenphp-docs-feature-docs/log',
+            [
+                'workspace' => 'feature-docs',
+                'lines' => 5,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.logs.node', $appNode->name)
             ->assertJsonPath('success.data.logs.app', 'docs')
             ->assertJsonPath('success.data.logs.workspace', 'feature-docs')
@@ -95,21 +113,31 @@ describe('ProcessLogController', function (): void {
     it('returns bounded logs for a node owned process', function (): void {
         createProcessLogCallerNode(role: 'gateway');
         $node = createTestAppHostNode(['name' => 'app-1']);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'opencode-server',
-            'runtime' => ProcessRuntime::Systemd,
-            'tool' => 'opencode',
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'opencode-server',
+                'runtime' => ProcessRuntime::Systemd,
+                'tool' => 'opencode',
+            ]);
         app()->instance(RemoteShell::class, new ProcessLogApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "OpenCode ready\n", stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('GET', '/api/processes/opencode-server/log', [
-            'node' => 'app-1',
-            'lines' => 5,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/opencode-server/log',
+            [
+                'node' => 'app-1',
+                'lines' => 5,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.logs.node', 'app-1')
             ->assertJsonPath('success.data.logs.app', null)
             ->assertJsonPath('success.data.logs.workspace', null)
@@ -123,39 +151,49 @@ describe('ProcessLogController', function (): void {
             'name' => 'database-1',
             'wireguard_address' => '10.6.0.44',
         ]);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'mysql8',
-            'command' => 'mysqld',
-            'runtime' => ProcessRuntime::DockerSwarm,
-            'runtime_config' => [
-                'service' => 'mysql',
-                'version_family' => '8',
-                'version' => '8.4',
-                'service_name' => 'orbit-mysql8',
-                'endpoint' => [
-                    'name' => 'mysql8',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.44',
-                    'port' => 3308,
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql8',
+                'command' => 'mysqld',
+                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'version_family' => '8',
+                    'version' => '8.4',
+                    'service_name' => 'orbit-mysql8',
+                    'endpoint' => [
+                        'name' => 'mysql8',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.44',
+                        'port' => 3308,
+                    ],
+                    'credentials' => [
+                        'database' => 'orbit',
+                        'password' => 'orbit',
+                        'username' => 'orbit',
+                    ],
                 ],
-                'credentials' => [
-                    'database' => 'orbit',
-                    'password' => 'orbit',
-                    'username' => 'orbit',
-                ],
-            ],
-        ]);
+            ]);
         $remoteShell = new ProcessLogApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "MySQL ready\n", stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('GET', '/api/processes/mysql8/log', [
-            'node' => 'database-1',
-            'lines' => 5,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/mysql8/log',
+            [
+                'node' => 'database-1',
+                'lines' => 5,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.logs.node', 'database-1')
             ->assertJsonPath('success.data.logs.app', null)
             ->assertJsonPath('success.data.logs.workspace', null)
@@ -181,12 +219,20 @@ describe('ProcessLogController', function (): void {
         $remoteShell = new ProcessLogApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('GET', '/api/processes/vite/log', [
-            'app' => 'docs',
-            'lines' => 5,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/vite/log',
+            [
+                'app' => 'docs',
+                'lines' => 5,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.unsupported_runtime')
             ->assertJsonPath('error.meta.process', 'vite')
             ->assertJsonPath('error.meta.runtime', 'docker-swarm')
@@ -203,11 +249,19 @@ describe('ProcessLogController', function (): void {
         $remoteShell = new ProcessLogApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('GET', '/api/processes/vite/log', [
-            'app' => 'docs',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/vite/log',
+            [
+                'app' => 'docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:logs');
@@ -224,9 +278,16 @@ describe('ProcessLogController', function (): void {
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing', durationMs: 1),
         ]));
 
-        $response = $this->call('GET', '/api/processes/vite/log', [
-            'app' => 'docs',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/processes/vite/log',
+            [
+                'app' => 'docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_LOG_CALLER_WG_IP],
+        );
 
         $response->assertStatus(502)
             ->assertJsonPath('error.code', 'process.log_read_failed');

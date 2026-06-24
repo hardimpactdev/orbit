@@ -43,7 +43,7 @@ final readonly class AppDevelopmentPackagesMount
             return null;
         }
 
-        $nodeUser = trim((string) ($app->node->user ?: 'orbit'));
+        $nodeUser = trim($app->node->user ?: 'orbit');
 
         if ($nodeUser === '') {
             return null;

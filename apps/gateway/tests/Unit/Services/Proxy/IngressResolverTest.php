@@ -27,7 +27,10 @@ describe('IngressResolver', function (): void {
         expect(app(IngressResolver::class)->forAppNode($web)->is($edge))->toBeTrue();
     });
 
-    it('rejects missing inactive or ineligible ingress nodes', function (?string $nodeStatus, ?string $roleStatus): void {
+    it('rejects missing inactive or ineligible ingress nodes', function (
+        ?string $nodeStatus,
+        ?string $roleStatus,
+    ): void {
         $edge = Node::factory()->create(['name' => 'edge-1', 'status' => $nodeStatus ?? 'active']);
 
         if ($roleStatus !== null) {
@@ -84,8 +87,10 @@ describe('IngressResolver', function (): void {
 
         $router = app(IngressResolver::class)->router();
 
-        expect($router->is($gateway))->toBeTrue()
-            ->and(app(IngressResolver::class)->routerUrl($router))->toBe('http://10.6.0.2:80');
+        expect($router->is($gateway))
+            ->toBeTrue()
+            ->and(app(IngressResolver::class)->routerUrl($router))
+            ->toBe('http://10.6.0.2:80');
     });
 
     it('rejects router urls for router nodes without wireguard addresses', function (): void {

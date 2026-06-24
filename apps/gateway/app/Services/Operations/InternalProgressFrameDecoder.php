@@ -44,7 +44,7 @@ final class InternalProgressFrameDecoder
             );
         }
 
-        if (! is_array($decoded) || ($decoded !== [] && array_is_list($decoded))) {
+        if (! is_array($decoded) || $decoded !== [] && array_is_list($decoded)) {
             throw new RuntimeException('internal_progress_frame_malformed: line must decode to a JSON object.');
         }
 

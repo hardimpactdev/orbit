@@ -24,8 +24,7 @@ it('defaults missing firewall rule owners to user-owned and unprotected', functi
         'protected' => true,
     ]);
 
-    expect($rule->refresh()->owner)->toBe('user')
-        ->and($rule->protected)->toBeFalse();
+    expect($rule->refresh()->owner)->toBe('user')->and($rule->protected)->toBeFalse();
 });
 
 it('marks non-user firewall rules as protected', function (): void {

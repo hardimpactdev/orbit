@@ -109,7 +109,7 @@ class VpnClientEnableCommand extends VpnGatewayCommand
     private function wasAlreadyInDesiredState(array $response, string $pastTense): bool
     {
         $data = $response['success']['data'] ?? null;
-        $client = is_array($data) ? ($data['client'] ?? null) : null;
+        $client = is_array($data) ? $data['client'] ?? null : null;
 
         return is_array($client) && ($client["already_{$pastTense}"] ?? false) === true;
     }

@@ -84,15 +84,15 @@ final readonly class CompoundCommandPrefixRule implements GroupedRule
 
         foreach ($matches as $match) {
             $suggestedCommand = $this->suggestedCompoundCommand(
-                strtolower((string) $match['family']),
-                strtolower((string) $match['rest']),
+                strtolower($match['family']),
+                strtolower($match['rest']),
             );
 
             if ($suggestedCommand === null) {
                 continue;
             }
 
-            $commands[(string) $match['command']] = $suggestedCommand;
+            $commands[$match['command']] = $suggestedCommand;
         }
 
         return $commands;

@@ -23,8 +23,12 @@ final readonly class PhpRuntimeManager
         private NodeRoleAssignments $nodeRoleAssignments,
     ) {}
 
-    public function view(?string $app = null, ?string $workspace = null, ?string $node = null, bool $live = false): PhpRuntimeOperation
-    {
+    public function view(
+        ?string $app = null,
+        ?string $workspace = null,
+        ?string $node = null,
+        bool $live = false,
+    ): PhpRuntimeOperation {
         $target = $this->resolveTarget(app: $app, workspace: $workspace, node: $node);
 
         if ($target instanceof PhpRuntimeFailure) {
@@ -43,8 +47,14 @@ final readonly class PhpRuntimeManager
         );
     }
 
-    public function use(?string $version, ?string $app = null, ?string $workspace = null, ?string $node = null, bool $inherit = false, bool $cli = false): PhpRuntimeOperation
-    {
+    public function use(
+        ?string $version,
+        ?string $app = null,
+        ?string $workspace = null,
+        ?string $node = null,
+        bool $inherit = false,
+        bool $cli = false,
+    ): PhpRuntimeOperation {
         $validation = $this->validateUseInputs($version, $app, $workspace, $inherit, $cli);
 
         if ($validation instanceof PhpRuntimeFailure) {
@@ -100,7 +110,11 @@ final readonly class PhpRuntimeManager
         $workspaceModel = $this->resolveWorkspace($workspace, $appModel);
 
         if ($workspace !== null && ! $workspaceModel instanceof Workspace) {
-            return $this->validationFailure('workspace', $workspace, "Workspace '{$workspace}' not found or not visible.");
+            return $this->validationFailure(
+                'workspace',
+                $workspace,
+                "Workspace '{$workspace}' not found or not visible.",
+            );
         }
 
         if (! $appModel instanceof App && $workspaceModel instanceof Workspace) {
@@ -117,7 +131,11 @@ final readonly class PhpRuntimeManager
         if ($appModel instanceof App) {
             $appModel->loadMissing('node');
 
-            if ($nodeModel instanceof Node && $appModel->node instanceof Node && $nodeModel->id !== $appModel->node->id) {
+            if (
+                $nodeModel instanceof Node
+                && $appModel->node instanceof Node
+                && $nodeModel->id !== $appModel->node->id
+            ) {
                 return $this->nodeTargetMismatch($nodeModel, $appModel);
             }
 
@@ -149,8 +167,13 @@ final readonly class PhpRuntimeManager
     /**
      * @return array{scope: string, node: Node, app: App|null, workspace: Workspace|null}|PhpRuntimeFailure
      */
-    private function resolveUseTarget(?string $app, ?string $workspace, ?string $node, bool $inherit, bool $cli): array|PhpRuntimeFailure
-    {
+    private function resolveUseTarget(
+        ?string $app,
+        ?string $workspace,
+        ?string $node,
+        bool $inherit,
+        bool $cli,
+    ): array|PhpRuntimeFailure {
         if ($cli) {
             $nodeModel = $this->resolveNode($node) ?? $this->defaultNode();
 
@@ -206,8 +229,13 @@ final readonly class PhpRuntimeManager
         ];
     }
 
-    private function validateUseInputs(?string $version, ?string $app, ?string $workspace, bool $inherit, bool $cli): ?PhpRuntimeFailure
-    {
+    private function validateUseInputs(
+        ?string $version,
+        ?string $app,
+        ?string $workspace,
+        bool $inherit,
+        bool $cli,
+    ): ?PhpRuntimeFailure {
         $version = is_string($version) ? trim($version) : null;
 
         if ($version === '') {
@@ -222,10 +250,14 @@ final readonly class PhpRuntimeManager
         }
 
         if ($cli && ($app !== null || $workspace !== null || $inherit)) {
-            return new PhpRuntimeFailure('validation_failed', 'CLI PHP selection cannot be combined with app, workspace, or inheritance targets.', [
-                'fields' => ['cli', 'app', 'workspace', 'inherit'],
-                'reason' => 'mutually_exclusive_input',
-            ]);
+            return new PhpRuntimeFailure(
+                'validation_failed',
+                'CLI PHP selection cannot be combined with app, workspace, or inheritance targets.',
+                [
+                    'fields' => ['cli', 'app', 'workspace', 'inherit'],
+                    'reason' => 'mutually_exclusive_input',
+                ],
+            );
         }
 
         if (! $inherit && $version === null) {
@@ -241,10 +273,14 @@ final readonly class PhpRuntimeManager
     private function useApp(?App $app, string $version): PhpRuntimeOperation
     {
         if (! $app instanceof App) {
-            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure('validation_failed', 'An app target is required.', [
-                'field' => 'app',
-                'reason' => 'missing_target',
-            ]));
+            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
+                'validation_failed',
+                'An app target is required.',
+                [
+                    'field' => 'app',
+                    'reason' => 'missing_target',
+                ],
+            ));
         }
 
         $app->loadMissing('node');
@@ -282,10 +318,14 @@ final readonly class PhpRuntimeManager
     private function useWorkspace(?Workspace $workspace, bool $inherit, ?string $version): PhpRuntimeOperation
     {
         if (! $workspace instanceof Workspace) {
-            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure('validation_failed', 'A workspace target is required.', [
-                'field' => 'workspace',
-                'reason' => 'missing_target',
-            ]));
+            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
+                'validation_failed',
+                'A workspace target is required.',
+                [
+                    'field' => 'workspace',
+                    'reason' => 'missing_target',
+                ],
+            ));
         }
 
         $workspace->loadMissing('app.node');
@@ -295,7 +335,7 @@ final readonly class PhpRuntimeManager
         $nextEffective = $nextRaw ?? $workspace->app?->php_version;
 
         if ($workspace->app?->node instanceof Node && is_string($nextEffective)) {
-            $availabilityFailure = $this->versionAvailabilityFailure($workspace->app->node, $nextEffective);
+            $availabilityFailure = $this->versionAvailabilityFailure($workspace->app?->node, $nextEffective);
 
             if ($availabilityFailure instanceof PhpRuntimeFailure) {
                 return new PhpRuntimeOperation(failure: $availabilityFailure);
@@ -327,7 +367,7 @@ final readonly class PhpRuntimeManager
     private function useNodeCli(Node $node, string $version): PhpRuntimeOperation
     {
         $tool = $this->phpTool($node);
-        $config = is_array($tool?->config) ? $tool->config : [];
+        $config = is_array($tool?->config) ? $tool?->config : [];
         $previous = $this->cliVersion($node);
         $config['cli_version'] = $version;
 
@@ -361,13 +401,21 @@ final readonly class PhpRuntimeManager
     /**
      * @param  array<string, mixed>  $result
      */
-    private function selectionOperation(?Node $node, ?App $app, ?Workspace $workspace, array $result): PhpRuntimeOperation
-    {
+    private function selectionOperation(
+        ?Node $node,
+        ?App $app,
+        ?Workspace $workspace,
+        array $result,
+    ): PhpRuntimeOperation {
         if (! $node instanceof Node) {
-            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure('validation_failed', 'A node target is required.', [
-                'field' => 'node',
-                'reason' => 'missing_target',
-            ]));
+            return new PhpRuntimeOperation(failure: new PhpRuntimeFailure(
+                'validation_failed',
+                'A node target is required.',
+                [
+                    'field' => 'node',
+                    'reason' => 'missing_target',
+                ],
+            ));
         }
 
         return new PhpRuntimeOperation(
@@ -389,15 +437,17 @@ final readonly class PhpRuntimeManager
             'supported' => $this->catalog->supported(),
             'available_images' => $this->availableImageVersions($node),
             'cli' => $this->cliVersion($node),
-            'app' => $app instanceof App ? [
-                'name' => $app->name,
-                'php_version' => $app->php_version,
-            ] : null,
-            'workspace' => $workspace instanceof Workspace ? [
-                'name' => $workspace->name,
-                'php_version' => $workspace->effectivePhpVersion(),
-                'inherits' => ! is_string($workspace->php_version) || $workspace->php_version === '',
-            ] : null,
+            'app' => $app instanceof App
+                ? [
+                    'name' => $app->name,
+                    'php_version' => $app->php_version,
+                ] : null,
+            'workspace' => $workspace instanceof Workspace
+                ? [
+                    'name' => $workspace->name,
+                    'php_version' => $workspace->effectivePhpVersion(),
+                    'inherits' => ! is_string($workspace->php_version) || $workspace->php_version === '',
+                ] : null,
         ];
     }
 
@@ -407,7 +457,7 @@ final readonly class PhpRuntimeManager
     private function availableImageVersions(Node $node): array
     {
         $tool = $this->phpTool($node);
-        $config = is_array($tool?->config) ? $tool->config : [];
+        $config = is_array($tool?->config) ? $tool?->config : [];
         $images = $config['images'] ?? null;
 
         if (is_array($images)) {
@@ -467,7 +517,7 @@ final readonly class PhpRuntimeManager
     private function rejectedImages(Node $node): array
     {
         $tool = $this->phpTool($node);
-        $config = is_array($tool?->config) ? $tool->config : [];
+        $config = is_array($tool?->config) ? $tool?->config : [];
         $images = $config['images'] ?? null;
 
         if (! is_array($images)) {

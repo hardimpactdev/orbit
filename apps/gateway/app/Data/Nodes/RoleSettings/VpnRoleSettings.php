@@ -63,14 +63,14 @@ final readonly class VpnRoleSettings implements NodeRoleSettings
 
         $publicEndpoint = is_string($settings['public_endpoint'] ?? null)
             ? trim($settings['public_endpoint'])
-            : ($settings['public_endpoint'] ?? null);
+            : $settings['public_endpoint'] ?? null;
         $wireguardCidr = is_string($settings['wireguard_cidr'] ?? null)
             ? trim($settings['wireguard_cidr'])
-            : ($settings['wireguard_cidr'] ?? '10.6.0.0/24');
+            : $settings['wireguard_cidr'] ?? '10.6.0.0/24';
         $wireguardPort = $settings['wireguard_port'] ?? 51820;
         $dnsIp = is_string($settings['dns_ip'] ?? null)
             ? trim($settings['dns_ip'])
-            : ($settings['dns_ip'] ?? '10.6.0.1');
+            : $settings['dns_ip'] ?? '10.6.0.1';
 
         if ($publicEndpoint !== null && ! is_string($publicEndpoint)) {
             throw new InvalidArgumentException('The vpn role requires a valid public endpoint setting.');

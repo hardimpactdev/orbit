@@ -73,7 +73,11 @@ final readonly class E2EPreparedTopology
 
     public static function unsupportedKindMessage(E2ETopologyKind $kind): string
     {
-        return "Prepared topology does not support [{$kind->value}]. Supported kinds are ".self::supportedKindsForHelp().'.';
+        return (
+            "Prepared topology does not support [{$kind->value}]. Supported kinds are "
+            .self::supportedKindsForHelp()
+            .'.'
+        );
     }
 
     /**
@@ -101,7 +105,11 @@ final readonly class E2EPreparedTopology
             $canonical = self::canonicalArtifactRole($role);
 
             if ($canonical === null) {
-                throw new \InvalidArgumentException("Unsupported prepared artifact role [{$role}]. Supported roles are ".implode(', ', self::artifactRoles()).'.');
+                throw new \InvalidArgumentException(
+                    "Unsupported prepared artifact role [{$role}]. Supported roles are "
+                    .implode(', ', self::artifactRoles())
+                    .'.',
+                );
             }
 
             if (in_array($canonical, $selected, true)) {
@@ -157,7 +165,11 @@ final readonly class E2EPreparedTopology
         $canonical = self::canonicalArtifactRole($role);
 
         if ($canonical === null) {
-            throw new \InvalidArgumentException("Unsupported prepared artifact role [{$role}]. Supported roles are ".implode(', ', self::artifactRoles()).'.');
+            throw new \InvalidArgumentException(
+                "Unsupported prepared artifact role [{$role}]. Supported roles are "
+                .implode(', ', self::artifactRoles())
+                .'.',
+            );
         }
 
         return $canonical;
@@ -197,11 +209,15 @@ final readonly class E2EPreparedTopology
 
     private static function websocketTopologyKind(E2ETopologyKind $kind): bool
     {
-        return in_array($kind, [
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-        ], true);
+        return in_array(
+            $kind,
+            [
+                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            ],
+            true,
+        );
     }
 
     /**
@@ -218,13 +234,17 @@ final readonly class E2EPreparedTopology
 
     public static function prodHostsIngressRole(E2ETopologyKind $kind): bool
     {
-        return in_array($kind, [
-            E2ETopologyKind::OperatorGatewayAppdevAppprod,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-            E2ETopologyKind::OperatorGatewayAppprodIngress,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-        ], true);
+        return in_array(
+            $kind,
+            [
+                E2ETopologyKind::OperatorGatewayAppdevAppprod,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                E2ETopologyKind::OperatorGatewayAppprodIngress,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            ],
+            true,
+        );
     }
 
     /**
@@ -298,76 +318,87 @@ final readonly class E2EPreparedTopology
     public static function gatewayRegistryPrunePhp(array $allowedNodeNames, array $allowedRolesByNode = []): string
     {
         $allowedNodeNames = array_values(array_unique($allowedNodeNames));
-        $allowedNodeNamesValue = '['.implode(', ', array_map(
-            static fn (string $name): string => var_export($name, true),
-            $allowedNodeNames,
-        )).']';
-        $allowedRolesByNodeValue = '['.implode(', ', array_map(
-            static fn (string $nodeName, array $roles): string => var_export($nodeName, true).' => ['.implode(', ', array_map(
-                static fn (string $role): string => var_export($role, true),
-                array_values(array_unique($roles)),
-            )).']',
-            array_keys($allowedRolesByNode),
-            array_values($allowedRolesByNode),
-        )).']';
+        $allowedNodeNamesValue =
+            '['
+            .implode(', ', array_map(
+                static fn (string $name): string => var_export($name, true),
+                $allowedNodeNames,
+            ))
+            .']';
+        $allowedRolesByNodeValue =
+            '['
+            .implode(', ', array_map(
+                static fn (string $nodeName, array $roles): string => (
+                    var_export($nodeName, true)
+                    .' => ['
+                    .implode(', ', array_map(
+                        static fn (string $role): string => var_export($role, true),
+                        array_values(array_unique($roles)),
+                    ))
+                    .']'
+                ),
+                array_keys($allowedRolesByNode),
+                array_values($allowedRolesByNode),
+            ))
+            .']';
 
         return <<<PHP
-\$allowedNodeNames = {$allowedNodeNamesValue};
-\$allowedRolesByNode = {$allowedRolesByNodeValue};
+            \$allowedNodeNames = {$allowedNodeNamesValue};
+            \$allowedRolesByNode = {$allowedRolesByNodeValue};
 
-if (in_array('operator-1', \$allowedNodeNames, true)) {
-    \$operatorNode = \\App\\Models\\Node::query()
-        ->where('name', 'operator-1')
-        ->first();
-    \$assignedNodeIds = \\App\\Models\\NodeRoleAssignment::query()
-        ->where('status', 'active')
-        ->distinct()
-        ->pluck('node_id');
-    \$previousOperatorNode = \\App\\Models\\Node::query()
-        ->where('name', '!=', 'operator-1')
-        ->when(\$assignedNodeIds->isNotEmpty(), fn (\$query) => \$query->whereNotIn('id', \$assignedNodeIds))
-        ->orderBy('id')
-        ->first();
+            if (in_array('operator-1', \$allowedNodeNames, true)) {
+                \$operatorNode = \\App\\Models\\Node::query()
+                    ->where('name', 'operator-1')
+                    ->first();
+                \$assignedNodeIds = \\App\\Models\\NodeRoleAssignment::query()
+                    ->where('status', 'active')
+                    ->distinct()
+                    ->pluck('node_id');
+                \$previousOperatorNode = \\App\\Models\\Node::query()
+                    ->where('name', '!=', 'operator-1')
+                    ->when(\$assignedNodeIds->isNotEmpty(), fn (\$query) => \$query->whereNotIn('id', \$assignedNodeIds))
+                    ->orderBy('id')
+                    ->first();
 
-    if (\$operatorNode === null && \$previousOperatorNode !== null) {
-        \$previousOperatorNode->forceFill(['name' => 'operator-1'])->save();
-    }
-}
+                if (\$operatorNode === null && \$previousOperatorNode !== null) {
+                    \$previousOperatorNode->forceFill(['name' => 'operator-1'])->save();
+                }
+            }
 
-foreach (\$allowedRolesByNode as \$nodeName => \$allowedRoles) {
-    \$node = \\App\\Models\\Node::query()
-        ->where('name', \$nodeName)
-        ->first();
+            foreach (\$allowedRolesByNode as \$nodeName => \$allowedRoles) {
+                \$node = \\App\\Models\\Node::query()
+                    ->where('name', \$nodeName)
+                    ->first();
 
-    if (\$node === null) {
-        continue;
-    }
+                if (\$node === null) {
+                    continue;
+                }
 
-    \\App\\Models\\NodeRoleAssignment::query()
-        ->where('node_id', \$node->id)
-        ->where('status', 'active')
-        ->whereNotIn('role', \$allowedRoles)
-        ->delete();
-}
+                \\App\\Models\\NodeRoleAssignment::query()
+                    ->where('node_id', \$node->id)
+                    ->where('status', 'active')
+                    ->whereNotIn('role', \$allowedRoles)
+                    ->delete();
+            }
 
-\$staleNodeIds = \\App\\Models\\Node::query()
-    ->whereNotIn('name', \$allowedNodeNames)
-    ->pluck('id');
+            \$staleNodeIds = \\App\\Models\\Node::query()
+                ->whereNotIn('name', \$allowedNodeNames)
+                ->pluck('id');
 
-if (\$staleNodeIds->isNotEmpty()) {
-    \\App\\Models\\FirewallRule::query()
-        ->whereIn('node_id', \$staleNodeIds)
-        ->delete();
-    \\App\\Models\\ProxyRoute::query()
-        ->whereIn('node_id', \$staleNodeIds)
-        ->delete();
-    \\App\\Models\\App::query()
-        ->whereIn('node_id', \$staleNodeIds)
-        ->delete();
-    \\App\\Models\\Node::query()
-        ->whereIn('id', \$staleNodeIds)
-        ->delete();
-}
-PHP;
+            if (\$staleNodeIds->isNotEmpty()) {
+                \\App\\Models\\FirewallRule::query()
+                    ->whereIn('node_id', \$staleNodeIds)
+                    ->delete();
+                \\App\\Models\\ProxyRoute::query()
+                    ->whereIn('node_id', \$staleNodeIds)
+                    ->delete();
+                \\App\\Models\\App::query()
+                    ->whereIn('node_id', \$staleNodeIds)
+                    ->delete();
+                \\App\\Models\\Node::query()
+                    ->whereIn('id', \$staleNodeIds)
+                    ->delete();
+            }
+            PHP;
     }
 }

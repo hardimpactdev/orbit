@@ -84,7 +84,9 @@ function updateCommandManifest(string $version): array
 function fakeUpdateLatest(string $latest): void
 {
     Http::fake([
-        'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(updateCommandManifest($latest)),
+        'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(updateCommandManifest(
+            $latest,
+        )),
         'https://github.com/hardimpactdev/orbit/releases/download/*' => Http::response(updateCommandManifest($latest)),
         'https://api.github.com/*' => Http::response([], 404),
     ]);
@@ -121,22 +123,33 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toHaveKey('success')
-            ->and($decoded['success']['data']['update']['scope'])->toBe('local')
-            ->and($decoded['success']['data']['update']['target'])->toBe('local')
-            ->and($decoded['success']['data']['update']['status'])->toBe('completed')
-            ->and($decoded['success']['data']['update']['from_version'])->toBe('0.1.130')
-            ->and($decoded['success']['data']['update']['to_version'])->toBe('0.1.131')
-            ->and($decoded['success']['data']['update']['latest_version'])->toBe('0.1.131')
-            ->and($decoded['success']['data']['update']['doctor_issues'])->toBe(0)
-            ->and($decoded['success']['data']['update']['steps'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toHaveKey('success')
+            ->and($decoded['success']['data']['update']['scope'])
+            ->toBe('local')
+            ->and($decoded['success']['data']['update']['target'])
+            ->toBe('local')
+            ->and($decoded['success']['data']['update']['status'])
+            ->toBe('completed')
+            ->and($decoded['success']['data']['update']['from_version'])
+            ->toBe('0.1.130')
+            ->and($decoded['success']['data']['update']['to_version'])
+            ->toBe('0.1.131')
+            ->and($decoded['success']['data']['update']['latest_version'])
+            ->toBe('0.1.131')
+            ->and($decoded['success']['data']['update']['doctor_issues'])
+            ->toBe(0)
+            ->and($decoded['success']['data']['update']['steps'])
+            ->toBe([
                 ['name' => 'check', 'status' => 'completed'],
                 ['name' => 'download', 'status' => 'completed'],
                 ['name' => 'replace', 'status' => 'completed'],
                 ['name' => 'doctor', 'status' => 'completed'],
             ])
-            ->and($this->updater->calls)->toBe(['download', 'replace', 'doctor']);
+            ->and($this->updater->calls)
+            ->toBe(['download', 'replace', 'doctor']);
     });
 
     it('renders the multi-step human progress tree and the version-transition footer', function (): void {
@@ -146,16 +159,21 @@ describe('update', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'update');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Updating Orbit')
-            ->and($output)->toContain('│')
-            ->and($output)->toContain('Checking for updates')
-            ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
-            ->and($output)->toContain('Downloading binary')
-            ->and($output)->toContain('Replacing binary')
-            ->and($output)->toContain('Running doctor')
-            ->and($output)->toContain('Success: Updated from 0.1.130 to 0.1.131')
-            ->and($output)->not->toContain('"success"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Updating Orbit')
+            ->and($output)
+            ->toContain('│')
+            ->and($output)
+            ->toContain('Checking for updates')
+            ->and($output)
+            ->not->toMatch('/Checking for updates\s+Checking\b/')->and($output)->toContain('Downloading binary')->and(
+                $output,
+            )->toContain('Replacing binary')->and($output)->toContain('Running doctor')->and($output)->toContain(
+                'Success: Updated from 0.1.130 to 0.1.131',
+            )->and($output)
+            ->not->toContain('"success"');
     });
 
     it('rejects the legacy final-only progress shape in human mode', function (): void {
@@ -165,13 +183,19 @@ describe('update', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'update');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('│')
-            ->and($output)->toContain('Checking for updates')
-            ->and($output)->toContain('└')
-            ->and($output)->toContain('Success: Updated from 0.1.130 to 0.1.131')
-            ->and($output)->not->toContain('Download binary completed')
-            ->and($output)->not->toMatch('/^Updated local Orbit checkout\.$/m');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('│')
+            ->and($output)
+            ->toContain('Checking for updates')
+            ->and($output)
+            ->toContain('└')
+            ->and($output)
+            ->toContain('Success: Updated from 0.1.130 to 0.1.131')
+            ->and($output)
+            ->not->toContain('Download binary completed')->and($output)
+            ->not->toMatch('/^Updated local Orbit checkout\.$/m');
     });
 
     it('returns a JSON skip envelope when already on the latest release', function (): void {
@@ -182,13 +206,18 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['update']['status'])->toBe('skipped_already')
-            ->and($decoded['success']['data']['update']['latest_version'])->toBe('0.1.131')
-            ->and($decoded['success']['data']['update']['steps'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['update']['status'])
+            ->toBe('skipped_already')
+            ->and($decoded['success']['data']['update']['latest_version'])
+            ->toBe('0.1.131')
+            ->and($decoded['success']['data']['update']['steps'])
+            ->toBe([
                 ['name' => 'check', 'status' => 'skipped'],
             ])
-            ->and($this->updater->calls)->toBe([]);
+            ->and($this->updater->calls)
+            ->toBe([]);
     });
 
     it('renders the already-installed skip footer in human mode', function (): void {
@@ -197,13 +226,18 @@ describe('update', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'update');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('│')
-            ->and($output)->toContain('Checking for updates')
-            ->and($output)->not->toMatch('/Checking for updates\s+Checking\b/')
-            ->and($output)->toContain('Skipped: 0.1.131 is already installed')
-            ->and($output)->not->toContain('Downloading binary')
-            ->and($output)->not->toContain('"success"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('│')
+            ->and($output)
+            ->toContain('Checking for updates')
+            ->and($output)
+            ->not->toMatch('/Checking for updates\s+Checking\b/')->and($output)->toContain(
+                'Skipped: 0.1.131 is already installed',
+            )->and($output)
+            ->not->toContain('Downloading binary')->and($output)
+            ->not->toContain('"success"');
     });
 
     it('returns a JSON skip envelope when the gateway is still behind', function (): void {
@@ -215,13 +249,18 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['update']['status'])->toBe('skipped_gateway_behind')
-            ->and($decoded['success']['data']['update']['latest_version'])->toBe('0.1.131')
-            ->and($decoded['success']['data']['update']['steps'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['update']['status'])
+            ->toBe('skipped_gateway_behind')
+            ->and($decoded['success']['data']['update']['latest_version'])
+            ->toBe('0.1.131')
+            ->and($decoded['success']['data']['update']['steps'])
+            ->toBe([
                 ['name' => 'check', 'status' => 'completed'],
             ])
-            ->and($this->updater->calls)->toBe([]);
+            ->and($this->updater->calls)
+            ->toBe([]);
     });
 
     it('renders the gateway-first skip footer in human mode', function (): void {
@@ -231,12 +270,17 @@ describe('update', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'update');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Checking for updates')
-            ->and($output)->toContain('Done: new version available, 0.1.131')
-            ->and($output)->toContain('Skipped: please update your gateway first')
-            ->and($output)->not->toContain('Downloading binary')
-            ->and($output)->not->toContain('"success"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Checking for updates')
+            ->and($output)
+            ->toContain('Done: new version available, 0.1.131')
+            ->and($output)
+            ->toContain('Skipped: please update your gateway first')
+            ->and($output)
+            ->not->toContain('Downloading binary')->and($output)
+            ->not->toContain('"success"');
     });
 
     it('returns a JSON failure envelope when the version check cannot resolve the latest release', function (): void {
@@ -250,10 +294,14 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('local_update_check_failed')
-            ->and($decoded['error']['meta'])->toBe(['failed_step' => 'check'])
-            ->and($this->updater->calls)->toBe([]);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('local_update_check_failed')
+            ->and($decoded['error']['meta'])
+            ->toBe(['failed_step' => 'check'])
+            ->and($this->updater->calls)
+            ->toBe([]);
     });
 
     it('renders local_checkout_unavailable when the install root does not exist', function (): void {
@@ -263,11 +311,16 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('local_checkout_unavailable')
-            ->and($decoded['error']['message'])->toBe('Local Orbit checkout cannot be updated.')
-            ->and($decoded['error']['meta'])->toBe(['path' => '/nonexistent/orbit-update-cmd-test'])
-            ->and($this->updater->calls)->toBe([]);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('local_checkout_unavailable')
+            ->and($decoded['error']['message'])
+            ->toBe('Local Orbit checkout cannot be updated.')
+            ->and($decoded['error']['meta'])
+            ->toBe(['path' => '/nonexistent/orbit-update-cmd-test'])
+            ->and($this->updater->calls)
+            ->toBe([]);
     });
 
     it('renders local_update_failed with binary update output', function (): void {
@@ -287,11 +340,16 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('local_update_failed')
-            ->and($decoded['error']['message'])->toBe('Failed to update local Orbit checkout.')
-            ->and($decoded['error']['meta'])->toBe(['failed_step' => 'download'])
-            ->and($decoded['error']['data'])->toBe(['output' => 'binary download failed']);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('local_update_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('Failed to update local Orbit checkout.')
+            ->and($decoded['error']['meta'])
+            ->toBe(['failed_step' => 'download'])
+            ->and($decoded['error']['data'])
+            ->toBe(['output' => 'binary download failed']);
     });
 
     it('renders failure prose and captured output in human mode', function (): void {
@@ -309,10 +367,14 @@ describe('update', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'update');
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Failed to update local Orbit checkout.')
-            ->and($output)->toContain('binary verify failed')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Failed to update local Orbit checkout.')
+            ->and($output)
+            ->toContain('binary verify failed')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('reports the replace step as completed in JSON when the low-level move was skipped', function (): void {
@@ -331,8 +393,10 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['update']['steps'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['update']['steps'])
+            ->toBe([
                 ['name' => 'check', 'status' => 'completed'],
                 ['name' => 'download', 'status' => 'completed'],
                 ['name' => 'replace', 'status' => 'completed'],
@@ -354,10 +418,14 @@ describe('update', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'update');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Replacing binary')
-            ->and($output)->toMatch('/Replacing binary\s+Done\b/')
-            ->and($output)->not->toMatch('/Replacing binary\s+Skipped\b/');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Replacing binary')
+            ->and($output)
+            ->toMatch('/Replacing binary\s+Done\b/')
+            ->and($output)
+            ->not->toMatch('/Replacing binary\s+Skipped\b/');
     });
 
     it('stops at check as already installed on a later run after replacement completed', function (): void {
@@ -381,12 +449,14 @@ describe('update', function (): void {
 
         [$secondExitCode, $secondOutput] = runCommand($this, 'update');
 
-        expect($secondExitCode)->toBe(0)
-            ->and($secondOutput)->toContain('Skipped: 0.1.131 is already installed')
-            ->and($secondOutput)->not->toContain('Downloading binary')
-            ->and($secondOutput)->not->toContain('Replacing binary')
-            ->and($secondOutput)->not->toContain('Running doctor')
-            ->and($this->updater->calls)->toBe([]);
+        expect($secondExitCode)
+            ->toBe(0)
+            ->and($secondOutput)
+            ->toContain('Skipped: 0.1.131 is already installed')
+            ->and($secondOutput)
+            ->not->toContain('Downloading binary')->and($secondOutput)
+            ->not->toContain('Replacing binary')->and($secondOutput)
+            ->not->toContain('Running doctor')->and($this->updater->calls)->toBe([]);
     });
 
     it('surfaces the doctor issue count without failing the update in JSON mode', function (): void {
@@ -400,8 +470,11 @@ describe('update', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['update']['status'])->toBe('completed')
-            ->and($decoded['success']['data']['update']['doctor_issues'])->toBe(2);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['update']['status'])
+            ->toBe('completed')
+            ->and($decoded['success']['data']['update']['doctor_issues'])
+            ->toBe(2);
     });
 });

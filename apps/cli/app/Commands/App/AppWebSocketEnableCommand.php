@@ -22,7 +22,12 @@ final class AppWebSocketEnableCommand extends AppGatewayCommand
         parent::configure();
 
         $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
-        $this->addOption('host', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Public WebSocket host to bind');
+        $this->addOption(
+            'host',
+            null,
+            InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+            'Public WebSocket host to bind',
+        );
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 

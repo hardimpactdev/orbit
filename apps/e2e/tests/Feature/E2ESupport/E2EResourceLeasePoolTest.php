@@ -20,21 +20,26 @@ it('retains resource lease metadata until explicit release', function (): void {
 
     $payload = json_decode((string) file_get_contents($retained->path()), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($retained->metadata())->toMatchArray([
-        'backend' => 'docker',
-        'host' => 'sidecar1',
-        'slot' => 1,
-        'path' => $retained->path(),
-        'owner' => 'manual-debug-session',
-        'retained' => true,
-    ])->and($payload)->toMatchArray([
-        'backend' => 'docker',
-        'host' => 'sidecar1',
-        'slot' => 1,
-        'owner' => 'manual-debug-session',
-        'pid' => null,
-        'retained' => true,
-    ])->and($payload['retained_at'])->toBeInt();
+    expect($retained->metadata())
+        ->toMatchArray([
+            'backend' => 'docker',
+            'host' => 'sidecar1',
+            'slot' => 1,
+            'path' => $retained->path(),
+            'owner' => 'manual-debug-session',
+            'retained' => true,
+        ])
+        ->and($payload)
+        ->toMatchArray([
+            'backend' => 'docker',
+            'host' => 'sidecar1',
+            'slot' => 1,
+            'owner' => 'manual-debug-session',
+            'pid' => null,
+            'retained' => true,
+        ])
+        ->and($payload['retained_at'])
+        ->toBeInt();
 
     expect($pool->snapshot('docker', ['sidecar1' => 1]))->toMatchArray([
         ['host' => 'sidecar1', 'slot' => 1, 'leased' => true],

@@ -70,8 +70,12 @@ final class StepTree
      * @param  list<StepDefinition>  $steps
      * @param  string|Closure(): string  $doneFooter
      */
-    public function run(string $title, array $steps, string|Closure $doneFooter, ?string $failFooter = null): StepTreeResult
-    {
+    public function run(
+        string $title,
+        array $steps,
+        string|Closure $doneFooter,
+        ?string $failFooter = null,
+    ): StepTreeResult {
         [$labels, $doneLabels] = $this->prepare($title, $steps);
         $total = count($steps);
         $results = [];
@@ -80,7 +84,6 @@ final class StepTree
             $this->startSpinner([$index], $total, $labels);
 
             try {
-                /** @var callable(): mixed $run */
                 $run = $step['run'];
                 $result = $run();
             } catch (Throwable $exception) {
@@ -89,7 +92,11 @@ final class StepTree
                     $this->output,
                     $index,
                     $total,
-                    $this->summary->failure($doneLabels[$index], $this->labelWidth, $this->throwableMessage($exception)),
+                    $this->summary->failure(
+                        $doneLabels[$index],
+                        $this->labelWidth,
+                        $this->throwableMessage($exception),
+                    ),
                 );
                 $this->finishFooter($failFooter ?? $this->throwableMessage($exception), success: false);
 
@@ -122,8 +129,13 @@ final class StepTree
      * @param  Closure(): mixed  $work
      * @param  string|Closure(): string  $doneFooter
      */
-    public function runOperation(string $title, array $phases, Closure $work, string|Closure $doneFooter, ?string $failFooter = null): StepTreeResult
-    {
+    public function runOperation(
+        string $title,
+        array $phases,
+        Closure $work,
+        string|Closure $doneFooter,
+        ?string $failFooter = null,
+    ): StepTreeResult {
         [$labels, $doneLabels] = $this->prepare($title, $phases);
         $total = count($phases);
         $indices = $total > 0 ? range(0, $total - 1) : [];
@@ -161,9 +173,9 @@ final class StepTree
      */
     private function prepare(string $title, array $steps): array
     {
-        $labels = array_map(static fn (array $step): string => (string) ($step['label'] ?? ''), $steps);
+        $labels = array_map(static fn (array $step): string => $step['label'], $steps);
         $doneLabels = array_map(
-            static fn (array $step): string => (string) ($step['doneLabel'] ?? $step['label'] ?? ''),
+            static fn (array $step): string => $step['doneLabel'] ?? $step['label'],
             $steps,
         );
 
@@ -246,7 +258,7 @@ final class StepTree
                     exit(0);
                 }
 
-                usleep($this->frameIntervalUs);
+                usleep(max(0, $this->frameIntervalUs));
                 $this->paintActive($indices, $total, $labels);
             }
         }
@@ -265,6 +277,7 @@ final class StepTree
         posix_kill($this->tickerPid, SIGTERM);
 
         if (function_exists('pcntl_waitpid')) {
+            $status = null;
             pcntl_waitpid($this->tickerPid, $status);
         }
 

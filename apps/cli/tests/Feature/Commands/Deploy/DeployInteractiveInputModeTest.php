@@ -16,16 +16,21 @@ describe('deploy interactive input mode', function (): void {
             ],
         ]));
 
-        $this->artisan('deploy:step-add')
+        $this
+            ->artisan('deploy:step-add')
             ->expectsQuestion('App', 'docs')
             ->expectsQuestion('Command', 'php artisan migrate --force')
             ->expectsOutputToContain('step')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && str_contains($request->url(), '/api/deploy/steps')
-            && $request->data()['app'] === 'docs'
-            && $request->data()['command'] === 'php artisan migrate --force');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && str_contains($request->url(), '/api/deploy/steps')
+                && $request->data()['app'] === 'docs'
+                && $request->data()['command'] === 'php artisan migrate --force'
+            ),
+        );
     });
 
     it('prompts for app before running a deployment', function (): void {
@@ -37,17 +42,22 @@ describe('deploy interactive input mode', function (): void {
             ],
         ]));
 
-        $this->artisan('deploy:run')
+        $this
+            ->artisan('deploy:run')
             ->expectsQuestion('App', 'docs')
             ->expectsOutputToContain('Deployment completed')
             ->assertSuccessful();
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && str_contains($request->url(), '/api/deploy/run')
-            && $request->data() === [
-                'app' => 'docs',
-                'detach' => false,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && str_contains($request->url(), '/api/deploy/run')
+                && $request->data() === [
+                    'app' => 'docs',
+                    'detach' => false,
+                ]
+            ),
+        );
     });
 
     it('prompts for app and step before removing with confirmation', function (): void {
@@ -59,19 +69,24 @@ describe('deploy interactive input mode', function (): void {
             ],
         ]));
 
-        $this->artisan('deploy:step-remove')
+        $this
+            ->artisan('deploy:step-remove')
             ->expectsQuestion('App', 'docs')
             ->expectsQuestion('Step', 'Run migrations')
             ->expectsConfirmation("Remove deployment step 'Run migrations' from 'docs'?", 'yes')
             ->expectsOutputToContain('step')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/deploy/steps/Run%20migrations')
-            && $request->data() === [
-                'app' => 'docs',
-                'destructive_consent' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && str_contains($request->url(), '/api/deploy/steps/Run%20migrations')
+                && $request->data() === [
+                    'app' => 'docs',
+                    'destructive_consent' => true,
+                ]
+            ),
+        );
     });
 
     it('prompts for app and run before reading deployment logs', function (): void {
@@ -89,7 +104,8 @@ describe('deploy interactive input mode', function (): void {
             'lines' => 100,
         ]));
 
-        $this->artisan('deploy:log')
+        $this
+            ->artisan('deploy:log')
             ->expectsQuestion('App', 'docs')
             ->expectsQuestion('Run', '42')
             ->expectsOutputToContain('deployed')
@@ -98,9 +114,11 @@ describe('deploy interactive input mode', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/log/42')
-                && str_contains($url, 'app=docs');
+                && str_contains($url, 'app=docs')
+            );
         });
     });
 });

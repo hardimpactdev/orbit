@@ -87,10 +87,8 @@ final readonly class OperationToken
         if (
             ! ctype_digit($decoded)
             || strlen($decoded) > strlen((string) PHP_INT_MAX)
-            || (
-                strlen($decoded) === strlen((string) PHP_INT_MAX)
-                && strcmp($decoded, (string) PHP_INT_MAX) > 0
-            )
+            || strlen($decoded) === strlen((string) PHP_INT_MAX)
+            && strcmp($decoded, (string) PHP_INT_MAX) > 0
         ) {
             throw new InvalidArgumentException("Operation token {$field} is malformed.");
         }
@@ -120,15 +118,13 @@ final readonly class OperationToken
 
     private static function isBase64Url(string $value): bool
     {
-        return $value !== ''
-            && preg_match('/^[A-Za-z0-9_-]+$/', $value) === 1
-            && strlen($value) % 4 !== 1;
+        return $value !== '' && preg_match('/^[A-Za-z0-9_-]+$/', $value) === 1 && (strlen($value) % 4) !== 1;
     }
 
     private static function withBase64Padding(string $value): string
     {
         $base64 = strtr($value, '-_', '+/');
-        $padding = (4 - strlen($base64) % 4) % 4;
+        $padding = (4 - (strlen($base64) % 4)) % 4;
 
         return $base64.str_repeat('=', $padding);
     }

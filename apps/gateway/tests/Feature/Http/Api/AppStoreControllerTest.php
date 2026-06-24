@@ -55,8 +55,12 @@ function grantAppStoreAccess(Node $caller, Node $appNode, array $permissions = [
     ]);
 }
 
-function assignAppStoreRole(Node $node, string $role, string $status = 'active', array $settings = []): NodeRoleAssignment
-{
+function assignAppStoreRole(
+    Node $node,
+    string $role,
+    string $status = 'active',
+    array $settings = [],
+): NodeRoleAssignment {
     return NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
@@ -79,14 +83,22 @@ describe('AppStoreController', function (): void {
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'root' => 'public',
-            'php_version' => '8.4',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'root' => 'public',
+                'php_version' => '8.4',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'created')
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
@@ -97,8 +109,12 @@ describe('AppStoreController', function (): void {
             ->assertJsonPath('success.data.app.worker_config', null)
             ->assertJsonPath('success.meta.warnings', []);
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and(collect($remoteShell->runs)->pluck('script')->contains(fn (string $script): bool => str_contains($script, '/etc/orbit/ca/root.crt')))->toBeFalse();
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeTrue()
+            ->and(collect($remoteShell->runs)
+                ->pluck('script')
+                ->contains(fn (string $script): bool => str_contains($script, '/etc/orbit/ca/root.crt')))
+            ->toBeFalse();
     });
 
     it('stores the opt-in HTTPS runtime proxy transport for new apps', function (): void {
@@ -113,15 +129,23 @@ describe('AppStoreController', function (): void {
 
         app()->instance(RemoteShell::class, new AppStoreRecordingRemoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'root' => 'public',
-            'php_version' => '8.4',
-            'runtime_proxy_transport' => 'https',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'root' => 'public',
+                'php_version' => '8.4',
+                'runtime_proxy_transport' => 'https',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app.runtime', 'php')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'https');
 
@@ -142,18 +166,25 @@ describe('AppStoreController', function (): void {
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'runtime_proxy_transport' => 'ftp',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'runtime_proxy_transport' => 'ftp',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime_proxy_transport');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     });
 
     it('rejects app creation when the caller lacks app:new on the target app node', function (): void {
@@ -175,18 +206,25 @@ describe('AppStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:new')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     });
 
     it('allows database-role callers when app:new is granted on the target app node', function (): void {
@@ -203,19 +241,29 @@ describe('AppStoreController', function (): void {
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'root' => 'public',
-            'php_version' => '8.5',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'root' => 'public',
+                'php_version' => '8.5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'created')
             ->assertJsonPath('success.data.app.name', 'docs');
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->runs)->not->toBe([]);
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeTrue()
+            ->and($remoteShell->runs)
+            ->not->toBe([]);
     });
 
     it('rejects app creation before remote work when the proxy route domain is already registered', function (): void {
@@ -239,17 +287,24 @@ describe('AppStoreController', function (): void {
         $remoteShell = new AppStoreRecordingRemoteShell;
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertConflict()
+        $response
+            ->assertConflict()
             ->assertJsonPath('error.code', 'proxy.domain_conflict')
             ->assertJsonPath('error.meta.domain', 'docs.test');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->runs)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->runs)->toBe([]);
     });
 
     it('reports github transport when github source creation fails', function (): void {
@@ -269,19 +324,29 @@ describe('AppStoreController', function (): void {
         ));
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'repository' => 'hardimpact/docs',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'repository' => 'hardimpact/docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertServerError()
+        $response
+            ->assertServerError()
             ->assertJsonPath('error.code', 'app.source_creation_failed')
             ->assertJsonPath('error.meta.reason', 'permission denied')
             ->assertJsonPath('error.meta.transport', 'github');
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeFalse()
-            ->and($remoteShell->runs[0]['script'])->toContain("gh repo clone 'hardimpact/docs'");
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeFalse()
+            ->and($remoteShell->runs[0]['script'])
+            ->toContain("gh repo clone 'hardimpact/docs'");
     });
 
     it('creates production app routes on ingress and backend app nodes', function (): void {
@@ -318,15 +383,23 @@ describe('AppStoreController', function (): void {
         app()->instance(RemoteShell::class, $remoteShell);
         app()->instance(SiteCertificateInstaller::class, new SiteCertificateInstallerFake);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'domain' => 'docs.example.com',
-            'root' => 'public',
-            'php_version' => '8.5',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'domain' => 'docs.example.com',
+                'root' => 'public',
+                'php_version' => '8.5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app.url', 'https://docs.example.com')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.domain_inactive');
 
@@ -334,42 +407,151 @@ describe('AppStoreController', function (): void {
 
         $route = ProxyRoute::query()->where('domain', 'docs.example.com')->firstOrFail();
 
-        expect($route->node_id)->toBe($ingress->id)
-            ->and($route->config['placement'])->toBe('ingress')
-            ->and($route->config['ingress_node_id'])->toBe($ingress->id)
-            ->and($route->config['router_upstream'])->toBe([
+        expect($route->node_id)
+            ->toBe($ingress->id)
+            ->and($route->config['placement'])
+            ->toBe('ingress')
+            ->and($route->config['ingress_node_id'])
+            ->toBe($ingress->id)
+            ->and($route->config['router_upstream'])
+            ->toBe([
                 'node_id' => $router->id,
                 'node' => 'gateway-1',
                 'url' => 'http://10.6.0.2:80',
             ])
-            ->and($route->config['router_artifact']['node_id'])->toBe($router->id)
-            ->and($route->config['router_artifact']['source_hash'])->toHaveLength(64)
-            ->and($route->config['router_backend_pool'])->toBe([
+            ->and($route->config['router_artifact']['node_id'])
+            ->toBe($router->id)
+            ->and($route->config['router_artifact']['source_hash'])
+            ->toHaveLength(64)
+            ->and($route->config['router_backend_pool'])
+            ->toBe([
                 [
                     'node_id' => $targetNode->id,
                     'node' => 'app-1',
                     'url' => 'http://10.6.0.21:8081',
                 ],
             ])
-            ->and($route->config['backend_artifacts'][0]['node_id'])->toBe($targetNode->id)
-            ->and($route->config['backend_artifacts'][0]['bind'])->toBe('10.6.0.21')
-            ->and($route->config['backend_artifacts'][0]['document_root'])->toBe('/home/docs/app/public')
-            ->and($route->config['backend_artifacts'][0]['runtime_upstream'])->toBe('http://orbit-app-docs:8080')
-            ->and($route->config['backend_artifacts'][0]['php_socket'])->toBeNull()
-            ->and($route->config['backend_artifacts'][0]['source_hash'])->toHaveLength(64)
-            ->and($route->source_hash)->toHaveLength(64)
-            ->and(collect($remoteShell->runs)->pluck('node')->all())->toContain($ingress->id, $router->id, $targetNode->id)
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $ingress->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $ingress->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $ingress->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $router->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $targetNode->id && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $targetNode->id && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->contains(fn (array $run): bool => $run['node'] === $targetNode->id && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->pluck('script')->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/docs.example.com.caddy')))->toBeTrue()
-            ->and(collect($remoteShell->runs)->pluck('script')->contains(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/docs.example.com.backend.caddy')))->toBeTrue();
+            ->and($route->config['backend_artifacts'][0]['node_id'])
+            ->toBe($targetNode->id)
+            ->and($route->config['backend_artifacts'][0]['bind'])
+            ->toBe('10.6.0.21')
+            ->and($route->config['backend_artifacts'][0]['document_root'])
+            ->toBe('/home/docs/app/public')
+            ->and($route->config['backend_artifacts'][0]['runtime_upstream'])
+            ->toBe('http://orbit-app-docs:8080')
+            ->and($route->config['backend_artifacts'][0]['php_socket'])
+            ->toBeNull()
+            ->and($route->config['backend_artifacts'][0]['source_hash'])
+            ->toHaveLength(64)
+            ->and($route->source_hash)
+            ->toHaveLength(64)
+            ->and(collect($remoteShell->runs)->pluck('node')->all())
+            ->toContain($ingress->id, $router->id, $targetNode->id)
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $ingress->id
+                            && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $ingress->id
+                            && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $ingress->id
+                            && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $router->id
+                            && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $router->id
+                            && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $router->id
+                            && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $targetNode->id
+                            && str_contains($run['script'], 'sudo test -f /etc/caddy/Caddyfile')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $targetNode->id
+                            && str_contains($run['script'], 'sudo install -d -m 0755 /etc/caddy')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(
+                collect($remoteShell->runs)
+                    ->contains(
+                        fn (array $run): bool => (
+                            $run['node'] === $targetNode->id
+                            && str_contains($run['script'], 'sudo tee /etc/caddy/Caddyfile >/dev/null')
+                        ),
+                    ),
+            )
+            ->toBeTrue()
+            ->and(collect($remoteShell->runs)
+                ->pluck('script')
+                ->contains(
+                    fn (string $script): bool => str_contains($script, '/etc/caddy/sites/docs.example.com.caddy'),
+                ))
+            ->toBeTrue()
+            ->and(collect($remoteShell->runs)
+                ->pluck('script')
+                ->contains(
+                    fn (string $script): bool => str_contains(
+                        $script,
+                        '/etc/caddy/sites/docs.example.com.backend.caddy',
+                    ),
+                ))
+            ->toBeTrue();
     });
 });
 
@@ -402,11 +584,13 @@ final class AppStoreRecordingRemoteShell implements RemoteShell
             }
         }
 
-        return $this->result ?? new RemoteShellResult(
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            durationMs: 1,
+        return (
+            $this->result ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            )
         );
     }
 }

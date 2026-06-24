@@ -30,7 +30,7 @@ final class FetchGatewayRootCa implements FetchesGatewayRootCa
         if (is_string($rootCa) && str_starts_with($rootCa, '{')) {
             $inner = json_decode($rootCa, true);
             $rootCa = is_array($inner)
-                ? ($inner['data']['root_ca'] ?? $inner['success']['data']['root_ca'] ?? null)
+                ? $inner['data']['root_ca'] ?? $inner['success']['data']['root_ca'] ?? null
                 : null;
         }
 
@@ -38,7 +38,10 @@ final class FetchGatewayRootCa implements FetchesGatewayRootCa
             throw new RuntimeException("Gateway at {$gatewayIp} returned an invalid or empty CA.");
         }
 
-        if (! str_contains($rootCa, '-----BEGIN CERTIFICATE-----') || ! str_contains($rootCa, '-----END CERTIFICATE-----')) {
+        if (
+            ! str_contains($rootCa, '-----BEGIN CERTIFICATE-----')
+            || ! str_contains($rootCa, '-----END CERTIFICATE-----')
+        ) {
             throw new RuntimeException("Gateway at {$gatewayIp} returned non-PEM content.");
         }
 
@@ -77,9 +80,11 @@ final class FetchGatewayRootCa implements FetchesGatewayRootCa
     {
         $parts = parse_url($location);
 
-        return ($parts['scheme'] ?? null) === 'https'
+        return (
+            ($parts['scheme'] ?? null) === 'https'
             && ($parts['host'] ?? null) === $gatewayIp
-            && ($parts['path'] ?? null) === '/api/ca/root';
+            && ($parts['path'] ?? null) === '/api/ca/root'
+        );
     }
 
     /**

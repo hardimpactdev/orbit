@@ -102,7 +102,7 @@ class App extends Model
 
     public function runtimeKind(): AppRuntimeKind
     {
-        $runtime = $this->getRawOriginal('runtime') ?? ($this->attributes['runtime'] ?? null);
+        $runtime = $this->getRawOriginal('runtime') ?? $this->attributes['runtime'] ?? null;
 
         if ($runtime instanceof AppRuntimeKind) {
             return $runtime;
@@ -205,12 +205,15 @@ class App extends Model
      */
     public function databaseConnections(): BelongsToMany
     {
-        return $this->belongsToMany(
-            related: DatabaseConnection::class,
-            table: 'database_connection_targets',
-            foreignPivotKey: 'app_id',
-            relatedPivotKey: 'database_connection_id',
-        )->withPivot('env_prefix')->withTimestamps();
+        return $this
+            ->belongsToMany(
+                related: DatabaseConnection::class,
+                table: 'database_connection_targets',
+                foreignPivotKey: 'app_id',
+                relatedPivotKey: 'database_connection_id',
+            )
+            ->withPivot('env_prefix')
+            ->withTimestamps();
     }
 
     /**
@@ -245,7 +248,7 @@ class App extends Model
 
         $this->loadMissing('node');
 
-        $tld = is_string($this->node?->tld) ? trim($this->node->tld, '.') : '';
+        $tld = is_string($this->node?->tld) ? trim($this->node?->tld, '.') : '';
 
         if ($tld === '') {
             return "https://{$this->name}";
@@ -256,12 +259,12 @@ class App extends Model
 
     public function documentRootPath(): string
     {
-        $root = trim((string) $this->document_root, '/');
+        $root = trim($this->document_root, '/');
 
         if ($root === '') {
-            return rtrim((string) $this->path, '/');
+            return rtrim($this->path, '/');
         }
 
-        return Str::finish(rtrim((string) $this->path, '/'), '/').$root;
+        return Str::finish(rtrim($this->path, '/'), '/').$root;
     }
 }

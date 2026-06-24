@@ -13,60 +13,60 @@ function workspaceRemoveSeed(E2ETopologyHarness $topology, string $workspaceName
     $workspaceNameValue = var_export($workspaceName, true);
     $workspacePathValue = var_export($workspacePath, true);
     $script = <<<PHP
-\$nodes = \\App\\Models\\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        \$nodes = \\App\\Models\\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as \$name) {
-    if (! \$nodes->has(\$name)) {
-        throw new \\RuntimeException("Missing prepared node [{\$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as \$name) {
+            if (! \$nodes->has(\$name)) {
+                throw new \\RuntimeException("Missing prepared node [{\$name}].");
+            }
+        }
 
-\\Illuminate\\Support\\Facades\\DB::table('workspace_run_steps')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('workspace_runs')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
-\\App\\Models\\App::query()->delete();
-\\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
-    'consumer_node_id' => \$nodes->get('operator-1'),
-    'serving_node_id' => \$nodes->get('app-dev-1'),
-    'permissions' => json_encode(['workspace:remove'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \\Illuminate\\Support\\Facades\\DB::table('workspace_run_steps')->delete();
+        \\Illuminate\\Support\\Facades\\DB::table('workspace_runs')->delete();
+        \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
+        \\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
+        \\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
+        \\App\\Models\\App::query()->delete();
+        \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
+        \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
+            'consumer_node_id' => \$nodes->get('operator-1'),
+            'serving_node_id' => \$nodes->get('app-dev-1'),
+            'permissions' => json_encode(['workspace:remove'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-\$app = \\App\\Models\\App::query()->create([
-    'name' => 'docs',
-    'node_id' => \$nodes->get('app-dev-1'),
-    'path' => '/home/orbit/apps/docs',
-    'document_root' => 'public',
-    'php_version' => '8.5',
-]);
+        \$app = \\App\\Models\\App::query()->create([
+            'name' => 'docs',
+            'node_id' => \$nodes->get('app-dev-1'),
+            'path' => '/home/orbit/apps/docs',
+            'document_root' => 'public',
+            'php_version' => '8.5',
+        ]);
 
-\$workspace = \\App\\Models\\Workspace::query()->create([
-    'app_id' => \$app->id,
-    'name' => {$workspaceNameValue},
-    'path' => {$workspacePathValue},
-    'php_version' => null,
-    'lifecycle_status' => \\App\\Enums\\WorkspaceLifecycleStatus::Expected,
-]);
+        \$workspace = \\App\\Models\\Workspace::query()->create([
+            'app_id' => \$app->id,
+            'name' => {$workspaceNameValue},
+            'path' => {$workspacePathValue},
+            'php_version' => null,
+            'lifecycle_status' => \\App\\Enums\\WorkspaceLifecycleStatus::Expected,
+        ]);
 
-\\App\\Models\\ProxyRoute::query()->create([
-    'node_id' => \$nodes->get('app-dev-1'),
-    'domain' => {$workspaceNameValue}.'.docs.test',
-    'app_id' => \$app->id,
-    'workspace_id' => \$workspace->id,
-    'owner_type' => 'workspace',
-    'kind' => 'workspace',
-    'source_hash' => str_repeat('b', 64),
-]);
+        \\App\\Models\\ProxyRoute::query()->create([
+            'node_id' => \$nodes->get('app-dev-1'),
+            'domain' => {$workspaceNameValue}.'.docs.test',
+            'app_id' => \$app->id,
+            'workspace_id' => \$workspace->id,
+            'owner_type' => 'workspace',
+            'kind' => 'workspace',
+            'source_hash' => str_repeat('b', 64),
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -86,7 +86,12 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-remove');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         workspaceRemoveSeed($topology, $workspaceName, $workspacePath);
 
@@ -108,16 +113,23 @@ it('removes a workspace from a non-gateway caller through the gateway api', func
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($payload['success']['data']['name'])->toBe($workspaceName)
-            ->and($payload['success']['data']['app'])->toBe('docs')
-            ->and($payload['success']['data']['action'])->toBe('removed')
-            ->and($payload['success']['data']['proxy_routes_removed'])->toBe(1)
-            ->and($payload['success']['data']['worktree_removed'])->toBeFalse()
-            ->and($payload['success']['meta']['kept_files'])->toBeTrue();
+        expect($payload['success']['data']['name'])
+            ->toBe($workspaceName)
+            ->and($payload['success']['data']['app'])
+            ->toBe('docs')
+            ->and($payload['success']['data']['action'])
+            ->toBe('removed')
+            ->and($payload['success']['data']['proxy_routes_removed'])
+            ->toBe(1)
+            ->and($payload['success']['data']['worktree_removed'])
+            ->toBeFalse()
+            ->and($payload['success']['meta']['kept_files'])
+            ->toBeTrue();
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->exists(),
                 'route_count' => \\App\\Models\\ProxyRoute::query()->where('domain', '{$workspaceName}.docs.test')->count(),
                 'app' => \\App\\Models\\App::query()->where('name', 'docs')->exists(),

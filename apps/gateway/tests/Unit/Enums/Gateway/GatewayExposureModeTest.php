@@ -14,5 +14,8 @@ it('parses supported gateway exposure modes', function (string $input, string $v
 
 it('rejects unsupported gateway exposure modes', function (): void {
     expect(fn () => GatewayExposureMode::parse('public-router'))
-        ->toThrow(InvalidArgumentException::class, 'Unsupported gateway exposure mode [public-router]. Expected router-colocated or gateway-direct.');
+        ->toThrow(
+            InvalidArgumentException::class,
+            'Unsupported gateway exposure mode [public-router]. Expected router-colocated or gateway-direct.',
+        );
 });

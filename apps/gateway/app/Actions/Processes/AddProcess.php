@@ -62,20 +62,28 @@ final readonly class AddProcess
         }
 
         if ($image !== null && $resolvedRuntime === ProcessRuntime::Systemd) {
-            throw new GatewayApiException('Process service image overrides require a Docker runtime.', 'validation_failed', [
-                'field' => 'image',
-                'value' => $image,
-                'reason' => 'process_service_image_requires_docker_runtime',
-            ]);
+            throw new GatewayApiException(
+                'Process service image overrides require a Docker runtime.',
+                'validation_failed',
+                [
+                    'field' => 'image',
+                    'value' => $image,
+                    'reason' => 'process_service_image_requires_docker_runtime',
+                ],
+            );
         }
 
         if ($service !== null) {
             if (! $context->owner instanceof Node) {
-                throw new GatewayApiException('Managed services are only valid for node-owned service processes.', 'validation_failed', [
-                    'field' => 'service',
-                    'value' => $service,
-                    'reason' => 'process_service_requires_node_owned_process',
-                ]);
+                throw new GatewayApiException(
+                    'Managed services are only valid for node-owned service processes.',
+                    'validation_failed',
+                    [
+                        'field' => 'service',
+                        'value' => $service,
+                        'reason' => 'process_service_requires_node_owned_process',
+                    ],
+                );
             }
 
             if ($tool !== null) {
@@ -110,7 +118,11 @@ final readonly class AddProcess
         }
 
         if ($context->ownerProcesses()->where('name', $name)->exists()) {
-            throw new GatewayApiException("Process '{$name}' already exists for {$context->label()}.", 'process.name_collision', $context->errorMeta($name));
+            throw new GatewayApiException(
+                "Process '{$name}' already exists for {$context->label()}.",
+                'process.name_collision',
+                $context->errorMeta($name),
+            );
         }
 
         if ($runtimeConfig !== []) {
@@ -121,22 +133,34 @@ final readonly class AddProcess
 
         $replacedContainers = $this->removeReplacementContainers($context, $replaceContainers);
 
-        $process = DB::transaction(function () use ($context, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime, $tool, $runtimeConfig): Process {
-            $maxOrder = $context->ownerProcesses()
+        $process = DB::transaction(function () use (
+            $context,
+            $name,
+            $command,
+            $restartPolicy,
+            $crashNotification,
+            $resolvedRuntime,
+            $tool,
+            $runtimeConfig,
+        ): Process {
+            $maxOrder = $context
+                ->ownerProcesses()
                 ->lockForUpdate()
                 ->max('sort_order') ?? 0;
 
-            $process = $context->ownerProcesses()->create([
-                'node_id' => $context->node->id,
-                'name' => $name,
-                'command' => $command,
-                'restart_policy' => $restartPolicy,
-                'crash_notification' => $crashNotification,
-                'runtime' => $resolvedRuntime,
-                'tool' => $tool,
-                'runtime_config' => $runtimeConfig,
-                'sort_order' => $maxOrder + 1,
-            ]);
+            $process = $context
+                ->ownerProcesses()
+                ->create([
+                    'node_id' => $context->node->id,
+                    'name' => $name,
+                    'command' => $command,
+                    'restart_policy' => $restartPolicy,
+                    'crash_notification' => $crashNotification,
+                    'runtime' => $resolvedRuntime,
+                    'tool' => $tool,
+                    'runtime_config' => $runtimeConfig,
+                    'sort_order' => $maxOrder + 1,
+                ]);
 
             if (! $process instanceof Process) {
                 throw new LogicException('Process owner relation created an unexpected model.');
@@ -194,17 +218,25 @@ final readonly class AddProcess
     /**
      * @param  list<string>  $replaceContainers
      */
-    private function assertReplacementContainersAllowed(ProcessOwnerContext $context, ProcessRuntime $runtime, ?string $service, array $replaceContainers): void
-    {
+    private function assertReplacementContainersAllowed(
+        ProcessOwnerContext $context,
+        ProcessRuntime $runtime,
+        ?string $service,
+        array $replaceContainers,
+    ): void {
         if ($replaceContainers === []) {
             return;
         }
 
         if (! $context->owner instanceof Node || $service === null || $runtime !== ProcessRuntime::Docker) {
-            throw new GatewayApiException('Replacement containers are only supported for node-owned Docker managed services.', 'validation_failed', [
-                'field' => 'replace_containers',
-                'reason' => 'replace_container_requires_node_docker_service',
-            ]);
+            throw new GatewayApiException(
+                'Replacement containers are only supported for node-owned Docker managed services.',
+                'validation_failed',
+                [
+                    'field' => 'replace_containers',
+                    'reason' => 'replace_container_requires_node_docker_service',
+                ],
+            );
         }
 
         foreach ($replaceContainers as $container) {
@@ -212,10 +244,14 @@ final readonly class AddProcess
                 continue;
             }
 
-            throw new GatewayApiException('Replacement container names must be valid Docker container names.', 'validation_failed', [
-                'field' => 'replace_containers',
-                'value' => $container,
-            ]);
+            throw new GatewayApiException(
+                'Replacement container names must be valid Docker container names.',
+                'validation_failed',
+                [
+                    'field' => 'replace_containers',
+                    'value' => $container,
+                ],
+            );
         }
     }
 
@@ -234,11 +270,15 @@ final readonly class AddProcess
 
         foreach ($replaceContainers as $container) {
             if (! $driver->remove($context->node, $container)) {
-                throw new GatewayApiException("Replacement container '{$container}' could not be removed.", 'process.replace_container_failed', [
-                    'field' => 'replace_containers',
-                    'container' => $container,
-                    'node' => $context->node->name,
-                ]);
+                throw new GatewayApiException(
+                    "Replacement container '{$container}' could not be removed.",
+                    'process.replace_container_failed',
+                    [
+                        'field' => 'replace_containers',
+                        'container' => $container,
+                        'node' => $context->node->name,
+                    ],
+                );
             }
 
             $replaced[] = $container;
@@ -254,8 +294,12 @@ final readonly class AddProcess
      *     applied_runtime_units: list<array{name: string, context: string}>
      * }
      */
-    private function applyRuntimeUnits(ProcessOwnerContext $context, App $app, Process $process, array $runtimeUnits): array
-    {
+    private function applyRuntimeUnits(
+        ProcessOwnerContext $context,
+        App $app,
+        Process $process,
+        array $runtimeUnits,
+    ): array {
         $warnings = [];
         $appliedRuntimeUnits = [];
         $driver = $this->runtimeDrivers->forProcess($process);
@@ -316,8 +360,11 @@ final readonly class AddProcess
     /**
      * @param  array<string, mixed>  $runtimeConfig
      */
-    private function assertServiceHasNoResourceConflicts(ProcessOwnerContext $context, string $name, array $runtimeConfig): void
-    {
+    private function assertServiceHasNoResourceConflicts(
+        ProcessOwnerContext $context,
+        string $name,
+        array $runtimeConfig,
+    ): void {
         $requestedEndpoints = $this->endpoints($runtimeConfig);
         $requestedVolumeNames = $this->volumeNames($runtimeConfig);
 
@@ -334,14 +381,18 @@ final readonly class AddProcess
                         continue;
                     }
 
-                    throw new GatewayApiException("Process '{$name}' endpoint port {$endpoint['port']} conflicts with process '{$process->name}'.", 'validation_failed', [
-                        'field' => 'service',
-                        'reason' => 'endpoint_conflict',
-                        'node' => $context->node->name,
-                        'process' => $name,
-                        'existing_process' => $process->name,
-                        'port' => $endpoint['port'],
-                    ]);
+                    throw new GatewayApiException(
+                        "Process '{$name}' endpoint port {$endpoint['port']} conflicts with process '{$process->name}'.",
+                        'validation_failed',
+                        [
+                            'field' => 'service',
+                            'reason' => 'endpoint_conflict',
+                            'node' => $context->node->name,
+                            'process' => $name,
+                            'existing_process' => $process->name,
+                            'port' => $endpoint['port'],
+                        ],
+                    );
                 }
             }
 
@@ -350,14 +401,18 @@ final readonly class AddProcess
                     continue;
                 }
 
-                throw new GatewayApiException("Process '{$name}' volume '{$volumeName}' conflicts with process '{$process->name}'.", 'validation_failed', [
-                    'field' => 'service',
-                    'reason' => 'volume_conflict',
-                    'node' => $context->node->name,
-                    'process' => $name,
-                    'existing_process' => $process->name,
-                    'volume' => $volumeName,
-                ]);
+                throw new GatewayApiException(
+                    "Process '{$name}' volume '{$volumeName}' conflicts with process '{$process->name}'.",
+                    'validation_failed',
+                    [
+                        'field' => 'service',
+                        'reason' => 'volume_conflict',
+                        'node' => $context->node->name,
+                        'process' => $name,
+                        'existing_process' => $process->name,
+                        'volume' => $volumeName,
+                    ],
+                );
             }
         }
     }

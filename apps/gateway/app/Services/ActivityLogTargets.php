@@ -23,7 +23,7 @@ final class ActivityLogTargets
 
     public function add(Node $node): void
     {
-        $key = (string) ($node->wireguard_address ?? $node->name ?? spl_object_hash($node));
+        $key = $node->wireguard_address ?? $node->name ?? spl_object_hash($node);
         $this->nodes[$key] = $node;
     }
 

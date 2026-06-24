@@ -60,10 +60,17 @@ describe('NodeListController activity logging', function (): void {
     it('preserves X-Orbit-Request-Id in batch_uuid for logged activity', function (): void {
         $requestId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
-        $response = $this->call('GET', '/api/nodes', [], [], [], [
-            'REMOTE_ADDR' => NODE_ACTIVITY_WG_IP,
-            'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
-        ]);
+        $response = $this->call(
+            'GET',
+            '/api/nodes',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => NODE_ACTIVITY_WG_IP,
+                'HTTP_X_ORBIT_REQUEST_ID' => $requestId,
+            ],
+        );
 
         $response->assertOk();
 

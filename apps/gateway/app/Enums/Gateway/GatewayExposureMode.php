@@ -15,8 +15,11 @@ enum GatewayExposureMode: string
     {
         $value = trim($value);
 
-        return self::tryFrom($value)
-            ?? throw new InvalidArgumentException("Unsupported gateway exposure mode [{$value}]. Expected router-colocated or gateway-direct.");
+        return (
+            self::tryFrom($value) ?? throw new InvalidArgumentException(
+                "Unsupported gateway exposure mode [{$value}]. Expected router-colocated or gateway-direct.",
+            )
+        );
     }
 
     public function isRouterColocated(): bool

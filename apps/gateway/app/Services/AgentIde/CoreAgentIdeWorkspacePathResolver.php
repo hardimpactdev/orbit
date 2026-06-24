@@ -87,7 +87,11 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
             throw new RuntimeException('adapter_invalid_response');
         }
 
-        if (! is_array($decoded) || ! is_array($decoded['success'] ?? null) || ! is_array($decoded['success']['data'] ?? null)) {
+        if (
+            ! is_array($decoded)
+            || ! is_array($decoded['success'] ?? null)
+            || ! is_array($decoded['success']['data'] ?? null)
+        ) {
             throw new RuntimeException('adapter_invalid_response');
         }
 
@@ -103,8 +107,8 @@ final readonly class CoreAgentIdeWorkspacePathResolver implements AgentIdeWorksp
         }
 
         $message = is_array($decoded)
-            && is_array($decoded['error'] ?? null)
-            && is_string($decoded['error']['message'] ?? null)
+        && is_array($decoded['error'] ?? null)
+        && is_string($decoded['error']['message'] ?? null)
             ? trim($decoded['error']['message'])
             : '';
 

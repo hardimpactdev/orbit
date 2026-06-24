@@ -130,9 +130,13 @@ final class AppRootUpdater
         $apps = App::query()
             ->with('node')
             ->get()
-            ->filter(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}")
+            ->filter(
+                fn (App $app): bool => (
+                    $app->name === $selector
+                    || $app->domain === $selector
+                    || $app->url() === "https://{$selector}"
+                ),
+            )
             ->values();
 
         if ($apps->count() !== 1) {
@@ -241,13 +245,18 @@ final class AppRootUpdater
      */
     private function successCommand(App $app, bool $changed, array $warnings): int
     {
-        return $this->successPayload([
-            'app' => $this->appPayload($app),
-            'result' => [
-                'hostname' => parse_url($app->url(), PHP_URL_HOST) ?: $app->name,
-                'changed' => $changed,
+        return $this->successPayload(
+            [
+                'app' => $this->appPayload($app),
+                'result' => [
+                    'hostname' => parse_url($app->url(), PHP_URL_HOST) ?: $app->name,
+                    'changed' => $changed,
+                ],
             ],
-        ], $warnings, (string) $app->node?->name, $changed);
+            $warnings,
+            (string) $app->node?->name,
+            $changed,
+        );
     }
 
     /**
@@ -262,9 +271,15 @@ final class AppRootUpdater
             $result = is_array($data['result'] ?? null) ? $data['result'] : [];
             $changed = (bool) ($result['changed'] ?? false);
 
-            $this->line($changed
-                ? "SUCCESS: Document root for app '".(string) ($app['name'] ?? '')."' updated to '".(string) ($app['root'] ?? '')."'."
-                : "SUCCESS: Document root for app '".(string) ($app['name'] ?? '')."' is already '".(string) ($app['root'] ?? '')."'.");
+            $this->line(
+                $changed
+                    ? "SUCCESS: Document root for app '".($app['name'] ?? '')."' updated to '".($app['root'] ?? '')."'."
+                    : "SUCCESS: Document root for app '"
+                    .($app['name'] ?? '')
+                    ."' is already '"
+                    .($app['root'] ?? '')
+                    ."'.",
+            );
             $this->line("Artifacts successfully re-enacted on node '{$nodeName}'.");
 
             if ($warnings !== []) {

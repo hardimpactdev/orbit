@@ -48,7 +48,9 @@ final class NodeRoleRemoveCommand extends GatewayCommand
         }
 
         if ($purgeData && ! $force) {
-            return $this->renderFailure('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge-data']);
+            return $this->renderFailure('validation_failed', 'The purge-data option requires --force.', [
+                'field' => 'purge-data',
+            ]);
         }
 
         if (! $force) {

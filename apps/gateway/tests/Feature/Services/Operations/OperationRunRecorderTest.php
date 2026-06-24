@@ -29,14 +29,23 @@ describe('OperationRunRecorder', function (): void {
             targetNodeId: null,
         );
 
-        expect($run)->toBeInstanceOf(OperationRun::class)
-            ->and($run->status)->toBe(OperationStatus::Queued)
-            ->and($run->id)->not->toBe($operationId)
-            ->and($run->operation_id)->toBe($operationId)
-            ->and($run->lane)->toBe('host')
-            ->and($run->internal_command)->toBe('internal:workspace-adapter:lookup')
-            ->and($run->started_at)->toBeNull()
-            ->and($run->finished_at)->toBeNull();
+        expect($run)
+            ->toBeInstanceOf(OperationRun::class)
+            ->and($run->status)
+            ->toBe(OperationStatus::Queued)
+            ->and($run->id)
+            ->not
+            ->toBe($operationId)
+            ->and($run->operation_id)
+            ->toBe($operationId)
+            ->and($run->lane)
+            ->toBe('host')
+            ->and($run->internal_command)
+            ->toBe('internal:workspace-adapter:lookup')
+            ->and($run->started_at)
+            ->toBeNull()
+            ->and($run->finished_at)
+            ->toBeNull();
     });
 
     it('persists optional node references when given', function (): void {
@@ -53,18 +62,24 @@ describe('OperationRunRecorder', function (): void {
             queue: 'orbit-default',
         );
 
-        expect($run->caller_node_id)->toBe($caller->id)
-            ->and($run->target_node_id)->toBe($target->id)
-            ->and($run->operation_type)->toBe('workspace.setup')
-            ->and($run->queue)->toBe('orbit-default')
-            ->and($run->correlation_id)->not->toBeNull();
+        expect($run->caller_node_id)
+            ->toBe($caller->id)
+            ->and($run->target_node_id)
+            ->toBe($target->id)
+            ->and($run->operation_type)
+            ->toBe('workspace.setup')
+            ->and($run->queue)
+            ->toBe('orbit-default')
+            ->and($run->correlation_id)
+            ->not->toBeNull();
     });
 
     it('rejects invalid lane values at the recorder before touching the table', function (): void {
         expect(fn () => $this->recorder->queued(
             operationId: (string) Str::uuid(),
             lane: 'bogus',
-        ))->toThrow(RuntimeException::class, 'host, runtime, local, gateway');
+        ))
+            ->toThrow(RuntimeException::class, 'host, runtime, local, gateway');
     });
 
     it('also enforces the lane invariant at the database via a SQL trigger', function (): void {
@@ -104,9 +119,13 @@ describe('OperationRunRecorder', function (): void {
 
         $startedAgain = $this->recorder->running($run->id);
 
-        expect($started->status)->toBe(OperationStatus::Running)
-            ->and($firstStartedAt)->not->toBeNull()
-            ->and($startedAgain->started_at?->toIso8601String())->toBe($firstStartedAt?->toIso8601String());
+        expect($started->status)
+            ->toBe(OperationStatus::Running)
+            ->and($firstStartedAt)
+            ->not
+            ->toBeNull()
+            ->and($startedAgain->started_at?->toIso8601String())
+            ->toBe($firstStartedAt?->toIso8601String());
     });
 
     it('finalizes a run as succeeded with exit code and result', function (): void {
@@ -121,11 +140,16 @@ describe('OperationRunRecorder', function (): void {
             stderrSummary: '',
         );
 
-        expect($done->status)->toBe(OperationStatus::Succeeded)
-            ->and($done->exit_code)->toBe(0)
-            ->and($done->result)->toMatchArray(['installed' => true])
-            ->and($done->stdout_summary)->toBe('ok')
-            ->and($done->finished_at)->not->toBeNull();
+        expect($done->status)
+            ->toBe(OperationStatus::Succeeded)
+            ->and($done->exit_code)
+            ->toBe(0)
+            ->and($done->result)
+            ->toMatchArray(['installed' => true])
+            ->and($done->stdout_summary)
+            ->toBe('ok')
+            ->and($done->finished_at)
+            ->not->toBeNull();
     });
 
     it('clears a queued result payload when finalizing as failed', function (): void {
@@ -142,9 +166,12 @@ describe('OperationRunRecorder', function (): void {
             error: ['code' => 'update_plan_invalid', 'message' => 'Release manifest download failed.'],
         );
 
-        expect($failed->status)->toBe(OperationStatus::Failed)
-            ->and($failed->result)->toBeNull()
-            ->and($failed->error)->toMatchArray(['code' => 'update_plan_invalid']);
+        expect($failed->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($failed->result)
+            ->toBeNull()
+            ->and($failed->error)
+            ->toMatchArray(['code' => 'update_plan_invalid']);
     });
 
     it('finalizes a run as failed with error payload', function (): void {
@@ -157,11 +184,16 @@ describe('OperationRunRecorder', function (): void {
             stderrSummary: 'connection refused',
         );
 
-        expect($failed->status)->toBe(OperationStatus::Failed)
-            ->and($failed->exit_code)->toBe(17)
-            ->and($failed->error)->toMatchArray(['code' => 'remote_shell_failed'])
-            ->and($failed->stderr_summary)->toBe('connection refused')
-            ->and($failed->result)->toBeNull();
+        expect($failed->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($failed->exit_code)
+            ->toBe(17)
+            ->and($failed->error)
+            ->toMatchArray(['code' => 'remote_shell_failed'])
+            ->and($failed->stderr_summary)
+            ->toBe('connection refused')
+            ->and($failed->result)
+            ->toBeNull();
     });
 
     it('finalizes rejected and expired runs without exit codes or output', function (): void {
@@ -171,12 +203,18 @@ describe('OperationRunRecorder', function (): void {
         $rejected = $this->recorder->rejected($rejectedRun->id, ['reason' => 'token_signature_invalid']);
         $expired = $this->recorder->expired($expiredRun->id);
 
-        expect($rejected->status)->toBe(OperationStatus::Rejected)
-            ->and($rejected->error)->toMatchArray(['reason' => 'token_signature_invalid'])
-            ->and($rejected->exit_code)->toBeNull()
-            ->and($expired->status)->toBe(OperationStatus::Expired)
-            ->and($expired->exit_code)->toBeNull()
-            ->and($expired->finished_at)->not->toBeNull();
+        expect($rejected->status)
+            ->toBe(OperationStatus::Rejected)
+            ->and($rejected->error)
+            ->toMatchArray(['reason' => 'token_signature_invalid'])
+            ->and($rejected->exit_code)
+            ->toBeNull()
+            ->and($expired->status)
+            ->toBe(OperationStatus::Expired)
+            ->and($expired->exit_code)
+            ->toBeNull()
+            ->and($expired->finished_at)
+            ->not->toBeNull();
     });
 
     it('throws when finalizing an operation_run that does not exist', function (): void {
@@ -195,12 +233,19 @@ describe('OperationRunRecorder', function (): void {
 
         $rows = OperationRun::query()->where('operation_id', $operationId)->orderBy('created_at')->get();
 
-        expect($rows)->toHaveCount(2)
-            ->and($rows[0]->id)->not->toBe($rows[1]->id)
-            ->and($rows[0]->operation_id)->toBe($operationId)
-            ->and($rows[1]->operation_id)->toBe($operationId)
-            ->and($rows[0]->status)->toBe(OperationStatus::Failed)
-            ->and($rows[1]->status)->toBe(OperationStatus::Succeeded);
+        expect($rows)
+            ->toHaveCount(2)
+            ->and($rows[0]->id)
+            ->not
+            ->toBe($rows[1]->id)
+            ->and($rows[0]->operation_id)
+            ->toBe($operationId)
+            ->and($rows[1]->operation_id)
+            ->toBe($operationId)
+            ->and($rows[0]->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($rows[1]->status)
+            ->toBe(OperationStatus::Succeeded);
     });
 });
 
@@ -232,8 +277,11 @@ describe('activity_log linkage', function (): void {
             ->where('operation_run_id', $run->id)
             ->first();
 
-        expect($row)->not->toBeNull()
-            ->and($row->log_name)->toBe('local_executor.dispatching');
+        expect($row)
+            ->not
+            ->toBeNull()
+            ->and($row->log_name)
+            ->toBe('local_executor.dispatching');
     });
 });
 

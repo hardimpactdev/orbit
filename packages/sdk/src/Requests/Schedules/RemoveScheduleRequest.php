@@ -34,10 +34,13 @@ final class RemoveScheduleRequest extends GatewayRequest implements HasBody
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     /**

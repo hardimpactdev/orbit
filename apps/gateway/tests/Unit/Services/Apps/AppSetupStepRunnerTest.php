@@ -41,10 +41,12 @@ final class AppSetupStepRunnerTestShell implements RemoteShell
 
 function createAppSetupRunnerTestApp(array $overrides = []): App
 {
-    $node = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-        'user' => 'orbit',
-    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+            'user' => 'orbit',
+        ]);
 
     return App::factory()->create(array_merge([
         'name' => 'docs',
@@ -67,12 +69,18 @@ it('runs app setup steps sequentially in the app path', function (): void {
 
     $result = $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
 
-    expect($result)->toBeTrue()
-        ->and($shell->runs)->toHaveCount(2)
-        ->and($shell->runs[0]['script'])->toBe('npm install')
-        ->and($shell->runs[0]['options']['cwd'])->toBe('/home/orbit/apps/docs')
-        ->and($shell->runs[1]['script'])->toBe('npm run build')
-        ->and($shell->runs[1]['options']['cwd'])->toBe('/home/orbit/apps/docs');
+    expect($result)
+        ->toBeTrue()
+        ->and($shell->runs)
+        ->toHaveCount(2)
+        ->and($shell->runs[0]['script'])
+        ->toBe('npm install')
+        ->and($shell->runs[0]['options']['cwd'])
+        ->toBe('/home/orbit/apps/docs')
+        ->and($shell->runs[1]['script'])
+        ->toBe('npm run build')
+        ->and($shell->runs[1]['options']['cwd'])
+        ->toBe('/home/orbit/apps/docs');
 
     $run->refresh();
     expect($run->status)->toBe('completed');
@@ -86,7 +94,11 @@ it('routes php and composer setup steps through the app host php toolchain', fun
 
     $steps = [
         AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'composer install', 'sort_order' => 1]),
-        AppSetupStep::factory()->create(['app_id' => $app->id, 'command' => 'php artisan migrate --force', 'sort_order' => 2]),
+        AppSetupStep::factory()->create([
+            'app_id' => $app->id,
+            'command' => 'php artisan migrate --force',
+            'sort_order' => 2,
+        ]),
     ];
 
     $runner->run($run, $steps, $app, $app->node, ['ORBIT_APP' => 'docs']);
@@ -117,14 +129,17 @@ it('fails fast on the first failed setup step and records output', function (): 
 
     $result = $runner->run($run, $steps, $app, $app->node, []);
 
-    expect($result)->toBeFalse()
-        ->and($shell->runs)->toHaveCount(1);
+    expect($result)->toBeFalse()->and($shell->runs)->toHaveCount(1);
 
     $run->refresh();
     $runStep = $run->runSteps()->first();
 
-    expect($run->status)->toBe('failed')
-        ->and($runStep?->exit_code)->toBe(1)
-        ->and($runStep?->output)->toContain('failed')
-        ->and($runStep?->output)->toContain('boom');
+    expect($run->status)
+        ->toBe('failed')
+        ->and($runStep?->exit_code)
+        ->toBe(1)
+        ->and($runStep?->output)
+        ->toContain('failed')
+        ->and($runStep?->output)
+        ->toContain('boom');
 });

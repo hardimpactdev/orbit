@@ -148,7 +148,11 @@ final readonly class EnsureWorkspaceProxyRoute
 
             $this->ensureGlobalCaddyfile($node);
             $this->ensureRuntimeTrustPool($node, $config);
-            $backendResult = $this->remoteShell->run($node, $this->renderInstallScript($domain, $backendContent, backend: true));
+            $backendResult = $this->remoteShell->run($node, $this->renderInstallScript(
+                $domain,
+                $backendContent,
+                backend: true,
+            ));
 
             if (! $backendResult->successful()) {
                 return [[
@@ -205,47 +209,49 @@ final readonly class EnsureWorkspaceProxyRoute
             $upstream = $config['runtime_upstream'] ?? null;
 
             if (! is_string($upstream) || $upstream === '') {
-                throw new RuntimeException("Workspace '{$workspace->name}' route is missing a runtime container upstream.");
+                throw new RuntimeException(
+                    "Workspace '{$workspace->name}' route is missing a runtime container upstream.",
+                );
             }
 
             $transport = $this->runtimeUpstreamTransportDirectives($config);
 
             return <<<CADDY
-{$domain} {
-    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-    encode gzip
+                {$domain} {
+                    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
+                    encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
+                    import security_headers
+                    import profiling_headers
+                    {$pathBlocking}
+                    import security_txt
+                    import cache_headers
 
-    reverse_proxy {$upstream} {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-{$transport}    }
-}
+                    reverse_proxy {$upstream} {
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                {$transport}    }
+                }
 
-CADDY;
+                CADDY;
         }
 
         return <<<CADDY
-{$domain} {
-    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-    root * {$config['document_root']}
-    encode gzip
+            {$domain} {
+                tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
+                root * {$config['document_root']}
+                encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
-    file_server
-}
+                import security_headers
+                import profiling_headers
+                {$pathBlocking}
+                import security_txt
+                import cache_headers
+                file_server
+            }
 
-CADDY;
+            CADDY;
     }
 
     private function renderInstallScript(string $domain, string $content, bool $backend = false): string
@@ -255,10 +261,10 @@ CADDY;
 
         return sprintf(
             <<<'SH'
-sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-%s
-SH,
+                sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                %s
+                SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
             CaddyTool::reloadCommand(),
@@ -304,13 +310,13 @@ SH,
 
     private function documentRoot(Workspace $workspace, App $app): string
     {
-        $root = trim((string) $app->document_root, '/');
+        $root = trim($app->document_root, '/');
 
         if ($root === '') {
-            return rtrim((string) $workspace->path, '/');
+            return rtrim($workspace->path, '/');
         }
 
-        return rtrim((string) $workspace->path, '/').'/'.$root;
+        return rtrim($workspace->path, '/').'/'.$root;
     }
 
     /**

@@ -55,22 +55,29 @@ describe('ProfileController', function (): void {
             'domain' => 'docs.example.com',
         ]);
 
-        app()->instance(RequestProfiler::class, new class implements RequestProfiler
-        {
+        app()->instance(RequestProfiler::class, new class implements RequestProfiler {
             public function profile(string $url, array $headers = []): array
             {
                 throw new RuntimeException('Gateway profiler must not run during profile resolution.');
             }
         });
 
-        $response = $this->call('GET', '/api/profile/resolve', [
-            'target' => 'docs',
-            'uri' => '/login',
-            'auth_mode' => 'user',
-            'user' => '42',
-        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/profile/resolve',
+            [
+                'target' => 'docs',
+                'uri' => '/login',
+                'auth_mode' => 'user',
+                'user' => '42',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.auth_mode', 'user')
             ->assertJsonPath('success.data.target.app', 'docs')
             ->assertJsonPath('success.data.target.node', 'app-1')
@@ -92,8 +99,7 @@ describe('ProfileController', function (): void {
             'domain' => 'docs.example.com',
         ]);
 
-        $profiler = new class implements RequestProfiler
-        {
+        $profiler = new class implements RequestProfiler {
             public array $calls = [];
 
             public function profile(string $url, array $headers = []): array
@@ -125,14 +131,22 @@ describe('ProfileController', function (): void {
 
         app()->instance(RequestProfiler::class, $profiler);
 
-        $response = $this->call('GET', '/api/profile', [
-            'target' => 'docs',
-            'uri' => '/login',
-            'auth_mode' => 'user',
-            'user' => '42',
-        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/profile',
+            [
+                'target' => 'docs',
+                'uri' => '/login',
+                'auth_mode' => 'user',
+                'user' => '42',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.origin', 'gateway')
             ->assertJsonPath('success.data.target.app', 'docs')
             ->assertJsonPath('success.data.target.node', 'app-1')
@@ -140,10 +154,14 @@ describe('ProfileController', function (): void {
             ->assertJsonPath('success.data.request.url', 'https://docs.example.com/login')
             ->assertJsonPath('success.data.timings.total_ms', 5.5);
 
-        expect($profiler->calls)->toHaveCount(1)
-            ->and($profiler->calls[0]['url'])->toBe('https://docs.example.com/login')
-            ->and($profiler->calls[0]['headers']['X-TOOLBAR-AUTH'])->toBe('user')
-            ->and($profiler->calls[0]['headers']['X-TOOLBAR-USER'])->toBe('42');
+        expect($profiler->calls)
+            ->toHaveCount(1)
+            ->and($profiler->calls[0]['url'])
+            ->toBe('https://docs.example.com/login')
+            ->and($profiler->calls[0]['headers']['X-TOOLBAR-AUTH'])
+            ->toBe('user')
+            ->and($profiler->calls[0]['headers']['X-TOOLBAR-USER'])
+            ->toBe('42');
     });
 
     it('profiles a visible development app by derived local domain', function (): void {
@@ -157,8 +175,7 @@ describe('ProfileController', function (): void {
             'domain' => null,
         ]);
 
-        app()->instance(RequestProfiler::class, new class implements RequestProfiler
-        {
+        app()->instance(RequestProfiler::class, new class implements RequestProfiler {
             public array $calls = [];
 
             public function profile(string $url, array $headers = []): array
@@ -188,11 +205,19 @@ describe('ProfileController', function (): void {
             }
         });
 
-        $response = $this->call('GET', '/api/profile', [
-            'target' => 'docs.test',
-        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/profile',
+            [
+                'target' => 'docs.test',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.target.app', 'docs')
             ->assertJsonPath('success.data.target.domain', 'docs.test')
             ->assertJsonPath('success.data.request.url', 'https://docs.test/');
@@ -207,11 +232,19 @@ describe('ProfileController', function (): void {
             'node_id' => $node->id,
         ]);
 
-        $response = $this->call('GET', '/api/profile', [
-            'target' => 'hidden',
-        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/profile',
+            [
+                'target' => 'hidden',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'app.not_found')
             ->assertJsonPath('error.meta.app', 'hidden');
     });
@@ -231,8 +264,7 @@ describe('ProfileController', function (): void {
             'path' => $appPath,
         ]);
 
-        app()->instance(RequestProfiler::class, new class implements RequestProfiler
-        {
+        app()->instance(RequestProfiler::class, new class implements RequestProfiler {
             public function profile(string $url, array $headers = []): array
             {
                 return [
@@ -258,11 +290,19 @@ describe('ProfileController', function (): void {
             }
         });
 
-        $response = $this->call('GET', '/api/profile', [
-            'target' => $appPath.'/subdir',
-        ], [], [], ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/profile',
+            [
+                'target' => $appPath.'/subdir',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROFILE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.target.app', 'docs')
             ->assertJsonPath('success.data.request.url', 'https://docs.example.com/');
     });

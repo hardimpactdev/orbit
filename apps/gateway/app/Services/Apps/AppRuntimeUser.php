@@ -39,14 +39,12 @@ final readonly class AppRuntimeUser implements AppRuntimeUserResolver
             return true;
         }
 
-        return $app->node instanceof Node
-            && app(NodeRoleAssignments::class)->nodeHasActiveRole($app->node, 'app-prod');
+        return $app->node instanceof Node && app(NodeRoleAssignments::class)->nodeHasActiveRole($app->node, 'app-prod');
     }
 
     private function productionUser(App $app): string
     {
-        return $this->userFromHomePath((string) $app->path)
-            ?? $this->nodeUser($app);
+        return $this->userFromHomePath($app->path) ?? $this->nodeUser($app);
     }
 
     private function userFromHomePath(string $path): ?string

@@ -20,8 +20,12 @@ use Illuminate\Contracts\Process\ProcessResult;
  *
  * @param  array<string, string>|null  $sshUsers
  */
-function e2eTopology(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false, bool $sourceMountedCheckout = false): E2ETopologyHarness
-{
+function e2eTopology(
+    E2ETopologyKind $kind,
+    ?array $sshUsers = null,
+    bool $withGatewayApi = false,
+    bool $sourceMountedCheckout = false,
+): E2ETopologyHarness {
     if (getenv('ORBIT_E2E') !== '1') {
         test()->markTestSkipped('Set ORBIT_E2E=1 to run prepared-topology feature tests against a provider.');
     }
@@ -61,16 +65,14 @@ function e2eFailsOnTopologyUnavailable(): bool
 {
     $value = getenv('ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE');
 
-    return is_string($value)
-        && in_array(strtolower($value), ['1', 'true', 'yes'], true);
+    return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
 }
 
 function e2eGatewayApiByDefault(): bool
 {
     $value = getenv('ORBIT_E2E_GATEWAY_API');
 
-    return is_string($value)
-        && in_array(strtolower($value), ['1', 'true', 'yes'], true);
+    return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
 }
 
 function e2eUsesDockerDnsAliasTopology(): bool
@@ -265,8 +267,12 @@ function e2eConfigureCurrentCheckoutGatewaySettings(E2ETopologyHarness $topology
     e2eConfigureCurrentCheckoutRootGatewaySettings($topology, $role, $caPemPath);
 }
 
-function e2eConfigureCurrentCheckoutRootGatewaySettings(E2ETopologyHarness $topology, string $role, ?string $caPemPath, ?string $gatewayCaUrl = null): void
-{
+function e2eConfigureCurrentCheckoutRootGatewaySettings(
+    E2ETopologyHarness $topology,
+    string $role,
+    ?string $caPemPath,
+    ?string $gatewayCaUrl = null,
+): void {
     $checkout = escapeshellarg($topology->checkout($role));
     $gatewayUrlValue = var_export(e2eGatewayApiUrl($topology), true);
     $gatewayIpValue = var_export(e2eGatewayWireGuardIp($topology), true);
@@ -274,48 +280,48 @@ function e2eConfigureCurrentCheckoutRootGatewaySettings(E2ETopologyHarness $topo
     $gatewayCaUrlValue = var_export($gatewayCaUrl, true);
 
     $php = <<<PHP
-\$gatewayCaUrl = {$gatewayCaUrlValue};
-\$caPemPath = {$caPemPathValue};
-\$caSha256 = null;
+        \$gatewayCaUrl = {$gatewayCaUrlValue};
+        \$caPemPath = {$caPemPathValue};
+        \$caSha256 = null;
 
-if (\$gatewayCaUrl !== null) {
-    \$rootCa = null;
-    \$response = @file_get_contents(\$gatewayCaUrl, false, stream_context_create([
-        'http' => ['timeout' => 5],
-    ]));
+        if (\$gatewayCaUrl !== null) {
+            \$rootCa = null;
+            \$response = @file_get_contents(\$gatewayCaUrl, false, stream_context_create([
+                'http' => ['timeout' => 5],
+            ]));
 
-    if (is_string(\$response) && \$response !== '') {
-        \$decoded = json_decode(\$response, true);
-        \$rootCa = is_array(\$decoded)
-            ? (\$decoded['success']['data']['root_ca'] ?? \$decoded['data']['root_ca'] ?? null)
-            : \$response;
-    }
+            if (is_string(\$response) && \$response !== '') {
+                \$decoded = json_decode(\$response, true);
+                \$rootCa = is_array(\$decoded)
+                    ? (\$decoded['success']['data']['root_ca'] ?? \$decoded['data']['root_ca'] ?? null)
+                    : \$response;
+            }
 
-    if (is_string(\$rootCa)
-        && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
-        && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
-        \$caPemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
-        \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
-        \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
-        \$caSha256 = hash('sha256', \$rootCa);
-    }
-}
+            if (is_string(\$rootCa)
+                && str_contains(\$rootCa, '-----BEGIN CERTIFICATE-----')
+                && str_contains(\$rootCa, '-----END CERTIFICATE-----')) {
+                \$caPemPath = rtrim((string) config('orbit.paths.config_root'), '/').'/gateway-ca/orbit.crt';
+                \\Illuminate\\Support\\Facades\\File::ensureDirectoryExists(dirname(\$caPemPath));
+                \\Illuminate\\Support\\Facades\\File::put(\$caPemPath, \$rootCa);
+                \$caSha256 = hash('sha256', \$rootCa);
+            }
+        }
 
-\$settings = \\App\\Models\\LocalGatewaySettings::current();
-\$settings->fill([
-    'gateway_url' => {$gatewayUrlValue},
-    'gateway_wg_ip' => {$gatewayIpValue},
-]);
-if (\$caPemPath !== null) {
-    \$settings->ca_pem_path = \$caPemPath;
-}
-if (\$caSha256 !== null) {
-    \$settings->ca_sha256 = \$caSha256;
-    \$settings->trusted_at = now();
-}
-\$settings->save();
-echo 'configured';
-PHP;
+        \$settings = \\App\\Models\\LocalGatewaySettings::current();
+        \$settings->fill([
+            'gateway_url' => {$gatewayUrlValue},
+            'gateway_wg_ip' => {$gatewayIpValue},
+        ]);
+        if (\$caPemPath !== null) {
+            \$settings->ca_pem_path = \$caPemPath;
+        }
+        if (\$caSha256 !== null) {
+            \$settings->ca_sha256 = \$caSha256;
+            \$settings->trusted_at = now();
+        }
+        \$settings->save();
+        echo 'configured';
+        PHP;
 
     $topology->ssh(
         $role,
@@ -450,8 +456,10 @@ function e2eRoleUsesDockerRuntime(E2ETopologyHarness $topology, string $role): b
 
 function e2eRoleUsesDockerHostLauncher(E2ETopologyHarness $topology, string $role): bool
 {
-    return e2eRoleUsesDockerTopologyNode($topology, $role)
-        && in_array($role, ['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress'], true);
+    return (
+        e2eRoleUsesDockerTopologyNode($topology, $role)
+        && in_array($role, ['operator', 'gateway', 'dev', 'prod', 'agent', 'ingress'], true)
+    );
 }
 
 function e2eRuntimeContainerName(E2ETopologyHarness $topology, string $role): string
@@ -468,8 +476,13 @@ function e2eDockerRuntimeExecCommand(string $runtimeContainer, string $command):
     );
 }
 
-function e2eRunInRoleRuntime(E2ETopologyHarness $topology, string $role, string $command, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
-{
+function e2eRunInRoleRuntime(
+    E2ETopologyHarness $topology,
+    string $role,
+    string $command,
+    ?int $timeoutSeconds = null,
+    bool $allowFailure = false,
+): ProcessResult {
     if (! e2eRoleUsesDockerRuntime($topology, $role)) {
         return $topology->ssh($role, $command, timeoutSeconds: $timeoutSeconds, allowFailure: $allowFailure);
     }
@@ -480,14 +493,21 @@ function e2eRunInRoleRuntime(E2ETopologyHarness $topology, string $role, string 
     );
 
     if (! $allowFailure && ! $result->successful()) {
-        throw new RuntimeException(trim("Docker runtime command failed: {$command}\n".$result->output().$result->errorOutput()));
+        throw new RuntimeException(trim(
+            "Docker runtime command failed: {$command}\n".$result->output().$result->errorOutput(),
+        ));
     }
 
     return $result;
 }
 
-function e2ePutRuntimeFile(E2ETopologyHarness $topology, string $role, string $path, string $contents, ?int $timeoutSeconds = null): void
-{
+function e2ePutRuntimeFile(
+    E2ETopologyHarness $topology,
+    string $role,
+    string $path,
+    string $contents,
+    ?int $timeoutSeconds = null,
+): void {
     e2eRunInRoleRuntime(
         $topology,
         $role,
@@ -502,8 +522,12 @@ function e2ePutRuntimeFile(E2ETopologyHarness $topology, string $role, string $p
     );
 }
 
-function e2eOrbitWrapperScript(string $checkout, bool $dockerRuntime, ?string $executorNodeIdentity = null, bool $hostLauncher = false): string
-{
+function e2eOrbitWrapperScript(
+    string $checkout,
+    bool $dockerRuntime,
+    ?string $executorNodeIdentity = null,
+    bool $hostLauncher = false,
+): string {
     return E2ECurrentCheckout::orbitWrapperScript($checkout, $dockerRuntime, $executorNodeIdentity, $hostLauncher);
 }
 
@@ -524,8 +548,14 @@ function e2ePhpServerCommand(int $port, string $routerPath, string $logPath, str
     );
 }
 
-function e2eStartRuntimePhpServer(E2ETopologyHarness $topology, string $role, int $port, string $routerPath, string $logPath, string $pidPath): void
-{
+function e2eStartRuntimePhpServer(
+    E2ETopologyHarness $topology,
+    string $role,
+    int $port,
+    string $routerPath,
+    string $logPath,
+    string $pidPath,
+): void {
     e2eRunInRoleRuntime(
         $topology,
         $role,
@@ -534,8 +564,13 @@ function e2eStartRuntimePhpServer(E2ETopologyHarness $topology, string $role, in
     );
 }
 
-function e2eWaitForRuntimeHttpEndpoint(E2ETopologyHarness $topology, string $role, int $port, string $path, string $logPath): void
-{
+function e2eWaitForRuntimeHttpEndpoint(
+    E2ETopologyHarness $topology,
+    string $role,
+    int $port,
+    string $path,
+    string $logPath,
+): void {
     e2eRunInRoleRuntime(
         $topology,
         $role,
@@ -553,59 +588,66 @@ function e2eStopRuntimePhpServer(E2ETopologyHarness $topology, string $role, str
     e2eRunInRoleRuntime(
         $topology,
         $role,
-        sprintf('test ! -f %s || kill "$(cat %s)" >/dev/null 2>&1 || true', escapeshellarg($pidPath), escapeshellarg($pidPath)),
+        sprintf(
+            'test ! -f %s || kill "$(cat %s)" >/dev/null 2>&1 || true',
+            escapeshellarg($pidPath),
+            escapeshellarg($pidPath),
+        ),
         timeoutSeconds: 30,
         allowFailure: true,
     );
 }
 
-function e2eGrantNodeAccess(E2ETopologyHarness $topology, string $consumer = 'operator-1', string $serving = 'app-dev-1'): void
-{
+function e2eGrantNodeAccess(
+    E2ETopologyHarness $topology,
+    string $consumer = 'operator-1',
+    string $serving = 'app-dev-1',
+): void {
     $consumerValue = var_export($consumer, true);
     $servingValue = var_export($serving, true);
     $checkout = escapeshellarg($topology->checkout('gateway'));
 
     $script = <<<PHP
-\$nodes = \\App\\Models\\Node::query()
-    ->whereIn('name', [{$consumerValue}, {$servingValue}])
-    ->pluck('id', 'name');
+        \$nodes = \\App\\Models\\Node::query()
+            ->whereIn('name', [{$consumerValue}, {$servingValue}])
+            ->pluck('id', 'name');
 
-foreach ([{$consumerValue}, {$servingValue}] as \$name) {
-    if (! \$nodes->has(\$name)) {
-        throw new \\RuntimeException("Missing prepared node [{\$name}].");
-    }
-}
+        foreach ([{$consumerValue}, {$servingValue}] as \$name) {
+            if (! \$nodes->has(\$name)) {
+                throw new \\RuntimeException("Missing prepared node [{\$name}].");
+            }
+        }
 
-\$servingName = {$servingValue};
-\$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-prod' : (str_contains(\$servingName, 'app-dev') ? 'app-dev' : null);
+        \$servingName = {$servingValue};
+        \$servingRole = str_contains(\$servingName, 'app-prod') ? 'app-prod' : (str_contains(\$servingName, 'app-dev') ? 'app-dev' : null);
 
-if (\$servingRole !== null) {
-    \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
-        [
-            'node_id' => \$nodes->get({$servingValue}),
-            'role' => \$servingRole,
-        ],
-        [
-            'status' => 'active',
-            'settings' => [],
-            'last_error' => null,
-            'converged_at' => now(),
-        ],
-    );
-}
+        if (\$servingRole !== null) {
+            \\App\\Models\\NodeRoleAssignment::query()->updateOrCreate(
+                [
+                    'node_id' => \$nodes->get({$servingValue}),
+                    'role' => \$servingRole,
+                ],
+                [
+                    'status' => 'active',
+                    'settings' => [],
+                    'last_error' => null,
+                    'converged_at' => now(),
+                ],
+            );
+        }
 
-\\Illuminate\\Support\\Facades\\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => \$nodes->get({$consumerValue}),
-    'serving_node_id' => \$nodes->get({$servingValue}),
-], [
-    'permissions' => json_encode(['*']),
-    'custom_permissions' => json_encode([]),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \\Illuminate\\Support\\Facades\\DB::table('node_access')->updateOrInsert([
+            'consumer_node_id' => \$nodes->get({$consumerValue}),
+            'serving_node_id' => \$nodes->get({$servingValue}),
+        ], [
+            'permissions' => json_encode(['*']),
+            'custom_permissions' => json_encode([]),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-echo 'granted';
-PHP;
+        echo 'granted';
+        PHP;
 
     $topology->ssh(
         'gateway',

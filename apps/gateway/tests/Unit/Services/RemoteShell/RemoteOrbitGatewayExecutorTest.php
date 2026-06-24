@@ -20,10 +20,12 @@ it('wraps plain commands in docker exec on orbit-gateway', function (): void {
         '*' => Process::result(output: "installed\n"),
     ]);
 
-    $result = app(RemoteOrbitGatewayExecutor::class)->run(remoteRuntimeExecutorNode(), 'composer install --no-interaction');
+    $result = app(RemoteOrbitGatewayExecutor::class)->run(
+        remoteRuntimeExecutorNode(),
+        'composer install --no-interaction',
+    );
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->stdout)->toBe("installed\n");
+    expect($result->successful())->toBeTrue()->and($result->stdout)->toBe("installed\n");
 
     Process::assertRan(fn (PendingProcess $process): bool => str_contains(
         (string) $process->command,
@@ -48,7 +50,10 @@ it('normalizes artisan commands to the gateway artisan path inside orbit-gateway
     'php artisan migrate --force',
 ]);
 
-it('unwraps docker exec variants that already target orbit-gateway', function (string $script, array $expectedFragments): void {
+it('unwraps docker exec variants that already target orbit-gateway', function (
+    string $script,
+    array $expectedFragments,
+): void {
     Process::preventStrayProcesses();
     Process::fake([
         '*' => Process::result(output: "migrated\n"),
@@ -63,10 +68,12 @@ it('unwraps docker exec variants that already target orbit-gateway', function (s
             fn (string $fragment): bool => str_contains($command, $fragment),
         );
 
-        return $containsExpectedFragments
+        return (
+            $containsExpectedFragments
             && substr_count($command, ' orbit-gateway ') === 1
             && ! str_contains($command, 'orbit-gateway docker exec')
-            && str_contains($command, 'orbit-gateway php apps/gateway/artisan migrate --force');
+            && str_contains($command, 'orbit-gateway php apps/gateway/artisan migrate --force')
+        );
     });
 })->with([
     'no options' => [
@@ -163,10 +170,12 @@ it('merges unwrapped docker exec workdir with runtime cwd without conflicts', fu
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return substr_count($command, '--workdir') === 1
+        return (
+            substr_count($command, '--workdir') === 1
             && str_contains($command, '/opt/orbit')
             && ! str_contains($command, '/home/orbit/orbit')
-            && ! str_contains($command, 'orbit-gateway docker exec');
+            && ! str_contains($command, 'orbit-gateway docker exec')
+        );
     });
 });
 
@@ -186,11 +195,13 @@ it('lets runtime cwd override unwrapped docker exec workdir for shell fallback',
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return substr_count($command, '--workdir') === 1
+        return (
+            substr_count($command, '--workdir') === 1
             && str_contains($command, OrbitGatewayContainer::SourcePath)
             && ! str_contains($command, '/foo')
             && ! str_contains($command, 'cd ')
-            && str_contains($command, 'echo hi && echo bye');
+            && str_contains($command, 'echo hi && echo bye')
+        );
     });
 });
 
@@ -209,11 +220,13 @@ it('merges unwrapped docker exec env with runtime metadata deterministically', f
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return substr_count($command, '--env') === 2
+        return (
+            substr_count($command, '--env') === 2
             && str_contains($command, 'CALLER_KEY=caller')
             && str_contains($command, 'ORBIT_REQUEST_ID=runtime-req')
             && ! str_contains($command, 'ORBIT_REQUEST_ID=caller')
-            && ! str_contains($command, 'orbit-gateway docker exec');
+            && ! str_contains($command, 'orbit-gateway docker exec')
+        );
     });
 });
 
@@ -242,7 +255,10 @@ it('only unwraps docker exec when it starts the command', function (string $scri
 
     app(RemoteOrbitGatewayExecutor::class)->run(remoteRuntimeExecutorNode(), $script);
 
-    Process::assertRan(fn (PendingProcess $process): bool => str_contains((string) $process->command, $expectedFragment));
+    Process::assertRan(fn (PendingProcess $process): bool => str_contains(
+        (string) $process->command,
+        $expectedFragment,
+    ));
 })->with([
     'substring' => [
         'printf %s docker exec orbit-gateway php artisan migrate --force',
@@ -268,14 +284,18 @@ it('preserves runtime env, cwd, timeout, input, stdout, and stderr semantics', f
         'input' => 'runtime-stdin',
     ]);
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->stdout)->toBe("runtime-ok\n")
-        ->and($result->stderr)->toBe("runtime-warning\n");
+    expect($result->successful())
+        ->toBeTrue()
+        ->and($result->stdout)
+        ->toBe("runtime-ok\n")
+        ->and($result->stderr)
+        ->toBe("runtime-warning\n");
 
     Process::assertRan(function (PendingProcess $process, ProcessResultContract $processResult): bool {
         $command = (string) $process->command;
 
-        return str_contains($command, 'docker exec -i')
+        return (
+            str_contains($command, 'docker exec -i')
             && str_contains($command, '--env')
             && str_contains($command, 'ORBIT_REQUEST_ID=runtime-req')
             && str_contains($command, '--workdir')
@@ -285,7 +305,8 @@ it('preserves runtime env, cwd, timeout, input, stdout, and stderr semantics', f
             && $process->timeout === 75
             && $process->input === 'runtime-stdin'
             && $processResult->output() === "runtime-ok\n"
-            && $processResult->errorOutput() === "runtime-warning\n";
+            && $processResult->errorOutput() === "runtime-warning\n"
+        );
     });
 });
 
@@ -304,12 +325,17 @@ it('falls back to an in-container shell for compound runtime scripts', function 
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return str_contains($command, 'docker exec -i')
+        return (
+            str_contains($command, 'docker exec -i')
             && str_contains($command, 'orbit-gateway sh -c')
             && ! str_contains($command, 'docker exec -i orbit-gateway sh -lc')
             && str_contains($command, '--env')
             && str_contains($command, 'ORBIT_REQUEST_ID')
-            && str_contains($command, 'php apps/gateway/artisan migrate --force && php apps/gateway/artisan orbit:cleanup');
+            && str_contains(
+                $command,
+                'php apps/gateway/artisan migrate --force && php apps/gateway/artisan orbit:cleanup',
+            )
+        );
     });
 });
 
@@ -320,16 +346,24 @@ it('throws runtime shell failures with the same RemoteShellFailed semantics', fu
     ]);
 
     try {
-        app(RemoteOrbitGatewayExecutor::class)->run(remoteRuntimeExecutorNode(['name' => 'runtime-failure']), 'php artisan migrate --force', [
-            'throw' => true,
-        ]);
+        app(RemoteOrbitGatewayExecutor::class)->run(
+            remoteRuntimeExecutorNode(['name' => 'runtime-failure']),
+            'php artisan migrate --force',
+            [
+                'throw' => true,
+            ],
+        );
 
         $this->fail('Expected the runtime executor to throw a remote shell failure.');
     } catch (RemoteShellFailed $exception) {
-        expect($exception->node->name)->toBe('runtime-failure')
-            ->and($exception->script)->toBe('docker exec -i orbit-gateway php apps/gateway/artisan migrate --force')
-            ->and($exception->result->exitCode)->toBe(13)
-            ->and($exception->getMessage())->toContain('RemoteShell failed on runtime-failure (exit 13): runtime denied');
+        expect($exception->node->name)
+            ->toBe('runtime-failure')
+            ->and($exception->script)
+            ->toBe('docker exec -i orbit-gateway php apps/gateway/artisan migrate --force')
+            ->and($exception->result->exitCode)
+            ->toBe(13)
+            ->and($exception->getMessage())
+            ->toContain('RemoteShell failed on runtime-failure (exit 13): runtime denied');
     }
 });
 

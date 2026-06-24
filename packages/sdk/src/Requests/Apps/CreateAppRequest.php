@@ -53,8 +53,12 @@ final class CreateAppRequest extends GatewayRequest implements HasBody
         $body = $response->json();
         $warnings = [];
 
-        if (is_array($body) && isset($body['success']['meta']['warnings']) && is_array($body['success']['meta']['warnings'])) {
-            $warnings = array_values($body['success']['meta']['warnings']);
+        if (
+            is_array($body)
+            && isset($body['success']['meta']['warnings'])
+            && is_array($body['success']['meta']['warnings'])
+        ) {
+            $warnings = $this->listOfStringKeyedArrays($body['success']['meta']['warnings']);
         }
 
         return new AppCreateResponse(

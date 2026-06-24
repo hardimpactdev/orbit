@@ -56,7 +56,9 @@ final class InstalledGatewayImageCast implements CastsAttributes
         }
 
         if (! $value instanceof InstalledGatewayImage) {
-            throw new InvalidArgumentException('installed_gateway_image must be an InstalledGatewayImage instance, array, or null.');
+            throw new InvalidArgumentException(
+                'installed_gateway_image must be an InstalledGatewayImage instance, array, or null.',
+            );
         }
 
         return [$key => json_encode($value->toArray(), JSON_THROW_ON_ERROR)];

@@ -28,8 +28,11 @@ final class NodeUpdateController implements Loggable
      */
     private array $activityChangedFields = [];
 
-    public function __invoke(UpdateNodeApiRequest $request, string $name, ReenactNodeArtifacts $reenactNodeArtifacts): JsonResponse
-    {
+    public function __invoke(
+        UpdateNodeApiRequest $request,
+        string $name,
+        ReenactNodeArtifacts $reenactNodeArtifacts,
+    ): JsonResponse {
         $this->activityTargetName = $name;
 
         /** @var mixed $resolvedUser */
@@ -201,7 +204,10 @@ final class NodeUpdateController implements Loggable
             $changes['tld'] = $providedFields['tld'];
         }
 
-        if (isset($providedFields['gateway_endpoint']) && $providedFields['gateway_endpoint'] !== $node->gateway_endpoint) {
+        if (
+            isset($providedFields['gateway_endpoint'])
+            && $providedFields['gateway_endpoint'] !== $node->gateway_endpoint
+        ) {
             $changes['gateway_endpoint'] = $providedFields['gateway_endpoint'];
         }
 
@@ -221,8 +227,7 @@ final class NodeUpdateController implements Loggable
      */
     private function touchesDnsFields(array $changedFields): bool
     {
-        return in_array('tld', $changedFields, true)
-            || in_array('wireguard_address', $changedFields, true);
+        return in_array('tld', $changedFields, true) || in_array('wireguard_address', $changedFields, true);
     }
 
     /**

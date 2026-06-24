@@ -191,9 +191,13 @@ final readonly class AgentIdeMessageDelivery
         return App::query()
             ->with('node')
             ->get()
-            ->first(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}");
+            ->first(
+                fn (App $app): bool => (
+                    $app->name === $selector
+                    || $app->domain === $selector
+                    || $app->url() === "https://{$selector}"
+                ),
+            );
     }
 
     private function resolveWorkspace(string $selector): ?Workspace

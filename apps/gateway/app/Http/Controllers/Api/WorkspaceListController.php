@@ -133,23 +133,42 @@ final readonly class WorkspaceListController implements Loggable
      * @param  list<int>  $visibleNodeIds
      * @return Collection<int, Workspace>
      */
-    private function fetchWorkspaces(bool $callerIsGateway, array $visibleNodeIds, ?string $app, ?string $node): Collection
-    {
+    private function fetchWorkspaces(
+        bool $callerIsGateway,
+        array $visibleNodeIds,
+        ?string $app,
+        ?string $node,
+    ): Collection {
         return Workspace::query()
             ->with(['app.node'])
-            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
-            ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-            ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                'node_id',
+                $visibleNodeIds,
+            )))
+            ->when($app
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
+                'name',
+                $app,
+            )))
+            ->when($node
+            !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where(
+                'name',
+                $node,
+            )))
             ->get()
-            ->sort(fn (Workspace $first, Workspace $second): int => [
-                mb_strtolower((string) $first->app?->node?->name),
-                mb_strtolower((string) $first->app?->name),
-                mb_strtolower($first->name),
-            ] <=> [
-                mb_strtolower((string) $second->app?->node?->name),
-                mb_strtolower((string) $second->app?->name),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (Workspace $first, Workspace $second): int => (
+                    [
+                        mb_strtolower((string) $first->app?->node?->name),
+                        mb_strtolower((string) $first->app?->name),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        mb_strtolower((string) $second->app?->node?->name),
+                        mb_strtolower((string) $second->app?->name),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->values();
     }
 

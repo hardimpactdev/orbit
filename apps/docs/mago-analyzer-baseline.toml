@@ -1,0 +1,343 @@
+variant = "loose"
+
+[[issues]]
+file = "app/Librarian/CommandDocsRegistry.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/JsonExampleParser.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Librarian/JsonExampleParser.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/LiveCliSurface.php"
+code = "invalid-type-cast"
+message = "Casting `mixed` to `array`."
+count = 3
+
+[[issues]]
+file = "app/Librarian/LiveCliSurface.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ActivityLoggingContractRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BannedTermsRule.php"
+code = "invalid-type-cast"
+message = "Casting `mixed` to `array`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/BannedTermsRule.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 3
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalBehaviorBoundaryRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CommandDirectoryStructureRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommonFailureNotRestatedRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CompoundCommandPrefixRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$match`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 3
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$nextMatch`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DestructiveConsentRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorIssueCodePrefixRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorIssueCodePrefixRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorRelationshipReferenceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 5
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DriftIssueSuffixRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ExitStatusPolicyRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 3
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererEnvelopeRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "app/Librarian/Rules/JsonWarningShapeRule.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/MarkdownLinkIntegrityRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NextActionContractRule.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NoLegacyNarrativeRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NonStateDomainHandoffRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ProductCodeNamespaceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/PublicJsonOptionContractRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReadCommandNoLiveProbeRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$argumentMatch` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$block`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$match`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$optionMatches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalSlotSemanticsRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 3
+
+[[issues]]
+file = "app/Librarian/Rules/TestMappingFormatRule.php"
+code = "possibly-undefined-variable"
+message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TestMappingFormatRule.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "mixed-operand"
+message = "Casting `mixed` to `bool`."
+count = 1

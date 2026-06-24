@@ -36,13 +36,15 @@ it('writes dnsmasq.conf and restarts orbit-dns when state changes', function ():
         'wireguard_address' => '10.6.0.2',
     ]);
 
-    (new DnsmasqReconciler(
+    new DnsmasqReconciler(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->reconcile();
+    )->reconcile();
 
-    expect(File::exists($this->confPath))->toBeTrue()
-        ->and(File::get($this->confPath))->toContain('address=/gateway/10.6.0.2');
+    expect(File::exists($this->confPath))
+        ->toBeTrue()
+        ->and(File::get($this->confPath))
+        ->toContain('address=/gateway/10.6.0.2');
 
     Process::assertRan(fn ($process): bool => str_contains(
         (string) $process->command,
@@ -59,13 +61,13 @@ it('is a no-op when the on-disk config already matches state', function (): void
         'wireguard_address' => '10.6.0.2',
     ]);
 
-    $expected = (new DnsmasqConfigBuilder)->build(Node::query()->get());
+    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
     File::put($this->confPath, $expected);
 
-    (new DnsmasqReconciler(
+    new DnsmasqReconciler(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->reconcile();
+    )->reconcile();
 
     Process::assertNothingRan();
 });
@@ -118,14 +120,17 @@ it('writes router-owned orbit service routes as an orbit tld mapping into dnsmas
         'kind' => 'proxy',
     ]);
 
-    (new DnsmasqReconciler(
+    new DnsmasqReconciler(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->reconcile();
+    )->reconcile();
 
-    expect(File::get($this->confPath))->toContain('address=/orbit/10.6.0.2')
-        ->and(File::get($this->confPath))->toContain('local=/orbit/')
-        ->and(File::get($this->confPath))->not->toContain('address=/metrics.orbit/');
+    expect(File::get($this->confPath))
+        ->toContain('address=/orbit/10.6.0.2')
+        ->and(File::get($this->confPath))
+        ->toContain('local=/orbit/')
+        ->and(File::get($this->confPath))
+        ->not->toContain('address=/metrics.orbit/');
 });
 
 it('does not rewrite the compose topology while reconciling dns state', function (): void {
@@ -135,11 +140,11 @@ it('does not rewrite the compose topology while reconciling dns state', function
     ]);
 
     File::put($this->workdir.'/docker-compose.yaml', <<<'YAML'
-services:
-  orbit-dns:
-    network_mode: "container:wg-easy"
+        services:
+          orbit-dns:
+            network_mode: "container:wg-easy"
 
-YAML);
+        YAML);
 
     Node::factory()->create([
         'name' => 'gateway',
@@ -147,10 +152,10 @@ YAML);
         'wireguard_address' => '10.6.0.2',
     ]);
 
-    (new DnsmasqReconciler(
+    new DnsmasqReconciler(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->reconcile();
+    )->reconcile();
 
     expect(File::get($this->workdir.'/docker-compose.yaml'))->toContain('network_mode: "container:wg-easy"');
 });
@@ -167,10 +172,10 @@ it('restarts the Swarm dns service when it exists', function (): void {
         'wireguard_address' => '10.6.0.2',
     ]);
 
-    (new DnsmasqReconciler(
+    new DnsmasqReconciler(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->reconcile();
+    )->reconcile();
 
     Process::assertRan("docker service update --force 'orbit_orbit-dns'");
     Process::assertNotRan('docker restart orbit-dns');

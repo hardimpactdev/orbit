@@ -68,10 +68,14 @@ describe('ORBIT-CLI-ARCH-01 — thin CLI command guardrail', function (): void {
     it('discovers at least the deploy, firewall, and internal:executor command classes via the explicit registration', function (): void {
         $classes = ThinCliCommandsTest::publicAndInternalCommandClasses();
 
-        expect($classes)->toContain('App\\Commands\\Deploy\\DeployHistoryCommand')
-            ->and($classes)->toContain('App\\Commands\\Deploy\\DeployStepListCommand')
-            ->and($classes)->toContain('App\\Commands\\Firewall\\FirewallListCommand')
-            ->and($classes)->toContain('App\\Commands\\Internal\\VerifyExecutorCommand');
+        expect($classes)
+            ->toContain('App\\Commands\\Deploy\\DeployHistoryCommand')
+            ->and($classes)
+            ->toContain('App\\Commands\\Deploy\\DeployStepListCommand')
+            ->and($classes)
+            ->toContain('App\\Commands\\Firewall\\FirewallListCommand')
+            ->and($classes)
+            ->toContain('App\\Commands\\Internal\\VerifyExecutorCommand');
     });
 
     it('keeps every registered App\\Commands\\* class extending exactly one of the documented adapter base classes', function (string $class): void {
@@ -88,8 +92,13 @@ describe('ORBIT-CLI-ARCH-01 — thin CLI command guardrail', function (): void {
         );
 
         expect($matched)
-            ->not->toBeEmpty()
-            ->and(count($matched))->toBe(1, "{$class} must extend exactly one of: GatewayCommand, LocalOnlyCommand, BootstrapGatewayCommand, InternalExecutorCommand.");
+            ->not
+            ->toBeEmpty()
+            ->and(count($matched))
+            ->toBe(
+                1,
+                "{$class} must extend exactly one of: GatewayCommand, LocalOnlyCommand, BootstrapGatewayCommand, InternalExecutorCommand.",
+            );
     })->with(ThinCliCommandsTest::publicAndInternalCommandClasses());
 
     it('keeps the canonical adapter base classes themselves out of the workflow-orchestration business', function (): void {
@@ -97,7 +106,12 @@ describe('ORBIT-CLI-ARCH-01 — thin CLI command guardrail', function (): void {
         // that mutate gateway/node state directly here would let any subclass bypass D18.
         $forbiddenMethodFragments = ['save', 'persist', 'mutate', 'install', 'provision'];
 
-        $bases = [GatewayCommand::class, LocalOnlyCommand::class, BootstrapGatewayCommand::class, InternalExecutorCommand::class];
+        $bases = [
+            GatewayCommand::class,
+            LocalOnlyCommand::class,
+            BootstrapGatewayCommand::class,
+            InternalExecutorCommand::class,
+        ];
 
         foreach ($bases as $base) {
             $reflection = new ReflectionClass($base);
@@ -111,7 +125,9 @@ describe('ORBIT-CLI-ARCH-01 — thin CLI command guardrail', function (): void {
 
                 foreach ($forbiddenMethodFragments as $fragment) {
                     expect(str_contains($name, $fragment))
-                        ->toBeFalse("{$base}::{$method->getName()} contains forbidden fragment '{$fragment}' — workflow orchestration must live in a service, not a command base.");
+                        ->toBeFalse(
+                            "{$base}::{$method->getName()} contains forbidden fragment '{$fragment}' — workflow orchestration must live in a service, not a command base.",
+                        );
                 }
             }
         }

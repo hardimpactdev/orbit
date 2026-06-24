@@ -51,8 +51,7 @@ it('registers router-owned s3 service route to one seaweedfs backend', function 
     expect($route)
         ->node_id->toBe($router->id)
         ->owner_type->toBe('router')
-        ->kind->toBe('proxy')
-        ->and($route->config)->toMatchArray([
+        ->kind->toBe('proxy')->and($route->config)->toMatchArray([
             'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'http://storage-1.s3.orbit:8333'],
@@ -81,8 +80,10 @@ it('stores the pool shape even for a single seaweedfs backend', function (): voi
 
     $route = ProxyRoute::query()->where('domain', 's3.orbit')->firstOrFail();
 
-    expect($route->config['upstreams'])->toHaveCount(1)
-        ->and($route->config['upstreams'][0])->toBe([
+    expect($route->config['upstreams'])
+        ->toHaveCount(1)
+        ->and($route->config['upstreams'][0])
+        ->toBe([
             'scheme' => 'http',
             'host' => 'storage-1.s3.orbit',
             'port' => 8333,
@@ -99,7 +100,8 @@ it('fails clearly when there is no active router node', function (): void {
     ]);
 
     app(S3RouteRegistrar::class)->syncServiceRoute();
-})->throws(RuntimeException::class, 'The S3 service route requires an active router node.')
+})
+    ->throws(RuntimeException::class, 'The S3 service route requires an active router node.')
     ->group('service');
 
 it('fails clearly when there are no active s3 nodes', function (): void {
@@ -107,7 +109,8 @@ it('fails clearly when there are no active s3 nodes', function (): void {
     s3AssignRole($router, 'router');
 
     app(S3RouteRegistrar::class)->syncServiceRoute();
-})->throws(RuntimeException::class, 'The S3 service route requires at least one active s3 backend.')
+})
+    ->throws(RuntimeException::class, 'The S3 service route requires at least one active s3 backend.')
     ->group('service');
 
 it('fails clearly when s3 node has no seaweedfs tool row', function (): void {
@@ -118,7 +121,8 @@ it('fails clearly when s3 node has no seaweedfs tool row', function (): void {
     s3AssignRole($storage, 's3');
 
     app(S3RouteRegistrar::class)->syncServiceRoute();
-})->throws(RuntimeException::class, 'The S3 service route requires at least one active seaweedfs tool row.')
+})
+    ->throws(RuntimeException::class, 'The S3 service route requires at least one active seaweedfs tool row.')
     ->group('service');
 
 it('updates the service route when called again', function (): void {
@@ -164,8 +168,7 @@ it('syncs public s3 host as ingress route forwarding to s3.orbit', function (): 
     expect($route)
         ->node_id->toBe($edge->id)
         ->owner_type->toBe('s3')
-        ->kind->toBe('proxy')
-        ->and($route->config)->toMatchArray([
+        ->kind->toBe('proxy')->and($route->config)->toMatchArray([
             'owner_name' => 'seaweedfs',
             'protocol' => 's3',
             'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
@@ -203,7 +206,11 @@ it('removes the public host route when owner_type is tool and owner_name is seaw
         'node_id' => $edge->id,
         'owner_type' => 's3',
         'kind' => 'proxy',
-        'config' => ['owner_name' => 'seaweedfs', 'protocol' => 's3', 'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit']],
+        'config' => [
+            'owner_name' => 'seaweedfs',
+            'protocol' => 's3',
+            'target' => ['type' => 'upstream', 'value' => 'https://s3.orbit'],
+        ],
     ]);
 
     app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
@@ -240,12 +247,14 @@ it('registers an ingress-placement route on the ingress node targeting the route
     expect($route)
         ->node_id->toBe($edge->id)
         ->owner_type->toBe('s3')
-        ->kind->toBe('proxy')
-        ->and($route->config['placement'])->toBe('ingress')
-        ->and($route->config['router_upstream']['node_id'])->toBe($router->id)
-        ->and($route->config['router_upstream']['node'])->toBe('gateway-1')
-        ->and($route->config['router_upstream']['url'])->toBe('http://10.6.0.1:80')
-        ->and($route->config['target'])->toBe(['type' => 'upstream', 'value' => 'https://s3.orbit']);
+        ->kind->toBe('proxy')->and($route->config['placement'])->toBe('ingress')->and(
+            $route->config['router_upstream']['node_id'],
+        )->toBe($router->id)->and($route->config['router_upstream']['node'])->toBe('gateway-1')->and(
+            $route->config['router_upstream']['url'],
+        )->toBe('http://10.6.0.1:80')->and($route->config['target'])->toBe([
+            'type' => 'upstream',
+            'value' => 'https://s3.orbit',
+        ]);
 })->group('public');
 
 it('public ingress route preserves Host and forwarded-proto via router_upstream config', function (): void {
@@ -273,9 +282,12 @@ it('public ingress route preserves Host and forwarded-proto via router_upstream 
 
     // placement=ingress triggers ProxyRouteRenderer::renderIngress which emits
     // `header_up Host {host}` and `header_up X-Forwarded-Proto {scheme}`.
-    expect($config['placement'])->toBe('ingress')
-        ->and($config['router_upstream'])->toBeArray()
-        ->and($config['router_upstream']['url'])->toStartWith('http://');
+    expect($config['placement'])
+        ->toBe('ingress')
+        ->and($config['router_upstream'])
+        ->toBeArray()
+        ->and($config['router_upstream']['url'])
+        ->toStartWith('http://');
 
     // Confirm the renderer actually produces a Caddy block with the expected
     // host-preservation directives.
@@ -312,10 +324,14 @@ it('creates separate ingress routes for each public host on the same seaweedfs t
 
     foreach (['s3.example.com', 'files.example.com'] as $host) {
         $route = ProxyRoute::query()->where('domain', $host)->firstOrFail();
-        expect($route->node_id)->toBe($edge->id)
-            ->and($route->config['placement'])->toBe('ingress')
-            ->and($route->config['tls']['cert_path'])->toBe("/etc/orbit/certs/{$host}.crt")
-            ->and($route->config['tls']['key_path'])->toBe("/etc/orbit/certs/{$host}.key");
+        expect($route->node_id)
+            ->toBe($edge->id)
+            ->and($route->config['placement'])
+            ->toBe('ingress')
+            ->and($route->config['tls']['cert_path'])
+            ->toBe("/etc/orbit/certs/{$host}.crt")
+            ->and($route->config['tls']['key_path'])
+            ->toBe("/etc/orbit/certs/{$host}.key");
     }
 })->group('public');
 
@@ -345,11 +361,12 @@ it('public host route does not target the concrete s3 storage node', function ()
     $targetValue = $route->config['target']['value'];
     $routerUrl = $route->config['router_upstream']['url'];
 
-    expect($targetValue)->toBe('https://s3.orbit')
-        ->and($targetValue)->not->toContain('10.6.0.44')
-        ->and($targetValue)->not->toContain('storage-1.s3.orbit')
-        ->and($routerUrl)->toContain('10.6.0.1')
-        ->and($routerUrl)->not->toContain('10.6.0.44');
+    expect($targetValue)
+        ->toBe('https://s3.orbit')
+        ->and($targetValue)
+        ->not->toContain('10.6.0.44')->and($targetValue)
+        ->not->toContain('storage-1.s3.orbit')->and($routerUrl)->toContain('10.6.0.1')->and($routerUrl)
+        ->not->toContain('10.6.0.44');
 })->group('public');
 
 it('re-syncing a public host is idempotent and does not create duplicate routes', function (): void {
@@ -413,8 +430,10 @@ it('removePublicHost removes only the seaweedfs s3 owned route and leaves unrela
 
     app(S3RouteRegistrar::class)->removePublicHost($tool, 's3.example.com');
 
-    expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())->toBeFalse()
-        ->and(ProxyRoute::query()->where('domain', 'other.example.com')->exists())->toBeTrue();
+    expect(ProxyRoute::query()->where('domain', 's3.example.com')->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->where('domain', 'other.example.com')->exists())
+        ->toBeTrue();
 })->group('public');
 
 it('removePublicHost does not remove a non-s3 tool route at the same domain', function (): void {
@@ -463,7 +482,8 @@ it('fails clearly when the router node has no WireGuard address', function (): v
     ]);
 
     app(S3RouteRegistrar::class)->syncPublicHosts($tool);
-})->throws(RuntimeException::class, 'requires a WireGuard address for S3 public host ingress')
+})
+    ->throws(RuntimeException::class, 'requires a WireGuard address for S3 public host ingress')
     ->group('public');
 
 it('fails clearly when there is no active ingress node for a public host', function (): void {
@@ -482,5 +502,6 @@ it('fails clearly when there is no active ingress node for a public host', funct
     ]);
 
     app(S3RouteRegistrar::class)->syncPublicHosts($tool);
-})->throws(RuntimeException::class, 'The S3 public host route requires an active ingress node.')
+})
+    ->throws(RuntimeException::class, 'The S3 public host route requires an active ingress node.')
     ->group('public');

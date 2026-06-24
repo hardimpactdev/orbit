@@ -30,11 +30,16 @@ it('stores app instances as concrete runtime targets for a logical app', functio
         ),
     ]);
 
-    expect($app->instances()->pluck('name')->all())->toBe(['development'])
-        ->and($instance->app->is($app))->toBeTrue()
-        ->and($instance->driver)->toBe(AppInstanceDriver::Orbit)
-        ->and($instance->driver_config)->toBeInstanceOf(OrbitAppInstanceDriverConfigData::class)
-        ->and($instance->driver_config->node)->toBe('app-dev-1');
+    expect($app->instances()->pluck('name')->all())
+        ->toBe(['development'])
+        ->and($instance->app->is($app))
+        ->toBeTrue()
+        ->and($instance->driver)
+        ->toBe(AppInstanceDriver::Orbit)
+        ->and($instance->driver_config)
+        ->toBeInstanceOf(OrbitAppInstanceDriverConfigData::class)
+        ->and($instance->driver_config->node)
+        ->toBe('app-dev-1');
 });
 
 it('keeps instance names unique per app only', function (): void {
@@ -51,26 +56,38 @@ it('keeps instance names unique per app only', function (): void {
 it('hydrates driver_config through Laravel Data concrete classes', function (): void {
     $app = App::factory()->create(['name' => 'billing']);
 
-    $instance = AppInstance::factory()->for($app)->create([
-        'name' => 'production-cloud',
-        'driver' => AppInstanceDriver::LaravelCloud,
-        'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
-            organization_id: 'org_123',
-            organization_name: 'Platform 11',
-            application_id: 'app_123',
-            application_name: 'billing',
-            environment_id: 'env_123',
-            environment_name: 'production',
-            domain: 'platform11.nl',
-        ),
-    ])->fresh();
+    $instance = AppInstance::factory()
+        ->for($app)
+        ->create([
+            'name' => 'production-cloud',
+            'driver' => AppInstanceDriver::LaravelCloud,
+            'driver_config' => new LaravelCloudAppInstanceDriverConfigData(
+                organization_id: 'org_123',
+                organization_name: 'Platform 11',
+                application_id: 'app_123',
+                application_name: 'billing',
+                environment_id: 'env_123',
+                environment_name: 'production',
+                domain: 'platform11.nl',
+            ),
+        ])
+        ->fresh();
 
-    expect($instance)->toBeInstanceOf(AppInstance::class)
-        ->and($instance->driver_config)->toBeInstanceOf(LaravelCloudAppInstanceDriverConfigData::class)
-        ->and($instance->driver_config->environment_name)->toBe('production');
+    expect($instance)
+        ->toBeInstanceOf(AppInstance::class)
+        ->and($instance->driver_config)
+        ->toBeInstanceOf(LaravelCloudAppInstanceDriverConfigData::class)
+        ->and($instance->driver_config->environment_name)
+        ->toBe('production');
 
-    $stored = json_decode((string) DB::table('app_instances')->where('id', $instance->id)->value('driver_config'), true, flags: JSON_THROW_ON_ERROR);
+    $stored = json_decode(
+        (string) DB::table('app_instances')->where('id', $instance->id)->value('driver_config'),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-    expect($stored['type'])->toBe('laravel_cloud_app_instance_driver_config')
-        ->and($stored['data']['application_id'])->toBe('app_123');
+    expect($stored['type'])
+        ->toBe('laravel_cloud_app_instance_driver_config')
+        ->and($stored['data']['application_id'])
+        ->toBe('app_123');
 });

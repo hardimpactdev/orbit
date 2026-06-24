@@ -12,7 +12,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 it('binds an sse progress reporter while streaming and restores the null reporter', function (): void {
-    $response = (new ProgressEventStreamResponseFactory)->make(function (): void {
+    $response = new ProgressEventStreamResponseFactory()->make(function (): void {
         $reporter = app(ProgressReporter::class);
 
         expect($reporter)->toBeInstanceOf(SseProgressReporter::class);
@@ -28,18 +28,24 @@ it('binds an sse progress reporter while streaming and restores the null reporte
     $response->sendContent();
     $output = (string) ob_get_clean();
 
-    expect($response->headers->get('Content-Type'))->toBe('text/event-stream')
-        ->and($response->headers->get('Cache-Control'))->toContain('no-cache')
-        ->and($output)->toContain('event: tree')
-        ->and($output)->toContain('"status":"start"')
-        ->and($output)->toContain('"status":"done"')
-        ->and(app(ProgressReporter::class))->toBeInstanceOf(NullProgressReporter::class);
+    expect($response->headers->get('Content-Type'))
+        ->toBe('text/event-stream')
+        ->and($response->headers->get('Cache-Control'))
+        ->toContain('no-cache')
+        ->and($output)
+        ->toContain('event: tree')
+        ->and($output)
+        ->toContain('"status":"start"')
+        ->and($output)
+        ->toContain('"status":"done"')
+        ->and(app(ProgressReporter::class))
+        ->toBeInstanceOf(NullProgressReporter::class);
 });
 
 it('turns stream exceptions into error events and restores the null reporter', function (): void {
     Log::spy();
 
-    $response = (new ProgressEventStreamResponseFactory)->make(function (): void {
+    $response = new ProgressEventStreamResponseFactory()->make(function (): void {
         throw new RuntimeException('stream exploded');
     });
 
@@ -47,15 +53,18 @@ it('turns stream exceptions into error events and restores the null reporter', f
     $response->sendContent();
     $output = (string) ob_get_clean();
 
-    expect($output)->toContain('event: error')
-        ->and($output)->toContain('"message":"stream exploded"')
-        ->and(app(ProgressReporter::class))->toBeInstanceOf(NullProgressReporter::class);
+    expect($output)
+        ->toContain('event: error')
+        ->and($output)
+        ->toContain('"message":"stream exploded"')
+        ->and(app(ProgressReporter::class))
+        ->toBeInstanceOf(NullProgressReporter::class);
 
     Log::shouldHaveReceived('error')->once();
 });
 
 it('flushes output buffers under fpm-fcgi, cli-server, and frankenphp sapi', function (string $sapi): void {
-    $response = (new ProgressEventStreamResponseFactory($sapi))->make(function (): void {
+    $response = new ProgressEventStreamResponseFactory($sapi)->make(function (): void {
         $reporter = app(ProgressReporter::class);
 
         expect($reporter)->toBeInstanceOf(SseProgressReporter::class);
@@ -79,12 +88,11 @@ it('flushes output buffers under fpm-fcgi, cli-server, and frankenphp sapi', fun
         ob_end_clean();
     }
 
-    expect($flushedOutput)->toContain('event: tree')
-        ->and($flushedOutput)->toContain('"status":"done"');
+    expect($flushedOutput)->toContain('event: tree')->and($flushedOutput)->toContain('"status":"done"');
 })->with(['fpm-fcgi', 'cli-server', 'frankenphp']);
 
 it('sends a buffering prelude before streamed events under frankenphp', function (): void {
-    $response = (new ProgressEventStreamResponseFactory('frankenphp'))->make(function (): void {
+    $response = new ProgressEventStreamResponseFactory('frankenphp')->make(function (): void {
         app(ProgressReporter::class)->tree('Test', [['key' => 'step', 'label' => 'Step']]);
     });
 
@@ -104,11 +112,12 @@ it('sends a buffering prelude before streamed events under frankenphp', function
 
     expect($flushedOutput)
         ->toStartWith(': ')
-        ->and(strpos($flushedOutput, "event: tree\n"))->toBeGreaterThan(0);
+        ->and(strpos($flushedOutput, "event: tree\n"))
+        ->toBeGreaterThan(0);
 });
 
 it('skips buffer flush under cli sapi', function (): void {
-    $response = (new ProgressEventStreamResponseFactory('cli'))->make(function (): void {
+    $response = new ProgressEventStreamResponseFactory('cli')->make(function (): void {
         $reporter = app(ProgressReporter::class);
         $reporter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
         $reporter->stepStart('step');
@@ -119,6 +128,5 @@ it('skips buffer flush under cli sapi', function (): void {
     $response->sendContent();
     $output = (string) ob_get_clean();
 
-    expect($output)->toContain('event: tree')
-        ->and($output)->toContain('"status":"done"');
+    expect($output)->toContain('event: tree')->and($output)->toContain('"status":"done"');
 });

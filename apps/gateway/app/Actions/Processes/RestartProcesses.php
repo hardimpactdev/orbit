@@ -29,10 +29,18 @@ final readonly class RestartProcesses
 
         if ($processes->isEmpty()) {
             if ($name !== null) {
-                throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
+                throw new GatewayApiException(
+                    "Process '{$name}' not found for {$context->label()}.",
+                    'process.not_found',
+                    $context->errorMeta($name),
+                );
             }
 
-            throw new GatewayApiException("{$context->label()} has no configured processes.", 'process.none_configured', $context->errorMeta());
+            throw new GatewayApiException(
+                "{$context->label()} has no configured processes.",
+                'process.none_configured',
+                $context->errorMeta(),
+            );
         }
 
         $runtimes = [];
@@ -47,8 +55,22 @@ final readonly class RestartProcesses
             $events = [];
 
             if ($ok) {
-                $events[] = $this->eventPayload($this->recordProcessEvent->handle(ProcessEventType::Stopped, $context->eventApp(), $workspace, $process, $context->node, $runtimeUnit));
-                $events[] = $this->eventPayload($this->recordProcessEvent->handle(ProcessEventType::Started, $context->eventApp(), $workspace, $process, $context->node, $runtimeUnit));
+                $events[] = $this->eventPayload($this->recordProcessEvent->handle(
+                    ProcessEventType::Stopped,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit,
+                ));
+                $events[] = $this->eventPayload($this->recordProcessEvent->handle(
+                    ProcessEventType::Started,
+                    $context->eventApp(),
+                    $workspace,
+                    $process,
+                    $context->node,
+                    $runtimeUnit,
+                ));
                 $restarted++;
             }
 

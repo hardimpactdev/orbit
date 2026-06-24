@@ -24,9 +24,12 @@ it('selects the first topology provider with the requested kind available', func
 
     $selection = $pool->select(E2ETopologyKind::OperatorGateway);
 
-    expect($selection->available())->toBeTrue()
-        ->and($selection->provider()->name())->toBe('incus')
-        ->and($selection->message)->toBe('incus: ready');
+    expect($selection->available())
+        ->toBeTrue()
+        ->and($selection->provider()->name())
+        ->toBe('incus')
+        ->and($selection->message)
+        ->toBe('incus: ready');
 });
 
 it('reports topology provider failures when none are available', function (): void {
@@ -37,9 +40,12 @@ it('reports topology provider failures when none are available', function (): vo
 
     $selection = $pool->select(E2ETopologyKind::Operator);
 
-    expect($selection->available())->toBeFalse()
-        ->and($selection->message)->toContain('docker: unavailable')
-        ->and($selection->message)->toContain('incus: unavailable');
+    expect($selection->available())
+        ->toBeFalse()
+        ->and($selection->message)
+        ->toContain('docker: unavailable')
+        ->and($selection->message)
+        ->toContain('incus: unavailable');
 });
 
 it('skips topology providers that lack required capabilities', function (): void {
@@ -57,9 +63,12 @@ it('skips topology providers that lack required capabilities', function (): void
 
     $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
-    expect($selection->available())->toBeTrue()
-        ->and($selection->provider()->name())->toBe('incus')
-        ->and($selection->message)->toContain('incus:');
+    expect($selection->available())
+        ->toBeTrue()
+        ->and($selection->provider()->name())
+        ->toBe('incus')
+        ->and($selection->message)
+        ->toContain('incus:');
 });
 
 it('reports capability mismatch when no provider satisfies the requirement', function (): void {
@@ -76,8 +85,10 @@ it('reports capability mismatch when no provider satisfies the requirement', fun
 
     $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
-    expect($selection->available())->toBeFalse()
-        ->and($selection->message)->toContain('docker: capabilities do not satisfy required');
+    expect($selection->available())
+        ->toBeFalse()
+        ->and($selection->message)
+        ->toContain('docker: capabilities do not satisfy required');
 });
 
 it('treats every requested capability flag independently', function (): void {
@@ -95,8 +106,7 @@ it('treats every requested capability flag independently', function (): void {
 
     $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
-    expect($selection->available())->toBeTrue()
-        ->and($selection->provider()->name())->toBe('incus');
+    expect($selection->available())->toBeTrue()->and($selection->provider()->name())->toBe('incus');
 });
 
 it('can select providers with Docker sibling container support', function (): void {
@@ -114,8 +124,7 @@ it('can select providers with Docker sibling container support', function (): vo
 
     $selection = $pool->select(E2ETopologyKind::Operator, $required);
 
-    expect($selection->available())->toBeTrue()
-        ->and($selection->provider()->name())->toBe('docker');
+    expect($selection->available())->toBeTrue()->and($selection->provider()->name())->toBe('docker');
 });
 
 it('can create a docker topology provider from environment config', function (): void {
@@ -133,10 +142,12 @@ it('can create a docker topology provider from environment config', function ():
     });
 });
 
-function fakeTopologyProvider(string $name, bool $available, ?E2ETopologyCapabilities $capabilities = null): E2ETopologyProvider
-{
-    return new class($name, $available, $capabilities ?? E2ETopologyCapabilities::vm()) implements E2ETopologyProvider
-    {
+function fakeTopologyProvider(
+    string $name,
+    bool $available,
+    ?E2ETopologyCapabilities $capabilities = null,
+): E2ETopologyProvider {
+    return new class($name, $available, $capabilities ?? E2ETopologyCapabilities::vm()) implements E2ETopologyProvider {
         public function __construct(
             private readonly string $name,
             private readonly bool $available,
@@ -160,8 +171,12 @@ function fakeTopologyProvider(string $name, bool $available, ?E2ETopologyCapabil
                 : ProviderAvailability::unavailable('unavailable');
         }
 
-        public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
-        {
+        public function acquire(
+            E2ETopologyKind $kind,
+            string $runId,
+            E2EPhaseTimer $timer,
+            E2ETopologyAcquisitionOptions $options,
+        ): E2ETopologyLease {
             throw new RuntimeException('Fake topology provider cannot acquire leases.');
         }
     };

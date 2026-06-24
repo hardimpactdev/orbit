@@ -57,7 +57,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 
         $this->auditLogger->log('remote_shell.run', $node, $script, $options, $result);
 
-        if ((bool) ($options['throw'] ?? false) && ! $result->successful()) {
+        if (($options['throw'] ?? false) && ! $result->successful()) {
             throw new RemoteShellFailed($node, $runtimeScript, $result);
         }
 
@@ -101,7 +101,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
         $pendingProcess = Process::timeout((int) ($options['timeout'] ?? self::DEFAULT_TIMEOUT));
 
         if (array_key_exists('input', $options)) {
-            return $pendingProcess->input((string) $options['input']);
+            return $pendingProcess->input($options['input']);
         }
 
         return $pendingProcess;
@@ -123,14 +123,17 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
         $runtimeCommand = $this->runtimeCommand($script);
         $directCommand = $this->directRuntimeCommand($runtimeCommand['script']);
 
-        if ($directCommand !== null && ! (bool) ($options['strict'] ?? false)) {
+        if ($directCommand !== null && ! ($options['strict'] ?? false)) {
             return $this->directDockerExec($directCommand, $options, $runtimeCommand['docker_exec_options']);
         }
 
         return implode(' ', [
             $this->dockerExecPrefix($options, $runtimeCommand['docker_exec_options']),
             'sh -c',
-            escapeshellarg($this->scripts->compose($runtimeCommand['script'], $this->shellFallbackComposeOptions($options))),
+            escapeshellarg($this->scripts->compose(
+                $runtimeCommand['script'],
+                $this->shellFallbackComposeOptions($options),
+            )),
         ]);
     }
 
@@ -183,8 +186,11 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      * so direct runtime options override duplicate environment and workdir values.
      * Shell fallback strips those executor options from the composed script body.
      */
-    private function dockerExecPrefix(array $options, array $dockerExecOptions, bool $includeExecutorOptions = true): string
-    {
+    private function dockerExecPrefix(
+        array $options,
+        array $dockerExecOptions,
+        bool $includeExecutorOptions = true,
+    ): string {
         $parts = ['docker exec -i'];
 
         if ($dockerExecOptions['detach']) {
@@ -266,10 +272,12 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      */
     private function runtimeCommand(string $script): array
     {
-        return $this->unwrapRuntimeCommand($script) ?? [
-            'script' => $script,
-            'docker_exec_options' => $this->emptyDockerExecOptions(),
-        ];
+        return (
+            $this->unwrapRuntimeCommand($script) ?? [
+                'script' => $script,
+                'docker_exec_options' => $this->emptyDockerExecOptions(),
+            ]
+        );
     }
 
     /**
@@ -543,8 +551,11 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
      * }  $dockerExecOptions
      * @return list<string>
      */
-    private function mergedExecEnvironment(array $options, array $dockerExecOptions, bool $includeExecutorOptions): array
-    {
+    private function mergedExecEnvironment(
+        array $options,
+        array $dockerExecOptions,
+        bool $includeExecutorOptions,
+    ): array {
         $environment = [];
 
         foreach ($dockerExecOptions['environment'] as $env) {
@@ -596,7 +607,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
     private function execWorkdir(array $options, array $dockerExecOptions, bool $includeExecutorOptions): ?string
     {
         if ($includeExecutorOptions && isset($options['cwd']) && $options['cwd'] !== '') {
-            return (string) $options['cwd'];
+            return $options['cwd'];
         }
 
         return $dockerExecOptions['workdir'];
@@ -694,7 +705,7 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
                     continue;
                 }
 
-                if ($character === '\\' && $quote !== "'" && $index + 1 < $length) {
+                if ($character === '\\' && $quote !== "'" && ($index + 1) < $length) {
                     $value .= $command[$index + 1];
                     $index += 2;
 
@@ -745,13 +756,13 @@ final readonly class RemoteOrbitGatewayExecutor implements RemoteExecutor
 
         return [
             ...$options,
-            'cwd' => $this->containerCwd($node, (string) $options['cwd']),
+            'cwd' => $this->containerCwd($node, $options['cwd']),
         ];
     }
 
     private function containerCwd(Node $node, string $cwd): string
     {
-        $hostOrbitPath = rtrim((string) $node->orbit_path, '/');
+        $hostOrbitPath = rtrim($node->orbit_path, '/');
         $normalizedCwd = rtrim($cwd, '/');
 
         if ($hostOrbitPath === '') {

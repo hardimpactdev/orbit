@@ -9,7 +9,7 @@ use Symfony\Component\Console\Output\BufferedOutput;
 function ageStreamedStepTreeFrame(StreamedStepTree $renderer, int $ageUs): void
 {
     $property = new ReflectionProperty(StreamedStepTree::class, 'lastFrameAtUs');
-    $property->setValue($renderer, ((int) (microtime(true) * 1_000_000)) - $ageUs);
+    $property->setValue($renderer, (int) (microtime(true) * 1_000_000) - $ageUs);
 }
 
 it('uses the canonical spinner frame order for active streamed steps', function (): void {
@@ -112,8 +112,15 @@ it('renders progress messages for active streamed steps', function (): void {
 });
 
 it('animates active streamed steps while the parent process is blocked', function (): void {
-    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('pcntl_signal') || ! function_exists('pcntl_async_signals')) {
-        $this->markTestSkipped('pcntl_fork, posix_kill, pcntl_signal, and pcntl_async_signals are required to observe parent-process ticker callbacks.');
+    if (
+        ! function_exists('pcntl_fork')
+        || ! function_exists('posix_kill')
+        || ! function_exists('pcntl_signal')
+        || ! function_exists('pcntl_async_signals')
+    ) {
+        $this->markTestSkipped(
+            'pcntl_fork, posix_kill, pcntl_signal, and pcntl_async_signals are required to observe parent-process ticker callbacks.',
+        );
     }
 
     $output = new BufferedOutput(decorated: true);

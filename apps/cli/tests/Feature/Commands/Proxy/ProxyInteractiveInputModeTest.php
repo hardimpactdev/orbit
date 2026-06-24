@@ -27,7 +27,8 @@ describe('proxy interactive input mode', function (): void {
             ],
         ]));
 
-        $this->artisan('proxy:add')
+        $this
+            ->artisan('proxy:add')
             ->expectsQuestion('Domain', 'vite.docs.test')
             ->expectsQuestion('Serving node', 'app-1')
             ->expectsChoice('Route type', 'upstream', ['Upstream', 'Redirect', 'upstream', 'redirect'])
@@ -35,13 +36,17 @@ describe('proxy interactive input mode', function (): void {
             ->expectsOutputToContain('route')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/proxy-routes'
-            && $request->data() === [
-                'domain' => 'vite.docs.test',
-                'node' => 'app-1',
-                'upstream' => 'http://127.0.0.1:5173',
-                'force' => false,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/proxy-routes'
+                && $request->data() === [
+                    'domain' => 'vite.docs.test',
+                    'node' => 'app-1',
+                    'upstream' => 'http://127.0.0.1:5173',
+                    'force' => false,
+                ]
+            ),
+        );
     });
 });

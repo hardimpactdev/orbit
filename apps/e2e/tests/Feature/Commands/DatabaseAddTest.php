@@ -37,17 +37,22 @@ it('adds a database connection from the operator node through the gateway api', 
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['connection']['slug'])->toBe($slug)
-            ->and($payload['success']['data']['connection']['driver'])->toBe('sqlite')
-            ->and($payload['success']['data']['connection']['node'])->toBe('app-dev-1');
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload['success']['data']['connection']['slug'])
+            ->toBe($slug)
+            ->and($payload['success']['data']['connection']['driver'])
+            ->toBe('sqlite')
+            ->and($payload['success']['data']['connection']['node'])
+            ->toBe('app-dev-1');
     } finally {
         $slugValue = var_export($slug, true);
         $cleanupPhp = "\\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete(); echo 'cleaned';";
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

@@ -55,7 +55,10 @@ final class AppRegisterCommand extends AppGatewayCommand
             'Registering App',
             [
                 ['label' => 'Resolve app configuration', 'doneLabel' => 'Resolved app configuration'],
-                ['label' => 'Register app record or adopt app path', 'doneLabel' => 'Registered app record or adopted app path'],
+                [
+                    'label' => 'Register app record or adopt app path',
+                    'doneLabel' => 'Registered app record or adopted app path',
+                ],
                 ['label' => 'Apply and verify app runtime', 'doneLabel' => 'Applied and verified app runtime'],
                 ['label' => 'Apply and verify app routing', 'doneLabel' => 'Applied and verified app routing'],
                 ['label' => 'Verify application', 'doneLabel' => 'Verified application'],

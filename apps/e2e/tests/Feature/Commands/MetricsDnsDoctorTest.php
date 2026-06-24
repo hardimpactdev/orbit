@@ -30,9 +30,18 @@ function metricsDnsDoctorPublishesRoute(): void
 
         $published = $topology->ssh(
             'gateway',
-            'grep -Fx '.escapeshellarg("address=/orbit/{$state['wireguard_address']}").' '.escapeshellarg($confPath)
-                .' && grep -Fx '.escapeshellarg('local=/orbit/').' '.escapeshellarg($confPath)
-                .' && ! grep -F '.escapeshellarg('address=/metrics.orbit/').' '.escapeshellarg($confPath),
+            'grep -Fx '
+                .escapeshellarg("address=/orbit/{$state['wireguard_address']}")
+                .' '
+                .escapeshellarg($confPath)
+                .' && grep -Fx '
+                .escapeshellarg('local=/orbit/')
+                .' '
+                .escapeshellarg($confPath)
+                .' && ! grep -F '
+                .escapeshellarg('address=/metrics.orbit/')
+                .' '
+                .escapeshellarg($confPath),
             timeoutSeconds: 60,
         );
 
@@ -48,35 +57,35 @@ function metricsDnsDoctorPublishesRoute(): void
 function metricsDnsDoctorSeedRouteIntent(E2ETopologyHarness $topology, string $checkout): array
 {
     $script = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'gateway')->firstOrFail();
-$config = \App\Services\Metrics\MetricsServiceRoute::config();
-$route = new \App\Models\ProxyRoute([
-    'node_id' => $node->id,
-    'domain' => \App\Services\Metrics\MetricsServiceRoute::Domain,
-    'owner_type' => 'router',
-    'kind' => 'proxy',
-    'config' => $config,
-]);
-$sourceHash = app(\App\Services\Proxy\ProxyRouteRenderer::class)->sourceHash($route);
+        $node = \App\Models\Node::query()->where('name', 'gateway')->firstOrFail();
+        $config = \App\Services\Metrics\MetricsServiceRoute::config();
+        $route = new \App\Models\ProxyRoute([
+            'node_id' => $node->id,
+            'domain' => \App\Services\Metrics\MetricsServiceRoute::Domain,
+            'owner_type' => 'router',
+            'kind' => 'proxy',
+            'config' => $config,
+        ]);
+        $sourceHash = app(\App\Services\Proxy\ProxyRouteRenderer::class)->sourceHash($route);
 
-\App\Models\ProxyRoute::query()->updateOrCreate(
-    ['domain' => \App\Services\Metrics\MetricsServiceRoute::Domain],
-    [
-        'node_id' => $node->id,
-        'app_id' => null,
-        'workspace_id' => null,
-        'owner_type' => 'router',
-        'kind' => 'proxy',
-        'config' => $config,
-        'source_hash' => $sourceHash,
-    ],
-);
+        \App\Models\ProxyRoute::query()->updateOrCreate(
+            ['domain' => \App\Services\Metrics\MetricsServiceRoute::Domain],
+            [
+                'node_id' => $node->id,
+                'app_id' => null,
+                'workspace_id' => null,
+                'owner_type' => 'router',
+                'kind' => 'proxy',
+                'config' => $config,
+                'source_hash' => $sourceHash,
+            ],
+        );
 
-echo json_encode([
-    'config_root' => rtrim((string) config('orbit.paths.config_root'), '/'),
-    'wireguard_address' => (string) $node->wireguard_address,
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'config_root' => rtrim((string) config('orbit.paths.config_root'), '/'),
+            'wireguard_address' => (string) $node->wireguard_address,
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
@@ -96,13 +105,13 @@ function metricsDnsDoctorRemovePublication(E2ETopologyHarness $topology, string 
 {
     $script = sprintf(
         <<<'SH'
-if [ -f %1$s ]; then
-    tmp="$(mktemp)"
-    grep -v -e '^address=/orbit/' -e '^local=/orbit/' -e 'metrics\.orbit' %1$s > "$tmp" || true
-    cat "$tmp" > %1$s
-    rm -f "$tmp"
-fi
-SH,
+            if [ -f %1$s ]; then
+                tmp="$(mktemp)"
+                grep -v -e '^address=/orbit/' -e '^local=/orbit/' -e 'metrics\.orbit' %1$s > "$tmp" || true
+                cat "$tmp" > %1$s
+                rm -f "$tmp"
+            fi
+            SH,
         escapeshellarg($confPath),
     );
 
@@ -114,10 +123,10 @@ SH,
 function metricsDnsDoctorReconcile(E2ETopologyHarness $topology, string $checkout): void
 {
     $script = <<<'PHP'
-app(\App\Services\Dns\DnsmasqReconciler::class)->reconcile();
+        app(\App\Services\Dns\DnsmasqReconciler::class)->reconcile();
 
-echo 'reconciled';
-PHP;
+        echo 'reconciled';
+        PHP;
 
     $result = $topology->ssh(
         'gateway',

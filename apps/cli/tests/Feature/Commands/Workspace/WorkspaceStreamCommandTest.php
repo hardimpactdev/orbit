@@ -12,8 +12,7 @@ use Psr\Http\Message\StreamInterface;
  */
 function sseFrame(string $event, array $data): string
 {
-    return "event: {$event}\n"
-        .'data: '.json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n\n";
+    return "event: {$event}\n".'data: '.json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n\n";
 }
 
 /**
@@ -101,8 +100,8 @@ describe('WorkspaceStream commands', function (): void {
 
         fakeWorkspaceStreamGateway(
             sseFrame('tree', ['title' => 'Creating Workspace'])
-            .sseFrame('step', ['key' => 'source', 'status' => 'running', 'message' => 'Provisioning worktree'])
-            .sseFrame('complete', $complete),
+                .sseFrame('step', ['key' => 'source', 'status' => 'running', 'message' => 'Provisioning worktree'])
+                .sseFrame('complete', $complete),
         );
 
         [$exitCode, $output] = runCommand($this, 'workspace:new', [
@@ -115,23 +114,31 @@ describe('WorkspaceStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/workspaces'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'name' => 'feature-docs',
-                'app' => 'docs',
-                'base' => 'main',
-                'php_version' => '8.5',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/workspaces'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'name' => 'feature-docs',
+                    'app' => 'docs',
+                    'base' => 'main',
+                    'php_version' => '8.5',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe([
                 'event' => 'complete',
                 'data' => $complete,
             ])
-            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
-            ->and($output)->not->toContain('Provisioning worktree');
+            ->and(count(array_filter(explode("\n", $output))))
+            ->toBe(1)
+            ->and($output)
+            ->not->toContain('Provisioning worktree');
     });
 
     it('renders gateway-authored workspace setup progress in human mode', function (): void {
@@ -142,13 +149,17 @@ describe('WorkspaceStream commands', function (): void {
                     ['key' => 'registry', 'label' => 'Apply workspace registry'],
                 ],
             ])
-            .sseFrame('step', ['key' => 'registry', 'status' => 'running', 'message' => 'Applying workspace registry'])
-            .sseFrame('complete', [
-                'exit_code' => 0,
-                'data' => [
-                    'footer' => 'Workspace ready and available at: https://feature-docs.docs.test',
-                ],
-            ]),
+                .sseFrame('step', [
+                    'key' => 'registry',
+                    'status' => 'running',
+                    'message' => 'Applying workspace registry',
+                ])
+                .sseFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => [
+                        'footer' => 'Workspace ready and available at: https://feature-docs.docs.test',
+                    ],
+                ]),
         );
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
@@ -157,11 +168,16 @@ describe('WorkspaceStream commands', function (): void {
             '--path' => '/Users/nckrtl/Sites/docs/.worktrees/feature-docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Setting Up Workspace')
-            ->and($output)->toContain('Apply workspace registry')
-            ->and($output)->toContain('Applying workspace registry')
-            ->and($output)->toContain('Workspace ready and available at: https://feature-docs.docs.test');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Setting Up Workspace')
+            ->and($output)
+            ->toContain('Apply workspace registry')
+            ->and($output)
+            ->toContain('Applying workspace registry')
+            ->and($output)
+            ->toContain('Workspace ready and available at: https://feature-docs.docs.test');
     });
 
     it('emits only the final workspace setup error frame in json mode', function (): void {
@@ -177,8 +193,8 @@ describe('WorkspaceStream commands', function (): void {
 
         fakeWorkspaceStreamGateway(
             sseFrame('tree', ['title' => 'Setting Up Workspace'])
-            .sseFrame('step', ['key' => 'setup', 'status' => 'running', 'message' => 'Running composer install'])
-            .sseFrame('error', $error),
+                .sseFrame('step', ['key' => 'setup', 'status' => 'running', 'message' => 'Running composer install'])
+                .sseFrame('error', $error),
         );
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
@@ -189,19 +205,22 @@ describe('WorkspaceStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toBe([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe([
                 'event' => 'error',
                 'data' => $error,
             ])
-            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
-            ->and($output)->not->toContain('Running composer install');
+            ->and(count(array_filter(explode("\n", $output))))
+            ->toBe(1)
+            ->and($output)
+            ->not->toContain('Running composer install');
     });
 
     it('ignores SSE keepalive comments while waiting for the terminal frame', function (): void {
         fakeWorkspaceStreamGateway(
-            ": heartbeat\n\n"
-            .sseFrame('complete', ['exit_code' => 0, 'data' => ['footer' => 'Workspace ready']]),
+            ": heartbeat\n\n".sseFrame('complete', ['exit_code' => 0, 'data' => ['footer' => 'Workspace ready']]),
         );
 
         [$exitCode, $output] = runCommand($this, 'workspace:setup', [
@@ -212,9 +231,12 @@ describe('WorkspaceStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($output)->not->toContain('heartbeat');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($output)
+            ->not->toContain('heartbeat');
     });
 
     it('fails when the workspace stream contains a malformed frame', function (): void {
@@ -228,9 +250,12 @@ describe('WorkspaceStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable')
-            ->and($decoded['error']['message'])->toContain('malformed');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('gateway_unavailable')
+            ->and($decoded['error']['message'])
+            ->toContain('malformed');
     });
 
     it('fails when the workspace stream closes without a terminal frame', function (): void {
@@ -244,8 +269,7 @@ describe('WorkspaceStream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('dispatches decoded frames before the full response body is read', function (): void {
@@ -260,12 +284,17 @@ describe('WorkspaceStream commands', function (): void {
         }));
 
         $exitCode = app(GatewayStreamClient::class)
-            ->streamEvents('/api/workspaces', [], function (ProgressEventType $type) use (&$readCount, &$eventReadCounts): void {
+            ->streamEvents('/api/workspaces', [], function (ProgressEventType $type) use (
+                &$readCount,
+                &$eventReadCounts,
+            ): void {
                 $eventReadCounts[$type->value] = $readCount;
             });
 
-        expect($exitCode)->toBe(0)
-            ->and($eventReadCounts)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($eventReadCounts)
+            ->toBe([
                 'step' => 1,
                 'complete' => 2,
             ]);

@@ -65,40 +65,69 @@ describe('AppRemoveController', function (): void {
             'source_hash' => str_repeat('a', 64),
         ]);
 
-        OrbitProcess::factory()->forOwner($app)->create([
-            'name' => 'frankenphp-docs',
-            'command' => 'frankenphp',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'container_name' => 'orbit-app-docs',
-                'php_ini_path' => '/etc/orbit/apps/docs.ini',
-            ],
-        ]);
+        OrbitProcess::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'frankenphp-docs',
+                'command' => 'frankenphp',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'container_name' => 'orbit-app-docs',
+                    'php_ini_path' => '/etc/orbit/apps/docs.ini',
+                ],
+            ]);
 
         $shell = new AppRemoveApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '{"Id":"abc"}', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'orbit-container-config-probe:present', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: 'orbit-container-config-probe:present',
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: 'orbit-container-config-probe:absent', stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: 'orbit-container-config-probe:absent',
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('DELETE', '/api/apps/docs', [
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            [
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.result.action', 'removed')
             ->assertJsonPath('success.data.cleanup.proxy_routes_removed', 1);
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeFalse()
-            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
-            ->and(OrbitProcess::query()->where('name', 'frankenphp-docs')->exists())->toBeFalse()
-            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))->toBeTrue()
-            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/apps/docs.ini'")))->toBeTrue()
-            ->and(collect($shell->scripts)->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))->toBeTrue();
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
+            ->toBeFalse()
+            ->and(OrbitProcess::query()->where('name', 'frankenphp-docs')->exists())
+            ->toBeFalse()
+            ->and(collect($shell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-app-docs'")))
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "sudo rm -f '/etc/orbit/apps/docs.ini'")))
+            ->toBeTrue()
+            ->and(collect($shell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "sudo rm -rf '/home/orbit/apps/docs'")))
+            ->toBeTrue();
     });
 
     it('requires destructive consent before removing app intent', function (): void {
@@ -117,7 +146,8 @@ describe('AppRemoveController', function (): void {
 
         $response = $this->call('DELETE', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force');
 
@@ -139,11 +169,19 @@ describe('AppRemoveController', function (): void {
 
         app()->instance(RemoteShell::class, new AppRemoveApiSequencedRemoteShell([]));
 
-        $response = $this->call('DELETE', '/api/apps/docs', [
-            'destructive_consent' => true,
-        ], [], [], ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/apps/docs',
+            [
+                'destructive_consent' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:remove')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
@@ -170,11 +208,13 @@ final class AppRemoveApiSequencedRemoteShell implements RemoteShell
     {
         $this->scripts[] = $script;
 
-        return array_shift($this->results) ?? new RemoteShellResult(
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            durationMs: 1,
+        return (
+            array_shift($this->results) ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            )
         );
     }
 }

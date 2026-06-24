@@ -27,7 +27,9 @@ abstract class FirewallGatewayCommand extends GatewayCommand
 
         if ($value === null) {
             if (! $this->wantsJson() && $this->input->isInteractive()) {
-                $answer = $this->ask($name === 'name' ? 'Rule name' : str($name)->replace('_', ' ')->title()->toString());
+                $answer = $this->ask(
+                    $name === 'name' ? 'Rule name' : str($name)->replace('_', ' ')->title()->toString(),
+                );
 
                 if (is_string($answer) && trim($answer) !== '') {
                     return trim($answer);

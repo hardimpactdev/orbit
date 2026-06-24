@@ -21,8 +21,11 @@ afterEach(function (): void {
     m::close();
 });
 
-function incusTopologyBuilderProcessResult(string $output = '', string $errorOutput = '', bool $successful = true): ProcessResult
-{
+function incusTopologyBuilderProcessResult(
+    string $output = '',
+    string $errorOutput = '',
+    bool $successful = true,
+): ProcessResult {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn($successful);
     $result->shouldReceive('output')->andReturn($output);
@@ -172,7 +175,8 @@ it('throws when the base image is missing', function (): void {
     $config = E2EConfig::fromEnvironment();
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
-    $host->shouldReceive('imageExists')
+    $host
+        ->shouldReceive('imageExists')
         ->with($config->baseImage)
         ->andReturn(false);
 
@@ -200,7 +204,8 @@ it('throws when a target template instance already exists', function (): void {
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->andReturn(true);
-    $host->shouldReceive('instanceExists')
+    $host
+        ->shouldReceive('instanceExists')
         ->with('orbit-template-operator-base')
         ->andReturn(true);
 
@@ -218,11 +223,13 @@ it('deletes target template instances before replacing them', function (): void 
     $host->shouldReceive('imageExists')->andReturn(true);
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => $name === 'orbit-template-operator-base');
-    $host->shouldReceive('deleteInstance')
+    $host
+        ->shouldReceive('deleteInstance')
         ->with('orbit-template-operator-base')
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
         ->andReturn(incusTopologyBuilderProcessResult(successful: false));
 
@@ -253,7 +260,8 @@ it('does not delete unsuffixed Incus templates when replacing prepared topology 
 
                 return incusTopologyBuilderProcessResult();
             });
-        $host->shouldReceive('run')
+        $host
+            ->shouldReceive('run')
             ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
             ->andReturn(incusTopologyBuilderProcessResult(successful: false));
 
@@ -262,9 +270,9 @@ it('does not delete unsuffixed Incus templates when replacing prepared topology 
 
         expect(fn () => $builder->build(E2ETopologyKind::Operator, replaceExisting: true))
             ->toThrow(RuntimeException::class, 'Could not create work directory')
-            ->and($checked)->not->toContain('orbit-template-operator')
-            ->and($deleted)->not->toContain('orbit-template-operator')
-            ->and($deleted)->toContain('orbit-template-operator-base');
+            ->and($checked)
+            ->not->toContain('orbit-template-operator')->and($deleted)
+            ->not->toContain('orbit-template-operator')->and($deleted)->toContain('orbit-template-operator-base');
     });
 });
 
@@ -273,7 +281,11 @@ it('does not erase trusted gateway CA config when switching the operator to the 
 
     expect($source)->toBeString();
 
-    preg_match('/private function updateOperatorCliGatewayUrl\(.*?private function cliJsonConfigBody/s', (string) $source, $matches);
+    preg_match(
+        '/private function updateOperatorCliGatewayUrl\(.*?private function cliJsonConfigBody/s',
+        (string) $source,
+        $matches,
+    );
 
     expect($matches[0] ?? '')
         ->toContain('$gateway')
@@ -290,7 +302,11 @@ it('does not seed database and redis fixture state in the plain app-dev provisio
 
     expect($source)->toBeString();
 
-    preg_match('/private function buildDevelopmentAppStage\(.*?private function buildProductionAppStage/s', (string) $source, $matches);
+    preg_match(
+        '/private function buildDevelopmentAppStage\(.*?private function buildProductionAppStage/s',
+        (string) $source,
+        $matches,
+    );
 
     expect($matches[0] ?? '')
         ->toContain('dev.node-new')
@@ -318,7 +334,8 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
 
             return incusTopologyBuilderProcessResult();
         });
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
         ->andReturn(incusTopologyBuilderProcessResult(successful: false));
 
@@ -327,7 +344,8 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdev, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
-        ->and($deleted)->toBe(array_reverse($existing));
+        ->and($deleted)
+        ->toBe(array_reverse($existing));
 });
 
 it('does not reuse an operator-gateway stage when rebuilding the prepared full topology', function (): void {
@@ -352,14 +370,19 @@ it('does not reuse an operator-gateway stage when rebuilding the prepared full t
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
     $host->shouldReceive('snapshotExists')
-        ->andReturnUsing(fn (string $name, string $snapshot): bool => in_array("{$name}:{$snapshot}", $baseSnapshots, true));
+        ->andReturnUsing(fn (string $name, string $snapshot): bool => in_array(
+            "{$name}:{$snapshot}",
+            $baseSnapshots,
+            true,
+        ));
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
 
             return incusTopologyBuilderProcessResult();
         });
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
         ->andReturn(incusTopologyBuilderProcessResult(successful: false));
 
@@ -368,7 +391,8 @@ it('does not reuse an operator-gateway stage when rebuilding the prepared full t
 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
-        ->and($deleted)->toBe([
+        ->and($deleted)
+        ->toBe([
             'orbit-template-agent-base',
             'orbit-template-app-prod-base',
             'orbit-template-app-dev-base',
@@ -390,9 +414,19 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $host
+            ->shouldReceive('provisionInstance')
+            ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
+            ->once()
+            ->andReturn(incusTopologyBuilderProcessResult());
+        $host
+            ->shouldReceive('provisionInstance')
+            ->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')
+            ->once()
+            ->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+            &$commands,
+        ): ProcessResult {
             $commands[] = $command;
 
             if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
@@ -447,106 +481,163 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
         $redisSeedPhase = array_search('dev.database-redis-seed', $phaseNames, true);
         $wireGuardCommandPosition = strpos($commandOutput, 'wg-quick up wg-orbit');
         $runtimePrerequisiteCommandPosition = strpos($commandOutput, 'sudo -u "$runtime_user" docker image inspect');
-        $runtimeSshAuthorizeCommandPosition = strpos($commandOutput, 'orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys');
+        $runtimeSshAuthorizeCommandPosition = strpos(
+            $commandOutput,
+            'orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys',
+        );
         $developmentReadyWaitPosition = strpos($commandOutput, 'while [ ! -f "$DEV_READY_MARKER" ]; do');
         $developmentBakePosition = strpos($commandOutput, '--role=app-dev');
         $productionBakePosition = strpos($commandOutput, 'orbit:internal:bake-ingress-node');
-        $developmentTldPosition = $developmentBakePosition !== false ? strpos($commandOutput, '--tld=', $developmentBakePosition) : false;
-        $developmentCommandSegment = $developmentBakePosition !== false && $developmentTldPosition !== false
-            ? substr($commandOutput, $developmentBakePosition, $developmentTldPosition - $developmentBakePosition + 24)
-            : '';
+        $developmentTldPosition = $developmentBakePosition !== false
+            ? strpos($commandOutput, '--tld=', $developmentBakePosition)
+            : false;
+        $developmentCommandSegment =
+            $developmentBakePosition !== false && $developmentTldPosition !== false
+                ? substr(
+                    $commandOutput,
+                    $developmentBakePosition,
+                    $developmentTldPosition - $developmentBakePosition + 24,
+                )
+                : '';
         $agentBakePosition = strpos($commandOutput, 'orbit:internal:bake-agent-node');
 
-        expect($manifest)->toHaveCount(5)
-            ->and($manifest)->sequence(
-                fn ($template) => $template->role->toBe('operator')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
-                fn ($template) => $template->role->toBe('gateway')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
-                fn ($template) => $template->role->toBe('dev')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
-                fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
-                fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
+        expect($manifest)
+            ->toHaveCount(5)
+            ->and($manifest)
+            ->sequence(
+                fn ($template) => $template
+                    ->role->toBe('operator')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
+                fn ($template) => $template
+                    ->role->toBe('gateway')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
+                fn ($template) => $template
+                    ->role->toBe('dev')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
+                fn ($template) => $template
+                    ->role->toBe('prod')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
+                fn ($template) => $template
+                    ->role->toBe('agent')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent-base'),
             )
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
-            ->and($commandOutput)->toContain('/tmp/orbit-e2e-prepared-downstream-roles.sh')
-            ->and($commandOutput)->toContain('PID_PREPARE_DEV=$!')
-            ->and($commandOutput)->toContain('PID_PREPARE_PROD=$!')
-            ->and($commandOutput)->toContain('PID_PREPARE_AGENT=$!')
-            ->and($commandOutput)->toContain('__orbit_prepare_timing')
-            ->and($commandOutput)->toContain('__orbit_bake_timing')
-            ->and($commandOutput)->toContain('grep "__orbit_bake_timing "')
-            ->and($commandOutput)->toContain('wait "$PID_PREPARE_DEV"')
-            ->and($commandOutput)->toContain('wait "$PID_PREPARE_PROD"')
-            ->and($commandOutput)->toContain('wait "$PID_PREPARE_AGENT"')
-            ->and($commandOutput)->toContain('PID_BAKE_DEV=$!')
-            ->and($commandOutput)->toContain('PID_BAKE_PROD=$!')
-            ->and($commandOutput)->toContain('PID_BAKE_AGENT=$!')
-            ->and($commandOutput)->toContain('set -euo pipefail;')
-            ->and($commandOutput)->toContain('PID_BAKE_DEV=$!;')
-            ->and($commandOutput)->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc")
-            ->and($wireGuardCommandPosition)->toBeInt()
-            ->and($runtimePrerequisiteCommandPosition)->toBeInt()
-            ->and($wireGuardCommandPosition)->toBeLessThan($runtimePrerequisiteCommandPosition)
-            ->and($productionBakePosition)->toBeInt()
-            ->and($agentBakePosition)->toBeInt()
-            ->and($developmentReadyWaitPosition)->toBeFalse()
-            ->and($developmentBakePosition)->toBeInt()
-            ->and($developmentCommandSegment)->toContain('--user=')
-            ->and($developmentCommandSegment)->toContain('orbit')
-            ->and($developmentCommandSegment)->not->toContain('provisioner')
-            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($developmentBakePosition)
-            ->and($runtimeSshAuthorizeCommandPosition)->toBeInt()
-            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($runtimeSshAuthorizeCommandPosition)
-            ->and($runtimeSshAuthorizeCommandPosition)->toBeLessThan($developmentBakePosition)
-            ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
-            ->and($commandOutput)->toContain('artisan tinker --execute=')
-            ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
-            ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-app-node')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-ingress-node')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-agent-node')
-            ->and($commandOutput)->toContain('app-dev-1')
-            ->and($commandOutput)->toContain('app-prod-1')
-            ->and($commandOutput)->toContain('agent-1')
-            ->and($commandOutput)->toContain('/tmp/orbit-e2e-prepared-bake.sh')
-            ->and($commandOutput)->toContain('caddy-2-alpine.tar')
-            ->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')
-            ->and($commandOutput)->toContain('orbit-reverb-current.tar')
-            ->and($commandOutput)->toContain('caddy:2-alpine')
-            ->and($commandOutput)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
-            ->and($commandOutput)->toContain('orbit-reverb:current')
-            ->and($commandOutput)->toContain('docker.io')
-            ->and($commandOutput)->toContain('sudo -u "$bootstrap_user" docker image inspect')
-            ->and($commandOutput)->toContain('runtime_user=orbit')
-            ->and($commandOutput)->toContain('usermod -aG docker "$runtime_user"')
-            ->and($commandOutput)->toContain('sudo -u "$runtime_user" docker image inspect')
-            ->and($commandOutput)->not->toContain('orbit-template-app-dev-base/var/tmp/orbit-gateway-current.tar')
-            ->and(substr_count($commandOutput, 'ORBIT_E2E_NODE_WIREGUARD_ADDRESS='))->toBe(0)
-            ->and($commandOutput)->toContain('prepared Incus base image is missing E2E dependencies')
-            ->and($commandOutput)->toContain('for command in composer git systemctl wg wg-quick dig ufw; do')
-            ->and($commandOutput)->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io')
-            ->and($commandOutput)->not->toContain('supervisor.service')
-            ->and($wireGuardPhase)->toBeInt()
-            ->and($runtimePrerequisitesPhase)->toBeInt()
-            ->and($bakePhase)->toBeInt()
-            ->and($redisSeedPhase)->toBeInt()
-            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.launch')
-            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.agent-ready')
-            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.orbit-binary')
-            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-authorize')
-            ->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-ready')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.host-key')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.registry')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.role-assignment')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-node')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-tool')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-converge')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.dev.total')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.prod.total')
-            ->and($phaseNames)->toContain('prepared.downstream.bake.agent.total')
-            ->and($wireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
-            ->and($runtimePrerequisitesPhase)->toBeLessThan($bakePhase)
-            ->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
+            ->and($commandOutput)
+            ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
+            ->and($commandOutput)
+            ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+            ->and($commandOutput)
+            ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
+            ->and($commandOutput)
+            ->toContain('/tmp/orbit-e2e-prepared-downstream-roles.sh')
+            ->and($commandOutput)
+            ->toContain('PID_PREPARE_DEV=$!')
+            ->and($commandOutput)
+            ->toContain('PID_PREPARE_PROD=$!')
+            ->and($commandOutput)
+            ->toContain('PID_PREPARE_AGENT=$!')
+            ->and($commandOutput)
+            ->toContain('__orbit_prepare_timing')
+            ->and($commandOutput)
+            ->toContain('__orbit_bake_timing')
+            ->and($commandOutput)
+            ->toContain('grep "__orbit_bake_timing "')
+            ->and($commandOutput)
+            ->toContain('wait "$PID_PREPARE_DEV"')
+            ->and($commandOutput)
+            ->toContain('wait "$PID_PREPARE_PROD"')
+            ->and($commandOutput)
+            ->toContain('wait "$PID_PREPARE_AGENT"')
+            ->and($commandOutput)
+            ->toContain('PID_BAKE_DEV=$!')
+            ->and($commandOutput)
+            ->toContain('PID_BAKE_PROD=$!')
+            ->and($commandOutput)
+            ->toContain('PID_BAKE_AGENT=$!')
+            ->and($commandOutput)
+            ->toContain('set -euo pipefail;')
+            ->and($commandOutput)
+            ->toContain('PID_BAKE_DEV=$!;')
+            ->and($commandOutput)
+            ->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc")
+            ->and($wireGuardCommandPosition)
+            ->toBeInt()
+            ->and($runtimePrerequisiteCommandPosition)
+            ->toBeInt()
+            ->and($wireGuardCommandPosition)
+            ->toBeLessThan($runtimePrerequisiteCommandPosition)
+            ->and($productionBakePosition)
+            ->toBeInt()
+            ->and($agentBakePosition)
+            ->toBeInt()
+            ->and($developmentReadyWaitPosition)
+            ->toBeFalse()
+            ->and($developmentBakePosition)
+            ->toBeInt()
+            ->and($developmentCommandSegment)
+            ->toContain('--user=')
+            ->and($developmentCommandSegment)
+            ->toContain('orbit')
+            ->and($developmentCommandSegment)
+            ->not->toContain('provisioner')->and($runtimePrerequisiteCommandPosition)->toBeLessThan(
+                $developmentBakePosition,
+            )->and($runtimeSshAuthorizeCommandPosition)->toBeInt()->and(
+                $runtimePrerequisiteCommandPosition,
+            )->toBeLessThan($runtimeSshAuthorizeCommandPosition)->and(
+                $runtimeSshAuthorizeCommandPosition,
+            )->toBeLessThan($developmentBakePosition)->and($commandOutput)->toContain(
+                'orbit-gateway:prepared-current',
+            )->and($commandOutput)->toContain('artisan tinker --execute=')->and($commandOutput)
+            ->not->toContain('cd /home/orbit/orbit && php artisan')->and($commandOutput)
+            ->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake')->and(
+                $commandOutput,
+            )->toContain('artisan orbit:internal:bake-app-node')->and($commandOutput)->toContain(
+                'artisan orbit:internal:bake-ingress-node',
+            )->and($commandOutput)->toContain('artisan orbit:internal:bake-agent-node')->and($commandOutput)->toContain(
+                'app-dev-1',
+            )->and($commandOutput)->toContain('app-prod-1')->and($commandOutput)->toContain('agent-1')->and(
+                $commandOutput,
+            )->toContain('/tmp/orbit-e2e-prepared-bake.sh')->and($commandOutput)->toContain('caddy-2-alpine.tar')->and(
+                $commandOutput,
+            )->toContain('frankenphp-1-php8.5-bookworm.tar')->and($commandOutput)->toContain(
+                'orbit-reverb-current.tar',
+            )->and($commandOutput)->toContain('caddy:2-alpine')->and($commandOutput)->toContain(
+                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            )->and($commandOutput)->toContain('orbit-reverb:current')->and($commandOutput)->toContain('docker.io')->and(
+                $commandOutput,
+            )->toContain('sudo -u "$bootstrap_user" docker image inspect')->and($commandOutput)->toContain(
+                'runtime_user=orbit',
+            )->and($commandOutput)->toContain('usermod -aG docker "$runtime_user"')->and($commandOutput)->toContain(
+                'sudo -u "$runtime_user" docker image inspect',
+            )->and($commandOutput)
+            ->not->toContain('orbit-template-app-dev-base/var/tmp/orbit-gateway-current.tar')->and(substr_count(
+                $commandOutput,
+                'ORBIT_E2E_NODE_WIREGUARD_ADDRESS=',
+            ))->toBe(0)->and($commandOutput)->toContain('prepared Incus base image is missing E2E dependencies')->and(
+                $commandOutput,
+            )->toContain('for command in composer git systemctl wg wg-quick dig ufw; do')->and(
+                $commandOutput,
+            )->toContain('apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io')->and($commandOutput)
+            ->not->toContain('supervisor.service')->and($wireGuardPhase)->toBeInt()->and(
+                $runtimePrerequisitesPhase,
+            )->toBeInt()->and($bakePhase)->toBeInt()->and($redisSeedPhase)->toBeInt()->and($phaseNames)->toContain(
+                'prepared.downstream.prepare.dev.launch',
+            )->and($phaseNames)->toContain('prepared.downstream.prepare.dev.agent-ready')->and($phaseNames)->toContain(
+                'prepared.downstream.prepare.dev.orbit-binary',
+            )->and($phaseNames)->toContain('prepared.downstream.prepare.dev.ssh-authorize')->and(
+                $phaseNames,
+            )->toContain('prepared.downstream.prepare.dev.ssh-ready')->and($phaseNames)->toContain(
+                'prepared.downstream.bake.dev.host-key',
+            )->and($phaseNames)->toContain('prepared.downstream.bake.dev.registry')->and($phaseNames)->toContain(
+                'prepared.downstream.bake.dev.role-assignment',
+            )->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-node')->and($phaseNames)->toContain(
+                'prepared.downstream.bake.dev.setup-tool',
+            )->and($phaseNames)->toContain('prepared.downstream.bake.dev.setup-converge')->and($phaseNames)->toContain(
+                'prepared.downstream.bake.dev.total',
+            )->and($phaseNames)->toContain('prepared.downstream.bake.prod.total')->and($phaseNames)->toContain(
+                'prepared.downstream.bake.agent.total',
+            )->and($wireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)->and(
+                $runtimePrerequisitesPhase,
+            )->toBeLessThan($bakePhase)->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
         expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(2);
     });
 });
@@ -564,9 +655,19 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $host
+            ->shouldReceive('provisionInstance')
+            ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
+            ->once()
+            ->andReturn(incusTopologyBuilderProcessResult());
+        $host
+            ->shouldReceive('provisionInstance')
+            ->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')
+            ->once()
+            ->andReturn(incusTopologyBuilderProcessResult());
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+            &$commands,
+        ): ProcessResult {
             $commands[] = $command;
 
             if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
@@ -621,104 +722,143 @@ it('builds full prepared websocket roles on the app-dev node', function (): void
         $runnerStartPosition = strpos($commandOutput, 'nohup sh -lc');
         $wireGuardCommandPosition = strpos($commandOutput, 'wg-quick up wg-orbit');
         $runtimePrerequisiteCommandPosition = strpos($commandOutput, 'sudo -u "$runtime_user" docker image inspect');
-        $runtimeSshAuthorizeCommandPosition = strpos($commandOutput, 'orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys');
+        $runtimeSshAuthorizeCommandPosition = strpos(
+            $commandOutput,
+            'orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys',
+        );
         $developmentReadyWaitPosition = strpos($commandOutput, 'while [ ! -f "$DEV_READY_MARKER" ]; do');
         $developmentBakePosition = strpos($commandOutput, '--role=app-dev');
         $productionBakePosition = strpos($commandOutput, 'orbit:internal:bake-ingress-node');
-        $developmentTldPosition = $developmentBakePosition !== false ? strpos($commandOutput, '--tld=', $developmentBakePosition) : false;
-        $developmentCommandSegment = $developmentBakePosition !== false && $developmentTldPosition !== false
-            ? substr($commandOutput, $developmentBakePosition, $developmentTldPosition - $developmentBakePosition + 24)
-            : '';
+        $developmentTldPosition = $developmentBakePosition !== false
+            ? strpos($commandOutput, '--tld=', $developmentBakePosition)
+            : false;
+        $developmentCommandSegment =
+            $developmentBakePosition !== false && $developmentTldPosition !== false
+                ? substr(
+                    $commandOutput,
+                    $developmentBakePosition,
+                    $developmentTldPosition - $developmentBakePosition + 24,
+                )
+                : '';
         $agentBakePosition = strpos($commandOutput, 'orbit:internal:bake-agent-node');
         $devWaitPosition = strpos($commandOutput, 'wait "$PID_BAKE_DEV"');
-        $devStatusPosition = $devWaitPosition === false ? false : strpos($commandOutput, '"$STATUS_DEV";', $devWaitPosition);
+        $devStatusPosition = $devWaitPosition === false
+            ? false
+            : strpos($commandOutput, '"$STATUS_DEV";', $devWaitPosition);
         $seedWaitPosition = strpos($commandOutput, 'until [ -f "$SEED_MARKER" ]; do');
 
-        expect($manifest)->toHaveCount(5)
-            ->and($manifest)->sequence(
-                fn ($template) => $template->role->toBe('operator')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
-                fn ($template) => $template->role->toBe('gateway')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
-                fn ($template) => $template->role->toBe('dev')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
-                fn ($template) => $template->role->toBe('prod')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
-                fn ($template) => $template->role->toBe('agent')->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+        expect($manifest)
+            ->toHaveCount(5)
+            ->and($manifest)
+            ->sequence(
+                fn ($template) => $template
+                    ->role->toBe('operator')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template
+                    ->role->toBe('gateway')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template
+                    ->role->toBe('dev')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template
+                    ->role->toBe('prod')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
+                fn ($template) => $template
+                    ->role->toBe('agent')
+                    ->snapshot->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base'),
             )
-            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-websocket-base'")
-            ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
-            ->and($commandOutput)->toContain('PID_BAKE_WEBSOCKET=$!')
-            ->and($commandOutput)->toContain('__orbit_prepare_timing')
-            ->and($commandOutput)->toContain('__orbit_bake_timing')
-            ->and($runnerStartPosition)->toBeInt()
-            ->and($wireGuardCommandPosition)->toBeInt()
-            ->and($runtimePrerequisiteCommandPosition)->toBeInt()
-            ->and($wireGuardCommandPosition)->toBeLessThan($runtimePrerequisiteCommandPosition)
-            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($runnerStartPosition)
-            ->and($productionBakePosition)->toBeInt()
-            ->and($agentBakePosition)->toBeInt()
-            ->and($developmentReadyWaitPosition)->toBeFalse()
-            ->and($developmentBakePosition)->toBeInt()
-            ->and($developmentCommandSegment)->toContain('--user=')
-            ->and($developmentCommandSegment)->toContain('orbit')
-            ->and($developmentCommandSegment)->not->toContain('provisioner')
-            ->and($runtimeSshAuthorizeCommandPosition)->toBeInt()
-            ->and($runtimePrerequisiteCommandPosition)->toBeLessThan($runtimeSshAuthorizeCommandPosition)
-            ->and($runtimeSshAuthorizeCommandPosition)->toBeLessThan($developmentBakePosition)
-            ->and($devWaitPosition)->toBeLessThan(strpos($commandOutput, 'orbit:internal:bake-websocket-node'))
-            ->and($devStatusPosition)->toBeInt()
-            ->and($seedWaitPosition)->toBeInt()
-            ->and($devStatusPosition)->toBeLessThan($seedWaitPosition)
-            ->and(strpos($commandOutput, 'orbit:internal:bake-websocket-node'))->toBeLessThan(strpos($commandOutput, 'wait "$PID_BAKE_PROD"'))
-            ->and(strpos($commandOutput, 'orbit:internal:bake-websocket-node'))->toBeLessThan(strpos($commandOutput, 'wait "$PID_BAKE_AGENT"'))
-            ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node')
-            ->and($commandOutput)->toContain('app-dev-1')
-            ->and($commandOutput)->toContain('10.201.0.12')
-            ->and($commandOutput)->toContain('--wireguard-address=')
-            ->and($commandOutput)->toContain('10.6.0.4')
-            ->and($commandOutput)->toContain('--redis-node=')
-            ->and($commandOutput)->toContain('app-dev-1')
-            ->and($commandOutput)->toContain('incus file push')
-            ->and($commandOutput)->toContain('orbit-gateway-current.tar')
-            ->and($commandOutput)->toContain('caddy-2-alpine.tar')
-            ->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')
-            ->and($commandOutput)->toContain('orbit-reverb-current.tar')
-            ->and($commandOutput)->toContain('caddy:2-alpine')
-            ->and($commandOutput)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
-            ->and($commandOutput)->toContain('orbit-reverb:current')
-            ->and($commandOutput)->toContain('grep "__orbit_bake_timing "')
-            ->and($commandOutput)->toContain('/tmp/orbit-e2e-bake-websocket.log')
-            ->and($commandOutput)->toContain('docker.io')
-            ->and($commandOutput)->toContain('bootstrap_user=')
-            ->and($commandOutput)->toContain('provisioner')
-            ->and($commandOutput)->toContain('docker load -i')
-            ->and($commandOutput)->toContain('docker tag')
-            ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
-            ->and($commandOutput)->toContain('orbit-gateway:current')
-            ->and($commandOutput)->toContain('usermod -aG docker "$bootstrap_user"')
-            ->and($commandOutput)->toContain('runtime_user=orbit')
-            ->and($commandOutput)->toContain('usermod -aG docker "$runtime_user"')
-            ->and($commandOutput)->toContain('sudo -u "$bootstrap_user" docker image inspect')
-            ->and($commandOutput)->toContain('sudo -u "$runtime_user" docker image inspect')
-            ->and($commandOutput)->toContain('--converge-runtime')
-            ->and($commandOutput)->not->toContain('--environment=')
-            ->and($commandOutput)->not->toContain('node.role')
-            ->and($downstreamWireGuardPhase)->toBeInt()
-            ->and($runtimePrerequisitesPhase)->toBeInt()
-            ->and($websocketBakePhase)->toBeInt()
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.launch')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.orbit-binary')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.host-key')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.registry')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.role-assignment')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-node')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-tool')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-converge')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.total')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.prod.total')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.agent.total')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.websocket.total')
-            ->and($downstreamWireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)
-            ->and($runtimePrerequisitesPhase)->toBeLessThan($websocketBakePhase)
-            ->and($phaseNames)->not->toContain('prepared-websocket.real-wireguard');
+            ->and($commandOutput)
+            ->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-websocket-base'")->and(
+                $commandOutput,
+            )->toContain('orbit-gateway:prepared-current')->and($commandOutput)->toContain(
+                'artisan orbit:internal:bake-websocket-node',
+            )->and($commandOutput)->toContain('PID_BAKE_WEBSOCKET=$!')->and($commandOutput)->toContain(
+                '__orbit_prepare_timing',
+            )->and($commandOutput)->toContain('__orbit_bake_timing')->and($runnerStartPosition)->toBeInt()->and(
+                $wireGuardCommandPosition,
+            )->toBeInt()->and($runtimePrerequisiteCommandPosition)->toBeInt()->and(
+                $wireGuardCommandPosition,
+            )->toBeLessThan($runtimePrerequisiteCommandPosition)->and(
+                $runtimePrerequisiteCommandPosition,
+            )->toBeLessThan($runnerStartPosition)->and($productionBakePosition)->toBeInt()->and(
+                $agentBakePosition,
+            )->toBeInt()->and($developmentReadyWaitPosition)->toBeFalse()->and(
+                $developmentBakePosition,
+            )->toBeInt()->and($developmentCommandSegment)->toContain('--user=')->and(
+                $developmentCommandSegment,
+            )->toContain('orbit')->and($developmentCommandSegment)
+            ->not->toContain('provisioner')->and($runtimeSshAuthorizeCommandPosition)->toBeInt()->and(
+                $runtimePrerequisiteCommandPosition,
+            )->toBeLessThan($runtimeSshAuthorizeCommandPosition)->and(
+                $runtimeSshAuthorizeCommandPosition,
+            )->toBeLessThan($developmentBakePosition)->and($devWaitPosition)->toBeLessThan(strpos(
+                $commandOutput,
+                'orbit:internal:bake-websocket-node',
+            ))->and($devStatusPosition)->toBeInt()->and($seedWaitPosition)->toBeInt()->and(
+                $devStatusPosition,
+            )->toBeLessThan($seedWaitPosition)->and(strpos(
+                $commandOutput,
+                'orbit:internal:bake-websocket-node',
+            ))->toBeLessThan(strpos($commandOutput, 'wait "$PID_BAKE_PROD"'))->and(strpos(
+                $commandOutput,
+                'orbit:internal:bake-websocket-node',
+            ))->toBeLessThan(strpos($commandOutput, 'wait "$PID_BAKE_AGENT"'))->and($commandOutput)
+            ->not->toContain(
+                'cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake-websocket-node',
+            )->and($commandOutput)->toContain('app-dev-1')->and($commandOutput)->toContain('10.201.0.12')->and(
+                $commandOutput,
+            )->toContain('--wireguard-address=')->and($commandOutput)->toContain('10.6.0.4')->and(
+                $commandOutput,
+            )->toContain('--redis-node=')->and($commandOutput)->toContain('app-dev-1')->and($commandOutput)->toContain(
+                'incus file push',
+            )->and($commandOutput)->toContain('orbit-gateway-current.tar')->and($commandOutput)->toContain(
+                'caddy-2-alpine.tar',
+            )->and($commandOutput)->toContain('frankenphp-1-php8.5-bookworm.tar')->and($commandOutput)->toContain(
+                'orbit-reverb-current.tar',
+            )->and($commandOutput)->toContain('caddy:2-alpine')->and($commandOutput)->toContain(
+                'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+            )->and($commandOutput)->toContain('orbit-reverb:current')->and($commandOutput)->toContain(
+                'grep "__orbit_bake_timing "',
+            )->and($commandOutput)->toContain('/tmp/orbit-e2e-bake-websocket.log')->and($commandOutput)->toContain(
+                'docker.io',
+            )->and($commandOutput)->toContain('bootstrap_user=')->and($commandOutput)->toContain('provisioner')->and(
+                $commandOutput,
+            )->toContain('docker load -i')->and($commandOutput)->toContain('docker tag')->and(
+                $commandOutput,
+            )->toContain('orbit-gateway:prepared-current')->and($commandOutput)->toContain(
+                'orbit-gateway:current',
+            )->and($commandOutput)->toContain('usermod -aG docker "$bootstrap_user"')->and($commandOutput)->toContain(
+                'runtime_user=orbit',
+            )->and($commandOutput)->toContain('usermod -aG docker "$runtime_user"')->and($commandOutput)->toContain(
+                'sudo -u "$bootstrap_user" docker image inspect',
+            )->and($commandOutput)->toContain('sudo -u "$runtime_user" docker image inspect')->and(
+                $commandOutput,
+            )->toContain('--converge-runtime')->and($commandOutput)
+            ->not->toContain('--environment=')->and($commandOutput)
+            ->not->toContain('node.role')->and($downstreamWireGuardPhase)->toBeInt()->and(
+                $runtimePrerequisitesPhase,
+            )->toBeInt()->and($websocketBakePhase)->toBeInt()->and($phaseNames)->toContain(
+                'prepared-websocket.downstream.prepare.dev.launch',
+            )->and($phaseNames)->toContain('prepared-websocket.downstream.prepare.dev.orbit-binary')->and(
+                $phaseNames,
+            )->toContain('prepared-websocket.downstream.bake.dev.host-key')->and($phaseNames)->toContain(
+                'prepared-websocket.downstream.bake.dev.registry',
+            )->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.role-assignment')->and(
+                $phaseNames,
+            )->toContain('prepared-websocket.downstream.bake.dev.setup-node')->and($phaseNames)->toContain(
+                'prepared-websocket.downstream.bake.dev.setup-tool',
+            )->and($phaseNames)->toContain('prepared-websocket.downstream.bake.dev.setup-converge')->and(
+                $phaseNames,
+            )->toContain('prepared-websocket.downstream.bake.dev.total')->and($phaseNames)->toContain(
+                'prepared-websocket.downstream.bake.prod.total',
+            )->and($phaseNames)->toContain('prepared-websocket.downstream.bake.agent.total')->and(
+                $phaseNames,
+            )->toContain('prepared-websocket.downstream.bake.websocket.total')->and(
+                $downstreamWireGuardPhase,
+            )->toBeLessThan($runtimePrerequisitesPhase)->and($runtimePrerequisitesPhase)->toBeLessThan(
+                $websocketBakePhase,
+            )->and($phaseNames)
+            ->not->toContain('prepared-websocket.real-wireguard');
     });
 });
 
@@ -736,17 +876,27 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('provisionInstance')->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')->once()->andReturn(incusTopologyBuilderProcessResult());
+        $host
+            ->shouldReceive('provisionInstance')
+            ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
+            ->once()
+            ->andReturn(incusTopologyBuilderProcessResult());
+        $host
+            ->shouldReceive('provisionInstance')
+            ->with('orbit-template-gateway-base', 'gateway', '/tmp/orbit-e2e-bundle-test')
+            ->once()
+            ->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('forceStopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('snapshotInstance')
+        $host
+            ->shouldReceive('snapshotInstance')
             ->zeroOrMoreTimes()
             ->andReturnUsing(function (string $name, string $snapshot) use (&$snapshots): ProcessResult {
                 $snapshots[] = "{$name}:{$snapshot}";
 
                 return incusTopologyBuilderProcessResult();
             });
-        $host->shouldReceive('snapshotInstancesConcurrently')
+        $host
+            ->shouldReceive('snapshotInstancesConcurrently')
             ->zeroOrMoreTimes()
             ->andReturnUsing(function (array $names, string $snapshot) use (&$snapshots): ProcessResult {
                 foreach ($names as $name) {
@@ -755,7 +905,9 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
 
                 return incusTopologyBuilderProcessResult();
             });
-        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+            &$commands,
+        ): ProcessResult {
             $commands[] = $command;
 
             if (str_contains($command, 'nohup sh -lc')) {
@@ -763,13 +915,17 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
             }
 
             if (str_contains($command, '/tmp/orbit-e2e-prepared-bake.status') && ! str_contains($command, 'cat >')) {
-                return incusTopologyBuilderProcessResult(implode("\n", [
-                    '__orbit_bake_status dev 0',
-                    '__orbit_bake_status prod 1',
-                    '__orbit_bake_status agent 0',
-                    '__orbit_bake_status websocket 0',
-                    '',
-                ]), 'prod failed', successful: false);
+                return incusTopologyBuilderProcessResult(
+                    implode("\n", [
+                        '__orbit_bake_status dev 0',
+                        '__orbit_bake_status prod 1',
+                        '__orbit_bake_status agent 0',
+                        '__orbit_bake_status websocket 0',
+                        '',
+                    ]),
+                    'prod failed',
+                    successful: false,
+                );
             }
 
             if (($result = incusTopologyBuilderPreparedRoleResult($command)) !== null) {
@@ -777,13 +933,17 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
             }
 
             if (str_contains($command, '/tmp/orbit-e2e-prepared-bake.sh') && ! str_contains($command, 'cat >')) {
-                return incusTopologyBuilderProcessResult(implode("\n", [
-                    '__orbit_bake_status dev 0',
-                    '__orbit_bake_status prod 1',
-                    '__orbit_bake_status agent 0',
-                    '__orbit_bake_status websocket 0',
-                    '',
-                ]), 'prod failed', successful: false);
+                return incusTopologyBuilderProcessResult(
+                    implode("\n", [
+                        '__orbit_bake_status dev 0',
+                        '__orbit_bake_status prod 1',
+                        '__orbit_bake_status agent 0',
+                        '__orbit_bake_status websocket 0',
+                        '',
+                    ]),
+                    'prod failed',
+                    successful: false,
+                );
             }
 
             if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
@@ -827,9 +987,14 @@ it('keeps successful app-dev agent and websocket checkpoints when app production
 
         expect($commandOutput)
             ->toContain('artisan orbit:internal:bake-websocket-node')
-            ->and($snapshots)->toContain('orbit-template-app-dev-base:clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
-            ->and($snapshots)->toContain('orbit-template-agent-base:clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
-            ->and($snapshots)->not->toContain('orbit-template-app-prod-base:clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
+            ->and($snapshots)
+            ->toContain('orbit-template-app-dev-base:clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+            ->and($snapshots)
+            ->toContain('orbit-template-agent-base:clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+            ->and($snapshots)
+            ->not->toContain(
+                'orbit-template-app-prod-base:clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+            );
     });
 });
 
@@ -879,12 +1044,17 @@ it('reuses valid app production and agent checkpoints while retrying missing app
         ), JSON_THROW_ON_ERROR));
         $host->shouldReceive('snapshotExists')->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('stopInstancesIfRunning')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
+        $host
+            ->shouldReceive('stopInstancesIfRunning')
+            ->zeroOrMoreTimes()
+            ->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('startInstancesIfStopped')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('forceStopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('writeTextFile')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+            &$commands,
+        ): ProcessResult {
             $commands[] = $command;
 
             if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
@@ -933,17 +1103,23 @@ it('reuses valid app production and agent checkpoints while retrying missing app
         $manifest = $builder->build($kind, replaceExisting: true);
         $commandOutput = implode("\n", $commands);
 
-        expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
-            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
-            ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
-            ->and($commandOutput)->toContain('PID_PREPARE_DEV=$!')
-            ->and($commandOutput)->not->toContain('PID_PREPARE_PROD=$!')
-            ->and($commandOutput)->not->toContain('PID_PREPARE_AGENT=$!')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-app-node')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
-            ->and($commandOutput)->not->toContain('artisan orbit:internal:bake-agent-node')
-            ->and($commandOutput)->not->toContain('artisan orbit:internal:bake-ingress-node');
+        expect(array_column($manifest, 'role'))
+            ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
+            ->and($commandOutput)
+            ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
+            ->and($commandOutput)
+            ->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")->and(
+                $commandOutput,
+            )
+            ->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")->and(
+                $commandOutput,
+            )->toContain('PID_PREPARE_DEV=$!')->and($commandOutput)
+            ->not->toContain('PID_PREPARE_PROD=$!')->and($commandOutput)
+            ->not->toContain('PID_PREPARE_AGENT=$!')->and($commandOutput)->toContain(
+                'artisan orbit:internal:bake-app-node',
+            )->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')->and($commandOutput)
+            ->not->toContain('artisan orbit:internal:bake-agent-node')->and($commandOutput)
+            ->not->toContain('artisan orbit:internal:bake-ingress-node');
     });
 });
 
@@ -994,8 +1170,10 @@ it('returns a reusable manifest when all prepared VM snapshots match the current
         $builder = new IncusTopologyBuilder($host);
         $builder->useProvisionFingerprint($fingerprint);
 
-        expect($builder->reusableManifest($kind))->toBe($checkpoints)
-            ->and($builder->build($kind, replaceExisting: true))->toBe($checkpoints);
+        expect($builder->reusableManifest($kind))
+            ->toBe($checkpoints)
+            ->and($builder->build($kind, replaceExisting: true))
+            ->toBe($checkpoints);
     });
 });
 
@@ -1046,12 +1224,17 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
         ), JSON_THROW_ON_ERROR));
         $host->shouldReceive('snapshotExists')->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('stopInstancesIfRunning')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
+        $host
+            ->shouldReceive('stopInstancesIfRunning')
+            ->zeroOrMoreTimes()
+            ->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('startInstancesIfStopped')->once()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('forceStopInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('snapshotInstance')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('writeTextFile')->zeroOrMoreTimes()->andReturn(incusTopologyBuilderProcessResult());
-        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+            &$commands,
+        ): ProcessResult {
             $commands[] = $command;
 
             if (str_contains($command, 'artisan orbit:internal:bake-websocket-node')) {
@@ -1098,17 +1281,23 @@ it('retries websocket bake when all concrete role checkpoints are valid but the 
         $commandOutput = implode("\n", $commands);
         $phaseNames = array_column($timer->events(), 'name');
 
-        expect(array_column($manifest, 'role'))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.real-wireguard')
-            ->and($phaseNames)->toContain('prepared-websocket.dev.database-redis-seed')
-            ->and($phaseNames)->toContain('prepared-websocket.websocket.bake')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
-            ->and($commandOutput)->not->toContain('/tmp/orbit-e2e-prepared-bake.sh')
-            ->and($commandOutput)->not->toContain('PID_PREPARE_DEV=$!')
-            ->and($commandOutput)->not->toContain('PID_BAKE_DEV=$!')
-            ->and($commandOutput)->not->toContain('artisan orbit:internal:bake-app-node')
-            ->and($commandOutput)->not->toContain('artisan orbit:internal:bake-agent-node')
-            ->and($commandOutput)->not->toContain('artisan orbit:internal:bake-ingress-node');
+        expect(array_column($manifest, 'role'))
+            ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
+            ->and($phaseNames)
+            ->toContain('prepared-websocket.downstream.real-wireguard')
+            ->and($phaseNames)
+            ->toContain('prepared-websocket.dev.database-redis-seed')
+            ->and($phaseNames)
+            ->toContain('prepared-websocket.websocket.bake')
+            ->and($commandOutput)
+            ->toContain('artisan orbit:internal:bake-websocket-node')
+            ->and($commandOutput)
+            ->not->toContain('/tmp/orbit-e2e-prepared-bake.sh')->and($commandOutput)
+            ->not->toContain('PID_PREPARE_DEV=$!')->and($commandOutput)
+            ->not->toContain('PID_BAKE_DEV=$!')->and($commandOutput)
+            ->not->toContain('artisan orbit:internal:bake-app-node')->and($commandOutput)
+            ->not->toContain('artisan orbit:internal:bake-agent-node')->and($commandOutput)
+            ->not->toContain('artisan orbit:internal:bake-ingress-node');
     });
 });
 
@@ -1132,15 +1321,22 @@ it('rebuilds app production ingress through the prepared prod template', functio
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
     $host->shouldReceive('snapshotExists')
-        ->andReturnUsing(fn (string $name, string $snapshot): bool => in_array($name, ['orbit-template-operator-base', 'orbit-template-gateway-base'], true)
-            && $snapshot === 'clean-operator_gateway-base');
+        ->andReturnUsing(
+            fn (string $name, string $snapshot): bool => in_array(
+                $name,
+                ['orbit-template-operator-base', 'orbit-template-gateway-base'],
+                true,
+            )
+            && $snapshot === 'clean-operator_gateway-base',
+        );
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
 
             return incusTopologyBuilderProcessResult();
         });
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
         ->andReturn(incusTopologyBuilderProcessResult(successful: false));
 
@@ -1149,12 +1345,17 @@ it('rebuilds app production ingress through the prepared prod template', functio
 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppprodIngress, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
-        ->and($deleted)->toContain('orbit-template-app-prod-base')
-        ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-operator-base')
-        ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-gateway-base')
-        ->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-prod-base')
-        ->and($deleted)->not->toContain('orbit-template-ingress-prod')
-        ->and($deleted)->not->toContain('orbit-template-ingress');
+        ->and($deleted)
+        ->toContain('orbit-template-app-prod-base')
+        ->and($deleted)
+        ->toContain('orbit-template-operator_gateway_app-prod_ingress-operator-base')
+        ->and($deleted)
+        ->toContain('orbit-template-operator_gateway_app-prod_ingress-gateway-base')
+        ->and($deleted)
+        ->toContain('orbit-template-operator_gateway_app-prod_ingress-prod-base')
+        ->and($deleted)
+        ->not->toContain('orbit-template-ingress-prod')->and($deleted)
+        ->not->toContain('orbit-template-ingress');
 });
 
 it('restores a reusable base stage before continuing a force rebuild', function (): void {
@@ -1165,7 +1366,8 @@ it('restores a reusable base stage before continuing a force rebuild', function 
     $host->shouldReceive('imageExists')->andReturn(true);
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => $name === 'orbit-template-operator-base');
-    $host->shouldReceive('snapshotExists')
+    $host
+        ->shouldReceive('snapshotExists')
         ->with('orbit-template-operator-base', 'clean-operator-base')
         ->andReturn(true);
     $host->shouldReceive('deleteInstance')->never();
@@ -1175,15 +1377,18 @@ it('restores a reusable base stage before continuing a force rebuild', function 
 
             return incusTopologyBuilderProcessResult();
         });
-    $host->shouldReceive('stopInstancesIfRunning')
+    $host
+        ->shouldReceive('stopInstancesIfRunning')
         ->with(['orbit-template-operator-base'])
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('restoreSnapshotsConcurrently')
+    $host
+        ->shouldReceive('restoreSnapshotsConcurrently')
         ->with(['orbit-template-operator-base'], 'clean-operator-base')
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('startInstance')
+    $host
+        ->shouldReceive('startInstance')
         ->once()
         ->andReturnUsing(function (string $name): ProcessResult {
             expect($name)->toBe('orbit-template-operator-base');
@@ -1204,8 +1409,10 @@ it('restores a reusable base stage before continuing a force rebuild', function 
 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGateway, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not start orbit-template-operator-base: start failed')
-        ->and($deletedSnapshots)->toContain('orbit-template-operator-base:clean-operator_gateway-base')
-        ->and($deletedSnapshots)->not->toContain('orbit-template-operator-base:clean-operator_gateway_app-dev_app-prod_agent-base');
+        ->and($deletedSnapshots)
+        ->toContain('orbit-template-operator-base:clean-operator_gateway-base')
+        ->and($deletedSnapshots)
+        ->not->toContain('orbit-template-operator-base:clean-operator_gateway_app-dev_app-prod_agent-base');
 });
 
 it('records phase timings while building topology templates', function (): void {
@@ -1215,7 +1422,8 @@ it('records phase timings while building topology templates', function (): void 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->with('orbit-template-operator-base')->andReturn(false);
-    $host->shouldReceive('provisionInstance')
+    $host
+        ->shouldReceive('provisionInstance')
         ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
@@ -1238,17 +1446,28 @@ it('records phase timings while building topology templates', function (): void 
 
     $eventNames = array_column($timer->events(), 'name');
 
-    expect($eventNames)->toContain('preflight')
-        ->and($eventNames)->toContain('workdir')
-        ->and($eventNames)->toContain('ssh-key')
-        ->and($eventNames)->toContain('operator.launch')
-        ->and($eventNames)->toContain('operator.agent.ready')
-        ->and($eventNames)->toContain('operator.provision')
-        ->and($eventNames)->toContain('operator.provisioning-ssh-key')
-        ->and($eventNames)->toContain('operator.identity')
-        ->and($eventNames)->toContain('finalize.stop')
-        ->and($eventNames)->toContain('finalize.snapshot')
-        ->and($eventNames)->toContain('workdir.cleanup');
+    expect($eventNames)
+        ->toContain('preflight')
+        ->and($eventNames)
+        ->toContain('workdir')
+        ->and($eventNames)
+        ->toContain('ssh-key')
+        ->and($eventNames)
+        ->toContain('operator.launch')
+        ->and($eventNames)
+        ->toContain('operator.agent.ready')
+        ->and($eventNames)
+        ->toContain('operator.provision')
+        ->and($eventNames)
+        ->toContain('operator.provisioning-ssh-key')
+        ->and($eventNames)
+        ->toContain('operator.identity')
+        ->and($eventNames)
+        ->toContain('finalize.stop')
+        ->and($eventNames)
+        ->toContain('finalize.snapshot')
+        ->and($eventNames)
+        ->toContain('workdir.cleanup');
 });
 
 it('provisions a source-mode operator from the current cli binary without gateway runtime state', function (): void {
@@ -1258,7 +1477,9 @@ it('provisions a source-mode operator from the current cli binary without gatewa
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->with('orbit-template-operator-base')->andReturn(false);
-    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+        &$commands,
+    ): ProcessResult {
         $commands[] = $command;
 
         if (str_starts_with($command, 'mktemp -d ')) {
@@ -1289,8 +1510,8 @@ it('provisions a source-mode operator from the current cli binary without gatewa
         ->not->toContain('/var/tmp/orbit-current-source')
         ->not->toContain('orbit-source disk')
         ->not->toContain('apps/gateway/artisan migrate')
-        ->not->toContain('/home/operator/.config/orbit/gateway.sqlite')
-        ->and($phaseNames)->not->toContain('finalize.detach-source.operator');
+        ->not->toContain('/home/operator/.config/orbit/gateway.sqlite')->and($phaseNames)
+        ->not->toContain('finalize.detach-source.operator');
 });
 
 it('records detailed gateway artifact provisioning timings', function (): void {
@@ -1305,7 +1526,9 @@ it('records detailed gateway artifact provisioning timings', function (): void {
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
-    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+        &$commands,
+    ): ProcessResult {
         $commands[] = $command;
 
         if (str_starts_with($command, 'mktemp -d ')) {
@@ -1334,21 +1557,26 @@ it('records detailed gateway artifact provisioning timings', function (): void {
     $builder->build(E2ETopologyKind::OperatorGateway);
     $commandOutput = implode("\n", $commands);
 
-    expect(array_column($timer->events(), 'name'))->toContain(
-        'operator.provision.binary',
-        'gateway.provision.binary',
-        'gateway.provision.image.archive-exists',
-        'gateway.provision.image.config-dir',
-        'gateway.provision.image.docker-start',
-        'gateway.provision.image.load',
-        'gateway.provision.image.inspect-prepared',
-        'gateway.provision.image.tag-current',
-        'gateway.provision.image.inspect-runtime-user',
-        'gateway.provision.migrate',
-    )
-        ->and($commandOutput)->toContain("incus exec 'orbit-template-gateway-base' -- sh -lc 'docker load' < '/tmp/orbit-e2e-gateway-artifacts-test/orbit-gateway-current.tar'")
-        ->and($commandOutput)->not->toContain('orbit-template-gateway-base/var/tmp/orbit-gateway-current.tar')
-        ->and($commandOutput)->not->toContain('rm -f \'/var/tmp/orbit-gateway-current.tar\'');
+    expect(array_column($timer->events(), 'name'))
+        ->toContain(
+            'operator.provision.binary',
+            'gateway.provision.binary',
+            'gateway.provision.image.archive-exists',
+            'gateway.provision.image.config-dir',
+            'gateway.provision.image.docker-start',
+            'gateway.provision.image.load',
+            'gateway.provision.image.inspect-prepared',
+            'gateway.provision.image.tag-current',
+            'gateway.provision.image.inspect-runtime-user',
+            'gateway.provision.migrate',
+        )
+        ->and($commandOutput)
+        ->toContain(
+            "incus exec 'orbit-template-gateway-base' -- sh -lc 'docker load' < '/tmp/orbit-e2e-gateway-artifacts-test/orbit-gateway-current.tar'",
+        )
+        ->and($commandOutput)
+        ->not->toContain('orbit-template-gateway-base/var/tmp/orbit-gateway-current.tar')->and($commandOutput)
+        ->not->toContain('rm -f \'/var/tmp/orbit-gateway-current.tar\'');
 });
 
 it('builds artifact backed prepared websocket topology through a gateway first cold path', function (): void {
@@ -1359,7 +1587,9 @@ it('builds artifact backed prepared websocket topology through a gateway first c
         $host = m::mock(IncusHost::class, [$config])->makePartial();
         $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
         $host->shouldReceive('instanceExists')->andReturn(false);
-        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+        $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+            &$commands,
+        ): ProcessResult {
             $commands[] = $command;
 
             if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
@@ -1423,27 +1653,35 @@ it('builds artifact backed prepared websocket topology through a gateway first c
         $commandOutput = implode("\n", $commands);
         $phaseNames = array_column($timer->events(), 'name');
 
-        expect($manifest)->toHaveCount(5)
-            ->and($commandOutput)->not->toContain('clean-operator-base')
-            ->and($commandOutput)->not->toContain('clean-operator_gateway-base')
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-gateway-base'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator-base'")
-            ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
-            ->and($commandOutput)->toContain('PID_PREPARE_OPERATOR=$!')
-            ->and($commandOutput)->toContain('PID_PREPARE_DEV=$!')
-            ->and($commandOutput)->toContain('PID_PREPARE_PROD=$!')
-            ->and($commandOutput)->toContain('PID_PREPARE_AGENT=$!')
-            ->and($commandOutput)->toContain('/tmp/orbit-e2e-gateway-artifacts-test/orbit-binary')
-            ->and($commandOutput)->toContain('orbit-gateway-current.tar')
-            ->and($commandOutput)->toContain('artisan orbit:internal:bake-websocket-node')
-            ->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.start')
-            ->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare')
-            ->and($phaseNames)->toContain('prepared-websocket.gateway.bootstrap-local')
-            ->and($phaseNames)->toContain('prepared-websocket.gateway.trust-operator')
-            ->and($phaseNames)->toContain('prepared-websocket.gateway.retarget-operator')
-            ->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.operator.launch')
-            ->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.dev.launch')
-            ->and($phaseNames)->toContain('prepared-websocket.downstream.bake.websocket.total');
+        expect($manifest)
+            ->toHaveCount(5)
+            ->and($commandOutput)
+            ->not->toContain('clean-operator-base')->and($commandOutput)
+            ->not->toContain('clean-operator_gateway-base')->and($commandOutput)->toContain(
+                "incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-gateway-base'",
+            )->and($commandOutput)->toContain(
+                "incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator-base'",
+            )->and($commandOutput)->toContain(
+                "incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'",
+            )->and($commandOutput)->toContain('PID_PREPARE_OPERATOR=$!')->and($commandOutput)->toContain(
+                'PID_PREPARE_DEV=$!',
+            )->and($commandOutput)->toContain('PID_PREPARE_PROD=$!')->and($commandOutput)->toContain(
+                'PID_PREPARE_AGENT=$!',
+            )->and($commandOutput)->toContain('/tmp/orbit-e2e-gateway-artifacts-test/orbit-binary')->and(
+                $commandOutput,
+            )->toContain('orbit-gateway-current.tar')->and($commandOutput)->toContain(
+                'artisan orbit:internal:bake-websocket-node',
+            )->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.start')->and(
+                $phaseNames,
+            )->toContain('prepared-websocket.operator-downstream.prepare')->and($phaseNames)->toContain(
+                'prepared-websocket.gateway.bootstrap-local',
+            )->and($phaseNames)->toContain('prepared-websocket.gateway.trust-operator')->and($phaseNames)->toContain(
+                'prepared-websocket.gateway.retarget-operator',
+            )->and($phaseNames)->toContain('prepared-websocket.operator-downstream.prepare.operator.launch')->and(
+                $phaseNames,
+            )->toContain('prepared-websocket.operator-downstream.prepare.dev.launch')->and($phaseNames)->toContain(
+                'prepared-websocket.downstream.bake.websocket.total',
+            );
     });
 });
 
@@ -1459,8 +1697,14 @@ it('builds prepared topology templates through staged internal gateway baking', 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
-    $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+    $host
+        ->shouldReceive('provisionInstance')
+        ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+        &$commands,
+    ): ProcessResult {
         $commands[] = $command;
 
         if (($result = incusTopologyBuilderPreparedBakeResult($command)) !== null) {
@@ -1509,77 +1753,88 @@ it('builds prepared topology templates through staged internal gateway baking', 
 
     $commandOutput = implode("\n", $commands);
 
-    expect($manifest)->toBe([
-        [
-            'role' => 'operator',
-            'name' => 'orbit-template-operator-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
-        ],
-        [
-            'role' => 'gateway',
-            'name' => 'orbit-template-gateway-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
-        ],
-        [
-            'role' => 'dev',
-            'name' => 'orbit-template-app-dev-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
-        ],
-        [
-            'role' => 'prod',
-            'name' => 'orbit-template-app-prod-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
-        ],
-        [
-            'role' => 'agent',
-            'name' => 'orbit-template-agent-base',
-            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
-        ],
-    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-gateway-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
-        ->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
-        ->and($commandOutput)->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-operator-base')
-        ->and($commandOutput)->not->toContain('orbit node:new gateway-1')
-        ->and($commandOutput)->not->toContain('--role=gateway')
-        ->and($commandOutput)->not->toContain('--operator-name=operator-1')
-        ->and($commandOutput)->toContain('/var/tmp/orbit-e2e-bundle/e2e-provision-node')
-        ->and($commandOutput)->toContain('--role=')
-        ->and($commandOutput)->toContain('gateway')
-        ->and($commandOutput)->toContain('docker run -d')
-        ->and($commandOutput)->toContain('--name wg-easy')
-        ->and($commandOutput)->toContain('-p 51820:51820/udp')
-        ->and($commandOutput)->not->toContain('51822')
-        ->and($commandOutput)->toContain('orbit:internal:bootstrap-gateway-local gateway')
-        ->and($commandOutput)->toContain('--public-host=')
-        ->and($commandOutput)->toContain('active_gateway')
-        ->and($commandOutput)->not->toContain('public_endpoint')
-        ->and($commandOutput)->toContain('gateway-ca/orbit.crt')
-        ->and($commandOutput)->toContain('ca_pem_path')
-        ->and($commandOutput)->toContain('/etc/wireguard/wg-orbit.conf')
-        ->and($commandOutput)->not->toContain('ListenPort = 51820')
-        ->and($commandOutput)->toContain('orbit-gateway:prepared-current')
-        ->and($commandOutput)->toContain('artisan orbit:internal:bootstrap-gateway-local gateway')
-        ->and($commandOutput)->toContain('artisan tinker --execute=')
-        ->and($commandOutput)->not->toContain('/tmp/orbit-e2e-appdev-database-redis.php')
-        ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php artisan')
-        ->and($commandOutput)->toContain('app-dev-1')
-        ->and($commandOutput)->toContain('10.201.0.12')
-        ->and($commandOutput)->toContain('--user=')
-        ->and($commandOutput)->toContain('provisioner')
-        ->and($commandOutput)->toContain('app-prod-1')
-        ->and($commandOutput)->toContain('10.201.0.13')
-        ->and($commandOutput)->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake')
-        ->and($commandOutput)->toContain('artisan orbit:internal:bake-app-node')
-        ->and($commandOutput)->toContain('artisan orbit:internal:bake-ingress-node')
-        ->and($commandOutput)->toContain('artisan orbit:internal:bake-agent-node')
-        ->and($commandOutput)->toContain('--role=app-dev')
-        ->and($commandOutput)->toContain('--role=app-prod')
-        ->and($commandOutput)->toContain('--ingress-node=')
-        ->and($commandOutput)->not->toContain('/tmp/orbit-e2e-prepared-node-new.sh')
-        ->and($commandOutput)->not->toContain('ORBIT_E2E_NODE_WIREGUARD_ADDRESS=')
-        ->and($commandOutput)->not->toContain('--roles=app-prod,ingress');
+    expect($manifest)
+        ->toBe([
+            [
+                'role' => 'operator',
+                'name' => 'orbit-template-operator-base',
+                'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
+            ],
+            [
+                'role' => 'gateway',
+                'name' => 'orbit-template-gateway-base',
+                'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
+            ],
+            [
+                'role' => 'dev',
+                'name' => 'orbit-template-app-dev-base',
+                'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
+            ],
+            [
+                'role' => 'prod',
+                'name' => 'orbit-template-app-prod-base',
+                'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
+            ],
+            [
+                'role' => 'agent',
+                'name' => 'orbit-template-agent-base',
+                'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-base',
+            ],
+        ])
+        ->and($commandOutput)
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-operator-base'")
+        ->and($commandOutput)
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-gateway-base'")
+        ->and($commandOutput)
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'")
+        ->and($commandOutput)
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+        ->and($commandOutput)
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-agent-base'")
+        ->and($commandOutput)
+        ->not->toContain('orbit-template-operator_gateway_app-dev_app-prod-operator-base')->and($commandOutput)
+        ->not->toContain('orbit node:new gateway-1')->and($commandOutput)
+        ->not->toContain('--role=gateway')->and($commandOutput)
+        ->not->toContain('--operator-name=operator-1')->and($commandOutput)->toContain(
+            '/var/tmp/orbit-e2e-bundle/e2e-provision-node',
+        )->and($commandOutput)->toContain('--role=')->and($commandOutput)->toContain('gateway')->and(
+            $commandOutput,
+        )->toContain('docker run -d')->and($commandOutput)->toContain('--name wg-easy')->and($commandOutput)->toContain(
+            '-p 51820:51820/udp',
+        )->and($commandOutput)
+        ->not->toContain('51822')->and($commandOutput)->toContain(
+            'orbit:internal:bootstrap-gateway-local gateway',
+        )->and($commandOutput)->toContain('--public-host=')->and($commandOutput)->toContain('active_gateway')->and(
+            $commandOutput,
+        )
+        ->not->toContain('public_endpoint')->and($commandOutput)->toContain('gateway-ca/orbit.crt')->and(
+            $commandOutput,
+        )->toContain('ca_pem_path')->and($commandOutput)->toContain('/etc/wireguard/wg-orbit.conf')->and($commandOutput)
+        ->not->toContain('ListenPort = 51820')->and($commandOutput)->toContain('orbit-gateway:prepared-current')->and(
+            $commandOutput,
+        )->toContain('artisan orbit:internal:bootstrap-gateway-local gateway')->and($commandOutput)->toContain(
+            'artisan tinker --execute=',
+        )->and($commandOutput)
+        ->not->toContain('/tmp/orbit-e2e-appdev-database-redis.php')->and($commandOutput)
+        ->not->toContain('cd /home/orbit/orbit && php artisan')->and($commandOutput)->toContain('app-dev-1')->and(
+            $commandOutput,
+        )->toContain('10.201.0.12')->and($commandOutput)->toContain('--user=')->and($commandOutput)->toContain(
+            'provisioner',
+        )->and($commandOutput)->toContain('app-prod-1')->and($commandOutput)->toContain('10.201.0.13')->and(
+            $commandOutput,
+        )
+        ->not->toContain('cd /home/orbit/orbit && php apps/gateway/artisan orbit:internal:bake')->and(
+            $commandOutput,
+        )->toContain('artisan orbit:internal:bake-app-node')->and($commandOutput)->toContain(
+            'artisan orbit:internal:bake-ingress-node',
+        )->and($commandOutput)->toContain('artisan orbit:internal:bake-agent-node')->and($commandOutput)->toContain(
+            '--role=app-dev',
+        )->and($commandOutput)->toContain('--role=app-prod')->and($commandOutput)->toContain('--ingress-node=')->and(
+            $commandOutput,
+        )
+        ->not->toContain('/tmp/orbit-e2e-prepared-node-new.sh')->and($commandOutput)
+        ->not->toContain('ORBIT_E2E_NODE_WIREGUARD_ADDRESS=')->and($commandOutput)
+        ->not->toContain('--roles=app-prod,ingress');
 });
 
 it('builds app production ingress on the prod template without development or agent stages', function (): void {
@@ -1594,8 +1849,14 @@ it('builds app production ingress on the prod template without development or ag
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->with($config->baseImage)->andReturn(true);
     $host->shouldReceive('instanceExists')->andReturn(false);
-    $host->shouldReceive('provisionInstance')->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')->once()->andReturn(incusTopologyBuilderProcessResult());
-    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+    $host
+        ->shouldReceive('provisionInstance')
+        ->with('orbit-template-operator-base', 'operator', '/tmp/orbit-e2e-bundle-test', 'operator')
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+        &$commands,
+    ): ProcessResult {
         $commands[] = $command;
 
         if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
@@ -1627,28 +1888,33 @@ it('builds app production ingress on the prod template without development or ag
     $manifest = $builder->build(E2ETopologyKind::OperatorGatewayAppprodIngress);
     $commandOutput = implode("\n", $commands);
 
-    expect($manifest)->toBe([
-        [
-            'role' => 'operator',
-            'name' => 'orbit-template-operator-base',
-            'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
-        ],
-        [
-            'role' => 'gateway',
-            'name' => 'orbit-template-gateway-base',
-            'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
-        ],
-        [
-            'role' => 'prod',
-            'name' => 'orbit-template-app-prod-base',
-            'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
-        ],
-    ])->and($commandOutput)->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
-        ->and($commandOutput)->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-ingress-base'")
-        ->and($commandOutput)->not->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway-base'")
-        ->and($commandOutput)->not->toContain('edge-1')
-        ->and($commandOutput)->toContain('--roles=app-prod,ingress')
-        ->and($commandOutput)->not->toContain('--ingress=')
-        ->and($commandOutput)->not->toContain('app-dev-1')
-        ->and($commandOutput)->not->toContain('agent-1');
+    expect($manifest)
+        ->toBe([
+            [
+                'role' => 'operator',
+                'name' => 'orbit-template-operator-base',
+                'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
+            ],
+            [
+                'role' => 'gateway',
+                'name' => 'orbit-template-gateway-base',
+                'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
+            ],
+            [
+                'role' => 'prod',
+                'name' => 'orbit-template-app-prod-base',
+                'snapshot' => 'clean-operator_gateway_app-prod_ingress-base',
+            ],
+        ])
+        ->and($commandOutput)
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-prod-base'")
+        ->and($commandOutput)
+        ->not->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-ingress-base'")->and(
+            $commandOutput,
+        )
+        ->not->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway-base'")->and($commandOutput)
+        ->not->toContain('edge-1')->and($commandOutput)->toContain('--roles=app-prod,ingress')->and($commandOutput)
+        ->not->toContain('--ingress=')->and($commandOutput)
+        ->not->toContain('app-dev-1')->and($commandOutput)
+        ->not->toContain('agent-1');
 });

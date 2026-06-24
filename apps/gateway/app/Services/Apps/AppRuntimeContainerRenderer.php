@@ -48,10 +48,12 @@ final readonly class AppRuntimeContainerRenderer
         }
 
         $policy = $this->phpRuntimePolicy->forVersion($app->php_version, $preloadPath);
-        $sourcePath = rtrim((string) $app->path, '/');
+        $sourcePath = rtrim($app->path, '/');
 
         if ($sourcePath === '') {
-            throw new InvalidArgumentException("App '{$app->name}' has no source path; cannot render runtime container.");
+            throw new InvalidArgumentException(
+                "App '{$app->name}' has no source path; cannot render runtime container.",
+            );
         }
 
         $mounts = [
@@ -84,7 +86,10 @@ final readonly class AppRuntimeContainerRenderer
             $app->loadMissing('node');
 
             if ($app->node !== null) {
-                foreach ($this->innerTlsPolicy->runtimeTlsMounts($app->node, $this->innerTlsPolicy->appRouteDomain($app)) as $mount) {
+                foreach ($this->innerTlsPolicy->runtimeTlsMounts(
+                    $app->node,
+                    $this->innerTlsPolicy->appRouteDomain($app),
+                ) as $mount) {
                     $mounts[] = $mount;
                 }
             }
@@ -141,7 +146,10 @@ final readonly class AppRuntimeContainerRenderer
         ];
 
         if ($this->innerTlsPolicy->appliesToApp($app)) {
-            $environment = array_merge($environment, $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->appRouteDomain($app)));
+            $environment = array_merge(
+                $environment,
+                $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->appRouteDomain($app)),
+            );
         } else {
             $environment['SERVER_NAME'] = ':'.self::InternalPort;
         }
@@ -195,7 +203,7 @@ final readonly class AppRuntimeContainerRenderer
 
     public function documentRootInContainer(App $app): string
     {
-        $documentRoot = trim((string) $app->document_root, '/');
+        $documentRoot = trim($app->document_root, '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return AppRuntimeContainer::SourceTarget;
@@ -211,7 +219,7 @@ final readonly class AppRuntimeContainerRenderer
      */
     public static function workerFileRelativeToSource(App $app): string
     {
-        $documentRoot = trim((string) $app->document_root, '/');
+        $documentRoot = trim($app->document_root, '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return self::WorkerFileName;

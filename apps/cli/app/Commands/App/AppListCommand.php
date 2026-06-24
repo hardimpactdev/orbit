@@ -28,9 +28,12 @@ final class AppListCommand extends GatewayCommand
     public function handle(): int
     {
         try {
-            $response = $this->gatewayGet('/api/apps', array_filter([
-                'node' => $this->option('node'),
-            ], fn (mixed $v): bool => $v !== null));
+            $response = $this->gatewayGet('/api/apps', array_filter(
+                [
+                    'node' => $this->option('node'),
+                ],
+                fn (mixed $v): bool => $v !== null,
+            ));
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

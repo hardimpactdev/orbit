@@ -175,7 +175,10 @@ final class ToolInstallController implements Loggable
             }
         }
 
-        if ($this->requestTargetString($request, 'node') === null && $this->requestTargetString($request, 'app') === null) {
+        if (
+            $this->requestTargetString($request, 'node') === null
+            && $this->requestTargetString($request, 'app') === null
+        ) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',

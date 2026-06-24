@@ -34,8 +34,7 @@ it('reports dns.container_missing when orbit-dns is absent', function (): void {
 
     $drift = $this->probe->probe();
 
-    expect($drift)->toHaveCount(1)
-        ->and($drift[0]->key)->toBe('dns.container_missing');
+    expect($drift)->toHaveCount(1)->and($drift[0]->key)->toBe('dns.container_missing');
 });
 
 it('reports dns.port_not_listening when port 53 is silent', function (): void {
@@ -48,7 +47,7 @@ it('reports dns.port_not_listening when port 53 is silent', function (): void {
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = (new DnsmasqConfigBuilder)->build(Node::query()->get());
+    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
     File::put($this->workdir.'/dnsmasq.conf', $expected);
 
     $drift = $this->probe->probe();
@@ -83,7 +82,7 @@ it('does not report drift when runtime is healthy and config matches intent', fu
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = (new DnsmasqConfigBuilder)->build(Node::query()->get());
+    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
     File::put($this->workdir.'/dnsmasq.conf', $expected);
 
     $drift = $this->probe->probe();
@@ -94,7 +93,9 @@ it('does not report drift when runtime is healthy and config matches intent', fu
 it('recognizes the swarm dns task as the dns runtime container', function (): void {
     Process::fake([
         'docker ps -a -q -f name=orbit-dns' => Process::result(''),
-        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'" => Process::result('swarm-dns-task'),
+        "docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-dns'" => Process::result(
+            'swarm-dns-task',
+        ),
         'docker exec*' => Process::result('udp 0 0 :::53 :::* LISTEN'),
     ]);
 
@@ -102,7 +103,7 @@ it('recognizes the swarm dns task as the dns runtime container', function (): vo
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = (new DnsmasqConfigBuilder)->build(Node::query()->get());
+    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
     File::put($this->workdir.'/dnsmasq.conf', $expected);
 
     $drift = $this->probe->probe();
@@ -120,7 +121,7 @@ it('reports dns.client_dns_drift when wg-easy client DNS is not pinned to the vp
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = (new DnsmasqConfigBuilder)->build(Node::query()->get());
+    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
     File::put($this->workdir.'/dnsmasq.conf', $expected);
     createDnsRuntimeProbeWgEasyDatabase($this->workdir.'/wg-easy/wg-easy.db', defaultDns: '["10.6.0.1"]', clients: [
         ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
@@ -130,10 +131,15 @@ it('reports dns.client_dns_drift when wg-easy client DNS is not pinned to the vp
     $drift = $this->probe->probe();
     $entry = collect($drift)->first(fn ($entry): bool => $entry->key === 'dns.client_dns_drift');
 
-    expect($entry)->not->toBeNull()
-        ->and($entry->summary)->toBe('wg-easy client DNS is not pinned to the VPN DNS endpoint.')
-        ->and($entry->detail['expected_dns'])->toBe('10.6.0.1')
-        ->and($entry->detail['clients'])->toBe([
+    expect($entry)
+        ->not
+        ->toBeNull()
+        ->and($entry->summary)
+        ->toBe('wg-easy client DNS is not pinned to the VPN DNS endpoint.')
+        ->and($entry->detail['expected_dns'])
+        ->toBe('10.6.0.1')
+        ->and($entry->detail['clients'])
+        ->toBe([
             [
                 'name' => 'operator',
                 'ipv4_address' => '10.6.0.3',
@@ -152,7 +158,7 @@ it('does not report client dns drift when wg-easy default and client DNS match i
         'tld' => 'gateway',
         'wireguard_address' => '10.6.0.2',
     ]);
-    $expected = (new DnsmasqConfigBuilder)->build(Node::query()->get());
+    $expected = new DnsmasqConfigBuilder()->build(Node::query()->get());
     File::put($this->workdir.'/dnsmasq.conf', $expected);
     createDnsRuntimeProbeWgEasyDatabase($this->workdir.'/wg-easy/wg-easy.db', defaultDns: '["10.6.0.1"]', clients: [
         ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1"]'],
@@ -164,34 +170,50 @@ it('does not report client dns drift when wg-easy default and client DNS match i
 });
 
 it('restores wg-easy client dns drift by updating persisted default and client DNS', function (): void {
-    createDnsRuntimeProbeWgEasyDatabase($this->workdir.'/wg-easy/wg-easy.db', defaultDns: '["10.6.0.1","1.1.1.1"]', clients: [
-        ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
-        ['name' => 'app-1', 'ipv4_address' => '10.6.0.4', 'dns' => '["1.1.1.1"]'],
-    ]);
+    createDnsRuntimeProbeWgEasyDatabase(
+        $this->workdir.'/wg-easy/wg-easy.db',
+        defaultDns: '["10.6.0.1","1.1.1.1"]',
+        clients: [
+            ['name' => 'operator', 'ipv4_address' => '10.6.0.3', 'dns' => '["10.6.0.1","1.1.1.1"]'],
+            ['name' => 'app-1', 'ipv4_address' => '10.6.0.4', 'dns' => '["1.1.1.1"]'],
+        ],
+    );
 
     $result = $this->probe->restore('dns.client_dns_drift');
 
-    expect($result)->toBeTrue()
-        ->and(readDnsRuntimeProbeWgEasyDefaultDns($this->workdir.'/wg-easy/wg-easy.db'))->toBe('["10.6.0.1"]')
-        ->and(readDnsRuntimeProbeWgEasyClientDns($this->workdir.'/wg-easy/wg-easy.db'))->toBe([
+    expect($result)
+        ->toBeTrue()
+        ->and(readDnsRuntimeProbeWgEasyDefaultDns($this->workdir.'/wg-easy/wg-easy.db'))
+        ->toBe('["10.6.0.1"]')
+        ->and(readDnsRuntimeProbeWgEasyClientDns($this->workdir.'/wg-easy/wg-easy.db'))
+        ->toBe([
             'app-1' => '["10.6.0.1"]',
             'operator' => '["10.6.0.1"]',
         ]);
 });
 
 it('marks the four drift kinds as restorable', function (): void {
-    expect($this->probe->isRestorable('dns.container_missing'))->toBeTrue()
-        ->and($this->probe->isRestorable('dns.port_not_listening'))->toBeTrue()
-        ->and($this->probe->isRestorable('dns.config_drift'))->toBeTrue()
-        ->and($this->probe->isRestorable('dns.client_dns_drift'))->toBeTrue()
-        ->and($this->probe->isRestorable('dns.unknown'))->toBeFalse();
+    expect($this->probe->isRestorable('dns.container_missing'))
+        ->toBeTrue()
+        ->and($this->probe->isRestorable('dns.port_not_listening'))
+        ->toBeTrue()
+        ->and($this->probe->isRestorable('dns.config_drift'))
+        ->toBeTrue()
+        ->and($this->probe->isRestorable('dns.client_dns_drift'))
+        ->toBeTrue()
+        ->and($this->probe->isRestorable('dns.unknown'))
+        ->toBeFalse();
 });
 
 it('does not mark dns runtime drift as adoptable', function (): void {
-    expect($this->probe->isAdoptable('dns.config_drift'))->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.container_missing'))->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.port_not_listening'))->toBeFalse()
-        ->and($this->probe->isAdoptable('dns.client_dns_drift'))->toBeFalse();
+    expect($this->probe->isAdoptable('dns.config_drift'))
+        ->toBeFalse()
+        ->and($this->probe->isAdoptable('dns.container_missing'))
+        ->toBeFalse()
+        ->and($this->probe->isAdoptable('dns.port_not_listening'))
+        ->toBeFalse()
+        ->and($this->probe->isAdoptable('dns.client_dns_drift'))
+        ->toBeFalse();
 });
 
 it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', function (): void {
@@ -207,8 +229,10 @@ it('restores config drift by rewriting dnsmasq.conf and restarting orbit-dns', f
 
     $result = $this->probe->restore('dns.config_drift');
 
-    expect($result)->toBeTrue()
-        ->and(File::get($this->workdir.'/dnsmasq.conf'))->toContain('address=/gateway/10.6.0.2');
+    expect($result)
+        ->toBeTrue()
+        ->and(File::get($this->workdir.'/dnsmasq.conf'))
+        ->toContain('address=/gateway/10.6.0.2');
 
     Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker restart orbit-dns'));
 });
@@ -229,10 +253,14 @@ it('restores config drift in swarm by forcing the orbit dns service update', fun
 
     $result = $this->probe->restore('dns.config_drift');
 
-    expect($result)->toBeTrue()
-        ->and(File::get($this->workdir.'/dnsmasq.conf'))->toContain('address=/gateway/10.6.0.2');
+    expect($result)
+        ->toBeTrue()
+        ->and(File::get($this->workdir.'/dnsmasq.conf'))
+        ->toContain('address=/gateway/10.6.0.2');
 
-    Process::assertRan(fn ($process): bool => (string) $process->command === "docker service update --force 'orbit_orbit-dns'");
+    Process::assertRan(
+        fn ($process): bool => (string) $process->command === "docker service update --force 'orbit_orbit-dns'",
+    );
 });
 
 /**
@@ -256,7 +284,9 @@ function createDnsRuntimeProbeWgEasyDatabase(string $path, string $defaultDns, a
     $statement = $database->prepare('insert into user_configs_table (default_dns) values (:default_dns)');
     $statement->execute(['default_dns' => $defaultDns]);
 
-    $statement = $database->prepare('insert into clients_table (name, ipv4_address, dns, enabled) values (:name, :ipv4_address, :dns, 1)');
+    $statement = $database->prepare(
+        'insert into clients_table (name, ipv4_address, dns, enabled) values (:name, :ipv4_address, :dns, 1)',
+    );
 
     foreach ($clients as $client) {
         $statement->execute($client);

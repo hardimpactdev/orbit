@@ -23,8 +23,18 @@ class FirewallRuleIntent
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    public function store(string $action, string $name, string $nodeName, string $direction, string $source, ?string $destination, string $port, string $protocol, ?string $reason, ?Node $caller = null): array
-    {
+    public function store(
+        string $action,
+        string $name,
+        string $nodeName,
+        string $direction,
+        string $source,
+        ?string $destination,
+        string $port,
+        string $protocol,
+        ?string $reason,
+        ?Node $caller = null,
+    ): array {
         $node = $this->resolveTargetNode($nodeName, $caller);
         $this->validateShape($action, $direction, $source, $destination, $port, $protocol);
         $this->guardBaselinePolicy($direction, $action, $source, $destination, $port, $protocol);
@@ -45,10 +55,14 @@ class FirewallRuleIntent
         ];
 
         if ($existing instanceof FirewallRule && ! $this->sameShape($existing, $shape)) {
-            throw new GatewayApiException('A different firewall rule already uses this name on the selected node.', 'firewall_rule.name_collision', [
-                'name' => $name,
-                'node' => $node->name,
-            ]);
+            throw new GatewayApiException(
+                'A different firewall rule already uses this name on the selected node.',
+                'firewall_rule.name_collision',
+                [
+                    'name' => $name,
+                    'node' => $node->name,
+                ],
+            );
         }
 
         $rule = FirewallRule::query()->updateOrCreate(
@@ -74,11 +88,15 @@ class FirewallRuleIntent
             ));
         } catch (\Throwable $exception) {
             if (! $this->shouldDeferBackendMutation()) {
-                throw new GatewayApiException('Firewall rule intent was saved, but backend enactment failed.', 'firewall_rule.enactment_failed', [
-                    'node' => $node->name,
-                    'rule' => $name,
-                    'reason' => $exception->getMessage(),
-                ]);
+                throw new GatewayApiException(
+                    'Firewall rule intent was saved, but backend enactment failed.',
+                    'firewall_rule.enactment_failed',
+                    [
+                        'node' => $node->name,
+                        'rule' => $name,
+                        'reason' => $exception->getMessage(),
+                    ],
+                );
             }
 
             $backendEnacted = false;
@@ -134,11 +152,15 @@ class FirewallRuleIntent
         }
 
         if ($rule->protected) {
-            throw new GatewayApiException('Protected firewall rules cannot be removed through firewall commands.', 'firewall_rule.protected', [
-                'name' => $rule->name,
-                'node' => $node->name,
-                'owner' => $rule->owner,
-            ]);
+            throw new GatewayApiException(
+                'Protected firewall rules cannot be removed through firewall commands.',
+                'firewall_rule.protected',
+                [
+                    'name' => $rule->name,
+                    'node' => $node->name,
+                    'owner' => $rule->owner,
+                ],
+            );
         }
 
         $entity = $this->query->toRuleEntity($rule, 'removed_with_drift');
@@ -151,11 +173,15 @@ class FirewallRuleIntent
             $this->fixer->remove($rule);
         } catch (\Throwable $exception) {
             if (! $this->shouldDeferBackendMutation()) {
-                throw new GatewayApiException('Firewall rule intent was removed, but backend cleanup failed.', 'firewall_rule.cleanup_failed', [
-                    'node' => $node->name,
-                    'rule' => $name,
-                    'reason' => $exception->getMessage(),
-                ]);
+                throw new GatewayApiException(
+                    'Firewall rule intent was removed, but backend cleanup failed.',
+                    'firewall_rule.cleanup_failed',
+                    [
+                        'node' => $node->name,
+                        'rule' => $name,
+                        'reason' => $exception->getMessage(),
+                    ],
+                );
             }
 
             $backendRemoved = false;
@@ -206,52 +232,91 @@ class FirewallRuleIntent
             return;
         }
 
-        throw new GatewayApiException('This node is not authorized to manage firewall rules for the selected node.', 'authorization_failed', [
-            'node' => $node->name,
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ]);
+        throw new GatewayApiException(
+            'This node is not authorized to manage firewall rules for the selected node.',
+            'authorization_failed',
+            [
+                'node' => $node->name,
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+        );
     }
 
-    private function validateShape(string $action, string $direction, string $source, ?string $destination, string $port, string $protocol): void
-    {
+    private function validateShape(
+        string $action,
+        string $direction,
+        string $source,
+        ?string $destination,
+        string $port,
+        string $protocol,
+    ): void {
         if (! in_array($action, ['allow', 'deny'], true)) {
-            throw new GatewayApiException('The firewall rule action is invalid.', 'validation_failed', ['field' => 'action']);
+            throw new GatewayApiException('The firewall rule action is invalid.', 'validation_failed', [
+                'field' => 'action',
+            ]);
         }
 
         if (! in_array($direction, ['incoming', 'outgoing'], true)) {
-            throw new GatewayApiException('The firewall rule direction is invalid.', 'validation_failed', ['field' => 'direction']);
+            throw new GatewayApiException('The firewall rule direction is invalid.', 'validation_failed', [
+                'field' => 'direction',
+            ]);
         }
 
         if (! in_array($protocol, ['tcp', 'udp'], true)) {
-            throw new GatewayApiException('The firewall rule protocol is invalid.', 'validation_failed', ['field' => 'protocol']);
+            throw new GatewayApiException('The firewall rule protocol is invalid.', 'validation_failed', [
+                'field' => 'protocol',
+            ]);
         }
 
-        if (! $this->validEndpoint($source) || ($destination !== null && ! $this->validEndpoint($destination))) {
-            throw new GatewayApiException('The firewall rule endpoint is invalid.', 'validation_failed', ['field' => 'source']);
+        if (! $this->validEndpoint($source) || $destination !== null && ! $this->validEndpoint($destination)) {
+            throw new GatewayApiException('The firewall rule endpoint is invalid.', 'validation_failed', [
+                'field' => 'source',
+            ]);
         }
 
         if (! preg_match('/^\d{1,5}(:\d{1,5})?$/', $port)) {
-            throw new GatewayApiException('The firewall rule port is invalid.', 'validation_failed', ['field' => 'port']);
+            throw new GatewayApiException('The firewall rule port is invalid.', 'validation_failed', [
+                'field' => 'port',
+            ]);
         }
     }
 
     private function validEndpoint(string $value): bool
     {
-        return $value === 'any'
+        return (
+            $value === 'any'
             || filter_var($value, FILTER_VALIDATE_IP) !== false
             || filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            || str_contains($value, '/');
+            || str_contains($value, '/')
+        );
     }
 
-    private function guardBaselinePolicy(string $direction, string $action, string $source, ?string $destination, string $port, string $protocol): void
-    {
-        if ($direction === 'incoming' && $action === 'allow' && $source === 'any' && $destination === null && $protocol === 'tcp' && $port === '22') {
-            throw new GatewayApiException('The requested rule would mutate node bootstrap policy.', 'firewall_rule.baseline_conflict', [
-                'port' => $port,
-                'protocol' => $protocol,
-            ]);
+    private function guardBaselinePolicy(
+        string $direction,
+        string $action,
+        string $source,
+        ?string $destination,
+        string $port,
+        string $protocol,
+    ): void {
+        if (
+            $direction === 'incoming'
+            && $action === 'allow'
+            && $source === 'any'
+            && $destination === null
+            && $protocol === 'tcp'
+            && $port === '22'
+        ) {
+            throw new GatewayApiException(
+                'The requested rule would mutate node bootstrap policy.',
+                'firewall_rule.baseline_conflict',
+                [
+                    'port' => $port,
+                    'protocol' => $protocol,
+                ],
+            );
         }
     }
 
@@ -268,12 +333,14 @@ class FirewallRuleIntent
      */
     private function sameShape(FirewallRule $rule, array $shape): bool
     {
-        return $rule->direction === $shape['direction']
+        return (
+            $rule->direction === $shape['direction']
             && $rule->action === $shape['action']
             && $rule->source === $shape['source']
             && $rule->destination === $shape['destination']
             && $rule->port === $shape['port']
-            && $rule->protocol === $shape['protocol'];
+            && $rule->protocol === $shape['protocol']
+        );
     }
 
     /**
@@ -303,10 +370,14 @@ class FirewallRuleIntent
             return false;
         }
 
-        return in_array('docker', array_map(
-            static fn (string $value): string => strtolower(trim($value)),
-            explode(',', $providers),
-        ), true);
+        return in_array(
+            'docker',
+            array_map(
+                static fn (string $value): string => strtolower(trim($value)),
+                explode(',', $providers),
+            ),
+            true,
+        );
     }
 
     private function e2eEnvironmentValue(string $key): ?string

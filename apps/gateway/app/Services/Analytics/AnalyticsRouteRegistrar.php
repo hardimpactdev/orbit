@@ -173,7 +173,8 @@ class AnalyticsRouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ($existingRoute->owner_type !== 'app-analytics' || $existingRoute->app_id !== $app->id)
+            && ($existingRoute->owner_type !== 'app-analytics'
+            || $existingRoute->app_id !== $app->id)
         ) {
             throw new RuntimeException("Analytics public host '{$host}' conflicts with an existing proxy route.");
         }
@@ -255,7 +256,8 @@ class AnalyticsRouteRegistrar
 
     private function routerNode(): Node
     {
-        $router = $this->nodeRoleAssignments->activeRouterNodeQuery()
+        $router = $this->nodeRoleAssignments
+            ->activeRouterNodeQuery()
             ->orderBy('id')
             ->first();
 
@@ -264,7 +266,9 @@ class AnalyticsRouteRegistrar
         }
 
         if ($this->wireGuardAddress($router) === '') {
-            throw new RuntimeException('The analytics service route requires the router node to have a WireGuard address.');
+            throw new RuntimeException(
+                'The analytics service route requires the router node to have a WireGuard address.',
+            );
         }
 
         return $router;

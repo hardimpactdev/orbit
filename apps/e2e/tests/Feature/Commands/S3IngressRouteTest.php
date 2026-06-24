@@ -14,10 +14,10 @@ it('flows public s3 ingress through router to seaweedfs backend and includes pub
     $publicHost = "s3.{$suffix}.example.test";
 
     try {
-        expect($topology->lease()->prodApp())->not->toBeNull()
-            ->and($topology->lease()->devApp())->not->toBeNull()
-            ->and($topology->lease()->gateway())->not->toBeNull()
-            ->and($topology->lease()->agent())->toBeNull();
+        expect($topology->lease()->prodApp())
+            ->not->toBeNull()->and($topology->lease()->devApp())
+            ->not->toBeNull()->and($topology->lease()->gateway())
+            ->not->toBeNull()->and($topology->lease()->agent())->toBeNull();
 
         $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
@@ -36,20 +36,28 @@ it('flows public s3 ingress through router to seaweedfs backend and includes pub
         $serviceRoute = $serviceSnapshot['route'];
         $serviceConfig = $serviceRoute['config'];
 
-        expect($serviceSnapshot['nodes']['app_prod_roles'])->toContain('ingress')
-            ->and($serviceSnapshot['nodes']['app_dev_roles'])->toContain('s3');
+        expect($serviceSnapshot['nodes']['app_prod_roles'])
+            ->toContain('ingress')
+            ->and($serviceSnapshot['nodes']['app_dev_roles'])
+            ->toContain('s3');
 
-        expect($serviceRoute)->toMatchArray([
-            'domain' => 's3.orbit',
-            'node' => 'gateway',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-        ])
-            ->and($serviceConfig['protocol'])->toBe('s3')
-            ->and($serviceConfig['owner_name'])->toBe('seaweedfs')
-            ->and($serviceConfig['upstreams'][0]['scheme'])->toBe('http')
-            ->and($serviceConfig['upstreams'][0]['host'])->toBe('app-dev-1.s3.orbit')
-            ->and($serviceConfig['upstreams'][0]['port'])->toBe(8333);
+        expect($serviceRoute)
+            ->toMatchArray([
+                'domain' => 's3.orbit',
+                'node' => 'gateway',
+                'owner_type' => 'router',
+                'kind' => 'proxy',
+            ])
+            ->and($serviceConfig['protocol'])
+            ->toBe('s3')
+            ->and($serviceConfig['owner_name'])
+            ->toBe('seaweedfs')
+            ->and($serviceConfig['upstreams'][0]['scheme'])
+            ->toBe('http')
+            ->and($serviceConfig['upstreams'][0]['host'])
+            ->toBe('app-dev-1.s3.orbit')
+            ->and($serviceConfig['upstreams'][0]['port'])
+            ->toBe(8333);
 
         // Run orbit s3:publish from the operator node.
         $publishResult = $topology->ssh(
@@ -72,39 +80,56 @@ it('flows public s3 ingress through router to seaweedfs backend and includes pub
         $publishedS3 = $publishPayload['data']['data']['s3'] ?? [];
         $publishedMeta = $publishPayload['data']['data']['meta'] ?? [];
 
-        expect($publishedS3['node'])->toBe('app-dev-1')
-            ->and($publishedS3['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($publishedS3['public_endpoints'])->toContain("https://{$publicHost}")
-            ->and($publishedS3['backend_pool'])->toContain('http://app-dev-1.s3.orbit:8333')
-            ->and($publishedMeta['host'])->toBe($publicHost)
-            ->and($publishedMeta['action'])->toBe('published')
-            ->and($publishedMeta['already_published'])->toBeFalse();
+        expect($publishedS3['node'])
+            ->toBe('app-dev-1')
+            ->and($publishedS3['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($publishedS3['public_endpoints'])
+            ->toContain("https://{$publicHost}")
+            ->and($publishedS3['backend_pool'])
+            ->toContain('http://app-dev-1.s3.orbit:8333')
+            ->and($publishedMeta['host'])
+            ->toBe($publicHost)
+            ->and($publishedMeta['action'])
+            ->toBe('published')
+            ->and($publishedMeta['already_published'])
+            ->toBeFalse();
 
         // Snapshot the public ingress route after publishing.
         $ingressSnapshot = s3IngressPublicRouteSnapshot($topology, $publicHost);
         $publicRoute = $ingressSnapshot['public_route'];
         $publicConfig = $publicRoute['config'];
 
-        expect($publicRoute)->toMatchArray([
-            'domain' => $publicHost,
-            'node' => 'app-prod-1',
-            'owner_type' => 's3',
-            'kind' => 'proxy',
-        ])
-            ->and($publicRoute['source_hash'])->toBe($publicRoute['expected_source_hash'])
-            ->and($publicConfig['placement'])->toBe('ingress')
-            ->and($publicConfig['owner_name'])->toBe('seaweedfs')
-            ->and($publicConfig['protocol'])->toBe('s3')
-            ->and($publicConfig['target']['value'])->toBe('https://s3.orbit')
-            ->and($publicConfig['router_upstream']['node'])->toBe('gateway');
+        expect($publicRoute)
+            ->toMatchArray([
+                'domain' => $publicHost,
+                'node' => 'app-prod-1',
+                'owner_type' => 's3',
+                'kind' => 'proxy',
+            ])
+            ->and($publicRoute['source_hash'])
+            ->toBe($publicRoute['expected_source_hash'])
+            ->and($publicConfig['placement'])
+            ->toBe('ingress')
+            ->and($publicConfig['owner_name'])
+            ->toBe('seaweedfs')
+            ->and($publicConfig['protocol'])
+            ->toBe('s3')
+            ->and($publicConfig['target']['value'])
+            ->toBe('https://s3.orbit')
+            ->and($publicConfig['router_upstream']['node'])
+            ->toBe('gateway');
 
         // Assert the service route backend pool contains the app-dev node.
         $refreshedService = $ingressSnapshot['service_route'];
         $refreshedServiceConfig = $refreshedService['config'];
 
-        expect($refreshedServiceConfig['upstreams'][0]['host'])->toBe('app-dev-1.s3.orbit')
-            ->and($refreshedServiceConfig['upstreams'][0]['port'])->toBe(8333)
-            ->and($refreshedServiceConfig['upstreams'][0]['scheme'])->toBe('http');
+        expect($refreshedServiceConfig['upstreams'][0]['host'])
+            ->toBe('app-dev-1.s3.orbit')
+            ->and($refreshedServiceConfig['upstreams'][0]['port'])
+            ->toBe(8333)
+            ->and($refreshedServiceConfig['upstreams'][0]['scheme'])
+            ->toBe('http');
 
         // Assert the rendered ingress Caddy route contains the expected substrings.
         $renderedIngress = $ingressSnapshot['rendered_ingress_route'];
@@ -129,14 +154,22 @@ it('flows public s3 ingress through router to seaweedfs backend and includes pub
         $credentials = $credPayload['success']['data']['credentials'] ?? [];
         $credMeta = $credPayload['success']['meta'] ?? [];
 
-        expect($credentials['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($credentials['region'])->toBe('orbit')
-            ->and($credentials['access_key_id'])->toBe('TESTKEYID12345678901')
-            ->and($credentials['secret_access_key'])->toBe('test-secret-access-key-e2e')
-            ->and($credentials['bucket_endpoint_style'])->toBe('path')
-            ->and($credentials['backend_pool'])->toContain('http://app-dev-1.s3.orbit:8333')
-            ->and($credentials['public_endpoints'])->toContain("https://{$publicHost}")
-            ->and($credMeta['tool'])->toBe('seaweedfs');
+        expect($credentials['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($credentials['region'])
+            ->toBe('orbit')
+            ->and($credentials['access_key_id'])
+            ->toBe('TESTKEYID12345678901')
+            ->and($credentials['secret_access_key'])
+            ->toBe('test-secret-access-key-e2e')
+            ->and($credentials['bucket_endpoint_style'])
+            ->toBe('path')
+            ->and($credentials['backend_pool'])
+            ->toContain('http://app-dev-1.s3.orbit:8333')
+            ->and($credentials['public_endpoints'])
+            ->toContain("https://{$publicHost}")
+            ->and($credMeta['tool'])
+            ->toBe('seaweedfs');
     } finally {
         s3IngressRouteCleanup($topology, $publicHost);
         $topology->cleanup();
@@ -148,8 +181,9 @@ it('proves SeaweedFS binds only to the WireGuard interface and is not exposed on
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdevAppprod, withGatewayApi: true);
 
     try {
-        expect($topology->lease()->devApp())->not->toBeNull()
-            ->and($topology->lease()->gateway())->not->toBeNull();
+        expect($topology->lease()->devApp())
+            ->not->toBeNull()->and($topology->lease()->gateway())
+            ->not->toBeNull();
 
         $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
@@ -180,8 +214,9 @@ it('proves SeaweedFS binds only to the WireGuard interface and is not exposed on
         expect($seaweedfsAddress)->toBe("{$wgAddress}:8333");
 
         // Neither published_ports nor seaweedfs_address may expose 0.0.0.0.
-        expect(implode(',', $publishedPorts))->not->toContain('0.0.0.0')
-            ->and($seaweedfsAddress)->not->toContain('0.0.0.0');
+        expect(implode(',', $publishedPorts))
+            ->not->toContain('0.0.0.0')->and($seaweedfsAddress)
+            ->not->toContain('0.0.0.0');
 
         // Every published-ports entry starts with the WireGuard IP.
         foreach ($publishedPorts as $entry) {
@@ -191,8 +226,9 @@ it('proves SeaweedFS binds only to the WireGuard interface and is not exposed on
         // When the public host differs from the WireGuard address, neither
         // published_ports nor seaweedfs_address may reference the public interface.
         if ($host !== $wgAddress) {
-            expect(implode(',', $publishedPorts))->not->toContain($host)
-                ->and($seaweedfsAddress)->not->toContain($host);
+            expect(implode(',', $publishedPorts))
+                ->not->toContain($host)->and($seaweedfsAddress)
+                ->not->toContain($host);
         }
     } finally {
         $topology->cleanup();
@@ -213,43 +249,43 @@ it('proves SeaweedFS binds only to the WireGuard interface and is not exposed on
 function s3RuntimeContainerBindSnapshot(E2ETopologyHarness $topology): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\App\Models\NodeRoleAssignment::query()->updateOrCreate(
-    [
-        'node_id' => $node->id,
-        'role' => 's3',
-    ],
-    [
-        'status' => 'active',
-        'settings' => ['data_path' => '/srv/orbit/s3/data'],
-        'last_error' => null,
-        'converged_at' => now(),
-    ],
-);
+        \App\Models\NodeRoleAssignment::query()->updateOrCreate(
+            [
+                'node_id' => $node->id,
+                'role' => 's3',
+            ],
+            [
+                'status' => 'active',
+                'settings' => ['data_path' => '/srv/orbit/s3/data'],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
 
-$assignment = $node->roleAssignments()
-    ->where('role', 's3')
-    ->where('status', 'active')
-    ->firstOrFail();
+        $assignment = $node->roleAssignments()
+            ->where('role', 's3')
+            ->where('status', 'active')
+            ->firstOrFail();
 
-$settings = \App\Data\Nodes\RoleSettings\S3RoleSettings::fromArray(
-    is_array($assignment->settings) ? $assignment->settings : []
-);
+        $settings = \App\Data\Nodes\RoleSettings\S3RoleSettings::fromArray(
+            is_array($assignment->settings) ? $assignment->settings : []
+        );
 
-$container = app(\App\Services\S3\S3RuntimeContainerRenderer::class)->render($node, $settings);
-$publishedPorts = $container->publishedPorts();
-$publishedAddress = isset($publishedPorts[0])
-    ? implode(':', array_slice(explode(':', $publishedPorts[0]), 0, 2))
-    : null;
+        $container = app(\App\Services\S3\S3RuntimeContainerRenderer::class)->render($node, $settings);
+        $publishedPorts = $container->publishedPorts();
+        $publishedAddress = isset($publishedPorts[0])
+            ? implode(':', array_slice(explode(':', $publishedPorts[0]), 0, 2))
+            : null;
 
-echo json_encode([
-    'wireguard_address' => $node->wireguard_address,
-    'host' => $node->host,
-    'published_ports' => $publishedPorts,
-    'seaweedfs_address' => $publishedAddress,
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'wireguard_address' => $node->wireguard_address,
+            'host' => $node->host,
+            'published_ports' => $publishedPorts,
+            'seaweedfs_address' => $publishedAddress,
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
@@ -290,75 +326,75 @@ PHP;
 function s3IngressServiceRouteSnapshot(E2ETopologyHarness $topology): array
 {
     $php = <<<'PHP'
-$appDevNode = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-$appProdNode = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
+        $appDevNode = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $appProdNode = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
 
-\App\Models\NodeRoleAssignment::query()->updateOrCreate(
-    [
-        'node_id' => $appDevNode->id,
-        'role' => 's3',
-    ],
-    [
-        'status' => 'active',
-        'settings' => ['data_path' => '/srv/orbit/s3/data'],
-        'last_error' => null,
-        'converged_at' => now(),
-    ],
-);
-
-\App\Models\NodeTool::query()->updateOrCreate(
-    [
-        'node_id' => $appDevNode->id,
-        'name' => 'seaweedfs',
-    ],
-    [
-        'expected_state' => 'running',
-        'config' => [
-            'backend_host' => 'app-dev-1.s3.orbit',
-            'public_hosts' => [],
-        ],
-        'credentials' => [
-            'fields' => [
-                'access_key_id' => 'TESTKEYID12345678901',
-                'secret_access_key' => 'test-secret-access-key-e2e',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        \App\Models\NodeRoleAssignment::query()->updateOrCreate(
+            [
+                'node_id' => $appDevNode->id,
+                'role' => 's3',
             ],
-        ],
-    ],
-);
+            [
+                'status' => 'active',
+                'settings' => ['data_path' => '/srv/orbit/s3/data'],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
 
-$route = app(\App\Services\S3\S3RouteRegistrar::class)->syncServiceRoute()->load('node');
-$renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
+        \App\Models\NodeTool::query()->updateOrCreate(
+            [
+                'node_id' => $appDevNode->id,
+                'name' => 'seaweedfs',
+            ],
+            [
+                'expected_state' => 'running',
+                'config' => [
+                    'backend_host' => 'app-dev-1.s3.orbit',
+                    'public_hosts' => [],
+                ],
+                'credentials' => [
+                    'fields' => [
+                        'access_key_id' => 'TESTKEYID12345678901',
+                        'secret_access_key' => 'test-secret-access-key-e2e',
+                        'region' => 'orbit',
+                        'endpoint' => 'https://s3.orbit',
+                        'bucket_style' => 'path',
+                    ],
+                ],
+            ],
+        );
 
-echo json_encode([
-    'route' => [
-        'domain' => $route->domain,
-        'node' => $route->node->name,
-        'owner_type' => $route->owner_type,
-        'kind' => $route->kind,
-        'config' => $route->config,
-        'source_hash' => $route->source_hash,
-        'expected_source_hash' => $renderer->sourceHash($route),
-    ],
-    'rendered_route' => $renderer->render($route),
-    'nodes' => [
-        'app_prod_roles' => $appProdNode->roleAssignments()
-            ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-            ->orderBy('role')
-            ->pluck('role')
-            ->values()
-            ->all(),
-        'app_dev_roles' => $appDevNode->roleAssignments()
-            ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-            ->orderBy('role')
-            ->pluck('role')
-            ->values()
-            ->all(),
-    ],
-], JSON_THROW_ON_ERROR);
-PHP;
+        $route = app(\App\Services\S3\S3RouteRegistrar::class)->syncServiceRoute()->load('node');
+        $renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
+
+        echo json_encode([
+            'route' => [
+                'domain' => $route->domain,
+                'node' => $route->node->name,
+                'owner_type' => $route->owner_type,
+                'kind' => $route->kind,
+                'config' => $route->config,
+                'source_hash' => $route->source_hash,
+                'expected_source_hash' => $renderer->sourceHash($route),
+            ],
+            'rendered_route' => $renderer->render($route),
+            'nodes' => [
+                'app_prod_roles' => $appProdNode->roleAssignments()
+                    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+                    ->orderBy('role')
+                    ->pluck('role')
+                    ->values()
+                    ->all(),
+                'app_dev_roles' => $appDevNode->roleAssignments()
+                    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+                    ->orderBy('role')
+                    ->pluck('role')
+                    ->values()
+                    ->all(),
+            ],
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
@@ -401,41 +437,41 @@ PHP;
 function s3IngressPublicRouteSnapshot(E2ETopologyHarness $topology, string $publicHost): array
 {
     $php = <<<'PHP'
-$publicHost = __PUBLIC_HOST__;
-$publicRoute = \App\Models\ProxyRoute::query()
-    ->with('node')
-    ->where('domain', $publicHost)
-    ->firstOrFail();
+        $publicHost = __PUBLIC_HOST__;
+        $publicRoute = \App\Models\ProxyRoute::query()
+            ->with('node')
+            ->where('domain', $publicHost)
+            ->firstOrFail();
 
-$serviceRoute = \App\Models\ProxyRoute::query()
-    ->with('node')
-    ->where('domain', \App\Services\S3\S3RouteRegistrar::ServiceDomain)
-    ->firstOrFail();
+        $serviceRoute = \App\Models\ProxyRoute::query()
+            ->with('node')
+            ->where('domain', \App\Services\S3\S3RouteRegistrar::ServiceDomain)
+            ->firstOrFail();
 
-$renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
+        $renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
 
-echo json_encode([
-    'public_route' => [
-        'domain' => $publicRoute->domain,
-        'node' => $publicRoute->node->name,
-        'owner_type' => $publicRoute->owner_type,
-        'kind' => $publicRoute->kind,
-        'config' => $publicRoute->config,
-        'source_hash' => $publicRoute->source_hash,
-        'expected_source_hash' => $renderer->sourceHash($publicRoute),
-    ],
-    'service_route' => [
-        'domain' => $serviceRoute->domain,
-        'node' => $serviceRoute->node->name,
-        'owner_type' => $serviceRoute->owner_type,
-        'kind' => $serviceRoute->kind,
-        'config' => $serviceRoute->config,
-        'source_hash' => $serviceRoute->source_hash,
-        'expected_source_hash' => $renderer->sourceHash($serviceRoute),
-    ],
-    'rendered_ingress_route' => $renderer->render($publicRoute),
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'public_route' => [
+                'domain' => $publicRoute->domain,
+                'node' => $publicRoute->node->name,
+                'owner_type' => $publicRoute->owner_type,
+                'kind' => $publicRoute->kind,
+                'config' => $publicRoute->config,
+                'source_hash' => $publicRoute->source_hash,
+                'expected_source_hash' => $renderer->sourceHash($publicRoute),
+            ],
+            'service_route' => [
+                'domain' => $serviceRoute->domain,
+                'node' => $serviceRoute->node->name,
+                'owner_type' => $serviceRoute->owner_type,
+                'kind' => $serviceRoute->kind,
+                'config' => $serviceRoute->config,
+                'source_hash' => $serviceRoute->source_hash,
+                'expected_source_hash' => $renderer->sourceHash($serviceRoute),
+            ],
+            'rendered_ingress_route' => $renderer->render($publicRoute),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $php = strtr($php, [
         '__PUBLIC_HOST__' => var_export($publicHost, true),
@@ -461,12 +497,12 @@ function s3IngressRouteCleanup(E2ETopologyHarness $topology, string $publicHost)
     }
 
     $php = <<<'PHP'
-$publicHost = __PUBLIC_HOST__;
+        $publicHost = __PUBLIC_HOST__;
 
-\App\Models\ProxyRoute::query()
-    ->where('domain', $publicHost)
-    ->delete();
-PHP;
+        \App\Models\ProxyRoute::query()
+            ->where('domain', $publicHost)
+            ->delete();
+        PHP;
 
     $php = strtr($php, [
         '__PUBLIC_HOST__' => var_export($publicHost, true),

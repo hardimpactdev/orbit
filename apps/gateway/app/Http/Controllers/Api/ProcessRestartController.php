@@ -43,7 +43,13 @@ final class ProcessRestartController implements Loggable
                 workspaceName: $this->optionalString($request, 'workspace'),
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorData(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $e->errorData(),
+                $this->statusFor($e),
+            );
         }
 
         $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:restart');
@@ -57,13 +63,25 @@ final class ProcessRestartController implements Loggable
         try {
             $result = $restartProcesses->handle($context, $name);
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorData(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $e->errorData(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $context->subject();
 
         if ($result['failed']) {
-            return $this->error('process.runtime_action_failed', $result['message'], $result['meta'], $result['data'], 422);
+            return $this->error(
+                'process.runtime_action_failed',
+                $result['message'],
+                $result['meta'],
+                $result['data'],
+                422,
+            );
         }
 
         return response()->json([
@@ -82,11 +100,17 @@ final class ProcessRestartController implements Loggable
             return null;
         }
 
-        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ], [], 403);
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$node->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+            [],
+            403,
+        );
     }
 
     private function optionalString(Request $request, string $key): ?string

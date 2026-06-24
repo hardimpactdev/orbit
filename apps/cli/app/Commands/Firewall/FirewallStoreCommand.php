@@ -183,7 +183,7 @@ abstract class FirewallStoreCommand extends FirewallGatewayCommand
     private function backendApply(array $response): string
     {
         $meta = $response['success']['meta'] ?? null;
-        $enacted = is_array($meta) ? ($meta['backend_enacted'] ?? null) : null;
+        $enacted = is_array($meta) ? $meta['backend_enacted'] ?? null : null;
 
         if ($enacted === true) {
             return 'enacted';

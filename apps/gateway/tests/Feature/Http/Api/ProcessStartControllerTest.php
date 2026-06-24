@@ -55,12 +55,20 @@ describe('ProcessStartController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'app' => 'docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_main_vite')
             ->assertJsonPath('success.data.runtimes.0.event.type', 'started')
             ->assertJsonPath('success.meta', []);
@@ -78,12 +86,20 @@ describe('ProcessStartController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'workspace' => 'feature-docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'workspace' => 'feature-docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs')
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_feature-docs_vite');
     });
@@ -93,21 +109,31 @@ describe('ProcessStartController', function (): void {
         grantProcessStartAccess($appNode, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
-        Process::factory()->forOwner($workspace)->create([
-            'name' => 'frankenphp-docs-feature-docs',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
-        ]);
+        Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'frankenphp-docs-feature-docs',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => ['container_name' => 'orbit-ws-docs-feature-docs'],
+            ]);
         app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'workspace' => 'feature-docs',
-            'name' => 'frankenphp-docs-feature-docs',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'workspace' => 'feature-docs',
+                'name' => 'frankenphp-docs-feature-docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.node', $appNode->name)
             ->assertJsonPath('success.data.runtimes.0.app', 'docs')
             ->assertJsonPath('success.data.runtimes.0.workspace', 'feature-docs')
@@ -117,22 +143,32 @@ describe('ProcessStartController', function (): void {
     it('starts a node owned process for node context', function (): void {
         createProcessStartCallerNode(role: 'gateway');
         $node = createTestAppHostNode(['name' => 'app-1']);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'opencode-server',
-            'runtime' => ProcessRuntime::Systemd,
-            'tool' => 'opencode',
-            'command' => 'opencode serve --hostname 0.0.0.0',
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'opencode-server',
+                'runtime' => ProcessRuntime::Systemd,
+                'tool' => 'opencode',
+                'command' => 'opencode serve --hostname 0.0.0.0',
+            ]);
         app()->instance(RemoteShell::class, new ProcessStartApiRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'node' => 'app-1',
-            'name' => 'opencode-server',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'node' => 'app-1',
+                'name' => 'opencode-server',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.node', 'app-1')
             ->assertJsonPath('success.data.runtimes.0.app', null)
             ->assertJsonPath('success.data.runtimes.0.workspace', null)
@@ -150,11 +186,19 @@ describe('ProcessStartController', function (): void {
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'app' => 'docs',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => 'docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.runtime_action_failed')
             ->assertJsonPath('error.meta.partial_state', 'partially_started')
             ->assertJsonPath('error.data.runtimes.1.state', 'failed');
@@ -171,12 +215,20 @@ describe('ProcessStartController', function (): void {
         $remoteShell = new ProcessStartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'app' => 'docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.unsupported_runtime')
             ->assertJsonPath('error.meta.process', 'vite')
             ->assertJsonPath('error.meta.runtime', 'docker-swarm')
@@ -197,11 +249,19 @@ describe('ProcessStartController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'app' => 'docs',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => 'docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.unsupported_runtime')
             ->assertJsonPath('error.meta.process', 'vite')
             ->assertJsonPath('error.meta.runtime', 'docker-swarm')
@@ -218,12 +278,20 @@ describe('ProcessStartController', function (): void {
         $remoteShell = new ProcessStartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'app' => 'docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:start');
@@ -239,12 +307,20 @@ describe('ProcessStartController', function (): void {
         $remoteShell = new ProcessStartApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes/start', [
-            'app' => 'docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/start',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_START_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:start');

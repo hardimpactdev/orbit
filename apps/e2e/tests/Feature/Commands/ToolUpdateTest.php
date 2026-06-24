@@ -24,8 +24,10 @@ it('updates a host-level tool on an app node through the gateway', function (): 
         );
         $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
 
-        expect($result->successful())->toBeTrue()
-            ->and($data['tool'])->toMatchArray([
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($data['tool'])
+            ->toMatchArray([
                 'name' => 'laravel-installer',
                 'node' => 'app-dev-1',
                 'version' => '5.28',
@@ -33,7 +35,10 @@ it('updates a host-level tool on an app node through the gateway', function (): 
 
         $stored = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'laravel-installer')->value('expected_version');"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg(
+                    "echo \\App\\Models\\NodeTool::query()->where('name', 'laravel-installer')->value('expected_version');",
+                ),
             timeoutSeconds: 120,
         );
 
@@ -41,8 +46,10 @@ it('updates a host-level tool on an app node through the gateway', function (): 
 
         $composerLog = $topology->ssh('dev', 'cat /tmp/orbit-tool-update-composer.log', timeoutSeconds: 60);
 
-        expect($composerLog->successful())->toBeTrue()
-            ->and($composerLog->output())->toContain('global update laravel/installer');
+        expect($composerLog->successful())
+            ->toBeTrue()
+            ->and($composerLog->output())
+            ->toContain('global update laravel/installer');
     } finally {
         $topology->cleanup();
     }
@@ -51,10 +58,10 @@ it('updates a host-level tool on an app node through the gateway', function (): 
 function toolUpdatePrepareComposer(E2ETopologyHarness $topology): void
 {
     $composer = <<<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> /tmp/orbit-tool-update-composer.log
-BASH;
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf '%s\n' "$*" >> /tmp/orbit-tool-update-composer.log
+        BASH;
 
     $topology->ssh(
         'dev',
@@ -69,24 +76,25 @@ BASH;
 function toolUpdateSeedGatewayIntent(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'laravel-installer'],
-    [
-        'expected_state' => 'installed',
-        'expected_version' => '5.27',
-        'config' => null,
-        'credentials' => null,
-    ],
-);
+        \App\Models\NodeTool::query()->updateOrCreate(
+            ['node_id' => $node->id, 'name' => 'laravel-installer'],
+            [
+                'expected_state' => 'installed',
+                'expected_version' => '5.27',
+                'config' => null,
+                'credentials' => null,
+            ],
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

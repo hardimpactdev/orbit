@@ -25,13 +25,21 @@ describe('gateway API-backed public commands', function (): void {
 
         [$exitCode, $output] = runPublicCommand($this, 'gateway:status');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('status: healthy')
-            ->and($output)->toContain('version: 0.1.0')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('status: healthy')
+            ->and($output)
+            ->toContain('version: 0.1.0')
+            ->and($output)
+            ->not->toContain('{');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/status');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/status'
+            ),
+        );
     });
 
     it('outputs a success envelope as JSON', function (): void {
@@ -51,14 +59,20 @@ describe('gateway API-backed public commands', function (): void {
 
         [$exitCode, $output] = runPublicCommand($this, 'gateway:status', ['--json' => true]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success($response, ['endpoint' => '/api/status']),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ));
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/status');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/status'
+            ),
+        );
     });
 
     it('renders only the gateway field for human success output', function (): void {
@@ -77,13 +91,20 @@ describe('gateway API-backed public commands', function (): void {
 
         [$exitCode, $output] = runPublicCommand($this, 'gateway:status');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('healthy')
-            ->and($output)->not->toContain('raw_response')
-            ->and($output)->not->toContain('hidden from human output');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('healthy')
+            ->and($output)
+            ->not->toContain('raw_response')->and($output)
+            ->not->toContain('hidden from human output');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/status');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/status'
+            ),
+        );
     });
 
     it('exits non-zero and renders a failure for gateway HTTP errors', function (): void {
@@ -95,12 +116,19 @@ describe('gateway API-backed public commands', function (): void {
 
         [$exitCode, $output] = runPublicCommand($this, 'gateway:status');
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('gateway_unavailable')
-            ->and($output)->toContain('HTTP 503');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('gateway_unavailable')
+            ->and($output)
+            ->toContain('HTTP 503');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/status');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/status'
+            ),
+        );
     });
 
     it('outputs gateway_unreachable_wireguard for WireGuard route failures in JSON mode', function (): void {
@@ -114,9 +142,12 @@ describe('gateway API-backed public commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard')
-            ->and($decoded['error']['message'])->toContain('WireGuard');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('gateway_unreachable_wireguard')
+            ->and($decoded['error']['message'])
+            ->toContain('WireGuard');
     });
 
     it('outputs a failure envelope as JSON for gateway HTTP errors', function (): void {
@@ -128,8 +159,10 @@ describe('gateway API-backed public commands', function (): void {
 
         [$exitCode, $output] = runPublicCommand($this, 'gateway:status', ['--json' => true]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::failure(
                     'gateway_unavailable',
                     'Gateway request failed (HTTP 503) Body: gateway offline',
@@ -142,8 +175,12 @@ describe('gateway API-backed public commands', function (): void {
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ));
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/status');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/status'
+            ),
+        );
     });
 });
 

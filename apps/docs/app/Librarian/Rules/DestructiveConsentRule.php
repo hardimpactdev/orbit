@@ -53,8 +53,12 @@ final readonly class DestructiveConsentRule implements GroupedRule
 
         return [
             ...$this->checkCanonicalContract($canonicalFile, $canonicalContents),
-            ...$this->checkInteractiveInputMode("{$commandDirectory}/technical/5.1_{$commandName}_input-mode_interactive.md"),
-            ...$this->checkNonInteractiveInputMode("{$commandDirectory}/technical/5.2_{$commandName}_input-mode_non-interactive.md"),
+            ...$this->checkInteractiveInputMode(
+                "{$commandDirectory}/technical/5.1_{$commandName}_input-mode_interactive.md",
+            ),
+            ...$this->checkNonInteractiveInputMode(
+                "{$commandDirectory}/technical/5.2_{$commandName}_input-mode_non-interactive.md",
+            ),
         ];
     }
 
@@ -69,19 +73,31 @@ final readonly class DestructiveConsentRule implements GroupedRule
         $lowerContents = strtolower($contents);
 
         if (! str_contains($signature, '--force')) {
-            $findings[] = $this->finding($file, 'Destructive canonical contracts must include [--force] in the command signature.');
+            $findings[] = $this->finding(
+                $file,
+                'Destructive canonical contracts must include [--force] in the command signature.',
+            );
         }
 
         if (preg_match('/^\|\s*`force`\s*\|\s*`--force`/m', $inputContract) !== 1) {
-            $findings[] = $this->finding($file, 'Destructive canonical contracts must include a `force` input row sourced from `--force`.');
+            $findings[] = $this->finding(
+                $file,
+                'Destructive canonical contracts must include a `force` input row sourced from `--force`.',
+            );
         }
 
         if (! str_contains($lowerContents, 'destructive consent')) {
-            $findings[] = $this->finding($file, 'Destructive canonical contracts must describe the destructive consent model.');
+            $findings[] = $this->finding(
+                $file,
+                'Destructive canonical contracts must describe the destructive consent model.',
+            );
         }
 
         if (! $this->statesJsonIsNotConsent($lowerContents)) {
-            $findings[] = $this->finding($file, '`--json` must be documented as non-interactive mode selection, not destructive consent.');
+            $findings[] = $this->finding(
+                $file,
+                '`--json` must be documented as non-interactive mode selection, not destructive consent.',
+            );
         }
 
         return $findings;
@@ -94,7 +110,10 @@ final readonly class DestructiveConsentRule implements GroupedRule
     {
         if (! is_file($file)) {
             return [
-                $this->finding($file, 'Destructive commands must include an interactive input-mode contract for confirmation prompting.'),
+                $this->finding(
+                    $file,
+                    'Destructive commands must include an interactive input-mode contract for confirmation prompting.',
+                ),
             ];
         }
 
@@ -103,11 +122,17 @@ final readonly class DestructiveConsentRule implements GroupedRule
         $lowerContents = strtolower($contents);
 
         if (! str_contains($lowerContents, 'confirm')) {
-            $findings[] = $this->finding($file, 'Interactive input mode for destructive commands must define a confirmation prompt.');
+            $findings[] = $this->finding(
+                $file,
+                'Interactive input mode for destructive commands must define a confirmation prompt.',
+            );
         }
 
         if (! str_contains($contents, '--force')) {
-            $findings[] = $this->finding($file, 'Interactive input mode for destructive commands must document `--force` confirmation bypass.');
+            $findings[] = $this->finding(
+                $file,
+                'Interactive input mode for destructive commands must document `--force` confirmation bypass.',
+            );
         }
 
         return $findings;
@@ -120,7 +145,10 @@ final readonly class DestructiveConsentRule implements GroupedRule
     {
         if (! is_file($file)) {
             return [
-                $this->finding($file, 'Destructive commands must include a non-interactive input-mode contract for missing-consent failure.'),
+                $this->finding(
+                    $file,
+                    'Destructive commands must include a non-interactive input-mode contract for missing-consent failure.',
+                ),
             ];
         }
 
@@ -129,15 +157,24 @@ final readonly class DestructiveConsentRule implements GroupedRule
         $lowerContents = strtolower($contents);
 
         if (! str_contains($contents, '--force')) {
-            $findings[] = $this->finding($file, 'Non-interactive input mode for destructive commands must require `--force`.');
+            $findings[] = $this->finding(
+                $file,
+                'Non-interactive input mode for destructive commands must require `--force`.',
+            );
         }
 
         if (! str_contains($lowerContents, 'before side effects')) {
-            $findings[] = $this->finding($file, 'Non-interactive missing-consent failures must be documented as failing before side effects.');
+            $findings[] = $this->finding(
+                $file,
+                'Non-interactive missing-consent failures must be documented as failing before side effects.',
+            );
         }
 
         if (! $this->statesJsonIsNotConsent($lowerContents)) {
-            $findings[] = $this->finding($file, '`--json` must be documented as forcing non-interactive input mode without destructive consent.');
+            $findings[] = $this->finding(
+                $file,
+                '`--json` must be documented as forcing non-interactive input mode without destructive consent.',
+            );
         }
 
         return $findings;
@@ -145,21 +182,27 @@ final readonly class DestructiveConsentRule implements GroupedRule
 
     private function hasDestructiveEffect(string $contents): bool
     {
-        return preg_match('/^\*\*Effects:\*\*\s*(?<effects>.+)$/m', $contents, $matches) === 1
-            && str_contains((string) $matches['effects'], 'destructive');
+        return (
+            preg_match('/^\*\*Effects:\*\*\s*(?<effects>.+)$/m', $contents, $matches) === 1
+            && str_contains($matches['effects'], 'destructive')
+        );
     }
 
     private function statesJsonIsNotConsent(string $lowerContents): bool
     {
-        return str_contains($lowerContents, '--json')
+        return (
+            str_contains($lowerContents, '--json')
             && str_contains($lowerContents, 'non-interactive')
             && str_contains($lowerContents, 'consent')
-            && (str_contains($lowerContents, 'never') || str_contains($lowerContents, 'not'));
+            && (str_contains($lowerContents, 'never') || str_contains($lowerContents, 'not'))
+        );
     }
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 

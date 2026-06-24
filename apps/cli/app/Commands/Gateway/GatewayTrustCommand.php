@@ -141,7 +141,11 @@ final class GatewayTrustCommand extends LocalOnlyCommand
             return [
                 'code' => 'node.gateway_api_error',
                 'message' => 'Gateway returned invalid CA material.',
-                'meta' => ['gateway_url' => $gatewayUrl, 'endpoint' => '/api/ca/root', 'reason' => 'invalid_trust_material'],
+                'meta' => [
+                    'gateway_url' => $gatewayUrl,
+                    'endpoint' => '/api/ca/root',
+                    'reason' => 'invalid_trust_material',
+                ],
             ];
         }
 
@@ -282,16 +286,18 @@ final class GatewayTrustCommand extends LocalOnlyCommand
             return false;
         }
 
-        return $installer->isCaTrusted($pemPath, self::LABEL)
+        return (
+            $installer->isCaTrusted($pemPath, self::LABEL)
             && ($active['ca_sha256'] ?? null) === $sha256
             && ($active['ca_pem_path'] ?? null) === $pemPath
-            && isset($active['trusted_at']);
+            && isset($active['trusted_at'])
+        );
     }
 
     private function trustedAt(OrbitConfigStore $configStore): string
     {
         $active = $configStore->activeGateway();
-        $trustedAt = is_array($active) ? ($active['trusted_at'] ?? null) : null;
+        $trustedAt = is_array($active) ? $active['trusted_at'] ?? null : null;
 
         return is_string($trustedAt) ? $trustedAt : now()->toIso8601String();
     }

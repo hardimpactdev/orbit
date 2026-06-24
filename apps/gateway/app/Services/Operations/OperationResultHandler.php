@@ -96,11 +96,13 @@ final readonly class OperationResultHandler
         foreach (array_keys($result) as $key) {
             if (! is_string($key) || ! in_array($key, $allowed, true)) {
                 throw new OperationPayloadRejected(
-                    "operation.result_unrecognized: key '".(string) $key."' is not allowed for operation_type '{$operationType}'.",
+                    "operation.result_unrecognized: key '"
+                    .$key
+                    ."' is not allowed for operation_type '{$operationType}'.",
                     errorCode: 'operation.result_unrecognized',
                     meta: [
                         'operation_type' => $operationType,
-                        'unrecognized_key' => (string) $key,
+                        'unrecognized_key' => $key,
                         'allowed_keys' => $allowed,
                     ],
                 );

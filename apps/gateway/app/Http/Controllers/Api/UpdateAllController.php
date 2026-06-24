@@ -77,8 +77,11 @@ final class UpdateAllController implements Loggable
         ]);
     }
 
-    private function stream(Request $request, OrbitUpdater $updater, ProgressEventStreamResponseFactory $streams): StreamedResponse
-    {
+    private function stream(
+        Request $request,
+        OrbitUpdater $updater,
+        ProgressEventStreamResponseFactory $streams,
+    ): StreamedResponse {
         $this->captureActivitySubject($request);
 
         return $streams->make(function ($emitter) use ($updater): void {
@@ -184,8 +187,11 @@ final class UpdateAllController implements Loggable
         ];
     }
 
-    private function updateLocalTarget(OrbitUpdater $updater, string $target, ?ProgressReporter $reporter): ProcessResult
-    {
+    private function updateLocalTarget(
+        OrbitUpdater $updater,
+        string $target,
+        ?ProgressReporter $reporter,
+    ): ProcessResult {
         $reporter?->stepProgress($target, 'pulling_source', $this->stageMessage('pulling_source', $target));
         $result = $updater->pullSource();
 
@@ -195,7 +201,11 @@ final class UpdateAllController implements Loggable
             return $result;
         }
 
-        $reporter?->stepProgress($target, 'installing_dependencies', $this->stageMessage('installing_dependencies', $target));
+        $reporter?->stepProgress(
+            $target,
+            'installing_dependencies',
+            $this->stageMessage('installing_dependencies', $target),
+        );
         $result = $updater->installDependencies();
 
         if (! $result->successful()) {
@@ -218,8 +228,11 @@ final class UpdateAllController implements Loggable
         return $result;
     }
 
-    private function updateRemoteTarget(OrbitUpdater $updater, Node $node, ?ProgressReporter $reporter): RemoteShellResult
-    {
+    private function updateRemoteTarget(
+        OrbitUpdater $updater,
+        Node $node,
+        ?ProgressReporter $reporter,
+    ): RemoteShellResult {
         if (! $reporter instanceof ProgressReporter) {
             return $updater->updateRemote($node);
         }
@@ -233,7 +246,11 @@ final class UpdateAllController implements Loggable
             return $result;
         }
 
-        $reporter->stepProgress($node->name, 'installing_dependencies', $this->stageMessage('installing_dependencies', $node->name));
+        $reporter->stepProgress(
+            $node->name,
+            'installing_dependencies',
+            $this->stageMessage('installing_dependencies', $node->name),
+        );
         $result = $updater->installRemoteDependencies($node);
 
         if (! $result->successful()) {
@@ -242,7 +259,11 @@ final class UpdateAllController implements Loggable
             return $result;
         }
 
-        $reporter->stepProgress($node->name, 'running_migrations', $this->stageMessage('running_migrations', $node->name));
+        $reporter->stepProgress(
+            $node->name,
+            'running_migrations',
+            $this->stageMessage('running_migrations', $node->name),
+        );
         $result = $updater->runRemoteMigrations($node);
 
         if (! $result->successful()) {
@@ -297,7 +318,15 @@ final class UpdateAllController implements Loggable
         while ($nextIndex < count($nodeList) || $workers !== []) {
             while (count($workers) < self::REMOTE_UPDATE_CONCURRENCY && $nextIndex < count($nodeList)) {
                 $node = $nodeList[$nextIndex];
-                $worker = $this->startRemoteUpdateProcessWorker($updater, $remoteShell, $node, $nextIndex, 0, $reporter, $updatesByIndex);
+                $worker = $this->startRemoteUpdateProcessWorker(
+                    $updater,
+                    $remoteShell,
+                    $node,
+                    $nextIndex,
+                    0,
+                    $reporter,
+                    $updatesByIndex,
+                );
 
                 if ($worker !== null) {
                     $workers[$nextIndex] = $worker;
@@ -318,7 +347,13 @@ final class UpdateAllController implements Loggable
 
                     $running = $process->running();
                 } catch (ProcessTimedOutException $e) {
-                    $this->markRemoteProcessFailure($worker['node'], $index, $reporter, $updatesByIndex, $this->remoteProcessResultFromTimeout($e, $worker['started_at']));
+                    $this->markRemoteProcessFailure(
+                        $worker['node'],
+                        $index,
+                        $reporter,
+                        $updatesByIndex,
+                        $this->remoteProcessResultFromTimeout($e, $worker['started_at']),
+                    );
                     unset($workers[$index]);
 
                     continue;
@@ -474,16 +509,18 @@ final class UpdateAllController implements Loggable
 
     private function canRunRemoteUpdateWorkers(): bool
     {
-        return function_exists('pcntl_fork')
-            && function_exists('stream_socket_pair');
+        return function_exists('pcntl_fork') && function_exists('stream_socket_pair');
     }
 
     /**
      * @param  Collection<int, Node>  $nodes
      * @return list<array<string, mixed>>
      */
-    private function updateRemoteTargetsSequentially(OrbitUpdater $updater, Collection $nodes, ?ProgressReporter $reporter): array
-    {
+    private function updateRemoteTargetsSequentially(
+        OrbitUpdater $updater,
+        Collection $nodes,
+        ?ProgressReporter $reporter,
+    ): array {
         $updates = [];
 
         foreach ($nodes as $node) {
@@ -497,8 +534,11 @@ final class UpdateAllController implements Loggable
      * @param  Collection<int, Node>  $nodes
      * @return list<array<string, mixed>>
      */
-    private function updateRemoteTargetsConcurrently(OrbitUpdater $updater, Collection $nodes, ?ProgressReporter $reporter): array
-    {
+    private function updateRemoteTargetsConcurrently(
+        OrbitUpdater $updater,
+        Collection $nodes,
+        ?ProgressReporter $reporter,
+    ): array {
         $nodeList = array_values($nodes->all());
         $workers = [];
         $updatesByIndex = [];
@@ -510,7 +550,11 @@ final class UpdateAllController implements Loggable
                 $worker = $this->startRemoteUpdateWorker($updater, $node, $nextIndex);
 
                 if ($worker === null) {
-                    $updatesByIndex[$nextIndex] = $this->remoteTargetUpdate($node, $this->updateRemoteTarget($updater, $node, $reporter));
+                    $updatesByIndex[$nextIndex] = $this->remoteTargetUpdate($node, $this->updateRemoteTarget(
+                        $updater,
+                        $node,
+                        $reporter,
+                    ));
                     $nextIndex++;
 
                     continue;
@@ -741,8 +785,12 @@ final class UpdateAllController implements Loggable
     /**
      * @param  array<int, array<string, mixed>>  $updatesByIndex
      */
-    private function markRemoteWorkerFailure(Node $node, int $index, ?ProgressReporter $reporter, array &$updatesByIndex): void
-    {
+    private function markRemoteWorkerFailure(
+        Node $node,
+        int $index,
+        ?ProgressReporter $reporter,
+        array &$updatesByIndex,
+    ): void {
         $output = 'Worker exited without reporting a result.';
         $reporter?->stepFail($node->name, $output);
         $updatesByIndex[$index] = [

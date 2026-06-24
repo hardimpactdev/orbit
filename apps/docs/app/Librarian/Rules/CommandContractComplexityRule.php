@@ -91,13 +91,18 @@ final readonly class CommandContractComplexityRule implements GroupedRule
             'input_fields' => count($inputRows),
             'conditional_required_fields' => count(array_filter(
                 $inputRows,
-                fn (array $row): bool => isset($row[2]) && ! in_array($this->normalizedCell($row[2]), ['never', 'optional', ''], true),
+                fn (array $row): bool => (
+                    isset($row[2]) && ! in_array($this->normalizedCell($row[2]), ['never', 'optional', ''], true)
+                ),
             )),
             'authorization_paths' => count($executionContextRows),
             'behavior_items' => $this->listItemCount($behaviorSection),
             'failure_cases' => max(count($failureRows), $this->listItemCount($failureSection)),
             'doctor_handoffs' => $this->matchCount('/\bdoctor\s+--(?:family|self)\b/', $contents),
-            'scope_boundary_clauses' => $this->matchCount('/\b(?:must not|does not|do not|outside|not supported|forbidden)\b/i', $behaviorSection),
+            'scope_boundary_clauses' => $this->matchCount(
+                '/\b(?:must not|does not|do not|outside|not supported|forbidden)\b/i',
+                $behaviorSection,
+            ),
         ];
     }
 
@@ -114,18 +119,22 @@ final readonly class CommandContractComplexityRule implements GroupedRule
      */
     private function score(array $metrics): int
     {
-        return $metrics['input_fields']
+        return (
+            $metrics['input_fields']
             + ($metrics['conditional_required_fields'] * 2)
             + (max(0, $metrics['authorization_paths'] - 1) * 3)
             + ($metrics['behavior_items'] * 3)
             + ($metrics['failure_cases'] * 2)
             + $metrics['doctor_handoffs']
-            + $metrics['scope_boundary_clauses'];
+            + $metrics['scope_boundary_clauses']
+        );
     }
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 
@@ -138,7 +147,7 @@ final readonly class CommandContractComplexityRule implements GroupedRule
             return null;
         }
 
-        return substr_count(substr($contents, 0, $matches[0][1]), "\n") + 1;
+        return substr_count(substr($contents, 0, (int) $matches[0][1]), "\n") + 1;
     }
 
     /**
@@ -171,7 +180,10 @@ final readonly class CommandContractComplexityRule implements GroupedRule
                 explode('|', trim($trimmed, '|')),
             );
 
-            if (isset($cells[0]) && in_array(strtolower($cells[0]), ['field', 'authorization path', 'condition', 'failure'], true)) {
+            if (
+                isset($cells[0])
+                && in_array(strtolower($cells[0]), ['field', 'authorization path', 'condition', 'failure'], true)
+            ) {
                 continue;
             }
 

@@ -40,7 +40,7 @@ final class RemoveDatabaseConnectionRequest extends GatewayRequest implements Ha
         $data = $this->unwrapData($response);
 
         return new DatabaseConnectionResultResponse(
-            result: is_array($data['result'] ?? null) ? $data['result'] : [],
+            result: $this->stringKeyedArray($data['result'] ?? []),
         );
     }
 }

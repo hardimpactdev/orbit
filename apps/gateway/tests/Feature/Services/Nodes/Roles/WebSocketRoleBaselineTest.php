@@ -49,29 +49,54 @@ it('converges websocket backend TLS material and runtime container through the r
     $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
     $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
-    expect($this->webSocketBaselineIssued->getArrayCopy())->toBe([
-        ['host' => '10.6.0.44', 'additional_sans' => ['10.6.0.44']],
-    ])
-        ->and($timingSteps)->toBe(['tools', 'image', 'render', 'certificates', 'source-files', 'source-hash', 'source-archive', 'source-remote', 'source-install', 'container-apply'])
-        ->and(NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'docker')
-            ->value('expected_state'))->toBe('installed')
-        ->and($scripts)->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
-        ->and($scripts)->toContain("docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'")
-        ->and($scripts)->toContain('release_dir="${runtime_root}/releases/')
-        ->and($scripts)->toContain('sudo install -d -m 0755 "$release_dir"')
-        ->and($scripts)->not->toContain('orbit-gateway:current')
-        ->and($scripts)->toContain('sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress')
-        ->and($scripts)->toContain("docker network inspect 'orbit-network'")
-        ->and($scripts)->toContain("docker container inspect --format '{{json .}}' 'orbit-websocket-app-dev-1'")
-        ->and($scripts)->toContain("docker run -d --pull 'never' --name 'orbit-websocket-app-dev-1'")
-        ->and($scripts)->toContain("--label 'orbit.container.kind=websocket-runtime'")
-        ->and($scripts)->not->toContain('.websocket.orbit')
-        ->and($scripts)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
-        ->and($scripts)->toContain("--env 'REDIS_HOST=10.6.0.3'")
-        ->and($scripts)->toContain('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
-        ->and($scripts)->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
+    expect($this->webSocketBaselineIssued->getArrayCopy())
+        ->toBe([
+            ['host' => '10.6.0.44', 'additional_sans' => ['10.6.0.44']],
+        ])
+        ->and($timingSteps)
+        ->toBe([
+            'tools',
+            'image',
+            'render',
+            'certificates',
+            'source-files',
+            'source-hash',
+            'source-archive',
+            'source-remote',
+            'source-install',
+            'container-apply',
+        ])
+        ->and(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'docker')
+                ->value('expected_state'),
+        )
+        ->toBe('installed')
+        ->and($scripts)
+        ->toContain("sudo install -d -m 0755 '/etc/orbit/certs'")
+        ->and($scripts)
+        ->toContain(
+            "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'",
+        )
+        ->and($scripts)
+        ->toContain('release_dir="${runtime_root}/releases/')
+        ->and($scripts)
+        ->toContain('sudo install -d -m 0755 "$release_dir"')
+        ->and($scripts)
+        ->not->toContain('orbit-gateway:current')->and($scripts)->toContain(
+            'sudo env COMPOSER_ALLOW_SUPERUSER=1 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader --no-progress',
+        )->and($scripts)->toContain("docker network inspect 'orbit-network'")->and($scripts)->toContain(
+            "docker container inspect --format '{{json .}}' 'orbit-websocket-app-dev-1'",
+        )->and($scripts)->toContain("docker run -d --pull 'never' --name 'orbit-websocket-app-dev-1'")->and(
+            $scripts,
+        )->toContain("--label 'orbit.container.kind=websocket-runtime'")->and($scripts)
+        ->not->toContain('.websocket.orbit')->and($scripts)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")->and(
+            $scripts,
+        )->toContain("--env 'REDIS_HOST=10.6.0.3'")->and($scripts)->toContain(
+            'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44',
+        )->and($scripts)
+        ->not->toContain('REVERB_SERVER_HOST=0.0.0.0');
 });
 
 it('uses self-contained websocket images without installing source on the node', function (): void {
@@ -84,14 +109,22 @@ it('uses self-contained websocket images without installing source on the node',
     $scripts = implode("\n---\n", $this->webSocketBaselineShell->scripts);
     $timingSteps = array_column(app(WebSocketRoleBaselineTiming::class)->records(), 'step');
 
-    expect($timingSteps)->toBe(['tools', 'image', 'env', 'render', 'certificates', 'container-apply'])
-        ->and($scripts)->toContain("docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'")
-        ->and($scripts)->toContain('key_file=/etc/orbit/websocket/app.key')
-        ->and($scripts)->not->toContain('release_dir="${runtime_root}/releases/')
-        ->and($scripts)->not->toContain('composer install --no-dev')
-        ->and($scripts)->not->toContain("--mount 'type=bind,source=/opt/orbit/websocket/current,target=/app'")
-        ->and($scripts)->toContain("--mount 'type=bind,source=/etc/orbit,target=/etc/orbit,readonly'")
-        ->and($scripts)->toContain("--env 'APP_KEY=base64:self-contained-test-key'");
+    expect($timingSteps)
+        ->toBe(['tools', 'image', 'env', 'render', 'certificates', 'container-apply'])
+        ->and($scripts)
+        ->toContain(
+            "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'",
+        )
+        ->and($scripts)
+        ->toContain('key_file=/etc/orbit/websocket/app.key')
+        ->and($scripts)
+        ->not->toContain('release_dir="${runtime_root}/releases/')->and($scripts)
+        ->not->toContain('composer install --no-dev')->and($scripts)
+        ->not->toContain("--mount 'type=bind,source=/opt/orbit/websocket/current,target=/app'")->and(
+            $scripts,
+        )->toContain("--mount 'type=bind,source=/etc/orbit,target=/etc/orbit,readonly'")->and($scripts)->toContain(
+            "--env 'APP_KEY=base64:self-contained-test-key'",
+        );
 });
 
 it('starts an existing matching websocket runtime container when it is stopped', function (): void {
@@ -181,24 +214,31 @@ function webSocketBaselineNode(array $overrides = []): Node
 
 function webSocketBaselineRedisNode(array $overrides = []): Node
 {
-    $node = Node::factory()->database()->create(array_merge([
-        'name' => 'redis-1',
-        'platform' => 'ubuntu',
-        'host' => 'redis-1.example.com',
-        'wireguard_address' => '10.6.0.3',
-        'status' => NodeStatus::Active,
-    ], $overrides));
+    $node = Node::factory()
+        ->database()
+        ->create(array_merge([
+            'name' => 'redis-1',
+            'platform' => 'ubuntu',
+            'host' => 'redis-1.example.com',
+            'wireguard_address' => '10.6.0.3',
+            'status' => NodeStatus::Active,
+        ], $overrides));
 
-    Process::factory()->forOwner($node)->create([
-        'name' => 'redis',
-        'runtime_config' => ['service' => 'redis'],
-    ]);
+    Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'redis',
+            'runtime_config' => ['service' => 'redis'],
+        ]);
 
     return $node;
 }
 
-function webSocketBaselineAssignment(Node $node, NodeRoleStatus $status = NodeRoleStatus::Pending, ?Node $redisNode = null): NodeRoleAssignment
-{
+function webSocketBaselineAssignment(
+    Node $node,
+    NodeRoleStatus $status = NodeRoleStatus::Pending,
+    ?Node $redisNode = null,
+): NodeRoleAssignment {
     return NodeRoleAssignment::factory()->for($node)->create([
         'role' => NodeRoleName::WebSocket->value,
         'status' => $status->value,
@@ -276,7 +316,12 @@ final class WebSocketRoleBaselineTestShell implements RemoteShell
         }
 
         if (str_contains($script, 'key_file=/etc/orbit/websocket/app.key')) {
-            return new RemoteShellResult(exitCode: 0, stdout: "base64:self-contained-test-key\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: "base64:self-contained-test-key\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         if (str_contains($script, 'docker network inspect')) {

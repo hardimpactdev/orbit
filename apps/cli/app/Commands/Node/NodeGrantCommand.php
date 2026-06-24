@@ -27,20 +27,25 @@ final class NodeGrantCommand extends GatewayCommand
         $servingNode = $this->stringArgument('serving_node');
 
         if ($consumingNode === null) {
-            return $this->renderFailure('validation_failed', 'Consuming node is required.', ['field' => 'consuming_node']);
+            return $this->renderFailure('validation_failed', 'Consuming node is required.', [
+                'field' => 'consuming_node',
+            ]);
         }
 
         if ($servingNode === null) {
             return $this->renderFailure('validation_failed', 'Serving node is required.', ['field' => 'serving_node']);
         }
 
-        $payload = array_filter([
-            'consuming_node' => $consumingNode,
-            'serving_node' => $servingNode,
-            'preset' => $this->stringOption('preset'),
-            'permissions' => $this->stringOption('permissions'),
-            'force' => (bool) $this->option('force'),
-        ], fn (mixed $value): bool => $value !== null);
+        $payload = array_filter(
+            [
+                'consuming_node' => $consumingNode,
+                'serving_node' => $servingNode,
+                'preset' => $this->stringOption('preset'),
+                'permissions' => $this->stringOption('permissions'),
+                'force' => (bool) $this->option('force'),
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
 
         try {
             $response = $this->gatewayPost('/api/nodes/grant', $payload);

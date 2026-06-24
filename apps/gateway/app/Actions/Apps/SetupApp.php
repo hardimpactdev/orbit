@@ -94,7 +94,8 @@ final readonly class SetupApp
         $success = $this->stepRunner->run($run, $steps->all(), $app, $node, $this->appEnv($app), $onStepProgress);
 
         if (! $success) {
-            $failedStep = $run->runSteps()
+            $failedStep = $run
+                ->runSteps()
                 ->orderByDesc('id')
                 ->first();
 

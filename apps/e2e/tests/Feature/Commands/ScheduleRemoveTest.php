@@ -27,43 +27,44 @@ it('removes a schedule from the operator node through the gateway api', function
         $scheduleName = 'e2e-rm-'.strtolower(bin2hex(random_bytes(3)));
 
         $seedPhp = <<<PHP
-\$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-\$app = \App\Models\App::query()->updateOrCreate(
-    ['name' => '{$appName}'],
-    [
-        'node_id' => \$node->id,
-        'path' => '/home/orbit/apps/{$appName}',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'adopted' => true,
-    ],
-);
-\$state = \App\Models\SchedulerState::query()->updateOrCreate(
-    ['node_id' => \$node->id],
-    ['heartbeat_at' => now(), 'status' => 'running'],
-);
-\App\Models\Schedule::query()->updateOrCreate(
-    ['schedule_key' => "app:{$appName}:{$scheduleName}"],
-    [
-        'name' => '{$scheduleName}',
-        'scope' => 'app',
-        'app_id' => \$app->id,
-        'node_id' => null,
-        'target_name' => \$app->name,
-        'interval' => 'every minute',
-        'timezone' => 'UTC',
-        'execution_type' => 'command',
-        'execution_value' => 'echo hello',
-        'enabled' => true,
-        'status' => 'expected',
-    ],
-);
-echo 'seeded';
-PHP;
+            \$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+            \$app = \App\Models\App::query()->updateOrCreate(
+                ['name' => '{$appName}'],
+                [
+                    'node_id' => \$node->id,
+                    'path' => '/home/orbit/apps/{$appName}',
+                    'document_root' => 'public',
+                    'php_version' => '8.5',
+                    'adopted' => true,
+                ],
+            );
+            \$state = \App\Models\SchedulerState::query()->updateOrCreate(
+                ['node_id' => \$node->id],
+                ['heartbeat_at' => now(), 'status' => 'running'],
+            );
+            \App\Models\Schedule::query()->updateOrCreate(
+                ['schedule_key' => "app:{$appName}:{$scheduleName}"],
+                [
+                    'name' => '{$scheduleName}',
+                    'scope' => 'app',
+                    'app_id' => \$app->id,
+                    'node_id' => null,
+                    'target_name' => \$app->name,
+                    'interval' => 'every minute',
+                    'timezone' => 'UTC',
+                    'execution_type' => 'command',
+                    'execution_value' => 'echo hello',
+                    'enabled' => true,
+                    'status' => 'expected',
+                ],
+            );
+            echo 'seeded';
+            PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
@@ -80,10 +81,14 @@ PHP;
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['schedule']['name'])->toBe($scheduleName)
-            ->and($payload['success']['data']['schedule']['status'])->toBe('removed')
-            ->and($payload['success']['meta']['history_retained'])->toBeTrue();
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload['success']['data']['schedule']['name'])
+            ->toBe($scheduleName)
+            ->and($payload['success']['data']['schedule']['status'])
+            ->toBe('removed')
+            ->and($payload['success']['meta']['history_retained'])
+            ->toBeTrue();
     } finally {
         $topology->cleanup();
     }

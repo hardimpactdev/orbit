@@ -7,8 +7,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         Schema::table('apps', function (Blueprint $table): void {
@@ -18,7 +17,7 @@ return new class extends Migration
         // Backfill legacy app proxy route configs so they carry a
         // Docker-first `runtime_upstream` derived from the app identity.
         // See AppProxyRouteRuntimeUpstreamBackfill for the contract.
-        (new AppProxyRouteRuntimeUpstreamBackfill)->run();
+        new AppProxyRouteRuntimeUpstreamBackfill()->run();
     }
 
     public function down(): void

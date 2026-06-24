@@ -32,9 +32,12 @@ describe('app write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node');
     });
 
     it('posts app:new payloads to the gateway apps endpoint', function (): void {
@@ -60,21 +63,27 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'name' => 'docs',
-                'node' => 'app-1',
-                'repository' => 'spatie/docs',
-                'root' => 'public',
-                'php_version' => '8.5',
-                'domain' => 'docs.example.com',
-                'runtime_proxy_transport' => 'http',
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'name' => 'docs',
+                    'node' => 'app-1',
+                    'repository' => 'spatie/docs',
+                    'root' => 'public',
+                    'php_version' => '8.5',
+                    'domain' => 'docs.example.com',
+                    'runtime_proxy_transport' => 'http',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe([
                 'event' => 'complete',
                 'data' => $complete,
             ]);
@@ -99,20 +108,23 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/register'
-            && $request->data() === [
-                'name' => 'docs',
-                'node' => 'app-1',
-                'path' => '/home/orbit/apps/docs',
-                'root' => 'public',
-                'php_version' => '8.5',
-                'domain' => 'docs.example.com',
-                'runtime_proxy_transport' => 'https',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/register'
+                && $request->data() === [
+                    'name' => 'docs',
+                    'node' => 'app-1',
+                    'path' => '/home/orbit/apps/docs',
+                    'root' => 'public',
+                    'php_version' => '8.5',
+                    'domain' => 'docs.example.com',
+                    'runtime_proxy_transport' => 'https',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('adopted');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['result']['action'])->toBe('adopted');
     });
 
     it('omits app:register runtime proxy transport unless it is explicit', function (): void {
@@ -128,9 +140,11 @@ describe('app write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/apps/register'
-            && ! array_key_exists('runtime_proxy_transport', $request->data()));
+            && ! array_key_exists('runtime_proxy_transport', $request->data()),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -144,9 +158,12 @@ describe('app write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('name');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('name');
     });
 
     it('requires force before removing an app non-interactively', function (): void {
@@ -161,9 +178,12 @@ describe('app write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('deletes app:remove targets with destructive consent when forced', function (): void {
@@ -181,15 +201,18 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/apps/docs'
-            && $request->data() === [
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'force',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/apps/docs'
+                && $request->data() === [
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'force',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('removed');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['result']['action'])->toBe('removed');
     });
 
     it('prompts before removing an app without force in interactive mode', function (): void {
@@ -199,17 +222,22 @@ describe('app write commands', function (): void {
             'cleanup' => [],
         ]));
 
-        $this->artisan('app:remove', ['app' => 'docs'])
+        $this
+            ->artisan('app:remove', ['app' => 'docs'])
             ->expectsConfirmation("Remove app 'docs' and all owned artifacts? This cannot be undone.", 'yes')
             ->expectsOutputToContain("App 'docs' removed")
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/apps/docs'
-            && $request->data() === [
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'force',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/apps/docs'
+                && $request->data() === [
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'force',
+                ]
+            ),
+        );
     });
 
     it('posts app:prune payloads to the gateway prune endpoint', function (): void {
@@ -227,15 +255,18 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/prune'
-            && $request->data() === [
-                'app' => 'docs',
-                'dry_run' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/prune'
+                && $request->data() === [
+                    'app' => 'docs',
+                    'dry_run' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['dry_run'])->toBeTrue();
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['dry_run'])->toBeTrue();
     });
 
     it('prompts before pruning stale workspaces without force in interactive mode', function (): void {
@@ -245,17 +276,22 @@ describe('app write commands', function (): void {
             'dry_run' => false,
         ]));
 
-        $this->artisan('app:prune', ['app' => 'docs'])
+        $this
+            ->artisan('app:prune', ['app' => 'docs'])
             ->expectsConfirmation("Pruning will permanently remove all stale workspaces for 'docs'. Continue?", 'yes')
             ->expectsOutputToContain('Pruning App Workspaces')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/prune'
-            && $request->data() === [
-                'app' => 'docs',
-                'dry_run' => false,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/prune'
+                && $request->data() === [
+                    'app' => 'docs',
+                    'dry_run' => false,
+                ]
+            ),
+        );
     });
 
     it('posts app:root payloads to the gateway app root endpoint', function (): void {
@@ -272,12 +308,15 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/root'
-            && $request->data() === ['root' => 'public']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/root'
+                && $request->data() === ['root' => 'public']
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['changed'])->toBeTrue();
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['result']['changed'])->toBeTrue();
     });
 
     it('validates required app:root inputs before gateway IO', function (): void {
@@ -292,9 +331,12 @@ describe('app write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('root');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('root');
     });
 
     it('validates required app:agent-ide inputs before gateway IO', function (array $params, string $field): void {
@@ -309,9 +351,12 @@ describe('app write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe($field);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe($field);
     })->with([
         'missing app' => [[], 'app'],
         'missing adapter' => [['app' => 'docs'], 'agent_ide'],
@@ -336,22 +381,30 @@ describe('app write commands', function (): void {
                 'previous_adapter' => 'opencode',
             ]));
 
-        $this->artisan('app:agent-ide', [
-            'app' => 'docs',
-            'agent_ide' => 'polyscope',
-        ])
-            ->expectsConfirmation("This will remove 1 workspace(s) managed by the previous adapter 'opencode'. Continue?", 'yes')
+        $this
+            ->artisan('app:agent-ide', [
+                'app' => 'docs',
+                'agent_ide' => 'polyscope',
+            ])
+            ->expectsConfirmation(
+                "This will remove 1 workspace(s) managed by the previous adapter 'opencode'. Continue?",
+                'yes',
+            )
             ->expectsOutputToContain('app')
             ->assertSuccessful();
 
         Http::assertSentCount(2);
         Http::assertSentInOrder([
-            fn (Request $request): bool => $request->method() === 'POST'
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/apps/docs/agent-ide'
-                && $request->data() === ['agent_ide' => 'polyscope', 'force' => false],
-            fn (Request $request): bool => $request->method() === 'POST'
+                && $request->data() === ['agent_ide' => 'polyscope', 'force' => false]
+            ),
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/apps/docs/agent-ide'
-                && $request->data() === ['agent_ide' => 'polyscope', 'force' => true],
+                && $request->data() === ['agent_ide' => 'polyscope', 'force' => true]
+            ),
         ]);
     });
 
@@ -373,12 +426,18 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/agent-ide'
-            && $request->data() === ['agent_ide' => 'polyscope', 'force' => true]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/agent-ide'
+                && $request->data() === ['agent_ide' => 'polyscope', 'force' => true]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['cleanup']['workspaces_removed'])->toBe(['stale-ws']);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['cleanup']['workspaces_removed'])
+            ->toBe(['stale-ws']);
     });
 
     it('forwards app:worker actions to their gateway endpoints', function (): void {
@@ -397,11 +456,14 @@ describe('app write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/worker/enable');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/worker/enable'
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['worker_enabled'])->toBeTrue();
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['worker_enabled'])->toBeTrue();
     });
 
     it('renders human app:worker show output for an enabled app', function (): void {
@@ -416,13 +478,18 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' worker mode is enabled.")
-            ->and($output)->toContain('  workers: auto')
-            ->and($output)->toContain('  max_requests: 500')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('worker_config:')
-            ->and($output)->not->toContain('worker_enabled');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' worker mode is enabled.")
+            ->and($output)
+            ->toContain('  workers: auto')
+            ->and($output)
+            ->toContain('  max_requests: 500')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('worker_config:')->and($output)
+            ->not->toContain('worker_enabled');
     });
 
     it('renders human app:worker show output for a disabled app without config detail', function (): void {
@@ -437,10 +504,13 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("App 'docs' worker mode is disabled.")
-            ->and($output)->not->toContain('workers:')
-            ->and($output)->not->toContain('max_requests:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("App 'docs' worker mode is disabled.")
+            ->and($output)
+            ->not->toContain('workers:')->and($output)
+            ->not->toContain('max_requests:');
     });
 
     it('renders human app:worker enable output when state changed', function (): void {
@@ -456,12 +526,17 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' worker mode enabled.")
-            ->and($output)->toContain('  workers: auto')
-            ->and($output)->toContain('  max_requests: 500')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('worker_config:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' worker mode enabled.")
+            ->and($output)
+            ->toContain('  workers: auto')
+            ->and($output)
+            ->toContain('  max_requests: 500')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('worker_config:');
     });
 
     it('renders human app:worker enable output when already enabled', function (): void {
@@ -477,11 +552,16 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' worker mode already enabled.")
-            ->and($output)->toContain('  workers: auto')
-            ->and($output)->toContain('  max_requests: 500')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' worker mode already enabled.")
+            ->and($output)
+            ->toContain('  workers: auto')
+            ->and($output)
+            ->toContain('  max_requests: 500')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders human app:worker disable output retaining config detail', function (): void {
@@ -497,12 +577,17 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' worker mode disabled.")
-            ->and($output)->toContain('  workers: auto')
-            ->and($output)->toContain('  max_requests: 500')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('worker_config:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' worker mode disabled.")
+            ->and($output)
+            ->toContain('  workers: auto')
+            ->and($output)
+            ->toContain('  max_requests: 500')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('worker_config:');
     });
 
     it('renders human app:worker disable output when already disabled', function (): void {
@@ -518,10 +603,13 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("App 'docs' worker mode already disabled.")
-            ->and($output)->not->toContain('workers:')
-            ->and($output)->not->toContain('max_requests:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("App 'docs' worker mode already disabled.")
+            ->and($output)
+            ->not->toContain('workers:')->and($output)
+            ->not->toContain('max_requests:');
     });
 
     it('validates required app:mount inputs before gateway IO', function (array $params, string $field): void {
@@ -536,14 +624,20 @@ describe('app write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe($field);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe($field);
     })->with([
         'missing action' => [[], 'action'],
         'missing app' => [['action' => 'add'], 'app'],
         'missing source' => [['action' => 'add', 'app' => 'docs'], 'source'],
-        'missing target for add' => [['action' => 'add', 'app' => 'docs', 'source' => '/home/orbit/packages'], 'target'],
+        'missing target for add' => [
+            ['action' => 'add', 'app' => 'docs', 'source' => '/home/orbit/packages'],
+            'target',
+        ],
         'missing target for remove' => [['action' => 'remove', 'app' => 'docs'], 'target'],
     ]);
 
@@ -563,8 +657,12 @@ describe('app write commands', function (): void {
             'app' => 'docs',
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/apps/docs/mounts');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
+            ),
+        );
 
         expect($listExitCode)->toBe(0);
 
@@ -589,13 +687,17 @@ describe('app write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
-            && $request->data() === [
-                'source' => '/home/orbit/packages',
-                'target' => '/home/orbit/packages',
-                'read_only' => false,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
+                && $request->data() === [
+                    'source' => '/home/orbit/packages',
+                    'target' => '/home/orbit/packages',
+                    'read_only' => false,
+                ]
+            ),
+        );
 
         expect($addExitCode)->toBe(0);
 
@@ -613,13 +715,16 @@ describe('app write commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
-            && $request->data() === ['target' => '/home/orbit/packages']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/apps/docs/mounts'
+                && $request->data() === ['target' => '/home/orbit/packages']
+            ),
+        );
 
         expect($removeExitCode)->toBe(0);
     });
-
 });
 
 describe('app mutation command human renderers', function (): void {
@@ -635,12 +740,17 @@ describe('app mutation command human renderers', function (): void {
             '--path' => '/home/orbit/apps/docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Registering App')
-            ->and($output)->toContain('Apply and verify app runtime')
-            ->and($output)->toContain("App 'docs' successfully registered on node 'app-1'.")
-            ->and($output)->not->toContain('action:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Registering App')
+            ->and($output)
+            ->toContain('Apply and verify app runtime')
+            ->and($output)
+            ->toContain("App 'docs' successfully registered on node 'app-1'.")
+            ->and($output)
+            ->not->toContain('action:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:register adopted action as adoption prose', function (): void {
@@ -655,9 +765,12 @@ describe('app mutation command human renderers', function (): void {
             '--path' => '/home/orbit/apps/docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' successfully adopted from path '/home/orbit/apps/docs' on node 'app-1'.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:register converged action as no-change prose', function (): void {
@@ -672,9 +785,12 @@ describe('app mutation command human renderers', function (): void {
             '--path' => '/home/orbit/apps/docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' is already converged on node 'app-1'. No changes were needed.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' is already converged on node 'app-1'. No changes were needed.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:register warnings after the success line', function (): void {
@@ -696,10 +812,14 @@ describe('app mutation command human renderers', function (): void {
             '--path' => '/home/orbit/apps/docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'docs' successfully registered on node 'app-1'.")
-            ->and($output)->toContain("Production domain 'docs.example.com' is not yet active.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'docs' successfully registered on node 'app-1'.")
+            ->and($output)
+            ->toContain("Production domain 'docs.example.com' is not yet active.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:register gateway failures as prose in human mode', function (): void {
@@ -714,9 +834,12 @@ describe('app mutation command human renderers', function (): void {
             '--path' => '/home/orbit/apps/docs',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('is already owned by app')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('is already owned by app')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders app:root human output as a progress tree with a changed footer', function (): void {
@@ -730,13 +853,19 @@ describe('app mutation command human renderers', function (): void {
             'root' => 'public',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Updating App Root')
-            ->and($output)->toContain('Apply runtime container configuration')
-            ->and($output)->toContain("Document root for app 'docs' updated to 'public'.")
-            ->and($output)->toContain("Artifacts successfully re-applied on node 'app-01'.")
-            ->and($output)->not->toContain('changed:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Updating App Root')
+            ->and($output)
+            ->toContain('Apply runtime container configuration')
+            ->and($output)
+            ->toContain("Document root for app 'docs' updated to 'public'.")
+            ->and($output)
+            ->toContain("Artifacts successfully re-applied on node 'app-01'.")
+            ->and($output)
+            ->not->toContain('changed:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:root converged no-op as already prose', function (): void {
@@ -750,10 +879,14 @@ describe('app mutation command human renderers', function (): void {
             'root' => 'public',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Document root for app 'docs' is already 'public'.")
-            ->and($output)->toContain("Artifacts successfully re-applied on node 'app-01'.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Document root for app 'docs' is already 'public'.")
+            ->and($output)
+            ->toContain("Artifacts successfully re-applied on node 'app-01'.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:root drift warnings after the tree', function (): void {
@@ -774,11 +907,16 @@ describe('app mutation command human renderers', function (): void {
             'root' => 'public',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Document root for app 'docs' updated to 'public'.")
-            ->and($output)->toContain('app.runtime_container_mismatch')
-            ->and($output)->toContain('doctor --family=app --app=docs --restore')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Document root for app 'docs' updated to 'public'.")
+            ->and($output)
+            ->toContain('app.runtime_container_mismatch')
+            ->and($output)
+            ->toContain('doctor --family=app --app=docs --restore')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:root gateway failures as prose in human mode', function (): void {
@@ -792,9 +930,12 @@ describe('app mutation command human renderers', function (): void {
             'root' => 'public',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('not authorized')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('not authorized')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders app:remove human output as a progress tree with a removed footer', function (): void {
@@ -809,12 +950,17 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Removing App')
-            ->and($output)->toContain('Apply and verify app removal')
-            ->and($output)->toContain("App 'my-app' removed")
-            ->and($output)->not->toContain('action:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Removing App')
+            ->and($output)
+            ->toContain('Apply and verify app removal')
+            ->and($output)
+            ->toContain("App 'my-app' removed")
+            ->and($output)
+            ->not->toContain('action:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:remove drift warnings in the footer and notes', function (): void {
@@ -836,11 +982,16 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("App 'my-app' removed with drift")
-            ->and($output)->toContain('Drift detected:')
-            ->and($output)->toContain("App runtime container for 'my-app' could not be removed during cleanup.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("App 'my-app' removed with drift")
+            ->and($output)
+            ->toContain('Drift detected:')
+            ->and($output)
+            ->toContain("App runtime container for 'my-app' could not be removed during cleanup.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:remove gateway failures as prose in human mode', function (): void {
@@ -851,9 +1002,12 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("App 'my-app' not found.")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("App 'my-app' not found.")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders app:prune human output as a per-workspace progress tree', function (): void {
@@ -871,13 +1025,19 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Pruning App Workspaces')
-            ->and($output)->toContain('Query agent IDE adapters')
-            ->and($output)->toContain('Remove workspace `feature-docs`')
-            ->and($output)->toContain('Remove workspace `stale-experiment`')
-            ->and($output)->not->toContain('dry_run:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Pruning App Workspaces')
+            ->and($output)
+            ->toContain('Query agent IDE adapters')
+            ->and($output)
+            ->toContain('Remove workspace `feature-docs`')
+            ->and($output)
+            ->toContain('Remove workspace `stale-experiment`')
+            ->and($output)
+            ->not->toContain('dry_run:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:prune dry-run output with preview labels and footer', function (): void {
@@ -894,11 +1054,16 @@ describe('app mutation command human renderers', function (): void {
             '--dry-run' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Previewing App Workspace Prune')
-            ->and($output)->toContain('Preview workspace `feature-docs`')
-            ->and($output)->toContain('Dry run complete. No side effects performed.')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Previewing App Workspace Prune')
+            ->and($output)
+            ->toContain('Preview workspace `feature-docs`')
+            ->and($output)
+            ->toContain('Dry run complete. No side effects performed.')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:prune gateway failures as prose in human mode', function (): void {
@@ -909,9 +1074,12 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("App 'docs' not found.")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("App 'docs' not found.")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders app:agent-ide human output as a progress tree with a set footer', function (): void {
@@ -929,12 +1097,17 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Configuring App Agent IDE')
-            ->and($output)->toContain('Apply and verify app agent IDE')
-            ->and($output)->toContain('App "my-app" agent IDE set to "opencode" (effective: "opencode").')
-            ->and($output)->not->toContain('action:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Configuring App Agent IDE')
+            ->and($output)
+            ->toContain('Apply and verify app agent IDE')
+            ->and($output)
+            ->toContain('App "my-app" agent IDE set to "opencode" (effective: "opencode").')
+            ->and($output)
+            ->not->toContain('action:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:agent-ide inherit resolution prose', function (): void {
@@ -952,9 +1125,12 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('App "my-app" agent IDE set to inherit (effective: "polyscope" from node "app-1").')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('App "my-app" agent IDE set to inherit (effective: "polyscope" from node "app-1").')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:agent-ide none resolution prose', function (): void {
@@ -972,9 +1148,12 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('App "my-app" agent IDE set to none (effective: none).')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('App "my-app" agent IDE set to none (effective: none).')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:agent-ide converged as already-set prose', function (): void {
@@ -992,9 +1171,12 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('App "my-app" agent IDE already set to "opencode".')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('App "my-app" agent IDE already set to "opencode".')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:agent-ide cleanup summary after the success line', function (): void {
@@ -1012,12 +1194,18 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('App "my-app" agent IDE set to "polyscope" (effective: "polyscope").')
-            ->and($output)->toContain('Removed 2 stale workspaces during adapter switch:')
-            ->and($output)->toContain('- stale-ws-1')
-            ->and($output)->toContain('- stale-ws-2')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('App "my-app" agent IDE set to "polyscope" (effective: "polyscope").')
+            ->and($output)
+            ->toContain('Removed 2 stale workspaces during adapter switch:')
+            ->and($output)
+            ->toContain('- stale-ws-1')
+            ->and($output)
+            ->toContain('- stale-ws-2')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:agent-ide post-configuration warnings as prose', function (): void {
@@ -1042,10 +1230,14 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('App "my-app" agent IDE set to "polyscope" (effective: "polyscope").')
-            ->and($output)->toContain("Failed to remove workspace 'stale-ws'.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('App "my-app" agent IDE set to "polyscope" (effective: "polyscope").')
+            ->and($output)
+            ->toContain("Failed to remove workspace 'stale-ws'.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app:agent-ide gateway failures as prose in human mode', function (): void {
@@ -1060,8 +1252,11 @@ describe('app mutation command human renderers', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('not authorized')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('not authorized')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 });

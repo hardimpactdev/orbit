@@ -76,26 +76,26 @@ final readonly class UnattendedUpgradesInstaller implements SecurityInstaller
         $unattendedUpgrades = rtrim($this->config->unattendedUpgrades(), "\n");
 
         return <<<SH
-{$this->packageInstallScript()}
-sudo tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null <<'EOF'
-{$autoUpgrades}
-EOF
-sudo tee /etc/apt/apt.conf.d/50unattended-upgrades > /dev/null <<'EOF'
-{$unattendedUpgrades}
-EOF
-SH;
+            {$this->packageInstallScript()}
+            sudo tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null <<'EOF'
+            {$autoUpgrades}
+            EOF
+            sudo tee /etc/apt/apt.conf.d/50unattended-upgrades > /dev/null <<'EOF'
+            {$unattendedUpgrades}
+            EOF
+            SH;
     }
 
     private function packageInstallScript(): string
     {
         return <<<'SH'
-set -euo pipefail
-if ! command -v unattended-upgrade >/dev/null 2>&1 \
-    && ! dpkg-query -W -f='${Status}' unattended-upgrades 2>/dev/null | grep -q 'install ok installed'; then
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
-fi
-SH;
+            set -euo pipefail
+            if ! command -v unattended-upgrade >/dev/null 2>&1 \
+                && ! dpkg-query -W -f='${Status}' unattended-upgrades 2>/dev/null | grep -q 'install ok installed'; then
+                sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+                sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq unattended-upgrades
+            fi
+            SH;
     }
 
     /**

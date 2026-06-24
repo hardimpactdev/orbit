@@ -24,8 +24,7 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     bindDevelopmentDnsMappingTestDoubles('node-store-controller-dns');
 
-    app()->instance(SshHostKeyPinner::class, new class
-    {
+    app()->instance(SshHostKeyPinner::class, new class {
         public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
         {
             return new PinnedHostKey(
@@ -139,7 +138,8 @@ describe('NodeStoreController', function (): void {
                 'tld' => 'test',
             ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:new')
@@ -166,7 +166,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.20',
             ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node');
 
@@ -174,7 +175,6 @@ describe('NodeStoreController', function (): void {
     });
 
     it('executes node creation in gateway context even when local config is stale', function (): void {
-
         $gatewayId = (int) DB::table('nodes')->insertGetId(apiStoreNodeRow([
             'name' => 'gateway',
         ]));
@@ -201,7 +201,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.20',
             ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.incompatible')
             ->assertJsonPath('error.message', 'Existing gateway is incompatible with the requested host or identity.');
 
@@ -234,7 +235,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.21',
             ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node');
 
@@ -267,7 +269,8 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.21',
             ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'ingress_node');
 
@@ -317,7 +320,10 @@ describe('NodeStoreController', function (): void {
             }
 
             if (str_contains($command, 'internal:wg-easy:state')) {
-                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
+                return Process::result(output: json_encode([
+                    'success' => ['data' => [], 'meta' => []],
+                ], JSON_THROW_ON_ERROR)
+                    ."\n");
             }
 
             if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
@@ -338,37 +344,48 @@ describe('NodeStoreController', function (): void {
                 'host' => '192.0.2.20',
             ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node.name', 'app-dev-1')
             ->assertJsonPath('success.data.development_tld.gateway_dns.domain', '*.app-dev-1');
 
         $node = DB::table('nodes')->where('name', 'app-dev-1')->first();
 
-        expect($node)->not->toBeNull()
-            ->and($node->tld)->toBe('app-dev-1')
-            ->and($node->wireguard_address)->toBe('10.6.0.4');
+        expect($node)
+            ->not
+            ->toBeNull()
+            ->and($node->tld)
+            ->toBe('app-dev-1')
+            ->and($node->wireguard_address)
+            ->toBe('10.6.0.4');
 
-        expect(NodeRoleAssignment::query()
-            ->where('node_id', $node->id)
-            ->where('role', 'app-dev')
-            ->where('status', NodeRoleStatus::Active->value)
-            ->exists())->toBeTrue();
+        expect(
+            NodeRoleAssignment::query()
+                ->where('node_id', $node->id)
+                ->where('role', 'app-dev')
+                ->where('status', NodeRoleStatus::Active->value)
+                ->exists(),
+        )->toBeTrue();
 
-        expect(DB::table('node_tools')
-            ->where('node_id', $node->id)
-            ->pluck('name')
-            ->sort()
-            ->values()
-            ->all())->toBe([
-                'caddy',
-                'composer',
-                'gh',
-                'laravel-installer',
-                'php-cli',
-            ]);
+        expect(
+            DB::table('node_tools')
+                ->where('node_id', $node->id)
+                ->pluck('name')
+                ->sort()
+                ->values()
+                ->all(),
+        )->toBe([
+            'caddy',
+            'composer',
+            'gh',
+            'laravel-installer',
+            'php-cli',
+        ]);
 
-        expect($shell->toolNodeStatuses)->toHaveCount(1)
-            ->and(array_values(array_unique($shell->toolNodeStatuses)))->toBe([NodeStatus::Provisioning->value]);
+        expect($shell->toolNodeStatuses)
+            ->toHaveCount(1)
+            ->and(array_values(array_unique($shell->toolNodeStatuses)))
+            ->toBe([NodeStatus::Provisioning->value]);
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -382,10 +399,17 @@ describe('NodeStoreController', function (): void {
         expect($entry->properties->get('roles'))->toBe(['app-dev']);
         expect($entry->properties->get('tld'))->toBe('app-dev-1');
 
-        Process::assertRan(fn ($process): bool => ! str_contains($process->command, '--role=')
-            && str_contains($process->command, '--source-archive='));
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'authorized_keys')
-            && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway'));
+        Process::assertRan(
+            fn ($process): bool => (
+                ! str_contains($process->command, '--role=') && str_contains($process->command, '--source-archive=')
+            ),
+        );
+        Process::assertRan(
+            fn ($process): bool => (
+                str_contains($process->command, 'authorized_keys')
+                && str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
+            ),
+        );
     });
 
     it('skips WireGuard addresses already present in wg-easy runtime state when provisioning', function (): void {
@@ -441,7 +465,10 @@ describe('NodeStoreController', function (): void {
             }
 
             if (str_contains($command, 'internal:wg-easy:state')) {
-                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
+                return Process::result(output: json_encode([
+                    'success' => ['data' => [], 'meta' => []],
+                ], JSON_THROW_ON_ERROR)
+                    ."\n");
             }
 
             if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
@@ -462,7 +489,8 @@ describe('NodeStoreController', function (): void {
                 'tld' => 'test2',
             ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node.name', 'app-dev-2')
             ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.6');
 
@@ -516,7 +544,10 @@ describe('NodeStoreController', function (): void {
             }
 
             if (str_contains($command, 'internal:wg-easy:state')) {
-                return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
+                return Process::result(output: json_encode([
+                    'success' => ['data' => [], 'meta' => []],
+                ], JSON_THROW_ON_ERROR)
+                    ."\n");
             }
 
             if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
@@ -544,37 +575,60 @@ describe('NodeStoreController', function (): void {
                 'host_key_fingerprint' => 'SHA256:database1',
             ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node.name', 'database1')
             ->assertJsonPath('success.data.provisioning.transport', 'ssh')
             ->assertJsonPath('success.data.provisioning.host', '116.203.220.206');
 
         $node = DB::table('nodes')->where('name', 'database1')->first();
 
-        expect($node)->not->toBeNull()
-            ->and($node->tld)->toBe('db1')
-            ->and($node->host)->toBe('116.203.220.206')
-            ->and($node->gateway_endpoint)->toBe('10.3.0.2')
-            ->and($node->user)->toBe('orbit')
-            ->and($node->status)->toBe(NodeStatus::Active->value)
-            ->and($wireGuardConfigs)->toHaveCount(1)
-            ->and($wireGuardConfigs[0])->toContain('Endpoint = 10.3.0.2:51820');
+        expect($node)
+            ->not
+            ->toBeNull()
+            ->and($node->tld)
+            ->toBe('db1')
+            ->and($node->host)
+            ->toBe('116.203.220.206')
+            ->and($node->gateway_endpoint)
+            ->toBe('10.3.0.2')
+            ->and($node->user)
+            ->toBe('orbit')
+            ->and($node->status)
+            ->toBe(NodeStatus::Active->value)
+            ->and($wireGuardConfigs)
+            ->toHaveCount(1)
+            ->and($wireGuardConfigs[0])
+            ->toContain('Endpoint = 10.3.0.2:51820');
 
-        expect(NodeRoleAssignment::query()
-            ->where('node_id', $node->id)
-            ->where('role', 'database')
-            ->where('status', NodeRoleStatus::Active->value)
-            ->exists())->toBeTrue();
+        expect(
+            NodeRoleAssignment::query()
+                ->where('node_id', $node->id)
+                ->where('role', 'database')
+                ->where('status', NodeRoleStatus::Active->value)
+                ->exists(),
+        )->toBeTrue();
 
-        expect(DB::table('node_tools')
-            ->where('node_id', $node->id)
-            ->pluck('name')
-            ->all())->toBe(['docker']);
+        expect(
+            DB::table('node_tools')
+                ->where('node_id', $node->id)
+                ->pluck('name')
+                ->all(),
+        )->toBe(['docker']);
 
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
-            && str_contains($process->command, "'orbit'@'116.203.220.206'"));
-        Process::assertRanTimes(fn ($process): bool => str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
-            && str_contains($process->command, "'root'@'116.203.220.206'"), 0);
+        Process::assertRan(
+            fn ($process): bool => (
+                str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
+                && str_contains($process->command, "'orbit'@'116.203.220.206'")
+            ),
+        );
+        Process::assertRanTimes(
+            fn ($process): bool => (
+                str_contains($process->command, 'ssh-ed25519 AAAATEST gateway')
+                && str_contains($process->command, "'root'@'116.203.220.206'")
+            ),
+            0,
+        );
     });
 
     it('rejects app callers before provisioning', function (): void {
@@ -602,7 +656,8 @@ describe('NodeStoreController', function (): void {
                 'tld' => 'test',
             ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:new')
@@ -661,16 +716,21 @@ describe('NodeStoreController', function (): void {
                 'tld' => 'test',
             ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.provisioning.status', 'adopted')
             ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.9');
 
         $node = DB::table('nodes')->where('name', 'app-adopt-1')->first();
 
-        expect($node)->not->toBeNull()
-            ->and($node->status)->toBe(NodeStatus::Active->value)
-            ->and($node->wireguard_address)->toBe('10.6.0.9');
+        expect($node)
+            ->not
+            ->toBeNull()
+            ->and($node->status)
+            ->toBe(NodeStatus::Active->value)
+            ->and($node->wireguard_address)
+            ->toBe('10.6.0.9');
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -699,27 +759,37 @@ describe('NodeStoreController', function (): void {
 
         app()->instance(RemoteShell::class, new NodeStoreSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'name' => 'app-unknown-1',
-                'role' => 'app-dev',
-                'local_role' => 'app-dev',
-                'status' => 'active',
-                'platform' => 'ubuntu_24-04',
-                'wireguard_address' => '10.6.0.8',
-                'registry_public_key' => null,
-                'interface_public_key' => 'app-public-key',
-            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'name' => 'app-unknown-1',
+                    'role' => 'app-dev',
+                    'local_role' => 'app-dev',
+                    'status' => 'active',
+                    'platform' => 'ubuntu_24-04',
+                    'wireguard_address' => '10.6.0.8',
+                    'registry_public_key' => null,
+                    'interface_public_key' => 'app-public-key',
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'name' => 'app-unknown-1',
-                'role' => 'app-dev',
-                'local_role' => 'app-dev',
-                'status' => 'active',
-                'platform' => 'ubuntu_24-04',
-                'wireguard_address' => '10.6.0.8',
-                'registry_public_key' => null,
-                'interface_public_key' => 'app-public-key',
-            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'name' => 'app-unknown-1',
+                    'role' => 'app-dev',
+                    'local_role' => 'app-dev',
+                    'status' => 'active',
+                    'platform' => 'ubuntu_24-04',
+                    'wireguard_address' => '10.6.0.8',
+                    'registry_public_key' => null,
+                    'interface_public_key' => 'app-public-key',
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
@@ -739,7 +809,8 @@ describe('NodeStoreController', function (): void {
                 'tld' => 'test',
             ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.provisioning.status', 'adopted')
             ->assertJsonPath('success.data.node.addresses.wireguard', '10.6.0.8')
@@ -748,13 +819,13 @@ describe('NodeStoreController', function (): void {
         $node = DB::table('nodes')->where('name', 'app-unknown-1')->first();
         $peer = $node === null ? null : DB::table('wireguard_peers')->where('node_id', $node->id)->first();
 
-        expect($node)->not->toBeNull()
-            ->and($node->host)->toBe('192.0.2.33')
-            ->and($node->status)->toBe(NodeStatus::Active->value)
-            ->and($peer)->not->toBeNull()
-            ->and($peer->public_key)->toBe('app-public-key')
-            ->and($peer->private_key)->toBe('')
-            ->and($peer->allowed_ips)->toBe('10.6.0.8/32');
+        expect($node)
+            ->not->toBeNull()->and($node->host)->toBe(
+                '192.0.2.33',
+            )->and($node->status)->toBe(NodeStatus::Active->value)->and($peer)
+            ->not->toBeNull()->and($peer->public_key)->toBe('app-public-key')->and($peer->private_key)->toBe(
+                '',
+            )->and($peer->allowed_ips)->toBe('10.6.0.8/32');
 
         $entry = Activity::query()
             ->where('event', 'node.created')
@@ -780,7 +851,7 @@ final class NodeStoreSequencedRemoteShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         if (str_contains($script, '# orbit-tool-probe:capability')) {
-            return (new NodeStoreConvergenceRemoteShell)->run($node, $script, $options);
+            return new NodeStoreConvergenceRemoteShell()->run($node, $script, $options);
         }
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
@@ -865,7 +936,10 @@ final class NodeStoreConvergenceRemoteShell implements RemoteShell
             '/opt/orbit/php/8.5/bin/php' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
             '/usr/local/bin/composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
-            'laravel', '/usr/local/bin/laravel', 'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
+            'laravel', '/usr/local/bin/laravel', 'laravel-installer' => [
+                '/usr/local/bin/laravel',
+                'Laravel Installer 5.0.0',
+            ],
             default => ['', ''],
         };
 

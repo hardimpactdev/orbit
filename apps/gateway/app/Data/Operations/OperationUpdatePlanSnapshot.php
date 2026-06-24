@@ -96,10 +96,14 @@ final readonly class OperationUpdatePlanSnapshot
 
     private function assertSupportedManifestSource(): void
     {
-        if (! in_array($this->manifestSource, [
-            ReleaseManifest::SourceGitHubRelease,
-            ReleaseManifest::SourceTopologyCandidate,
-        ], true)) {
+        if (! in_array(
+            $this->manifestSource,
+            [
+                ReleaseManifest::SourceGitHubRelease,
+                ReleaseManifest::SourceTopologyCandidate,
+            ],
+            true,
+        )) {
             throw new RuntimeException("Update plan manifest source [{$this->manifestSource}] is not supported.");
         }
     }
@@ -114,7 +118,9 @@ final readonly class OperationUpdatePlanSnapshot
         $buildId = $this->manifestSnapshot['build_id'] ?? null;
 
         if ($source !== ReleaseManifest::SourceTopologyCandidate || ! is_string($buildId) || trim($buildId) === '') {
-            throw new RuntimeException('Update plan topology candidate manifest snapshot must include a topology candidate source and build id.');
+            throw new RuntimeException(
+                'Update plan topology candidate manifest snapshot must include a topology candidate source and build id.',
+            );
         }
     }
 
@@ -156,7 +162,9 @@ final readonly class OperationUpdatePlanSnapshot
 
         foreach ($images as $role => $image) {
             if (! is_string($role) || trim($role) === '' || ! is_string($image) || trim($image) === '') {
-                throw new RuntimeException('Update plan role images must be keyed by role with non-empty image references.');
+                throw new RuntimeException(
+                    'Update plan role images must be keyed by role with non-empty image references.',
+                );
             }
         }
     }

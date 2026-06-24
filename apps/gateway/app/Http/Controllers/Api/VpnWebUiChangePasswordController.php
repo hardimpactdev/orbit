@@ -24,7 +24,9 @@ final class VpnWebUiChangePasswordController extends VpnControllerSupport
         $password = $request->string('password')->toString();
 
         if ($password === '') {
-            return $this->fail(new VpnFailure('validation_failed', 'VPN web UI password is required.', ['field' => 'password']), 422);
+            return $this->fail(new VpnFailure('validation_failed', 'VPN web UI password is required.', [
+                'field' => 'password',
+            ]), 422);
         }
 
         if (! $request->boolean('force')) {

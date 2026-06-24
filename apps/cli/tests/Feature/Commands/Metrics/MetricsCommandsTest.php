@@ -26,11 +26,15 @@ describe('metrics commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && str_contains($request->url(), '/api/nodes/app-1/roles')
-            && $request['role'] === 'metrics'
-            && $request['settings'] === []
-            && $request['reconverge_existing'] === true);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && str_contains($request->url(), '/api/nodes/app-1/roles')
+                && $request['role'] === 'metrics'
+                && $request['settings'] === []
+                && $request['reconverge_existing'] === true
+            ),
+        );
 
         expect($exitCode)->toBe(0);
         expect($timeout)->toBe(300);
@@ -52,12 +56,17 @@ describe('metrics commands', function (): void {
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Metrics role enabled on 'app-1'")
-            ->and($output)->toContain('Role: metrics')
-            ->and($output)->toContain('Status: active')
-            ->and($output)->not->toContain('assignment:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Metrics role enabled on 'app-1'")
+            ->and($output)
+            ->toContain('Role: metrics')
+            ->and($output)
+            ->toContain('Status: active')
+            ->and($output)
+            ->not->toContain('assignment:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders metrics:enable gateway failures as prose in human mode', function (): void {
@@ -67,9 +76,12 @@ describe('metrics commands', function (): void {
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("Node 'app-1' not found.")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("Node 'app-1' not found.")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('requires --node before enabling metrics', function (): void {
@@ -83,9 +95,12 @@ describe('metrics commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node');
     });
 
     it('requires --force before disabling metrics', function (): void {
@@ -100,9 +115,12 @@ describe('metrics commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('disables metrics through the node role API when force is supplied', function (): void {
@@ -117,10 +135,14 @@ describe('metrics commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/nodes/app-1/roles/metrics')
-            && $request['force'] === true
-            && $request['purge_data'] === false);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && str_contains($request->url(), '/api/nodes/app-1/roles/metrics')
+                && $request['force'] === true
+                && $request['purge_data'] === false
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -147,12 +169,15 @@ describe('metrics commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains(urldecode($request->url()), '/api/metrics/status')
-            && str_contains(urldecode($request->url()), 'node=metrics-1'));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains(urldecode($request->url()), '/api/metrics/status')
+                && str_contains(urldecode($request->url()), 'node=metrics-1')
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['metrics'][0]['node'])->toBe('metrics-1');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['metrics'][0]['node'])->toBe('metrics-1');
     });
 
     it('renders metrics status as a human table with uppercase headers', function (): void {
@@ -170,12 +195,18 @@ describe('metrics commands', function (): void {
             '--node' => 'metrics-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('NODE')
-            ->and($output)->toContain('URL')
-            ->and($output)->toContain('PROCESSES')
-            ->and($output)->toContain('metrics-1')
-            ->and($output)->toContain('—');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('NODE')
+            ->and($output)
+            ->toContain('URL')
+            ->and($output)
+            ->toContain('PROCESSES')
+            ->and($output)
+            ->toContain('metrics-1')
+            ->and($output)
+            ->toContain('—');
     });
 
     it('reads Grafana credentials from the gateway', function (): void {
@@ -188,13 +219,20 @@ describe('metrics commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains(urldecode($request->url()), '/api/metrics/credentials')
-            && str_contains(urldecode($request->url()), 'node=metrics-1'));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains(urldecode($request->url()), '/api/metrics/credentials')
+                && str_contains(urldecode($request->url()), 'node=metrics-1')
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['url'])->toBe('https://metrics.orbit')
-            ->and($decoded['success']['data']['credentials']['admin_password'])->toBe('secret-password');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['credentials']['url'])
+            ->toBe('https://metrics.orbit')
+            ->and($decoded['success']['data']['credentials']['admin_password'])
+            ->toBe('secret-password');
     });
 
     it('resets Grafana credentials through the gateway when requested', function (): void {
@@ -208,12 +246,18 @@ describe('metrics commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && str_contains($request->url(), '/api/metrics/credentials/reset')
-            && $request['node'] === 'metrics-1');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && str_contains($request->url(), '/api/metrics/credentials/reset')
+                && $request['node'] === 'metrics-1'
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['admin_password'])->toBe('new-secret-password');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['credentials']['admin_password'])
+            ->toBe('new-secret-password');
     });
 
     it('renders Grafana credentials as a human table with uppercase headers', function (): void {
@@ -232,12 +276,18 @@ describe('metrics commands', function (): void {
             '--node' => 'metrics-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('FIELD')
-            ->and($output)->toContain('VALUE')
-            ->and($output)->toContain('metrics-1')
-            ->and($output)->toContain('https://metrics.orbit')
-            ->and($output)->toContain('—');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('FIELD')
+            ->and($output)
+            ->toContain('VALUE')
+            ->and($output)
+            ->toContain('metrics-1')
+            ->and($output)
+            ->toContain('https://metrics.orbit')
+            ->and($output)
+            ->toContain('—');
     });
 });
 

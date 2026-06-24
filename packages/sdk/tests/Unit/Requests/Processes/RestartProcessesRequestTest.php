@@ -17,9 +17,12 @@ uses(TestCase::class);
 it('targets the process restart gateway endpoint with optional filters', function (): void {
     $request = new RestartProcessesRequest(app: 'docs', workspace: 'feature-docs', name: 'vite');
 
-    expect($request->getMethod())->toBe(Method::POST)
-        ->and($request->resolveEndpoint())->toBe('/api/processes/restart')
-        ->and($request->body()->all())->toBe([
+    expect($request->getMethod())
+        ->toBe(Method::POST)
+        ->and($request->resolveEndpoint())
+        ->toBe('/api/processes/restart')
+        ->and($request->body()->all())
+        ->toBe([
             'app' => 'docs',
             'workspace' => 'feature-docs',
             'name' => 'vite',
@@ -52,6 +55,8 @@ it('returns a ProcessRestartResponse DTO', function (): void {
 
     $dto = $connector->send(new RestartProcessesRequest(app: 'docs', workspace: null, name: 'vite'))->dto();
 
-    expect($dto)->toBeInstanceOf(ProcessRestartResponse::class)
-        ->and($dto->data['runtimes'][0]['state'])->toBe('running');
+    expect($dto)
+        ->toBeInstanceOf(ProcessRestartResponse::class)
+        ->and($dto->data['runtimes'][0]['state'])
+        ->toBe('running');
 });

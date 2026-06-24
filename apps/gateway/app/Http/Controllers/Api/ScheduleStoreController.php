@@ -97,23 +97,48 @@ final readonly class ScheduleStoreController implements Loggable
         }
 
         if (! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $name)) {
-            return $this->error('validation_failed', 'The schedule name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'name', 'value' => $name], 422);
+            return $this->error(
+                'validation_failed',
+                'The schedule name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+                ['field' => 'name', 'value' => $name],
+                422,
+            );
         }
 
         if (($app === null) === ($node === null)) {
-            return $this->error('validation_failed', 'Exactly one schedule target is required.', ['fields' => ['app', 'node']], 422);
+            return $this->error(
+                'validation_failed',
+                'Exactly one schedule target is required.',
+                ['fields' => ['app', 'node']],
+                422,
+            );
         }
 
         if (($command === null) === ($script === null)) {
-            return $this->error('validation_failed', 'Exactly one schedule execution source is required.', ['fields' => ['command', 'script']], 422);
+            return $this->error(
+                'validation_failed',
+                'Exactly one schedule execution source is required.',
+                ['fields' => ['command', 'script']],
+                422,
+            );
         }
 
         if ($interval === null) {
-            return $this->error('schedule.interval_invalid', 'The schedule interval is required.', ['field' => 'interval'], 422);
+            return $this->error(
+                'schedule.interval_invalid',
+                'The schedule interval is required.',
+                ['field' => 'interval'],
+                422,
+            );
         }
 
         if (! in_array($timezone, timezone_identifiers_list(), true)) {
-            return $this->error('validation_failed', 'The schedule timezone must be a valid IANA timezone.', ['field' => 'timezone', 'value' => $timezone], 422);
+            return $this->error(
+                'validation_failed',
+                'The schedule timezone must be a valid IANA timezone.',
+                ['field' => 'timezone', 'value' => $timezone],
+                422,
+            );
         }
 
         return [
@@ -132,9 +157,16 @@ final readonly class ScheduleStoreController implements Loggable
         if ($app !== null) {
             $target = App::query()->with('node.schedulerState')->where('name', $app)->first();
 
-            return $target instanceof App
-                ? $target
-                : $this->error('validation_failed', "App '{$app}' not found.", ['field' => 'app', 'value' => $app], 422);
+            return (
+                $target instanceof App
+                    ? $target
+                    : $this->error(
+                        'validation_failed',
+                        "App '{$app}' not found.",
+                        ['field' => 'app', 'value' => $app],
+                        422,
+                    )
+            );
         }
 
         $target = Node::query()
@@ -143,9 +175,16 @@ final readonly class ScheduleStoreController implements Loggable
             ->whereIn('id', app(NodeRoleAssignments::class)->activeGatewayOrAppHostNodeIds())
             ->first();
 
-        return $target instanceof Node
-            ? $target
-            : $this->error('validation_failed', "Node '{$node}' not found.", ['field' => 'node', 'value' => $node], 422);
+        return (
+            $target instanceof Node
+                ? $target
+                : $this->error(
+                    'validation_failed',
+                    "Node '{$node}' not found.",
+                    ['field' => 'node', 'value' => $node],
+                    422,
+                )
+        );
     }
 
     private function authorizeTarget(Node $caller, App|Node $target): ?JsonResponse
@@ -153,10 +192,15 @@ final readonly class ScheduleStoreController implements Loggable
         $servingNode = $target instanceof App ? $target->node : $target;
 
         if (! $servingNode instanceof Node) {
-            return $this->error('authorization_failed', 'This node is not authorized to manage schedules for the selected scope.', [
-                'reason' => 'serving_node_unresolved',
-                'missing_permission' => 'schedule:add',
-            ], 403);
+            return $this->error(
+                'authorization_failed',
+                'This node is not authorized to manage schedules for the selected scope.',
+                [
+                    'reason' => 'serving_node_unresolved',
+                    'missing_permission' => 'schedule:add',
+                ],
+                403,
+            );
         }
 
         $result = $this->authorizer->authorize($caller, $servingNode, 'schedule:add');
@@ -165,11 +209,16 @@ final readonly class ScheduleStoreController implements Loggable
             return null;
         }
 
-        return $this->error('authorization_failed', 'This node is not authorized to manage schedules for the selected scope.', [
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $servingNode->name,
-        ], 403);
+        return $this->error(
+            'authorization_failed',
+            'This node is not authorized to manage schedules for the selected scope.',
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $servingNode->name,
+            ],
+            403,
+        );
     }
 
     private function optionalString(Request $request, string $key): ?string

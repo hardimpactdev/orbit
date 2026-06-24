@@ -52,7 +52,12 @@ final readonly class WorkloadNodeUpdater
      */
     private function updateNode(OperationRun $operationRun, OperationUpdatePlan $plan, Node $node): array
     {
-        $this->operationRuns->appendStep($operationRun->id, $this->eventKey($node), 'running', "Updating workload node {$node->name}");
+        $this->operationRuns->appendStep(
+            $operationRun->id,
+            $this->eventKey($node),
+            'running',
+            "Updating workload node {$node->name}",
+        );
 
         try {
             $result = $this->leases->withLease(
@@ -84,7 +89,12 @@ final readonly class WorkloadNodeUpdater
         $status = $result['status'] ?? null;
 
         if ($status === 'skipped') {
-            $this->operationRuns->appendStep($operationRun->id, $this->eventKey($node), 'done', "Workload node {$node->name} skipped: already up to date");
+            $this->operationRuns->appendStep(
+                $operationRun->id,
+                $this->eventKey($node),
+                'done',
+                "Workload node {$node->name} skipped: already up to date",
+            );
 
             return $result;
         }
@@ -212,10 +222,10 @@ final readonly class WorkloadNodeUpdater
         }
 
         $envelope = $decoded['success'] ?? $decoded['error'] ?? null;
-        $data = is_array($envelope) ? ($envelope['data'] ?? null) : null;
-        $doctor = is_array($data) ? ($data['doctor'] ?? null) : null;
-        $summary = is_array($doctor) ? ($doctor['summary'] ?? null) : null;
-        $issues = is_array($summary) ? ($summary['issues'] ?? null) : null;
+        $data = is_array($envelope) ? $envelope['data'] ?? null : null;
+        $doctor = is_array($data) ? $data['doctor'] ?? null : null;
+        $summary = is_array($doctor) ? $doctor['summary'] ?? null : null;
+        $issues = is_array($summary) ? $summary['issues'] ?? null : null;
 
         return is_int($issues) ? $issues : null;
     }
@@ -318,7 +328,11 @@ final readonly class WorkloadNodeUpdater
         $platform = $this->platformKey($node);
         $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-        if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+        ) {
             throw new RuntimeException("Update plan does not contain a CLI artifact for platform [{$platform}].");
         }
 
@@ -356,17 +370,21 @@ final readonly class WorkloadNodeUpdater
             return 'linux-arm64';
         }
 
-        if ($platform === ''
+        if (
+            $platform === ''
             || str_contains($platform, 'linux')
             || str_contains($platform, 'ubuntu')
             || str_contains($platform, 'debian')
             || str_contains($platform, 'amd64')
             || str_contains($platform, 'x86_64')
-            || str_contains($platform, 'x64')) {
+            || str_contains($platform, 'x64')
+        ) {
             return 'linux-amd64';
         }
 
-        throw new RuntimeException("Unsupported workload update platform [{$node->platform}] for node [{$node->name}].");
+        throw new RuntimeException(
+            "Unsupported workload update platform [{$node->platform}] for node [{$node->name}].",
+        );
     }
 
     /**
@@ -380,7 +398,10 @@ final readonly class WorkloadNodeUpdater
             $images[] = $plan->role_images['orbit-caddy'];
         }
 
-        if ($this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value) && is_string($plan->role_images['orbit-websocket'] ?? null)) {
+        if (
+            $this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
+            && is_string($plan->role_images['orbit-websocket'] ?? null)
+        ) {
             $images[] = $plan->role_images['orbit-websocket'];
         }
 

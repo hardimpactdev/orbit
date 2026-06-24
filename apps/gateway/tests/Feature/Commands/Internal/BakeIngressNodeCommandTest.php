@@ -15,8 +15,7 @@ uses(RefreshDatabase::class);
 
 describe('orbit:internal:bake-ingress-node', function (): void {
     beforeEach(function (): void {
-        $this->hostKeyPinner = new class
-        {
+        $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: ?string}> */
             public array $calls = [];
 
@@ -53,22 +52,30 @@ describe('orbit:internal:bake-ingress-node', function (): void {
             ->where('role', NodeRoleName::Ingress->value)
             ->first();
 
-        expect($node->host)->toBe('ingress')
-            ->and($node->wireguard_address)->toBe('10.6.0.7')
-            ->and($node->gateway_endpoint)->toBe('10.6.0.2')
-            ->and($node->user)->toBe('orbit')
-            ->and($node->orbit_path)->toBe('/home/orbit/orbit')
-            ->and($node->status)->toBe(NodeStatus::Active)
-            ->and($node->host_key_type)->toBe('ssh-ed25519')
-            ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeIngressNodeHostKey')
-            ->and($node->host_key_fingerprint)->toBe('SHA256:bake-ingress-node-host-key')
-            ->and($node->host_key_pin_mode)->toBe('tofu')
-            ->and($node->host_key_pinned_at)->not->toBeNull()
-            ->and($this->hostKeyPinner->calls)->toBe([
+        expect($node->host)
+            ->toBe('ingress')
+            ->and($node->wireguard_address)
+            ->toBe('10.6.0.7')
+            ->and($node->gateway_endpoint)
+            ->toBe('10.6.0.2')
+            ->and($node->user)
+            ->toBe('orbit')
+            ->and($node->orbit_path)
+            ->toBe('/home/orbit/orbit')
+            ->and($node->status)
+            ->toBe(NodeStatus::Active)
+            ->and($node->host_key_type)
+            ->toBe('ssh-ed25519')
+            ->and($node->host_key_public)
+            ->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeIngressNodeHostKey')
+            ->and($node->host_key_fingerprint)
+            ->toBe('SHA256:bake-ingress-node-host-key')
+            ->and($node->host_key_pin_mode)
+            ->toBe('tofu')
+            ->and($node->host_key_pinned_at)
+            ->not->toBeNull()->and($this->hostKeyPinner->calls)->toBe([
                 ['host' => '10.6.0.7', 'expected' => null],
-            ])
-            ->and($assignment)->not->toBeNull()
-            ->and($assignment?->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment?->settings)->toBe([]);
+            ])->and($assignment)
+            ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([]);
     });
 });

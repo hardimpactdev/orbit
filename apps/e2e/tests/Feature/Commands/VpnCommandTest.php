@@ -14,11 +14,13 @@ function vpnCommandPrepareFakeBackend(E2ETopologyHarness $topology, string $back
     $envPathArgument = escapeshellarg($envPath);
     $envTmpPathArgument = escapeshellarg("{$envPath}.vpn-e2e");
     $backendPathValue = var_export($backendPath, true);
-    $publicKey = trim($topology->ssh(
-        'operator',
-        'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-operator >/dev/null; fi && cat ~/.ssh/id_ed25519.pub',
-        timeoutSeconds: 60,
-    )->output());
+    $publicKey = trim(
+        $topology->ssh(
+            'operator',
+            'install -d -m 700 ~/.ssh && if ! test -f ~/.ssh/id_ed25519; then ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519 -C orbit-e2e-operator >/dev/null; fi && cat ~/.ssh/id_ed25519.pub',
+            timeoutSeconds: 60,
+        )->output(),
+    );
 
     $topology->ssh(
         'gateway',
@@ -30,34 +32,34 @@ function vpnCommandPrepareFakeBackend(E2ETopologyHarness $topology, string $back
     );
 
     $script = <<<PHP
-\$gateway = \\App\\Models\\Node::query()->where('name', 'gateway-1')->first();
+        \$gateway = \\App\\Models\\Node::query()->where('name', 'gateway-1')->first();
 
-if (\$gateway instanceof \\App\\Models\\Node) {
-    \$gateway->update(['orbit_path' => '{$topology->checkout('gateway')}', 'status' => 'active']);
-}
+        if (\$gateway instanceof \\App\\Models\\Node) {
+            \$gateway->update(['orbit_path' => '{$topology->checkout('gateway')}', 'status' => 'active']);
+        }
 
-\Spatie\Activitylog\Models\Activity::query()->delete();
+        \Spatie\Activitylog\Models\Activity::query()->delete();
 
-\$backendPath = {$backendPathValue};
-\Illuminate\Support\Facades\File::ensureDirectoryExists(dirname(\$backendPath));
-\$written = file_put_contents(\$backendPath, json_encode([
-    'clients' => [
-        [
-            'id' => 'client-1',
-            'name' => 'laptop',
-            'address' => '10.6.0.70',
-            'enabled' => true,
-            'latest_handshake_at' => '2026-05-07T10:00:00Z',
-        ],
-    ],
-], JSON_THROW_ON_ERROR));
+        \$backendPath = {$backendPathValue};
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(dirname(\$backendPath));
+        \$written = file_put_contents(\$backendPath, json_encode([
+            'clients' => [
+                [
+                    'id' => 'client-1',
+                    'name' => 'laptop',
+                    'address' => '10.6.0.70',
+                    'enabled' => true,
+                    'latest_handshake_at' => '2026-05-07T10:00:00Z',
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR));
 
-if (\$written === false) {
-    throw new \RuntimeException("Could not write VPN fake backend state to {\$backendPath}.");
-}
+        if (\$written === false) {
+            throw new \RuntimeException("Could not write VPN fake backend state to {\$backendPath}.");
+        }
 
-echo 'prepared';
-PHP;
+        echo 'prepared';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -67,59 +69,64 @@ PHP;
 
     $gatewayCheckoutValue = var_export($topology->checkout('gateway'), true);
     $operatorScript = <<<PHP
-\$gateway = \App\Models\Node::query()->where('name', 'gateway-1')->first();
+        \$gateway = \App\Models\Node::query()->where('name', 'gateway-1')->first();
 
-if (! \$gateway instanceof \App\Models\Node) {
-    \$gateway = new \App\Models\Node(['name' => 'gateway-1']);
-}
+        if (! \$gateway instanceof \App\Models\Node) {
+            \$gateway = new \App\Models\Node(['name' => 'gateway-1']);
+        }
 
-\$hostKey = app(\App\Services\Security\SshHostKeyPinner::class)->pin('gateway');
+        \$hostKey = app(\App\Services\Security\SshHostKeyPinner::class)->pin('gateway');
 
-\$gateway->forceFill([
-    'host' => 'gateway',
-    'wireguard_address' => '10.6.0.2',
-    'user' => 'orbit',
-    'orbit_path' => {$gatewayCheckoutValue},
-    'status' => 'active',
-    'host_key_type' => \$hostKey->type,
-    'host_key_fingerprint' => \$hostKey->fingerprint,
-    'host_key_public' => \$hostKey->publicKey,
-    'host_key_pin_mode' => \$hostKey->pinMode,
-    'host_key_pinned_at' => now(),
-])->save();
+        \$gateway->forceFill([
+            'host' => 'gateway',
+            'wireguard_address' => '10.6.0.2',
+            'user' => 'orbit',
+            'orbit_path' => {$gatewayCheckoutValue},
+            'status' => 'active',
+            'host_key_type' => \$hostKey->type,
+            'host_key_fingerprint' => \$hostKey->fingerprint,
+            'host_key_public' => \$hostKey->publicKey,
+            'host_key_pin_mode' => \$hostKey->pinMode,
+            'host_key_pinned_at' => now(),
+        ])->save();
 
-\App\Models\NodeRoleAssignment::query()->updateOrCreate(
-    ['node_id' => \$gateway->id, 'role' => 'gateway'],
-    ['status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => now()],
-);
+        \App\Models\NodeRoleAssignment::query()->updateOrCreate(
+            ['node_id' => \$gateway->id, 'role' => 'gateway'],
+            ['status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => now()],
+        );
 
-\App\Models\NodeRoleAssignment::query()->updateOrCreate(
-    ['node_id' => \$gateway->id, 'role' => 'vpn'],
-    [
-        'status' => 'active',
-        'settings' => [
-            'public_endpoint' => 'gateway',
-            'wireguard_cidr' => '10.6.0.0/24',
-            'wireguard_port' => 51820,
-            'dns_ip' => '10.6.0.1',
-        ],
-        'last_error' => null,
-        'converged_at' => now(),
-    ],
-);
+        \App\Models\NodeRoleAssignment::query()->updateOrCreate(
+            ['node_id' => \$gateway->id, 'role' => 'vpn'],
+            [
+                'status' => 'active',
+                'settings' => [
+                    'public_endpoint' => 'gateway',
+                    'wireguard_cidr' => '10.6.0.0/24',
+                    'wireguard_port' => 51820,
+                    'dns_ip' => '10.6.0.1',
+                ],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
 
-echo 'prepared';
-PHP;
+        echo 'prepared';
+        PHP;
 
     $topology->ssh(
         'operator',
-        'cd '.escapeshellarg($topology->checkout('operator')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($operatorScript),
+        'cd '.escapeshellarg($topology->checkout('operator')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($operatorScript),
         timeoutSeconds: 120,
     );
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && mkdir -p ".escapeshellarg(dirname($envPath))." && (grep -v '^ORBIT_VPN_FAKE_BACKEND_PATH=' {$envPathArgument} 2>/dev/null || true) > {$envTmpPathArgument} && printf '%s\n' ORBIT_VPN_FAKE_BACKEND_PATH=".escapeshellarg($backendPath)." >> {$envTmpPathArgument} && mv {$envTmpPathArgument} {$envPathArgument}",
+        "cd {$checkout} && mkdir -p "
+        .escapeshellarg(dirname($envPath))
+        ." && (grep -v '^ORBIT_VPN_FAKE_BACKEND_PATH=' {$envPathArgument} 2>/dev/null || true) > {$envTmpPathArgument} && printf '%s\n' ORBIT_VPN_FAKE_BACKEND_PATH="
+        .escapeshellarg($backendPath)
+        ." >> {$envTmpPathArgument} && mv {$envTmpPathArgument} {$envPathArgument}",
         timeoutSeconds: 60,
     );
 }
@@ -131,25 +138,26 @@ function vpnCommandGatewayState(E2ETopologyHarness $topology, string $backendPat
 {
     $backendPathValue = var_export($backendPath, true);
     $script = <<<PHP
-echo json_encode([
-    'backend' => json_decode((string) file_get_contents({$backendPathValue}), true, 512, JSON_THROW_ON_ERROR),
-    'activity' => \\Spatie\\Activitylog\\Models\\Activity::query()
-        ->selectRaw('event, JSON_EXTRACT(properties, "$.type") as effect, count(*) as total')
-        ->groupBy('event', 'effect')
-        ->orderBy('event')
-        ->get()
-        ->map(fn (\$activity) => [
-            'event' => \$activity->event,
-            'effect' => trim((string) \$activity->effect, '"'),
-            'total' => (int) \$activity->total,
-        ])
-        ->all(),
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'backend' => json_decode((string) file_get_contents({$backendPathValue}), true, 512, JSON_THROW_ON_ERROR),
+            'activity' => \\Spatie\\Activitylog\\Models\\Activity::query()
+                ->selectRaw('event, JSON_EXTRACT(properties, "$.type") as effect, count(*) as total')
+                ->groupBy('event', 'effect')
+                ->orderBy('event')
+                ->get()
+                ->map(fn (\$activity) => [
+                    'event' => \$activity->event,
+                    'effect' => trim((string) \$activity->effect, '"'),
+                    'total' => (int) \$activity->total,
+                ])
+                ->all(),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($script),
         timeoutSeconds: 120,
     );
 
@@ -160,7 +168,11 @@ it('administers VPN clients through gateway execution and operator SSH forwardin
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway)
         ->withCurrentCheckout(roles: ['operator', 'gateway']);
-    $backendPath = $topology->checkout('gateway').'/apps/gateway/storage/app/orbit-vpn-'.strtolower(bin2hex(random_bytes(3))).'.json';
+    $backendPath =
+        $topology->checkout('gateway')
+        .'/apps/gateway/storage/app/orbit-vpn-'
+        .strtolower(bin2hex(random_bytes(3)))
+        .'.json';
     $gatewayCheckout = escapeshellarg($topology->checkout('gateway'));
     $operatorCheckout = escapeshellarg($topology->checkout('operator'));
 
@@ -168,7 +180,12 @@ it('administers VPN clients through gateway execution and operator SSH forwardin
         vpnCommandPrepareFakeBackend($topology, $backendPath);
 
         e2eRestartGatewayApi($topology, 'vpn-command');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $topology->lease()->gatewayApiIp());
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $topology->lease()->gatewayApiIp(),
+        );
 
         $gatewayList = $topology->ssh(
             'gateway',
@@ -177,8 +194,10 @@ it('administers VPN clients through gateway execution and operator SSH forwardin
         );
         $gatewayListPayload = json_decode(trim($gatewayList->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($gatewayList->successful())->toBeTrue()
-            ->and(array_column($gatewayListPayload['success']['data']['clients'], 'name'))->toContain('laptop');
+        expect($gatewayList->successful())
+            ->toBeTrue()
+            ->and(array_column($gatewayListPayload['success']['data']['clients'], 'name'))
+            ->toContain('laptop');
 
         $created = $topology->ssh(
             'operator',
@@ -210,56 +229,73 @@ it('administers VPN clients through gateway execution and operator SSH forwardin
 
         $password = $topology->ssh(
             'gateway',
-            "cd {$gatewayCheckout} && orbit vpn-web-ui:change-password ".escapeshellarg('new-password-1234').' --force --json',
+            "cd {$gatewayCheckout} && orbit vpn-web-ui:change-password "
+            .escapeshellarg('new-password-1234')
+            .' --force --json',
             timeoutSeconds: 120,
         );
         $passwordPayload = json_decode(trim($password->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($created->successful())->toBeTrue()
-            ->and($createdPayload['success']['data']['client'])->toMatchArray([
+        expect($created->successful())
+            ->toBeTrue()
+            ->and($createdPayload['success']['data']['client'])
+            ->toMatchArray([
                 'name' => 'tablet',
                 'address' => '10.6.0.8',
                 'enabled' => true,
                 'kind' => 'admin',
             ])
-            ->and($createdPayload['success']['data']['client']['config'])->toContain('PrivateKey')
-            ->and($disabled->successful())->toBeTrue()
-            ->and($disabledPayload['success']['data']['client'])->toMatchArray([
+            ->and($createdPayload['success']['data']['client']['config'])
+            ->toContain('PrivateKey')
+            ->and($disabled->successful())
+            ->toBeTrue()
+            ->and($disabledPayload['success']['data']['client'])
+            ->toMatchArray([
                 'name' => 'tablet',
                 'enabled' => false,
                 'action' => 'disabled',
             ])
-            ->and($enabled->successful())->toBeTrue()
-            ->and($enabledPayload['success']['data']['client'])->toMatchArray([
+            ->and($enabled->successful())
+            ->toBeTrue()
+            ->and($enabledPayload['success']['data']['client'])
+            ->toMatchArray([
                 'name' => 'tablet',
                 'enabled' => true,
                 'action' => 'enabled',
             ])
-            ->and($removed->successful())->toBeTrue()
-            ->and($removedPayload['success']['data']['client'])->toBe([
+            ->and($removed->successful())
+            ->toBeTrue()
+            ->and($removedPayload['success']['data']['client'])
+            ->toBe([
                 'name' => 'tablet',
                 'action' => 'removed',
             ])
-            ->and($password->successful())->toBeTrue()
-            ->and($passwordPayload['success']['data']['vpn'])->toBe([
+            ->and($password->successful())
+            ->toBeTrue()
+            ->and($passwordPayload['success']['data']['vpn'])
+            ->toBe([
                 'password_changed' => true,
                 'sessions_invalidated' => true,
             ]);
 
         $state = vpnCommandGatewayState($topology, $backendPath);
 
-        expect(array_column($state['backend']['clients'], 'name'))->toBe(['laptop'])
-            ->and($state['backend'])->toMatchArray([
+        expect(array_column($state['backend']['clients'], 'name'))
+            ->toBe(['laptop'])
+            ->and($state['backend'])
+            ->toMatchArray([
                 'password_changed' => true,
                 'password_length' => 17,
                 'sessions_invalidated' => true,
             ])
-            ->and($state['activity'])->toContain([
+            ->and($state['activity'])
+            ->toContain([
                 'event' => 'api:GET /api/vpn/clients',
                 'effect' => 'read',
                 'total' => 1,
             ])
-            ->and($state['activity'])->toContain([
+            ->and($state['activity'])
+            ->toContain([
                 'event' => 'api:DELETE /api/vpn/clients/tablet',
                 'effect' => 'destructive',
                 'total' => 1,

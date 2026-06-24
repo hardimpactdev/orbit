@@ -35,7 +35,11 @@ final readonly class JsonRendererExampleRule implements GroupedRule
                 if (! $example->isValidArray() || ! is_array($example->decoded)) {
                     $findings[] = $this->finding(
                         $file,
-                        sprintf('JSON example %d is not valid JSON: %s.', $example->blockIndex + 1, $example->parseError ?? 'decoded value is not an object'),
+                        sprintf(
+                            'JSON example %d is not valid JSON: %s.',
+                            $example->blockIndex + 1,
+                            $example->parseError ?? 'decoded value is not an object',
+                        ),
                         $example->line,
                     );
 
@@ -66,7 +70,10 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         if ($hasSuccess && $hasError) {
             $findings[] = $this->finding(
                 $file,
-                sprintf('JSON example %d must not contain both top-level envelopes: success and error.', $example->blockIndex + 1),
+                sprintf(
+                    'JSON example %d must not contain both top-level envelopes: success and error.',
+                    $example->blockIndex + 1,
+                ),
                 $example->line,
             );
         }
@@ -74,7 +81,10 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         if ($hasSuccess && ! is_array($decoded['success'])) {
             $findings[] = $this->finding(
                 $file,
-                sprintf('JSON example %d must use a success object, not a scalar success value.', $example->blockIndex + 1),
+                sprintf(
+                    'JSON example %d must use a success object, not a scalar success value.',
+                    $example->blockIndex + 1,
+                ),
                 $example->line,
             );
         }
@@ -82,7 +92,10 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         if ($hasError && ! is_array($decoded['error'])) {
             $findings[] = $this->finding(
                 $file,
-                sprintf('JSON example %d must use an error object, not a scalar error value.', $example->blockIndex + 1),
+                sprintf(
+                    'JSON example %d must use an error object, not a scalar error value.',
+                    $example->blockIndex + 1,
+                ),
                 $example->line,
             );
         }
@@ -94,7 +107,11 @@ final readonly class JsonRendererExampleRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                sprintf('JSON example %d contains nested boolean "%s"; success is an envelope, not a data field.', $example->blockIndex + 1, $path),
+                sprintf(
+                    'JSON example %d contains nested boolean "%s"; success is an envelope, not a data field.',
+                    $example->blockIndex + 1,
+                    $path,
+                ),
                 $example->line,
             );
         }
@@ -130,7 +147,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
                 }
 
                 foreach ($value as $index => $item) {
-                    if (! $this->isJsonObject($item)) {
+                    $itemObject = $this->jsonObject($item);
+
+                    if ($itemObject === null) {
                         continue;
                     }
 
@@ -141,7 +160,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
                             example: $example,
                             entity: $entityPath['entity'],
                             label: "{$entityPath['label']}[{$index}]",
-                            value: $item,
+                            value: $itemObject,
                             schema: $schema,
                         ),
                     );
@@ -150,7 +169,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
                 continue;
             }
 
-            if (! $this->isJsonObject($value)) {
+            $valueObject = $this->jsonObject($value);
+
+            if ($valueObject === null) {
                 continue;
             }
 
@@ -161,7 +182,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
                     example: $example,
                     entity: $entityPath['entity'],
                     label: $entityPath['label'],
-                    value: $value,
+                    value: $valueObject,
                     schema: $schema,
                 ),
             );
@@ -178,12 +199,42 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         return [
             ['entity' => 'app', 'path' => ['success', 'data', 'app'], 'label' => 'success.data.app', 'list' => false],
             ['entity' => 'app', 'path' => ['success', 'data', 'apps'], 'label' => 'success.data.apps', 'list' => true],
-            ['entity' => 'workspace', 'path' => ['success', 'data', 'workspace'], 'label' => 'success.data.workspace', 'list' => false],
-            ['entity' => 'workspace', 'path' => ['success', 'data', 'workspaces'], 'label' => 'success.data.workspaces', 'list' => true],
-            ['entity' => 'node', 'path' => ['success', 'data', 'node'], 'label' => 'success.data.node', 'list' => false],
-            ['entity' => 'node', 'path' => ['success', 'data', 'nodes'], 'label' => 'success.data.nodes', 'list' => true],
-            ['entity' => 'process', 'path' => ['success', 'data', 'process'], 'label' => 'success.data.process', 'list' => false],
-            ['entity' => 'process', 'path' => ['success', 'data', 'processes'], 'label' => 'success.data.processes', 'list' => true],
+            [
+                'entity' => 'workspace',
+                'path' => ['success', 'data', 'workspace'],
+                'label' => 'success.data.workspace',
+                'list' => false,
+            ],
+            [
+                'entity' => 'workspace',
+                'path' => ['success', 'data', 'workspaces'],
+                'label' => 'success.data.workspaces',
+                'list' => true,
+            ],
+            [
+                'entity' => 'node',
+                'path' => ['success', 'data', 'node'],
+                'label' => 'success.data.node',
+                'list' => false,
+            ],
+            [
+                'entity' => 'node',
+                'path' => ['success', 'data', 'nodes'],
+                'label' => 'success.data.nodes',
+                'list' => true,
+            ],
+            [
+                'entity' => 'process',
+                'path' => ['success', 'data', 'process'],
+                'label' => 'success.data.process',
+                'list' => false,
+            ],
+            [
+                'entity' => 'process',
+                'path' => ['success', 'data', 'processes'],
+                'label' => 'success.data.processes',
+                'list' => true,
+            ],
         ];
     }
 
@@ -206,9 +257,24 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         return $value;
     }
 
-    private function isJsonObject(mixed $value): bool
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function jsonObject(mixed $value): ?array
     {
-        return is_array($value) && ($value === [] || ! array_is_list($value));
+        if (! is_array($value) || $value !== [] && array_is_list($value)) {
+            return null;
+        }
+
+        $object = [];
+
+        foreach ($value as $key => $field) {
+            if (is_string($key)) {
+                $object[$key] = $field;
+            }
+        }
+
+        return $object;
     }
 
     /**
@@ -240,7 +306,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                'JSON example '.($example->blockIndex + 1)." {$label} is missing required canonical {$entity} field `{$field}`.",
+                'JSON example '
+                .($example->blockIndex + 1)
+                ." {$label} is missing required canonical {$entity} field `{$field}`.",
                 $example->line,
             );
         }
@@ -256,7 +324,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                'JSON example '.($example->blockIndex + 1)." {$label}.{$field} must be {$type}, got {$this->typeName($value[$field])}.",
+                'JSON example '
+                .($example->blockIndex + 1)
+                ." {$label}.{$field} must be {$type}, got {$this->typeName($value[$field])}.",
                 $example->line,
             );
         }
@@ -268,7 +338,9 @@ final readonly class JsonRendererExampleRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                'JSON example '.($example->blockIndex + 1)." {$label} contains non-canonical {$entity} field `{$field}`.",
+                'JSON example '
+                .($example->blockIndex + 1)
+                ." {$label} contains non-canonical {$entity} field `{$field}`.",
                 $example->line,
                 FindingSeverity::Warning,
             );
@@ -305,7 +377,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
             'bool' => is_bool($value),
             'int' => is_int($value),
             'null' => $value === null,
-            'object' => $this->isJsonObject($value),
+            'object' => $this->jsonObject($value) !== null,
             'string' => is_string($value),
             default => false,
         };
@@ -313,7 +385,7 @@ final readonly class JsonRendererExampleRule implements GroupedRule
 
     private function typeName(mixed $value): string
     {
-        if ($this->isJsonObject($value)) {
+        if ($this->jsonObject($value) !== null) {
             return 'object';
         }
 
@@ -371,8 +443,12 @@ final readonly class JsonRendererExampleRule implements GroupedRule
         return $paths;
     }
 
-    private function finding(string $path, string $message, ?int $line = null, FindingSeverity $severity = FindingSeverity::Error): Finding
-    {
+    private function finding(
+        string $path,
+        string $message,
+        ?int $line = null,
+        FindingSeverity $severity = FindingSeverity::Error,
+    ): Finding {
         return new Finding(
             path: $this->docs->relativePath($path),
             line: $line,

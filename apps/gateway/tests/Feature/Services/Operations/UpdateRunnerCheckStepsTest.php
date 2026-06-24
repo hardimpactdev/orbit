@@ -32,21 +32,27 @@ it('emits the two check steps before the gateway phase and reports outdated node
     app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu_24-04',
-        'installed_cli' => checkStepsInstalledCliArtifact(sha256: str_repeat('c', 64)),
-    ]);
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'installed_cli' => checkStepsInstalledCliArtifact(),
-    ]);
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
-    ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => checkStepsInstalledCliArtifact(sha256: str_repeat('c', 64)),
+        ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => checkStepsInstalledCliArtifact(),
+        ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+        ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
 
@@ -70,24 +76,27 @@ it('emits the two check steps before the gateway phase and reports outdated node
     $checkFleetIndex = array_search('check-fleet-versions', $keys, true);
     $gatewayIndex = array_search('gateway', $keys, true);
 
-    expect($checkUpdatesIndex)->toBeLessThan($checkFleetIndex)
-        ->and($checkFleetIndex)->toBeLessThan($gatewayIndex);
+    expect($checkUpdatesIndex)->toBeLessThan($checkFleetIndex)->and($checkFleetIndex)->toBeLessThan($gatewayIndex);
 });
 
 it('reports all nodes current when the gateway and every workload node match the target', function (): void {
     app()->instance(UpdateRunnerPipeline::class, new CheckStepsNoopPipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu_24-04',
-        'installed_cli' => checkStepsInstalledCliArtifact(),
-    ]);
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
-    ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => checkStepsInstalledCliArtifact(),
+        ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+        ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
 
@@ -105,16 +114,20 @@ it('short-circuits when the fleet-version probe finds 0 outdated nodes', functio
     app()->instance(UpdateRunnerPipeline::class, $pipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu_24-04',
-        'installed_cli' => checkStepsInstalledCliArtifact(),
-    ]);
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
-    ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => checkStepsInstalledCliArtifact(),
+        ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+        ]);
 
     app(OperationUpdatePlanStore::class)->create($run, checkStepsSnapshot('2.0.0'));
 
@@ -122,12 +135,16 @@ it('short-circuits when the fleet-version probe finds 0 outdated nodes', functio
 
     $keys = array_map(fn (array $step): string => $step[0], checkStepsEvents($run));
 
-    expect($pipeline->gatewayUpdateCalled)->toBeFalse()
-        ->and($pipeline->workloadsUpdateCalled)->toBeFalse()
-        ->and($pipeline->fleetVerifyCalled)->toBeFalse()
-        ->and($keys)->not->toContain('gateway')
-        ->and($keys)->not->toContain('workload-nodes')
-        ->and($keys)->not->toContain('verification');
+    expect($pipeline->gatewayUpdateCalled)
+        ->toBeFalse()
+        ->and($pipeline->workloadsUpdateCalled)
+        ->toBeFalse()
+        ->and($pipeline->fleetVerifyCalled)
+        ->toBeFalse()
+        ->and($keys)
+        ->not->toContain('gateway')->and($keys)
+        ->not->toContain('workload-nodes')->and($keys)
+        ->not->toContain('verification');
 });
 
 it('does not short-circuit topology candidate manifests when the candidate CLI hash differs', function (): void {
@@ -135,16 +152,20 @@ it('does not short-circuit topology candidate manifests when the candidate CLI h
     app()->instance(UpdateRunnerPipeline::class, $pipeline);
 
     $run = checkStepsRun();
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu_24-04',
-        'installed_cli' => checkStepsInstalledCliArtifact(sha256: str_repeat('c', 64)),
-    ]);
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => checkStepsInstalledGatewayImage(),
-    ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => checkStepsInstalledCliArtifact(sha256: str_repeat('c', 64)),
+        ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => checkStepsInstalledGatewayImage(),
+        ]);
 
     app(OperationUpdatePlanStore::class)->create(
         $run,
@@ -155,17 +176,26 @@ it('does not short-circuit topology candidate manifests when the candidate CLI h
 
     $keys = array_map(fn (array $step): string => $step[0], checkStepsEvents($run));
 
-    expect($pipeline->gatewayUpdateCalled)->toBeTrue()
-        ->and($pipeline->workloadsUpdateCalled)->toBeTrue()
-        ->and($pipeline->fleetVerifyCalled)->toBeTrue()
-        ->and($keys)->toContain('gateway')
-        ->and($keys)->toContain('workload-nodes')
-        ->and($keys)->toContain('verification')
-        ->and(checkStepsEvents($run))->toContain(
+    expect($pipeline->gatewayUpdateCalled)
+        ->toBeTrue()
+        ->and($pipeline->workloadsUpdateCalled)
+        ->toBeTrue()
+        ->and($pipeline->fleetVerifyCalled)
+        ->toBeTrue()
+        ->and($keys)
+        ->toContain('gateway')
+        ->and($keys)
+        ->toContain('workload-nodes')
+        ->and($keys)
+        ->toContain('verification')
+        ->and(checkStepsEvents($run))
+        ->toContain(
             ['check-fleet-versions', 'done', 'Done: 1 outdated node found'],
         )
-        ->and(checkStepsFleetDonePayload($run)['update_targets'] ?? null)->toBe(['gateway', 'local', 'agent-1'])
-        ->and($run->refresh()->result['cli_artifacts']['linux-amd64']['url'] ?? null)->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64');
+        ->and(checkStepsFleetDonePayload($run)['update_targets'] ?? null)
+        ->toBe(['gateway', 'local', 'agent-1'])
+        ->and($run->refresh()->result['cli_artifacts']['linux-amd64']['url'] ?? null)
+        ->toBe('https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-amd64');
 });
 
 it('clears the deferred start payload from the operation result when manifest resolution fails', function (): void {
@@ -187,9 +217,12 @@ it('clears the deferred start payload from the operation result when manifest re
 
     $run->refresh();
 
-    expect($run->status)->toBe(OperationStatus::Failed)
-        ->and($run->result)->toBeNull()
-        ->and($run->error)->toMatchArray([
+    expect($run->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->result)
+        ->toBeNull()
+        ->and($run->error)
+        ->toMatchArray([
             'code' => 'update_runner_failed',
         ]);
 });
@@ -238,9 +271,13 @@ it('resolves the release manifest during check-updates when no plan was persiste
 
     $plan = OperationUpdatePlan::query()->where('operation_run_id', $run->id)->first();
 
-    expect($plan)->not->toBeNull()
-        ->and($plan->target_version)->toBe('2.0.0')
-        ->and(checkStepsEvents($run))->toContain(
+    expect($plan)
+        ->not
+        ->toBeNull()
+        ->and($plan->target_version)
+        ->toBe('2.0.0')
+        ->and(checkStepsEvents($run))
+        ->toContain(
             ['check-updates', 'running', 'Checking'],
             ['check-updates', 'done', 'Done: latest version is 2.0.0'],
             ['check-fleet-versions', 'running', 'Checking'],
@@ -268,8 +305,7 @@ it('does not short-circuit when at least one node is outdated', function (): voi
 
     $keys = array_map(fn (array $step): string => $step[0], checkStepsEvents($run));
 
-    expect($pipeline->gatewayUpdateCalled)->toBeTrue()
-        ->and($keys)->toContain('gateway');
+    expect($pipeline->gatewayUpdateCalled)->toBeTrue()->and($keys)->toContain('gateway');
 });
 
 function checkStepsRun(): OperationRun
@@ -286,7 +322,8 @@ function checkStepsRun(): OperationRun
  */
 function checkStepsEvents(OperationRun $run): array
 {
-    return $run->events()
+    return $run
+        ->events()
         ->where('event_type', 'step')
         ->get()
         ->map(fn (OperationEvent $event): array => [
@@ -302,20 +339,30 @@ function checkStepsEvents(OperationRun $run): array
  */
 function checkStepsFleetDonePayload(OperationRun $run): array
 {
-    $event = $run->events()
+    $event = $run
+        ->events()
         ->where('event_type', 'step')
         ->get()
-        ->first(fn (OperationEvent $event): bool => ($event->payload['key'] ?? null) === 'check-fleet-versions'
-            && ($event->payload['status'] ?? null) === 'done');
+        ->first(
+            fn (OperationEvent $event): bool => (
+                ($event->payload['key'] ?? null) === 'check-fleet-versions'
+                && ($event->payload['status'] ?? null) === 'done'
+            ),
+        );
 
     expect($event)->not->toBeNull();
 
     return $event->payload;
 }
 
-function checkStepsSnapshot(string $targetVersion, string $manifestSource = 'github-release'): OperationUpdatePlanSnapshot
-{
-    $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:'.$targetVersion.'@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+function checkStepsSnapshot(
+    string $targetVersion,
+    string $manifestSource = 'github-release',
+): OperationUpdatePlanSnapshot {
+    $gatewayImage =
+        'ghcr.io/hardimpactdev/orbit-gateway:'
+        .$targetVersion
+        .'@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
     $cliArtifacts = [
         'linux-amd64' => [
@@ -327,7 +374,10 @@ function checkStepsSnapshot(string $targetVersion, string $manifestSource = 'git
     ];
     $roleImages = [
         'orbit-caddy' => 'caddy:2-alpine',
-        'orbit-websocket' => 'hardimpact/orbit-reverb:'.$targetVersion.'@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+        'orbit-websocket' =>
+            'hardimpact/orbit-reverb:'
+                .$targetVersion
+                .'@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     ];
 
     return new OperationUpdatePlanSnapshot(
@@ -432,7 +482,7 @@ final class CheckStepsFakeShell implements RemoteShell
     #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        (new RemoteShellMetadata)->prologue($options['metadata'] ?? []);
+        new RemoteShellMetadata()->prologue($options['metadata'] ?? []);
 
         $version = $this->versions[$node->name] ?? '0.0.0';
 

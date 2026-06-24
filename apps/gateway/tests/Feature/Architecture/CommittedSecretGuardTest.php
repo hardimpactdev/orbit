@@ -19,9 +19,11 @@ it('does not commit Laravel app key material', function (): void {
                 return [];
             }
 
-            return preg_match('/(?:APP_KEY=|name="APP_KEY" value=")base64:[A-Za-z0-9+\/=]{20,}/', $contents) === 1
-                ? [$path]
-                : [];
+            return (
+                preg_match('/(?:APP_KEY=|name="APP_KEY" value=")base64:[A-Za-z0-9+\/=]{20,}/', $contents) === 1
+                    ? [$path]
+                    : []
+            );
         })
         ->values()
         ->all();

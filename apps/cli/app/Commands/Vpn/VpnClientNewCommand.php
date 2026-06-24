@@ -135,7 +135,7 @@ final class VpnClientNewCommand extends VpnGatewayCommand
     private function client(array $response): array
     {
         $data = $response['success']['data'] ?? null;
-        $client = is_array($data) ? ($data['client'] ?? null) : null;
+        $client = is_array($data) ? $data['client'] ?? null : null;
 
         return is_array($client) ? $client : [];
     }

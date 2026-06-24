@@ -14,7 +14,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 describe('node role caddy baseline convergence', function (): void {
-    it('converges orbit-caddy intent when a role needs caddy', function (string $role, array $settings, array $expectedPorts): void {
+    it('converges orbit-caddy intent when a role needs caddy', function (
+        string $role,
+        array $settings,
+        array $expectedPorts,
+    ): void {
         $node = todo314CaddyBaselineNode();
         $assignment = NodeRoleAssignment::factory()->for($node)->create([
             'role' => $role,
@@ -29,20 +33,34 @@ describe('node role caddy baseline convergence', function (): void {
             ->where('name', 'caddy')
             ->sole();
 
-        $container = is_array($tool->config) ? ($tool->config['container'] ?? null) : null;
+        $container = is_array($tool->config) ? $tool->config['container'] ?? null : null;
 
-        expect($tool->expected_state)->toBe('installed')
-            ->and($container)->toBeArray()
-            ->and($container['name'] ?? null)->toBe('orbit-caddy')
-            ->and($container['image'] ?? null)->toBe('caddy:2-alpine')
-            ->and($container['restart_policy'] ?? null)->toBe('unless-stopped')
-            ->and($container['network'] ?? null)->toBe('orbit-network')
-            ->and($container['published_ports'] ?? null)->toBe($expectedPorts)
-            ->and($container['extra_hosts'] ?? null)->toBe(['host.docker.internal' => 'host-gateway']);
+        expect($tool->expected_state)
+            ->toBe('installed')
+            ->and($container)
+            ->toBeArray()
+            ->and($container['name'] ?? null)
+            ->toBe('orbit-caddy')
+            ->and($container['image'] ?? null)
+            ->toBe('caddy:2-alpine')
+            ->and($container['restart_policy'] ?? null)
+            ->toBe('unless-stopped')
+            ->and($container['network'] ?? null)
+            ->toBe('orbit-network')
+            ->and($container['published_ports'] ?? null)
+            ->toBe($expectedPorts)
+            ->and($container['extra_hosts'] ?? null)
+            ->toBe(['host.docker.internal' => 'host-gateway']);
 
         $mountTargets = collect($container['mounts'] ?? [])->pluck('target')->all();
 
-        expect($mountTargets)->toContain('/etc/caddy/Caddyfile', '/etc/caddy/orbit', '/etc/caddy/sites', '/etc/orbit', '/home');
+        expect($mountTargets)->toContain(
+            '/etc/caddy/Caddyfile',
+            '/etc/caddy/orbit',
+            '/etc/caddy/sites',
+            '/etc/orbit',
+            '/home',
+        );
     })->with([
         'app-dev' => [
             NodeRoleName::AppDevelopment->value,
@@ -70,7 +88,11 @@ describe('node role caddy baseline convergence', function (): void {
         $node = todo314CaddyBaselineNode();
         $converger = app(NodeRoleBaselineConverger::class);
 
-        foreach ([NodeRoleName::Router->value, NodeRoleName::Ingress->value, NodeRoleName::AppProduction->value] as $role) {
+        foreach ([
+            NodeRoleName::Router->value,
+            NodeRoleName::Ingress->value,
+            NodeRoleName::AppProduction->value,
+        ] as $role) {
             $assignment = NodeRoleAssignment::factory()->for($node)->create([
                 'role' => $role,
                 'status' => NodeRoleStatus::Pending->value,
@@ -79,19 +101,25 @@ describe('node role caddy baseline convergence', function (): void {
             $converger->converge($node, $assignment);
         }
 
-        expect(NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'caddy')
-            ->count())->toBe(1);
+        expect(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'caddy')
+                ->count(),
+        )
+            ->toBe(1);
 
-        $container = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'caddy')
-            ->sole()
-            ->config['container'] ?? null;
+        $container =
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'caddy')
+                ->sole()
+                ->config['container'] ?? null;
 
-        expect($container)->toBeArray()
-            ->and($container['published_ports'] ?? null)->toBe(['80:80', '443:443', '443:443/udp', '10.6.0.50:8081:8081']);
+        expect($container)
+            ->toBeArray()
+            ->and($container['published_ports'] ?? null)
+            ->toBe(['80:80', '443:443', '443:443/udp', '10.6.0.50:8081:8081']);
     });
 
     it('keeps the orbit-caddy private backend port off the public socket when ingress and app-prod co-locate', function (): void {
@@ -107,11 +135,12 @@ describe('node role caddy baseline convergence', function (): void {
             $converger->converge($node, $assignment);
         }
 
-        $container = NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'caddy')
-            ->sole()
-            ->config['container'] ?? null;
+        $container =
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'caddy')
+                ->sole()
+                ->config['container'] ?? null;
 
         expect($container)->toBeArray();
 

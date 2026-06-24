@@ -34,8 +34,12 @@ final class WorkspaceStepDeleteController implements Loggable
         private readonly RemoveWorkspaceStep $removeWorkspaceStep,
     ) {}
 
-    public function __invoke(string $phase, int $step, Request $request, WorkspaceStepListPayload $payload): JsonResponse
-    {
+    public function __invoke(
+        string $phase,
+        int $step,
+        Request $request,
+        WorkspaceStepListPayload $payload,
+    ): JsonResponse {
         $phaseEnum = WorkspaceLifecyclePhase::tryFrom($phase);
 
         if (! $phaseEnum instanceof WorkspaceLifecyclePhase) {
@@ -64,7 +68,7 @@ final class WorkspaceStepDeleteController implements Loggable
 
         $app = $appSlug !== null
             ? $this->resolveAppBySlug($appSlug)
-            : $this->resolveAppByPath((string) $path);
+            : $this->resolveAppByPath($path);
 
         if (! $app instanceof App) {
             return $this->appNotFound($appSlug ?? (string) $path);
@@ -152,14 +156,15 @@ final class WorkspaceStepDeleteController implements Loggable
                 $workspacePath = rtrim($workspace->path, '/');
 
                 return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
-            })?->app;
+            })
+            ?->app;
     }
 
     private function stringValue(Request $request, string $key): ?string
     {
         $value = $request->query($key, $request->input($key));
 
-        return is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+        return is_scalar($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     /**

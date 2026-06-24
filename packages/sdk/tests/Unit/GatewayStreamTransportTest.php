@@ -23,9 +23,7 @@ afterEach(function (): void {
 
 it('invokes idle callbacks while waiting for the next stream frame', function (): void {
     $stream = new IdleThenFramesStream(
-        "event: complete\n"
-        .'data: {"exit_code":0}'
-        ."\n\n",
+        "event: complete\n".'data: {"exit_code":0}'."\n\n",
     );
     $idleCount = 0;
 
@@ -34,7 +32,7 @@ it('invokes idle callbacks while waiting for the next stream frame', function ()
     ]);
 
     $connector = new GatewayConnector(baseUrl: 'https://gateway.test', caPemPath: null);
-    $exitCode = (new GatewayStreamTransport($connector))->events(
+    $exitCode = new GatewayStreamTransport($connector)->events(
         request: new GenericGatewayStreamRequest('/api/stream', [], 'post'),
         onEvent: fn () => null,
         unavailableMessage: 'Gateway stream unavailable.',
@@ -45,8 +43,7 @@ it('invokes idle callbacks while waiting for the next stream frame', function ()
         idleIntervalMicroseconds: 1,
     );
 
-    expect($exitCode)->toBe(0)
-        ->and($idleCount)->toBeGreaterThan(0);
+    expect($exitCode)->toBe(0)->and($idleCount)->toBeGreaterThan(0);
 });
 
 final class SdkGatewayStreamMockResponse extends GatewayMockResponse
@@ -57,8 +54,10 @@ final class SdkGatewayStreamMockResponse extends GatewayMockResponse
         parent::__construct('', 200, ['Content-Type' => 'text/event-stream']);
     }
 
-    public function createPsrResponse(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): ResponseInterface
-    {
+    public function createPsrResponse(
+        ResponseFactoryInterface $responseFactory,
+        StreamFactoryInterface $streamFactory,
+    ): ResponseInterface {
         return $responseFactory
             ->createResponse(200)
             ->withHeader('Content-Type', 'text/event-stream')

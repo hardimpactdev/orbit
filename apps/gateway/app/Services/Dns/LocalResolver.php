@@ -138,7 +138,9 @@ class LocalResolver
         File::put($this->configPath($tld), "address=/{$tld}/{$target}\n");
 
         $resolverResult = Process::timeout(10)->run(
-            "sudo mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null'
+            "sudo mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo tee "
+            .escapeshellarg("/etc/resolver/{$tld}")
+            .' > /dev/null',
         );
 
         if (! $resolverResult->successful()) {

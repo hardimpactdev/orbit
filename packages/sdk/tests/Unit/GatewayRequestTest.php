@@ -16,8 +16,7 @@ use Saloon\Http\Response;
 uses(TestCase::class);
 function makeProbeRequest(): GatewayRequest
 {
-    return new class extends GatewayRequest
-    {
+    return new class extends GatewayRequest {
         protected Method $method = Method::GET;
 
         public function resolveEndpoint(): string

@@ -32,12 +32,17 @@ final readonly class EditProcess
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
 
-        $process = $context->ownerProcesses()
+        $process = $context
+            ->ownerProcesses()
             ->where('name', $name)
             ->first();
 
         if (! $process instanceof Process) {
-            throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
+            throw new GatewayApiException(
+                "Process '{$name}' not found for {$context->label()}.",
+                'process.not_found',
+                $context->errorMeta($name),
+            );
         }
 
         $changed = [];
@@ -103,8 +108,13 @@ final readonly class EditProcess
      *     applied_runtime_units: list<array{name: string, context: string}>
      * }
      */
-    private function applyRuntimeUnits(ProcessOwnerContext $context, App $app, Process $process, array $runtimeUnits, ProcessRuntime $previousRuntime): array
-    {
+    private function applyRuntimeUnits(
+        ProcessOwnerContext $context,
+        App $app,
+        Process $process,
+        array $runtimeUnits,
+        ProcessRuntime $previousRuntime,
+    ): array {
         $warnings = [];
         $appliedRuntimeUnits = [];
         $driver = $this->runtimeDrivers->forProcess($process);

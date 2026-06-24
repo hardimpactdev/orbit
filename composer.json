@@ -150,20 +150,61 @@
             "set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:prepare-warm-topology @additional_args"
         ],
         "analyse": [
-            "bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M",
-            "cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M",
-            "cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M",
-            "cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M",
-            "cd packages/sdk && vendor/bin/phpstan analyse --memory-limit=512M",
-            "cd apps/e2e && vendor/bin/phpstan analyse --memory-limit=512M"
+            "Composer\\Config::disableProcessTimeout",
+            "bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium",
+            "cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium",
+            "cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium",
+            "bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium",
+            "cd packages/core && vendor/bin/mago analyze src --reporting-format=medium",
+            "cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium",
+            "cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium"
         ],
         "format": [
-            "bin/orbit-gateway-vendor-bin pint",
-            "cd apps/cli && vendor/bin/pint",
-            "cd apps/docs && vendor/bin/pint",
-            "cd packages/core && vendor/bin/pint",
-            "cd packages/sdk && vendor/bin/pint",
-            "cd apps/e2e && vendor/bin/pint"
+            "bin/orbit-gateway-vendor-bin mago format",
+            "cd apps/cli && vendor/bin/mago format",
+            "cd apps/docs && vendor/bin/mago format",
+            "bin/orbit-gateway-vendor-bin mago --workspace ../reverb format",
+            "cd packages/core && vendor/bin/mago format",
+            "cd packages/sdk && vendor/bin/mago format",
+            "cd apps/e2e && vendor/bin/mago format"
+        ],
+        "mago:analyze": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium",
+            "cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium",
+            "cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium",
+            "bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium",
+            "cd packages/core && vendor/bin/mago analyze src --reporting-format=medium",
+            "cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium",
+            "cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium"
+        ],
+        "mago:lint": [
+            "Composer\\Config::disableProcessTimeout",
+            "bin/orbit-gateway-vendor-bin mago lint --reporting-format=medium",
+            "cd apps/cli && vendor/bin/mago lint --reporting-format=medium",
+            "cd apps/docs && vendor/bin/mago lint --reporting-format=medium",
+            "bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint --reporting-format=medium",
+            "cd packages/core && vendor/bin/mago lint --reporting-format=medium",
+            "cd packages/sdk && vendor/bin/mago lint --reporting-format=medium",
+            "cd apps/e2e && vendor/bin/mago lint --reporting-format=medium"
+        ],
+        "mago:format": [
+            "bin/orbit-gateway-vendor-bin mago format",
+            "cd apps/cli && vendor/bin/mago format",
+            "cd apps/docs && vendor/bin/mago format",
+            "bin/orbit-gateway-vendor-bin mago --workspace ../reverb format",
+            "cd packages/core && vendor/bin/mago format",
+            "cd packages/sdk && vendor/bin/mago format",
+            "cd apps/e2e && vendor/bin/mago format"
+        ],
+        "mago:format:check": [
+            "bin/orbit-gateway-vendor-bin mago format --check",
+            "cd apps/cli && vendor/bin/mago format --check",
+            "cd apps/docs && vendor/bin/mago format --check",
+            "bin/orbit-gateway-vendor-bin mago --workspace ../reverb format --check",
+            "cd packages/core && vendor/bin/mago format --check",
+            "cd packages/sdk && vendor/bin/mago format --check",
+            "cd apps/e2e && vendor/bin/mago format --check"
         ],
         "rector": [
             "bin/orbit-gateway-vendor-bin rector process",

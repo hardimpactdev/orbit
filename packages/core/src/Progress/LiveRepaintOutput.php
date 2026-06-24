@@ -36,7 +36,7 @@ final class LiveRepaintOutput
             }
         }
 
-        if (defined('STDOUT') && is_resource(STDOUT)) {
+        if (defined('STDOUT')) {
             return STDOUT;
         }
 

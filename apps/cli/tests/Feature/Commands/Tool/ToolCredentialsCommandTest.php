@@ -33,15 +33,20 @@ describe('tool:credentials', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/tools/openclaw/credentials')
-                && str_contains($url, 'node=app-1');
+                && str_contains($url, 'node=app-1')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['fields']['password'])->toBe('gateway-managed-secret')
-            ->and($output)->not->toContain('operation_token')
-            ->and($output)->not->toContain('executor_secret');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['credentials']['fields']['password'])
+            ->toBe('gateway-managed-secret')
+            ->and($output)
+            ->not->toContain('operation_token')->and($output)
+            ->not->toContain('executor_secret');
     });
 
     it('does not emit extra sensitive gateway envelope fields in JSON mode', function (): void {
@@ -66,11 +71,13 @@ describe('tool:credentials', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data'])->toHaveKey('credentials')
-            ->and($decoded['success']['data'])->not->toHaveKey('operation_token')
-            ->and($decoded['success']['meta'])->toBe([])
-            ->and($output)->not->toContain('must-not-leak');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data'])
+            ->toHaveKey('credentials')
+            ->and($decoded['success']['data'])
+            ->not->toHaveKey('operation_token')->and($decoded['success']['meta'])->toBe([])->and($output)
+            ->not->toContain('must-not-leak');
     });
 
     it('renders human credential fields from the gateway payload only', function (): void {
@@ -90,11 +97,16 @@ describe('tool:credentials', function (): void {
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Credentials for openclaw on app-1:')
-            ->and($output)->toContain('host: orbit.test')
-            ->and($output)->toContain('password: gateway-managed-secret')
-            ->and($output)->not->toContain('operation_token');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Credentials for openclaw on app-1:')
+            ->and($output)
+            ->toContain('host: orbit.test')
+            ->and($output)
+            ->toContain('password: gateway-managed-secret')
+            ->and($output)
+            ->not->toContain('operation_token');
     });
 
     it('uses the local default node when no target option is provided', function (): void {
@@ -123,12 +135,10 @@ describe('tool:credentials', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/tools/openclaw/credentials')
-                && str_contains($url, 'node=default-app');
+            return str_contains($url, '/api/tools/openclaw/credentials') && str_contains($url, 'node=default-app');
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['node'])->toBe('default-app');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['credentials']['node'])->toBe('default-app');
 
         @unlink($store->path());
     });
@@ -186,14 +196,15 @@ describe('tool:credentials', function (): void {
 
         Http::assertSentCount(2);
 
-        expect($exitCode)->toBe(0)
-            ->and($tester->getDisplay())->toContain('gateway-managed-secret');
+        expect($exitCode)->toBe(0)->and($tester->getDisplay())->toContain('gateway-managed-secret');
 
         @unlink($store->path());
     });
 
     it('uses the local default node before prompting for an omitted interactive tool', function (): void {
-        $store = new OrbitConfigStore(overridePath: base_path('tests/.tmp-tool-credentials-interactive-default-config.json'));
+        $store = new OrbitConfigStore(overridePath: base_path(
+            'tests/.tmp-tool-credentials-interactive-default-config.json',
+        ));
         @unlink($store->path());
         $store->save(['defaults' => ['node' => 'default-app', 'profile' => null]]);
         app()->instance(OrbitConfigStore::class, $store);
@@ -250,8 +261,7 @@ describe('tool:credentials', function (): void {
 
         Http::assertSentCount(2);
 
-        expect($exitCode)->toBe(0)
-            ->and($tester->getDisplay())->toContain('gateway-managed-secret');
+        expect($exitCode)->toBe(0)->and($tester->getDisplay())->toContain('gateway-managed-secret');
 
         @unlink($store->path());
     });
@@ -265,9 +275,12 @@ describe('tool:credentials', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('tool');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('tool');
     });
 
     it('passes through authorization failures from the gateway without remapping them', function (): void {
@@ -281,8 +294,7 @@ describe('tool:credentials', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('authorization_failed');
     });
 
     it('passes through unsupported credential reads from the gateway', function (): void {
@@ -299,8 +311,7 @@ describe('tool:credentials', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('tool.unsupported_action');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('tool.unsupported_action');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -314,7 +325,6 @@ describe('tool:credentials', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

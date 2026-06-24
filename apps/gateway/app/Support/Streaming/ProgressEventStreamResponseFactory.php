@@ -20,25 +20,29 @@ final readonly class ProgressEventStreamResponseFactory
      */
     public function make(callable $streamer): StreamedResponse
     {
-        return new StreamedResponse(function () use ($streamer): void {
-            $emitter = new ProgressEventStreamEmitter($this->sapi);
+        return new StreamedResponse(
+            function () use ($streamer): void {
+                $emitter = new ProgressEventStreamEmitter($this->sapi);
 
-            app()->instance(ProgressReporter::class, new SseProgressReporter($emitter));
-            $emitter->bufferingPrelude();
+                app()->instance(ProgressReporter::class, new SseProgressReporter($emitter));
+                $emitter->bufferingPrelude();
 
-            try {
-                $streamer($emitter);
-            } catch (Throwable $e) {
-                Log::error('Progress stream crashed: '.$e->getMessage(), ['exception' => $e]);
-                $emitter->error($e->getMessage());
-            } finally {
-                app()->instance(ProgressReporter::class, new NullProgressReporter);
-            }
-        }, 200, [
-            'Content-Type' => 'text/event-stream',
-            'Cache-Control' => 'no-cache',
-            'Connection' => 'keep-alive',
-            'X-Accel-Buffering' => 'no',
-        ]);
+                try {
+                    $streamer($emitter);
+                } catch (Throwable $e) {
+                    Log::error('Progress stream crashed: '.$e->getMessage(), ['exception' => $e]);
+                    $emitter->error($e->getMessage());
+                } finally {
+                    app()->instance(ProgressReporter::class, new NullProgressReporter);
+                }
+            },
+            200,
+            [
+                'Content-Type' => 'text/event-stream',
+                'Cache-Control' => 'no-cache',
+                'Connection' => 'keep-alive',
+                'X-Accel-Buffering' => 'no',
+            ],
+        );
     }
 }

@@ -55,28 +55,41 @@ describe('node role assignments', function (): void {
 
         $assignments = app(NodeRoleAssignments::class);
 
-        expect($assignments->activeAppHostNodeIds())->toBe([
-            $developmentNode->id,
-            $productionNode->id,
-        ])
-            ->and($assignments->activeToolHostNodeIds())->toBe([
+        expect($assignments->activeAppHostNodeIds())
+            ->toBe([
+                $developmentNode->id,
+                $productionNode->id,
+            ])
+            ->and($assignments->activeToolHostNodeIds())
+            ->toBe([
                 $developmentNode->id,
                 $productionNode->id,
                 $databaseNode->id,
                 $agentNode->id,
                 $metricsNode->id,
             ])
-            ->and($assignments->nodeHasActiveAppHostRole($developmentNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveAppHostRole($productionNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveAppHostRole($unassignedAppNode))->toBeFalse()
-            ->and($assignments->nodeHasActiveAppHostRole($pendingAppNode))->toBeFalse()
-            ->and($assignments->nodeHasActiveAppHostRole($databaseNode))->toBeFalse()
-            ->and($assignments->nodeHasActiveToolHostRole($databaseNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveToolHostRole($agentNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveToolHostRole($metricsNode))->toBeTrue()
-            ->and($assignments->activeAppHostEnvironment($developmentNode))->toBe('development')
-            ->and($assignments->activeAppHostEnvironment($productionNode))->toBe('production')
-            ->and($assignments->activeAppHostEnvironment($unassignedAppNode))->toBeNull();
+            ->and($assignments->nodeHasActiveAppHostRole($developmentNode))
+            ->toBeTrue()
+            ->and($assignments->nodeHasActiveAppHostRole($productionNode))
+            ->toBeTrue()
+            ->and($assignments->nodeHasActiveAppHostRole($unassignedAppNode))
+            ->toBeFalse()
+            ->and($assignments->nodeHasActiveAppHostRole($pendingAppNode))
+            ->toBeFalse()
+            ->and($assignments->nodeHasActiveAppHostRole($databaseNode))
+            ->toBeFalse()
+            ->and($assignments->nodeHasActiveToolHostRole($databaseNode))
+            ->toBeTrue()
+            ->and($assignments->nodeHasActiveToolHostRole($agentNode))
+            ->toBeTrue()
+            ->and($assignments->nodeHasActiveToolHostRole($metricsNode))
+            ->toBeTrue()
+            ->and($assignments->activeAppHostEnvironment($developmentNode))
+            ->toBe('development')
+            ->and($assignments->activeAppHostEnvironment($productionNode))
+            ->toBe('production')
+            ->and($assignments->activeAppHostEnvironment($unassignedAppNode))
+            ->toBeNull();
     });
 
     it('only treats active nodes with active gateway assignments as gateways', function (): void {
@@ -98,10 +111,14 @@ describe('node role assignments', function (): void {
 
         $assignments = app(NodeRoleAssignments::class);
 
-        expect($assignments->nodeIsGateway($activeUnassignedGateway))->toBeFalse()
-            ->and($assignments->nodeIsGateway($inactiveUnassignedGateway))->toBeFalse()
-            ->and($assignments->nodeIsGateway($activeAssignedGateway))->toBeTrue()
-            ->and($assignments->nodeIsGateway($inactiveAssignedGateway))->toBeFalse();
+        expect($assignments->nodeIsGateway($activeUnassignedGateway))
+            ->toBeFalse()
+            ->and($assignments->nodeIsGateway($inactiveUnassignedGateway))
+            ->toBeFalse()
+            ->and($assignments->nodeIsGateway($activeAssignedGateway))
+            ->toBeTrue()
+            ->and($assignments->nodeIsGateway($inactiveAssignedGateway))
+            ->toBeFalse();
     });
 
     it('discovers the active vpn node from role assignments', function (): void {
@@ -128,11 +145,16 @@ describe('node role assignments', function (): void {
 
         $assignments = app(NodeRoleAssignments::class);
 
-        expect($assignments->nodeHasActiveVpnRole($activeVpnNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveVpnRole($inactiveVpnNode))->toBeTrue()
-            ->and($assignments->nodeHasActiveVpnRole($pendingVpnNode))->toBeFalse()
-            ->and($assignments->nodeHasActiveVpnRole($unassignedVpnNode))->toBeFalse()
-            ->and($assignments->activeVpnNodeQuery()->pluck('id')->all())->toBe([$activeVpnNode->id]);
+        expect($assignments->nodeHasActiveVpnRole($activeVpnNode))
+            ->toBeTrue()
+            ->and($assignments->nodeHasActiveVpnRole($inactiveVpnNode))
+            ->toBeTrue()
+            ->and($assignments->nodeHasActiveVpnRole($pendingVpnNode))
+            ->toBeFalse()
+            ->and($assignments->nodeHasActiveVpnRole($unassignedVpnNode))
+            ->toBeFalse()
+            ->and($assignments->activeVpnNodeQuery()->pluck('id')->all())
+            ->toBe([$activeVpnNode->id]);
     });
 
     it('labels effective roles from active assignments', function (): void {
@@ -166,10 +188,15 @@ describe('node role assignments', function (): void {
 
         $assignments = app(NodeRoleAssignments::class);
 
-        expect($assignments->assignmentRoleLabel($gateway))->toBe('gateway')
-            ->and($assignments->assignmentRoleLabel($development))->toBe('app-dev')
-            ->and($assignments->assignmentRoleLabel($database))->toBe('database')
-            ->and($assignments->assignmentRoleLabel($metrics))->toBe('metrics')
-            ->and($assignments->assignmentRoleLabel($control))->toBe('operator');
+        expect($assignments->assignmentRoleLabel($gateway))
+            ->toBe('gateway')
+            ->and($assignments->assignmentRoleLabel($development))
+            ->toBe('app-dev')
+            ->and($assignments->assignmentRoleLabel($database))
+            ->toBe('database')
+            ->and($assignments->assignmentRoleLabel($metrics))
+            ->toBe('metrics')
+            ->and($assignments->assignmentRoleLabel($control))
+            ->toBe('operator');
     });
 });

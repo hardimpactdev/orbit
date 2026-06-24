@@ -78,7 +78,11 @@ final readonly class DatabaseConnectionRestorer
             return (string) file_get_contents($path);
         }
 
-        $result = $this->remoteShell->run($this->targetNode($target), sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), ['throw' => false]);
+        $result = $this->remoteShell->run(
+            $this->targetNode($target),
+            sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)),
+            ['throw' => false],
+        );
 
         return $result->successful() ? $result->stdout : '';
     }
@@ -109,7 +113,11 @@ final readonly class DatabaseConnectionRestorer
             return $target->app->node;
         }
 
-        if ($target->workspace instanceof Workspace && $target->workspace->app instanceof App && $target->workspace->app->node instanceof Node) {
+        if (
+            $target->workspace instanceof Workspace
+            && $target->workspace->app instanceof App
+            && $target->workspace->app->node instanceof Node
+        ) {
             return $target->workspace->app->node;
         }
 

@@ -9,7 +9,9 @@ use Illuminate\Support\Facades\File;
 
 class DevelopmentDnsMappingProbe
 {
-    public function __construct(private readonly ?DevelopmentDnsMappingEnactor $enactor = null) {}
+    public function __construct(
+        private readonly ?DevelopmentDnsMappingEnactor $enactor = null,
+    ) {}
 
     /**
      * @return array{

@@ -28,21 +28,22 @@ it('updates a database connection from the operator node through the gateway api
 
         $slugValue = var_export($slug, true);
         $seedPhp = <<<PHP
-\$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-\\App\\Models\\DatabaseConnection::query()->updateOrCreate(
-    ['slug' => {$slugValue}],
-    [
-        'node_id' => \$node->id,
-        'driver' => 'sqlite',
-        'path' => '/srv/docs/database.sqlite',
-    ],
-);
-echo 'seeded';
-PHP;
+            \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+            \\App\\Models\\DatabaseConnection::query()->updateOrCreate(
+                ['slug' => {$slugValue}],
+                [
+                    'node_id' => \$node->id,
+                    'driver' => 'sqlite',
+                    'path' => '/srv/docs/database.sqlite',
+                ],
+            );
+            echo 'seeded';
+            PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
@@ -59,8 +60,10 @@ PHP;
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['connection']['slug'])->toBe($updatedSlug);
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload['success']['data']['connection']['slug'])
+            ->toBe($updatedSlug);
     } finally {
         $updatedSlugValue = var_export($updatedSlug, true);
         $slugValue = var_export($slug, true);
@@ -68,7 +71,8 @@ PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

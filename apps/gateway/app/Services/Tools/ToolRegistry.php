@@ -28,18 +28,27 @@ final readonly class ToolRegistry
         return NodeTool::query()
             ->with('node')
             ->when(
-                ! ($targetNode instanceof Node),
-                fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $this->visibleManagedToolNodeQuery($query)),
+                ! $targetNode instanceof Node,
+                fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $this->visibleManagedToolNodeQuery(
+                    $query,
+                )),
             )
-            ->when($targetNode instanceof Node, fn (Builder $query): Builder => $query->where('node_id', $targetNode->id))
+            ->when($targetNode instanceof Node, fn (Builder $query): Builder => $query->where(
+                'node_id',
+                $targetNode?->id,
+            ))
             ->get()
-            ->sort(fn (NodeTool $first, NodeTool $second): int => [
-                mb_strtolower((string) $first->node?->name),
-                mb_strtolower($first->name),
-            ] <=> [
-                mb_strtolower((string) $second->node?->name),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (NodeTool $first, NodeTool $second): int => (
+                    [
+                        mb_strtolower((string) $first->node?->name),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        mb_strtolower((string) $second->node?->name),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->values();
     }
 
@@ -88,7 +97,11 @@ final readonly class ToolRegistry
             $nodeFilter = $this->resolveNode($node);
 
             if (! $nodeFilter instanceof Node) {
-                return ToolRegistryFailure::validation('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
+                return ToolRegistryFailure::validation(
+                    'node',
+                    $node,
+                    "Invalid value for --node: '{$node}'. Expected a visible tool node name.",
+                );
             }
         }
 
@@ -96,7 +109,11 @@ final readonly class ToolRegistry
             $appNode = $this->resolveAppNode($app);
 
             if (! $appNode instanceof Node) {
-                return ToolRegistryFailure::validation('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name, domain, or app.node-tld selector.");
+                return ToolRegistryFailure::validation(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. Expected a visible app name, domain, or app.node-tld selector.",
+                );
             }
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
@@ -130,7 +147,11 @@ final readonly class ToolRegistry
             return $targetNode;
         }
 
-        return ToolRegistryFailure::validation('target', '', 'A node or app target is required. Provide --node or --app.');
+        return ToolRegistryFailure::validation(
+            'target',
+            '',
+            'A node or app target is required. Provide --node or --app.',
+        );
     }
 
     private function resolveNodeFilter(?string $node, ?string $app): ?Node
@@ -213,7 +234,8 @@ final readonly class ToolRegistry
      */
     private function gatewayNodeIds(): array
     {
-        return $this->nodeRoleAssignments->activeGatewayNodeQuery()
+        return $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
             ->pluck('id')
             ->map(fn (mixed $nodeId): int => (int) $nodeId)
             ->all();

@@ -24,9 +24,13 @@ final class ToolUpdateCommand extends ToolGatewayCommand
         $version = $this->stringOption('expected-version');
 
         if ($tool === null && $version !== null) {
-            return $this->failValidation('expected_version', 'The --expected-version option requires a tool argument.', [
-                'reason' => 'missing_tool',
-            ]);
+            return $this->failValidation(
+                'expected_version',
+                'The --expected-version option requires a tool argument.',
+                [
+                    'reason' => 'missing_tool',
+                ],
+            );
         }
 
         $payload = $this->toolTargetPayload();

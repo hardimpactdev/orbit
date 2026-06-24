@@ -25,12 +25,12 @@ describe('DatabaseConnectionRestorer', function (): void {
         $path = storage_path('framework/testing/database-restorer-app');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', <<<'ENV'
-# Existing comment
-APP_NAME=Docs
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-KEEP_ME=yes
-ENV);
+            # Existing comment
+            APP_NAME=Docs
+            DB_CONNECTION=mysql
+            DB_HOST=127.0.0.1
+            KEEP_ME=yes
+            ENV);
 
         $app = App::factory()->create([
             'node_id' => $node->id,
@@ -44,14 +44,17 @@ ENV);
             'username' => 'orbit',
             'credentials' => ['password' => 'secret'],
         ]);
-        $target = DatabaseConnectionTarget::factory()->forApp($app)->create([
-            'database_connection_id' => $connection->id,
-            'env_prefix' => 'DB',
-        ]);
+        $target = DatabaseConnectionTarget::factory()
+            ->forApp($app)
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
 
         app(DatabaseConnectionRestorer::class)->restore($target);
 
-        expect(File::get($path.'/.env'))->toContain('# Existing comment')
+        expect(File::get($path.'/.env'))
+            ->toContain('# Existing comment')
             ->toContain('APP_NAME=Docs')
             ->toContain('KEEP_ME=yes')
             ->toContain('DB_CONNECTION=pgsql')
@@ -63,11 +66,13 @@ ENV);
     });
 
     it('writes managed docker mysql service aliases on the same node as the app target', function (): void {
-        $node = Node::factory()->gateway()->create([
-            'name' => 'beast',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.7',
-        ]);
+        $node = Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'beast',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
         $path = storage_path('framework/testing/database-restorer-managed-docker-mysql-alias');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=10.6.0.7\nDB_PORT=3308\n");
@@ -77,25 +82,27 @@ ENV);
             'name' => 'dlf-leden',
             'path' => $path,
         ]);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'dlf-leden-mysql',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'service' => 'mysql',
-                'version' => '8.4',
-                'endpoint' => [
-                    'host' => '10.6.0.7',
-                    'port' => 3308,
-                ],
-                'ports' => [
-                    [
-                        'published' => 3308,
-                        'target' => 3306,
-                        'protocol' => 'tcp',
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'dlf-leden-mysql',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'version' => '8.4',
+                    'endpoint' => [
+                        'host' => '10.6.0.7',
+                        'port' => 3308,
+                    ],
+                    'ports' => [
+                        [
+                            'published' => 3308,
+                            'target' => 3306,
+                            'protocol' => 'tcp',
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $node->id,
             'driver' => 'mysql',
@@ -105,10 +112,12 @@ ENV);
             'username' => 'dlf_leden',
             'credentials' => ['password' => 'secret'],
         ]);
-        $target = DatabaseConnectionTarget::factory()->forApp($app)->create([
-            'database_connection_id' => $connection->id,
-            'env_prefix' => 'DB',
-        ]);
+        $target = DatabaseConnectionTarget::factory()
+            ->forApp($app)
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
 
         app(DatabaseConnectionRestorer::class)->restore($target);
 
@@ -121,10 +130,12 @@ ENV);
 
     it('writes managed database hosts as the owner node WireGuard service address', function (): void {
         $appNode = Node::factory()->gateway()->create(['status' => 'active']);
-        $databaseNode = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'wireguard_address' => '10.6.0.7',
-        ]);
+        $databaseNode = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'wireguard_address' => '10.6.0.7',
+            ]);
         $path = storage_path('framework/testing/database-restorer-managed-host');
         File::ensureDirectoryExists($path);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=localhost\n");
@@ -142,10 +153,12 @@ ENV);
             'username' => 'orbit',
             'credentials' => ['password' => 'secret'],
         ]);
-        $target = DatabaseConnectionTarget::factory()->forApp($app)->create([
-            'database_connection_id' => $connection->id,
-            'env_prefix' => 'DB',
-        ]);
+        $target = DatabaseConnectionTarget::factory()
+            ->forApp($app)
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
 
         app(DatabaseConnectionRestorer::class)->restore($target);
 
@@ -157,16 +170,19 @@ ENV);
 
     it('writes remote managed database env through base64-safe transport', function (): void {
         $node = Node::factory()->appDev()->create(['status' => 'active']);
-        $databaseNode = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'wireguard_address' => '10.6.0.7',
-        ]);
+        $databaseNode = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'wireguard_address' => '10.6.0.7',
+            ]);
         $app = App::factory()->create(['node_id' => $node->id, 'name' => 'docs']);
         $workspace = Workspace::factory()->create([
             'app_id' => $app->id,
             'name' => 'feature',
             'path' => '/srv/docs/.worktrees/feature',
         ]);
+        $credentialValue = "ORBIT_ENV\"#=\nline-two";
         $connection = DatabaseConnection::factory()->create([
             'node_id' => $databaseNode->id,
             'driver' => 'pgsql',
@@ -174,12 +190,14 @@ ENV);
             'port' => 5432,
             'database' => 'docs',
             'username' => 'orbit',
-            'credentials' => ['password' => "ORBIT_ENV\"#=\nsecret"],
+            'credentials' => ['password' => $credentialValue],
         ]);
-        $target = DatabaseConnectionTarget::factory()->forWorkspace($workspace)->create([
-            'database_connection_id' => $connection->id,
-            'env_prefix' => 'DB',
-        ]);
+        $target = DatabaseConnectionTarget::factory()
+            ->forWorkspace($workspace)
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
         $shell = new DatabaseConnectionRestorerRemoteShell([
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -191,13 +209,16 @@ ENV);
         preg_match("/printf %s '([^']+)' \\| base64 -d/", $shell->scripts[1], $matches);
         $written = base64_decode($matches[1] ?? '', strict: true);
 
-        expect($shell->scripts)->toHaveCount(2)
-            ->and($shell->scripts[1])->not->toContain("ORBIT_ENV\"#=\nsecret")
-            ->and($shell->scripts[1])->toContain('base64 -d')
-            ->and($shell->scripts[1])->toContain('/srv/docs/.worktrees/feature/.env')
-            ->and($written)->toContain('DB_HOST=10.6.0.7')
-            ->and($written)->not->toContain('DB_HOST=postgres.orbit')
-            ->and($written)->not->toContain('DB_HOST=127.0.0.1');
+        expect($shell->scripts)
+            ->toHaveCount(2)
+            ->and($shell->scripts[1])
+            ->not->toContain($credentialValue)->and($shell->scripts[1])->toContain('base64 -d')->and(
+                $shell->scripts[1],
+            )->toContain('/srv/docs/.worktrees/feature/.env')->and($written)->toContain('DB_HOST=10.6.0.7')->and(
+                $written,
+            )
+            ->not->toContain('DB_HOST=postgres.orbit')->and($written)
+            ->not->toContain('DB_HOST=127.0.0.1');
     });
 });
 
@@ -211,7 +232,9 @@ final class DatabaseConnectionRestorerRemoteShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

@@ -26,7 +26,13 @@ final readonly class OperationEventStreamController
         $pollMicroseconds = $this->pollMicroseconds($request);
         $maxIdlePolls = $this->maxIdlePolls($request);
 
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($streamer, $operationRun, $lastSequence, $pollMicroseconds, $maxIdlePolls): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use (
+            $streamer,
+            $operationRun,
+            $lastSequence,
+            $pollMicroseconds,
+            $maxIdlePolls,
+        ): void {
             foreach ($streamer->follow($operationRun, $lastSequence, $pollMicroseconds, $maxIdlePolls) as $event) {
                 if ($event === null) {
                     $events->heartbeat();
@@ -45,12 +51,12 @@ final readonly class OperationEventStreamController
 
         if ($value === null) {
             $queryValue = $request->query('last_event_id');
-            $value = is_scalar($queryValue) ? (string) $queryValue : null;
+            $value = is_scalar($queryValue) ? $queryValue : null;
         }
 
         if ($value === null) {
             $queryValue = $request->query('since');
-            $value = is_scalar($queryValue) ? (string) $queryValue : null;
+            $value = is_scalar($queryValue) ? $queryValue : null;
         }
 
         if (! is_string($value)) {
@@ -72,7 +78,7 @@ final readonly class OperationEventStreamController
     {
         $value = $request->query('poll_microseconds');
 
-        if (! is_scalar($value) || ! ctype_digit((string) $value)) {
+        if (! is_scalar($value) || ! ctype_digit($value)) {
             return 500_000;
         }
 
@@ -87,7 +93,7 @@ final readonly class OperationEventStreamController
 
         $value = $request->query('max_idle_polls');
 
-        if (! is_scalar($value) || ! ctype_digit((string) $value)) {
+        if (! is_scalar($value) || ! ctype_digit($value)) {
             return null;
         }
 

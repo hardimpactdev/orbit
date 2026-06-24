@@ -19,8 +19,7 @@ beforeEach(function (): void {
     /** @var OperationResultRegistry $registry */
     $registry = app(OperationResultRegistry::class);
 
-    $registry->register(new class implements OperationResultContract
-    {
+    $registry->register(new class implements OperationResultContract {
         public function operationType(): string
         {
             return 'workspace.setup';
@@ -65,7 +64,8 @@ describe('ResultBoundaryRedactionPolicy', function (): void {
                     'password' => 'leak',
                 ],
             ],
-        ]))->toThrow(OperationPayloadRejected::class, "'nested.inner.password'");
+        ]))
+            ->toThrow(OperationPayloadRejected::class, "'nested.inner.password'");
     });
 
     it('rejects payloads whose leaf string values contain PEM blocks', function (): void {
@@ -103,18 +103,21 @@ describe('ResultBoundaryRedactionPolicy', function (): void {
     it('exposes a forbidden-key check helper', function (): void {
         $policy = new ResultBoundaryRedactionPolicy;
 
-        expect($policy->isForbiddenKey('access_token'))->toBeTrue()
-            ->and($policy->isForbiddenKey('My_Password'))->toBeTrue()
-            ->and($policy->isForbiddenKey('host_path'))->toBeFalse()
-            ->and($policy->isForbiddenKey('workspace_id'))->toBeFalse();
+        expect($policy->isForbiddenKey('access_token'))
+            ->toBeTrue()
+            ->and($policy->isForbiddenKey('My_Password'))
+            ->toBeTrue()
+            ->and($policy->isForbiddenKey('host_path'))
+            ->toBeFalse()
+            ->and($policy->isForbiddenKey('workspace_id'))
+            ->toBeFalse();
     });
 
     it('exposes a PEM-block check helper', function (): void {
         $policy = new ResultBoundaryRedactionPolicy;
         $pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----";
 
-        expect($policy->valueContainsPem($pem))->toBeTrue()
-            ->and($policy->valueContainsPem('plain'))->toBeFalse();
+        expect($policy->valueContainsPem($pem))->toBeTrue()->and($policy->valueContainsPem('plain'))->toBeFalse();
     });
 });
 
@@ -134,15 +137,20 @@ describe('OperationResultHandler::recordSuccess', function (): void {
             stdoutSummary: 'ok',
         );
 
-        expect($updated->status)->toBe(OperationStatus::Succeeded)
-            ->and($updated->exit_code)->toBe(0)
-            ->and($updated->result)->toMatchArray([
+        expect($updated->status)
+            ->toBe(OperationStatus::Succeeded)
+            ->and($updated->exit_code)
+            ->toBe(0)
+            ->and($updated->result)
+            ->toMatchArray([
                 'workspace_id' => 'docs',
                 'host_path' => '/home/orbit/workspaces/docs',
                 'duration_ms' => 1234,
             ])
-            ->and($updated->stdout_summary)->toBe('ok')
-            ->and($updated->finished_at)->not->toBeNull();
+            ->and($updated->stdout_summary)
+            ->toBe('ok')
+            ->and($updated->finished_at)
+            ->not->toBeNull();
     });
 
     it('rejects results for an unregistered operation_type with operation.result_unrecognized', function (): void {
@@ -157,8 +165,10 @@ describe('OperationResultHandler::recordSuccess', function (): void {
 
             $this->fail('Expected OperationPayloadRejected.');
         } catch (OperationPayloadRejected $exception) {
-            expect($exception->errorCode)->toBe('operation.result_unrecognized')
-                ->and($exception->meta['operation_type'])->toBe('tool.install');
+            expect($exception->errorCode)
+                ->toBe('operation.result_unrecognized')
+                ->and($exception->meta['operation_type'])
+                ->toBe('tool.install');
         }
 
         expect(OperationRun::query()->find($run->id)->status)->toBe(OperationStatus::Queued);
@@ -179,9 +189,12 @@ describe('OperationResultHandler::recordSuccess', function (): void {
 
             $this->fail('Expected OperationPayloadRejected.');
         } catch (OperationPayloadRejected $exception) {
-            expect($exception->errorCode)->toBe('operation.result_unrecognized')
-                ->and($exception->meta['unrecognized_key'])->toBe('sneaky_extra_field')
-                ->and($exception->meta['allowed_keys'])->toContain('workspace_id');
+            expect($exception->errorCode)
+                ->toBe('operation.result_unrecognized')
+                ->and($exception->meta['unrecognized_key'])
+                ->toBe('sneaky_extra_field')
+                ->and($exception->meta['allowed_keys'])
+                ->toContain('workspace_id');
         }
 
         expect(OperationRun::query()->find($run->id)->status)->toBe(OperationStatus::Queued);
@@ -204,12 +217,16 @@ describe('OperationResultHandler::recordSuccess', function (): void {
 
             $this->fail("Expected OperationPayloadRejected for forbidden key '{$secretKey}'.");
         } catch (OperationPayloadRejected $exception) {
-            expect($exception->errorCode)->toBe('operation.result_unsafe')
-                ->and($exception->meta['reason'])->toBe('forbidden_key');
+            expect($exception->errorCode)
+                ->toBe('operation.result_unsafe')
+                ->and($exception->meta['reason'])
+                ->toBe('forbidden_key');
         }
 
-        expect(OperationRun::query()->find($run->id)->status)->toBe(OperationStatus::Queued)
-            ->and(OperationRun::query()->find($run->id)->result)->toBeNull();
+        expect(OperationRun::query()->find($run->id)->status)
+            ->toBe(OperationStatus::Queued)
+            ->and(OperationRun::query()->find($run->id)->result)
+            ->toBeNull();
     })->with([
         'operation_token',
         'executor_secret',
@@ -236,8 +253,10 @@ describe('OperationResultHandler::recordSuccess', function (): void {
 
             $this->fail('Expected OperationPayloadRejected for PEM block.');
         } catch (OperationPayloadRejected $exception) {
-            expect($exception->errorCode)->toBe('operation.result_unsafe')
-                ->and($exception->meta['reason'])->toBe('pem_block_value');
+            expect($exception->errorCode)
+                ->toBe('operation.result_unsafe')
+                ->and($exception->meta['reason'])
+                ->toBe('pem_block_value');
         }
 
         expect(OperationRun::query()->find($run->id)->result)->toBeNull();
@@ -255,10 +274,14 @@ describe('OperationResultHandler::recordFailure', function (): void {
             stderrSummary: 'connection refused',
         );
 
-        expect($failed->status)->toBe(OperationStatus::Failed)
-            ->and($failed->exit_code)->toBe(17)
-            ->and($failed->error)->toMatchArray(['code' => 'remote_shell_failed'])
-            ->and($failed->stderr_summary)->toBe('connection refused');
+        expect($failed->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($failed->exit_code)
+            ->toBe(17)
+            ->and($failed->error)
+            ->toMatchArray(['code' => 'remote_shell_failed'])
+            ->and($failed->stderr_summary)
+            ->toBe('connection refused');
     });
 
     it('rejects failure payloads that contain forbidden secret keys before writing', function (): void {
@@ -278,7 +301,9 @@ describe('OperationResultHandler::recordFailure', function (): void {
             expect($exception->errorCode)->toBe('operation.error_unsafe');
         }
 
-        expect(OperationRun::query()->find($run->id)->status)->toBe(OperationStatus::Queued)
-            ->and(OperationRun::query()->find($run->id)->error)->toBeNull();
+        expect(OperationRun::query()->find($run->id)->status)
+            ->toBe(OperationStatus::Queued)
+            ->and(OperationRun::query()->find($run->id)->error)
+            ->toBeNull();
     });
 });

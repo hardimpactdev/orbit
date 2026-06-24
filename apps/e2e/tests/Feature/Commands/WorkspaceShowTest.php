@@ -11,46 +11,46 @@ function workspaceShowE2ESeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
-\Illuminate\Support\Facades\DB::table('workspaces')->delete();
-\App\Models\App::query()->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'permissions' => json_encode(['workspace:read'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('workspaces')->delete();
+        \App\Models\App::query()->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->insert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+            'permissions' => json_encode(['workspace:read'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-$app = \App\Models\App::query()->create([
-    'name' => 'docs',
-    'node_id' => $nodes->get('app-dev-1'),
-    'path' => '/srv/docs',
-    'document_root' => 'public',
-]);
+        $app = \App\Models\App::query()->create([
+            'name' => 'docs',
+            'node_id' => $nodes->get('app-dev-1'),
+            'path' => '/srv/docs',
+            'document_root' => 'public',
+        ]);
 
-\App\Models\Workspace::query()->create([
-    'app_id' => $app->id,
-    'name' => 'feature-docs',
-    'path' => '/srv/docs/.worktrees/feature-docs',
-    'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
-]);
+        \App\Models\Workspace::query()->create([
+            'app_id' => $app->id,
+            'name' => 'feature-docs',
+            'path' => '/srv/docs/.worktrees/feature-docs',
+            'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -68,7 +68,12 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-show');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         workspaceShowE2ESeed($topology);
 
@@ -83,10 +88,14 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
             allowFailure: true,
         );
 
-        expect($humanResult->successful())->toBeTrue()
-            ->and($humanResult->output())->toContain('Workspace: feature-docs.docs')
-            ->and($humanResult->output())->toContain('URL')
-            ->and($humanResult->output())->toContain('docs');
+        expect($humanResult->successful())
+            ->toBeTrue()
+            ->and($humanResult->output())
+            ->toContain('Workspace: feature-docs.docs')
+            ->and($humanResult->output())
+            ->toContain('URL')
+            ->and($humanResult->output())
+            ->toContain('docs');
 
         // JSON output happy path
         $jsonResult = $topology->ssh(
@@ -101,11 +110,16 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
         $payload = json_decode(trim($jsonResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $workspace = $payload['success']['data']['workspace'] ?? null;
 
-        expect($workspace)->toBeArray()
-            ->and($workspace['name'])->toBe('feature-docs')
-            ->and($workspace['app'])->toBe('docs')
-            ->and($payload['success']['meta']['registry_only'])->toBeTrue()
-            ->and($workspace)->not->toHaveKey('live_checks');
+        expect($workspace)
+            ->toBeArray()
+            ->and($workspace['name'])
+            ->toBe('feature-docs')
+            ->and($workspace['app'])
+            ->toBe('docs')
+            ->and($payload['success']['meta']['registry_only'])
+            ->toBeTrue()
+            ->and($workspace)
+            ->not->toHaveKey('live_checks');
 
         // Not-found error in non-interactive mode (--json with bad name)
         $notFoundResult = $topology->ssh(
@@ -120,8 +134,10 @@ it('shows workspace details from a non-gateway caller through the gateway api', 
 
         $notFoundPayload = json_decode(trim($notFoundResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($notFoundResult->successful())->toBeFalse()
-            ->and($notFoundPayload['error']['code'])->toBe('workspace.not_found');
+        expect($notFoundResult->successful())
+            ->toBeFalse()
+            ->and($notFoundPayload['error']['code'])
+            ->toBe('workspace.not_found');
     } finally {
         $topology->cleanup();
     }

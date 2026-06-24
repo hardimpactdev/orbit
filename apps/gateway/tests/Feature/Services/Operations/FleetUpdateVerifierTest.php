@@ -25,8 +25,7 @@ uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     Process::preventStrayProcesses();
-    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
-    {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
          * @return array{url: string, sha256: string, source_url: string}
          */
@@ -35,7 +34,11 @@ beforeEach(function (): void {
         {
             $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+            if (
+                ! is_array($artifact)
+                || ! is_string($artifact['url'] ?? null)
+                || ! is_string($artifact['sha256'] ?? null)
+            ) {
                 throw new RuntimeException("Missing test artifact for [{$platform}].");
             }
 
@@ -62,8 +65,12 @@ beforeEach(function (): void {
 
 it('verifies gateway scheduler workload CLI and required role images', function (): void {
     Process::fake([
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
     ]);
 
     $shell = new FleetVerifierFakeShell;
@@ -80,18 +87,24 @@ it('verifies gateway scheduler workload CLI and required role images', function 
 
     app(FleetUpdateVerifier::class)->verify($run, $plan);
 
-    expect($shell->calls)->toHaveCount(7)
-        ->and($shell->calls[0])->toMatchArray([
+    expect($shell->calls)
+        ->toHaveCount(7)
+        ->and($shell->calls[0])
+        ->toMatchArray([
             'node' => 'agent-1',
             'script' => 'orbit --version --local',
         ])
-        ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->calls[3])->toMatchArray([
+        ->and($shell->calls[0]['options']['metadata'])
+        ->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->calls[3])
+        ->toMatchArray([
             'node' => 'ingress-1',
             'script' => 'orbit --version --local',
         ])
-        ->and($shell->calls[6]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and(array_column($shell->calls, 'node'))->toBe([
+        ->and($shell->calls[6]['options']['metadata'])
+        ->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and(array_column($shell->calls, 'node'))
+        ->toBe([
             'agent-1',
             'app-dev-1',
             'database-1',
@@ -100,19 +113,31 @@ it('verifies gateway scheduler workload CLI and required role images', function 
             'app-dev-1',
             'ingress-1',
         ])
-        ->and($shell->calls[4]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
-        ->and($shell->calls[5]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
-        ->and($shell->calls[6]['script'])->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
+        ->and($shell->calls[4]['script'])
+        ->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
+        ->and($shell->calls[5]['script'])
+        ->toContain("docker image inspect 'caddy:2-alpine' >/dev/null")
+        ->and($shell->calls[6]['script'])
+        ->toContain("docker image inspect 'caddy:2-alpine' >/dev/null");
 });
 
 it('fails when workload CLI verification fails', function (): void {
     Process::fake([
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(output: "gateway-image\n"),
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "scheduler-image\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "gateway-image\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "scheduler-image\n",
+        ),
     ]);
 
     app()->instance(RemoteShell::class, new FleetVerifierFakeShell(failScriptsContaining: [
-        'orbit --version --local' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit missing', durationMs: 10),
+        'orbit --version --local' => new RemoteShellResult(
+            exitCode: 1,
+            stdout: '',
+            stderr: 'orbit missing',
+            durationMs: 10,
+        ),
     ]));
 
     $run = fleetVerifierRun();
@@ -125,12 +150,21 @@ it('fails when workload CLI verification fails', function (): void {
 
 it('fails when a required role image is missing on a workload node', function (): void {
     Process::fake([
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(output: "gateway-image\n"),
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "scheduler-image\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "gateway-image\n",
+        ),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "scheduler-image\n",
+        ),
     ]);
 
     app()->instance(RemoteShell::class, new FleetVerifierFakeShell(failScriptsContaining: [
-        'docker image inspect' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'missing image', durationMs: 10),
+        'docker image inspect' => new RemoteShellResult(
+            exitCode: 1,
+            stdout: '',
+            stderr: 'missing image',
+            durationMs: 10,
+        ),
     ]));
 
     $run = fleetVerifierRun();
@@ -155,46 +189,49 @@ it('emits terminal success only after runner verification passes', function (): 
 
     $run->refresh();
 
-    expect($run->status)->toBe(OperationStatus::Succeeded)
-        ->and(fleetVerifierStepEvents($run))->toBe([
-            ['runner', 'running'],
-            ['check-updates', 'running'],
-            ['check-updates', 'done'],
-            ['check-fleet-versions', 'running'],
-            ['check-fleet-versions', 'done'],
-            ['lease.fleet', 'done'],
-            ['cli-artifacts', 'running'],
-            ['cli-artifacts', 'done'],
-            ['gateway', 'running'],
-            ['lease.gateway', 'done'],
-            ['scheduler.stop', 'running'],
-            ['scheduler.stop', 'done'],
-            ['migrations', 'running'],
-            ['migrations', 'done'],
-            ['gateway.service', 'running'],
-            ['gateway.service', 'done'],
-            ['scheduler.start', 'running'],
-            ['scheduler.start', 'done'],
-            ['gateway', 'done'],
-            ['workload-nodes', 'running'],
-            ['workload.app-dev-1', 'running'],
-            ['workload.app-dev-1', 'running'],
-            ['workload.app-dev-1', 'running'],
-            ['workload.app-dev-1', 'running'],
-            ['workload.app-dev-1', 'done'],
-            ['workload-nodes', 'done'],
-            ['verification', 'running'],
-            ['verification.gateway', 'running'],
-            ['verification.gateway', 'done'],
-            ['verification.scheduler', 'running'],
-            ['verification.scheduler', 'done'],
-            ['verification.cli', 'running'],
-            ['verification.cli', 'done'],
+    expect($run->status)
+        ->toBe(OperationStatus::Succeeded)
+        ->and(fleetVerifierStepEvents($run))
+        ->toBe([
+            ['runner',                   'running'],
+            ['check-updates',            'running'],
+            ['check-updates',            'done'],
+            ['check-fleet-versions',     'running'],
+            ['check-fleet-versions',     'done'],
+            ['lease.fleet',              'done'],
+            ['cli-artifacts',            'running'],
+            ['cli-artifacts',            'done'],
+            ['gateway',                  'running'],
+            ['lease.gateway',            'done'],
+            ['scheduler.stop',           'running'],
+            ['scheduler.stop',           'done'],
+            ['migrations',               'running'],
+            ['migrations',               'done'],
+            ['gateway.service',          'running'],
+            ['gateway.service',          'done'],
+            ['scheduler.start',          'running'],
+            ['scheduler.start',          'done'],
+            ['gateway',                  'done'],
+            ['workload-nodes',           'running'],
+            ['workload.app-dev-1',       'running'],
+            ['workload.app-dev-1',       'running'],
+            ['workload.app-dev-1',       'running'],
+            ['workload.app-dev-1',       'running'],
+            ['workload.app-dev-1',       'done'],
+            ['workload-nodes',           'done'],
+            ['verification',             'running'],
+            ['verification.gateway',     'running'],
+            ['verification.gateway',     'done'],
+            ['verification.scheduler',   'running'],
+            ['verification.scheduler',   'done'],
+            ['verification.cli',         'running'],
+            ['verification.cli',         'done'],
             ['verification.role-images', 'running'],
             ['verification.role-images', 'done'],
-            ['verification', 'done'],
+            ['verification',             'done'],
         ])
-        ->and($run->events()->where('event_type', 'complete')->first()?->payload)->toMatchArray([
+        ->and($run->events()->where('event_type', 'complete')->first()?->payload)
+        ->toMatchArray([
             'exit_code' => 0,
             'data' => [
                 'target_version' => '1.2.3',
@@ -207,7 +244,12 @@ it('emits terminal success only after runner verification passes', function (): 
 
 it('emits terminal failure when runner verification fails', function (): void {
     app()->instance(RemoteShell::class, new FleetVerifierFakeShell(failScriptsContaining: [
-        'orbit --version --local' => new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'orbit missing', durationMs: 10),
+        'orbit --version --local' => new RemoteShellResult(
+            exitCode: 1,
+            stdout: '',
+            stderr: 'orbit missing',
+            durationMs: 10,
+        ),
     ]));
 
     $run = fleetVerifierRun();
@@ -222,16 +264,20 @@ it('emits terminal failure when runner verification fails', function (): void {
 
     $run->refresh();
 
-    expect($run->status)->toBe(OperationStatus::Failed)
-        ->and($run->error)->toMatchArray([
+    expect($run->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->error)
+        ->toMatchArray([
             'code' => 'cli_verification_failed',
             'message' => 'CLI verification failed.',
         ])
-        ->and(fleetVerifierStepEvents($run))->toContain(
+        ->and(fleetVerifierStepEvents($run))
+        ->toContain(
             ['verification.cli', 'fail'],
             ['verification', 'fail'],
         )
-        ->and($run->events()->where('event_type', 'error')->first()?->payload)->toMatchArray([
+        ->and($run->events()->where('event_type', 'error')->first()?->payload)
+        ->toMatchArray([
             'data' => [
                 'code' => 'cli_verification_failed',
             ],
@@ -250,13 +296,21 @@ function fleetVerifierRun(): OperationRun
 function fakeFleetVerifierGatewayUpdateProcesses(string $gatewayImage): void
 {
     Process::fake([
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "{$gatewayImage}\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "{$gatewayImage}\n",
+        ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=0'" => Process::result(),
-        "docker service update --detach=true --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" => Process::result(),
-        "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(output: "completed\n"),
-        "docker service update --detach=true --image '{$gatewayImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" => Process::result(),
+        "docker service update --detach=true --image '{$gatewayImage}' --update-order 'start-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-gateway'" =>
+            Process::result(),
+        "docker service inspect --format '{{.UpdateStatus.State}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "completed\n",
+        ),
+        "docker service update --detach=true --image '{$gatewayImage}' --update-order 'stop-first' --update-failure-action rollback --update-monitor 60s 'orbit_orbit-scheduler'" =>
+            Process::result(),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(output: "{$gatewayImage}\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-gateway'" => Process::result(
+            output: "{$gatewayImage}\n",
+        ),
     ]);
 }
 
@@ -273,7 +327,8 @@ function fakeFleetVerifierGatewayMigrations(): void
  */
 function fleetVerifierStepEvents(OperationRun $run): array
 {
-    return $run->events()
+    return $run
+        ->events()
         ->where('event_type', 'step')
         ->get()
         ->map(fn ($event): array => [$event->payload['key'], $event->payload['status']])
@@ -290,16 +345,18 @@ function fleetVerifierSnapshot(
     array $roleImages = [],
 ): OperationUpdatePlanSnapshot {
     $gatewayImage = 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    $cliArtifacts = $cliArtifacts === [] ? [
-        'linux-amd64' => [
-            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-            'sha256' => str_repeat('b', 64),
-        ],
-    ] : $cliArtifacts;
-    $roleImages = $roleImages === [] ? [
-        'orbit-caddy' => 'caddy:2-alpine',
-        'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-    ] : $roleImages;
+    $cliArtifacts = $cliArtifacts === []
+        ? [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
+                'sha256' => str_repeat('b', 64),
+            ],
+        ] : $cliArtifacts;
+    $roleImages = $roleImages === []
+        ? [
+            'orbit-caddy' => 'caddy:2-alpine',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+        ] : $roleImages;
 
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
@@ -337,7 +394,7 @@ final class FleetVerifierFakeShell implements RemoteShell
     #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        (new RemoteShellMetadata)->prologue($options['metadata'] ?? []);
+        new RemoteShellMetadata()->prologue($options['metadata'] ?? []);
 
         $this->calls[] = [
             'node' => $node->name,

@@ -25,13 +25,20 @@ describe('AppAnalyticsShowCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/apps/docs/analytics'
-            && $request->data() === []);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/apps/docs/analytics'
+                && $request->data() === []
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['binding']['internal_host'])->toBe('analytics.orbit')
-            ->and($decoded['success']['data']['binding']['public_hosts'])->toBe(['analytics.docs.test']);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['binding']['internal_host'])
+            ->toBe('analytics.orbit')
+            ->and($decoded['success']['data']['binding']['public_hosts'])
+            ->toBe(['analytics.docs.test']);
     });
 
     it('renders show responses in human mode', function (): void {
@@ -50,15 +57,24 @@ describe('AppAnalyticsShowCommand', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('binding:')
-            ->and($output)->toContain('  app: docs')
-            ->and($output)->toContain('  enabled: true')
-            ->and($output)->toContain('  internal_host: analytics.orbit')
-            ->and($output)->toContain('  dashboard_url: https://analytics.orbit')
-            ->and($output)->toContain('  public_hosts:')
-            ->and($output)->toContain('    - analytics.docs.test')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('binding:')
+            ->and($output)
+            ->toContain('  app: docs')
+            ->and($output)
+            ->toContain('  enabled: true')
+            ->and($output)
+            ->toContain('  internal_host: analytics.orbit')
+            ->and($output)
+            ->toContain('  dashboard_url: https://analytics.orbit')
+            ->and($output)
+            ->toContain('  public_hosts:')
+            ->and($output)
+            ->toContain('    - analytics.docs.test')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {
@@ -72,8 +88,11 @@ describe('AppAnalyticsShowCommand', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 });

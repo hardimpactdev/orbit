@@ -33,9 +33,21 @@ final readonly class GatewayStreamTransport
         ?callable $onIdle = null,
         int $idleIntervalMicroseconds = self::DEFAULT_IDLE_INTERVAL_MICROSECONDS,
     ): int|GatewayApiException {
-        if ($this->preferCurl && $request instanceof GenericGatewayStreamRequest && function_exists('curl_init') && function_exists('curl_multi_init')) {
+        if (
+            $this->preferCurl
+            && $request instanceof GenericGatewayStreamRequest
+            && function_exists('curl_init')
+            && function_exists('curl_multi_init')
+        ) {
             try {
-                return $this->eventsWithCurl($request, $onEvent, $defaultExitCode, $requireTerminalFrame, $onIdle, $idleIntervalMicroseconds);
+                return $this->eventsWithCurl(
+                    $request,
+                    $onEvent,
+                    $defaultExitCode,
+                    $requireTerminalFrame,
+                    $onIdle,
+                    $idleIntervalMicroseconds,
+                );
             } catch (GatewayApiException $exception) {
                 return $exception;
             }
@@ -64,8 +76,11 @@ final readonly class GatewayStreamTransport
     /**
      * @param  callable(string): void  $onOutput
      */
-    public function text(GatewayStreamRequest $request, callable $onOutput, string $unavailableMessage): int|GatewayApiException
-    {
+    public function text(
+        GatewayStreamRequest $request,
+        callable $onOutput,
+        string $unavailableMessage,
+    ): int|GatewayApiException {
         $response = $this->send($request, $unavailableMessage);
 
         if ($response instanceof GatewayApiException) {
@@ -272,7 +287,7 @@ final readonly class GatewayStreamTransport
                 } while ($multiStatus === CURLM_CALL_MULTI_PERFORM);
 
                 if ($multiStatus !== CURLM_OK) {
-                    throw $this->unavailable(curl_multi_strerror($multiStatus));
+                    throw $this->unavailable(curl_multi_strerror($multiStatus) ?? 'Unknown curl multi error');
                 }
 
                 if ($failure instanceof Throwable || $terminal !== null) {
@@ -288,7 +303,7 @@ final readonly class GatewayStreamTransport
                         usleep(250);
                     }
 
-                    usleep($idleIntervalMicroseconds);
+                    usleep(max(0, $idleIntervalMicroseconds));
                 }
             } while ($running > 0);
 
@@ -445,15 +460,19 @@ final readonly class GatewayStreamTransport
         return [$event, $payload];
     }
 
-    private function readStream(StreamInterface $body, int $maxBytes, ?callable $onIdle, int $idleIntervalMicroseconds): string
-    {
+    private function readStream(
+        StreamInterface $body,
+        int $maxBytes,
+        ?callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): string {
         if ($onIdle === null) {
             return $body->read($maxBytes);
         }
 
         $resource = $body->getMetadata('stream');
 
-        if (! is_resource($resource) || get_resource_type($resource) !== 'stream') {
+        if (! is_resource($resource)) {
             return $this->readStreamWithIdlePolling($body, $maxBytes, $onIdle, $idleIntervalMicroseconds);
         }
 
@@ -480,7 +499,15 @@ final readonly class GatewayStreamTransport
                 continue;
             }
 
-            $chunk = $this->readReadyStreamChunk($resource, $maxBytes);
+            $selectedResource = $read[0] ?? null;
+
+            if (! is_resource($selectedResource)) {
+                $onIdle();
+
+                continue;
+            }
+
+            $chunk = $this->readReadyStreamChunk($selectedResource, $maxBytes);
 
             if ($chunk !== '') {
                 return $chunk;
@@ -514,8 +541,12 @@ final readonly class GatewayStreamTransport
         }
     }
 
-    private function readStreamWithIdlePolling(StreamInterface $body, int $maxBytes, callable $onIdle, int $idleIntervalMicroseconds): string
-    {
+    private function readStreamWithIdlePolling(
+        StreamInterface $body,
+        int $maxBytes,
+        callable $onIdle,
+        int $idleIntervalMicroseconds,
+    ): string {
         while (! $body->eof()) {
             $chunk = $body->read($maxBytes);
 
@@ -524,7 +555,7 @@ final readonly class GatewayStreamTransport
             }
 
             $onIdle();
-            usleep($idleIntervalMicroseconds);
+            usleep(max(0, $idleIntervalMicroseconds));
         }
 
         return '';
@@ -567,8 +598,11 @@ final readonly class GatewayStreamTransport
         return false;
     }
 
-    private function unavailable(string $message, ?string $reason = null, ?Throwable $previous = null): GatewayApiException
-    {
+    private function unavailable(
+        string $message,
+        ?string $reason = null,
+        ?Throwable $previous = null,
+    ): GatewayApiException {
         if (is_string($reason) && trim($reason) !== '') {
             $message .= ' '.trim($reason);
         }

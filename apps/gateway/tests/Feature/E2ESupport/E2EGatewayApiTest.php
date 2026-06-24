@@ -23,8 +23,7 @@ it('installs provisioning SSH keys for gateway API container users', function ()
     file_put_contents($privateKey, 'private-key');
     file_put_contents($publicKey, 'public-key');
 
-    $instance = new class implements E2EInstance
-    {
+    $instance = new class implements E2EInstance {
         /** @var list<array{source: string, target: string}> */
         public array $copies = [];
 
@@ -43,8 +42,12 @@ it('installs provisioning SSH keys for gateway API container users', function ()
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -76,11 +79,17 @@ it('installs provisioning SSH keys for gateway API container users', function ()
             '/var/www/.ssh/id_ed25519',
         ]);
 
-        $gatewayKeyInstall = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway')
-            && str_contains($command, 'docker cp')
-            && str_contains($command, '/root/.ssh/id_ed25519'));
+        $gatewayKeyInstall = collect($instance->commands)
+            ->first(
+                fn (string $command): bool => (
+                    str_contains($command, 'orbit-gateway')
+                    && str_contains($command, 'docker cp')
+                    && str_contains($command, '/root/.ssh/id_ed25519')
+                ),
+            );
 
-        expect($gatewayKeyInstall)->toBeString()
+        expect($gatewayKeyInstall)
+            ->toBeString()
             ->toContain("docker inspect --format='{{.State.Running}}' 'orbit-gateway'")
             ->toContain('gateway_private_key=/home/orbit/.ssh/id_ed25519')
             ->toContain("docker cp \"\$gateway_private_key\" 'orbit-gateway:/root/.ssh/id_ed25519'")
@@ -92,8 +101,7 @@ it('installs provisioning SSH keys for gateway API container users', function ()
 });
 
 it('seeds operator identity with a gateway admin grant', function (): void {
-    $instance = new class implements E2EInstance
-    {
+    $instance = new class implements E2EInstance {
         /** @var list<string> */
         public array $commands = [];
 
@@ -109,8 +117,12 @@ it('seeds operator identity with a gateway admin grant', function (): void {
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -132,10 +144,16 @@ it('seeds operator identity with a gateway admin grant', function (): void {
 
     E2EGatewayApi::seedOperatorIdentity($instance, '10.6.0.3', 'orbit');
 
-    $seedCommand = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway:prepared-current')
-        && str_contains($command, 'artisan tinker --execute='));
+    $seedCommand = collect($instance->commands)
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, 'orbit-gateway:prepared-current')
+                && str_contains($command, 'artisan tinker --execute=')
+            ),
+        );
 
-    expect($seedCommand)->toBeString()
+    expect($seedCommand)
+        ->toBeString()
         ->toContain('docker run --rm --pull never')
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->toContain('DB_CONNECTION=sqlite')
@@ -186,28 +204,50 @@ it('repairs docker gateway config root write permissions before seeding operator
     $tinkerPosition = strpos($setup, 'php apps/gateway/artisan tinker --execute');
     $lastRepairPosition = strrpos($setup, 'chmod -R u+rwX,g+rwX');
 
-    expect($repairPosition)->toBeInt()
-        ->and($removeTmpPosition)->toBeInt()
-        ->and($seedPosition)->toBeInt()
-        ->and($sudoPosition)->toBeInt()
-        ->and($migratePosition)->toBeInt()
-        ->and($innerRepairPosition)->toBeInt()
-        ->and($tinkerPosition)->toBeInt()
-        ->and($lastRepairPosition)->toBeInt()
-        ->and($repairPosition)->toBeLessThan($seedPosition)
-        ->and($removeTmpPosition)->toBeLessThan($seedPosition)
-        ->and($seedPosition)->toBeLessThan($sudoPosition)
-        ->and($sudoPosition)->toBeLessThan($migratePosition)
-        ->and($migratePosition)->toBeLessThan($innerRepairPosition)
-        ->and($innerRepairPosition)->toBeLessThan($tinkerPosition)
-        ->and($migratePosition)->toBeLessThan($lastRepairPosition)
-        ->and($setup)->toContain('install -d -m 775 -o orbit -g orbit')
-        ->and($setup)->toContain('chown -R orbit:orbit')
-        ->and($setup)->toContain('sudo chown -R orbit:orbit')
-        ->and($setup)->toContain('chmod -R u+rwX,g+rwX')
-        ->and($setup)->toContain('/home/orbit/.config/orbit/.env')
-        ->and($setup)->toContain('/home/orbit/.config/orbit/.env.tmp')
-        ->and($setup)->toContain('.tmp');
+    expect($repairPosition)
+        ->toBeInt()
+        ->and($removeTmpPosition)
+        ->toBeInt()
+        ->and($seedPosition)
+        ->toBeInt()
+        ->and($sudoPosition)
+        ->toBeInt()
+        ->and($migratePosition)
+        ->toBeInt()
+        ->and($innerRepairPosition)
+        ->toBeInt()
+        ->and($tinkerPosition)
+        ->toBeInt()
+        ->and($lastRepairPosition)
+        ->toBeInt()
+        ->and($repairPosition)
+        ->toBeLessThan($seedPosition)
+        ->and($removeTmpPosition)
+        ->toBeLessThan($seedPosition)
+        ->and($seedPosition)
+        ->toBeLessThan($sudoPosition)
+        ->and($sudoPosition)
+        ->toBeLessThan($migratePosition)
+        ->and($migratePosition)
+        ->toBeLessThan($innerRepairPosition)
+        ->and($innerRepairPosition)
+        ->toBeLessThan($tinkerPosition)
+        ->and($migratePosition)
+        ->toBeLessThan($lastRepairPosition)
+        ->and($setup)
+        ->toContain('install -d -m 775 -o orbit -g orbit')
+        ->and($setup)
+        ->toContain('chown -R orbit:orbit')
+        ->and($setup)
+        ->toContain('sudo chown -R orbit:orbit')
+        ->and($setup)
+        ->toContain('chmod -R u+rwX,g+rwX')
+        ->and($setup)
+        ->toContain('/home/orbit/.config/orbit/.env')
+        ->and($setup)
+        ->toContain('/home/orbit/.config/orbit/.env.tmp')
+        ->and($setup)
+        ->toContain('.tmp');
 });
 
 it('proxies gateway api routes to Laravel before legacy command shims', function (): void {
@@ -222,11 +262,11 @@ it('proxies gateway api routes to Laravel before legacy command shims', function
     expect($script)
         ->toContain('proxy_to_laravel($connection, $requestLine, $headers, $body);')
         ->not->toContain('php apps/gateway/artisan tool:logs')
-        ->not->toContain('stream_tool_logs')
-        ->toContain('sudo -iu orbit bash -lc')
-        ->and($apiProxyPosition)->toBeInt()
-        ->and($legacyNodeListPosition)->toBeInt()
-        ->and($apiProxyPosition)->toBeLessThan($legacyNodeListPosition);
+        ->not->toContain('stream_tool_logs')->toContain('sudo -iu orbit bash -lc')->and(
+            $apiProxyPosition,
+        )->toBeInt()->and($legacyNodeListPosition)->toBeInt()->and($apiProxyPosition)->toBeLessThan(
+            $legacyNodeListPosition,
+        );
 });
 
 it('runs Docker gateway api shim commands directly inside orbit gateway', function (): void {
@@ -269,14 +309,16 @@ it('proxies node grant requests through Laravel api controllers', function (): v
 
     expect($script)
         ->toContain('proxy_to_laravel($connection, $requestLine, $headers, $body);')
-        ->and($apiProxyPosition)->toBeInt()
-        ->and($legacyNodeGrantPosition)->toBeInt()
-        ->and($apiProxyPosition)->toBeLessThan($legacyNodeGrantPosition);
+        ->and($apiProxyPosition)
+        ->toBeInt()
+        ->and($legacyNodeGrantPosition)
+        ->toBeInt()
+        ->and($apiProxyPosition)
+        ->toBeLessThan($legacyNodeGrantPosition);
 });
 
 it('starts Incus gateway API support from orbit-gateway containers without host PHP', function (): void {
-    $instance = new class implements E2EInstance
-    {
+    $instance = new class implements E2EInstance {
         /** @var list<string> */
         public array $commands = [];
 
@@ -292,8 +334,12 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -316,14 +362,29 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
     E2EGatewayApi::start($instance, 'runtime-env', '/home/orbit/orbit-current', '10.6.0.2');
 
     $setup = implode("\n", $instance->commands);
-    $certificateCommand = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, 'orbit-gateway:prepared-current')
-        && str_contains($command, 'artisan tinker --execute='));
-    $httpStart = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, '--name')
-        && str_contains($command, 'orbit-gateway-e2e-runtime-env-http')
-        && str_contains($command, 'php -d display_errors=0 -d max_execution_time=0 -S'));
-    $tlsStart = collect($instance->commands)->first(fn (string $command): bool => str_contains($command, '--name')
-        && str_contains($command, 'orbit-gateway-e2e-runtime-env-tls')
-        && str_contains($command, '/tmp/orbit-runtime-env-tls.php'));
+    $certificateCommand = collect($instance->commands)
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, 'orbit-gateway:prepared-current')
+                && str_contains($command, 'artisan tinker --execute=')
+            ),
+        );
+    $httpStart = collect($instance->commands)
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, '--name')
+                && str_contains($command, 'orbit-gateway-e2e-runtime-env-http')
+                && str_contains($command, 'php -d display_errors=0 -d max_execution_time=0 -S')
+            ),
+        );
+    $tlsStart = collect($instance->commands)
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, '--name')
+                && str_contains($command, 'orbit-gateway-e2e-runtime-env-tls')
+                && str_contains($command, '/tmp/orbit-runtime-env-tls.php')
+            ),
+        );
 
     expect($setup)
         ->toContain('docker run --rm --pull never')
@@ -333,20 +394,20 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
         ->toContain('/home/orbit/.config/orbit')
         ->toContain('type=bind,source=/home/orbit/orbit-current,target=/srv/orbit')
         ->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
-        ->not->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')
-        ->toContain('/home/orbit/.ssh:/home/orbit/.ssh')
-        ->toContain('ORBIT_E2E_TRUST_WIREGUARD_HEADER=true')
+        ->not->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')->toContain(
+            '/home/orbit/.ssh:/home/orbit/.ssh',
+        )->toContain('ORBIT_E2E_TRUST_WIREGUARD_HEADER=true')
         ->not->toContain('cd /home/orbit/orbit')
         ->not->toContain('php apps/gateway/artisan')
         ->not->toContain('nohup php');
 
-    expect($certificateCommand)->toBeString()
-        ->toContain('artisan tinker --execute=');
+    expect($certificateCommand)->toBeString()->toContain('artisan tinker --execute=');
 
     expect(gatewayDecodedTinkerPayload((string) $certificateCommand))
         ->toContain('issueLeaf');
 
-    expect($httpStart)->toBeString()
+    expect($httpStart)
+        ->toBeString()
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
         ->toContain('ORBIT_GATEWAY_URL=http://10.6.0.2')
         ->toContain('ORBIT_FORWARD_INSTALL_BINARY=/usr/local/bin/orbit-cli')
@@ -355,21 +416,24 @@ it('starts Incus gateway API support from orbit-gateway containers without host 
         ->toContain('VIEW_COMPILED_PATH=/srv/orbit/apps/gateway/storage/framework/views')
         ->toContain('type=bind,source=/home/orbit/orbit-current,target=/srv/orbit')
         ->toContain('/home/orbit/orbit-current/apps/cli/orbit:/usr/local/bin/orbit-cli:ro')
-        ->not->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')
+        ->not
+        ->toContain('/usr/local/bin/orbit:/usr/local/bin/orbit-cli')
         ->toContain('/home/orbit/.wg-easy:/home/orbit/.wg-easy')
         ->toContain('/home/orbit/.ssh:/home/orbit/.ssh')
         ->toContain('/root/.ssh:/root/.ssh')
         ->toContain('/tmp/orbit-runtime-env-http-router.php')
-        ->toContain('php -d display_errors=0 -d max_execution_time=0 -S 10.6.0.2:80 -t public /tmp/orbit-runtime-env-http-router.php');
+        ->toContain(
+            'php -d display_errors=0 -d max_execution_time=0 -S 10.6.0.2:80 -t public /tmp/orbit-runtime-env-http-router.php',
+        );
 
-    expect($tlsStart)->toBeString()
+    expect($tlsStart)
+        ->toBeString()
         ->toContain('ORBIT_GATEWAY_E2E_CLI=/usr/local/bin/orbit-cli')
         ->toContain('/tmp/orbit-runtime-env-tls.php');
 });
 
 it('reads Incus gateway nodes through orbit-gateway image commands', function (): void {
-    $instance = new class implements E2EInstance
-    {
+    $instance = new class implements E2EInstance {
         /** @var list<string> */
         public array $commands = [];
 
@@ -388,8 +452,12 @@ it('reads Incus gateway nodes through orbit-gateway image commands', function ()
             ], JSON_THROW_ON_ERROR));
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -457,31 +525,59 @@ it('starts Docker gateway API support through gateway container commands without
 
     $setup = implode("\n", $commands);
 
-    $statePrepare = collect($commands)->first(fn (string $command): bool => str_contains($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway' sh -lc")
-        && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
-        && str_contains($command, 'php apps/gateway/artisan migrate --force --no-interaction --ansi'));
-    $httpStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, 'php -d display_errors=0 -d max_execution_time=0 -S'));
-    $httpRouterWrite = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, 'cat >')
-        && str_contains($command, '/tmp/orbit-docker-gateway-api-http-router.php'));
-    $tlsWrite = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, 'cat >')
-        && str_contains($command, '/tmp/orbit-docker-gateway-api-tls.php'));
-    $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, 'php apps/gateway/artisan tinker --execute='));
-    $certificateSetup = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --env')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
-        && str_contains($command, 'issueLeaf'));
-    $runtimeIdentity = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, '/home/orbit/.ssh/id_ed25519')
-        && str_contains($command, '/root/.ssh/id_ed25519'));
+    $statePrepare = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, "docker exec --user 'orbit' 'orbit-e2e-run123-gateway' sh -lc")
+            && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
+            && str_contains($command, 'php apps/gateway/artisan migrate --force --no-interaction --ansi')
+        ),
+    );
+    $httpStart = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec --detach')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, 'php -d display_errors=0 -d max_execution_time=0 -S')
+        ),
+    );
+    $httpRouterWrite = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, 'cat >')
+            && str_contains($command, '/tmp/orbit-docker-gateway-api-http-router.php')
+        ),
+    );
+    $tlsWrite = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, 'cat >')
+            && str_contains($command, '/tmp/orbit-docker-gateway-api-tls.php')
+        ),
+    );
+    $tlsStart = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec --detach')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, 'php apps/gateway/artisan tinker --execute=')
+        ),
+    );
+    $certificateSetup = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec --env')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, 'php apps/gateway/artisan key:generate --force --no-interaction')
+            && str_contains($command, 'issueLeaf')
+        ),
+    );
+    $runtimeIdentity = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, '/home/orbit/.ssh/id_ed25519')
+            && str_contains($command, '/root/.ssh/id_ed25519')
+        ),
+    );
 
     expect($setup)
         ->toContain('php apps/gateway/artisan tinker --execute=')
@@ -503,18 +599,24 @@ it('starts Docker gateway API support through gateway container commands without
     $appKey = strpos((string) $statePrepare, 'php apps/gateway/artisan key:generate --force --no-interaction');
     $migrate = strpos((string) $statePrepare, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
 
-    expect($statePrepare)->toBeString()
-        ->and($appKey)->toBeInt()
-        ->and($migrate)->toBeInt()
-        ->and($appKey)->toBeLessThan($migrate);
+    expect($statePrepare)
+        ->toBeString()
+        ->and($appKey)
+        ->toBeInt()
+        ->and($migrate)
+        ->toBeInt()
+        ->and($appKey)
+        ->toBeLessThan($migrate);
 
-    expect($runtimeIdentity)->toBeString()
+    expect($runtimeIdentity)
+        ->toBeString()
         ->toContain('install -d -m 700 /root/.ssh')
         ->toContain('cp /home/orbit/.ssh/id_ed25519 /root/.ssh/id_ed25519');
 
     $normalizedCertificateSetup = preg_replace('/[^A-Za-z0-9_.:\/=>-]+/', '', (string) $certificateSetup);
 
-    expect($certificateSetup)->toBeString()
+    expect($certificateSetup)
+        ->toBeString()
         ->toContain('/home/orbit/.config/orbit/.env')
         ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
@@ -544,18 +646,18 @@ it('starts Docker gateway API support through gateway container commands without
         ->toBeLessThan(array_search($httpStart, $commands, strict: true))
         ->toBeLessThan(array_search($tlsStart, $commands, strict: true));
 
-    expect($httpStart)->toBeString()
+    expect($httpStart)
+        ->toBeString()
         ->toContain('ORBIT_SOURCE_PATH=/home/orbit/orbit')
         ->toContain('VIEW_COMPILED_PATH=/home/orbit/orbit/apps/gateway/storage/framework/views')
         ->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
 
-    expect($httpRouterWrite)->toBeString()
-        ->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
+    expect($httpRouterWrite)->toBeString()->toContain('/tmp/orbit-docker-gateway-api-http-router.php');
 
-    expect($tlsWrite)->toBeString()
-        ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
+    expect($tlsWrite)->toBeString()->toContain('/tmp/orbit-docker-gateway-api-tls.php');
 
-    expect($tlsStart)->toBeString()
+    expect($tlsStart)
+        ->toBeString()
         ->toContain('/tmp/orbit-docker-gateway-api-tls.php')
         ->not->toContain('sudo -iu orbit');
 });
@@ -585,22 +687,31 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
         certSans: ['10.6.0.2'],
     );
 
-    $stop = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, '/proc/[0-9]*/cmdline'));
-    $tlsStart = collect($commands)->first(fn (string $command): bool => str_contains($command, 'sudo docker exec --detach')
-        && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
-        && str_contains($command, 'php apps/gateway/artisan tinker --execute='));
+    $stop = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, '/proc/[0-9]*/cmdline')
+        ),
+    );
+    $tlsStart = collect($commands)->first(
+        fn (string $command): bool => (
+            str_contains($command, 'sudo docker exec --detach')
+            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            && str_contains($command, 'php apps/gateway/artisan tinker --execute=')
+        ),
+    );
 
-    expect($stop)->toBeString()
+    expect($stop)
+        ->toBeString()
         ->toContain('/tmp/orbit-')
         ->toContain('-tls.php')
         ->toContain('orbit\ serve\ --host=')
-        ->not->toContain('php\ *artisan\ serve\ --host=')
+        ->not
+        ->toContain('php\ *artisan\ serve\ --host=')
         ->toContain('php\ */apps/gateway/artisan\ serve\ --host=');
 
-    expect($tlsStart)->toBeString()
-        ->toContain('/tmp/orbit-docker-gateway-api-tls.php');
+    expect($tlsStart)->toBeString()->toContain('/tmp/orbit-docker-gateway-api-tls.php');
 
     expect(array_search($stop, $commands, strict: true))
         ->toBeLessThan(array_search($tlsStart, $commands, strict: true));
@@ -609,19 +720,24 @@ it('stops Docker gateway API TLS shim before restarting', function (): void {
 it('stops Docker gateway API HTTP processes after the runtime entrypoint execs artisan serve', function (): void {
     expect(gatewayStopScriptMatchesCommand(
         'php /home/orbit/orbit/apps/gateway/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
-    ))->toBeTrue()
+    ))
+        ->toBeTrue()
         ->and(gatewayStopScriptMatchesCommand(
             'php /home/orbit/orbit/artisan serve --host=0.0.0.0 --port=80 --tries=1 --no-reload --quiet',
-        ))->toBeFalse()
+        ))
+        ->toBeFalse()
         ->and(gatewayStopScriptMatchesCommand(
             '/usr/local/bin/php -S 0.0.0.0:80 /home/orbit/orbit/apps/gateway/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
-        ))->toBeTrue()
+        ))
+        ->toBeTrue()
         ->and(gatewayStopScriptMatchesCommand(
             '/usr/local/bin/php -S 0.0.0.0:80 /home/orbit/orbit/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
-        ))->toBeFalse()
+        ))
+        ->toBeFalse()
         ->and(gatewayStopScriptMatchesCommand(
             '/usr/local/bin/php -S 0.0.0.0:8080 /home/orbit/orbit/apps/gateway/vendor/laravel/framework/src/Illuminate/Foundation/Console/../resources/server.php',
-        ))->toBeFalse();
+        ))
+        ->toBeFalse();
 });
 
 it('treats gateway API stop as idempotent when no matching process remains', function (): void {
@@ -635,8 +751,7 @@ it('treats gateway API stop as idempotent when no matching process remains', fun
 });
 
 it('can split gateway wireguard identity from bind address and cert key', function (): void {
-    $instance = new class implements E2EInstance
-    {
+    $instance = new class implements E2EInstance {
         /** @var list<string> */
         public array $commands = [];
 
@@ -652,8 +767,12 @@ it('can split gateway wireguard identity from bind address and cert key', functi
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -687,7 +806,16 @@ it('can split gateway wireguard identity from bind address and cert key', functi
     $reflection = new ReflectionClass(E2EGatewayApi::class);
     $method = $reflection->getMethod('tlsServerScript');
     $method->setAccessible(true);
-    $tlsScript = $method->invoke(null, '/srv/orbit', '10.6.0.2', '0.0.0.0', 'gateway', [], true, '/usr/local/bin/orbit-cli');
+    $tlsScript = $method->invoke(
+        null,
+        '/srv/orbit',
+        '10.6.0.2',
+        '0.0.0.0',
+        'gateway',
+        [],
+        true,
+        '/usr/local/bin/orbit-cli',
+    );
     $certificateCommand = collect($instance->commands)
         ->first(fn (string $command): bool => str_contains($command, 'artisan tinker --execute='));
 
@@ -752,15 +880,21 @@ it('maps configured docker peer ips to canonical wireguard identities in the gat
         '10.61.42.4' => '10.6.0.4',
     ]);
 
-    expect(gatewayCanonicalPeerIp($script, '10.61.42.4'))->toBe('10.6.0.4')
-        ->and($script)->toContain('$identity = canonical_peer_ip($clientIp);')
-        ->and($script)->toContain("\$headers['x-orbit-e2e-wireguard-ip'] = \$identity;")
-        ->and($script)->not->toContain("isset(\$headers['x-orbit-e2e-wireguard-ip'])");
+    expect(gatewayCanonicalPeerIp($script, '10.61.42.4'))
+        ->toBe('10.6.0.4')
+        ->and($script)
+        ->toContain('$identity = canonical_peer_ip($clientIp);')
+        ->and($script)
+        ->toContain("\$headers['x-orbit-e2e-wireguard-ip'] = \$identity;")
+        ->and($script)
+        ->not->toContain("isset(\$headers['x-orbit-e2e-wireguard-ip'])");
 });
 
 it('maps run-scoped docker peer ips to canonical wireguard identities in the gateway tls proxy', function (): void {
-    expect(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.24.0.3'))->toBe('10.6.0.3')
-        ->and(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.31.0.4'))->toBe('10.6.0.4');
+    expect(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.24.0.3'))
+        ->toBe('10.6.0.3')
+        ->and(gatewayCanonicalPeerIp(gatewayTlsServerScript(), '10.31.0.4'))
+        ->toBe('10.6.0.4');
 });
 
 it('adds canonical e2e identity headers in the gateway http router', function (): void {
@@ -768,11 +902,16 @@ it('adds canonical e2e identity headers in the gateway http router', function ()
         '10.61.42.3' => '10.6.0.3',
     ]);
 
-    expect(gatewayHttpRouterPeerIdentity($script, '10.61.42.3'))->toBe('10.6.0.3')
-        ->and(gatewayHttpRouterPeerIdentity($script, '::ffff:10.24.0.4'))->toBe('10.6.0.4')
-        ->and(gatewayHttpRouterPeerIdentity($script, '127.0.0.1', '10.6.0.5'))->toBe('10.6.0.5')
-        ->and($script)->toContain("! isset(\$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'])")
-        ->and($script)->toContain("\$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] = \$identity;");
+    expect(gatewayHttpRouterPeerIdentity($script, '10.61.42.3'))
+        ->toBe('10.6.0.3')
+        ->and(gatewayHttpRouterPeerIdentity($script, '::ffff:10.24.0.4'))
+        ->toBe('10.6.0.4')
+        ->and(gatewayHttpRouterPeerIdentity($script, '127.0.0.1', '10.6.0.5'))
+        ->toBe('10.6.0.5')
+        ->and($script)
+        ->toContain("! isset(\$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'])")
+        ->and($script)
+        ->toContain("\$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] = \$identity;");
 });
 
 it('maps ipv4-mapped docker peer ips to canonical wireguard identities in the gateway tls proxy', function (): void {
@@ -780,8 +919,10 @@ it('maps ipv4-mapped docker peer ips to canonical wireguard identities in the ga
         '10.61.42.3' => '10.6.0.3',
     ]);
 
-    expect(gatewayCanonicalPeerIp($script, '::ffff:10.61.42.3'))->toBe('10.6.0.3')
-        ->and($script)->toContain('function normalize_peer_ip(string $peerIp): string');
+    expect(gatewayCanonicalPeerIp($script, '::ffff:10.61.42.3'))
+        ->toBe('10.6.0.3')
+        ->and($script)
+        ->toContain('function normalize_peer_ip(string $peerIp): string');
 });
 
 it('forwards raw peer ips in the default gateway tls proxy mode', function (): void {
@@ -889,7 +1030,12 @@ function gatewayHttpRouterPeerIdentity(string $script, string $peerIp, ?string $
         $server['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] = $existingIdentity;
     }
 
-    file_put_contents($file, "<?php\n\$_SERVER = ".var_export($server, true).";\n{$body}\necho \$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] ?? '';\n");
+    file_put_contents(
+        $file,
+        "<?php\n\$_SERVER = "
+        .var_export($server, true)
+        .";\n{$body}\necho \$_SERVER['HTTP_X_ORBIT_E2E_WIREGUARD_IP'] ?? '';\n",
+    );
 
     try {
         $output = [];

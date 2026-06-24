@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 it('creates the app websocket bindings table with the expected columns and broad types', function (): void {
-    expect(Schema::hasTable('app_websocket_bindings'))->toBeTrue()
+    expect(Schema::hasTable('app_websocket_bindings'))
+        ->toBeTrue()
         ->and(Schema::hasColumns('app_websocket_bindings', [
             'id',
             'app_id',
@@ -24,13 +25,20 @@ it('creates the app websocket bindings table with the expected columns and broad
             'public_hosts',
             'created_at',
             'updated_at',
-        ]))->toBeTrue()
-        ->and(Schema::getColumnType('app_websocket_bindings', 'enabled'))->toBeIn(['boolean', 'tinyint'])
-        ->and(Schema::getColumnType('app_websocket_bindings', 'reverb_app_id'))->toBeIn(['string', 'varchar'])
-        ->and(Schema::getColumnType('app_websocket_bindings', 'reverb_app_key'))->toBeIn(['string', 'varchar'])
-        ->and(Schema::getColumnType('app_websocket_bindings', 'reverb_app_secret'))->toBe('text')
-        ->and(Schema::getColumnType('app_websocket_bindings', 'allowed_origins'))->toBeIn(['json', 'text'])
-        ->and(Schema::getColumnType('app_websocket_bindings', 'public_hosts'))->toBeIn(['json', 'text']);
+        ]))
+        ->toBeTrue()
+        ->and(Schema::getColumnType('app_websocket_bindings', 'enabled'))
+        ->toBeIn(['boolean', 'tinyint'])
+        ->and(Schema::getColumnType('app_websocket_bindings', 'reverb_app_id'))
+        ->toBeIn(['string', 'varchar'])
+        ->and(Schema::getColumnType('app_websocket_bindings', 'reverb_app_key'))
+        ->toBeIn(['string', 'varchar'])
+        ->and(Schema::getColumnType('app_websocket_bindings', 'reverb_app_secret'))
+        ->toBe('text')
+        ->and(Schema::getColumnType('app_websocket_bindings', 'allowed_origins'))
+        ->toBeIn(['json', 'text'])
+        ->and(Schema::getColumnType('app_websocket_bindings', 'public_hosts'))
+        ->toBeIn(['json', 'text']);
 });
 
 it('stores app websocket bindings with encrypted secret material', function (): void {
@@ -50,11 +58,11 @@ it('stores app websocket bindings with encrypted secret material', function (): 
         ->enabled->toBeTrue()
         ->reverb_app_secret->toBe('server-secret')
         ->allowed_origins->toBe(['https://example.com'])
-        ->public_hosts->toBe(['ws.example.com'])
-        ->and($app->fresh()->webSocketBinding->is($binding))->toBeTrue();
+        ->public_hosts->toBe(['ws.example.com'])->and($app->fresh()->webSocketBinding->is($binding))->toBeTrue();
 
     expect(DB::table('app_websocket_bindings')->whereKey($binding->id)->value('reverb_app_secret'))
-        ->not->toBe('server-secret');
+        ->not
+        ->toBe('server-secret');
 });
 
 it('enforces one websocket binding per app', function (): void {
@@ -66,7 +74,8 @@ it('enforces one websocket binding per app', function (): void {
 
     expect(fn () => AppWebSocketBinding::factory()->create([
         'app_id' => $app->id,
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });
 
 it('cascades websocket bindings when the app is deleted', function (): void {

@@ -25,7 +25,11 @@ it('keeps gateway stream requests on canonical action endpoints', function (): v
 
     $violations = collect(File::allFiles(repo_path('packages/sdk/src/Requests')))
         ->reject(fn (SplFileInfo $file): bool => in_array($file->getPathname(), $allowedRequestFiles, true))
-        ->filter(fn (SplFileInfo $file): bool => preg_match("/return ['\"]\\/api\\/[^'\"]*\\/stream['\"];/", File::get($file->getPathname())) === 1)
+        ->filter(
+            fn (SplFileInfo $file): bool => (
+                preg_match("/return ['\"]\\/api\\/[^'\"]*\\/stream['\"];/", File::get($file->getPathname())) === 1
+            ),
+        )
         ->map(fn (SplFileInfo $file): string => str_replace(repo_path().'/', '', $file->getPathname()))
         ->values()
         ->all();
@@ -40,10 +44,14 @@ it('preserves real-time streaming headers on gateway api stream routes', functio
         echo "data: test\n\n";
     });
 
-    expect($response->headers->get('Content-Type'))->toBe('text/event-stream')
-        ->and($response->headers->get('Cache-Control'))->toContain('no-cache')
-        ->and($response->headers->get('Connection'))->toBe('keep-alive')
-        ->and($response->headers->get('X-Accel-Buffering'))->toBe('no');
+    expect($response->headers->get('Content-Type'))
+        ->toBe('text/event-stream')
+        ->and($response->headers->get('Cache-Control'))
+        ->toContain('no-cache')
+        ->and($response->headers->get('Connection'))
+        ->toBe('keep-alive')
+        ->and($response->headers->get('X-Accel-Buffering'))
+        ->toBe('no');
 });
 
 it('does not use laravel http for gateway transport', function (): void {

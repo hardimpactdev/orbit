@@ -15,24 +15,38 @@ it('treats omitted template and roles as a client identity request', function ()
         roles: null,
     );
 
-    expect($selection->clientIdentity)->toBeTrue()
-        ->and($selection->operator)->toBeFalse()
-        ->and($selection->gateway)->toBeFalse()
-        ->and($selection->hosted)->toBe([])
-        ->and($selection->requestedRoleMeta)->toBe('client');
+    expect($selection->clientIdentity)
+        ->toBeTrue()
+        ->and($selection->operator)
+        ->toBeFalse()
+        ->and($selection->gateway)
+        ->toBeFalse()
+        ->and($selection->hosted)
+        ->toBe([])
+        ->and($selection->requestedRoleMeta)
+        ->toBe('client');
 });
 
-it('expands node templates to canonical stored roles', function (string $template, array $hosted, bool $gateway = false, bool $operator = false): void {
+it('expands node templates to canonical stored roles', function (
+    string $template,
+    array $hosted,
+    bool $gateway = false,
+    bool $operator = false,
+): void {
     $selection = app(NodeCreationRoleResolver::class)->resolve(
         template: $template,
         operator: false,
         roles: null,
     );
 
-    expect($selection->template)->toBe($template)
-        ->and($selection->hosted)->toBe($hosted)
-        ->and($selection->gateway)->toBe($gateway)
-        ->and($selection->operator)->toBe($operator);
+    expect($selection->template)
+        ->toBe($template)
+        ->and($selection->hosted)
+        ->toBe($hosted)
+        ->and($selection->gateway)
+        ->toBe($gateway)
+        ->and($selection->operator)
+        ->toBe($operator);
 })->with([
     'operator' => ['operator', [], false, true],
     'gateway' => ['gateway', [], true, false],
@@ -44,16 +58,23 @@ it('expands node templates to canonical stored roles', function (string $templat
     'agent' => ['agent', ['agent'], false, false],
 ]);
 
-it('resolves comma-separated programmatic roles without template expansion', function (string $roles, array $hosted, string $requestedRole): void {
+it('resolves comma-separated programmatic roles without template expansion', function (
+    string $roles,
+    array $hosted,
+    string $requestedRole,
+): void {
     $selection = app(NodeCreationRoleResolver::class)->resolve(
         template: null,
         operator: false,
         roles: $roles,
     );
 
-    expect($selection->template)->toBeNull()
-        ->and($selection->hosted)->toBe($hosted)
-        ->and($selection->requestedRoleMeta)->toBe($requestedRole);
+    expect($selection->template)
+        ->toBeNull()
+        ->and($selection->hosted)
+        ->toBe($hosted)
+        ->and($selection->requestedRoleMeta)
+        ->toBe($requestedRole);
 })->with([
     'app dev with database' => ['app-dev,database', ['app-dev', 'database'], 'app-dev'],
     'metrics' => ['metrics', ['metrics'], 'metrics'],
@@ -67,9 +88,12 @@ it('rejects template and explicit roles together', function (): void {
             roles: 'app-dev',
         );
     } catch (NodeCreationRoleInputException $exception) {
-        expect($exception->errorCode)->toBe('validation_failed')
-            ->and($exception->getMessage())->toBe('--template and --roles cannot be used together.')
-            ->and($exception->meta)->toBe(['fields' => ['template', 'roles']]);
+        expect($exception->errorCode)
+            ->toBe('validation_failed')
+            ->and($exception->getMessage())
+            ->toBe('--template and --roles cannot be used together.')
+            ->and($exception->meta)
+            ->toBe(['fields' => ['template', 'roles']]);
 
         return;
     }
@@ -85,8 +109,7 @@ it('rejects retired aggregate role values without aliases', function (): void {
             roles: 'app-development',
         );
     } catch (NodeCreationRoleInputException $exception) {
-        expect($exception->errorCode)->toBe('validation_failed')
-            ->and($exception->meta)->toBe(['field' => 'roles']);
+        expect($exception->errorCode)->toBe('validation_failed')->and($exception->meta)->toBe(['field' => 'roles']);
 
         return;
     }

@@ -32,7 +32,7 @@ it('consumes gateway update events without waiting for large buffered reads', fu
     $connector->withMockClient($mock);
     $events = [];
 
-    $exitCode = (new UpdateAllGatewayStreamClient(new GatewayStreamTransport($connector)))->run(
+    $exitCode = new UpdateAllGatewayStreamClient(new GatewayStreamTransport($connector))->run(
         function (string $event, array $payload) use (&$events): void {
             $events[] = [$event, $payload];
         },
@@ -52,8 +52,10 @@ final class OneByteOnlyUpdateAllStreamResponse extends MockResponse
         parent::__construct('', 200, ['Content-Type' => 'text/event-stream']);
     }
 
-    public function createPsrResponse(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): ResponseInterface
-    {
+    public function createPsrResponse(
+        ResponseFactoryInterface $responseFactory,
+        StreamFactoryInterface $streamFactory,
+    ): ResponseInterface {
         return $responseFactory
             ->createResponse(200)
             ->withHeader('Content-Type', 'text/event-stream')

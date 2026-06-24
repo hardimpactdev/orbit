@@ -63,8 +63,7 @@ final readonly class FamilyCommandPrefixRule implements GroupedRule
 
     private function startsWithFamilyPrefix(string $commandSlug, string $familySlug): bool
     {
-        return $commandSlug === $familySlug
-            || str_starts_with($commandSlug, "{$familySlug}-");
+        return $commandSlug === $familySlug || str_starts_with($commandSlug, "{$familySlug}-");
     }
 
     private function finding(string $path, string $commandSlug, string $familySlug): Finding

@@ -19,17 +19,23 @@ it('runs a gateway scheduler tick without due schedules', function (): void {
 
     $result = app(OrbitScheduler::class)->tick($startedAt);
 
-    expect($result->startedAt->equalTo($startedAt))->toBeTrue()
-        ->and($result->dueSchedules)->toBe(0)
-        ->and($result->executedSchedules)->toBe(0)
-        ->and($result->finishedAt)->toBeInstanceOf(CarbonImmutable::class);
+    expect($result->startedAt->equalTo($startedAt))
+        ->toBeTrue()
+        ->and($result->dueSchedules)
+        ->toBe(0)
+        ->and($result->executedSchedules)
+        ->toBe(0)
+        ->and($result->finishedAt)
+        ->toBeInstanceOf(CarbonImmutable::class);
 });
 
 it('aligns daemon sleeps to the next wall-clock minute', function (): void {
     $scheduler = app(OrbitScheduler::class);
 
-    expect($scheduler->secondsUntilNextMinute(CarbonImmutable::parse('2026-05-06 12:34:45', 'UTC')))->toBe(15)
-        ->and($scheduler->secondsUntilNextMinute(CarbonImmutable::parse('2026-05-06 12:34:00', 'UTC')))->toBe(60);
+    expect($scheduler->secondsUntilNextMinute(CarbonImmutable::parse('2026-05-06 12:34:45', 'UTC')))
+        ->toBe(15)
+        ->and($scheduler->secondsUntilNextMinute(CarbonImmutable::parse('2026-05-06 12:34:00', 'UTC')))
+        ->toBe(60);
 });
 
 function createOrbitSchedulerUnitGatewayNode(): Node

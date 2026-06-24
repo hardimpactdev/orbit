@@ -15,8 +15,7 @@ describe('VpnRoleBaseline', function (): void {
         config()->set('services.wg_easy.password', 'secret-password');
         config()->set('services.wg_easy.username', 'orbit-admin');
 
-        $this->vpnDnsInstaller = new class extends VpnDnsSwarmInstaller
-        {
+        $this->vpnDnsInstaller = new class extends VpnDnsSwarmInstaller {
             /** @var list<array{publicHost: string, username: string, password: string, wireguardCidr: string, wireguardPort: int, dnsIp: string}> */
             public array $invocations = [];
 
@@ -40,7 +39,6 @@ describe('VpnRoleBaseline', function (): void {
                 ];
             }
         };
-
     });
 
     it('installs the vpn dns Swarm runtime when the vpn role has a public endpoint', function (): void {
@@ -86,10 +84,14 @@ describe('VpnRoleBaseline', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect($this->vpnDnsInstaller->invocations[0]['username'])->toBe('orbit')
-            ->and($this->vpnDnsInstaller->invocations[0]['wireguardCidr'])->toBe('10.6.0.0/24')
-            ->and($this->vpnDnsInstaller->invocations[0]['wireguardPort'])->toBe(51820)
-            ->and($this->vpnDnsInstaller->invocations[0]['dnsIp'])->toBe('10.6.0.1');
+        expect($this->vpnDnsInstaller->invocations[0]['username'])
+            ->toBe('orbit')
+            ->and($this->vpnDnsInstaller->invocations[0]['wireguardCidr'])
+            ->toBe('10.6.0.0/24')
+            ->and($this->vpnDnsInstaller->invocations[0]['wireguardPort'])
+            ->toBe(51820)
+            ->and($this->vpnDnsInstaller->invocations[0]['dnsIp'])
+            ->toBe('10.6.0.1');
     });
 
     it('does nothing when the vpn role has no public endpoint', function (): void {

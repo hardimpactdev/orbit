@@ -133,7 +133,11 @@ Route::middleware(CorrelationHeader::class)->group(function (): void {
             ->name('api.operations.events');
     });
 
-    Route::middleware([WireGuardIdentity::class, RequireGrantPermission::class, LogActivity::class])->group(function (): void {
+    Route::middleware([
+        WireGuardIdentity::class,
+        RequireGrantPermission::class,
+        LogActivity::class,
+    ])->group(function (): void {
         Route::get('/activity', ActivityListController::class);
         Route::get('/activity/{id}', ActivityShowController::class);
         Route::get('/agent-ide/adapters', AgentIdeAdapterChoicesController::class);

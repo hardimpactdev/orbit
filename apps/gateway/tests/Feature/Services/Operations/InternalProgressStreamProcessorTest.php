@@ -25,7 +25,11 @@ beforeEach(function (): void {
         $this->recorder,
     );
 
-    $this->run = $this->recorder->queued((string) Str::uuid(), 'local', internalCommand: 'internal:workspace-adapter:lookup');
+    $this->run = $this->recorder->queued(
+        (string) Str::uuid(),
+        'local',
+        internalCommand: 'internal:workspace-adapter:lookup',
+    );
 });
 
 /**
@@ -40,18 +44,24 @@ describe('InternalProgressFrameDecoder', function (): void {
     it('skips blank lines and comment lines silently', function (): void {
         $decoder = new InternalProgressFrameDecoder;
 
-        expect($decoder->decode(''))->toBeNull()
-            ->and($decoder->decode('   '))->toBeNull()
-            ->and($decoder->decode('# heartbeat'))->toBeNull();
+        expect($decoder->decode(''))
+            ->toBeNull()
+            ->and($decoder->decode('   '))
+            ->toBeNull()
+            ->and($decoder->decode('# heartbeat'))
+            ->toBeNull();
     });
 
     it('decodes each canonical event type', function (string $type): void {
         $decoder = new InternalProgressFrameDecoder;
         $event = $decoder->decode(json_encode(['event' => $type, 'data' => ['x' => 1]], JSON_THROW_ON_ERROR));
 
-        expect($event)->toBeInstanceOf(ProgressEvent::class)
-            ->and($event->type->value)->toBe($type)
-            ->and($event->payload)->toBe(['x' => 1]);
+        expect($event)
+            ->toBeInstanceOf(ProgressEvent::class)
+            ->and($event->type->value)
+            ->toBe($type)
+            ->and($event->payload)
+            ->toBe(['x' => 1]);
     })->with(['tree', 'step', 'complete', 'error']);
 
     it('rejects lines that are not valid JSON', function (): void {
@@ -93,8 +103,7 @@ describe('InternalProgressFrameDecoder', function (): void {
         $decoder = new InternalProgressFrameDecoder;
         $event = $decoder->decode('{"event":"step"}');
 
-        expect($event?->type)->toBe(ProgressEventType::Step)
-            ->and($event?->payload)->toBe([]);
+        expect($event?->type)->toBe(ProgressEventType::Step)->and($event?->payload)->toBe([]);
     });
 });
 
@@ -108,17 +117,27 @@ describe('InternalProgressStreamProcessor', function (): void {
             '{"event":"complete","data":{"exit_code":0,"workspace_id":"docs"}}',
         ];
 
-        $row = $this->processor->process($this->run->id, $lines, function (ProgressEvent $event) use (&$intermediates): void {
+        $row = $this->processor->process($this->run->id, $lines, function (ProgressEvent $event) use (
+            &$intermediates,
+        ): void {
             $intermediates[] = $event;
         });
 
-        expect($row->status)->toBe(OperationStatus::Succeeded)
-            ->and($row->exit_code)->toBe(0)
-            ->and($row->result)->toMatchArray(['workspace_id' => 'docs'])
-            ->and($row->finished_at)->not->toBeNull()
-            ->and($intermediates)->toHaveCount(3)
-            ->and($intermediates[0]->type)->toBe(ProgressEventType::Tree)
-            ->and($intermediates[1]->type)->toBe(ProgressEventType::Step);
+        expect($row->status)
+            ->toBe(OperationStatus::Succeeded)
+            ->and($row->exit_code)
+            ->toBe(0)
+            ->and($row->result)
+            ->toMatchArray(['workspace_id' => 'docs'])
+            ->and($row->finished_at)
+            ->not
+            ->toBeNull()
+            ->and($intermediates)
+            ->toHaveCount(3)
+            ->and($intermediates[0]->type)
+            ->toBe(ProgressEventType::Tree)
+            ->and($intermediates[1]->type)
+            ->toBe(ProgressEventType::Step);
     });
 
     it('transitions an operation_run row to failed on an error frame and persists the redacted error', function (): void {
@@ -129,13 +148,17 @@ describe('InternalProgressStreamProcessor', function (): void {
 
         $row = $this->processor->process($this->run->id, $lines);
 
-        expect($row->status)->toBe(OperationStatus::Failed)
-            ->and($row->exit_code)->toBe(17)
-            ->and($row->error)->toMatchArray([
+        expect($row->status)
+            ->toBe(OperationStatus::Failed)
+            ->and($row->exit_code)
+            ->toBe(17)
+            ->and($row->error)
+            ->toMatchArray([
                 'code' => 'clone_failed',
                 'message' => 'remote refused',
             ])
-            ->and($row->finished_at)->not->toBeNull();
+            ->and($row->finished_at)
+            ->not->toBeNull();
     });
 
     it('rejects malformed frames before any persistence and leaves the queued row untouched', function (): void {
@@ -165,8 +188,10 @@ describe('InternalProgressStreamProcessor', function (): void {
             $this->processor->process($this->run->id, $lines);
             test()->fail('Expected OperationPayloadRejected for forbidden key in progress frame.');
         } catch (OperationPayloadRejected $exception) {
-            expect($exception->errorCode)->toBe('operation.progress_unsafe')
-                ->and($exception->meta['reason'])->toBe('forbidden_key');
+            expect($exception->errorCode)
+                ->toBe('operation.progress_unsafe')
+                ->and($exception->meta['reason'])
+                ->toBe('forbidden_key');
         }
 
         expect(OperationRun::query()->find($this->run->id)->status)->toBe(OperationStatus::Queued);
@@ -182,8 +207,10 @@ describe('InternalProgressStreamProcessor', function (): void {
             $this->processor->process($this->run->id, $lines);
             test()->fail('Expected OperationPayloadRejected for PEM block in progress frame.');
         } catch (OperationPayloadRejected $exception) {
-            expect($exception->errorCode)->toBe('operation.progress_unsafe')
-                ->and($exception->meta['reason'])->toBe('pem_block_value');
+            expect($exception->errorCode)
+                ->toBe('operation.progress_unsafe')
+                ->and($exception->meta['reason'])
+                ->toBe('pem_block_value');
         }
 
         expect(OperationRun::query()->find($this->run->id)->status)->toBe(OperationStatus::Queued);
@@ -204,11 +231,11 @@ describe('InternalProgressStreamProcessor', function (): void {
     it('skips blank lines and # comment heartbeats without consuming a terminal frame', function (): void {
         $lines = ndjsonLines(<<<'NDJSON'
 
-        # heartbeat
-        {"event":"step","data":{"name":"clone"}}
-        # another heartbeat
-        {"event":"complete","data":{"exit_code":0}}
-        NDJSON);
+            # heartbeat
+            {"event":"step","data":{"name":"clone"}}
+            # another heartbeat
+            {"event":"complete","data":{"exit_code":0}}
+            NDJSON);
 
         $row = $this->processor->process($this->run->id, $lines);
 

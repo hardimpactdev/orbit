@@ -32,8 +32,12 @@ final class AppSetupController implements Loggable
         private readonly NodeAccessAuthorizer $authorizer,
     ) {}
 
-    public function __invoke(string $app, Request $request, SetupAppProgress $setupProgress, ProgressEventStreamResponseFactory $streams): JsonResponse|StreamedResponse
-    {
+    public function __invoke(
+        string $app,
+        Request $request,
+        SetupAppProgress $setupProgress,
+        ProgressEventStreamResponseFactory $streams,
+    ): JsonResponse|StreamedResponse {
         $targetApp = $this->resolveApp($app);
 
         if (! $targetApp instanceof App) {
@@ -43,7 +47,9 @@ final class AppSetupController implements Loggable
         $targetApp->loadMissing('node');
 
         if (! $targetApp->node instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$targetApp->name}'.", ['app' => $targetApp->name]);
+            return $this->authorizationFailed("Could not resolve owning node for app '{$targetApp->name}'.", [
+                'app' => $targetApp->name,
+            ]);
         }
 
         /** @var mixed $caller */
@@ -70,14 +76,14 @@ final class AppSetupController implements Loggable
         } catch (RuntimeException $exception) {
             return $this->error('app.setup_failed', $exception->getMessage(), [
                 'phase' => 'setup',
-                'node' => $targetApp->node->name,
+                'node' => $targetApp->node?->name,
             ]);
         }
 
         if ($result['setup_steps']['status'] === 'failed') {
             return $this->error('app.setup_step_failed', $result['setup_steps']['message'], [
                 'phase' => 'setup_steps',
-                'node' => $targetApp->node->name,
+                'node' => $targetApp->node?->name,
                 'path' => $targetApp->path,
             ]);
         }
@@ -90,8 +96,12 @@ final class AppSetupController implements Loggable
         ]);
     }
 
-    private function stream(SetupAppProgress $setupProgress, ProgressEventStreamResponseFactory $streams, App $app, Node $node): StreamedResponse
-    {
+    private function stream(
+        SetupAppProgress $setupProgress,
+        ProgressEventStreamResponseFactory $streams,
+        App $app,
+        Node $node,
+    ): StreamedResponse {
         return $streams->make(function ($emitter) use ($setupProgress, $app, $node): void {
             $plan = $setupProgress->for($app, $node);
             $exitCode = $plan->runForReporter(app(ProgressReporter::class));

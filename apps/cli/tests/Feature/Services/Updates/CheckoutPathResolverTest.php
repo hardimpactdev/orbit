@@ -10,7 +10,7 @@ describe('CheckoutPathResolver', function (): void {
         putenv('ORBIT_INSTALL_PATH=/custom/install/path');
 
         try {
-            $path = (new CheckoutPathResolver)->resolve();
+            $path = new CheckoutPathResolver()->resolve();
         } finally {
             $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
         }
@@ -23,7 +23,7 @@ describe('CheckoutPathResolver', function (): void {
         putenv('ORBIT_INSTALL_PATH=/custom/install/path/');
 
         try {
-            $path = (new CheckoutPathResolver)->resolve();
+            $path = new CheckoutPathResolver()->resolve();
         } finally {
             $previous === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previous}");
         }
@@ -39,7 +39,7 @@ describe('CheckoutPathResolver', function (): void {
         putenv('HOME=/home/orbit-user');
 
         try {
-            $path = (new CheckoutPathResolver)->resolve();
+            $path = new CheckoutPathResolver()->resolve();
         } finally {
             $previousInstall === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previousInstall}");
             $previousHome === false ? putenv('HOME') : putenv("HOME={$previousHome}");
@@ -56,7 +56,7 @@ describe('CheckoutPathResolver', function (): void {
         putenv('HOME=/home/orbit-user/');
 
         try {
-            $path = (new CheckoutPathResolver)->resolve();
+            $path = new CheckoutPathResolver()->resolve();
         } finally {
             $previousInstall === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previousInstall}");
             $previousHome === false ? putenv('HOME') : putenv("HOME={$previousHome}");
@@ -70,12 +70,13 @@ describe('CheckoutPathResolver', function (): void {
         putenv('ORBIT_INSTALL_PATH=/some/install/root');
 
         try {
-            $path = (new CheckoutPathResolver)->resolve();
+            $path = new CheckoutPathResolver()->resolve();
         } finally {
             $previousInstall === false ? putenv('ORBIT_INSTALL_PATH') : putenv("ORBIT_INSTALL_PATH={$previousInstall}");
         }
 
-        expect($path)->not->toContain('phar://')
-            ->and($path)->not->toStartWith(base_path());
+        expect($path)
+            ->not->toContain('phar://')->and($path)
+            ->not->toStartWith(base_path());
     });
 });

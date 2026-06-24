@@ -21,22 +21,32 @@ beforeEach(function (): void {
         'host' => 'gateway',
         'orbit_path' => '/home/gateway/orbit',
         'status' => 'active',
-        'wireguard_address' => WORKSPACE_STORE_CALLER_WG_IP]);
+        'wireguard_address' => WORKSPACE_STORE_CALLER_WG_IP,
+    ]);
 
     App::factory()->create([
         'name' => 'demo',
         'domain' => 'demo.beast',
         'path' => '/home/nckrtl/apps/demo',
-        'php_version' => '8.5']);
+        'php_version' => '8.5',
+    ]);
 
     app()->instance(RemoteShell::class, new WorkspaceStoreTestShell);
 });
 
 it('creates a workspace for an authorized gateway caller', function (): void {
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-a',
-        'app' => 'demo',
-        'base' => 'main'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-a',
+            'app' => 'demo',
+            'base' => 'main',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.name', 'feature-a');
@@ -59,11 +69,20 @@ it('rejects callers without workspace creation permission', function (): void {
         'name' => 'beast',
         'host' => 'beast',
         'wireguard_address' => '10.6.0.7',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-a',
-        'app' => 'demo'], [], [], ['REMOTE_ADDR' => '10.6.0.7']);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-a',
+            'app' => 'demo',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => '10.6.0.7'],
+    );
 
     $response->assertStatus(403);
     $response->assertJsonPath('error.code', 'authorization_failed');
@@ -72,9 +91,17 @@ it('rejects callers without workspace creation permission', function (): void {
 });
 
 it('rejects reserved name main', function (): void {
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'main',
-        'app' => 'demo'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'main',
+            'app' => 'demo',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'validation_failed');
@@ -82,9 +109,17 @@ it('rejects reserved name main', function (): void {
 });
 
 it('rejects invalid workspace names', function (): void {
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'Feature_A',
-        'app' => 'demo'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'Feature_A',
+            'app' => 'demo',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertStatus(422);
 });
@@ -94,11 +129,20 @@ it('rejects duplicate workspace names per app', function (): void {
         'app_id' => 1,
         'name' => 'feature-a',
         'path' => '/home/nckrtl/apps/demo/.worktrees/feature-a',
-        'lifecycle_status' => WorkspaceLifecycleStatus::Expected]);
+        'lifecycle_status' => WorkspaceLifecycleStatus::Expected,
+    ]);
 
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-a',
-        'app' => 'demo'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-a',
+            'app' => 'demo',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'workspace.already_exists');
@@ -108,29 +152,49 @@ it('rejects workspace creation for production app nodes', function (): void {
     $node = createTestAppHostNode([
         'name' => 'prod-1',
         'host' => 'prod-1',
-        'wireguard_address' => '10.6.0.8'], role: 'app-prod');
+        'wireguard_address' => '10.6.0.8',
+    ], role: 'app-prod');
     App::factory()
         ->for($node, 'node')
         ->create([
             'name' => 'prod',
             'domain' => 'prod.test',
             'path' => '/home/orbit/apps/prod',
-            'php_version' => '8.5']);
+            'php_version' => '8.5',
+        ]);
 
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-a',
-        'app' => 'prod'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-a',
+            'app' => 'prod',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'workspace.unsupported_for_production');
-    expect(Workspace::query()->where('app_id', App::query()->where('name', 'prod')->value('id'))->exists())->toBeFalse();
+    expect(
+        Workspace::query()->where('app_id', App::query()->where('name', 'prod')->value('id'))->exists(),
+    )->toBeFalse();
 });
 
 it('creates workspace with supported custom php version', function (): void {
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-php',
-        'app' => 'demo',
-        'php_version' => '8.4'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-php',
+            'app' => 'demo',
+            'php_version' => '8.4',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertCreated();
     $response->assertJsonPath('success.data.workspace.php_version', '8.4');
@@ -143,10 +207,18 @@ it('creates workspace with supported custom php version', function (): void {
 });
 
 it('rejects unsupported php version', function (): void {
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-php',
-        'app' => 'demo',
-        'php_version' => '8.2'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-php',
+            'app' => 'demo',
+            'php_version' => '8.2',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertStatus(422);
     $response->assertJsonPath('error.code', 'validation_failed');
@@ -157,10 +229,18 @@ it('converges both FPM pool and FrankenPHP runtime container when creating a php
     $shell = new WorkspaceStoreRuntimeContainerShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-runtime',
-        'app' => 'demo',
-        'base' => 'main'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-runtime',
+            'app' => 'demo',
+            'base' => 'main',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertCreated();
 
@@ -169,45 +249,71 @@ it('converges both FPM pool and FrankenPHP runtime container when creating a php
 
     // FrankenPHP runtime container converges; FPM pool is not rendered in
     // the steady-state path after ORBIT-RUNTIME-06C (todo 336).
-    expect($combined)->toContain("'orbit-ws-demo-feature-runtime'")
-        ->and($combined)->toContain('docker run -d')
-        ->and($combined)->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
-        ->and($combined)->not->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
+    expect($combined)
+        ->toContain("'orbit-ws-demo-feature-runtime'")
+        ->and($combined)
+        ->toContain('docker run -d')
+        ->and($combined)
+        ->toContain('/etc/orbit/workspaces/demo-feature-runtime.ini')
+        ->and($combined)
+        ->not->toContain('/etc/php/8.5/fpm/pool.d/orbit-demo-feature-runtime.conf');
 });
 
 it('skips runtime container convergence for static workspaces during create (runtime)', function (): void {
-    App::query()->where('name', 'demo')->update([
-        'runtime' => AppRuntimeKind::Static->value]);
+    App::query()
+        ->where('name', 'demo')
+        ->update([
+            'runtime' => AppRuntimeKind::Static->value,
+        ]);
 
     $shell = new WorkspaceStoreRuntimeContainerShell;
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-static',
-        'app' => 'demo',
-        'base' => 'main'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-static',
+            'app' => 'demo',
+            'base' => 'main',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertCreated();
 
     $scripts = array_map(fn (array $call): string => $call['script'], $shell->calls);
     $combined = implode("\n", $scripts);
 
-    expect($combined)->not->toContain("'orbit-ws-demo-feature-static'")
-        ->and($combined)->not->toContain('docker run -d');
+    expect($combined)
+        ->not->toContain("'orbit-ws-demo-feature-static'")->and($combined)
+        ->not->toContain('docker run -d');
 });
 
 it('rejects unauthenticated requests', function (): void {
-    $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-a',
-        'app' => 'demo'])
+    $this
+        ->call('POST', '/api/workspaces', [
+            'name' => 'feature-a',
+            'app' => 'demo',
+        ])
         ->assertStatus(403)
         ->assertJsonPath('error.code', 'authorization_failed');
 });
 
 it('rejects missing app', function (): void {
-    $response = $this->call('POST', '/api/workspaces', [
-        'name' => 'feature-a',
-        'app' => 'nonexistent'], [], [], ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/workspaces',
+        [
+            'name' => 'feature-a',
+            'app' => 'nonexistent',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => WORKSPACE_STORE_CALLER_WG_IP],
+    );
 
     $response->assertStatus(404);
     $response->assertJsonPath('error.code', 'app.not_found');

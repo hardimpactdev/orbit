@@ -110,8 +110,11 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
     /**
      * @return array<int, string>
      */
-    private function companionSlotsToCheck(string $canonicalContents, string $commandDirectory, string $commandName): array
-    {
+    private function companionSlotsToCheck(
+        string $canonicalContents,
+        string $commandDirectory,
+        string $commandName,
+    ): array {
         if (str_contains($canonicalContents, 'Role-specific behavior is defined in these companion contracts')) {
             return self::ROLE_SUFFIXES;
         }
@@ -140,15 +143,24 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
         $contents = file_get_contents($file) ?: '';
 
         if (! str_contains($contents, '[Back to')) {
-            $findings[] = $this->finding($file, 'Role companion files must link back to the canonical technical contract.');
+            $findings[] = $this->finding(
+                $file,
+                'Role companion files must link back to the canonical technical contract.',
+            );
         }
 
         if (! $this->hasBehaviorSection($contents)) {
-            $findings[] = $this->finding($file, 'Role companion files must define role-specific behavior, allowed paths, or denial behavior.');
+            $findings[] = $this->finding(
+                $file,
+                'Role companion files must define role-specific behavior, allowed paths, or denial behavior.',
+            );
         }
 
         if (str_contains($suffix, 'app-role') && ! $this->describesAppRolePath($contents)) {
-            $findings[] = $this->finding($file, 'App-role companion files must explicitly describe the app-role invocation path.');
+            $findings[] = $this->finding(
+                $file,
+                'App-role companion files must explicitly describe the app-role invocation path.',
+            );
         }
 
         if (! str_contains($contents, "\n## Test Mapping")) {
@@ -167,10 +179,12 @@ final readonly class RoleCompanionCoverageRule implements GroupedRule
     {
         $lowerContents = strtolower($contents);
 
-        return str_contains($lowerContents, 'app role')
+        return (
+            str_contains($lowerContents, 'app role')
             || str_contains($lowerContents, 'app-role')
             || str_contains($lowerContents, 'app-development')
-            || str_contains($lowerContents, 'app-production');
+            || str_contains($lowerContents, 'app-production')
+        );
     }
 
     private function finding(string $path, string $message): Finding

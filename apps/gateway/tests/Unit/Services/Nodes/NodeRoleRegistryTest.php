@@ -161,46 +161,82 @@ describe('node role registry', function (): void {
     it('defines supported platforms and assignability for the initial roles', function (): void {
         $registry = new NodeRoleRegistry;
 
-        expect($registry->definition('gateway')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('gateway')->assignableByRoleCommand)->toBeFalse()
-            ->and($registry->definition('gateway')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('router')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('router')->assignableByRoleCommand)->toBeFalse()
-            ->and($registry->definition('router')->assignableByNodeNew)->toBeFalse()
-            ->and($registry->definition('app-dev')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('app-dev')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('app-dev')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('app-prod')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('app-prod')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('app-prod')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('database')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('database')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('database')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('agent')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('agent')->assignableByRoleCommand)->toBeFalse()
-            ->and($registry->definition('agent')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('ingress')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('ingress')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('ingress')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('websocket')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('websocket')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('websocket')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('vpn')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('vpn')->assignableByRoleCommand)->toBeFalse()
-            ->and($registry->definition('vpn')->assignableByNodeNew)->toBeFalse()
-            ->and($registry->definition('s3')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('s3')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('s3')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('metrics')->supportedPlatforms)->toBe(['ubuntu', 'debian'])
-            ->and($registry->definition('metrics')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('metrics')->assignableByNodeNew)->toBeTrue()
-            ->and($registry->definition('analytics')->supportedPlatforms)->toBe(['ubuntu'])
-            ->and($registry->definition('analytics')->assignableByRoleCommand)->toBeTrue()
-            ->and($registry->definition('analytics')->assignableByNodeNew)->toBeTrue();
+        expect($registry->definition('gateway')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('gateway')->assignableByRoleCommand)
+            ->toBeFalse()
+            ->and($registry->definition('gateway')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('router')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('router')->assignableByRoleCommand)
+            ->toBeFalse()
+            ->and($registry->definition('router')->assignableByNodeNew)
+            ->toBeFalse()
+            ->and($registry->definition('app-dev')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('app-dev')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('app-dev')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('app-prod')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('app-prod')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('app-prod')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('database')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('database')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('database')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('agent')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('agent')->assignableByRoleCommand)
+            ->toBeFalse()
+            ->and($registry->definition('agent')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('ingress')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('ingress')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('ingress')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('websocket')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('websocket')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('websocket')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('vpn')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('vpn')->assignableByRoleCommand)
+            ->toBeFalse()
+            ->and($registry->definition('vpn')->assignableByNodeNew)
+            ->toBeFalse()
+            ->and($registry->definition('s3')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('s3')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('s3')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('metrics')->supportedPlatforms)
+            ->toBe(['ubuntu', 'debian'])
+            ->and($registry->definition('metrics')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('metrics')->assignableByNodeNew)
+            ->toBeTrue()
+            ->and($registry->definition('analytics')->supportedPlatforms)
+            ->toBe(['ubuntu'])
+            ->and($registry->definition('analytics')->assignableByRoleCommand)
+            ->toBeTrue()
+            ->and($registry->definition('analytics')->assignableByNodeNew)
+            ->toBeTrue();
     });
 
     it('hydrates role-specific settings dtos', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('app-prod')
             ->settingsFromArray(['ingress_node_id' => 12]);
 
@@ -211,7 +247,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates app development settings dtos', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => 'test']);
 
@@ -222,7 +258,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates s3 settings dtos with default data path', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('s3')
             ->settingsFromArray([]);
 
@@ -233,7 +269,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates agent settings dtos with default tld', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray([]);
 
@@ -244,7 +280,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates agent settings dtos with explicit tld', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => 'custom']);
 
@@ -255,7 +291,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates vpn settings with defaults', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('vpn')
             ->settingsFromArray([]);
 
@@ -271,7 +307,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates explicit vpn settings', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('vpn')
             ->settingsFromArray([
                 'public_endpoint' => ' vpn.example.com ',
@@ -292,7 +328,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates websocket settings dtos', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('websocket')
             ->settingsFromArray(['redis_node_id' => 12]);
 
@@ -303,7 +339,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates analytics settings dtos', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('analytics')
             ->settingsFromArray([
                 'postgres_node_id' => 12,
@@ -320,7 +356,7 @@ describe('node role registry', function (): void {
     });
 
     it('hydrates empty settings dtos for roles without settings', function (string $role, string $class): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition($role)
             ->settingsFromArray([]);
 
@@ -329,100 +365,141 @@ describe('node role registry', function (): void {
             ->and($settings->toArray())
             ->toBe([]);
     })->with([
-        ['gateway', EmptyRoleSettings::class],
-        ['router', EmptyRoleSettings::class],
+        ['gateway',  EmptyRoleSettings::class],
+        ['router',   EmptyRoleSettings::class],
         ['database', DatabaseRoleSettings::class],
-        ['ingress', EmptyRoleSettings::class],
-        ['metrics', EmptyRoleSettings::class],
+        ['ingress',  EmptyRoleSettings::class],
+        ['metrics',  EmptyRoleSettings::class],
     ]);
 
     it('rejects invalid app development settings', function (): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => '']))
             ->toThrow(InvalidArgumentException::class, 'The app-dev role requires a valid tld setting.');
     });
 
     it('rejects path-like app development tld settings', function (): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => '../../orbit']))
             ->toThrow(InvalidArgumentException::class, 'The app-dev role requires a valid tld setting.');
     });
 
     it('rejects unknown app development settings', function (): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition('app-dev')
             ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
             ->toThrow(InvalidArgumentException::class, 'The app-dev role does not accept unknown settings.');
     });
 
     it('rejects invalid agent settings', function (): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => '']))
             ->toThrow(InvalidArgumentException::class, 'The agent role requires a valid tld setting.');
     });
 
     it('rejects path-like agent tld settings', function (): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => '../../orbit']))
             ->toThrow(InvalidArgumentException::class, 'The agent role requires a valid tld setting.');
     });
 
     it('rejects unknown agent settings', function (): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition('agent')
             ->settingsFromArray(['tld' => 'test', 'unexpected' => 'value']))
             ->toThrow(InvalidArgumentException::class, 'The agent role does not accept unknown settings.');
     });
 
     it('rejects invalid vpn settings', function (array $settings, string $message): void {
-        expect(fn () => (new NodeRoleRegistry)
-            ->definition('vpn')
-            ->settingsFromArray($settings))
+        expect(
+            fn () => new NodeRoleRegistry()
+                ->definition('vpn')
+                ->settingsFromArray($settings),
+        )
             ->toThrow(InvalidArgumentException::class, $message);
     })->with([
         'unknown key' => [['unexpected' => 'value'], 'The vpn role does not accept unknown settings.'],
-        'bad endpoint' => [['public_endpoint' => 'not-a-dotted-host'], 'The vpn role requires a valid public endpoint setting.'],
+        'bad endpoint' => [
+            ['public_endpoint' => 'not-a-dotted-host'],
+            'The vpn role requires a valid public endpoint setting.',
+        ],
         'bad cidr' => [['wireguard_cidr' => '10.6.0.0'], 'The vpn role requires a valid IPv4 CIDR setting.'],
         'bad port' => [['wireguard_port' => 70000], 'The vpn role requires a valid WireGuard port.'],
         'bad dns' => [['dns_ip' => 'not-an-ip'], 'The vpn role requires a valid DNS IP setting.'],
     ]);
 
-    it('rejects invalid vpn constructor values', function (?string $publicEndpoint, string $wireguardCidr, int $wireguardPort, string $dnsIp, string $message): void {
+    it('rejects invalid vpn constructor values', function (
+        ?string $publicEndpoint,
+        string $wireguardCidr,
+        int $wireguardPort,
+        string $dnsIp,
+        string $message,
+    ): void {
         expect(fn () => new VpnRoleSettings(
             publicEndpoint: $publicEndpoint,
             wireguardCidr: $wireguardCidr,
             wireguardPort: $wireguardPort,
             dnsIp: $dnsIp,
-        ))->toThrow(InvalidArgumentException::class, $message);
+        ))
+            ->toThrow(InvalidArgumentException::class, $message);
     })->with([
-        'bad endpoint' => ['not-a-dotted-host', '10.6.0.0/24', 51820, '10.6.0.1', 'The vpn role requires a valid public endpoint setting.'],
-        'bad cidr' => ['203.0.113.10', '10.6.0.0/024', 51820, '10.6.0.1', 'The vpn role requires a valid IPv4 CIDR setting.'],
-        'bad port' => ['203.0.113.10', '10.6.0.0/24', 70000, '10.6.0.1', 'The vpn role requires a valid WireGuard port.'],
-        'bad dns' => ['203.0.113.10', '10.6.0.0/24', 51820, 'not-an-ip', 'The vpn role requires a valid DNS IP setting.'],
+        'bad endpoint' => [
+            'not-a-dotted-host',
+            '10.6.0.0/24',
+            51820,
+            '10.6.0.1',
+            'The vpn role requires a valid public endpoint setting.',
+        ],
+        'bad cidr' => [
+            '203.0.113.10',
+            '10.6.0.0/024',
+            51820,
+            '10.6.0.1',
+            'The vpn role requires a valid IPv4 CIDR setting.',
+        ],
+        'bad port' => [
+            '203.0.113.10',
+            '10.6.0.0/24',
+            70000,
+            '10.6.0.1',
+            'The vpn role requires a valid WireGuard port.',
+        ],
+        'bad dns' => [
+            '203.0.113.10',
+            '10.6.0.0/24',
+            51820,
+            'not-an-ip',
+            'The vpn role requires a valid DNS IP setting.',
+        ],
     ]);
 
     it('rejects settings for roles without settings', function (string $role): void {
-        expect(fn () => (new NodeRoleRegistry)
+        expect(fn () => new NodeRoleRegistry()
             ->definition($role)
             ->settingsFromArray(['unexpected' => 'value']))
             ->toThrow(InvalidArgumentException::class, 'This role does not accept settings.');
     })->with(['gateway', 'router', 'database', 'ingress', 'metrics']);
 
     it('rejects invalid analytics settings', function (array $settings, string $message): void {
-        expect(fn () => (new NodeRoleRegistry)
-            ->definition('analytics')
-            ->settingsFromArray($settings))
+        expect(
+            fn () => new NodeRoleRegistry()
+                ->definition('analytics')
+                ->settingsFromArray($settings),
+        )
             ->toThrow(InvalidArgumentException::class, $message);
     })->with([
-        'unknown key' => [[
-            'postgres_node_id' => 12,
-            'clickhouse_node_id' => 13,
-            'unexpected' => true,
-        ], 'The analytics role does not accept unknown settings.'],
+        'unknown key' => [
+            [
+                'postgres_node_id' => 12,
+                'clickhouse_node_id' => 13,
+                'unexpected' => true,
+            ],
+            'The analytics role does not accept unknown settings.',
+        ],
         'missing postgres' => [
             ['clickhouse_node_id' => 13],
             'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
@@ -442,7 +519,7 @@ describe('node role registry', function (): void {
     ]);
 
     it('accepts empty app production settings for compatibility with existing rows', function (): void {
-        $settings = (new NodeRoleRegistry)
+        $settings = new NodeRoleRegistry()
             ->definition('app-prod')
             ->settingsFromArray([]);
 
@@ -453,18 +530,29 @@ describe('node role registry', function (): void {
     });
 
     it('rejects invalid app production settings', function (array $settings, string $message): void {
-        expect(fn () => (new NodeRoleRegistry)
-            ->definition('app-prod')
-            ->settingsFromArray($settings))
+        expect(
+            fn () => new NodeRoleRegistry()
+                ->definition('app-prod')
+                ->settingsFromArray($settings),
+        )
             ->toThrow(InvalidArgumentException::class, $message);
     })->with([
-        'unknown key' => [['ingress_node_id' => 12, 'unexpected' => true], 'The app-prod role does not accept unknown settings.'],
-        'not integer' => [['ingress_node_id' => '12'], 'The app-prod role requires a positive ingress_node_id setting when provided.'],
-        'not positive' => [['ingress_node_id' => 0], 'The app-prod role requires a positive ingress_node_id setting when provided.'],
+        'unknown key' => [
+            ['ingress_node_id' => 12, 'unexpected' => true],
+            'The app-prod role does not accept unknown settings.',
+        ],
+        'not integer' => [
+            ['ingress_node_id' => '12'],
+            'The app-prod role requires a positive ingress_node_id setting when provided.',
+        ],
+        'not positive' => [
+            ['ingress_node_id' => 0],
+            'The app-prod role requires a positive ingress_node_id setting when provided.',
+        ],
     ]);
 
     it('rejects unknown roles', function (): void {
-        expect(fn () => (new NodeRoleRegistry)->definition('queue'))
+        expect(fn () => new NodeRoleRegistry()->definition('queue'))
             ->toThrow(InvalidArgumentException::class, 'Unknown node role [queue].');
     });
 

@@ -18,8 +18,11 @@ it('is hidden', function (): void {
 it('requires explicit topology roles or runtime artifacts', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:ensure-artifacts')
-        ->expectsOutputToContain('Set --roles or --all-roles for topology artifacts, or pass --runtime for Docker runtime/support images.')
+    $this
+        ->artisan('e2e:ensure-artifacts')
+        ->expectsOutputToContain(
+            'Set --roles or --all-roles for topology artifacts, or pass --runtime for Docker runtime/support images.',
+        )
         ->assertFailed();
 
     Process::assertNothingRan();
@@ -28,10 +31,11 @@ it('requires explicit topology roles or runtime artifacts', function (): void {
 it('rejects unsupported artifact lanes', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:ensure-artifacts', [
-        '--lanes' => 'docker,hetzner',
-        '--roles' => 'agent',
-    ])
+    $this
+        ->artisan('e2e:ensure-artifacts', [
+            '--lanes' => 'docker,hetzner',
+            '--roles' => 'agent',
+        ])
         ->expectsOutputToContain('Unsupported E2E artifact lane(s): hetzner. Supported lanes: docker, incus.')
         ->assertFailed();
 
@@ -41,17 +45,26 @@ it('rejects unsupported artifact lanes', function (): void {
 it('plans targeted Docker artifacts and a full Incus base rebuild without mutation', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:ensure-artifacts', [
-        'kind' => 'operator_gateway_agent',
-        '--roles' => 'agent',
-    ])
+    $this
+        ->artisan('e2e:ensure-artifacts', [
+            'kind' => 'operator_gateway_agent',
+            '--roles' => 'agent',
+        ])
         ->expectsOutputToContain('Dry run. Pass --force to run supported artifact preparation.')
         ->expectsOutputToContain('planned: docker topology')
-        ->expectsOutputToContain("command: composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent 'operator_gateway_agent'")
+        ->expectsOutputToContain(
+            "command: composer e2e:prepare-docker-hosts -- --force --topology-only --roles=agent 'operator_gateway_agent'",
+        )
         ->expectsOutputToContain('planned: incus topology (force guarded)')
-        ->expectsOutputToContain("command: composer e2e:prepare-topology -- --force 'operator_gateway_app-dev_app-prod_agent_websocket'")
-        ->expectsOutputToContain('template: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('template: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+        ->expectsOutputToContain(
+            "command: composer e2e:prepare-topology -- --force 'operator_gateway_app-dev_app-prod_agent_websocket'",
+        )
+        ->expectsOutputToContain(
+            'template: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'template: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->assertSuccessful();
 
     Process::assertNothingRan();
@@ -63,15 +76,20 @@ it('plans targeted Incus role artifacts in a custom namespace without mutation',
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function (): void {
-        $this->artisan('e2e:ensure-artifacts', [
-            'kind' => 'operator_gateway_agent',
-            '--lanes' => 'incus',
-            '--roles' => 'agent',
-        ])
+        $this
+            ->artisan('e2e:ensure-artifacts', [
+                'kind' => 'operator_gateway_agent',
+                '--lanes' => 'incus',
+                '--roles' => 'agent',
+            ])
             ->expectsOutputToContain('Dry run. Pass --force to run supported artifact preparation.')
             ->expectsOutputToContain('planned: incus topology (force guarded)')
-            ->expectsOutputToContain("command: composer e2e:prepare-topology -- --force --roles=agent 'operator_gateway_agent'")
-            ->expectsOutputToContain('template: orbit-template-agent-agent-isolation (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation)')
+            ->expectsOutputToContain(
+                "command: composer e2e:prepare-topology -- --force --roles=agent 'operator_gateway_agent'",
+            )
+            ->expectsOutputToContain(
+                'template: orbit-template-agent-agent-isolation (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation)',
+            )
             ->assertSuccessful();
     });
 
@@ -80,65 +98,78 @@ it('plans targeted Incus role artifacts in a custom namespace without mutation',
 
 it('delegates targeted Docker role preparation to the missing-only host preparer', function (): void {
     Process::fake([
-        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" =>
+            Process::result(),
     ]);
 
-    $this->artisan('e2e:ensure-artifacts', [
-        'kind' => 'operator_gateway_app-dev_app-prod_agent',
-        '--lanes' => 'docker',
-        '--roles' => 'agent',
-        '--force' => true,
-    ])
+    $this
+        ->artisan('e2e:ensure-artifacts', [
+            'kind' => 'operator_gateway_app-dev_app-prod_agent',
+            '--lanes' => 'docker',
+            '--roles' => 'agent',
+            '--force' => true,
+        ])
         ->expectsOutputToContain('ensured: docker topology')
         ->assertSuccessful();
 
-    Process::assertRan("bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan(
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'",
+    );
     Process::assertRan(fn ($process): bool => $process->path === repo_path());
 });
 
 it('can explicitly request a targeted Docker role rebuild', function (): void {
     Process::fake([
-        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'" =>
+            Process::result(),
     ]);
 
-    $this->artisan('e2e:ensure-artifacts', [
-        'kind' => 'operator_gateway_app-dev_app-prod_agent',
-        '--lanes' => 'docker',
-        '--roles' => 'agent',
-        '--force' => true,
-        '--rebuild' => true,
-    ])
+    $this
+        ->artisan('e2e:ensure-artifacts', [
+            'kind' => 'operator_gateway_app-dev_app-prod_agent',
+            '--lanes' => 'docker',
+            '--roles' => 'agent',
+            '--force' => true,
+            '--rebuild' => true,
+        ])
         ->expectsOutputToContain('ensured: docker topology')
         ->assertSuccessful();
 
-    Process::assertRan("bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan(
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild --topology-only --roles=agent 'operator_gateway_app-dev_app-prod_agent'",
+    );
 });
 
 it('delegates Docker runtime preparation separately from topology roles', function (): void {
     Process::fake([
-        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'" => Process::result(),
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'" =>
+            Process::result(),
     ]);
 
-    $this->artisan('e2e:ensure-artifacts', [
-        '--lanes' => 'docker',
-        '--runtime' => true,
-        '--force' => true,
-    ])
+    $this
+        ->artisan('e2e:ensure-artifacts', [
+            '--lanes' => 'docker',
+            '--runtime' => true,
+            '--force' => true,
+        ])
         ->expectsOutputToContain('ensured: docker runtime')
         ->assertSuccessful();
 
-    Process::assertRan("bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'");
+    Process::assertRan(
+        "bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --runtime-only 'operator_gateway_app-dev_app-prod_agent'",
+    );
 });
 
 it('guards forced Incus role preparation before mutation', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:ensure-artifacts', [
-        'kind' => 'operator_gateway_agent',
-        '--lanes' => 'incus',
-        '--roles' => 'agent',
-        '--force' => true,
-    ])
+    $this
+        ->artisan('e2e:ensure-artifacts', [
+            'kind' => 'operator_gateway_agent',
+            '--lanes' => 'incus',
+            '--roles' => 'agent',
+            '--force' => true,
+        ])
         ->expectsOutputToContain('Targeted Incus role artifact preparation is guarded.')
         ->assertFailed();
 

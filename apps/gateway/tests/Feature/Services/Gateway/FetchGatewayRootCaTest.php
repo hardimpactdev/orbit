@@ -29,15 +29,20 @@ describe('FetchGatewayRootCa', function (): void {
 
         $result = $this->fetcher->handle('10.6.0.2');
 
-        expect($result->pem)->toBe($pem)
-            ->and($result->sha256)->toBe(hash('sha256', $pem))
-            ->and($result->sourceUrl)->toBe('https://10.6.0.2/api/ca/root');
+        expect($result->pem)
+            ->toBe($pem)
+            ->and($result->sha256)
+            ->toBe(hash('sha256', $pem))
+            ->and($result->sourceUrl)
+            ->toBe('https://10.6.0.2/api/ca/root');
     });
 
     it('follows same-host HTTPS redirect', function (): void {
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
         GatewayMockClient::global([
-            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make('', 302, ['Location' => 'https://10.6.0.2/api/ca/root']),
+            'http://10.6.0.2/api/ca/root' => GatewayMockResponse::make('', 302, [
+                'Location' => 'https://10.6.0.2/api/ca/root',
+            ]),
             'https://10.6.0.2/api/ca/root' => GatewayMockResponse::make([
                 'success' => [
                     'data' => [

@@ -105,10 +105,17 @@ function s3JsonSeaweedfsTool(Node $storage, array $config = []): NodeTool
  */
 function s3JsonStreamFinalFrame(object $test, array $payload = []): array
 {
-    $response = $test->call('POST', '/api/s3/public-hosts', $payload, [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-    ]);
+    $response = $test->call(
+        'POST',
+        '/api/s3/public-hosts',
+        $payload,
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+        ],
+    );
 
     $content = $response->streamedContent();
 
@@ -137,17 +144,26 @@ describe('S3PublishJsonRenderer success shape', function (): void {
         $frame = s3JsonStreamFinalFrame($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
         // success.data.s3 shape.
-        expect($frame['data']['s3']['node'])->toBe('storage-1')
-            ->and($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($frame['data']['s3']['public_endpoints'])->toContain('https://s3.example.com')
-            ->and($frame['data']['s3']['backend_pool'])->toBeArray()
-            ->and($frame['data']['s3']['credentials_ref']['tool'])->toBe('seaweedfs')
-            ->and($frame['data']['s3']['credentials_ref']['node'])->toBe('storage-1');
+        expect($frame['data']['s3']['node'])
+            ->toBe('storage-1')
+            ->and($frame['data']['s3']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->toContain('https://s3.example.com')
+            ->and($frame['data']['s3']['backend_pool'])
+            ->toBeArray()
+            ->and($frame['data']['s3']['credentials_ref']['tool'])
+            ->toBe('seaweedfs')
+            ->and($frame['data']['s3']['credentials_ref']['node'])
+            ->toBe('storage-1');
 
         // success.meta shape.
-        expect($frame['data']['meta']['host'])->toBe('s3.example.com')
-            ->and($frame['data']['meta']['action'])->toBe('published')
-            ->and($frame['data']['meta']['already_published'])->toBeFalse();
+        expect($frame['data']['meta']['host'])
+            ->toBe('s3.example.com')
+            ->and($frame['data']['meta']['action'])
+            ->toBe('published')
+            ->and($frame['data']['meta']['already_published'])
+            ->toBeFalse();
     });
 });
 
@@ -165,8 +181,10 @@ describe('S3PublishJsonRenderer action metadata', function (): void {
 
         $frame = s3JsonStreamFinalFrame($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($frame['data']['meta']['action'])->toBe('published')
-            ->and($frame['data']['meta']['already_published'])->toBeFalse();
+        expect($frame['data']['meta']['action'])
+            ->toBe('published')
+            ->and($frame['data']['meta']['already_published'])
+            ->toBeFalse();
     });
 
     it('returns already_published=true on idempotent re-publish', function (): void {
@@ -178,8 +196,10 @@ describe('S3PublishJsonRenderer action metadata', function (): void {
 
         $frame = s3JsonStreamFinalFrame($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($frame['data']['meta']['already_published'])->toBeTrue()
-            ->and($frame['data']['meta']['action'])->toBe('published');
+        expect($frame['data']['meta']['already_published'])
+            ->toBeTrue()
+            ->and($frame['data']['meta']['action'])
+            ->toBe('published');
     });
 });
 
@@ -192,19 +212,29 @@ describe('S3PublishJsonRenderer error codes', function (): void {
         s3JsonCallerNode();
         // No s3 role node.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"s3"');
     });
 
     it('emits validation_failed for missing router', function (): void {
@@ -213,17 +243,23 @@ describe('S3PublishJsonRenderer error codes', function (): void {
         s3JsonSeaweedfsTool($storage);
         // No router.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
-        expect($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"router"');
+        expect($content)->toContain('validation_failed')->and($content)->toContain('"required_role":"router"');
     });
 
     it('emits validation_failed for missing ingress', function (): void {
@@ -233,17 +269,23 @@ describe('S3PublishJsonRenderer error codes', function (): void {
         s3JsonRouterNode();
         // No ingress.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
-        expect($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"ingress"');
+        expect($content)->toContain('validation_failed')->and($content)->toContain('"required_role":"ingress"');
     });
 
     it('emits proxy.domain_conflict when host is owned by a non-S3 route', function (): void {
@@ -261,17 +303,23 @@ describe('S3PublishJsonRenderer error codes', function (): void {
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
         ]);
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
-        expect($content)->toContain('proxy.domain_conflict')
-            ->and($content)->toContain('"owner_type":"app"');
+        expect($content)->toContain('proxy.domain_conflict')->and($content)->toContain('"owner_type":"app"');
     });
 
     it('emits s3.publish_failed code from the action error return value', function (): void {
@@ -285,30 +333,43 @@ describe('S3PublishJsonRenderer error codes', function (): void {
         s3JsonCallerNode();
         // No s3 role assignment — triggers validation error path.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'missing-storage',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'missing-storage',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
         // Verifies that error events are produced (specific code = validation_failed here,
         // s3.publish_failed requires a live route-apply failure which cannot be
         // injected without mocking the final S3RouteRegistrar).
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed');
+        expect($content)->toContain('event: error')->and($content)->toContain('validation_failed');
     });
 
     it('emits authorization_failed for unauthenticated callers', function (): void {
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => '192.168.1.1',
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => '192.168.1.1',
+            ],
+        );
 
         $response->assertStatus(403);
         $response->assertJsonPath('error.code', 'authorization_failed');
@@ -323,17 +384,23 @@ describe('S3PublishJsonRenderer prerequisite error metadata', function (): void 
     it('includes field and required_role in the error meta for node validation failure', function (): void {
         s3JsonCallerNode();
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('"field":"node"')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)->toContain('"field":"node"')->and($content)->toContain('"required_role":"s3"');
     });
 });

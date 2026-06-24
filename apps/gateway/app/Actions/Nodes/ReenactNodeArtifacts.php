@@ -53,44 +53,44 @@ class ReenactNodeArtifacts
         $quotedEndpoint = escapeshellarg($endpoint);
 
         return <<<SH
-set -euo pipefail
-endpoint={$quotedEndpoint}
-timestamp="\$(date -u +%Y%m%d%H%M%S)"
-peers_file="\$(mktemp)"
-trap 'rm -f "\$peers_file"' EXIT
+            set -euo pipefail
+            endpoint={$quotedEndpoint}
+            timestamp="\$(date -u +%Y%m%d%H%M%S)"
+            peers_file="\$(mktemp)"
+            trap 'rm -f "\$peers_file"' EXIT
 
-conf=""
-for candidate in /etc/wireguard/wg-orbit.conf /etc/wireguard/wg0.conf; do
-    if [ ! -f "\$candidate" ]; then
-        continue
-    fi
+            conf=""
+            for candidate in /etc/wireguard/wg-orbit.conf /etc/wireguard/wg0.conf; do
+                if [ ! -f "\$candidate" ]; then
+                    continue
+                fi
 
-    conf="\$candidate"
-    break
-done
+                conf="\$candidate"
+                break
+            done
 
-if [ -z "\$conf" ]; then
-    echo "No WireGuard config file found for endpoint rotation." >&2
-    exit 1
-fi
+            if [ -z "\$conf" ]; then
+                echo "No WireGuard config file found for endpoint rotation." >&2
+                exit 1
+            fi
 
-if ! sudo grep -qE '^Endpoint[[:space:]]*=' "\$conf"; then
-    echo "WireGuard config does not contain an Endpoint line: \$conf" >&2
-    exit 1
-fi
+            if ! sudo grep -qE '^Endpoint[[:space:]]*=' "\$conf"; then
+                echo "WireGuard config does not contain an Endpoint line: \$conf" >&2
+                exit 1
+            fi
 
-sudo cp -a "\$conf" "\${conf}.before-gateway-endpoint-\${timestamp}"
-sudo sed -i -E "s#^Endpoint[[:space:]]*=.*#Endpoint = \${endpoint}#" "\$conf"
+            sudo cp -a "\$conf" "\${conf}.before-gateway-endpoint-\${timestamp}"
+            sudo sed -i -E "s#^Endpoint[[:space:]]*=.*#Endpoint = \${endpoint}#" "\$conf"
 
-iface="\$(basename "\$conf" .conf)"
-if sudo wg show "\$iface" peers > "\$peers_file" 2>/dev/null; then
-    while IFS= read -r peer; do
-        if [ -n "\$peer" ]; then
-            sudo wg set "\$iface" peer "\$peer" endpoint "\$endpoint"
-        fi
-    done < "\$peers_file"
-fi
-SH;
+            iface="\$(basename "\$conf" .conf)"
+            if sudo wg show "\$iface" peers > "\$peers_file" 2>/dev/null; then
+                while IFS= read -r peer; do
+                    if [ -n "\$peer" ]; then
+                        sudo wg set "\$iface" peer "\$peer" endpoint "\$endpoint"
+                    fi
+                done < "\$peers_file"
+            fi
+            SH;
     }
 
     /**

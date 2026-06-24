@@ -38,28 +38,35 @@ it('orders workspace setup and teardown steps independently', function (): void 
         command: 'php artisan down',
     );
 
-    expect(WorkspaceStep::query()
-        ->where('app_id', $app->id)
-        ->where('phase', WorkspaceLifecyclePhase::Setup)
-        ->orderBy('sort_order')
-        ->pluck('command')
-        ->all())->toBe([
+    expect(
+        WorkspaceStep::query()
+            ->where('app_id', $app->id)
+            ->where('phase', WorkspaceLifecyclePhase::Setup)
+            ->orderBy('sort_order')
+            ->pluck('command')
+            ->all(),
+    )
+        ->toBe([
             'composer install',
             'npm run build',
             'php artisan migrate',
         ])
-        ->and($teardown->sort_order)->toBe(1)
-        ->and($first->timeoutSeconds())->toBe(WorkspaceStep::DEFAULT_TIMEOUT_SECONDS);
+        ->and($teardown->sort_order)
+        ->toBe(1)
+        ->and($first->timeoutSeconds())
+        ->toBe(WorkspaceStep::DEFAULT_TIMEOUT_SECONDS);
 
     $removeStep->handle($inserted);
 
-    expect(WorkspaceStep::query()
-        ->where('app_id', $app->id)
-        ->where('phase', WorkspaceLifecyclePhase::Setup)
-        ->orderBy('sort_order')
-        ->pluck('sort_order', 'command')
-        ->all())->toBe([
-            'composer install' => 1,
-            'php artisan migrate' => 2,
-        ]);
+    expect(
+        WorkspaceStep::query()
+            ->where('app_id', $app->id)
+            ->where('phase', WorkspaceLifecyclePhase::Setup)
+            ->orderBy('sort_order')
+            ->pluck('sort_order', 'command')
+            ->all(),
+    )->toBe([
+        'composer install' => 1,
+        'php artisan migrate' => 2,
+    ]);
 });

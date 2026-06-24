@@ -33,9 +33,12 @@ it('manages and lists node access permissions from the gateway', function (): vo
 
         $setPayload = json_decode(trim($setResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($setPayload['success']['data']['consuming_node'])->toBe('operator-1')
-            ->and($setPayload['success']['data']['serving_node'])->toBe('app-dev-1')
-            ->and($setPayload['success']['data']['permissions'])->toContain('node:read');
+        expect($setPayload['success']['data']['consuming_node'])
+            ->toBe('operator-1')
+            ->and($setPayload['success']['data']['serving_node'])
+            ->toBe('app-dev-1')
+            ->and($setPayload['success']['data']['permissions'])
+            ->toContain('node:read');
 
         $listResult = $topology->ssh(
             'gateway',
@@ -48,9 +51,12 @@ it('manages and lists node access permissions from the gateway', function (): vo
 
         $listPayload = json_decode(trim($listResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($listPayload['success']['data']['consuming_node'])->toBe('operator-1')
-            ->and($listPayload['success']['data']['serving_node'])->toBe('app-dev-1')
-            ->and($listPayload['success']['data']['permissions'])->toContain('node:read');
+        expect($listPayload['success']['data']['consuming_node'])
+            ->toBe('operator-1')
+            ->and($listPayload['success']['data']['serving_node'])
+            ->toBe('app-dev-1')
+            ->and($listPayload['success']['data']['permissions'])
+            ->toContain('node:read');
     } finally {
         $topology->cleanup();
     }

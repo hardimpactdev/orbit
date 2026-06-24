@@ -59,12 +59,26 @@ class LiveIncusLocalMachine
 
     public function addGateway(string $gatewayIp, string $gatewayName): ProcessResult
     {
-        return Process::timeout(120)->run([repo_path('bin/orbit'), 'gateway:add', $gatewayIp, "--name={$gatewayName}", '--json']);
+        return Process::timeout(120)->run([
+            repo_path('bin/orbit'),
+            'gateway:add',
+            $gatewayIp,
+            "--name={$gatewayName}",
+            '--json',
+        ]);
     }
 
     public function verifyGateway(string $gatewayIp): ProcessResult
     {
-        return Process::timeout(30)->run(['curl', '--fail', '--silent', '--show-error', '--max-time', '10', "http://{$gatewayIp}/api/ca/root"]);
+        return Process::timeout(30)->run([
+            'curl',
+            '--fail',
+            '--silent',
+            '--show-error',
+            '--max-time',
+            '10',
+            "http://{$gatewayIp}/api/ca/root",
+        ]);
     }
 
     private function hasTty(): bool

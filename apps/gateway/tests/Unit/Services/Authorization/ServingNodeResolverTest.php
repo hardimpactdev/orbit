@@ -40,23 +40,24 @@ function servingNodeRequest(array $routeParameters = [], array $input = []): Req
 
 describe('RequiresPermission attribute', function (): void {
     it('defaults to target serving-node resolution', function (): void {
-        $attributes = (new ReflectionClass(DefaultRequiresPermissionFixture::class))
+        $attributes = new ReflectionClass(DefaultRequiresPermissionFixture::class)
             ->getAttributes(RequiresPermission::class);
 
         $attribute = $attributes[0]->newInstance();
 
-        expect($attribute->permission)->toBe('node:remove')
-            ->and($attribute->servingNode)->toBe(ServingNode::Target);
+        expect($attribute->permission)->toBe('node:remove')->and($attribute->servingNode)->toBe(ServingNode::Target);
     });
 
     it('stores explicit serving-node resolution', function (): void {
-        $attributes = (new ReflectionClass(WorkspaceRequiresPermissionFixture::class))
+        $attributes = new ReflectionClass(WorkspaceRequiresPermissionFixture::class)
             ->getAttributes(RequiresPermission::class);
 
         $attribute = $attributes[0]->newInstance();
 
-        expect($attribute->permission)->toBe('workspace:setup')
-            ->and($attribute->servingNode)->toBe(ServingNode::WorkspaceOwning);
+        expect($attribute->permission)
+            ->toBe('workspace:setup')
+            ->and($attribute->servingNode)
+            ->toBe(ServingNode::WorkspaceOwning);
     });
 });
 
@@ -64,7 +65,7 @@ describe('ServingNodeResolver', function (): void {
     it('resolves the active gateway node', function (): void {
         $gateway = Node::factory()->gateway()->create(['name' => 'gateway-1']);
 
-        $resolved = (new ServingNodeResolver)->resolve(servingNodeRequest(), ServingNode::Gateway);
+        $resolved = new ServingNodeResolver()->resolve(servingNodeRequest(), ServingNode::Gateway);
 
         expect($resolved?->is($gateway))->toBeTrue();
     });
@@ -72,7 +73,7 @@ describe('ServingNodeResolver', function (): void {
     it('resolves target nodes from route parameters', function (): void {
         $target = Node::factory()->create(['name' => 'app-1']);
 
-        $resolved = (new ServingNodeResolver)->resolve(
+        $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest(['name' => 'app-1']),
             ServingNode::Target,
         );
@@ -84,7 +85,7 @@ describe('ServingNodeResolver', function (): void {
         $node = Node::factory()->create(['name' => 'app-node']);
         OrbitApp::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
-        $resolved = (new ServingNodeResolver)->resolve(
+        $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest(['app' => 'docs']),
             ServingNode::AppOwning,
         );
@@ -97,7 +98,7 @@ describe('ServingNodeResolver', function (): void {
         $app = OrbitApp::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         OrbitProcess::factory()->forOwner($app)->create(['name' => 'queue']);
 
-        $resolved = (new ServingNodeResolver)->resolve(
+        $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest(['name' => 'queue']),
             ServingNode::AppOwning,
         );
@@ -114,7 +115,7 @@ describe('ServingNodeResolver', function (): void {
         Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature']);
         Workspace::factory()->create(['app_id' => $otherApp->id, 'name' => 'feature']);
 
-        $resolved = (new ServingNodeResolver)->resolve(
+        $resolved = new ServingNodeResolver()->resolve(
             servingNodeRequest(['workspace' => 'feature'], ['app' => 'docs']),
             ServingNode::WorkspaceOwning,
         );
@@ -127,13 +128,13 @@ describe('ServingNodeResolver', function (): void {
         $request = servingNodeRequest();
         $request->setUserResolver(static fn (): Node => $caller);
 
-        $resolved = (new ServingNodeResolver)->resolve($request, ServingNode::Caller);
+        $resolved = new ServingNodeResolver()->resolve($request, ServingNode::Caller);
 
         expect($resolved?->is($caller))->toBeTrue();
     });
 
     it('returns null when the serving node cannot be resolved', function (): void {
-        $resolved = (new ServingNodeResolver)->resolve(servingNodeRequest(), ServingNode::Target);
+        $resolved = new ServingNodeResolver()->resolve(servingNodeRequest(), ServingNode::Target);
 
         expect($resolved)->toBeNull();
     });

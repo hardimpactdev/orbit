@@ -7,7 +7,6 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('S3Credentials CLI command', function (): void {
-
     // -----------------------------------------------------------------------
     // Request payload
     // -----------------------------------------------------------------------
@@ -20,9 +19,13 @@ describe('S3Credentials CLI command', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains(urldecode($request->url()), '/api/s3/credentials')
-            && str_contains(urldecode($request->url()), 'node=storage-1'));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains(urldecode($request->url()), '/api/s3/credentials')
+                && str_contains(urldecode($request->url()), 'node=storage-1')
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -49,9 +52,13 @@ describe('S3Credentials CLI command', function (): void {
 
         expect($exitCode)->toBe(0);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains(urldecode($request->url()), '/api/s3/credentials')
-            && str_contains(urldecode($request->url()), 'node=storage-1'));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains(urldecode($request->url()), '/api/s3/credentials')
+                && str_contains(urldecode($request->url()), 'node=storage-1')
+            ),
+        );
     });
 
     // -----------------------------------------------------------------------
@@ -82,10 +89,14 @@ describe('S3Credentials CLI command', function (): void {
 
         Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/api/s3/credentials'));
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node')
-            ->and($decoded['error']['meta']['required_role'])->toBe('s3');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node')
+            ->and($decoded['error']['meta']['required_role'])
+            ->toBe('s3');
     });
 
     it('fails before contacting the credentials endpoint when no s3 nodes exist', function (): void {
@@ -106,10 +117,14 @@ describe('S3Credentials CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node')
-            ->and($decoded['error']['meta']['required_role'])->toBe('s3');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node')
+            ->and($decoded['error']['meta']['required_role'])
+            ->toBe('s3');
     });
 
     // -----------------------------------------------------------------------
@@ -129,14 +144,22 @@ describe('S3Credentials CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['node'])->toBe('storage-1')
-            ->and($decoded['success']['data']['credentials']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($decoded['success']['data']['credentials']['region'])->toBe('orbit')
-            ->and($decoded['success']['data']['credentials']['access_key_id'])->toBe('MYACCESSKEYID12345678')
-            ->and($decoded['success']['data']['credentials']['secret_access_key'])->toBe('my-secret-access-key-value')
-            ->and($decoded['success']['data']['credentials']['bucket_endpoint_style'])->toBe('path')
-            ->and($decoded['success']['meta']['tool'])->toBe('seaweedfs');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['credentials']['node'])
+            ->toBe('storage-1')
+            ->and($decoded['success']['data']['credentials']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($decoded['success']['data']['credentials']['region'])
+            ->toBe('orbit')
+            ->and($decoded['success']['data']['credentials']['access_key_id'])
+            ->toBe('MYACCESSKEYID12345678')
+            ->and($decoded['success']['data']['credentials']['secret_access_key'])
+            ->toBe('my-secret-access-key-value')
+            ->and($decoded['success']['data']['credentials']['bucket_endpoint_style'])
+            ->toBe('path')
+            ->and($decoded['success']['meta']['tool'])
+            ->toBe('seaweedfs');
     });
 
     it('places secret_access_key after access_key_id in --json output', function (): void {
@@ -151,9 +174,9 @@ describe('S3Credentials CLI command', function (): void {
         $akPos = strpos($output, 'access_key_id');
         $skPos = strpos($output, 'secret_access_key');
 
-        expect($akPos)->not->toBeFalse()
-            ->and($skPos)->not->toBeFalse()
-            ->and($skPos)->toBeGreaterThan($akPos);
+        expect($akPos)
+            ->not->toBeFalse()->and($skPos)
+            ->not->toBeFalse()->and($skPos)->toBeGreaterThan($akPos);
     });
 
     it('does not emit a progress tree in --json mode', function (): void {
@@ -164,10 +187,12 @@ describe('S3Credentials CLI command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->not->toContain('event: tree')
-            ->and($output)->not->toContain('event: step')
-            ->and($output)->not->toContain('event: complete');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->not->toContain('event: tree')->and($output)
+            ->not->toContain('event: step')->and($output)
+            ->not->toContain('event: complete');
     });
 
     // -----------------------------------------------------------------------
@@ -185,14 +210,22 @@ describe('S3Credentials CLI command', function (): void {
             '--node' => 'storage-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('FIELD')
-            ->and($output)->toContain('VALUE')
-            ->and($output)->toContain('storage-1')
-            ->and($output)->toContain('https://s3.orbit')
-            ->and($output)->toContain('MYACCESSKEYID12345678')
-            ->and($output)->toContain('my-secret-access-key-value')
-            ->and($output)->toContain('—');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('FIELD')
+            ->and($output)
+            ->toContain('VALUE')
+            ->and($output)
+            ->toContain('storage-1')
+            ->and($output)
+            ->toContain('https://s3.orbit')
+            ->and($output)
+            ->toContain('MYACCESSKEYID12345678')
+            ->and($output)
+            ->toContain('my-secret-access-key-value')
+            ->and($output)
+            ->toContain('—');
     });
 
     it('does not emit a progress tree in human mode', function (): void {
@@ -202,9 +235,11 @@ describe('S3Credentials CLI command', function (): void {
             '--node' => 'storage-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->not->toContain('event: tree')
-            ->and($output)->not->toContain('event: step');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->not->toContain('event: tree')->and($output)
+            ->not->toContain('event: step');
     });
 
     // -----------------------------------------------------------------------
@@ -212,11 +247,15 @@ describe('S3Credentials CLI command', function (): void {
     // -----------------------------------------------------------------------
 
     it('maps s3.credentials_missing from the gateway in --json mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('s3.credentials_missing', "SeaweedFS service credentials are missing for 'storage-1'.", [
-            'node' => 'storage-1',
-            'tool' => 'seaweedfs',
-            'next_command' => 'doctor --family=tool --restore --node=storage-1',
-        ]), 422);
+        fakeGateway(fakeErrorEnvelope(
+            's3.credentials_missing',
+            "SeaweedFS service credentials are missing for 'storage-1'.",
+            [
+                'node' => 'storage-1',
+                'tool' => 'seaweedfs',
+                'next_command' => 'doctor --family=tool --restore --node=storage-1',
+            ],
+        ), 422);
 
         [$exitCode, $output] = runCommand($this, 's3:credentials', [
             '--node' => 'storage-1',
@@ -225,9 +264,12 @@ describe('S3Credentials CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('s3.credentials_missing')
-            ->and($decoded['error']['meta']['next_command'])->toBe('doctor --family=tool --restore --node=storage-1');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('s3.credentials_missing')
+            ->and($decoded['error']['meta']['next_command'])
+            ->toBe('doctor --family=tool --restore --node=storage-1');
     });
 
     it('maps authorization_failed from the gateway in --json mode', function (): void {
@@ -240,8 +282,7 @@ describe('S3Credentials CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('authorization_failed');
     });
 
     it('maps validation_failed from the gateway in --json mode', function (): void {
@@ -257,9 +298,12 @@ describe('S3Credentials CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('router');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('router');
     });
 
     it('maps gateway_unavailable errors when the gateway is unreachable', function (): void {
@@ -272,8 +316,7 @@ describe('S3Credentials CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });
 

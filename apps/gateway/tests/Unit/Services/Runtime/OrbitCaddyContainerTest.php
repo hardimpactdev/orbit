@@ -12,12 +12,18 @@ describe('orbit caddy container', function (): void {
     it('uses deterministic orbit-caddy container defaults', function (): void {
         $container = OrbitCaddyContainer::default(new OrbitContainerNames);
 
-        expect($container->name())->toBe('orbit-caddy')
-            ->and($container->image())->toBe('caddy:2-alpine')
-            ->and($container->restartPolicy())->toBe('unless-stopped')
-            ->and($container->network())->toBe('orbit-network')
-            ->and($container->publishedPorts())->toBe([])
-            ->and($container->mounts())->toBe([
+        expect($container->name())
+            ->toBe('orbit-caddy')
+            ->and($container->image())
+            ->toBe('caddy:2-alpine')
+            ->and($container->restartPolicy())
+            ->toBe('unless-stopped')
+            ->and($container->network())
+            ->toBe('orbit-network')
+            ->and($container->publishedPorts())
+            ->toBe([])
+            ->and($container->mounts())
+            ->toBe([
                 ['source' => '/var/lib/orbit/caddy/data', 'target' => '/data/caddy', 'read_only' => false],
                 ['source' => '/var/lib/orbit/caddy/config', 'target' => '/config/caddy', 'read_only' => false],
                 ['source' => '/etc/caddy/Caddyfile', 'target' => '/etc/caddy/Caddyfile', 'read_only' => true],
@@ -27,13 +33,17 @@ describe('orbit caddy container', function (): void {
                 ['source' => '/home', 'target' => '/home', 'read_only' => true],
                 ['source' => '/run/php', 'target' => '/run/php', 'read_only' => false],
             ])
-            ->and($container->networkAliases())->toBe(['orbit-caddy'])
-            ->and($container->extraHosts())->toBe(['host.docker.internal' => 'host-gateway'])
-            ->and($container->labels())->toMatchArray([
+            ->and($container->networkAliases())
+            ->toBe(['orbit-caddy'])
+            ->and($container->extraHosts())
+            ->toBe(['host.docker.internal' => 'host-gateway'])
+            ->and($container->labels())
+            ->toMatchArray([
                 'orbit.managed' => 'true',
                 'orbit.container.kind' => 'caddy',
             ])
-            ->and($container->spec())->toMatchArray([
+            ->and($container->spec())
+            ->toMatchArray([
                 'name' => 'orbit-caddy',
                 'image' => 'caddy:2-alpine',
                 'network' => 'orbit-network',
@@ -129,15 +139,19 @@ describe('orbit caddy container', function (): void {
             callerFacingAddress: '192.168.1.150',
         );
 
-        expect($container->publishedPorts())->toBe([
-            '10.6.0.50:80:80',
-            '10.6.0.50:443:443',
-            '10.6.0.50:443:443/udp',
-            '192.168.1.150:80:80',
-            '192.168.1.150:443:443',
-            '192.168.1.150:443:443/udp',
-            '10.6.0.50:8081:8081',
-        ])->not->toContain('192.168.1.150:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort);
+        expect($container->publishedPorts())
+            ->toBe([
+                '10.6.0.50:80:80',
+                '10.6.0.50:443:443',
+                '10.6.0.50:443:443/udp',
+                '192.168.1.150:80:80',
+                '192.168.1.150:443:443',
+                '192.168.1.150:443:443/udp',
+                '10.6.0.50:8081:8081',
+            ])
+            ->not->toContain(
+                '192.168.1.150:'.OrbitCaddyContainer::PrivateBackendPort.':'.OrbitCaddyContainer::PrivateBackendPort,
+            );
     });
 
     it('ignores non-private caller-facing IPv4 values for private node listeners', function (): void {

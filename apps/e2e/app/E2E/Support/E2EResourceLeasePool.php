@@ -80,8 +80,12 @@ final readonly class E2EResourceLeasePool
      * @param  array<string, int>  $hostSlots
      * @param  list<string>  $exclusiveHosts
      */
-    public function acquireWeighted(string $backend, array $hostSlots, int $slots, array $exclusiveHosts = []): E2EResourceLeaseSet
-    {
+    public function acquireWeighted(
+        string $backend,
+        array $hostSlots,
+        int $slots,
+        array $exclusiveHosts = [],
+    ): E2EResourceLeaseSet {
         if ($slots < 1) {
             throw new RuntimeException("A {$backend} E2E lease must request at least one slot.");
         }
@@ -116,7 +120,9 @@ final readonly class E2EResourceLeasePool
             usleep(200_000);
         } while (true);
 
-        throw new RuntimeException("No {$backend} E2E capacity for {$slots} slots became available within {$this->waitSeconds} seconds.");
+        throw new RuntimeException(
+            "No {$backend} E2E capacity for {$slots} slots became available within {$this->waitSeconds} seconds.",
+        );
     }
 
     /**
@@ -137,8 +143,10 @@ final readonly class E2EResourceLeasePool
                 $snapshot[] = [
                     'host' => $host,
                     'slot' => $slot,
-                    'leased' => is_file($this->path($backend, $host, $slot))
-                        || ($this->isExclusiveHost($host, $exclusiveHostLookup) && $this->hasConflictingHostLease($backend, $host)),
+                    'leased' =>
+                        is_file($this->path($backend, $host, $slot))
+                            || $this->isExclusiveHost($host, $exclusiveHostLookup)
+                            && $this->hasConflictingHostLease($backend, $host),
                 ];
             }
         }
@@ -214,8 +222,13 @@ final readonly class E2EResourceLeasePool
      * @param  array<string, true>  $exclusiveHostLookup
      * @return non-empty-list<E2EResourceLease>|null
      */
-    private function tryAcquireWeighted(string $backend, string $host, int $availableSlots, int $requestedSlots, array $exclusiveHostLookup): ?array
-    {
+    private function tryAcquireWeighted(
+        string $backend,
+        string $host,
+        int $availableSlots,
+        int $requestedSlots,
+        array $exclusiveHostLookup,
+    ): ?array {
         if (! $this->isExclusiveHost($host, $exclusiveHostLookup)) {
             return $this->tryAcquireSlotSet($backend, $host, $availableSlots, $requestedSlots);
         }
@@ -420,19 +433,29 @@ final readonly class E2EResourceLeasePool
 
     private function path(string $backend, string $host, int $slot): string
     {
-        return $this->directory.'/'.implode('-', [
-            $this->sanitize($backend),
-            $this->sanitize($host),
-            $slot,
-        ]).'.lease';
+        return (
+            $this->directory
+            .'/'
+            .implode('-', [
+                $this->sanitize($backend),
+                $this->sanitize($host),
+                $slot,
+            ])
+            .'.lease'
+        );
     }
 
     private function hostMutexPath(string $host): string
     {
-        return $this->directory.'/'.implode('-', [
-            '__host_mutex',
-            $this->sanitize($host),
-        ]).'.lease';
+        return (
+            $this->directory
+            .'/'
+            .implode('-', [
+                '__host_mutex',
+                $this->sanitize($host),
+            ])
+            .'.lease'
+        );
     }
 
     /**

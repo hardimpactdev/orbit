@@ -77,8 +77,11 @@ class GatewaySwarmInstaller
     /**
      * @param  array{cert: string, key: string}  $gatewayLeaf
      */
-    private function convergeRouterOwnedOrbitCaddy(string $wireguardAddress, string $wireguardCidr, array $gatewayLeaf): void
-    {
+    private function convergeRouterOwnedOrbitCaddy(
+        string $wireguardAddress,
+        string $wireguardCidr,
+        array $gatewayLeaf,
+    ): void {
         $this->installCaddyReadableGatewayLeaf($gatewayLeaf);
 
         $container = OrbitCaddyContainer::forPublicIngress($wireguardAddress);

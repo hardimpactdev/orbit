@@ -37,8 +37,11 @@ function incusParallelHostTasksConfig(): E2EConfig
     );
 }
 
-function incusParallelHostTasksResult(string $output = '', bool $successful = true, string $errorOutput = ''): ProcessResult
-{
+function incusParallelHostTasksResult(
+    string $output = '',
+    bool $successful = true,
+    string $errorOutput = '',
+): ProcessResult {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn($successful);
     $result->shouldReceive('output')->andReturn($output);
@@ -67,13 +70,16 @@ it('builds one script that runs every task in the background and waits on all of
         ->toContain('__orbit_task_status dev')
         ->toContain('__orbit_task_status prod')
         ->toContain('[ "$STATUS" -eq 0 ]')
-        ->not->toContain("\nexit \"\$STATUS\"")
-        ->and(strpos($script, '& PID_TASK_2=$!'))->toBeLessThan(strpos($script, 'wait "$PID_TASK_1"'));
+        ->not
+        ->toContain("\nexit \"\$STATUS\"")
+        ->and(strpos($script, '& PID_TASK_2=$!'))
+        ->toBeLessThan(strpos($script, 'wait "$PID_TASK_1"'));
 });
 
 it('records per-task timings into the timer when the host run succeeds', function (): void {
     $host = m::mock(IncusHost::class, [incusParallelHostTasksConfig()])->makePartial();
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->andReturn(incusParallelHostTasksResult(implode("\n", [
             '__orbit_task_status dev 0',
@@ -84,22 +90,32 @@ it('records per-task timings into the timer when the host run succeeds', functio
 
     $timer = new E2EPhaseTimer;
 
-    IncusParallelHostTasks::run($host, [
-        'dev' => 'true',
-        'prod' => 'true',
-    ], $timer, 'command-ready', timeoutSeconds: 120);
+    IncusParallelHostTasks::run(
+        $host,
+        [
+            'dev' => 'true',
+            'prod' => 'true',
+        ],
+        $timer,
+        'command-ready',
+        timeoutSeconds: 120,
+    );
 
     $events = collect($timer->events())->keyBy('name');
 
-    expect($events)->toHaveKey('command-ready.dev')
+    expect($events)
+        ->toHaveKey('command-ready.dev')
         ->toHaveKey('command-ready.prod')
-        ->and($events['command-ready.dev']['seconds'])->toBe(1.5)
-        ->and($events['command-ready.prod']['seconds'])->toBe(2.5);
+        ->and($events['command-ready.dev']['seconds'])
+        ->toBe(1.5)
+        ->and($events['command-ready.prod']['seconds'])
+        ->toBe(2.5);
 });
 
 it('throws with the failed task labels when the host run fails', function (): void {
     $host = m::mock(IncusHost::class, [incusParallelHostTasksConfig()])->makePartial();
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->andReturn(incusParallelHostTasksResult(
             output: implode("\n", [
@@ -117,12 +133,14 @@ it('throws with the failed task labels when the host run fails', function (): vo
         'command-ready',
         timeoutSeconds: 120,
         failureMessage: 'Could not wait for prepared clones',
-    ))->toThrow(RuntimeException::class, 'Could not wait for prepared clones [prod]');
+    ))
+        ->toThrow(RuntimeException::class, 'Could not wait for prepared clones [prod]');
 });
 
 it('treats a failed run without parsed statuses as a failure of every task', function (): void {
     $host = m::mock(IncusHost::class, [incusParallelHostTasksConfig()])->makePartial();
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->andReturn(incusParallelHostTasksResult(successful: false, errorOutput: 'mktemp: failed'));
 
@@ -131,7 +149,8 @@ it('treats a failed run without parsed statuses as a failure of every task', fun
         ['dev' => 'true', 'prod' => 'true'],
         new E2EPhaseTimer,
         'phase',
-    ))->toThrow(RuntimeException::class, '[dev, prod]');
+    ))
+        ->toThrow(RuntimeException::class, '[dev, prod]');
 });
 
 it('does nothing when no tasks are given', function (): void {

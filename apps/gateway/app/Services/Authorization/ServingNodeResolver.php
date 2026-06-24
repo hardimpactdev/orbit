@@ -147,7 +147,7 @@ final class ServingNodeResolver
             return $value;
         }
 
-        if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+        if (is_int($value) || is_string($value) && ctype_digit($value)) {
             return Node::query()->whereKey($value)->first();
         }
 
@@ -168,7 +168,7 @@ final class ServingNodeResolver
             return $value;
         }
 
-        if (is_int($value) || (is_string($value) && ctype_digit($value))) {
+        if (is_int($value) || is_string($value) && ctype_digit($value)) {
             return OrbitApp::query()
                 ->with('node')
                 ->whereKey($value)
@@ -219,7 +219,7 @@ final class ServingNodeResolver
             ->with('owner')
             ->when($app instanceof OrbitApp, fn ($query) => $query->ownedBy($app))
             ->when(
-                is_int($value) || ctype_digit((string) $value),
+                is_int($value) || ctype_digit($value),
                 fn ($query) => $query->whereKey($value),
                 fn ($query) => $query->where('name', $value),
             )
@@ -259,9 +259,9 @@ final class ServingNodeResolver
 
         $query = Workspace::query()
             ->with('app.node')
-            ->when($app instanceof OrbitApp, fn ($query) => $query->where('app_id', $app->id))
+            ->when($app instanceof OrbitApp, fn ($query) => $query->where('app_id', $app?->id))
             ->when(
-                is_int($value) || ctype_digit((string) $value),
+                is_int($value) || ctype_digit($value),
                 fn ($query) => $query->whereKey($value),
                 fn ($query) => $query->where('name', $value),
             );

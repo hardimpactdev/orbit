@@ -38,23 +38,41 @@ final class WorkspaceRemoveController implements Loggable
         }
 
         if ($request->boolean('destructive_consent') !== true) {
-            return $this->error('validation_failed', 'Use --force to remove this workspace.', ['field' => 'force'], 422);
+            return $this->error(
+                'validation_failed',
+                'Use --force to remove this workspace.',
+                ['field' => 'force'],
+                422,
+            );
         }
 
         $app = $this->stringQuery($request, 'app');
         $matches = $this->matchingWorkspaces($name, $app);
 
         if ($matches->isEmpty()) {
-            return $this->error('workspace.not_found', "Workspace '{$name}' not found in registry.", array_filter([
-                'name' => $name,
-                'app' => $app,
-            ], fn (?string $value): bool => $value !== null), 404);
+            return $this->error(
+                'workspace.not_found',
+                "Workspace '{$name}' not found in registry.",
+                array_filter(
+                    [
+                        'name' => $name,
+                        'app' => $app,
+                    ],
+                    fn (?string $value): bool => $value !== null,
+                ),
+                404,
+            );
         }
 
         if ($app === null && $matches->count() > 1) {
-            return $this->error('workspace.ambiguous_name', "Workspace name '{$name}' matches multiple apps.", [
-                'name' => $name,
-            ], 400);
+            return $this->error(
+                'workspace.ambiguous_name',
+                "Workspace name '{$name}' matches multiple apps.",
+                [
+                    'name' => $name,
+                ],
+                400,
+            );
         }
 
         $workspace = $matches->firstOrFail();
@@ -62,10 +80,15 @@ final class WorkspaceRemoveController implements Loggable
         $node = $workspace->app?->node;
 
         if (! $node instanceof Node) {
-            return $this->error('authorization_failed', 'Workspace owning node could not be resolved.', [
-                'name' => $workspace->name,
-                'app' => $workspace->app?->name,
-            ], 403);
+            return $this->error(
+                'authorization_failed',
+                'Workspace owning node could not be resolved.',
+                [
+                    'name' => $workspace->name,
+                    'app' => $workspace->app?->name,
+                ],
+                403,
+            );
         }
 
         $authorization = $this->authorizer->authorize($caller, $node, 'workspace:remove');
@@ -105,7 +128,11 @@ final class WorkspaceRemoveController implements Loggable
         return Workspace::query()
             ->with(['app.node', 'app.processes'])
             ->where('name', $name)
-            ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when($app
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
+                'name',
+                $app,
+            )))
             ->get();
     }
 

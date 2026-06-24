@@ -132,9 +132,11 @@ final class EnvFileEditor
         if (($quote === '"' || $quote === "'") && $last === $quote) {
             $inner = substr($trimmed, 1, -1);
 
-            return $quote === '"'
-                ? str_replace(['\\"', '\\\\'], ['"', '\\'], $inner)
-                : str_replace(["\\'", '\\\\'], ["'", '\\'], $inner);
+            return (
+                $quote === '"'
+                    ? str_replace(['\\"', '\\\\'], ['"', '\\'], $inner)
+                    : str_replace(["\\'", '\\\\'], ["'", '\\'], $inner)
+            );
         }
 
         return $trimmed;

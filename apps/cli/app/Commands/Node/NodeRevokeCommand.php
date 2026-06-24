@@ -29,7 +29,9 @@ final class NodeRevokeCommand extends GatewayCommand
         $servingNode = $this->stringArgument('serving_node');
 
         if ($consumingNode === null) {
-            return $this->renderFailure('validation_failed', 'Consuming node is required.', ['field' => 'consuming_node']);
+            return $this->renderFailure('validation_failed', 'Consuming node is required.', [
+                'field' => 'consuming_node',
+            ]);
         }
 
         if ($servingNode === null) {

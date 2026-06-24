@@ -35,12 +35,17 @@ final class DatabaseConnectionQueryController extends DatabaseConnectionApiContr
         $connection = $this->selector->resolve($target, $this->stringValue($request->input('connection')));
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
-            $this->setActivityProperties($request, $this->audit->queryAttempt($target, $sql, [
-                'write' => $request->boolean('write'),
-            ], extra: [
-                'selected_connection' => $this->stringValue($request->input('connection')),
-                'exit_status' => 'failed',
-            ]));
+            $this->setActivityProperties($request, $this->audit->queryAttempt(
+                $target,
+                $sql,
+                [
+                    'write' => $request->boolean('write'),
+                ],
+                extra: [
+                    'selected_connection' => $this->stringValue($request->input('connection')),
+                    'exit_status' => 'failed',
+                ],
+            ));
 
             return $this->failureResponse($connection);
         }
@@ -67,17 +72,31 @@ final class DatabaseConnectionQueryController extends DatabaseConnectionApiContr
 
         try {
             $result = $this->executor->query($connection, $sql, $options);
-            $this->setActivityProperties($request, $this->audit->query($connection, $target, $sql, $options, $result['meta'], [
-                'affected_rows' => $result['data']['affected_rows'] ?? null,
-                'exit_status' => 'success',
-            ]));
+            $this->setActivityProperties($request, $this->audit->query(
+                $connection,
+                $target,
+                $sql,
+                $options,
+                $result['meta'],
+                [
+                    'affected_rows' => $result['data']['affected_rows'] ?? null,
+                    'exit_status' => 'success',
+                ],
+            ));
 
             return $this->operationResponse($result['data'], $result['meta'], $connection);
         } catch (DatabaseQueryRunnerFailure $failure) {
-            $this->setActivityProperties($request, $this->audit->query($connection, $target, $sql, $options, $failure->meta, [
-                'exit_status' => 'failed',
-                'error_code' => $failure->errorCode,
-            ]));
+            $this->setActivityProperties($request, $this->audit->query(
+                $connection,
+                $target,
+                $sql,
+                $options,
+                $failure->meta,
+                [
+                    'exit_status' => 'failed',
+                    'error_code' => $failure->errorCode,
+                ],
+            ));
 
             return $this->queryFailureResponse($failure);
         }

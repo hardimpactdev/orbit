@@ -72,7 +72,10 @@ final readonly class CommandDirectoryStructureRule implements GroupedRule
                 continue;
             }
 
-            $pattern = '/^(?<slot>[1-9]\d*(?:\.[1-9]\d*)?)_'.preg_quote($commandName, '/').'(?:_[a-z0-9]+(?:-[a-z0-9]+)*)*\.md$/';
+            $pattern =
+                '/^(?<slot>[1-9]\d*(?:\.[1-9]\d*)?)_'
+                .preg_quote($commandName, '/')
+                .'(?:_[a-z0-9]+(?:-[a-z0-9]+)*)*\.md$/';
 
             if (preg_match($pattern, $entry, $matches) !== 1) {
                 $findings[] = $this->finding(
@@ -83,7 +86,7 @@ final readonly class CommandDirectoryStructureRule implements GroupedRule
                 continue;
             }
 
-            $slot = (string) $matches['slot'];
+            $slot = $matches['slot'];
 
             if (isset($seenSlots[$slot])) {
                 $findings[] = $this->finding(

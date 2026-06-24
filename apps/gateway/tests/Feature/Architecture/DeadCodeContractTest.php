@@ -16,14 +16,19 @@ function deadCodeContractRepoRoot(): string
 it('does not keep obsolete gateway-side stream client wrappers', function (): void {
     $repoRoot = deadCodeContractRepoRoot();
 
-    expect("{$repoRoot}/apps/gateway/app/Http/Gateway/DeployRunGatewayStreamClient.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/WorkspaceNewGatewayStreamClient.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/WorkspaceSetupGatewayStreamClient.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/ToolActionGatewayStreamClient.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Deploy/RunDeployStreamRequest.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Workspaces/CreateWorkspaceStreamRequest.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Workspaces/SetupWorkspaceStreamRequest.php")->not->toBeFile()
-        ->and("{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Tools/ToolActionStreamRequest.php")->not->toBeFile();
+    expect("{$repoRoot}/apps/gateway/app/Http/Gateway/DeployRunGatewayStreamClient.php")
+        ->not->toBeFile()->and("{$repoRoot}/apps/gateway/app/Http/Gateway/WorkspaceNewGatewayStreamClient.php")
+        ->not->toBeFile()->and("{$repoRoot}/apps/gateway/app/Http/Gateway/WorkspaceSetupGatewayStreamClient.php")
+        ->not->toBeFile()->and("{$repoRoot}/apps/gateway/app/Http/Gateway/ToolActionGatewayStreamClient.php")
+        ->not->toBeFile()->and("{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Deploy/RunDeployStreamRequest.php")
+        ->not->toBeFile()->and(
+            "{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Workspaces/CreateWorkspaceStreamRequest.php",
+        )
+        ->not->toBeFile()->and(
+            "{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Workspaces/SetupWorkspaceStreamRequest.php",
+        )
+        ->not->toBeFile()->and("{$repoRoot}/apps/gateway/app/Http/Gateway/Requests/Tools/ToolActionStreamRequest.php")
+        ->not->toBeFile();
 });
 
 it('does not keep the unused remote progress reporter wrapper', function (): void {
@@ -41,7 +46,8 @@ it('keeps gateway-owned code behind the Orbit SDK boundary', function (): void {
         "{$repoRoot}/apps/gateway/tests",
     ]) as $path) {
         expect(file_get_contents($path) ?: '')
-            ->not->toContain($needle, "{$path} imports SDK HTTP-client internals directly.");
+            ->not
+            ->toContain($needle, "{$path} imports SDK HTTP-client internals directly.");
     }
 });
 

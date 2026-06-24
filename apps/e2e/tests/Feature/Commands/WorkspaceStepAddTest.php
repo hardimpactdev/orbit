@@ -11,40 +11,40 @@ function workspaceStepAddSeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspaces')->delete();
-\App\Models\App::query()->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'permissions' => json_encode(['workspace:read', 'workspace:write'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspaces')->delete();
+        \App\Models\App::query()->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->insert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+            'permissions' => json_encode(['workspace:read', 'workspace:write'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-\App\Models\App::query()->create([
-    'name' => 'docs',
-    'node_id' => $nodes->get('app-dev-1'),
-    'path' => '/srv/docs',
-    'document_root' => 'public',
-]);
+        \App\Models\App::query()->create([
+            'name' => 'docs',
+            'node_id' => $nodes->get('app-dev-1'),
+            'path' => '/srv/docs',
+            'document_root' => 'public',
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -62,7 +62,12 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-step-add');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         workspaceStepAddSeed($topology);
 
@@ -94,19 +99,33 @@ it('adds workspace setup and teardown steps from a non-gateway caller through th
             "cd {$checkout} && orbit workspace-setup-step:list --app=docs --json",
             timeoutSeconds: 120,
         );
-        $setupListPayload = json_decode(trim($setupListResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $setupListPayload = json_decode(
+            trim($setupListResult->output()),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
         $setupSteps = $setupListPayload['success']['data']['steps'] ?? null;
 
-        expect($composerPayload['success']['data']['result'])->toBe(['action' => 'added'])
-            ->and($composerStep['app'])->toBe('docs')
-            ->and($composerStep['command'])->toBe('composer install')
-            ->and($composerStep['phase'])->toBe('setup')
-            ->and($composerStep['timeout_seconds'])->toBe(600)
-            ->and($teardownPayload['success']['data']['step']['phase'])->toBe('teardown')
-            ->and($teardownPayload['success']['data']['step']['command'])->toBe('dropdb docs')
-            ->and($setupSteps)->toBeArray()
-            ->and(array_column($setupSteps, 'command'))->toBe(['composer install', 'npm install'])
-            ->and(array_column($setupSteps, 'order'))->toBe([1, 2]);
+        expect($composerPayload['success']['data']['result'])
+            ->toBe(['action' => 'added'])
+            ->and($composerStep['app'])
+            ->toBe('docs')
+            ->and($composerStep['command'])
+            ->toBe('composer install')
+            ->and($composerStep['phase'])
+            ->toBe('setup')
+            ->and($composerStep['timeout_seconds'])
+            ->toBe(600)
+            ->and($teardownPayload['success']['data']['step']['phase'])
+            ->toBe('teardown')
+            ->and($teardownPayload['success']['data']['step']['command'])
+            ->toBe('dropdb docs')
+            ->and($setupSteps)
+            ->toBeArray()
+            ->and(array_column($setupSteps, 'command'))
+            ->toBe(['composer install', 'npm install'])
+            ->and(array_column($setupSteps, 'order'))
+            ->toBe([1, 2]);
     } finally {
         $topology->cleanup();
     }

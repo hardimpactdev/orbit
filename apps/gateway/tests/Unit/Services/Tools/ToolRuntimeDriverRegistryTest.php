@@ -18,10 +18,14 @@ it('resolves Docker and Docker Swarm runtime drivers from process rows', functio
 
     $docker = new Process(['runtime' => ProcessRuntime::Docker]);
     $node = Node::factory()->create();
-    $swarm = Process::factory()->forOwner($node)->make([
-        'runtime' => ProcessRuntime::DockerSwarm,
-    ]);
+    $swarm = Process::factory()
+        ->forOwner($node)
+        ->make([
+            'runtime' => ProcessRuntime::DockerSwarm,
+        ]);
 
-    expect($registry->forProcess($docker))->toBeInstanceOf(DockerProcessRuntimeDriver::class)
-        ->and($registry->forProcess($swarm))->toBeInstanceOf(DockerSwarmProcessRuntimeDriver::class);
+    expect($registry->forProcess($docker))
+        ->toBeInstanceOf(DockerProcessRuntimeDriver::class)
+        ->and($registry->forProcess($swarm))
+        ->toBeInstanceOf(DockerSwarmProcessRuntimeDriver::class);
 });

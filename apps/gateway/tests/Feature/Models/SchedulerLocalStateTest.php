@@ -19,10 +19,14 @@ it('stores the gateway scheduler heartbeat state', function (): void {
         'registry_synced_at' => '2026-05-06 12:33:55',
     ]);
 
-    expect($node->schedulerState->is($state))->toBeTrue()
-        ->and($state->node->is($node))->toBeTrue()
-        ->and($state->heartbeat_at?->toIso8601String())->toBe('2026-05-06T12:34:00+00:00')
-        ->and($state->registry_synced_at?->toIso8601String())->toBe('2026-05-06T12:33:55+00:00');
+    expect($node->schedulerState->is($state))
+        ->toBeTrue()
+        ->and($state->node->is($node))
+        ->toBeTrue()
+        ->and($state->heartbeat_at?->toIso8601String())
+        ->toBe('2026-05-06T12:34:00+00:00')
+        ->and($state->registry_synced_at?->toIso8601String())
+        ->toBe('2026-05-06T12:33:55+00:00');
 });
 
 it('keeps scheduler state unique per node', function (): void {
@@ -45,10 +49,14 @@ it('stores gateway schedule locks by stable schedule key', function (): void {
         'expires_at' => '2026-05-06 12:39:00',
     ]);
 
-    expect($gateway->scheduleLocks()->first()->is($firstLock))->toBeTrue()
-        ->and($firstLock->node->is($gateway))->toBeTrue()
-        ->and($firstLock->locked_at->toIso8601String())->toBe('2026-05-06T12:34:00+00:00')
-        ->and($firstLock->expires_at?->toIso8601String())->toBe('2026-05-06T12:39:00+00:00');
+    expect($gateway->scheduleLocks()->first()->is($firstLock))
+        ->toBeTrue()
+        ->and($firstLock->node->is($gateway))
+        ->toBeTrue()
+        ->and($firstLock->locked_at->toIso8601String())
+        ->toBe('2026-05-06T12:34:00+00:00')
+        ->and($firstLock->expires_at?->toIso8601String())
+        ->toBe('2026-05-06T12:39:00+00:00');
 });
 
 it('keeps schedule lock keys unique on the gateway', function (): void {
@@ -62,5 +70,6 @@ it('keeps schedule lock keys unique on the gateway', function (): void {
     expect(fn () => ScheduleLock::factory()->create([
         'node_id' => $node->id,
         'schedule_key' => 'node:app-1:backups',
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });

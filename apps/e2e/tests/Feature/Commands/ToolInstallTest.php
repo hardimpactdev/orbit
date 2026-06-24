@@ -23,8 +23,10 @@ it('installs a host-level tool on an app node through the gateway', function ():
         );
         $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
 
-        expect($result->successful())->toBeTrue()
-            ->and($data['tool'])->toMatchArray([
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($data['tool'])
+            ->toMatchArray([
                 'name' => 'laravel-installer',
                 'node' => 'app-dev-1',
                 'state' => 'installed',
@@ -32,7 +34,10 @@ it('installs a host-level tool on an app node through the gateway', function ():
 
         $stored = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo \\App\\Models\\NodeTool::query()->where('name', 'laravel-installer')->value('expected_state');"),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg(
+                    "echo \\App\\Models\\NodeTool::query()->where('name', 'laravel-installer')->value('expected_state');",
+                ),
             timeoutSeconds: 120,
         );
 
@@ -40,8 +45,10 @@ it('installs a host-level tool on an app node through the gateway', function ():
 
         $composerLog = $topology->ssh('dev', 'cat /tmp/orbit-tool-install-composer.log', timeoutSeconds: 60);
 
-        expect($composerLog->successful())->toBeTrue()
-            ->and($composerLog->output())->toContain('global require laravel/installer');
+        expect($composerLog->successful())
+            ->toBeTrue()
+            ->and($composerLog->output())
+            ->toContain('global require laravel/installer');
     } finally {
         $topology->cleanup();
     }
@@ -50,10 +57,10 @@ it('installs a host-level tool on an app node through the gateway', function ():
 function toolInstallPrepareComposer(E2ETopologyHarness $topology): void
 {
     $composer = <<<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\n' "$*" >> /tmp/orbit-tool-install-composer.log
-BASH;
+        #!/usr/bin/env bash
+        set -euo pipefail
+        printf '%s\n' "$*" >> /tmp/orbit-tool-install-composer.log
+        BASH;
 
     $topology->ssh(
         'dev',

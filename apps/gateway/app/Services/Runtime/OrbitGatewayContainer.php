@@ -145,7 +145,7 @@ class OrbitGatewayContainer
             return [
                 'source' => $source,
                 'target' => $target,
-                'read_only' => (bool) ($mount['read_only'] ?? false),
+                'read_only' => $mount['read_only'] ?? false,
             ];
         }, $mounts);
     }

@@ -77,8 +77,12 @@ class WebSocketRuntimeContainerRenderer
     /**
      * @return array<string, string>
      */
-    private function environment(string $wireGuardAddress, string $backendName, string $redisAddress, ?string $appKey = null): array
-    {
+    private function environment(
+        string $wireGuardAddress,
+        string $backendName,
+        string $redisAddress,
+        ?string $appKey = null,
+    ): array {
         $environment = [
             'APP_DEBUG' => 'false',
             'APP_ENV' => 'production',
@@ -138,7 +142,9 @@ class WebSocketRuntimeContainerRenderer
         $wireGuardAddress = trim((string) $node->wireguard_address);
 
         if ($wireGuardAddress === '') {
-            throw new RuntimeException('The websocket role requires a WireGuard address before runtime config can be rendered.');
+            throw new RuntimeException(
+                'The websocket role requires a WireGuard address before runtime config can be rendered.',
+            );
         }
 
         return $wireGuardAddress;
@@ -149,7 +155,9 @@ class WebSocketRuntimeContainerRenderer
         $redisNode = $this->redisResolver->usableRedisNode($settings->redisNodeId);
 
         if (! $redisNode instanceof Node) {
-            throw new RuntimeException('The websocket role requires an active Redis node before runtime config can be rendered.');
+            throw new RuntimeException(
+                'The websocket role requires an active Redis node before runtime config can be rendered.',
+            );
         }
 
         return $this->serviceAddress->forServiceOn($redisNode, $node, 'redis');
@@ -172,7 +180,7 @@ class WebSocketRuntimeContainerRenderer
 
     private function containerScopeForNode(Node $node): string
     {
-        $host = trim((string) $node->host);
+        $host = trim($node->host);
 
         if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP) === false) {
             return $host;

@@ -11,36 +11,36 @@ function activityListSeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$actor = \App\Models\Node::query()->where('name', 'operator-1')->first();
+        $actor = \App\Models\Node::query()->where('name', 'operator-1')->first();
 
-if (! $actor instanceof \App\Models\Node) {
-    throw new \RuntimeException('Missing prepared operator-1 node.');
-}
+        if (! $actor instanceof \App\Models\Node) {
+            throw new \RuntimeException('Missing prepared operator-1 node.');
+        }
 
-\Spatie\Activitylog\Models\Activity::query()->delete();
+        \Spatie\Activitylog\Models\Activity::query()->delete();
 
-activity('api')
-    ->causedBy($actor)
-    ->event('node.created')
-    ->withProperties([
-        'type' => 'write',
-        'command' => 'node:new',
-        'target_node' => 'app-dev-1',
-    ])
-    ->log('Recorded node.created');
+        activity('api')
+            ->causedBy($actor)
+            ->event('node.created')
+            ->withProperties([
+                'type' => 'write',
+                'command' => 'node:new',
+                'target_node' => 'app-dev-1',
+            ])
+            ->log('Recorded node.created');
 
-activity('api')
-    ->causedBy($actor)
-    ->event('node.removed')
-    ->withProperties([
-        'type' => 'destructive',
-        'command' => 'node:remove',
-        'target_node' => 'app-prod-1',
-    ])
-    ->log('Recorded node.removed');
+        activity('api')
+            ->causedBy($actor)
+            ->event('node.removed')
+            ->withProperties([
+                'type' => 'destructive',
+                'command' => 'node:remove',
+                'target_node' => 'app-prod-1',
+            ])
+            ->log('Recorded node.removed');
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -58,7 +58,12 @@ it('reads gateway activity from a operator caller through the gateway api', func
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'activity-list');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         activityListSeed($topology);
 
@@ -74,11 +79,16 @@ it('reads gateway activity from a operator caller through the gateway api', func
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $activities = $payload['success']['data']['activities'] ?? null;
 
-        expect($activities)->toBeArray()
-            ->and($activities)->toHaveCount(1)
-            ->and($activities[0]['type'])->toBe('node.removed')
-            ->and($activities[0]['effect'])->toBe('destructive')
-            ->and($payload['success']['meta']['filters']['effect'])->toBe('destructive');
+        expect($activities)
+            ->toBeArray()
+            ->and($activities)
+            ->toHaveCount(1)
+            ->and($activities[0]['type'])
+            ->toBe('node.removed')
+            ->and($activities[0]['effect'])
+            ->toBe('destructive')
+            ->and($payload['success']['meta']['filters']['effect'])
+            ->toBe('destructive');
     } finally {
         $topology->cleanup();
     }

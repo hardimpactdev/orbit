@@ -26,15 +26,18 @@ describe('app:env', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
-            && $request->data() === [
-                'key' => 'APP_DEBUG',
-                'value' => 'false',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
+                && $request->data() === [
+                    'key' => 'APP_DEBUG',
+                    'value' => 'false',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['variable']['key'])->toBe('APP_DEBUG');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['variable']['key'])->toBe('APP_DEBUG');
     });
 
     it('renders human set output naming the saved key and instance', function (): void {
@@ -56,10 +59,13 @@ describe('app:env', function (): void {
             '--value' => 'false',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Saved 'APP_DEBUG' for instance 'development'.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('variable:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Saved 'APP_DEBUG' for instance 'development'.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('variable:');
     });
 
     it('renders human render output as an aligned effective env map', function (): void {
@@ -78,13 +84,17 @@ describe('app:env', function (): void {
             '--instance' => 'production',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('APP_ENV=production')
-            ->and($output)->toContain('DB_PASSWORD=')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('variables:')
-            ->and($output)->not->toContain('"secret"')
-            ->and($output)->not->toContain('source');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('APP_ENV=production')
+            ->and($output)
+            ->toContain('DB_PASSWORD=')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('variables:')->and($output)
+            ->not->toContain('"secret"')->and($output)
+            ->not->toContain('source');
     });
 
     it('renders human render output with an empty effective env map', function (): void {
@@ -100,9 +110,12 @@ describe('app:env', function (): void {
             '--instance' => 'production',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No environment values found.')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe('No environment values found.')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders app instance env with app selector supplied as --app', function (): void {
@@ -119,8 +132,12 @@ describe('app:env', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/apps/billing/instances/production/env/render');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances/production/env/render'
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -141,15 +158,23 @@ describe('app:env', function (): void {
             '--instance' => 'production',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('KEY')
-            ->and($output)->toContain('VALUE')
-            ->and($output)->toContain('APP_ENV')
-            ->and($output)->toContain('production')
-            ->and($output)->toContain('APP_DEBUG')
-            ->and($output)->toContain('false')
-            ->and($output)->not->toContain('variables: [')
-            ->and($output)->not->toContain('"secret"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('KEY')
+            ->and($output)
+            ->toContain('VALUE')
+            ->and($output)
+            ->toContain('APP_ENV')
+            ->and($output)
+            ->toContain('production')
+            ->and($output)
+            ->toContain('APP_DEBUG')
+            ->and($output)
+            ->toContain('false')
+            ->and($output)
+            ->not->toContain('variables: [')->and($output)
+            ->not->toContain('"secret"');
     });
 
     it('renders human empty list output when no env variables exist', function (): void {
@@ -165,8 +190,7 @@ describe('app:env', function (): void {
             '--instance' => 'production',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No environment values found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No environment values found.');
     });
 
     it('fails before gateway io when app selectors conflict', function (): void {
@@ -184,9 +208,12 @@ describe('app:env', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('forwards apply requests when setting instance env values', function (): void {
@@ -215,16 +242,19 @@ describe('app:env', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
-            && $request->data() === [
-                'key' => 'MAIL_MAILER',
-                'value' => 'smtp',
-                'apply' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
+                && $request->data() === [
+                    'key' => 'MAIL_MAILER',
+                    'value' => 'smtp',
+                    'apply' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['apply']['runtime_outcome'])->toBe('recreated');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['apply']['runtime_outcome'])->toBe('recreated');
     });
 
     it('rejects apply outside set actions before gateway io', function (): void {
@@ -242,9 +272,12 @@ describe('app:env', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('apply');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('apply');
     });
 
     it('does not allow secret writes in the first slice', function (): void {
@@ -264,8 +297,11 @@ describe('app:env', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('secret');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('secret');
     });
 });

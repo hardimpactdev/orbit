@@ -2,13 +2,13 @@
 
 # Parallelized quality gate for Orbit.
 #
-# Static checks (docs-lint, phpstan, rector, pint) run concurrently in a
+# Static checks (docs-lint, Mago, rector) run concurrently in a
 # capped background pool while Pest lanes run alongside them. Each background
 # job writes to its own log file so output stays readable, and the gate exits
 # non-zero if any single check failed.
 #
-# Defaults are read-only (rector --dry-run, pint --test). Pass
-# `--fix` to apply rector + pint changes the same way the legacy
+# Defaults are read-only (rector --dry-run, mago format --check). Pass
+# `--fix` to apply rector + Mago changes the same way the legacy
 # `composer rector && composer format` invocation did.
 
 set -uo pipefail
@@ -40,10 +40,12 @@ LOG_DIR="$(mktemp -d)"
 trap 'rm -rf "$LOG_DIR"' EXIT
 
 RECTOR_ARGS=("--dry-run")
-PINT_ARGS=("--test" "--format=agent")
+MAGO_LINT_ARGS=("--reporting-format=medium")
+MAGO_FORMAT_ARGS=("--check")
 if [ "$FIX_MODE" -eq 1 ]; then
     RECTOR_ARGS=()
-    PINT_ARGS=("--format=agent")
+    MAGO_LINT_ARGS=("--fix" "--format-after-fix" "--fail-on-remaining")
+    MAGO_FORMAT_ARGS=()
 fi
 
 quality_check_default_max_background_jobs() {
@@ -129,12 +131,21 @@ run_bg docs_lint bin/orbit-docs-artisan librarian:lint --format=agent --path=dom
 run_bg docs_testing bin/orbit-docs-artisan librarian:lint --format=agent --path=testing
 run_bg docs_references bin/orbit-docs-artisan librarian:lint --format=agent --group=references
 
-run_bg gateway_phpstan bin/orbit-gateway-vendor-bin phpstan analyse --memory-limit=512M --no-progress
-run_bg cli_phpstan bash -lc 'cd apps/cli && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
-run_bg docs_phpstan bash -lc 'cd apps/docs && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
-run_bg core_phpstan bash -lc 'cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
-run_bg sdk_phpstan bash -lc 'cd packages/sdk && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
-run_bg e2e_phpstan bash -lc 'cd apps/e2e && vendor/bin/phpstan analyse --memory-limit=512M --no-progress'
+run_bg gateway_mago_analyze bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium
+run_bg cli_mago_analyze bash -lc 'cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium'
+run_bg docs_mago_analyze bash -lc 'cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium'
+run_bg reverb_mago_analyze bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium
+run_bg core_mago_analyze bash -lc 'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium'
+run_bg sdk_mago_analyze bash -lc 'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium'
+run_bg e2e_mago_analyze bash -lc 'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium'
+
+run_bg gateway_mago_lint bin/orbit-gateway-vendor-bin mago lint "${MAGO_LINT_ARGS[@]}"
+run_bg cli_mago_lint bash -lc 'cd apps/cli && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg docs_mago_lint bash -lc 'cd apps/docs && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg reverb_mago_lint bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint "${MAGO_LINT_ARGS[@]}"
+run_bg core_mago_lint bash -lc 'cd packages/core && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg sdk_mago_lint bash -lc 'cd packages/sdk && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
+run_bg e2e_mago_lint bash -lc 'cd apps/e2e && vendor/bin/mago lint "$@"' bash "${MAGO_LINT_ARGS[@]}"
 
 run_bg gateway_rector bin/orbit-gateway-vendor-bin rector process "${RECTOR_ARGS[@]}"
 run_bg cli_rector bash -lc 'cd apps/cli && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
@@ -143,12 +154,13 @@ run_bg core_rector bash -lc 'cd packages/core && vendor/bin/rector process "$@"'
 run_bg sdk_rector bash -lc 'cd packages/sdk && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 run_bg e2e_rector bash -lc 'cd apps/e2e && vendor/bin/rector process "$@"' bash "${RECTOR_ARGS[@]}"
 
-run_bg gateway_pint bin/orbit-gateway-vendor-bin pint "${PINT_ARGS[@]}"
-run_bg cli_pint bash -lc 'cd apps/cli && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
-run_bg docs_pint bash -lc 'cd apps/docs && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
-run_bg core_pint bash -lc 'cd packages/core && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
-run_bg sdk_pint bash -lc 'cd packages/sdk && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
-run_bg e2e_pint bash -lc 'cd apps/e2e && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
+run_bg gateway_mago_format bin/orbit-gateway-vendor-bin mago format "${MAGO_FORMAT_ARGS[@]}"
+run_bg cli_mago_format bash -lc 'cd apps/cli && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+run_bg docs_mago_format bash -lc 'cd apps/docs && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+run_bg reverb_mago_format bin/orbit-gateway-vendor-bin mago --workspace ../reverb format "${MAGO_FORMAT_ARGS[@]}"
+run_bg core_mago_format bash -lc 'cd packages/core && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+run_bg sdk_mago_format bash -lc 'cd packages/sdk && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
+run_bg e2e_mago_format bash -lc 'cd apps/e2e && vendor/bin/mago format "$@"' bash "${MAGO_FORMAT_ARGS[@]}"
 
 run_bg cli_pest bin/orbit-cli-pest-quality --exclude-group=slow --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
@@ -174,24 +186,33 @@ STATIC_CHECK_LABELS=(
     docs_lint
     docs_testing
     docs_references
-    gateway_phpstan
-    cli_phpstan
-    docs_phpstan
-    core_phpstan
-    sdk_phpstan
-    e2e_phpstan
+    gateway_mago_analyze
+    cli_mago_analyze
+    docs_mago_analyze
+    reverb_mago_analyze
+    core_mago_analyze
+    sdk_mago_analyze
+    e2e_mago_analyze
+    gateway_mago_lint
+    cli_mago_lint
+    docs_mago_lint
+    reverb_mago_lint
+    core_mago_lint
+    sdk_mago_lint
+    e2e_mago_lint
     gateway_rector
     cli_rector
     docs_rector
     core_rector
     sdk_rector
     e2e_rector
-    gateway_pint
-    cli_pint
-    docs_pint
-    core_pint
-    sdk_pint
-    e2e_pint
+    gateway_mago_format
+    cli_mago_format
+    docs_mago_format
+    reverb_mago_format
+    core_mago_format
+    sdk_mago_format
+    e2e_mago_format
 )
 
 LONG_RUNNING_PEST_LABELS=(
@@ -206,24 +227,33 @@ CHECK_LABELS=(
     docs_lint
     docs_testing
     docs_references
-    gateway_phpstan
-    cli_phpstan
-    docs_phpstan
-    core_phpstan
-    sdk_phpstan
-    e2e_phpstan
+    gateway_mago_analyze
+    cli_mago_analyze
+    docs_mago_analyze
+    reverb_mago_analyze
+    core_mago_analyze
+    sdk_mago_analyze
+    e2e_mago_analyze
+    gateway_mago_lint
+    cli_mago_lint
+    docs_mago_lint
+    reverb_mago_lint
+    core_mago_lint
+    sdk_mago_lint
+    e2e_mago_lint
     gateway_rector
     cli_rector
     docs_rector
     core_rector
     sdk_rector
     e2e_rector
-    gateway_pint
-    cli_pint
-    docs_pint
-    core_pint
-    sdk_pint
-    e2e_pint
+    gateway_mago_format
+    cli_mago_format
+    docs_mago_format
+    reverb_mago_format
+    core_mago_format
+    sdk_mago_format
+    e2e_mago_format
     cli_pest
     docs_pest
     core_pest

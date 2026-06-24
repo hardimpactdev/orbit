@@ -36,7 +36,8 @@ function grantWorkerAccess(Node $caller, Node $appNode, array $permissions): voi
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 /**
@@ -44,17 +45,20 @@ function grantWorkerAccess(Node $caller, Node $appNode, array $permissions): voi
  */
 function bindWorkerControllerShell(array $results = []): void
 {
-    app()->instance(RemoteShell::class, new class($results) implements RemoteShell
-    {
-        public function __construct(public array $results) {}
+    app()->instance(RemoteShell::class, new class($results) implements RemoteShell {
+        public function __construct(
+            public array $results,
+        ) {}
 
         public function run(Node $node, string $script, array $options = []): RemoteShellResult
         {
-            return array_shift($this->results) ?? new RemoteShellResult(
-                exitCode: 0,
-                stdout: "octane:installed\nfrankenphp-worker-file:present\nfrankenphp:configured\n",
-                stderr: '',
-                durationMs: 1,
+            return (
+                array_shift($this->results) ?? new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "octane:installed\nfrankenphp-worker-file:present\nfrankenphp:configured\n",
+                    stderr: '',
+                    durationMs: 1,
+                )
             );
         }
     });
@@ -69,12 +73,14 @@ describe('AppWorkerController', function (): void {
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
             'php_version' => '8.5',
-            'runtime' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php,
+        ]);
         bindWorkerControllerShell();
 
         $response = $this->call('GET', '/api/apps/docs/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app', 'docs')
             ->assertJsonPath('success.data.worker_enabled', false)
             ->assertJsonPath('success.data.worker_config', null);
@@ -87,12 +93,21 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php,
+        ]);
         bindWorkerControllerShell();
 
-        $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/worker/enable',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.worker_enabled', true)
             ->assertJsonPath('success.data.worker_config.workers', 'auto')
             ->assertJsonPath('success.data.worker_config.max_requests', 500)
@@ -109,11 +124,20 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'docs',
             'path' => '/home/orbit/apps/docs',
-            'runtime' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php,
+        ]);
         bindWorkerControllerShell([
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
 
-        $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/worker/enable',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'app.worker_readiness_failed');
@@ -131,18 +155,29 @@ describe('AppWorkerController', function (): void {
             'path' => '/home/orbit/apps/docs',
             'runtime' => AppRuntimeKind::Php,
             'worker_enabled' => true,
-            'worker_config' => ['workers' => 'auto', 'max_requests' => 500]]);
+            'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
+        ]);
         bindWorkerControllerShell();
 
-        $response = $this->call('POST', '/api/apps/docs/worker/disable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/worker/disable',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.worker_enabled', false)
             ->assertJsonPath('success.data.worker_config.workers', 'auto');
 
         $app = App::query()->where('name', 'docs')->first();
-        expect($app->worker_enabled)->toBeFalse()
-            ->and($app->worker_config)->toMatchArray(['workers' => 'auto', 'max_requests' => 500]);
+        expect($app->worker_enabled)
+            ->toBeFalse()
+            ->and($app->worker_config)
+            ->toMatchArray(['workers' => 'auto', 'max_requests' => 500]);
     });
 
     it('rejects worker mutations when the caller lacks the app:worker permission', function (): void {
@@ -152,9 +187,17 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create(['name' => 'docs', 'runtime' => AppRuntimeKind::Php]);
         bindWorkerControllerShell();
 
-        $response = $this->call('POST', '/api/apps/docs/worker/enable', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/worker/enable',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:worker');
     });
@@ -163,7 +206,14 @@ describe('AppWorkerController', function (): void {
         createWorkerControllerCaller();
         bindWorkerControllerShell();
 
-        $response = $this->call('GET', '/api/apps/missing/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps/missing/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
 
         $response->assertNotFound()
             ->assertJsonPath('error.code', 'app.not_found');
@@ -180,14 +230,23 @@ describe('AppWorkerController', function (): void {
         App::factory()->for($node, 'node')->create([
             'name' => 'alpha',
             'domain' => 'docs.example.com',
-            'runtime' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php,
+        ]);
         App::factory()->for($node, 'node')->create([
             'name' => 'docs.example.com',
             'domain' => 'other.example.com',
-            'runtime' => AppRuntimeKind::Php]);
+            'runtime' => AppRuntimeKind::Php,
+        ]);
         bindWorkerControllerShell();
 
-        $response = $this->call('GET', '/api/apps/docs.example.com/worker', [], [], [], ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs.example.com/worker',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_WORKER_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.app', 'docs.example.com');

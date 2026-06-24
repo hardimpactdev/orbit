@@ -58,24 +58,33 @@ describe(DatabaseConnectionExecutor::class, function (): void {
 
         $result = $executor->query($connection, 'select id from users', ['limit' => 5]);
 
-        expect($result['data']['rows'])->toBe([['id' => 1]])
-            ->and($transport->calls)->toHaveCount(1)
-            ->and($transport->calls[0]['node']->is($node))->toBeTrue()
-            ->and($transport->calls[0]['script'])->toContain('/usr/local/bin/orbit internal:database-query-local')
-            ->and($transport->calls[0]['script'])->not->toContain('orbit database:query-local')
-            ->and($transport->calls[0]['script'])->not->toContain('never-print-me')
-            ->and($transport->calls[0]['options'])->toHaveKeys(['input', 'throw', 'strict'])
-            ->and($transport->calls[0]['options']['throw'])->toBeFalse()
-            ->and($transport->calls[0]['options']['strict'])->toBeTrue();
+        expect($result['data']['rows'])
+            ->toBe([['id' => 1]])
+            ->and($transport->calls)
+            ->toHaveCount(1)
+            ->and($transport->calls[0]['node']->is($node))
+            ->toBeTrue()
+            ->and($transport->calls[0]['script'])
+            ->toContain('/usr/local/bin/orbit internal:database-query-local')
+            ->and($transport->calls[0]['script'])
+            ->not->toContain('orbit database:query-local')->and($transport->calls[0]['script'])
+            ->not->toContain('never-print-me')->and($transport->calls[0]['options'])->toHaveKeys([
+                'input',
+                'throw',
+                'strict',
+            ])->and($transport->calls[0]['options']['throw'])->toBeFalse()->and(
+                $transport->calls[0]['options']['strict'],
+            )->toBeTrue();
 
         $input = json_decode($transport->calls[0]['options']['input'], associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($input['connection']['path'])->toBe('/srv/docs/database/database.sqlite')
-            ->and($input['connection'])->not->toHaveKey('credentials')
-            ->and($input['connection'])->not->toHaveKey('password')
-            ->and($input['sql'])->toBe('select id from users')
-            ->and($input['limit'])->toBe(5)
-            ->and($input['write'])->toBeFalse();
+        expect($input['connection']['path'])
+            ->toBe('/srv/docs/database/database.sqlite')
+            ->and($input['connection'])
+            ->not->toHaveKey('credentials')->and($input['connection'])
+            ->not->toHaveKey('password')->and($input['sql'])->toBe('select id from users')->and($input['limit'])->toBe(
+                5,
+            )->and($input['write'])->toBeFalse();
     });
 });
 
@@ -101,7 +110,9 @@ final class DatabaseConnectionExecutorRecordingTransport implements RemoteExecut
     /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
     public array $calls = [];
 
-    public function __construct(private readonly RemoteShellResult $result) {}
+    public function __construct(
+        private readonly RemoteShellResult $result,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

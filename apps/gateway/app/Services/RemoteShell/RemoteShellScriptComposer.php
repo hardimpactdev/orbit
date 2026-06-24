@@ -22,7 +22,7 @@ final readonly class RemoteShellScriptComposer
      */
     public function compose(string $script, array $options): string
     {
-        if ((bool) ($options['strict'] ?? false)) {
+        if ($options['strict'] ?? false) {
             return $this->composeStrict($script, $options);
         }
 
@@ -59,8 +59,8 @@ final readonly class RemoteShellScriptComposer
         $resolved = [];
 
         foreach ($options['metadata'] as $key => $value) {
-            $stringKey = (string) $key;
-            $stringValue = (string) $value;
+            $stringKey = $key;
+            $stringValue = $value;
 
             if ($validate) {
                 $this->metadata->validate($stringKey, $stringValue);

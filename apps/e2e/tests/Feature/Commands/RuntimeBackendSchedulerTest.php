@@ -19,12 +19,15 @@ it('verifies Docker runtime backend and scheduler liveness', function (): void {
         );
         $schedulerTick = e2eRunInRoleRuntime($topology, 'gateway', 'orbit orbit-scheduler --once', timeoutSeconds: 60);
 
-        expect($inspection->successful())->toBeTrue()
+        expect($inspection->successful())
+            ->toBeTrue()
             ->and($inspection->output())
             ->toContain('true')
             ->toContain('unless-stopped')
-            ->and($schedulerTick->successful())->toBeTrue()
-            ->and($schedulerTick->output())->toContain('Orbit Scheduler tick completed');
+            ->and($schedulerTick->successful())
+            ->toBeTrue()
+            ->and($schedulerTick->output())
+            ->toContain('Orbit Scheduler tick completed');
     } finally {
         $topology->cleanup();
     }

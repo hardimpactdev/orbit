@@ -130,11 +130,16 @@ describe('NodeRoleRemoveController', function (): void {
             'wireguard_address' => '10.6.0.20',
         ]));
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/database',
+            [],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'role:remove')
@@ -174,11 +179,16 @@ describe('NodeRoleRemoveController', function (): void {
             'updated_at' => now(),
         ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-dev', [], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/app-dev',
+            [],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node_role.remove_blocked')
             ->assertJsonPath('error.meta.dependents.0', '1 development app record');
 
@@ -207,13 +217,18 @@ describe('NodeRoleRemoveController', function (): void {
         ]);
         grantNodeRoleRemoveAccess($callerId, $node->id);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/gateway-2/roles/gateway', [
-            'force' => true,
-        ], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/gateway-2/roles/gateway',
+            [
+                'force' => true,
+            ],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'role')
             ->assertJsonPath('error.meta.role', 'gateway');
@@ -245,21 +260,30 @@ describe('NodeRoleRemoveController', function (): void {
             'custom_permissions' => [],
         ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-dev', [], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/app-dev',
+            [],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.role', 'app-dev');
 
         $node->refresh();
 
-        expect($node->roleAssignments()->where('role', 'app-dev')->exists())->toBeFalse()
-            ->and($node->tld)->toBe('test')
-            ->and(NodeAccess::query()
-                ->where('consumer_node_id', $node->id)
-                ->where('serving_node_id', $node->id)
-                ->exists())->toBeFalse();
+        expect($node->roleAssignments()->where('role', 'app-dev')->exists())
+            ->toBeFalse()
+            ->and($node->tld)
+            ->toBe('test')
+            ->and(
+                NodeAccess::query()
+                    ->where('consumer_node_id', $node->id)
+                    ->where('serving_node_id', $node->id)
+                    ->exists(),
+            )
+            ->toBeFalse();
     });
 
     it('removes Orbit-owned role dependents when force is true without purge data', function (): void {
@@ -278,16 +302,22 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        Process::factory()->forOwner($node)->create([
-            'name' => 'postgres16',
-            'runtime_config' => ['service' => 'postgres'],
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'postgres16',
+                'runtime_config' => ['service' => 'postgres'],
+            ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
-            'force' => true,
-        ], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/database',
+            [
+                'force' => true,
+            ],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.purged_data', false);
@@ -311,23 +341,31 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        Process::factory()->forOwner($node)->create([
-            'name' => 'postgres16',
-            'runtime_config' => ['service' => 'postgres'],
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'postgres16',
+                'runtime_config' => ['service' => 'postgres'],
+            ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
-            'purge_data' => true,
-        ], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/database',
+            [
+                'purge_data' => true,
+            ],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'The purge-data option requires --force.')
             ->assertJsonPath('error.meta.field', 'purge_data');
 
-        expect($node->roleAssignments()->where('role', 'database')->exists())->toBeTrue()
+        expect($node->roleAssignments()->where('role', 'database')->exists())
+            ->toBeTrue()
             ->and(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())
             ->toBeTrue();
     });
@@ -348,17 +386,23 @@ describe('NodeRoleRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        Process::factory()->forOwner($node)->create([
-            'name' => 'postgres16',
-            'runtime_config' => ['service' => 'postgres'],
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'postgres16',
+                'runtime_config' => ['service' => 'postgres'],
+            ]);
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/database', [
-            'force' => true,
-            'purge_data' => true,
-        ], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/database',
+            [
+                'force' => true,
+                'purge_data' => true,
+            ],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.purged_data', true);
@@ -385,8 +429,7 @@ describe('NodeRoleRemoveController', function (): void {
             'converged_at' => now(),
         ]);
 
-        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct()
             {
                 parent::__construct(
@@ -404,17 +447,24 @@ describe('NodeRoleRemoveController', function (): void {
             }
         });
 
-        $response = deleteNodeRoleRemoveJson('/api/nodes/target-1/roles/app-dev', [
-            'force' => true,
-        ], [
-            'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
-        ]);
+        $response = deleteNodeRoleRemoveJson(
+            '/api/nodes/target-1/roles/app-dev',
+            [
+                'force' => true,
+            ],
+            [
+                'REMOTE_ADDR' => NODE_ROLE_REMOVE_CALLER_WG_IP,
+            ],
+        );
 
-        $response->assertStatus(500)
+        $response
+            ->assertStatus(500)
             ->assertJsonPath('error.code', 'node_role.remove_failed')
             ->assertJsonPath('error.meta.last_error', 'Cleanup failed.');
 
-        expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Error)
-            ->and($assignment->fresh()->last_error)->toBe('Cleanup failed.');
+        expect($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Error)
+            ->and($assignment->fresh()->last_error)
+            ->toBe('Cleanup failed.');
     });
 });

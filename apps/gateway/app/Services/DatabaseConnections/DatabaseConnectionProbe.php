@@ -200,7 +200,11 @@ final readonly class DatabaseConnectionProbe
             return $target->app->node;
         }
 
-        if ($target->workspace instanceof Workspace && $target->workspace->app instanceof App && $target->workspace->app->node instanceof Node) {
+        if (
+            $target->workspace instanceof Workspace
+            && $target->workspace->app instanceof App
+            && $target->workspace->app->node instanceof Node
+        ) {
             return $target->workspace->app->node;
         }
 
@@ -213,15 +217,18 @@ final readonly class DatabaseConnectionProbe
      */
     private function wireGuardSelfRouteDetail(array $diagnostic): array
     {
-        return array_filter([
-            'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
-            'platform' => $diagnostic['platform'] ?? null,
-            'reason' => $diagnostic['reason'] ?? null,
-            'message' => $diagnostic['message'] ?? null,
-            'command' => $diagnostic['command'] ?? null,
-            'exit_code' => $diagnostic['exit_code'] ?? null,
-            'output' => $diagnostic['output'] ?? null,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
+                'platform' => $diagnostic['platform'] ?? null,
+                'reason' => $diagnostic['reason'] ?? null,
+                'message' => $diagnostic['message'] ?? null,
+                'command' => $diagnostic['command'] ?? null,
+                'exit_code' => $diagnostic['exit_code'] ?? null,
+                'output' => $diagnostic['output'] ?? null,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     /**
@@ -289,7 +296,9 @@ final readonly class DatabaseConnectionProbe
         $path = rtrim($target->path, '/').'/.env';
         $contents = $this->shouldUseLocalFilesystem($node) && is_file($path)
             ? file_get_contents($path)
-            : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), ['throw' => false])->stdout;
+            : $this->remoteShell->run($node, sprintf('test -f %1$s && cat %1$s', escapeshellarg($path)), [
+                'throw' => false,
+            ])->stdout;
 
         if (! is_string($contents) || $contents === '') {
             return [];
@@ -301,7 +310,13 @@ final readonly class DatabaseConnectionProbe
         foreach ($this->observedPrefixes($values) as $prefix) {
             $detail = $target instanceof App
                 ? ['target_type' => 'app', 'target_id' => $target->id, 'app' => $target->name, 'env_prefix' => $prefix]
-                : ['target_type' => 'workspace', 'target_id' => $target->id, 'workspace' => $target->name, 'app' => $target->app?->name, 'env_prefix' => $prefix];
+                : [
+                    'target_type' => 'workspace',
+                    'target_id' => $target->id,
+                    'workspace' => $target->name,
+                    'app' => $target->app?->name,
+                    'env_prefix' => $prefix,
+                ];
 
             if (in_array($this->detailKey($detail), $scannedTargets, true)) {
                 continue;
@@ -409,11 +424,11 @@ final readonly class DatabaseConnectionProbe
 
         return DatabaseConnectionPayload::fromArray([
             'driver' => $driver,
-            'host' => $driver === 'sqlite' ? null : ($values["{$prefix}_HOST"] ?? null),
-            'port' => $driver === 'sqlite' ? null : ($values["{$prefix}_PORT"] ?? null),
-            'database' => $driver === 'sqlite' ? null : ($values["{$prefix}_DATABASE"] ?? null),
-            'path' => $driver === 'sqlite' ? ($values["{$prefix}_DATABASE"] ?? null) : null,
-            'username' => $driver === 'sqlite' ? null : ($values["{$prefix}_USERNAME"] ?? null),
+            'host' => $driver === 'sqlite' ? null : $values["{$prefix}_HOST"] ?? null,
+            'port' => $driver === 'sqlite' ? null : $values["{$prefix}_PORT"] ?? null,
+            'database' => $driver === 'sqlite' ? null : $values["{$prefix}_DATABASE"] ?? null,
+            'path' => $driver === 'sqlite' ? $values["{$prefix}_DATABASE"] ?? null : null,
+            'username' => $driver === 'sqlite' ? null : $values["{$prefix}_USERNAME"] ?? null,
             'password' => $values["{$prefix}_PASSWORD"] ?? null,
         ]);
     }
@@ -456,8 +471,11 @@ final readonly class DatabaseConnectionProbe
         return null;
     }
 
-    private function connectionMatchesPayload(DatabaseConnection $connection, DatabaseConnectionPayload $payload, Node $node): bool
-    {
+    private function connectionMatchesPayload(
+        DatabaseConnection $connection,
+        DatabaseConnectionPayload $payload,
+        Node $node,
+    ): bool {
         if ($payload->driver === 'sqlite') {
             return $connection->node_id === $node->id && $connection->path === $payload->path;
         }
@@ -469,11 +487,13 @@ final readonly class DatabaseConnectionProbe
             return false;
         }
 
-        return $endpoint['host'] === $payload->host
+        return (
+            $endpoint['host'] === $payload->host
             && $endpoint['port'] === $payload->port
             && $connection->database === $payload->database
             && $connection->username === $payload->username
-            && (! is_string($payload->password) || $password === $payload->password);
+            && (! is_string($payload->password) || $password === $payload->password)
+        );
     }
 
     private function validEnvPrefix(string $value): bool
@@ -506,7 +526,11 @@ final readonly class DatabaseConnectionProbe
      */
     private function workspacesForNode(Node $node): array
     {
-        return Workspace::query()->with('app')->whereHas('app', fn ($query) => $query->where('node_id', $node->id))->get()->all();
+        return Workspace::query()
+            ->with('app')
+            ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
+            ->get()
+            ->all();
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool
@@ -516,7 +540,6 @@ final readonly class DatabaseConnectionProbe
 
     private function isSecretKey(string $key): bool
     {
-        return str_ends_with($key, '_PASSWORD')
-            || str_contains($key, 'PASSWORD');
+        return str_ends_with($key, '_PASSWORD') || str_contains($key, 'PASSWORD');
     }
 }

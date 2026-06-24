@@ -12,11 +12,15 @@ final readonly class E2ENodeProbe
         $version = $instance->exec("sudo -iu orbit bash -lc 'orbit --version --local >/dev/null'");
 
         if (! $install->successful()) {
-            throw new \RuntimeException(trim($install->output().$install->errorOutput()) ?: 'Orbit install files were not found.');
+            throw new \RuntimeException(
+                trim($install->output().$install->errorOutput()) ?: 'Orbit install files were not found.',
+            );
         }
 
         if (! $version->successful()) {
-            throw new \RuntimeException(trim($version->output().$version->errorOutput()) ?: 'Orbit version command failed.');
+            throw new \RuntimeException(
+                trim($version->output().$version->errorOutput()) ?: 'Orbit version command failed.',
+            );
         }
     }
 }

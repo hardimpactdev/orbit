@@ -84,7 +84,7 @@ final readonly class ProductCodeNamespaceRule implements GroupedRule
         );
 
         foreach ($matches as $match) {
-            $prefix = strtolower((string) $match['prefix']);
+            $prefix = strtolower($match['prefix']);
             $code = "{$prefix}.{$match['condition']}";
 
             if (isset(self::ALLOWED_STORAGE_FIELDS[$code])) {

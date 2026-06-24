@@ -37,27 +37,30 @@ final class ShowWorkspaceHistoryRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'path' => $this->path,
-            'limit' => $this->limit,
-            'since' => $this->since,
-            'until' => $this->until,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'path' => $this->path,
+                'limit' => $this->limit,
+                'since' => $this->since,
+                'until' => $this->until,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): WorkspaceHistoryResponse
     {
         $body = json_decode($response->body(), true, 512, JSON_THROW_ON_ERROR);
-        $success = is_array($body) ? ($body['success'] ?? []) : [];
-        $data = is_array($success) ? ($success['data'] ?? []) : [];
-        $meta = is_array($success) ? ($success['meta'] ?? []) : [];
+        $success = is_array($body) ? $body['success'] ?? [] : [];
+        $data = is_array($success) ? $success['data'] ?? [] : [];
+        $meta = is_array($success) ? $success['meta'] ?? [] : [];
         $runs = $data['runs'] ?? [];
-        $pagination = is_array($meta) ? ($meta['pagination'] ?? []) : [];
+        $pagination = is_array($meta) ? $meta['pagination'] ?? [] : [];
 
         return new WorkspaceHistoryResponse(
-            runs: is_array($runs) ? array_values($runs) : [],
-            pagination: is_array($pagination) ? $pagination : [],
+            runs: $this->listOfStringKeyedArrays($runs),
+            pagination: $this->stringKeyedArray($pagination),
         );
     }
 }

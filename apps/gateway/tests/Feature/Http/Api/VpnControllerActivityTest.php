@@ -19,14 +19,17 @@ it('logs vpn api activity with safe metadata', function (): void {
         'name' => 'gateway-1',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 'vpn',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
     app()->instance(VpnBackend::class, new ArrayVpnBackend([
-        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null)]));
+        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null),
+    ]));
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
@@ -49,7 +52,8 @@ it('returns vpn runtime unavailable when no active vpn role node exists', functi
         'name' => 'gateway-1',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
     app()->instance(VpnBackend::class, new ArrayVpnBackend);
 
@@ -66,7 +70,8 @@ it('uses the configured fake backend without requiring an active vpn role node',
         'name' => 'gateway-1',
         'host' => '10.6.0.2',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
     $backendPath = storage_path('framework/testing/vpn-api-fake-'.bin2hex(random_bytes(6)).'.json');
     File::ensureDirectoryExists(dirname($backendPath));
@@ -77,7 +82,10 @@ it('uses the configured fake backend without requiring an active vpn role node',
                 'name' => 'laptop',
                 'address' => '10.6.0.7',
                 'enabled' => true,
-                'latest_handshake_at' => null]]], JSON_THROW_ON_ERROR));
+                'latest_handshake_at' => null,
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
     config(['services.wg_easy.fake_backend_path' => $backendPath]);
 
     try {
@@ -96,15 +104,18 @@ it('requires vpn read grants for non-gateway api callers', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $gateway->id,
         'role' => 'vpn',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     Node::factory()->create([
         'name' => 'control-1',
         'wireguard_address' => '10.6.0.9',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.6.0.9'])
@@ -119,22 +130,27 @@ it('allows non-gateway api callers with vpn read grants', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $gateway->id,
         'role' => 'vpn',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     $caller = Node::factory()->create([
         'name' => 'control-1',
         'wireguard_address' => '10.6.0.9',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $gateway->id,
         'permissions' => ['vpn:read'],
-        'custom_permissions' => ['vpn:read']]);
+        'custom_permissions' => ['vpn:read'],
+    ]);
     app()->instance(VpnBackend::class, new ArrayVpnBackend([
-        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null)]));
+        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', true, null),
+    ]));
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.6.0.9'])
@@ -147,13 +163,16 @@ it('enables and disables vpn clients through independent endpoints', function ()
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $gateway->id,
         'role' => 'vpn',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     app()->instance(VpnBackend::class, new ArrayVpnBackend([
-        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', false, null)]));
+        new VpnBackendClient('client-1', 'laptop', '10.6.0.7', false, null),
+    ]));
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.6.0.2'])
@@ -178,15 +197,18 @@ it('requires vpn write grants for non-gateway api writes', function (): void {
     $gateway = createTestGatewayNode([
         'name' => 'gateway-1',
         'wireguard_address' => '10.6.0.2',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $gateway->id,
         'role' => 'vpn',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
     Node::factory()->create([
         'name' => 'control-1',
         'wireguard_address' => '10.6.0.9',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 
     $this
         ->withServerVariables(['REMOTE_ADDR' => '10.6.0.9'])

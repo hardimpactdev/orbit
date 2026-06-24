@@ -270,9 +270,7 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $resolved = $message
-            ?? $status
-            ?? $key;
+        $resolved = $message ?? $status ?? $key;
 
         if ($resolved === null) {
             return;
@@ -290,8 +288,13 @@ final class UpdateAllHumanProgressRenderer
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function applyKeyedStep(OutputInterface $output, string $key, ?string $status, ?string $message, array $payload = []): bool
-    {
+    private function applyKeyedStep(
+        OutputInterface $output,
+        string $key,
+        ?string $status,
+        ?string $message,
+        array $payload = [],
+    ): bool {
         if ($key === self::ROW_CHECK_UPDATES || $key === self::ROW_CHECK_FLEET) {
             $this->ensureTarget($output, $key);
 
@@ -325,7 +328,13 @@ final class UpdateAllHumanProgressRenderer
 
             if ($status === 'done') {
                 $this->gatewayPhaseComplete = true;
-                $this->setRow($output, 'gateway', self::STATE_DONE, self::STAGE_DONE, $this->nodeDoctorSuffix($message));
+                $this->setRow(
+                    $output,
+                    'gateway',
+                    self::STATE_DONE,
+                    self::STAGE_DONE,
+                    $this->nodeDoctorSuffix($message),
+                );
 
                 return true;
             }
@@ -444,9 +453,10 @@ final class UpdateAllHumanProgressRenderer
     {
         $this->ensureTarget($output, 'local');
 
-        $suffix = ($issues !== null && $issues > 0)
-            ? '('.$issues.' '.($issues === 1 ? 'issue' : 'issues').')'
-            : '';
+        $suffix =
+            $issues !== null && $issues > 0
+                ? '('.$issues.' '.($issues === 1 ? 'issue' : 'issues').')'
+                : '';
 
         $this->setRow($output, 'local', self::STATE_DONE, self::STAGE_DONE, $suffix);
     }
@@ -463,15 +473,20 @@ final class UpdateAllHumanProgressRenderer
         $this->setRow($output, 'local', self::STATE_SKIPPED, self::STAGE_SKIPPED);
     }
 
-    public function finishSuccess(OutputInterface $output, ?string $targetVersion = null, bool $allCurrent = false): void
-    {
+    public function finishSuccess(
+        OutputInterface $output,
+        ?string $targetVersion = null,
+        bool $allCurrent = false,
+    ): void {
         foreach ($this->order as $target) {
             $state = $this->rows[$target]['state'] ?? self::STATE_WAITING;
 
             // Preserve settled check rows, skipped (orange) rows, and any failed
             // row; only still-pending node/gateway rows settle to Done.
-            if (in_array($state, [self::STATE_DONE, self::STATE_FAILED, self::STATE_SKIPPED], true)
-                || in_array($this->rows[$target]['stage'] ?? '', [self::STAGE_SETTLED, self::STAGE_CHECKING], true)) {
+            if (
+                in_array($state, [self::STATE_DONE, self::STATE_FAILED, self::STATE_SKIPPED], true)
+                || in_array($this->rows[$target]['stage'] ?? '', [self::STAGE_SETTLED, self::STAGE_CHECKING], true)
+            ) {
                 continue;
             }
 
@@ -524,28 +539,42 @@ final class UpdateAllHumanProgressRenderer
             // the gateway phase, so they must not create a gateway row — that
             // would render a spurious gateway entry in the all-current
             // short-circuit. The gateway row starts at the gateway phase below.
-            'Update plan persisted',
-            'Update runner started',
-            'Fleet update lease acquired' => null,
+            'Update plan persisted', 'Update runner started', 'Fleet update lease acquired' => null,
             'Gateway and scheduler update leases acquired' => null,
-            'Updating gateway services' => $this->setGatewayStage($output, self::STAGE_DOWNLOADING, $this->gatewayAssetsMessage()),
+            'Updating gateway services' => $this->setGatewayStage(
+                $output,
+                self::STAGE_DOWNLOADING,
+                $this->gatewayAssetsMessage(),
+            ),
             'Updating gateway service',
             'Updating orbit-gateway service',
-            'orbit-gateway service healthy' => $this->setGatewayStage($output, self::STAGE_REPLACING_CLI_BINARY),
-            'Stopping orbit-scheduler service',
-            'orbit-scheduler service stopped' => $this->setGatewayStage($output, self::STAGE_UPDATING_GATEWAY_APP),
-            'Running gateway migrations',
-            'Gateway migrations completed' => $this->setGatewayStage($output, self::STAGE_UPDATING_GATEWAY_APP),
-            'Starting orbit-scheduler service',
-            'orbit-scheduler service running' => $this->setGatewayStage($output, self::STAGE_RUNNING_DOCTOR),
-            'Gateway services updated',
-            'Fleet update verified' => $this->setRow($output, 'gateway', self::STATE_DONE, self::STAGE_DONE),
+            'orbit-gateway service healthy',
+                => $this->setGatewayStage($output, self::STAGE_REPLACING_CLI_BINARY),
+            'Stopping orbit-scheduler service', 'orbit-scheduler service stopped' => $this->setGatewayStage(
+                $output,
+                self::STAGE_UPDATING_GATEWAY_APP,
+            ),
+            'Running gateway migrations', 'Gateway migrations completed' => $this->setGatewayStage(
+                $output,
+                self::STAGE_UPDATING_GATEWAY_APP,
+            ),
+            'Starting orbit-scheduler service', 'orbit-scheduler service running' => $this->setGatewayStage(
+                $output,
+                self::STAGE_RUNNING_DOCTOR,
+            ),
+            'Gateway services updated', 'Fleet update verified' => $this->setRow(
+                $output,
+                'gateway',
+                self::STATE_DONE,
+                self::STAGE_DONE,
+            ),
             'Pulling required images' => $this->setGatewayStage($output, self::STAGE_PULLING_REQUIRED_IMAGES),
             'Verifying fleet update',
             'Verifying orbit-gateway service',
             'Verifying orbit-scheduler service',
             'Verifying workload CLI artifacts',
-            'Verifying required role images' => $this->setGatewayStage($output, self::STAGE_VERIFYING),
+            'Verifying required role images',
+                => $this->setGatewayStage($output, self::STAGE_VERIFYING),
             default => null,
         };
     }
@@ -752,8 +781,7 @@ final class UpdateAllHumanProgressRenderer
 
     private function hasOutdatedNodes(?string $message): bool
     {
-        return $message !== null
-            && preg_match('/Done: \d+ outdated /', $message) === 1;
+        return $message !== null && preg_match('/Done: \d+ outdated /', $message) === 1;
     }
 
     private function isCheckTarget(string $target): bool
@@ -763,9 +791,7 @@ final class UpdateAllHumanProgressRenderer
 
     private function isWorkloadTarget(string $target): bool
     {
-        return ! $this->isCheckTarget($target)
-            && $target !== 'gateway'
-            && $target !== 'local';
+        return ! $this->isCheckTarget($target) && $target !== 'gateway' && $target !== 'local';
     }
 
     private function displayName(string $target): string
@@ -801,7 +827,7 @@ final class UpdateAllHumanProgressRenderer
         for ($line = 0; $line < $lineCount; $line++) {
             $output->write("\e[2K\r");
 
-            if ($line < $lineCount - 1) {
+            if ($line < ($lineCount - 1)) {
                 $output->write("\e[1B");
             }
         }
@@ -853,8 +879,13 @@ final class UpdateAllHumanProgressRenderer
         }
     }
 
-    private function setRow(OutputInterface $output, string $target, string $state, string $stage, string $message = ''): void
-    {
+    private function setRow(
+        OutputInterface $output,
+        string $target,
+        string $state,
+        string $stage,
+        string $message = '',
+    ): void {
         if (! isset($this->rows[$target])) {
             return;
         }
@@ -878,7 +909,10 @@ final class UpdateAllHumanProgressRenderer
             $this->lastFrameAtUs = (int) (microtime(true) * 1_000_000);
         }
 
-        if (! $output->isDecorated() && $this->shouldSkipNonDecoratedRepaint($previousState, $previousStage, $state, $stage, $message)) {
+        if (
+            ! $output->isDecorated()
+            && $this->shouldSkipNonDecoratedRepaint($previousState, $previousStage, $state, $stage, $message)
+        ) {
             $this->syncTicker();
 
             return;
@@ -895,11 +929,13 @@ final class UpdateAllHumanProgressRenderer
         string $stage,
         string $message,
     ): bool {
-        return $previousState === self::STATE_WAITING
+        return (
+            $previousState === self::STATE_WAITING
             && $previousStage === self::STAGE_WAITING
             && $state === self::STATE_ACTIVE
             && $stage === self::STAGE_CHECKING
-            && $message === '';
+            && $message === ''
+        );
     }
 
     private function repaintRow(OutputInterface $output, string $target): void
@@ -957,21 +993,38 @@ final class UpdateAllHumanProgressRenderer
 
         $line = match ($row['state']) {
             self::STATE_ACTIVE => '  '.$this->activeIcon($styled).'  '.$this->decorate($label, self::ACCENT, $styled),
-            self::STATE_DONE => '  '.$this->decorate('●', self::GREEN, $styled).'  '.$this->decorate($label, self::ACCENT, $styled),
-            self::STATE_SKIPPED => '  '.$this->decorate('●', self::ORANGE, $styled).'  '.$this->decorate($label, self::ACCENT, $styled),
-            self::STATE_FAILED => '  '.$this->decorate('●', self::RED, $styled).'  '.$this->decorate($label, self::RED, $styled),
+            self::STATE_DONE => '  '
+                .$this->decorate('●', self::GREEN, $styled)
+                .'  '
+                .$this->decorate($label, self::ACCENT, $styled),
+            self::STATE_SKIPPED => '  '
+                .$this->decorate('●', self::ORANGE, $styled)
+                .'  '
+                .$this->decorate($label, self::ACCENT, $styled),
+            self::STATE_FAILED => '  '
+                .$this->decorate('●', self::RED, $styled)
+                .'  '
+                .$this->decorate($label, self::RED, $styled),
             default => $this->decorate('  ○  '.$label, self::DIM, $styled),
         };
 
-        if ($row['state'] === self::STATE_WAITING
-            && ($target === 'local' || $this->isWorkloadTarget($target))
-            && $row['message'] === 'Waiting') {
+        if (
+            $row['state'] === self::STATE_WAITING
+            && ($target === 'local'
+            || $this->isWorkloadTarget($target))
+            && $row['message'] === 'Waiting'
+        ) {
             $line .= '  '.$this->decorate('Waiting', self::DIM, $styled);
         }
 
         if ($row['message'] !== '' && ! ($row['state'] === self::STATE_WAITING && $row['message'] === 'Waiting')) {
             $separator = $stage === '' ? '  ' : ' ';
-            $line .= $separator.$this->decorate($row['message'], $row['state'] === self::STATE_FAILED ? self::RED : self::DIM, $styled);
+            $line .= $separator
+            .$this->decorate(
+                $row['message'],
+                $row['state'] === self::STATE_FAILED ? self::RED : self::DIM,
+                $styled,
+            );
         }
 
         return $styled ? $line : $this->stripAnsi($line);
@@ -979,7 +1032,10 @@ final class UpdateAllHumanProgressRenderer
 
     private function titleLine(bool $styled): string
     {
-        return $this->stripAnsiIfNeeded('  '.$this->decorate('┌', self::DIM, $styled).'  '.$this->decorate(self::TITLE, self::ACCENT, $styled), $styled);
+        return $this->stripAnsiIfNeeded(
+            '  '.$this->decorate('┌', self::DIM, $styled).'  '.$this->decorate(self::TITLE, self::ACCENT, $styled),
+            $styled,
+        );
     }
 
     private function spacerLine(bool $styled): string
@@ -995,13 +1051,16 @@ final class UpdateAllHumanProgressRenderer
             null => self::DIM,
         };
 
-        return $this->stripAnsiIfNeeded('  '.$this->decorate('└', self::DIM, $styled).'  '.$this->decorate($footer, $color, $styled), $styled);
+        return $this->stripAnsiIfNeeded(
+            '  '.$this->decorate('└', self::DIM, $styled).'  '.$this->decorate($footer, $color, $styled),
+            $styled,
+        );
     }
 
     private function activeIcon(bool $styled): string
     {
         if (! $styled) {
-            return $this->frame % 2 === 0 ? '○' : '◉';
+            return ($this->frame % 2) === 0 ? '○' : '◉';
         }
 
         return self::SPINNER_FRAMES[$this->frame % count(self::SPINNER_FRAMES)];
@@ -1015,7 +1074,10 @@ final class UpdateAllHumanProgressRenderer
             return;
         }
 
-        $hasActiveRow = array_any($this->order, fn ($target) => ($this->rows[$target]['state'] ?? null) === self::STATE_ACTIVE);
+        $hasActiveRow = array_any(
+            $this->order,
+            fn ($target) => ($this->rows[$target]['state'] ?? null) === self::STATE_ACTIVE,
+        );
 
         if (! $hasActiveRow) {
             $this->stopTicker();

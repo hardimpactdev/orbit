@@ -8,11 +8,13 @@ use App\Services\Gateway\GatewaySwarmStackRenderer;
 
 function gatewaySwarmImageForTest(): GatewayImageReference
 {
-    return GatewayImageReference::fromString('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    return GatewayImageReference::fromString(
+        'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    );
 }
 
 it('renders the gateway and scheduler Swarm services for gateway-direct mode', function (): void {
-    $yaml = (new GatewaySwarmStackRenderer)->render(
+    $yaml = new GatewaySwarmStackRenderer()->render(
         gatewaySwarmImageForTest(),
         GatewayExposureMode::GatewayDirect,
     );
@@ -20,7 +22,9 @@ it('renders the gateway and scheduler Swarm services for gateway-direct mode', f
     expect($yaml)
         ->toContain('version: "3.8"')
         ->toContain('orbit-gateway:')
-        ->toContain('image: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"')
+        ->toContain(
+            'image: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+        )
         ->toContain('aliases:')
         ->toContain('- orbit-gateway')
         ->toContain('ORBIT_GATEWAY_EXPOSURE_MODE: gateway-direct')
@@ -61,19 +65,24 @@ it('renders the gateway and scheduler Swarm services for gateway-direct mode', f
 });
 
 it('omits gateway host ports when router-owned Caddy fronts the gateway', function (): void {
-    $yaml = (new GatewaySwarmStackRenderer)->render(
+    $yaml = new GatewaySwarmStackRenderer()->render(
         gatewaySwarmImageForTest(),
         GatewayExposureMode::RouterColocated,
     );
 
-    $gatewayBlock = substr($yaml, strpos($yaml, '  orbit-gateway:'), strpos($yaml, '  orbit-scheduler:') - strpos($yaml, '  orbit-gateway:'));
+    $gatewayBlock = substr(
+        $yaml,
+        strpos($yaml, '  orbit-gateway:'),
+        strpos($yaml, '  orbit-scheduler:') - strpos($yaml, '  orbit-gateway:'),
+    );
 
     expect($gatewayBlock)
         ->toContain('ORBIT_GATEWAY_EXPOSURE_MODE: router-colocated')
         ->toContain('ORBIT_TRUST_WIREGUARD_PROXY_HEADER: "1"')
         ->toContain('aliases:')
         ->toContain('- orbit-gateway')
-        ->not->toContain('ports:')
+        ->not
+        ->toContain('ports:')
         ->and($yaml)
         ->toContain('orbit-scheduler:')
         ->toContain('order: stop-first');

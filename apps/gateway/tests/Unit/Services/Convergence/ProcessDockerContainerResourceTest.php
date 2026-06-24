@@ -39,14 +39,22 @@ it('plans ok when the docker process container already matches gateway intent', 
     $plan = $resource->plan($probe);
     $result = $resource->apply($node, $shell, $plan);
 
-    expect($probe->exists)->toBeTrue()
-        ->and($probe->specHash)->toBe($container->specHash())
-        ->and($plan->status)->toBe(ConvergenceStatus::Ok)
-        ->and($plan->outcome)->toBe(ProcessDockerContainerApplyOutcome::Unchanged)
-        ->and($result->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->changed())->toBeFalse()
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->scripts[0])->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'");
+    expect($probe->exists)
+        ->toBeTrue()
+        ->and($probe->specHash)
+        ->toBe($container->specHash())
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($plan->outcome)
+        ->toBe(ProcessDockerContainerApplyOutcome::Unchanged)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->changed())
+        ->toBeFalse()
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->scripts[0])
+        ->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'");
 });
 
 it('ensures the docker network before creating a missing idle process container', function (): void {
@@ -65,18 +73,31 @@ it('ensures the docker network before creating a missing idle process container'
     $plan = $resource->plan($probe);
     $result = $resource->apply($node, $shell, $plan);
 
-    expect($probe->exists)->toBeFalse()
-        ->and($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($plan->outcome)->toBe(ProcessDockerContainerApplyOutcome::Created)
-        ->and($result->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->details['outcome'])->toBe('created')
-        ->and($shell->scripts[0])->toBe("docker network inspect 'orbit-network'")
-        ->and($shell->scripts[1])->toBe("docker network create --label 'orbit.managed=true' --label 'orbit.network.kind=runtime' 'orbit-network'")
-        ->and($shell->scripts[2])->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'")
-        ->and($shell->scripts[3])->toStartWith('docker create')
-        ->and($shell->scripts[3])->toContain("--name 'orbit_docs_main_queue'")
-        ->and($shell->scripts[3])->not->toContain('docker run -d')
-        ->and($shell->scripts[3])->not->toContain('docker start');
+    expect($probe->exists)
+        ->toBeFalse()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($plan->outcome)
+        ->toBe(ProcessDockerContainerApplyOutcome::Created)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->details['outcome'])
+        ->toBe('created')
+        ->and($shell->scripts[0])
+        ->toBe("docker network inspect 'orbit-network'")
+        ->and($shell->scripts[1])
+        ->toBe(
+            "docker network create --label 'orbit.managed=true' --label 'orbit.network.kind=runtime' 'orbit-network'",
+        )
+        ->and($shell->scripts[2])
+        ->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'")
+        ->and($shell->scripts[3])
+        ->toStartWith('docker create')
+        ->and($shell->scripts[3])
+        ->toContain("--name 'orbit_docs_main_queue'")
+        ->and($shell->scripts[3])
+        ->not->toContain('docker run -d')->and($shell->scripts[3])
+        ->not->toContain('docker start');
 });
 
 it('removes and recreates a docker process container when the spec hash drifts', function (): void {
@@ -104,13 +125,20 @@ it('removes and recreates a docker process container when the spec hash drifts',
     $plan = $resource->plan($probe);
     $result = $resource->apply($node, $shell, $plan);
 
-    expect($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($plan->outcome)->toBe(ProcessDockerContainerApplyOutcome::Recreated)
-        ->and($plan->details['observed_hash'])->toBe('old-hash')
-        ->and($result->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->details['outcome'])->toBe('recreated')
-        ->and($shell->scripts[1])->toBe("docker rm -f 'orbit_docs_main_queue'")
-        ->and($shell->scripts[2])->toStartWith('docker create');
+    expect($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($plan->outcome)
+        ->toBe(ProcessDockerContainerApplyOutcome::Recreated)
+        ->and($plan->details['observed_hash'])
+        ->toBe('old-hash')
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->details['outcome'])
+        ->toBe('recreated')
+        ->and($shell->scripts[1])
+        ->toBe("docker rm -f 'orbit_docs_main_queue'")
+        ->and($shell->scripts[2])
+        ->toStartWith('docker create');
 });
 
 it('returns a failed apply result when creating the docker process container fails', function (): void {
@@ -129,10 +157,14 @@ it('returns a failed apply result when creating the docker process container fai
         ]))),
     );
 
-    expect($result->status)->toBe(ConvergenceStatus::Failed)
-        ->and($result->summary)->toBe('Failed to create orbit_docs_main_queue container on app-dev-1: image missing')
-        ->and($result->successful())->toBeFalse()
-        ->and($result->details)->toMatchArray([
+    expect($result->status)
+        ->toBe(ConvergenceStatus::Failed)
+        ->and($result->summary)
+        ->toBe('Failed to create orbit_docs_main_queue container on app-dev-1: image missing')
+        ->and($result->successful())
+        ->toBeFalse()
+        ->and($result->details)
+        ->toMatchArray([
             'container' => 'orbit_docs_main_queue',
             'network' => 'orbit-network',
             'outcome' => 'created',
@@ -179,7 +211,9 @@ final class ProcessDockerContainerResourceShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

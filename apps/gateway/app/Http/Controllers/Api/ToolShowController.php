@@ -97,8 +97,12 @@ final class ToolShowController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function resolveTargetNode(Request $request, Node $caller, array $visibleNodeIds, string $tool): Node|JsonResponse
-    {
+    private function resolveTargetNode(
+        Request $request,
+        Node $caller,
+        array $visibleNodeIds,
+        string $tool,
+    ): Node|JsonResponse {
         $node = $request->query('node');
         $app = $request->query('app');
 
@@ -106,7 +110,11 @@ final class ToolShowController implements Loggable
             $nodeFilter = $this->resolveNodeFilter($node, $caller, $visibleNodeIds, allowAnyActiveNode: true);
 
             if (! $nodeFilter instanceof Node) {
-                return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
+                return $this->validationFailed(
+                    'node',
+                    $node,
+                    "Invalid value for --node: '{$node}'. Expected a visible tool node name.",
+                );
             }
 
             $catalog = app(ToolCatalog::class);
@@ -131,11 +139,19 @@ final class ToolShowController implements Loggable
             $appNode = $this->resolveAppNodeFilter($app, $caller, $visibleNodeIds);
 
             if (! $appNode instanceof Node) {
-                return $this->validationFailed('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name or domain.");
+                return $this->validationFailed(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. Expected a visible app name or domain.",
+                );
             }
 
             if (isset($nodeFilter) && $nodeFilter->id !== $appNode->id) {
-                return $this->validationFailed('app', $app, "Invalid value for --app: '{$app}'. App is not owned by the selected node.");
+                return $this->validationFailed(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                );
             }
 
             $catalog = app(ToolCatalog::class);

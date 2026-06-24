@@ -21,7 +21,10 @@ final readonly class OperatorNodeManager
     public function manage(Node $node, string $user, string $platform): array
     {
         if (! $node->isActive() || ! $node->isOperator()) {
-            throw new OperatorNodeManagementException('node.not_operator', 'Only active roleless nodes can opt into gateway SSH management.');
+            throw new OperatorNodeManagementException(
+                'node.not_operator',
+                'Only active roleless nodes can opt into gateway SSH management.',
+            );
         }
 
         $wireguardAddress = $this->wireguardAddress($node);
@@ -35,7 +38,10 @@ final readonly class OperatorNodeManager
         $pinnedHostKey = $pinner->pin($wireguardAddress);
 
         if (! $pinnedHostKey instanceof PinnedHostKey) {
-            throw new OperatorNodeManagementException('node.host_key_pin_failed', 'Gateway SSH host key pinning failed.');
+            throw new OperatorNodeManagementException(
+                'node.host_key_pin_failed',
+                'Gateway SSH host key pinning failed.',
+            );
         }
 
         $pinner->persist($node, $pinnedHostKey);
@@ -62,7 +68,10 @@ final readonly class OperatorNodeManager
         $address = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
 
         if ($address === '') {
-            throw new OperatorNodeManagementException('node.wireguard_address_missing', 'Node has no WireGuard address for gateway SSH.');
+            throw new OperatorNodeManagementException(
+                'node.wireguard_address_missing',
+                'Node has no WireGuard address for gateway SSH.',
+            );
         }
 
         return $address;

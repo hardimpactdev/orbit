@@ -10,10 +10,15 @@ it('keeps ephemeral e2e on the Incus backend separate from default pest tests', 
 });
 
 it('does not expose a standing live smoke test lane', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-    expect(repo_path('bin/live-smoke'))->not->toBeFile()
-        ->and($composer['scripts'])->not->toHaveKey('test:live');
+    expect(repo_path('bin/live-smoke'))
+        ->not->toBeFile()->and($composer['scripts'])
+        ->not->toHaveKey('test:live');
 });
 
 it('keeps composer test:live and bin/live-smoke out of every doc surface agents read', function (): void {
@@ -30,16 +35,23 @@ it('keeps composer test:live and bin/live-smoke out of every doc surface agents 
         }
 
         $files = $files->merge(
-            collect(new RecursiveIteratorIterator(new RecursiveDirectoryIterator($absolute, FilesystemIterator::SKIP_DOTS)))
+            collect(new RecursiveIteratorIterator(new RecursiveDirectoryIterator(
+                $absolute,
+                FilesystemIterator::SKIP_DOTS,
+            )))
                 ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'md')
-                ->map(fn (SplFileInfo $file): string => $file->getPathname())
+                ->map(fn (SplFileInfo $file): string => $file->getPathname()),
         );
     }
 
     $offenders = $files
         ->filter(fn (string $path): bool => is_file($path))
         ->mapWithKeys(fn (string $path): array => [$path => (string) file_get_contents($path)])
-        ->filter(fn (string $contents): bool => str_contains($contents, 'composer test:live') || str_contains($contents, 'bin/live-smoke'))
+        ->filter(
+            fn (string $contents): bool => (
+                str_contains($contents, 'composer test:live') || str_contains($contents, 'bin/live-smoke')
+            ),
+        )
         ->keys()
         ->map(fn (string $path): string => str_replace(repo_path().'/', '', $path))
         ->sort()
@@ -50,7 +62,11 @@ it('keeps composer test:live and bin/live-smoke out of every doc surface agents 
 });
 
 it('reports command docs lint severities in agent format', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
     $docsLintScript = implode("\n", (array) $composer['scripts']['docs-lint']);
 
     expect($docsLintScript)
@@ -63,8 +79,94 @@ it('reports command docs lint severities in agent format', function (): void {
         ->not->toContain('--strict');
 });
 
+it('uses Mago for analysis, linting, and formatting', function (): void {
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $magoAnalyzeCommands = [
+        'bin/orbit-gateway-vendor-bin mago analyze app config database --reporting-format=medium',
+        'cd apps/cli && vendor/bin/mago analyze app config --reporting-format=medium',
+        'cd apps/docs && vendor/bin/mago analyze app config database --reporting-format=medium',
+        'bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze bootstrap config routes --reporting-format=medium',
+        'cd packages/core && vendor/bin/mago analyze src --reporting-format=medium',
+        'cd packages/sdk && vendor/bin/mago analyze src --reporting-format=medium',
+        'cd apps/e2e && vendor/bin/mago analyze app config database --reporting-format=medium',
+    ];
+    $magoProjectCommands = [
+        'bin/orbit-gateway-vendor-bin mago',
+        'cd apps/cli && vendor/bin/mago',
+        'cd apps/docs && vendor/bin/mago',
+        'bin/orbit-gateway-vendor-bin mago --workspace ../reverb',
+        'cd packages/core && vendor/bin/mago',
+        'cd packages/sdk && vendor/bin/mago',
+        'cd apps/e2e && vendor/bin/mago',
+    ];
+
+    expect($composer['scripts'])
+        ->toHaveKeys([
+            'analyse',
+            'format',
+            'mago:analyze',
+            'mago:lint',
+            'mago:format',
+            'mago:format:check',
+        ])
+        ->and(implode("\n", $composer['scripts']['analyse']))
+        ->toContain('mago analyze')
+        ->not->toContain('phpstan analyse')->and(implode("\n", $composer['scripts']['format']))->toContain(
+            'mago format',
+        )
+        ->not->toContain('pint');
+
+    foreach ($magoAnalyzeCommands as $command) {
+        expect(implode("\n", $composer['scripts']['mago:analyze']))->toContain($command);
+    }
+
+    foreach ($magoProjectCommands as $command) {
+        expect(implode("\n", $composer['scripts']['mago:lint']))
+            ->toContain("{$command} lint --reporting-format=medium")
+            ->and(implode("\n", $composer['scripts']['mago:format']))
+            ->toContain("{$command} format")
+            ->and(implode("\n", $composer['scripts']['mago:format:check']))
+            ->toContain("{$command} format --check");
+    }
+
+    foreach ([
+        'apps/gateway',
+        'apps/cli',
+        'apps/docs',
+        'apps/reverb',
+        'apps/e2e',
+        'packages/core',
+        'packages/sdk',
+    ] as $projectPath) {
+        $manifest = json_decode(
+            file_get_contents(repo_path("{$projectPath}/composer.json")) ?: '',
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($manifest['require-dev']['carthage-software/mago'] ?? null)
+            ->toBe('^1.40.1')
+            ->and(repo_path("{$projectPath}/mago.toml"))
+            ->toBeFile()
+            ->and(repo_path("{$projectPath}/mago-analyzer-baseline.toml"))
+            ->toBeFile()
+            ->and(repo_path("{$projectPath}/mago-linter-baseline.toml"))
+            ->toBeFile()
+            ->and($manifest['scripts'])
+            ->toHaveKeys(['analyse', 'format', 'mago:analyze', 'mago:lint', 'mago:format', 'mago:format:check']);
+    }
+});
+
 it('keeps the aggregate quality gate complete', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     // The gate keeps every subgate but caps background fan-out so local
     // runner contention does not distort the Pest lanes unnecessarily.
@@ -126,36 +228,41 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('wait_for_bg_slot')
         ->toContain('--path=testing')
         ->toContain('--group=references')
-        ->toContain('phpstan analyse')
-        ->toContain('rector process')
-        ->toContain('bin/orbit-gateway-vendor-bin pint')
-        ->toContain('cd apps/cli && vendor/bin/phpstan analyse')
-        ->toContain('cd apps/docs && vendor/bin/phpstan analyse')
-        ->toContain('cd packages/core && vendor/bin/phpstan analyse')
-        ->toContain('cd packages/sdk && vendor/bin/phpstan analyse')
-        ->toContain('cd apps/e2e && vendor/bin/phpstan analyse')
-        ->toContain('cd apps/cli && vendor/bin/rector process')
-        ->toContain('cd apps/docs && vendor/bin/rector process')
-        ->toContain('cd packages/core && vendor/bin/rector process')
-        ->toContain('cd packages/sdk && vendor/bin/rector process')
-        ->toContain('cd apps/e2e && vendor/bin/rector process')
-        ->toContain('cd apps/cli && vendor/bin/pint')
-        ->toContain('cd apps/docs && vendor/bin/pint')
-        ->toContain('cd packages/core && vendor/bin/pint')
-        ->toContain('cd packages/sdk && vendor/bin/pint')
-        ->toContain('cd apps/e2e && vendor/bin/pint')
-        ->toContain('bin/orbit-cli-pest')
-        ->toContain('bin/orbit-docs-pest')
-        ->toContain('cd packages/core && vendor/bin/pest')
-        ->toContain('cd packages/sdk && vendor/bin/pest')
-        ->toContain('cd apps/e2e && vendor/bin/pest')
-        ->toContain('--exclude-group=e2e-binary')
-        ->toContain('--exclude-group=e2e-provision')
-        ->toContain('bin/orbit-gateway-pest')
-        ->toContain('--exclude-group=e2e')
-        ->toContain('--exclude-group=slow')
-        ->toContain('--parallel')
-        ->toContain('--compact');
+        ->toContain('mago analyze')
+        ->toContain('mago lint')
+        ->toContain('mago format')
+        ->not->toContain('phpstan analyse')
+        ->not->toContain('vendor/bin/pint')->toContain('rector process')->toContain(
+            'cd apps/cli && vendor/bin/mago analyze',
+        )->toContain('cd apps/docs && vendor/bin/mago analyze')->toContain(
+            'bin/orbit-gateway-vendor-bin mago --workspace ../reverb analyze',
+        )->toContain('cd packages/core && vendor/bin/mago analyze')->toContain(
+            'cd packages/sdk && vendor/bin/mago analyze',
+        )->toContain('cd apps/e2e && vendor/bin/mago analyze')->toContain(
+            'cd apps/cli && vendor/bin/rector process',
+        )->toContain('cd apps/docs && vendor/bin/rector process')->toContain(
+            'cd packages/core && vendor/bin/rector process',
+        )->toContain('cd packages/sdk && vendor/bin/rector process')->toContain(
+            'cd apps/e2e && vendor/bin/rector process',
+        )->toContain('cd apps/cli && vendor/bin/mago lint')->toContain(
+            'cd apps/docs && vendor/bin/mago lint',
+        )->toContain('bin/orbit-gateway-vendor-bin mago --workspace ../reverb lint')->toContain(
+            'cd packages/core && vendor/bin/mago lint',
+        )->toContain('cd packages/sdk && vendor/bin/mago lint')->toContain(
+            'cd apps/e2e && vendor/bin/mago lint',
+        )->toContain('cd apps/cli && vendor/bin/mago format')->toContain(
+            'cd apps/docs && vendor/bin/mago format',
+        )->toContain('bin/orbit-gateway-vendor-bin mago --workspace ../reverb format')->toContain(
+            'cd packages/core && vendor/bin/mago format',
+        )->toContain('cd packages/sdk && vendor/bin/mago format')->toContain(
+            'cd apps/e2e && vendor/bin/mago format',
+        )->toContain('bin/orbit-cli-pest')->toContain('bin/orbit-docs-pest')->toContain(
+            'cd packages/core && vendor/bin/pest',
+        )->toContain('cd packages/sdk && vendor/bin/pest')->toContain('cd apps/e2e && vendor/bin/pest')->toContain(
+            '--exclude-group=e2e-binary',
+        )->toContain('--exclude-group=e2e-provision')->toContain('bin/orbit-gateway-pest')->toContain(
+            '--exclude-group=e2e',
+        )->toContain('--exclude-group=slow')->toContain('--parallel')->toContain('--compact');
 
     expect($waitedBackgroundLabels)
         ->toBe($backgroundLabels)
@@ -224,7 +331,9 @@ it('includes monorepo path packages in the gateway image build context', functio
 
     foreach (['core', 'sdk'] as $package) {
         expect($dockerfile)
-            ->toContain("COPY packages/{$package}/composer.json packages/{$package}/composer.lock /srv/orbit/packages/{$package}/")
+            ->toContain(
+                "COPY packages/{$package}/composer.json packages/{$package}/composer.lock /srv/orbit/packages/{$package}/",
+            )
             ->toContain("COPY packages/{$package}/src /srv/orbit/packages/{$package}/src")
             ->and($dockerignore)
             ->toContain("!packages/{$package}/")
@@ -236,8 +345,16 @@ it('includes monorepo path packages in the gateway image build context', functio
 });
 
 it('keeps default composer tests out of e2e lanes', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
-    $e2eComposer = json_decode(file_get_contents(repo_path('apps/e2e/composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $e2eComposer = json_decode(
+        file_get_contents(repo_path('apps/e2e/composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
     $appLocalE2eInMemoryScript = 'vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact';
     $defaultTestScripts = implode("\n", $composer['scripts']['test']);
     $slowTestScripts = implode("\n", $composer['scripts']['test:slow']);
@@ -254,7 +371,8 @@ it('keeps default composer tests out of e2e lanes', function (): void {
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
             fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),
-        )->and($composer['scripts']['test:slow'])
+        )
+        ->and($composer['scripts']['test:slow'])
         ->sequence(
             fn ($script) => $script->toBe('Composer\\Config::disableProcessTimeout'),
             fn ($script) => $script->toContain('artisan config:clear'),
@@ -266,7 +384,8 @@ it('keeps default composer tests out of e2e lanes', function (): void {
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
             fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),
-        )->and($e2eComposer['scripts']['test'])
+        )
+        ->and($e2eComposer['scripts']['test'])
         ->sequence(
             fn ($script) => $script->toBe('@php artisan config:clear --ansi'),
             fn ($script) => $script->toBe($appLocalE2eInMemoryScript),
@@ -276,8 +395,7 @@ it('keeps default composer tests out of e2e lanes', function (): void {
         ->not->toContain('apps/e2e')
         ->not->toContain('bin/orbit-e2e')
         ->not->toContain('ORBIT_E2E=1')
-        ->not->toContain('--group=e2e')
-        ->and($slowTestScripts)
+        ->not->toContain('--group=e2e')->and($slowTestScripts)
         ->not->toContain('apps/e2e')
         ->not->toContain('bin/orbit-e2e')
         ->not->toContain('ORBIT_E2E=1')
@@ -288,36 +406,52 @@ it('keeps default composer tests out of e2e lanes', function (): void {
     $dockerCanaryE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=docker bin/quality-gate-run --gate=e2e-docker-canary --command="composer test:e2e:docker:canary" -- bin/orbit-e2e-artisan e2e:test --canary @additional_args';
     $incusE2eScript = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; ORBIT_E2E_LANES=incus bin/quality-gate-run --gate=e2e-incus --command="composer test:e2e:incus" -- bin/orbit-e2e-artisan e2e:test @additional_args';
 
-    expect($composer['scripts']['test:e2e'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        $e2eScript,
-    ])->and($composer['scripts']['test:e2e:docker'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        $dockerE2eScript,
-    ])->and($composer['scripts']['test:e2e:docker:canary'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        $dockerCanaryE2eScript,
-    ])->and($composer['scripts']['test:e2e:incus'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        $incusE2eScript,
-    ]);
+    expect($composer['scripts']['test:e2e'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            $e2eScript,
+        ])
+        ->and($composer['scripts']['test:e2e:docker'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            $dockerE2eScript,
+        ])
+        ->and($composer['scripts']['test:e2e:docker:canary'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            $dockerCanaryE2eScript,
+        ])
+        ->and($composer['scripts']['test:e2e:incus'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            $incusE2eScript,
+        ]);
 
-    expect($composer['scripts']['test:e2e:provision'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'composer test:e2e:provision:docker',
-        'composer test:e2e:provision:incus',
-    ])->and($composer['scripts']['test:e2e:provision:docker'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild operator_gateway_app-dev_app-prod_agent_websocket @additional_args',
-    ])->and($composer['scripts']['test:e2e:provision:incus'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 vendor/bin/pest --group=e2e-provision --fail-on-empty-test-suite @additional_args',
-    ])->and($composer['scripts']['test:e2e:next'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'cd apps/e2e && vendor/bin/pest --compact @additional_args',
-    ])->and($composer['scripts'])->not->toHaveKey('test:e2e:provisioning')
-        ->and($composer['scripts'])->not->toHaveKey('test:e2e:features')
-        ->and($composer['scripts'])->not->toHaveKey('test:e2e:features:docker');
+    expect($composer['scripts']['test:e2e:provision'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            'composer test:e2e:provision:docker',
+            'composer test:e2e:provision:incus',
+        ])
+        ->and($composer['scripts']['test:e2e:provision:docker'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; bin/orbit-e2e-artisan e2e:prepare-docker-hosts --force --rebuild operator_gateway_app-dev_app-prod_agent_websocket @additional_args',
+        ])
+        ->and($composer['scripts']['test:e2e:provision:incus'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 vendor/bin/pest --group=e2e-provision --fail-on-empty-test-suite @additional_args',
+        ])
+        ->and($composer['scripts']['test:e2e:next'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            'cd apps/e2e && vendor/bin/pest --compact @additional_args',
+        ])
+        ->and($composer['scripts'])
+        ->not->toHaveKey('test:e2e:provisioning')->and($composer['scripts'])
+        ->not->toHaveKey('test:e2e:features')->and($composer['scripts'])
+        ->not->toHaveKey('test:e2e:features:docker');
 });
 
 it('documents the supported verification lanes', function (): void {
@@ -389,51 +523,83 @@ it('keeps reusable e2e support code free of Pest-only expectations', function ()
 });
 
 it('does not expose hetzner e2e support', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     expect($composer['scripts'])
         ->not->toHaveKey('test:e2e:hcloud-docker')
         ->not->toHaveKey('e2e:reap-hcloud')
         ->not->toHaveKey('e2e:prepare-hcloud-images');
 
-    expect(is_file(repo_path('apps/gateway/app/Console/Commands/E2EReapHcloudCommand.php')))->toBeFalse()
-        ->and(is_file(repo_path('apps/gateway/app/Console/Commands/E2ETestHcloudDockerCommand.php')))->toBeFalse()
-        ->and(is_file(repo_path('apps/gateway/app/E2E/Support/HcloudProvider.php')))->toBeFalse()
-        ->and(is_file(repo_path('apps/gateway/app/E2E/Support/HcloudInstance.php')))->toBeFalse()
-        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudE2EReaper.php')))->toBeFalse()
-        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunner.php')))->toBeFalse()
-        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunOptions.php')))->toBeFalse();
+    expect(is_file(repo_path('apps/gateway/app/Console/Commands/E2EReapHcloudCommand.php')))
+        ->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Console/Commands/E2ETestHcloudDockerCommand.php')))
+        ->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/E2E/Support/HcloudProvider.php')))
+        ->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/E2E/Support/HcloudInstance.php')))
+        ->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudE2EReaper.php')))
+        ->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunner.php')))
+        ->toBeFalse()
+        ->and(is_file(repo_path('apps/gateway/app/Services/E2E/HcloudDockerE2ERunOptions.php')))
+        ->toBeFalse();
 });
 
 it('exposes e2e preflight, preparation, and cleanup helpers', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     $e2eEnvPrefix = 'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a;';
 
-    expect($composer['scripts']['e2e:preflight'])->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:preflight @additional_args")
-        ->and($composer['scripts']['e2e:prepare-docker-runtime'])->toBe([
+    expect($composer['scripts']['e2e:preflight'])
+        ->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:preflight @additional_args")
+        ->and($composer['scripts']['e2e:prepare-docker-runtime'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-docker-runtime @additional_args",
-        ])->and($composer['scripts']['e2e:prepare-docker-topology'])->toBe([
+        ])
+        ->and($composer['scripts']['e2e:prepare-docker-topology'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-docker-topology @additional_args",
-        ])->and($composer['scripts']['e2e:prepare-docker-hosts'])->toBe([
+        ])
+        ->and($composer['scripts']['e2e:prepare-docker-hosts'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-docker-hosts @additional_args",
-        ])->and($composer['scripts']['e2e:ensure-artifacts'])->toBe([
+        ])
+        ->and($composer['scripts']['e2e:ensure-artifacts'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:ensure-artifacts @additional_args",
-        ])->and($composer['scripts']['e2e:prepare-base-image'])->toBe([
+        ])
+        ->and($composer['scripts']['e2e:prepare-base-image'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-base-image @additional_args",
-        ])->and($composer['scripts']['e2e:prepare-topology'])->toBe([
+        ])
+        ->and($composer['scripts']['e2e:prepare-topology'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-topology @additional_args",
-        ])->and($composer['scripts']['e2e:prepare-warm-topology'])->toBe([
+        ])
+        ->and($composer['scripts']['e2e:prepare-warm-topology'])
+        ->toBe([
             'Composer\\Config::disableProcessTimeout',
             "{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:prepare-warm-topology @additional_args",
-        ])->and($composer['scripts']['e2e:reap-incus'])->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:reap-incus @additional_args")
-        ->and($composer['scripts']['e2e:reap-docker'])->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:reap-docker @additional_args");
+        ])
+        ->and($composer['scripts']['e2e:reap-incus'])
+        ->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:reap-incus @additional_args")
+        ->and($composer['scripts']['e2e:reap-docker'])
+        ->toBe("{$e2eEnvPrefix} bin/orbit-e2e-artisan e2e:reap-docker @additional_args");
 });
 
 it('keeps reusable e2e harness code out of the Tests namespace for app commands', function (): void {
@@ -443,7 +609,10 @@ it('keeps reusable e2e harness code out of the Tests namespace for app commands'
         ->filter(fn (SplFileInfo $file): bool => $file->isFile() && $file->getExtension() === 'php');
 
     $offenders = $appFiles
-        ->filter(fn (SplFileInfo $file): bool => str_contains((string) file_get_contents($file->getPathname()), 'Tests\\E2E\\Support'))
+        ->filter(fn (SplFileInfo $file): bool => str_contains(
+            (string) file_get_contents($file->getPathname()),
+            'Tests\\E2E\\Support',
+        ))
         ->map(fn (SplFileInfo $file): string => str_replace(repo_path().'/', '', $file->getPathname()))
         ->values()
         ->all();
@@ -529,16 +698,16 @@ it('does not wait for guest initialization tooling before mutating apt on Ubuntu
 
 it('aggregates e2e timing lines by label and event', function (): void {
     $input = <<<'TEXT'
-[orbit-e2e] topology acquire 1.25s
-[orbit-e2e] topology acquire 2.50s
-[orbit-e2e] topology acquire 3.75s
-[orbit-e2e] topology reset 4.00s
-[orbit-e2e] malformed
-[orbit-e2e] topology acquire nope
-noise line
-[orbit-e2e] node new 9.00s
-[orbit-e2e] checkout checkout operator checkout.copy 0.75s
-TEXT;
+        [orbit-e2e] topology acquire 1.25s
+        [orbit-e2e] topology acquire 2.50s
+        [orbit-e2e] topology acquire 3.75s
+        [orbit-e2e] topology reset 4.00s
+        [orbit-e2e] malformed
+        [orbit-e2e] topology acquire nope
+        noise line
+        [orbit-e2e] node new 9.00s
+        [orbit-e2e] checkout checkout operator checkout.copy 0.75s
+        TEXT;
 
     $process = new Process([
         'awk',
@@ -566,7 +735,8 @@ it('does not install host Supervisor because runtime processes live inside Docke
     $script = file_get_contents(repo_path('bin/install-orbit'));
 
     expect($script)
-        ->not->toContain('supervisor')
+        ->not
+        ->toContain('supervisor')
         ->toContain('orbit-gateway:current');
 });
 
@@ -579,10 +749,11 @@ it('installs the SSH client as a operator-node provisioning prerequisite', funct
 it('does not install host PHP SQLite packages because the CLI binary embeds pdo_sqlite', function (): void {
     $script = file_get_contents(repo_path('bin/install-orbit'));
 
-    expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))->toBe(0)
-        ->and($script)->not->toContain('php8.4-sqlite3')
-        ->and($script)->not->toContain('php8.5-sqlite3')
-        ->and($script)->toContain('orbit-gateway:current');
+    expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $script))
+        ->toBe(0)
+        ->and($script)
+        ->not->toContain('php8.4-sqlite3')->and($script)
+        ->not->toContain('php8.5-sqlite3')->and($script)->toContain('orbit-gateway:current');
 });
 
 it('aligns orbit checkout and config root ownership so non-root users can write after container bootstrap', function (): void {
@@ -608,7 +779,11 @@ it('documents e2e topology timing event names', function (): void {
 });
 
 it('does not expose stale per-topology feature e2e aliases', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     expect($composer['scripts'])
         ->not->toHaveKey('test:e2e:features:operator')
@@ -620,12 +795,18 @@ it('does not expose stale per-topology feature e2e aliases', function (): void {
 });
 
 it('runs the topology contract against the Docker full topology by default', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-    expect($composer['scripts']['test:e2e:topology-contract'])->toBe([
-        'Composer\\Config::disableProcessTimeout',
-        'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker vendor/bin/pest --group=e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket @additional_args',
-    ])->and($composer['scripts'])
+    expect($composer['scripts']['test:e2e:topology-contract'])
+        ->toBe([
+            'Composer\\Config::disableProcessTimeout',
+            'set -a; [ ! -f .env.e2e ] || . ./.env.e2e; set +a; cd apps/e2e && ORBIT_E2E=1 ORBIT_E2E_TOPOLOGY_PROVIDER=docker vendor/bin/pest --group=e2e-topology-contract-operator_gateway_app-dev_app-prod_agent_websocket @additional_args',
+        ])
+        ->and($composer['scripts'])
         ->not->toHaveKey('test:e2e:topology-contract:operator')
         ->not->toHaveKey('test:e2e:topology-contract:operator-gateway')
         ->not->toHaveKey('test:e2e:topology-contract:operator-gateway-dev')

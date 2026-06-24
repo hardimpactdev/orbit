@@ -103,10 +103,17 @@ function s3HumanSeaweedfsTool(Node $storage, array $config = []): NodeTool
  */
 function s3HumanStream(object $test, array $payload = []): string
 {
-    $response = $test->call('POST', '/api/s3/public-hosts', $payload, [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
-    ]);
+    $response = $test->call(
+        'POST',
+        '/api/s3/public-hosts',
+        $payload,
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
+        ],
+    );
 
     $response->assertOk();
 
@@ -128,15 +135,24 @@ describe('S3PublishHumanRenderer progress tree', function (): void {
         $content = s3HumanStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
         // Tree event with title and all 7 documented steps.
-        expect($content)->toContain('event: tree')
-            ->and($content)->toContain('Publishing S3 Host')
-            ->and($content)->toContain('Resolve S3 node')
-            ->and($content)->toContain('Check router and ingress')
-            ->and($content)->toContain('Ensure SeaweedFS credentials')
-            ->and($content)->toContain('Ensure private s3.orbit route')
-            ->and($content)->toContain('Ensure S3 backend pool')
-            ->and($content)->toContain('Publish ingress host')
-            ->and($content)->toContain('Verify route intent');
+        expect($content)
+            ->toContain('event: tree')
+            ->and($content)
+            ->toContain('Publishing S3 Host')
+            ->and($content)
+            ->toContain('Resolve S3 node')
+            ->and($content)
+            ->toContain('Check router and ingress')
+            ->and($content)
+            ->toContain('Ensure SeaweedFS credentials')
+            ->and($content)
+            ->toContain('Ensure private s3.orbit route')
+            ->and($content)
+            ->toContain('Ensure S3 backend pool')
+            ->and($content)
+            ->toContain('Publish ingress host')
+            ->and($content)
+            ->toContain('Verify route intent');
     });
 
     it('emits step events for each progress phase', function (): void {
@@ -148,14 +164,22 @@ describe('S3PublishHumanRenderer progress tree', function (): void {
 
         $content = s3HumanStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($content)->toContain('event: step')
-            ->and($content)->toContain('resolve_node')
-            ->and($content)->toContain('check_router_ingress')
-            ->and($content)->toContain('ensure_credentials')
-            ->and($content)->toContain('ensure_private_route')
-            ->and($content)->toContain('ensure_backend_pool')
-            ->and($content)->toContain('publish_ingress')
-            ->and($content)->toContain('verify_intent');
+        expect($content)
+            ->toContain('event: step')
+            ->and($content)
+            ->toContain('resolve_node')
+            ->and($content)
+            ->toContain('check_router_ingress')
+            ->and($content)
+            ->toContain('ensure_credentials')
+            ->and($content)
+            ->toContain('ensure_private_route')
+            ->and($content)
+            ->toContain('ensure_backend_pool')
+            ->and($content)
+            ->toContain('publish_ingress')
+            ->and($content)
+            ->toContain('verify_intent');
     });
 });
 
@@ -173,16 +197,23 @@ describe('S3PublishHumanRenderer success summary', function (): void {
 
         $content = s3HumanStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($content)->toContain('event: complete')
-            ->and($content)->toContain('"node":"storage-1"')
-            ->and($content)->toContain('"host":"s3.example.com"')
-            ->and($content)->toContain('"action":"published"')
-            ->and($content)->toContain('"already_published":false');
+        expect($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"node":"storage-1"')
+            ->and($content)
+            ->toContain('"host":"s3.example.com"')
+            ->and($content)
+            ->toContain('"action":"published"')
+            ->and($content)
+            ->toContain('"already_published":false');
 
         // Decode the frame to verify URL fields without slash-escaping issues.
         $frame = s3HumanParseCompleteFrame($content);
-        expect($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($frame['data']['s3']['public_endpoints'])->toContain('https://s3.example.com');
+        expect($frame['data']['s3']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->toContain('https://s3.example.com');
     });
 
     it('emits credentials_ref with tool=seaweedfs and node name', function (): void {
@@ -194,8 +225,7 @@ describe('S3PublishHumanRenderer success summary', function (): void {
 
         $content = s3HumanStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($content)->toContain('"tool":"seaweedfs"')
-            ->and($content)->toContain('"node":"storage-1"');
+        expect($content)->toContain('"tool":"seaweedfs"')->and($content)->toContain('"node":"storage-1"');
     });
 });
 
@@ -213,9 +243,12 @@ describe('S3PublishHumanRenderer idempotent output', function (): void {
 
         $content = s3HumanStream($this, ['host' => 's3.example.com', 'node' => 'storage-1']);
 
-        expect($content)->toContain('event: complete')
-            ->and($content)->toContain('"already_published":true')
-            ->and($content)->toContain('"action":"published"');
+        expect($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"already_published":true')
+            ->and($content)
+            ->toContain('"action":"published"');
     });
 });
 
@@ -228,19 +261,29 @@ describe('S3PublishHumanRenderer prerequisite failure', function (): void {
         s3HumanCallerNode();
         // No s3 role node registered.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"s3"');
     });
 
     it('names the missing router prerequisite in the error frame', function (): void {
@@ -249,19 +292,29 @@ describe('S3PublishHumanRenderer prerequisite failure', function (): void {
         s3HumanSeaweedfsTool($storage);
         // No router.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"router"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"router"');
     });
 
     it('names the missing ingress prerequisite in the error frame', function (): void {
@@ -271,19 +324,29 @@ describe('S3PublishHumanRenderer prerequisite failure', function (): void {
         s3HumanRouterNode();
         // No ingress.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"ingress"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"ingress"');
     });
 });
 
@@ -304,18 +367,24 @@ describe('S3PublishHumanRenderer apply-failure recovery', function (): void {
         // No s3 role assignment — simulates apply-path prerequisite failure.
         // The action detects no active s3 node and returns a validation error.
 
-        $response = $this->call('POST', '/api/s3/public-hosts', [
-            'host' => 's3.example.com',
-            'node' => 'nonexistent-storage',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/s3/public-hosts',
+            [
+                'host' => 's3.example.com',
+                'node' => 'nonexistent-storage',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_PUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed');
+        expect($content)->toContain('event: error')->and($content)->toContain('validation_failed');
     });
 });
 

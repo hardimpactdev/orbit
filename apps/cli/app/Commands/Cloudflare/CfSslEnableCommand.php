@@ -61,7 +61,9 @@ final class CfSslEnableCommand extends CloudflareGatewayCommand
                 $resolvedZone = $ssl['zone'] ?? null;
                 $displayZone = is_string($resolvedZone) && $resolvedZone !== '' ? $resolvedZone : $zone;
                 $resolvedMode = $ssl['mode'] ?? null;
-                $displayMode = is_string($resolvedMode) && $resolvedMode !== '' ? $resolvedMode : ($this->stringOption('mode') ?? 'strict');
+                $displayMode = is_string($resolvedMode) && $resolvedMode !== ''
+                    ? $resolvedMode
+                    : $this->stringOption('mode') ?? 'strict';
 
                 return "Cloudflare SSL mode for {$displayZone} set to {$displayMode}";
             },

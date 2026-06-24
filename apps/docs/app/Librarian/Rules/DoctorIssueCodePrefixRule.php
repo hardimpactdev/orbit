@@ -119,7 +119,7 @@ final readonly class DoctorIssueCodePrefixRule implements GroupedRule
         $sections = [];
 
         foreach ($matches as $match) {
-            $sections[(string) $match['heading']] = (string) $match['section'];
+            $sections[$match['heading']] = $match['section'];
         }
 
         return $sections;
@@ -137,7 +137,7 @@ final readonly class DoctorIssueCodePrefixRule implements GroupedRule
                 continue;
             }
 
-            $codes[] = (string) $matches['code'];
+            $codes[] = $matches['code'];
         }
 
         return $codes;

@@ -18,13 +18,19 @@ it('registers an idle callback for stream polling even when pcntl fork support e
 
     $ticker->stop();
 
-    expect($tickCount)->toBe(1)
-        ->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
+    expect($tickCount)->toBe(1)->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
 });
 
 it('invokes tick callbacks in the parent process while work is blocked', function (): void {
-    if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('pcntl_signal') || ! function_exists('pcntl_async_signals')) {
-        $this->markTestSkipped('pcntl_fork, posix_kill, pcntl_signal, and pcntl_async_signals are required to observe parent-process ticker callbacks.');
+    if (
+        ! function_exists('pcntl_fork')
+        || ! function_exists('posix_kill')
+        || ! function_exists('pcntl_signal')
+        || ! function_exists('pcntl_async_signals')
+    ) {
+        $this->markTestSkipped(
+            'pcntl_fork, posix_kill, pcntl_signal, and pcntl_async_signals are required to observe parent-process ticker callbacks.',
+        );
     }
 
     $parentPid = getmypid();
@@ -45,8 +51,10 @@ it('invokes tick callbacks in the parent process while work is blocked', functio
 
     $ticker->stop();
 
-    expect($tickCount)->toBeGreaterThanOrEqual(2)
-        ->and(array_values(array_unique($callbackPids)))->toBe([$parentPid]);
+    expect($tickCount)
+        ->toBeGreaterThanOrEqual(2)
+        ->and(array_values(array_unique($callbackPids)))
+        ->toBe([$parentPid]);
 });
 
 it('throttles duplicate idle invocations within one interval window', function (): void {
@@ -74,13 +82,11 @@ it('can register an idle callback without forking a signal child', function (): 
             $tickCount++;
         });
 
-        expect($tickCount)->toBe(0)
-            ->and(ForkedFrameTicker::hasIdleCallback())->toBeTrue();
+        expect($tickCount)->toBe(0)->and(ForkedFrameTicker::hasIdleCallback())->toBeTrue();
 
         ForkedFrameTicker::invokeIdleCallback();
         $ticker->stop();
     });
 
-    expect($tickCount)->toBe(1)
-        ->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
+    expect($tickCount)->toBe(1)->and(ForkedFrameTicker::hasIdleCallback())->toBeFalse();
 });

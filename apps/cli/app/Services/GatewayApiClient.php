@@ -160,9 +160,7 @@ final readonly class GatewayApiClient
      */
     private function shouldVerifyAgainstGatewayCa(): bool
     {
-        return is_string($this->caPemPath)
-            && $this->caPemPath !== ''
-            && is_file($this->caPemPath);
+        return is_string($this->caPemPath) && $this->caPemPath !== '' && is_file($this->caPemPath);
     }
 
     private function normalizedBaseUrl(): string
@@ -215,17 +213,21 @@ final readonly class GatewayApiClient
             return false;
         }
 
-        return function_exists('pcntl_fork')
+        return (
+            function_exists('pcntl_fork')
             && function_exists('pcntl_waitpid')
-            && function_exists('stream_socket_pair');
+            && function_exists('stream_socket_pair')
+        );
     }
 
     private function canCurlIdleRequest(): bool
     {
-        return function_exists('curl_init')
+        return (
+            function_exists('curl_init')
             && function_exists('curl_multi_init')
             && function_exists('curl_multi_exec')
-            && function_exists('curl_multi_select');
+            && function_exists('curl_multi_select')
+        );
     }
 
     /**
@@ -408,12 +410,13 @@ final readonly class GatewayApiClient
                 'message' => $exception->getMessage(),
                 'failure_kind' => $exception->failureKind()->name,
                 'status_code' => $exception->statusCode(),
-                'gateway_error' => $exception->hasGatewayError() ? [
-                    'code' => $exception->gatewayErrorCode(),
-                    'message' => $exception->gatewayErrorMessage(),
-                    'meta' => $exception->gatewayErrorMeta(),
-                    'data' => $exception->gatewayErrorData(),
-                ] : null,
+                'gateway_error' => $exception->hasGatewayError()
+                    ? [
+                        'code' => $exception->gatewayErrorCode(),
+                        'message' => $exception->gatewayErrorMessage(),
+                        'meta' => $exception->gatewayErrorMeta(),
+                        'data' => $exception->gatewayErrorData(),
+                    ] : null,
             ];
         } catch (Throwable $exception) {
             $result = [
@@ -455,7 +458,9 @@ final readonly class GatewayApiClient
      */
     private function gatewayExceptionFromChildResult(array $result): GatewayApiException
     {
-        $failureKindName = is_string($result['failure_kind'] ?? null) ? $result['failure_kind'] : GatewayApiFailureKind::Generic->name;
+        $failureKindName = is_string($result['failure_kind'] ?? null)
+            ? $result['failure_kind']
+            : GatewayApiFailureKind::Generic->name;
         $failureKind = GatewayApiFailureKind::{$failureKindName};
         $statusCode = is_int($result['status_code'] ?? null) ? $result['status_code'] : null;
         $message = is_string($result['message'] ?? null) ? $result['message'] : 'Gateway request failed.';
@@ -509,7 +514,8 @@ final readonly class GatewayApiClient
     {
         $message = strtolower($exception->getMessage());
 
-        $isWireGuardReachabilityFailure = str_contains($message, 'timed out')
+        $isWireGuardReachabilityFailure =
+            str_contains($message, 'timed out')
             || str_contains($message, 'no route to host')
             || str_contains($message, 'network is unreachable')
             || str_contains($message, 'could not resolve host');

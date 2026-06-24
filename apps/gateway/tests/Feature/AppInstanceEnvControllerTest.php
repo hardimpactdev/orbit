@@ -28,8 +28,11 @@ function createAppInstanceEnvApiCaller(): Node
 /**
  * @param  list<string>  $permissions
  */
-function grantAppInstanceEnvApiAccess(Node $caller, Node $serving, array $permissions = ['app:read', 'app:write', 'database:write']): void
-{
+function grantAppInstanceEnvApiAccess(
+    Node $caller,
+    Node $serving,
+    array $permissions = ['app:read', 'app:write', 'database:write'],
+): void {
     DB::table('node_access')->insert([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $serving->id,
@@ -81,36 +84,50 @@ it('sets lists and renders non-secret app instance env values with database atta
         'value' => 'false',
     ]);
 
-    $set->assertOk()
+    $set
+        ->assertOk()
         ->assertJsonPath('success.data.variable.key', 'APP_DEBUG')
         ->assertJsonPath('success.data.variable.value', 'false');
 
-    $attach = $this->call('POST', '/api/database-connections/billing-db/targets', [
-        'app' => 'billing',
-        'instance' => 'development',
-        'env_prefix' => 'DB',
-    ], [], [], ['REMOTE_ADDR' => APP_INSTANCE_ENV_API_CALLER_WG_IP]);
+    $attach = $this->call(
+        'POST',
+        '/api/database-connections/billing-db/targets',
+        [
+            'app' => 'billing',
+            'instance' => 'development',
+            'env_prefix' => 'DB',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => APP_INSTANCE_ENV_API_CALLER_WG_IP],
+    );
 
-    $attach->assertOk()
+    $attach
+        ->assertOk()
         ->assertJsonPath('success.data.connection.targets.0.type', 'app_instance')
         ->assertJsonPath('success.data.connection.targets.0.app', 'billing')
         ->assertJsonPath('success.data.connection.targets.0.instance', 'development');
 
     $list = appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env');
 
-    $list->assertOk()
+    $list
+        ->assertOk()
         ->assertJsonPath('success.data.variables.0.key', 'APP_DEBUG')
         ->assertJsonPath('success.data.variables.0.value', 'false');
 
     $render = appInstanceEnvApiJson('GET', '/api/apps/billing/instances/development/env/render');
 
-    $render->assertOk()
+    $render
+        ->assertOk()
         ->assertJsonPath('success.data.variables.APP_DEBUG.value', 'false')
         ->assertJsonPath('success.data.variables.DB_CONNECTION.value', 'pgsql')
         ->assertJsonPath('success.data.variables.DB_PASSWORD.secret', true);
 
-    expect($render->getContent())->not->toContain('secret-password')
-        ->and($connection->fresh()->instanceTargets()->where('app_instance_id', $instance->id)->exists())->toBeTrue();
+    expect($render->getContent())
+        ->not
+        ->toContain('secret-password')
+        ->and($connection->fresh()->instanceTargets()->where('app_instance_id', $instance->id)->exists())
+        ->toBeTrue();
 });
 
 it('applies set env values to the remote app runtime when apply is requested', function (): void {
@@ -133,7 +150,8 @@ it('applies set env values to the remote app runtime when apply is requested', f
         'apply' => true,
     ]);
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.variable.key', 'MAIL_MAILER')
         ->assertJsonPath('success.data.variable.value', 'smtp')
         ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing/.env')
@@ -154,7 +172,8 @@ it('rejects secret env writes until secret storage is designed', function (): vo
         'secret' => true,
     ]);
 
-    $response->assertUnprocessable()
+    $response
+        ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.meta.field', 'secret');
 });

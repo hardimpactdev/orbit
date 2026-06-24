@@ -59,13 +59,21 @@ describe('ProcessUpdateController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('PATCH', '/api/processes/vite', [
-            'app' => 'docs',
-            'command' => 'npm run dev -- --host=0.0.0.0',
-            'restart_policy' => 'on_failure',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+                'restart_policy' => 'on_failure',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.command', 'npm run dev -- --host=0.0.0.0')
             ->assertJsonPath('success.data.changed', ['command', 'restart_policy'])
             ->assertJsonPath('success.meta.warnings', []);
@@ -78,12 +86,20 @@ describe('ProcessUpdateController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
-        $response = $this->call('PATCH', '/api/processes/vite', [
-            'app' => 'docs',
-            'command' => 'npm run dev -- --host=0.0.0.0',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'command' => 'npm run dev -- --host=0.0.0.0',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:edit');
@@ -97,12 +113,20 @@ describe('ProcessUpdateController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
-        $response = $this->call('PATCH', '/api/processes/vite', [
-            'app' => 'docs',
-            'command' => 'npm run dev',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'command' => 'npm run dev',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:edit');
@@ -118,12 +142,20 @@ describe('ProcessUpdateController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('PATCH', '/api/processes/queue', [
-            'app' => 'docs',
-            'runtime' => 'systemd',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'docs',
+                'runtime' => 'systemd',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.runtime', 'systemd')
             ->assertJsonPath('success.data.changed', ['runtime']);
 
@@ -134,23 +166,33 @@ describe('ProcessUpdateController', function (): void {
         $caller = createProcessUpdateCallerNode();
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantProcessUpdateAccess($caller, $node);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'opencode-server',
-            'command' => 'opencode serve',
-            'runtime' => 'systemd',
-            'tool' => 'opencode',
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'opencode-server',
+                'command' => 'opencode serve',
+                'runtime' => 'systemd',
+                'tool' => 'opencode',
+            ]);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('PATCH', '/api/processes/opencode-server', [
-            'node' => 'app-1',
-            'command' => 'opencode serve -a',
-            'runtime' => 'systemd',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/opencode-server',
+            [
+                'node' => 'app-1',
+                'command' => 'opencode serve -a',
+                'runtime' => 'systemd',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.node', 'app-1')
             ->assertJsonPath('success.data.process.app', null)
             ->assertJsonPath('success.data.process.workspace', null)
@@ -168,26 +210,39 @@ describe('ProcessUpdateController', function (): void {
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         $workspace = Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
-        Process::factory()->forOwner($workspace)->create([
-            'name' => 'worker',
-            'command' => 'php artisan queue:work',
-            'runtime' => 'systemd',
-        ]);
+        Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'worker',
+                'command' => 'php artisan queue:work',
+                'runtime' => 'systemd',
+            ]);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('PATCH', '/api/processes/worker', [
-            'app' => 'docs',
-            'workspace' => 'feature-docs',
-            'command' => 'php artisan horizon',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/worker',
+            [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+                'command' => 'php artisan horizon',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.app', 'docs')
             ->assertJsonPath('success.data.process.workspace', 'feature-docs')
             ->assertJsonPath('success.data.process.command', 'php artisan horizon')
-            ->assertJsonPath('success.data.runtime_units.0', ['name' => 'orbit_docs_feature-docs_worker', 'context' => 'feature-docs']);
+            ->assertJsonPath('success.data.runtime_units.0', [
+                'name' => 'orbit_docs_feature-docs_worker',
+                'context' => 'feature-docs',
+            ]);
 
         expect($workspace->processes()->where('name', 'worker')->value('command'))->toBe('php artisan horizon');
     });
@@ -200,12 +255,20 @@ describe('ProcessUpdateController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
-        $response = $this->call('PATCH', '/api/processes/queue', [
-            'app' => 'docs',
-            'runtime' => 'podman',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'docs',
+                'runtime' => 'podman',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
@@ -223,19 +286,29 @@ describe('ProcessUpdateController', function (): void {
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('PATCH', '/api/processes/queue', [
-            'app' => 'docs',
-            'runtime' => 'supervisor',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'docs',
+                'runtime' => 'supervisor',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'supervisor')
             ->assertJsonPath('error.meta.allowed', ['docker', 'docker-swarm', 'systemd']);
 
-        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker')
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)
+            ->toBe('docker')
+            ->and($remoteShell->scripts)
+            ->toBe([]);
     });
 
     it('rejects docker swarm for app scoped process updates before runtime side effects', function (): void {
@@ -247,19 +320,29 @@ describe('ProcessUpdateController', function (): void {
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('PATCH', '/api/processes/queue', [
-            'app' => 'docs',
-            'runtime' => 'docker-swarm',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'docs',
+                'runtime' => 'docker-swarm',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker-swarm')
             ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
-        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('docker')
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)
+            ->toBe('docker')
+            ->and($remoteShell->scripts)
+            ->toBe([]);
     });
 
     it('rejects docker for app scoped host-command process updates before runtime side effects', function (): void {
@@ -271,19 +354,29 @@ describe('ProcessUpdateController', function (): void {
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('PATCH', '/api/processes/queue', [
-            'app' => 'docs',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'docs',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker')
             ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
 
-        expect(Process::query()->where('name', 'queue')->value('runtime')->value)->toBe('systemd')
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'queue')->value('runtime')->value)
+            ->toBe('systemd')
+            ->and($remoteShell->scripts)
+            ->toBe([]);
     });
 
     it('rejects docker for workspace scoped host-command process updates before runtime side effects', function (): void {
@@ -296,30 +389,52 @@ describe('ProcessUpdateController', function (): void {
         $remoteShell = new ProcessUpdateRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('PATCH', '/api/processes/queue', [
-            'app' => 'docs',
-            'workspace' => 'feature-docs',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/queue',
+            [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker')
             ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
 
-        expect($workspace->processes()->where('name', 'queue')->value('runtime')->value)->toBe('systemd')
-            ->and($remoteShell->scripts)->toBe([]);
+        expect($workspace->processes()->where('name', 'queue')->value('runtime')->value)
+            ->toBe('systemd')
+            ->and($remoteShell->scripts)
+            ->toBe([]);
     });
 
-    it('returns validation and not found errors', function (array $payload, string $processName, int $status, string $code): void {
+    it('returns validation and not found errors', function (
+        array $payload,
+        string $processName,
+        int $status,
+        string $code,
+    ): void {
         createProcessUpdateCallerNode(role: 'gateway');
         $appNode = createTestAppHostNode();
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
         app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([]));
 
-        $response = $this->call('PATCH', "/api/processes/{$processName}", $payload, [], [], ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP]);
+        $response = $this->call(
+            'PATCH',
+            "/api/processes/{$processName}",
+            $payload,
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertStatus($status)
             ->assertJsonPath('error.code', $code);
@@ -346,11 +461,17 @@ final class ProcessUpdateRemoteShell implements RemoteShell
         $this->scripts[] = $script;
 
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
-            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'exists' => false,
-                'hash' => null,
-                'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => false,
+                    'hash' => null,
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

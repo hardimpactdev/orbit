@@ -24,7 +24,8 @@ it('is hidden', function (): void {
 });
 
 it('defaults to a dry-run plan', function (): void {
-    $this->artisan('e2e:prepare-base-image')
+    $this
+        ->artisan('e2e:prepare-base-image')
         ->expectsOutputToContain('Dry run. Pass --force to build the Incus base image.')
         ->expectsOutputToContain('planned: base -> orbit-base-ubuntu-26.04-runtime (source: images:ubuntu/26.04)')
         ->assertSuccessful();
@@ -45,18 +46,21 @@ it('outputs json for the dry-run plan', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-base-image', ['--json' => true])
+    $this
+        ->artisan('e2e:prepare-base-image', ['--json' => true])
         ->expectsOutput($expected)
         ->assertSuccessful();
 });
 
 it('--force invokes the preparer and emits a JSON success envelope', function (): void {
     $preparer = m::mock(IncusBaseImagePreparer::class);
-    $preparer->shouldReceive('build')->andReturn([
-        'role' => 'base',
-        'alias' => 'orbit-base-ubuntu-26.04-runtime',
-        'action' => 'built',
-    ]);
+    $preparer
+        ->shouldReceive('build')
+        ->andReturn([
+            'role' => 'base',
+            'alias' => 'orbit-base-ubuntu-26.04-runtime',
+            'action' => 'built',
+        ]);
 
     $command = app(E2EPrepareBaseImageCommand::class);
     $command->setPreparerFactory(fn (IncusHost $host): IncusBaseImagePreparer => $preparer);
@@ -85,7 +89,8 @@ it('--force invokes the preparer and emits a JSON success envelope', function ()
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-base-image', ['--force' => true, '--json' => true])
+    $this
+        ->artisan('e2e:prepare-base-image', ['--force' => true, '--json' => true])
         ->expectsOutput($expected)
         ->assertSuccessful();
 });
@@ -100,14 +105,16 @@ it('--force builds on the configured image build host and distributes to configu
     $preparedHosts = [];
     $distributorHost = null;
     $preparer = m::mock(IncusBaseImagePreparer::class);
-    $preparer->shouldReceive('build')
+    $preparer
+        ->shouldReceive('build')
         ->andReturn([
             'role' => 'base',
             'alias' => 'orbit-base-ubuntu-26.04-runtime',
             'action' => 'built',
         ]);
     $distributor = m::mock(IncusImageDistributor::class);
-    $distributor->shouldReceive('distribute')
+    $distributor
+        ->shouldReceive('distribute')
         ->once()
         ->andReturn([
             [
@@ -130,7 +137,10 @@ it('--force builds on the configured image build host and distributes to configu
 
         return $preparer;
     });
-    $command->setImageDistributorFactory(function (IncusHost $host) use ($distributor, &$distributorHost): IncusImageDistributor {
+    $command->setImageDistributorFactory(function (IncusHost $host) use (
+        $distributor,
+        &$distributorHost,
+    ): IncusImageDistributor {
         $distributorHost = $host->config->host;
 
         return $distributor;
@@ -173,11 +183,14 @@ it('--force builds on the configured image build host and distributes to configu
     ], JSON_THROW_ON_ERROR);
 
     try {
-        $this->artisan('e2e:prepare-base-image', ['--force' => true, '--json' => true])
+        $this
+            ->artisan('e2e:prepare-base-image', ['--force' => true, '--json' => true])
             ->expectsOutput($expected)
             ->assertSuccessful();
     } finally {
-        $previousBuildHost === false ? putenv('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST') : putenv("ORBIT_E2E_INCUS_IMAGE_BUILD_HOST={$previousBuildHost}");
+        $previousBuildHost === false
+            ? putenv('ORBIT_E2E_INCUS_IMAGE_BUILD_HOST')
+            : putenv("ORBIT_E2E_INCUS_IMAGE_BUILD_HOST={$previousBuildHost}");
         $previousHosts === false ? putenv('ORBIT_E2E_INCUS_HOSTS') : putenv("ORBIT_E2E_INCUS_HOSTS={$previousHosts}");
     }
 
@@ -203,14 +216,14 @@ it('--force rejects unsupported provisioning provider configuration', function (
 
 it('--force surfaces preparer failure as command failure', function (): void {
     $preparer = m::mock(IncusBaseImagePreparer::class);
-    $preparer->shouldReceive('build')
-        ->andThrow(new RuntimeException('Source image [orbit-missing] is not available.'));
+    $preparer->shouldReceive('build')->andThrow(new RuntimeException('Source image [orbit-missing] is not available.'));
 
     $command = app(E2EPrepareBaseImageCommand::class);
     $command->setPreparerFactory(fn (IncusHost $host): IncusBaseImagePreparer => $preparer);
     $this->app->instance(E2EPrepareBaseImageCommand::class, $command);
 
-    $this->artisan('e2e:prepare-base-image', ['--force' => true])
+    $this
+        ->artisan('e2e:prepare-base-image', ['--force' => true])
         ->expectsOutputToContain('Source image [orbit-missing] is not available.')
         ->assertFailed();
 });

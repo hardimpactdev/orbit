@@ -66,7 +66,10 @@ class FleetUpdateVerifier
     private function verifySchedulerService(): null
     {
         if ($this->swarm->serviceImage('orbit_orbit-scheduler') === null) {
-            throw new FleetUpdateVerificationFailed('scheduler_health_failed', 'Scheduler service verification failed.');
+            throw new FleetUpdateVerificationFailed(
+                'scheduler_health_failed',
+                'Scheduler service verification failed.',
+            );
         }
 
         return null;
@@ -113,15 +116,23 @@ class FleetUpdateVerifier
             ]);
 
             if (! $result->successful()) {
-                throw new FleetUpdateVerificationFailed('required_image_missing', 'Required role image verification failed.');
+                throw new FleetUpdateVerificationFailed(
+                    'required_image_missing',
+                    'Required role image verification failed.',
+                );
             }
         }
 
         return null;
     }
 
-    private function runVerificationStep(OperationRun $operationRun, string $key, string $runningMessage, string $doneMessage, callable $callback): null
-    {
+    private function runVerificationStep(
+        OperationRun $operationRun,
+        string $key,
+        string $runningMessage,
+        string $doneMessage,
+        callable $callback,
+    ): null {
         $this->operationRuns->appendStep($operationRun->id, $key, 'running', $runningMessage);
 
         try {
@@ -148,7 +159,10 @@ class FleetUpdateVerifier
             $images[] = $plan->role_images['orbit-caddy'];
         }
 
-        if ($this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value) && is_string($plan->role_images['orbit-websocket'] ?? null)) {
+        if (
+            $this->roles->nodeHasActiveRole($node, NodeRoleName::WebSocket->value)
+            && is_string($plan->role_images['orbit-websocket'] ?? null)
+        ) {
             $images[] = $plan->role_images['orbit-websocket'];
         }
 

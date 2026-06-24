@@ -25,9 +25,12 @@ it('keeps managed service runtime selection independent of node tool platform ro
         processName: 'redis',
     );
 
-    expect($descriptor->runtimeConfig['image'])->toBe('redis:7.2')
-        ->and($descriptor->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
-        ->and($descriptor->runtimeConfig['labels']['orbit.process.service'])->toBe('redis');
+    expect($descriptor->runtimeConfig['image'])
+        ->toBe('redis:7.2')
+        ->and($descriptor->runtimeConfig['endpoint']['host'])
+        ->toBe('10.6.0.44')
+        ->and($descriptor->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('redis');
 });
 
 it('rejects unsupported managed service runtimes through the service catalog', function (): void {

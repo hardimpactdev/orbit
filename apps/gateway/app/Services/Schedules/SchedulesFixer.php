@@ -53,7 +53,11 @@ final readonly class SchedulesFixer
             return $this->action($gatewayNode, $entry, $schedule);
         }
 
-        if (! in_array($entry->key, ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'], true)) {
+        if (! in_array(
+            $entry->key,
+            ['schedule.scheduler_missing', 'schedule.scheduler_stopped', 'schedule.scheduler_replicas_mismatch'],
+            true,
+        )) {
             return null;
         }
 
@@ -139,10 +143,13 @@ final readonly class SchedulesFixer
             'summary' => $schedule instanceof Schedule
                 ? "Repaired Orbit Scheduler for schedule {$schedule->name}."
                 : 'Repaired gateway Orbit Scheduler.',
-            'details' => array_filter([
-                'schedule' => $schedule?->name,
-                ...($entry->detail ?? []),
-            ], fn (mixed $value): bool => $value !== null),
+            'details' => array_filter(
+                [
+                    'schedule' => $schedule?->name,
+                    ...($entry->detail ?? []),
+                ],
+                fn (mixed $value): bool => $value !== null,
+            ),
         ];
     }
 

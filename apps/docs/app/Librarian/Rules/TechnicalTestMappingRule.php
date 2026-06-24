@@ -61,15 +61,27 @@ final readonly class TechnicalTestMappingRule implements GroupedRule
         $errorCodes = $this->errorCodes($contents);
 
         if ($errorCodes !== [] && ! $this->mapsErrorCodeCoverage($coverage, $errorCodes)) {
-            $findings[] = $this->warning($file, $line, 'Test Mapping must map exhaustive error code coverage or name every documented `error.code` value.');
+            $findings[] = $this->warning(
+                $file,
+                $line,
+                'Test Mapping must map exhaustive error code coverage or name every documented `error.code` value.',
+            );
         }
 
         if ($this->documentsWarningPayload($contents) && ! $this->mapsWarningPayloadCoverage($coverage)) {
-            $findings[] = $this->warning($file, $line, 'Test Mapping must map warning payload coverage when the file documents `success.meta.warnings[]`.');
+            $findings[] = $this->warning(
+                $file,
+                $line,
+                'Test Mapping must map warning payload coverage when the file documents `success.meta.warnings[]`.',
+            );
         }
 
         if ($this->documentsDestructiveConsent($contents) && ! $this->mapsDestructiveConsentCoverage($coverage)) {
-            $findings[] = $this->warning($file, $line, 'Test Mapping must map destructive consent coverage when the file documents destructive consent behavior.');
+            $findings[] = $this->warning(
+                $file,
+                $line,
+                'Test Mapping must map destructive consent coverage when the file documents destructive consent behavior.',
+            );
         }
 
         return $findings;
@@ -77,7 +89,9 @@ final readonly class TechnicalTestMappingRule implements GroupedRule
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 
@@ -90,7 +104,7 @@ final readonly class TechnicalTestMappingRule implements GroupedRule
             return null;
         }
 
-        return substr_count(substr($contents, 0, $matches[0][1]), "\n") + 1;
+        return substr_count(substr($contents, 0, (int) $matches[0][1]), "\n") + 1;
     }
 
     /**
@@ -117,7 +131,11 @@ final readonly class TechnicalTestMappingRule implements GroupedRule
             return true;
         }
 
-        if (str_contains($coverage, 'exhaustive') && (str_contains($coverage, 'error.code') || str_contains($coverage, 'error code'))) {
+        if (
+            str_contains($coverage, 'exhaustive')
+            && (str_contains($coverage, 'error.code')
+            || str_contains($coverage, 'error code'))
+        ) {
             return true;
         }
 
@@ -126,29 +144,31 @@ final readonly class TechnicalTestMappingRule implements GroupedRule
 
     private function documentsWarningPayload(string $contents): bool
     {
-        return str_contains($contents, 'success.meta.warnings[]')
-            || str_contains($contents, 'success.meta.warnings');
+        return str_contains($contents, 'success.meta.warnings[]') || str_contains($contents, 'success.meta.warnings');
     }
 
     private function mapsWarningPayloadCoverage(string $coverage): bool
     {
-        return str_contains($coverage, 'warning')
-            && (str_contains($coverage, 'shape') || str_contains($coverage, 'payload'));
+        return (
+            str_contains($coverage, 'warning')
+            && (str_contains($coverage, 'shape') || str_contains($coverage, 'payload'))
+        );
     }
 
     private function documentsDestructiveConsent(string $contents): bool
     {
         $contents = strtolower($contents);
 
-        return str_contains($contents, 'destructive consent')
-            || str_contains($contents, 'destructive confirmation');
+        return str_contains($contents, 'destructive consent') || str_contains($contents, 'destructive confirmation');
     }
 
     private function mapsDestructiveConsentCoverage(string $coverage): bool
     {
-        return str_contains($coverage, 'destructive consent')
+        return (
+            str_contains($coverage, 'destructive consent')
             || str_contains($coverage, 'confirmation')
-            || str_contains($coverage, '--force');
+            || str_contains($coverage, '--force')
+        );
     }
 
     private function finding(string $path, string $message): Finding

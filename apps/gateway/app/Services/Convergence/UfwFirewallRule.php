@@ -174,7 +174,9 @@ final readonly class UfwFirewallRule
             'from',
             escapeshellarg($this->endpointForFamily($this->source, source: true)),
             'to',
-            $this->destination === null ? $this->anyForFamily() : escapeshellarg($this->endpointForFamily($this->destination, source: false)),
+            $this->destination === null
+                ? $this->anyForFamily()
+                : escapeshellarg($this->endpointForFamily($this->destination, source: false)),
             'port',
             escapeshellarg($this->port),
             'proto',
@@ -195,7 +197,7 @@ final readonly class UfwFirewallRule
     public function deleteCommand(array $shape): string
     {
         $interface = is_string($shape['interface'] ?? null) && $shape['interface'] !== ''
-            ? ['on', '$('.$this->interfaceResolver((string) $shape['interface']).')']
+            ? ['on', '$('.$this->interfaceResolver($shape['interface']).')']
             : [];
 
         $parts = [
@@ -206,7 +208,7 @@ final readonly class UfwFirewallRule
             'from',
             escapeshellarg((string) ($shape['source'] ?? 'any')),
             'to',
-            is_string($shape['destination'] ?? null) ? escapeshellarg((string) $shape['destination']) : 'any',
+            is_string($shape['destination'] ?? null) ? escapeshellarg($shape['destination']) : 'any',
             'port',
             escapeshellarg((string) ($shape['port'] ?? '*')),
             'proto',
@@ -254,7 +256,8 @@ final readonly class UfwFirewallRule
                 && ($observed['action'] ?? null) === $expected['action']
                 && ($observed['port'] ?? null) === $expected['port']
                 && ($observed['protocol'] ?? null) === $expected['protocol']
-                && (($expected['address_family'] ?? 'both') === 'both' || ($observed['address_family'] ?? 'both') === ($expected['address_family'] ?? 'both'))
+                && (($expected['address_family'] ?? 'both') === 'both'
+                || ($observed['address_family'] ?? 'both') === ($expected['address_family'] ?? 'both'))
             ) {
                 return $observed;
             }

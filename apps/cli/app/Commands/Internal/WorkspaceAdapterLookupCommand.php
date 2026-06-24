@@ -139,8 +139,9 @@ final class WorkspaceAdapterLookupCommand extends InternalExecutorCommand
         return $this->emitInternalSuccess([
             'server_id' => $this->stringValue($settings['serverId'] ?? null),
             'repository_id' => $repositoryId,
-            'base_url' => $this->stringValue($settings['backendUrl'] ?? null)
-                ?? $this->stringValue($settings['backend'] ?? null),
+            'base_url' => $this->stringValue($settings['backendUrl'] ?? null) ?? $this->stringValue(
+                $settings['backend'] ?? null,
+            ),
         ]);
     }
 
@@ -215,8 +216,10 @@ final class WorkspaceAdapterLookupCommand extends InternalExecutorCommand
 
             return [
                 'match' => true,
-                'workspace_name' => $this->stringValue($row['branch'] ?? null)
-                    ?? $this->requiredRowString($row, 'name'),
+                'workspace_name' => $this->stringValue($row['branch'] ?? null) ?? $this->requiredRowString(
+                    $row,
+                    'name',
+                ),
                 'path' => $this->normalizePath($directory),
                 'adapter_workspace_id' => $this->requiredRowString($row, 'id'),
             ];

@@ -31,7 +31,11 @@ final class ScheduleShowCommand extends GatewayCommand
     public function handle(): int
     {
         if ($this->hasMutuallyExclusiveOptions('app', 'node')) {
-            return $this->renderFailure('validation_failed', 'The schedule filters are mutually exclusive.', ['fields' => ['app', 'node']]);
+            return $this->renderFailure(
+                'validation_failed',
+                'The schedule filters are mutually exclusive.',
+                ['fields' => ['app', 'node']],
+            );
         }
 
         $name = $this->resolveScheduleName();
@@ -106,7 +110,7 @@ final class ScheduleShowCommand extends GatewayCommand
         $type = is_scalar($execution['type'] ?? null) ? (string) $execution['type'] : null;
         $value = is_scalar($execution['value'] ?? null) ? (string) $execution['value'] : null;
 
-        return $type !== null && $value !== null ? "{$type}: {$value}" : ($value ?? $type ?? '—');
+        return $type !== null && $value !== null ? "{$type}: {$value}" : $value ?? $type ?? '—';
     }
 
     private function lastRunLabel(mixed $lastRun): string

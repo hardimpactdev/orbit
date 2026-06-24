@@ -20,21 +20,18 @@ it('defines a self-contained gateway composer boundary', function (): void {
             'php' => '^8.5',
             'hardimpactdev/orbit-core' => 'dev-main',
             'laravel/framework' => '^13.0',
-        ])
-        ->and($composer['require'])->not->toHaveKey('laravel-zero/framework')
-        ->and($composer['repositories'][0])->toMatchArray([
+        ])->and($composer['require'])
+        ->not->toHaveKey('laravel-zero/framework')->and($composer['repositories'][0])->toMatchArray([
             'type' => 'path',
             'url' => '../../packages/core',
             'options' => [
                 'symlink' => true,
             ],
-        ])
-        ->and($composer['autoload']['psr-4'])->toMatchArray([
+        ])->and($composer['autoload']['psr-4'])->toMatchArray([
             'App\\' => 'app/',
             'Database\\Factories\\' => 'database/factories/',
             'Database\\Seeders\\' => 'database/seeders/',
-        ])
-        ->and($composer['autoload-dev']['psr-4'])->toMatchArray([
+        ])->and($composer['autoload-dev']['psr-4'])->toMatchArray([
             'Tests\\' => 'tests/',
         ]);
 });

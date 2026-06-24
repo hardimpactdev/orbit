@@ -33,10 +33,14 @@ it('resolves MySQL and Redis managed services into process runtime config', func
         processName: 'redis',
     );
 
-    expect($mysql->command)->toBe('mysqld')
-        ->and($mysql->versionFamily)->toBe('8')
-        ->and($mysql->version)->toBe('8.3')
-        ->and($mysql->runtimeConfig)->toMatchArray([
+    expect($mysql->command)
+        ->toBe('mysqld')
+        ->and($mysql->versionFamily)
+        ->toBe('8')
+        ->and($mysql->version)
+        ->toBe('8.3')
+        ->and($mysql->runtimeConfig)
+        ->toMatchArray([
             'service' => 'mysql',
             'version_family' => '8',
             'version' => '8.3',
@@ -44,31 +48,47 @@ it('resolves MySQL and Redis managed services into process runtime config', func
             'command_mode' => 'image_entrypoint',
             'service_name' => 'orbit-mysql8',
         ])
-        ->and($mysql->runtimeConfig['endpoint']['name'])->toBe('mysql8')
-        ->and($mysql->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
-        ->and($mysql->runtimeConfig['endpoint']['port'])->toBe(3308)
-        ->and($mysql->runtimeConfig['ports'][0])->toBe([
+        ->and($mysql->runtimeConfig['endpoint']['name'])
+        ->toBe('mysql8')
+        ->and($mysql->runtimeConfig['endpoint']['host'])
+        ->toBe('10.6.0.44')
+        ->and($mysql->runtimeConfig['endpoint']['port'])
+        ->toBe(3308)
+        ->and($mysql->runtimeConfig['ports'][0])
+        ->toBe([
             'published' => 3308,
             'target' => 3306,
             'protocol' => 'tcp',
         ])
-        ->and($mysql->runtimeConfig['labels']['orbit.process'])->toBe('mysql8')
-        ->and($mysql->runtimeConfig['labels']['orbit.process.service'])->toBe('mysql')
-        ->and($mysql->runtimeConfig['labels']['orbit.process.version_family'])->toBe('8')
-        ->and($mysql->runtimeConfig['labels']['orbit.process.version'])->toBe('8.3')
-        ->and($mysql->runtimeConfig['labels']['orbit.process.spec_hash'])->toBe($mysql->runtimeConfig['spec_hash'])
-        ->and($mysql->runtimeConfig['volumes'][0]['name'])->toBe('orbit-mysql8')
-        ->and($mysql->runtimeConfig['mounts'][0]['source'])->toBe('/var/lib/orbit/processes/mysql8')
-        ->and($redis->command)->toContain('redis-server')
-        ->and($redis->runtimeConfig)->toMatchArray([
+        ->and($mysql->runtimeConfig['labels']['orbit.process'])
+        ->toBe('mysql8')
+        ->and($mysql->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('mysql')
+        ->and($mysql->runtimeConfig['labels']['orbit.process.version_family'])
+        ->toBe('8')
+        ->and($mysql->runtimeConfig['labels']['orbit.process.version'])
+        ->toBe('8.3')
+        ->and($mysql->runtimeConfig['labels']['orbit.process.spec_hash'])
+        ->toBe($mysql->runtimeConfig['spec_hash'])
+        ->and($mysql->runtimeConfig['volumes'][0]['name'])
+        ->toBe('orbit-mysql8')
+        ->and($mysql->runtimeConfig['mounts'][0]['source'])
+        ->toBe('/var/lib/orbit/processes/mysql8')
+        ->and($redis->command)
+        ->toContain('redis-server')
+        ->and($redis->runtimeConfig)
+        ->toMatchArray([
             'service' => 'redis',
             'version_family' => '7',
             'version' => '7.2',
             'image' => 'redis:7.2',
         ])
-        ->and($redis->runtimeConfig['endpoint']['name'])->toBe('redis')
-        ->and($redis->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
-        ->and($redis->runtimeConfig['endpoint']['port'])->toBe(6379);
+        ->and($redis->runtimeConfig['endpoint']['name'])
+        ->toBe('redis')
+        ->and($redis->runtimeConfig['endpoint']['host'])
+        ->toBe('10.6.0.44')
+        ->and($redis->runtimeConfig['endpoint']['port'])
+        ->toBe(6379);
 });
 
 it('keeps MySQL 8 and MySQL 9 managed services distinct', function (): void {
@@ -78,11 +98,16 @@ it('keeps MySQL 8 and MySQL 9 managed services distinct', function (): void {
     $mysql8 = $registry->resolve('mysql', '8', ProcessRuntime::Docker, $node, 'mysql8');
     $mysql9 = $registry->resolve('mysql', '9', ProcessRuntime::Docker, $node, 'mysql9');
 
-    expect($mysql8->runtimeConfig['endpoint']['port'])->toBe(3308)
-        ->and($mysql9->runtimeConfig['endpoint']['port'])->toBe(3309)
-        ->and($mysql8->runtimeConfig['service_name'])->toBe('orbit-mysql8')
-        ->and($mysql9->runtimeConfig['service_name'])->toBe('orbit-mysql9')
-        ->and($mysql8->runtimeConfig['spec_hash'])->not->toBe($mysql9->runtimeConfig['spec_hash']);
+    expect($mysql8->runtimeConfig['endpoint']['port'])
+        ->toBe(3308)
+        ->and($mysql9->runtimeConfig['endpoint']['port'])
+        ->toBe(3309)
+        ->and($mysql8->runtimeConfig['service_name'])
+        ->toBe('orbit-mysql8')
+        ->and($mysql9->runtimeConfig['service_name'])
+        ->toBe('orbit-mysql9')
+        ->and($mysql8->runtimeConfig['spec_hash'])
+        ->not->toBe($mysql9->runtimeConfig['spec_hash']);
 });
 
 it('resolves metrics managed services for Prometheus, Grafana, and node-exporter', function (): void {
@@ -115,20 +140,28 @@ it('resolves metrics managed services for Prometheus, Grafana, and node-exporter
         processName: 'node-exporter',
     );
 
-    expect($prometheus->version)->toBe('v3.12.0')
-        ->and($prometheus->command)->toContain('--storage.tsdb.retention.time=15d')
-        ->and($prometheus->runtimeConfig)->toMatchArray([
+    expect($prometheus->version)
+        ->toBe('v3.12.0')
+        ->and($prometheus->command)
+        ->toContain('--storage.tsdb.retention.time=15d')
+        ->and($prometheus->runtimeConfig)
+        ->toMatchArray([
             'service' => 'prometheus',
             'version_family' => '3',
             'version' => 'v3.12.0',
             'image' => 'prom/prometheus:v3.12.0',
             'service_name' => 'orbit-prometheus',
         ])
-        ->and($prometheus->runtimeConfig['endpoint']['host'])->toBe('10.6.0.55')
-        ->and($prometheus->runtimeConfig['endpoint']['port'])->toBe(9090)
-        ->and($prometheus->runtimeConfig['labels']['orbit.process.service'])->toBe('prometheus')
-        ->and($grafana->version)->toBe('13.0.2')
-        ->and($grafana->runtimeConfig)->toMatchArray([
+        ->and($prometheus->runtimeConfig['endpoint']['host'])
+        ->toBe('10.6.0.55')
+        ->and($prometheus->runtimeConfig['endpoint']['port'])
+        ->toBe(9090)
+        ->and($prometheus->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('prometheus')
+        ->and($grafana->version)
+        ->toBe('13.0.2')
+        ->and($grafana->runtimeConfig)
+        ->toMatchArray([
             'service' => 'grafana',
             'version_family' => '13',
             'version' => '13.0.2',
@@ -140,11 +173,16 @@ it('resolves metrics managed services for Prometheus, Grafana, and node-exporter
                 'GF_SERVER_ROOT_URL' => 'https://metrics.orbit',
             ],
         ])
-        ->and($grafana->runtimeConfig['endpoint']['host'])->toBe('10.6.0.55')
-        ->and($grafana->runtimeConfig['endpoint']['port'])->toBe(3000)
-        ->and($nodeExporter->version)->toBe('1.11.1')
-        ->and($nodeExporter->command)->toContain('node_exporter')
-        ->and($nodeExporter->runtimeConfig)->toMatchArray([
+        ->and($grafana->runtimeConfig['endpoint']['host'])
+        ->toBe('10.6.0.55')
+        ->and($grafana->runtimeConfig['endpoint']['port'])
+        ->toBe(3000)
+        ->and($nodeExporter->version)
+        ->toBe('1.11.1')
+        ->and($nodeExporter->command)
+        ->toContain('node_exporter')
+        ->and($nodeExporter->runtimeConfig)
+        ->toMatchArray([
             'service' => 'node-exporter',
             'version_family' => '1',
             'version' => '1.11.1',
@@ -155,7 +193,8 @@ it('resolves metrics managed services for Prometheus, Grafana, and node-exporter
                 'port' => 9100,
             ],
         ])
-        ->and($nodeExporter->runtimeConfig['labels']['orbit.process.service'])->toBe('node-exporter');
+        ->and($nodeExporter->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('node-exporter');
 });
 
 it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process runtime config', function (): void {
@@ -170,33 +209,43 @@ it('resolves PostgreSQL, ClickHouse, and Plausible managed services into process
     $clickhouse = $registry->resolve('clickhouse', '24', ProcessRuntime::DockerSwarm, $node, 'clickhouse24');
     $plausible = $registry->resolve('plausible', '3.2.2', ProcessRuntime::DockerSwarm, $node, 'plausible');
 
-    expect($registry->names())->toContain('postgres', 'clickhouse', 'plausible')
-        ->and($postgres->runtimeConfig)->toMatchArray([
+    expect($registry->names())
+        ->toContain('postgres', 'clickhouse', 'plausible')
+        ->and($postgres->runtimeConfig)
+        ->toMatchArray([
             'service' => 'postgres',
             'version_family' => '16',
             'version' => '16',
             'image' => 'postgres:16',
         ])
-        ->and($postgres->runtimeConfig['endpoint']['port'])->toBe(5432)
-        ->and($clickhouse->runtimeConfig)->toMatchArray([
+        ->and($postgres->runtimeConfig['endpoint']['port'])
+        ->toBe(5432)
+        ->and($clickhouse->runtimeConfig)
+        ->toMatchArray([
             'service' => 'clickhouse',
             'version_family' => '24',
             'version' => '24',
             'image' => 'clickhouse/clickhouse-server:24',
         ])
-        ->and($clickhouse->runtimeConfig['endpoint']['port'])->toBe(8123)
-        ->and($plausible->runtimeConfig)->toMatchArray([
+        ->and($clickhouse->runtimeConfig['endpoint']['port'])
+        ->toBe(8123)
+        ->and($plausible->runtimeConfig)
+        ->toMatchArray([
             'service' => 'plausible',
             'version_family' => '3.2.2',
             'version' => '3.2.2',
             'image' => 'ghcr.io/plausible/community-edition:3.2.2',
         ])
-        ->and($plausible->runtimeConfig['endpoint']['port'])->toBe(8000)
-        ->and($plausible->runtimeConfig['environment'])->toMatchArray([
+        ->and($plausible->runtimeConfig['endpoint']['port'])
+        ->toBe(8000)
+        ->and($plausible->runtimeConfig['environment'])
+        ->toMatchArray([
             'BASE_URL' => 'https://analytics.orbit',
         ])
-        ->and($plausible->runtimeConfig['labels']['orbit.process.service'])->toBe('plausible')
-        ->and($plausible->runtimeConfig['labels']['orbit.process.version'])->toBe('3.2.2');
+        ->and($plausible->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('plausible')
+        ->and($plausible->runtimeConfig['labels']['orbit.process.version'])
+        ->toBe('3.2.2');
 });
 
 it('requires service process endpoints to use the owner node WireGuard address', function (): void {
@@ -214,10 +263,13 @@ it('requires service process endpoints to use the owner node WireGuard address',
         processName: 'redis',
     );
 
-    expect($descriptor->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
-        ->and($descriptor->runtimeConfig['endpoints'][0]['host'])->toBe('10.6.0.44')
-        ->and($descriptor->runtimeConfig['endpoint']['host'])->not->toBe('database-1.example.com')
-        ->and($descriptor->runtimeConfig['endpoint']['host'])->not->toBe('database-1');
+    expect($descriptor->runtimeConfig['endpoint']['host'])
+        ->toBe('10.6.0.44')
+        ->and($descriptor->runtimeConfig['endpoints'][0]['host'])
+        ->toBe('10.6.0.44')
+        ->and($descriptor->runtimeConfig['endpoint']['host'])
+        ->not->toBe('database-1.example.com')->and($descriptor->runtimeConfig['endpoint']['host'])
+        ->not->toBe('database-1');
 });
 
 it('rejects service process endpoints when the owning node has no WireGuard address', function (): void {
@@ -234,7 +286,10 @@ it('rejects service process endpoints when the owning node has no WireGuard addr
         node: $node,
         processName: 'redis',
     );
-})->throws(GatewayApiException::class, "Node 'database-1' cannot host service process endpoints without a WireGuard address.");
+})->throws(
+    GatewayApiException::class,
+    "Node 'database-1' cannot host service process endpoints without a WireGuard address.",
+);
 
 it('resolves Mailpit managed service with published SMTP and private Web UI', function (): void {
     $node = Node::factory()->create([
@@ -250,11 +305,16 @@ it('resolves Mailpit managed service with published SMTP and private Web UI', fu
         processName: 'mailpit',
     );
 
-    expect(app(ProcessServiceCatalog::class)->names())->toContain('mailpit')
-        ->and($mailpit->command)->toBe('/mailpit')
-        ->and($mailpit->versionFamily)->toBe('latest')
-        ->and($mailpit->version)->toBe('latest')
-        ->and($mailpit->runtimeConfig)->toMatchArray([
+    expect(app(ProcessServiceCatalog::class)->names())
+        ->toContain('mailpit')
+        ->and($mailpit->command)
+        ->toBe('/mailpit')
+        ->and($mailpit->versionFamily)
+        ->toBe('latest')
+        ->and($mailpit->version)
+        ->toBe('latest')
+        ->and($mailpit->runtimeConfig)
+        ->toMatchArray([
             'service' => 'mailpit',
             'version_family' => 'latest',
             'version' => 'latest',
@@ -263,13 +323,15 @@ it('resolves Mailpit managed service with published SMTP and private Web UI', fu
             'service_name' => 'orbit-mailpit',
             'credentials' => [],
         ])
-        ->and($mailpit->runtimeConfig['endpoint'])->toMatchArray([
+        ->and($mailpit->runtimeConfig['endpoint'])
+        ->toMatchArray([
             'name' => 'smtp',
             'kind' => 'tcp',
             'host' => '10.6.0.7',
             'port' => 1025,
         ])
-        ->and($mailpit->runtimeConfig['endpoints'])->toBe([
+        ->and($mailpit->runtimeConfig['endpoints'])
+        ->toBe([
             [
                 'name' => 'smtp',
                 'kind' => 'tcp',
@@ -277,15 +339,18 @@ it('resolves Mailpit managed service with published SMTP and private Web UI', fu
                 'port' => 1025,
             ],
         ])
-        ->and($mailpit->runtimeConfig['ports'])->toBe([
+        ->and($mailpit->runtimeConfig['ports'])
+        ->toBe([
             [
                 'published' => 1025,
                 'target' => 1025,
                 'protocol' => 'tcp',
             ],
         ])
-        ->and($mailpit->runtimeConfig['healthcheck']['command'])->toContain('8025')
-        ->and($mailpit->runtimeConfig['labels']['orbit.process.service'])->toBe('mailpit');
+        ->and($mailpit->runtimeConfig['healthcheck']['command'])
+        ->toContain('8025')
+        ->and($mailpit->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('mailpit');
 });
 
 it('rejects unsupported managed service inputs', function (Closure $operation, string $field, string $reason): void {
@@ -294,8 +359,10 @@ it('rejects unsupported managed service inputs', function (Closure $operation, s
     try {
         $operation(app(ProcessServiceCatalog::class), $node);
     } catch (GatewayApiException $exception) {
-        expect($exception->errorCode())->toBe('validation_failed')
-            ->and($exception->errorMeta())->toMatchArray([
+        expect($exception->errorCode())
+            ->toBe('validation_failed')
+            ->and($exception->errorMeta())
+            ->toMatchArray([
                 'field' => $field,
                 'reason' => $reason,
             ]);
@@ -306,32 +373,68 @@ it('rejects unsupported managed service inputs', function (Closure $operation, s
     $this->fail('Expected GatewayApiException was not thrown.');
 })->with([
     'service' => [
-        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve('queue', '1', ProcessRuntime::Docker, $node, 'queue'),
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'queue',
+            '1',
+            ProcessRuntime::Docker,
+            $node,
+            'queue',
+        ),
         'service',
         'unsupported_value',
     ],
     'version required' => [
-        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve('mysql', null, ProcessRuntime::Docker, $node, 'mysql'),
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'mysql',
+            null,
+            ProcessRuntime::Docker,
+            $node,
+            'mysql',
+        ),
         'version',
         'required',
     ],
     'version unsupported' => [
-        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve('mysql', '10', ProcessRuntime::Docker, $node, 'mysql10'),
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'mysql',
+            '10',
+            ProcessRuntime::Docker,
+            $node,
+            'mysql10',
+        ),
         'version',
         'unsupported_value',
     ],
     'uncatalogued family version unsupported' => [
-        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve('mysql', '8.99', ProcessRuntime::Docker, $node, 'mysql899'),
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'mysql',
+            '8.99',
+            ProcessRuntime::Docker,
+            $node,
+            'mysql899',
+        ),
         'version',
         'unsupported_value',
     ],
     'runtime unsupported' => [
-        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve('redis', '7', ProcessRuntime::Systemd, $node, 'redis'),
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'redis',
+            '7',
+            ProcessRuntime::Systemd,
+            $node,
+            'redis',
+        ),
         'runtime',
         'process_service_runtime_unsupported',
     ],
     'node exporter docker unsupported' => [
-        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve('node-exporter', null, ProcessRuntime::DockerSwarm, $node, 'node-exporter'),
+        fn (ProcessServiceCatalog $registry, Node $node) => $registry->resolve(
+            'node-exporter',
+            null,
+            ProcessRuntime::DockerSwarm,
+            $node,
+            'node-exporter',
+        ),
         'runtime',
         'process_service_runtime_unsupported',
     ],

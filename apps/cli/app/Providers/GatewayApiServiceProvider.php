@@ -67,7 +67,10 @@ final class GatewayApiServiceProvider extends ServiceProvider
 
         $this->app->bind(FetchesGatewayRootCa::class, fn (): FetchesGatewayRootCa => new FetchGatewayRootCa);
 
-        $this->app->bind(ResolvesGatewayAddress::class, fn (): ResolvesGatewayAddress => new WireGuardGatewayAddressResolver);
+        $this->app->bind(
+            ResolvesGatewayAddress::class,
+            fn (): ResolvesGatewayAddress => new WireGuardGatewayAddressResolver,
+        );
 
         $this->app->bind(VerifiesGatewayIdentity::class, fn (): VerifiesGatewayIdentity => new VerifyGatewayIdentity);
 
@@ -113,9 +116,15 @@ final class GatewayApiServiceProvider extends ServiceProvider
 
         $this->app->bind(GatewayOperationFollower::class, fn (): GatewayOperationFollower => new GatewayOperationFollower(
             events: $this->app->make(GatewayOperationEventStreamClient::class),
-            reconnectSleepMs: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_reconnect_sleep_ms'), 500),
+            reconnectSleepMs: $this->nonNegativeInteger(
+                config('orbit.gateway.operation_follow_reconnect_sleep_ms'),
+                500,
+            ),
             maxEmptyReplays: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_empty_replays'), 0),
-            maxTransientFailures: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_transient_failures'), 120),
+            maxTransientFailures: $this->nonNegativeInteger(
+                config('orbit.gateway.operation_follow_max_transient_failures'),
+                120,
+            ),
         ));
 
         $this->app->singleton(GatewayLogStreamClient::class, function (): GatewayLogStreamClient {
@@ -140,7 +149,7 @@ final class GatewayApiServiceProvider extends ServiceProvider
         $jsonUrl = is_array($jsonGateway) ? $this->nullableString($jsonGateway['url'] ?? null) : null;
 
         $envTimeout = config('orbit.gateway.timeout');
-        $jsonTimeout = is_array($jsonGateway) ? ($jsonGateway['timeout'] ?? null) : null;
+        $jsonTimeout = is_array($jsonGateway) ? $jsonGateway['timeout'] ?? null : null;
 
         $envCaPemPath = $this->nullableString(config('orbit.gateway.ca_pem_path'));
         $jsonCaPemPath = is_array($jsonGateway) ? $this->nullableString($jsonGateway['ca_pem_path'] ?? null) : null;

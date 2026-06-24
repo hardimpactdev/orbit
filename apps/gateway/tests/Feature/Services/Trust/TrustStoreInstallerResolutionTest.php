@@ -9,8 +9,7 @@ use App\Support\LocalPlatform;
 
 describe('TrustStoreInstaller container resolution', function (): void {
     it('resolves MacOsTrustStoreInstaller when platform is macos', function (): void {
-        app()->instance(LocalPlatform::class, new class extends LocalPlatform
-        {
+        app()->instance(LocalPlatform::class, new class extends LocalPlatform {
             public function current(): string
             {
                 return 'macos';
@@ -23,8 +22,7 @@ describe('TrustStoreInstaller container resolution', function (): void {
     });
 
     it('resolves LinuxTrustStoreInstaller when platform is linux', function (): void {
-        app()->instance(LocalPlatform::class, new class extends LocalPlatform
-        {
+        app()->instance(LocalPlatform::class, new class extends LocalPlatform {
             public function current(): string
             {
                 return 'linux';
@@ -37,8 +35,7 @@ describe('TrustStoreInstaller container resolution', function (): void {
     });
 
     it('throws RuntimeException on unsupported platform', function (): void {
-        app()->instance(LocalPlatform::class, new class extends LocalPlatform
-        {
+        app()->instance(LocalPlatform::class, new class extends LocalPlatform {
             public function current(): string
             {
                 return 'unsupported';

@@ -33,14 +33,19 @@ describe('schedule:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/schedules')
-                && str_contains($url, 'app=docs');
+                && str_contains($url, 'app=docs')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['schedules'][0]['name'])->toBe('laravel-scheduler')
-            ->and($decoded['success']['meta']['count'])->toBe(1);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['schedules'][0]['name'])
+            ->toBe('laravel-scheduler')
+            ->and($decoded['success']['meta']['count'])
+            ->toBe(1);
     });
 
     it('renders human output as a table with uppercase headers and schedule cells', function (): void {
@@ -69,24 +74,41 @@ describe('schedule:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('SCOPE')
-            ->and($output)->toContain('TARGET')
-            ->and($output)->toContain('NODE')
-            ->and($output)->toContain('INTERVAL')
-            ->and($output)->toContain('EXECUTION')
-            ->and($output)->toContain('LAST RUN')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('laravel-scheduler')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('every minute')
-            ->and($output)->toContain('command: php artisan schedule:run')
-            ->and($output)->toContain('completed')
-            ->and($output)->toContain('prune')
-            ->and($output)->toContain('—')
-            ->and($output)->not->toContain('schedules: [')
-            ->and($output)->not->toContain('"execution"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('SCOPE')
+            ->and($output)
+            ->toContain('TARGET')
+            ->and($output)
+            ->toContain('NODE')
+            ->and($output)
+            ->toContain('INTERVAL')
+            ->and($output)
+            ->toContain('EXECUTION')
+            ->and($output)
+            ->toContain('LAST RUN')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('laravel-scheduler')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('every minute')
+            ->and($output)
+            ->toContain('command: php artisan schedule:run')
+            ->and($output)
+            ->toContain('completed')
+            ->and($output)
+            ->toContain('prune')
+            ->and($output)
+            ->toContain('—')
+            ->and($output)
+            ->not->toContain('schedules: [')->and($output)
+            ->not->toContain('"execution"');
     });
 
     it('renders a scope-aware empty state when filtered with no matches', function (): void {
@@ -94,8 +116,7 @@ describe('schedule:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:list', ['--app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No schedules found for app docs.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No schedules found for app docs.');
     });
 
     it('renders a plain empty state when unfiltered with no schedules', function (): void {
@@ -103,8 +124,7 @@ describe('schedule:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'schedule:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No schedules found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No schedules found.');
     });
 
     it('fails validation before opening the gateway request when app and node filters are combined', function (): void {
@@ -120,9 +140,12 @@ describe('schedule:list', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['fields'])->toBe(['app', 'node']);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['fields'])
+            ->toBe(['app', 'node']);
     });
 
     it('surfaces gateway_unavailable on non-envelope gateway HTTP errors', function (): void {
@@ -132,8 +155,7 @@ describe('schedule:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -143,7 +165,6 @@ describe('schedule:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

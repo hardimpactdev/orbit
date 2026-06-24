@@ -31,30 +31,30 @@ final readonly class GatewayCaddyRouteRenderer
         $upstream = $this->nonEmpty($upstream, 'upstream');
 
         return <<<CADDY
-{$siteAddress} {
-    tls {$certPath} {$keyPath}
+            {$siteAddress} {
+                tls {$certPath} {$keyPath}
 
-    @notWireGuard {
-        not remote_ip {$wireguardCidr}
-    }
-    abort @notWireGuard
+                @notWireGuard {
+                    not remote_ip {$wireguardCidr}
+                }
+                abort @notWireGuard
 
-    request_header -X-Forwarded-For
-    request_header -X-Real-IP
-    request_header -Forwarded
-    request_header -X-Orbit-WireGuard-Ip
+                request_header -X-Forwarded-For
+                request_header -X-Real-IP
+                request_header -Forwarded
+                request_header -X-Orbit-WireGuard-Ip
 
-    reverse_proxy {$upstream} {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto https
-        header_up X-Real-IP {remote_host}
-        header_up X-Orbit-WireGuard-Ip {remote_host}
-    }
-}
+                reverse_proxy {$upstream} {
+                    flush_interval -1
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto https
+                    header_up X-Real-IP {remote_host}
+                    header_up X-Orbit-WireGuard-Ip {remote_host}
+                }
+            }
 
-CADDY;
+            CADDY;
     }
 
     /**
@@ -74,7 +74,9 @@ CADDY;
 
         foreach ($names as $name) {
             if (preg_match('/\s/', $name) === 1) {
-                throw new InvalidArgumentException("Gateway Caddy route server name [{$name}] cannot contain whitespace.");
+                throw new InvalidArgumentException(
+                    "Gateway Caddy route server name [{$name}] cannot contain whitespace.",
+                );
             }
         }
 

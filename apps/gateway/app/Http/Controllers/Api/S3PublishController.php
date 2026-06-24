@@ -48,7 +48,11 @@ final class S3PublishController implements Loggable
         $this->activityHost = $input['host'];
         $this->activityNode = $input['node'];
 
-        return $streams->make(function (ProgressEventStreamEmitter $emitter) use ($publishAction, $caller, $input): void {
+        return $streams->make(function (ProgressEventStreamEmitter $emitter) use (
+            $publishAction,
+            $caller,
+            $input,
+        ): void {
             $emitter->tree('Publishing S3 Host', [
                 ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
                 ['key' => 'check_router_ingress', 'label' => 'Check router and ingress'],
@@ -143,7 +147,7 @@ final class S3PublishController implements Loggable
                 ->get();
 
             if ($nodes->count() === 1) {
-                return $nodes->first()->name;
+                return $nodes->first()?->name;
             }
 
             return null;

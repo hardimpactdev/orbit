@@ -72,7 +72,10 @@ final readonly class ProcessesProbe
         $backendOutput = '';
 
         foreach ($expectedUnits as $unit) {
-            $result = $shell->run($node, 'docker container inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']));
+            $result = $shell->run(
+                $node,
+                'docker container inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']),
+            );
 
             if (! $result->successful()) {
                 $stderr = $result->errorOutput();
@@ -119,7 +122,7 @@ final readonly class ProcessesProbe
             }
 
             $labels = $inspection['Config']['Labels'] ?? [];
-            $observedHash = is_array($labels) ? ($labels[$unit['config_hash_label']] ?? null) : null;
+            $observedHash = is_array($labels) ? $labels[$unit['config_hash_label']] ?? null : null;
             $containerState = $inspection['State']['Status'] ?? null;
 
             $runtimeUnits[$unit['name']] = [
@@ -171,7 +174,10 @@ final readonly class ProcessesProbe
         $backendOutput = '';
 
         foreach ($expectedUnits as $unit) {
-            $result = $shell->run($node, 'docker service inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']));
+            $result = $shell->run(
+                $node,
+                'docker service inspect --format \'{{json .}}\' '.escapeshellarg($unit['name']),
+            );
 
             if (! $result->successful()) {
                 $message = $result->errorOutput().' '.$result->stdout;
@@ -218,7 +224,7 @@ final readonly class ProcessesProbe
             }
 
             $labels = $inspection['Spec']['Labels'] ?? [];
-            $observedHash = is_array($labels) ? ($labels[$unit['config_hash_label']] ?? null) : null;
+            $observedHash = is_array($labels) ? $labels[$unit['config_hash_label']] ?? null : null;
             $replicas = $inspection['Spec']['Mode']['Replicated']['Replicas'] ?? null;
 
             $runtimeUnits[$unit['name']] = [
@@ -234,7 +240,9 @@ final readonly class ProcessesProbe
             $expectedNames = array_column($expectedUnits, 'name');
             $psResult = $shell->run(
                 $node,
-                'docker service ls --filter label=orbit.managed=true --filter label=orbit.process='.escapeshellarg($process->name)." --format '{{.Name}}'",
+                'docker service ls --filter label=orbit.managed=true --filter label=orbit.process='
+                .escapeshellarg($process->name)
+                ." --format '{{.Name}}'",
             );
 
             if ($psResult->successful()) {
@@ -287,7 +295,8 @@ final readonly class ProcessesProbe
 
         $script = $this->systemdProbeScript($spec, $notifier);
 
-        $result = $this->runtimeBackendProbe()
+        $result = $this
+            ->runtimeBackendProbe()
             ->remoteShell()
             ->run($node, $script, [
                 'throw' => true,
@@ -357,7 +366,8 @@ final readonly class ProcessesProbe
             $units,
         );
         $unitCalls = array_map(
-            fn (array $unit): string => 'probe_unit '.implode(' ', array_map(
+            fn (array $unit): string => 'probe_unit '
+            .implode(' ', array_map(
                 $this->shellQuote(...),
                 [
                     $unit['name'],
@@ -379,122 +389,122 @@ final readonly class ProcessesProbe
             ')',
             '',
             <<<'SH'
-hash_file() {
-    path=$1
+                hash_file() {
+                    path=$1
 
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum "$path" 2>/dev/null | awk '{print $1}'
-        return
-    fi
+                    if command -v sha256sum >/dev/null 2>&1; then
+                        sha256sum "$path" 2>/dev/null | awk '{print $1}'
+                        return
+                    fi
 
-    shasum -a 256 "$path" 2>/dev/null | awk '{print $1}'
-}
+                    shasum -a 256 "$path" 2>/dev/null | awk '{print $1}'
+                }
 
-line_exists() {
-    path=$1
-    expected=$2
+                line_exists() {
+                    path=$1
+                    expected=$2
 
-    grep -Fqx -- "$expected" "$path" 2>/dev/null
-}
+                    grep -Fqx -- "$expected" "$path" 2>/dev/null
+                }
 
-probe_unit() {
-    unit_name=$1
-    unit_path=$2
-    expected_hash=$3
-    restart_policy=$4
-    shift 4
+                probe_unit() {
+                    unit_name=$1
+                    unit_path=$2
+                    expected_hash=$3
+                    restart_policy=$4
+                    shift 4
 
-    exists=0
-    matches=0
-    restart_matches=0
-    environment_matches=0
+                    exists=0
+                    matches=0
+                    restart_matches=0
+                    environment_matches=0
 
-    if [ -f "$unit_path" ]; then
-        exists=1
-        actual_hash=$(hash_file "$unit_path" || printf '')
+                    if [ -f "$unit_path" ]; then
+                        exists=1
+                        actual_hash=$(hash_file "$unit_path" || printf '')
 
-        if [ "$actual_hash" = "$expected_hash" ]; then
-            matches=1
-        fi
+                        if [ "$actual_hash" = "$expected_hash" ]; then
+                            matches=1
+                        fi
 
-        if line_exists "$unit_path" "Restart=$restart_policy"; then
-            restart_matches=1
-        fi
+                        if line_exists "$unit_path" "Restart=$restart_policy"; then
+                            restart_matches=1
+                        fi
 
-        environment_matches=1
+                        environment_matches=1
 
-        for environment_line in "$@"; do
-            if [ "$environment_line" = "" ]; then
-                continue
-            fi
+                        for environment_line in "$@"; do
+                            if [ "$environment_line" = "" ]; then
+                                continue
+                            fi
 
-            if ! line_exists "$unit_path" "$environment_line"; then
-                environment_matches=0
-                break
-            fi
-        done
-    fi
+                            if ! line_exists "$unit_path" "$environment_line"; then
+                                environment_matches=0
+                                break
+                            fi
+                        done
+                    fi
 
-    printf '%s\t%s\t%s\t%s\t%s\n' "$unit_name" "$exists" "$matches" "$restart_matches" "$environment_matches"
-}
+                    printf '%s\t%s\t%s\t%s\t%s\n' "$unit_name" "$exists" "$matches" "$restart_matches" "$environment_matches"
+                }
 
-is_expected_name() {
-    expected_name=$1
+                is_expected_name() {
+                    expected_name=$1
 
-    printf '%s\n' "$EXPECTED_NAMES" | grep -Fqx -- "$expected_name"
-}
+                    printf '%s\n' "$EXPECTED_NAMES" | grep -Fqx -- "$expected_name"
+                }
 
-probe_notifier() {
-    notifier_path='/usr/local/bin/orbit-notify-exit'
-    endpoint_path='/etc/orbit/gateway-endpoint'
-SH,
-            '    expected_script_hash='.$this->shellQuote((string) $notifier['script_hash']),
-            '    expected_endpoint='.$this->shellQuote((string) ($notifier['gateway_endpoint'] ?? '')),
+                probe_notifier() {
+                    notifier_path='/usr/local/bin/orbit-notify-exit'
+                    endpoint_path='/etc/orbit/gateway-endpoint'
+                SH,
+            '    expected_script_hash='.$this->shellQuote($notifier['script_hash']),
+            '    expected_endpoint='.$this->shellQuote($notifier['gateway_endpoint'] ?? ''),
             <<<'SH'
-    notifier_exists=0
-    notifier_executable=0
-    notifier_matches=0
-    endpoint_exists=0
-    endpoint_matches=0
+                    notifier_exists=0
+                    notifier_executable=0
+                    notifier_matches=0
+                    endpoint_exists=0
+                    endpoint_matches=0
 
-    if [ -f "$notifier_path" ]; then
-        notifier_exists=1
-        notifier_hash=$(hash_file "$notifier_path" || printf '')
+                    if [ -f "$notifier_path" ]; then
+                        notifier_exists=1
+                        notifier_hash=$(hash_file "$notifier_path" || printf '')
 
-        if [ -x "$notifier_path" ]; then
-            notifier_executable=1
-        fi
+                        if [ -x "$notifier_path" ]; then
+                            notifier_executable=1
+                        fi
 
-        if [ "$notifier_hash" = "$expected_script_hash" ]; then
-            notifier_matches=1
-        fi
-    fi
+                        if [ "$notifier_hash" = "$expected_script_hash" ]; then
+                            notifier_matches=1
+                        fi
+                    fi
 
-    if [ -f "$endpoint_path" ]; then
-        endpoint_exists=1
-        endpoint_value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s:/*$::' "$endpoint_path" 2>/dev/null || printf '')
+                    if [ -f "$endpoint_path" ]; then
+                        endpoint_exists=1
+                        endpoint_value=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s:/*$::' "$endpoint_path" 2>/dev/null || printf '')
 
-        if [ "$expected_endpoint" != "" ] && [ "$endpoint_value" = "$expected_endpoint" ]; then
-            endpoint_matches=1
-        fi
-    fi
+                        if [ "$expected_endpoint" != "" ] && [ "$endpoint_value" = "$expected_endpoint" ]; then
+                            endpoint_matches=1
+                        fi
+                    fi
 
-    printf '__notifier\t%s\t%s\t%s\t%s\t%s\n' "$notifier_exists" "$notifier_executable" "$notifier_matches" "$endpoint_exists" "$endpoint_matches"
-}
+                    printf '__notifier\t%s\t%s\t%s\t%s\t%s\n' "$notifier_exists" "$notifier_executable" "$notifier_matches" "$endpoint_exists" "$endpoint_matches"
+                }
 
-probe_extras() {
-    for unit_path in /etc/systemd/system/orbit_*.service; do
-        [ -f "$unit_path" ] || continue
+                probe_extras() {
+                    for unit_path in /etc/systemd/system/orbit_*.service; do
+                        [ -f "$unit_path" ] || continue
 
-        unit_file=${unit_path##*/}
-        unit_name=${unit_file%.service}
+                        unit_file=${unit_path##*/}
+                        unit_name=${unit_file%.service}
 
-        if ! is_expected_name "$unit_name"; then
-            printf '__extra\t%s\n' "$unit_name"
-        fi
-    done
-}
-SH,
+                        if ! is_expected_name "$unit_name"; then
+                            printf '__extra\t%s\n' "$unit_name"
+                        fi
+                    done
+                }
+                SH,
             implode(PHP_EOL, $unitCalls),
             'probe_notifier',
             'probe_extras',
@@ -692,7 +702,10 @@ SH,
 
         return collect($observed['runtime_unit_extras'])
             ->filter(fn (mixed $runtimeUnit): bool => is_string($runtimeUnit) && $runtimeUnit !== '')
-            ->filter(fn (string $runtimeUnit): bool => $runtimeUnitPrefix === null || str_starts_with($runtimeUnit, $runtimeUnitPrefix))
+            ->filter(
+                fn (string $runtimeUnit): bool => $runtimeUnitPrefix === null
+                || str_starts_with($runtimeUnit, $runtimeUnitPrefix),
+            )
             ->map(function (string $runtimeUnit) use ($process, $isDocker): DriftEntry {
                 $detail = $this->runtimeUnitDetail($process, [
                     'name' => $runtimeUnit,
@@ -907,7 +920,8 @@ SH,
             $isMismatch = ($runtimeUnit['config_matches'] ?? null) === false;
 
             if (! in_array($this->runtimeFor($process), [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm], true)) {
-                $isMismatch = $isMismatch
+                $isMismatch =
+                    $isMismatch
                     && ($runtimeUnit['restart_policy_matches'] ?? null) !== false
                     && ($runtimeUnit['environment_matches'] ?? null) !== false;
             }
@@ -990,12 +1004,15 @@ SH,
                 key: 'process.runtime_unit_unrenderable',
                 kind: DriftKind::Unverifiable,
                 summary: "Process {$process->name} runtime unit cannot be rendered from gateway intent.",
-                detail: array_filter([
-                    'process' => $process->name,
-                    'runtime' => $this->runtimeFor($process)->value,
-                    ...$this->serviceRuntimeDetail($process),
-                    'reason' => $observed['runtime_unit_render_error'] ?? null,
-                ], $this->filledDetail(...)),
+                detail: array_filter(
+                    [
+                        'process' => $process->name,
+                        'runtime' => $this->runtimeFor($process)->value,
+                        ...$this->serviceRuntimeDetail($process),
+                        'reason' => $observed['runtime_unit_render_error'] ?? null,
+                    ],
+                    $this->filledDetail(...),
+                ),
             ),
         ];
     }
@@ -1112,15 +1129,18 @@ SH,
      */
     private function wireGuardSelfRouteDetail(array $diagnostic): array
     {
-        return array_filter([
-            'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
-            'platform' => $diagnostic['platform'] ?? null,
-            'reason' => $diagnostic['reason'] ?? null,
-            'message' => $diagnostic['message'] ?? null,
-            'command' => $diagnostic['command'] ?? null,
-            'exit_code' => $diagnostic['exit_code'] ?? null,
-            'output' => $diagnostic['output'] ?? null,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'wireguard_address' => $diagnostic['wireguard_address'] ?? null,
+                'platform' => $diagnostic['platform'] ?? null,
+                'reason' => $diagnostic['reason'] ?? null,
+                'message' => $diagnostic['message'] ?? null,
+                'command' => $diagnostic['command'] ?? null,
+                'exit_code' => $diagnostic['exit_code'] ?? null,
+                'output' => $diagnostic['output'] ?? null,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     /**
@@ -1145,13 +1165,21 @@ SH,
 
         if ($this->runtimeFor($process) === ProcessRuntime::Docker) {
             return collect($this->runtimeContexts($process))
-                ->map(fn (?Workspace $workspace): string => $this->dockerContainerRenderer()->containerName($process->app, $process, $workspace))
+                ->map(fn (?Workspace $workspace): string => $this->dockerContainerRenderer()->containerName(
+                    $process->app,
+                    $process,
+                    $workspace,
+                ))
                 ->values()
                 ->all();
         }
 
         return collect($this->runtimeContexts($process))
-            ->map(fn (?Workspace $workspace): string => $this->systemdUnitRenderer()->unitName($process->app, $process, $workspace))
+            ->map(fn (?Workspace $workspace): string => $this->systemdUnitRenderer()->unitName(
+                $process->app,
+                $process,
+                $workspace,
+            ))
             ->values()
             ->all();
     }
@@ -1196,7 +1224,10 @@ SH,
         $process->loadMissing('owner');
 
         if ($process->owner instanceof Node) {
-            $container = $this->dockerContainerRenderer()->render($this->surrogateAppForNode($process->owner), $process);
+            $container = $this->dockerContainerRenderer()->render(
+                $this->surrogateAppForNode($process->owner),
+                $process,
+            );
             $config = is_array($process->runtime_config) ? $process->runtime_config : [];
             $configuredHash = $config['container_spec_hash'] ?? null;
             $configuredHashLabel = $config['container_spec_hash_label'] ?? null;
@@ -1252,9 +1283,11 @@ SH,
     {
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
         $serviceName = $this->optionalConfigString($config, 'service_name') ?? $process->name;
-        $configuredHash = $this->optionalConfigString($config, 'spec_hash')
-            ?? $this->optionalConfigString($this->stringMap($config['labels'] ?? []), ProcessDockerContainer::SpecHashLabel)
-            ?? '';
+        $configuredHash =
+            $this->optionalConfigString($config, 'spec_hash') ?? $this->optionalConfigString(
+                $this->stringMap($config['labels'] ?? []),
+                ProcessDockerContainer::SpecHashLabel,
+            ) ?? '';
 
         return [[
             'name' => $serviceName,
@@ -1296,7 +1329,7 @@ SH,
 
         return collect($this->runtimeContexts($process))
             ->map(function (?Workspace $workspace) use ($process): array {
-                $node = $process->app->node;
+                $node = $process->app?->node;
 
                 if (! $node instanceof Node) {
                     return [];
@@ -1337,7 +1370,10 @@ SH,
 
     private function requiresEventNotifier(Process $process): bool
     {
-        return ProcessCrashNotification::tryFrom((string) $process->getRawOriginal('crash_notification')) === ProcessCrashNotification::AgentIde;
+        return (
+            ProcessCrashNotification::tryFrom((string) $process->getRawOriginal('crash_notification'))
+            === ProcessCrashNotification::AgentIde
+        );
     }
 
     private function runtimeFor(Process $process): ProcessRuntime
@@ -1395,8 +1431,10 @@ SH,
         return implode(' ', $parts);
     }
 
-    private function unrenderableRuntimeUnitSnapshot(Process $process, InvalidArgumentException $exception): ProbeSnapshot
-    {
+    private function unrenderableRuntimeUnitSnapshot(
+        Process $process,
+        InvalidArgumentException $exception,
+    ): ProbeSnapshot {
         return new ProbeSnapshot([
             $process->name => [
                 'runtime_unit_renderable' => false,
@@ -1417,13 +1455,16 @@ SH,
      */
     private function runtimeUnitDetail(Process $process, array $unit): array
     {
-        return array_filter([
-            'process' => $process->name,
-            'runtime' => $this->runtimeFor($process)->value,
-            'runtime_unit' => $unit['name'] ?? null,
-            'expected' => $unit['config_path'] ?? null,
-            ...$this->serviceRuntimeDetail($process),
-        ], $this->filledDetail(...));
+        return array_filter(
+            [
+                'process' => $process->name,
+                'runtime' => $this->runtimeFor($process)->value,
+                'runtime_unit' => $unit['name'] ?? null,
+                'expected' => $unit['config_path'] ?? null,
+                ...$this->serviceRuntimeDetail($process),
+            ],
+            $this->filledDetail(...),
+        );
     }
 
     /**
@@ -1438,13 +1479,16 @@ SH,
             return [];
         }
 
-        return array_filter([
-            'service' => $service,
-            'version_family' => $this->optionalConfigString($config, 'version_family'),
-            'version' => $this->optionalConfigString($config, 'version'),
-            'service_name' => $this->optionalConfigString($config, 'service_name'),
-            'endpoint' => $this->serviceEndpointDetail($config['endpoint'] ?? null),
-        ], $this->filledDetail(...));
+        return array_filter(
+            [
+                'service' => $service,
+                'version_family' => $this->optionalConfigString($config, 'version_family'),
+                'version' => $this->optionalConfigString($config, 'version'),
+                'service_name' => $this->optionalConfigString($config, 'service_name'),
+                'endpoint' => $this->serviceEndpointDetail($config['endpoint'] ?? null),
+            ],
+            $this->filledDetail(...),
+        );
     }
 
     private function filledDetail(mixed $value): bool

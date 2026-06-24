@@ -18,7 +18,17 @@ use Throwable;
 
 final readonly class ProxyRouteProbe
 {
-    private const array OwnerTypes = ['app', 'app-analytics', 'app-websocket', 'workspace', 'gateway', 'router', 's3', 'tool', 'custom'];
+    private const array OwnerTypes = [
+        'app',
+        'app-analytics',
+        'app-websocket',
+        'workspace',
+        'gateway',
+        'router',
+        's3',
+        'tool',
+        'custom',
+    ];
 
     private const array Kinds = ['app', 'workspace', 'internal', 'proxy', 'redirect'];
 
@@ -96,28 +106,28 @@ final readonly class ProxyRouteProbe
     private function inspectRouteFile(Node $node, string $domain, bool $backend = false): array
     {
         $script = <<<'BASH'
-set -euo pipefail
-domain="$ORBIT_PROXY_DOMAIN"
-suffix="${ORBIT_PROXY_SUFFIX:-}"
-path="/etc/caddy/sites/${domain}${suffix}.caddy"
-exists=0
-hash=""
-cert=""
-key=""
-cert_exists=0
-key_exists=0
+            set -euo pipefail
+            domain="$ORBIT_PROXY_DOMAIN"
+            suffix="${ORBIT_PROXY_SUFFIX:-}"
+            path="/etc/caddy/sites/${domain}${suffix}.caddy"
+            exists=0
+            hash=""
+            cert=""
+            key=""
+            cert_exists=0
+            key_exists=0
 
-if [ -f "$path" ]; then
-    exists=1
-    hash=$(sha256sum "$path" | awk '{print $1}')
-    cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$path")
-    key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$path")
-    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
-    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
-fi
+            if [ -f "$path" ]; then
+                exists=1
+                hash=$(sha256sum "$path" | awk '{print $1}')
+                cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$path")
+                key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$path")
+                [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
+                [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+            fi
 
-printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
-BASH;
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$exists" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
+            BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, [
             'throw' => true,
@@ -148,22 +158,22 @@ BASH;
     public function introspectNode(Node $node): ProbeSnapshot
     {
         $script = <<<'BASH'
-set -euo pipefail
-if [ ! -d /etc/caddy/sites ]; then
-    exit 0
-fi
-for f in /etc/caddy/sites/*.caddy; do
-    [ -e "$f" ] || continue
-    name=$(basename "$f" .caddy)
-    hash=$(sha256sum "$f" | awk '{print $1}')
-    cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$f")
-    key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$f")
-    cert_exists=0; key_exists=0
-    [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
-    [ -n "$key" ] && [ -f "$key" ] && key_exists=1
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
-done
-BASH;
+            set -euo pipefail
+            if [ ! -d /etc/caddy/sites ]; then
+                exit 0
+            fi
+            for f in /etc/caddy/sites/*.caddy; do
+                [ -e "$f" ] || continue
+                name=$(basename "$f" .caddy)
+                hash=$(sha256sum "$f" | awk '{print $1}')
+                cert=$(awk '$1 == "tls" && $2 != "internal" {print $2; exit}' "$f")
+                key=$(awk '$1 == "tls" && $2 != "internal" {print $3; exit}' "$f")
+                cert_exists=0; key_exists=0
+                [ -n "$cert" ] && [ -f "$cert" ] && cert_exists=1
+                [ -n "$key" ] && [ -f "$key" ] && key_exists=1
+                printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$hash" "$cert" "$key" "$cert_exists" "$key_exists"
+            done
+            BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
         $items = [];
@@ -207,31 +217,31 @@ BASH;
      */
     public function introspectCaddyContainer(Node $node): ProbeSnapshot
     {
-        $caddyName = (new OrbitContainerNames)->caddy();
+        $caddyName = new OrbitContainerNames()->caddy();
 
         $script = sprintf(
             <<<'BASH'
-# orbit-proxy-doctor:caddy-container-probe
-container=%s
-runtime="available"
-exists="false"
-running="false"
+                # orbit-proxy-doctor:caddy-container-probe
+                container=%s
+                runtime="available"
+                exists="false"
+                running="false"
 
-if ! command -v docker >/dev/null 2>&1; then
-    runtime="no_docker"
-elif ! docker info >/dev/null 2>&1; then
-    runtime="daemon_unavailable"
-else
-    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
-        exists="true"
-        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
-        if [ "$state" = "true" ]; then
-            running="true"
-        fi
-    fi
-fi
-printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
-BASH,
+                if ! command -v docker >/dev/null 2>&1; then
+                    runtime="no_docker"
+                elif ! docker info >/dev/null 2>&1; then
+                    runtime="daemon_unavailable"
+                else
+                    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
+                        exists="true"
+                        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
+                        if [ "$state" = "true" ]; then
+                            running="true"
+                        fi
+                    fi
+                fi
+                printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
+                BASH,
             escapeshellarg($caddyName),
         );
 
@@ -257,7 +267,7 @@ BASH,
      */
     public function diffCaddyContainer(Node $node, ProbeSnapshot $snapshot): array
     {
-        $caddyName = (new OrbitContainerNames)->caddy();
+        $caddyName = new OrbitContainerNames()->caddy();
         $observed = $snapshot->get($caddyName);
 
         if (! is_array($observed)) {
@@ -322,18 +332,18 @@ BASH,
     public function snapshotForAdopt(Node $node): ProbeSnapshot
     {
         $script = <<<'BASH'
-set -euo pipefail
-if [ ! -d /etc/caddy/sites ]; then
-    exit 0
-fi
-for f in /etc/caddy/sites/*.caddy; do
-    [ -e "$f" ] || continue
-    name=$(basename "$f" .caddy)
-    vhost_hash=$(sha256sum "$f" | awk '{print $1}')
-    body_b64=$(base64 -w0 "$f" 2>/dev/null || base64 "$f" | tr -d '\n')
-    printf '%s\t%s\t%s\n' "$name" "$vhost_hash" "$body_b64"
-done
-BASH;
+            set -euo pipefail
+            if [ ! -d /etc/caddy/sites ]; then
+                exit 0
+            fi
+            for f in /etc/caddy/sites/*.caddy; do
+                [ -e "$f" ] || continue
+                name=$(basename "$f" .caddy)
+                vhost_hash=$(sha256sum "$f" | awk '{print $1}')
+                body_b64=$(base64 -w0 "$f" 2>/dev/null || base64 "$f" | tr -d '\n')
+                printf '%s\t%s\t%s\n' "$name" "$vhost_hash" "$body_b64"
+            done
+            BASH;
 
         $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script, ['throw' => true]);
         $items = [];
@@ -398,12 +408,16 @@ BASH;
 
             if (! in_array($route->domain, $observedDomains, true)) {
                 $hasBackendDrift = collect($routeDrift)->contains(
-                    fn (DriftEntry $entry): bool => in_array($entry->key, [
-                        'proxy.route_missing',
-                        'proxy.route_mismatch',
-                        'proxy.public_route_missing',
-                        'proxy.public_route_mismatch',
-                    ], true)
+                    fn (DriftEntry $entry): bool => in_array(
+                        $entry->key,
+                        [
+                            'proxy.route_missing',
+                            'proxy.route_mismatch',
+                            'proxy.public_route_missing',
+                            'proxy.public_route_mismatch',
+                        ],
+                        true,
+                    ),
                 );
 
                 if (! $hasBackendDrift) {
@@ -420,7 +434,7 @@ BASH;
         }
 
         foreach ($snapshot->keys() as $domain) {
-            $domain = (string) $domain;
+            $domain = $domain;
 
             if (in_array($domain, $expectedDomains, true)) {
                 continue;
@@ -583,8 +597,9 @@ BASH;
         $assignments = app(NodeRoleAssignments::class);
 
         if ($route->owner_type === 'custom') {
-            return $assignments->nodeCanServeGatewayOrAppHostWorkloads($node)
-                || $assignments->nodeCanServeIngress($node);
+            return (
+                $assignments->nodeCanServeGatewayOrAppHostWorkloads($node) || $assignments->nodeCanServeIngress($node)
+            );
         }
 
         return $assignments->nodeCanServeGatewayOrAppHostWorkloads($node);
@@ -800,7 +815,11 @@ BASH;
             $nodeId = $artifact['node_id'] ?? null;
             $node = is_int($nodeId) ? Node::query()->find($nodeId) : null;
 
-            if ($node instanceof Node && $node->isActive() && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-prod')) {
+            if (
+                $node instanceof Node
+                && $node->isActive()
+                && app(NodeRoleAssignments::class)->nodeHasActiveRole($node, 'app-prod')
+            ) {
                 continue;
             }
 
@@ -902,7 +921,10 @@ BASH;
 
         $expected = $this->expectedTlsPaths($route);
 
-        if (($observed['cert_path'] ?? null) !== $expected['cert'] || ($observed['key_path'] ?? null) !== $expected['key']) {
+        if (
+            ($observed['cert_path'] ?? null) !== $expected['cert']
+            || ($observed['key_path'] ?? null) !== $expected['key']
+        ) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -937,8 +959,8 @@ BASH;
         }
 
         $managedBy = is_array($tls)
-            ? ($tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit')
-            : ($config['tls_managed_by'] ?? 'orbit');
+            ? $tls['managed_by'] ?? $config['tls_managed_by'] ?? 'orbit'
+            : $config['tls_managed_by'] ?? 'orbit';
 
         if ($managedBy === 'acme') {
             return false;
@@ -970,9 +992,7 @@ BASH;
             $target = $config['target']['value'] ?? $config['redirect'] ?? $config['redirect_url'] ?? null;
             $code = $config['code'] ?? $config['redirect_code'] ?? null;
 
-            return is_string($target)
-                && $target !== ''
-                && is_int($code);
+            return is_string($target) && $target !== '' && is_int($code);
         }
 
         if ($route->kind === 'proxy') {
@@ -1011,9 +1031,11 @@ BASH;
 
         return array_all(
             $pool,
-            fn (mixed $backend): bool => is_array($backend)
+            fn (mixed $backend): bool => (
+                is_array($backend)
                 && is_string($backend['url'] ?? null)
-                && $backend['url'] !== '',
+                && $backend['url'] !== ''
+            ),
         );
     }
 

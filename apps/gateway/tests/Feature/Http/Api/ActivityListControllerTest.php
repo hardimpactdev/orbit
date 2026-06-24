@@ -75,7 +75,8 @@ describe('ActivityListController', function (): void {
 
         $response = $this->call('GET', '/api/activity', [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'activity:read')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
@@ -87,16 +88,36 @@ describe('ActivityListController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
 
         createActivityEntry('node.listed', 'read', $caller);
-        $olderDestructive = createActivityEntry('node.revoked', 'destructive', $caller, $appNode, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
-        $newerDestructive = createActivityEntry('app.removed', 'destructive', $caller, $app, 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff');
+        $olderDestructive = createActivityEntry(
+            'node.revoked',
+            'destructive',
+            $caller,
+            $appNode,
+            'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        );
+        $newerDestructive = createActivityEntry(
+            'app.removed',
+            'destructive',
+            $caller,
+            $app,
+            'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+        );
         createActivityEntry('node.granted', 'write', $caller, $appNode);
 
         $olderDestructive->forceFill(['created_at' => now()->subMinute(), 'updated_at' => now()->subMinute()])->save();
         $newerDestructive->forceFill(['created_at' => now(), 'updated_at' => now()])->save();
 
-        $response = $this->call('GET', '/api/activity?effect=destructive&limit=25', [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/activity?effect=destructive&limit=25',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.meta.filters.effect', 'destructive')
             ->assertJsonPath('success.meta.limit', 25)
             ->assertJsonPath('success.meta.count', 2)
@@ -120,20 +141,40 @@ describe('ActivityListController', function (): void {
         createActivityEntry('node.revoked', 'destructive', $caller);
         createActivityEntry('app.removed', 'destructive', $caller);
 
-        $response = $this->call('GET', '/api/activity?effect=destructive&limit=2', [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/activity?effect=destructive&limit=2',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(2, 'success.data.activities')
             ->assertJsonPath('success.meta.count', 2)
             ->assertJsonPath('success.meta.has_more', true);
     });
 
-    it('validates filters before reading activity history', function (string $query, string $field, string $reason): void {
+    it('validates filters before reading activity history', function (
+        string $query,
+        string $field,
+        string $reason,
+    ): void {
         createActivityListCallerNode();
 
-        $response = $this->call('GET', "/api/activity?{$query}", [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            "/api/activity?{$query}",
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Invalid activity filter.')
             ->assertJsonPath('error.meta.field', $field)
@@ -149,7 +190,14 @@ describe('ActivityListController', function (): void {
         $caller = createActivityListCallerNode();
         createActivityEntry('node.removed', 'destructive', $caller);
 
-        $response = $this->call('GET', '/api/activity?effect=destructive&limit=10', [], [], [], ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/activity?effect=destructive&limit=10',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_LIST_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 

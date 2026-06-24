@@ -30,18 +30,26 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Created)
-            ->and($results[0]->key)->toBe('vite.docs.test');
+        expect(count($results))
+            ->toBe(1)
+            ->and($results[0]->action)
+            ->toBe(AdoptAction::Created)
+            ->and($results[0]->key)
+            ->toBe('vite.docs.test');
 
         $route = ProxyRoute::query()->where('domain', 'vite.docs.test')->first();
 
-        expect($route)->not->toBeNull()
-            ->and($route->owner_type)->toBe('custom')
-            ->and($route->kind)->toBe('proxy')
-            ->and($route->config)->toMatchArray([
+        expect($route)
+            ->not
+            ->toBeNull()
+            ->and($route->owner_type)
+            ->toBe('custom')
+            ->and($route->kind)
+            ->toBe('proxy')
+            ->and($route->config)
+            ->toMatchArray([
                 'target' => ['type' => 'upstream', 'value' => 'localhost:8080'],
                 'upstream' => 'localhost:8080',
             ]);
@@ -57,16 +65,19 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Created);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Created);
 
         $route = ProxyRoute::query()->where('domain', 'old.docs.test')->first();
 
-        expect($route)->not->toBeNull()
-            ->and($route->kind)->toBe('redirect')
-            ->and($route->config['code'])->toBe(301);
+        expect($route)
+            ->not
+            ->toBeNull()
+            ->and($route->kind)
+            ->toBe('redirect')
+            ->and($route->config['code'])
+            ->toBe(301);
     });
 
     it('skips routes already in registry', function (): void {
@@ -84,10 +95,9 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Skipped);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Skipped);
     });
 
     it('skips routes that conflict with app domains', function (): void {
@@ -100,10 +110,9 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Skipped);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Skipped);
     });
 
     it('skips routes that match workspace patterns', function (): void {
@@ -117,10 +126,9 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Skipped);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Skipped);
     });
 
     it('skips routes with root directive', function (): void {
@@ -132,10 +140,9 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Skipped);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Skipped);
     });
 
     it('skips internal ip-address routes', function (): void {
@@ -147,10 +154,9 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Skipped);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Skipped);
     });
 
     it('skips unclassifiable routes', function (): void {
@@ -162,9 +168,8 @@ describe('ProxyRouteAdopter', function (): void {
             ],
         ]);
 
-        $results = (new ProxyRouteAdopter)->adopt($node, $snapshot);
+        $results = new ProxyRouteAdopter()->adopt($node, $snapshot);
 
-        expect(count($results))->toBe(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Skipped);
+        expect(count($results))->toBe(1)->and($results[0]->action)->toBe(AdoptAction::Skipped);
     });
 });

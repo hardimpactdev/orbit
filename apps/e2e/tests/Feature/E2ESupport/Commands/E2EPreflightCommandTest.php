@@ -53,8 +53,7 @@ function processResult(bool $successful, string $output = ''): ProcessResult
 
 function testHost(E2EConfig $config, array $results): IncusHost
 {
-    return new class($config, $results) extends IncusHost
-    {
+    return new class($config, $results) extends IncusHost {
         private array $results;
 
         public function __construct(E2EConfig $config, array $results)
@@ -103,7 +102,8 @@ it('returns success json when all hosts reachable', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:preflight', ['--json' => true])
+    $this
+        ->artisan('e2e:preflight', ['--json' => true])
         ->expectsOutput($expected)
         ->assertSuccessful();
 });
@@ -132,7 +132,8 @@ it('returns error json when any host unreachable', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:preflight', ['--json' => true])
+    $this
+        ->artisan('e2e:preflight', ['--json' => true])
         ->expectsOutput($expected)
         ->assertFailed();
 });
@@ -149,7 +150,8 @@ it('outputs text summary for reachable host', function (): void {
     $command->setHostPoolFactory(fn () => $pool);
     $this->app->instance(E2EPreflightCommand::class, $command);
 
-    $this->artisan('e2e:preflight')
+    $this
+        ->artisan('e2e:preflight')
         ->expectsOutputToContain('OK beast (incus 0.7)')
         ->assertSuccessful();
 });
@@ -165,7 +167,8 @@ it('outputs text summary for unreachable host', function (): void {
     $command->setHostPoolFactory(fn () => $pool);
     $this->app->instance(E2EPreflightCommand::class, $command);
 
-    $this->artisan('e2e:preflight')
+    $this
+        ->artisan('e2e:preflight')
         ->expectsOutputToContain('FAIL sidecar1: incus version check failed')
         ->assertFailed();
 });
@@ -177,7 +180,8 @@ it('returns failure with clear message for empty host pool', function (): void {
     $command->setHostPoolFactory(fn () => $pool);
     $this->app->instance(E2EPreflightCommand::class, $command);
 
-    $this->artisan('e2e:preflight')
+    $this
+        ->artisan('e2e:preflight')
         ->expectsOutputToContain('No Incus hosts configured')
         ->assertFailed();
 });
@@ -196,7 +200,8 @@ it('returns json error for empty host pool', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:preflight', ['--json' => true])
+    $this
+        ->artisan('e2e:preflight', ['--json' => true])
         ->expectsOutput($expected)
         ->assertFailed();
 });

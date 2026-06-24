@@ -34,10 +34,13 @@ final class ShowWorkspaceRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'path' => $this->path,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'path' => $this->path,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): WorkspaceShowResponse
@@ -46,7 +49,7 @@ final class ShowWorkspaceRequest extends GatewayRequest
         $workspace = $data['workspace'] ?? [];
 
         return new WorkspaceShowResponse(
-            workspace: is_array($workspace) ? $workspace : [],
+            workspace: $this->stringKeyedArray($workspace),
         );
     }
 }

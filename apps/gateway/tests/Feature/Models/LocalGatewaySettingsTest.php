@@ -12,8 +12,7 @@ describe('LocalGatewaySettings', function (): void {
     it('creates a singleton row via current()', function (): void {
         $settings = LocalGatewaySettings::current();
 
-        expect($settings)->toBeInstanceOf(LocalGatewaySettings::class)
-            ->and($settings->exists)->toBeTrue();
+        expect($settings)->toBeInstanceOf(LocalGatewaySettings::class)->and($settings->exists)->toBeTrue();
     });
 
     it('returns existing row on subsequent current() calls', function (): void {
@@ -22,8 +21,7 @@ describe('LocalGatewaySettings', function (): void {
 
         $second = LocalGatewaySettings::current();
 
-        expect($second->id)->toBe($first->id)
-            ->and($second->gateway_url)->toBe('https://10.6.0.2');
+        expect($second->id)->toBe($first->id)->and($second->gateway_url)->toBe('https://10.6.0.2');
     });
 
     it('has correct fillable fields', function (): void {
@@ -38,11 +36,16 @@ describe('LocalGatewaySettings', function (): void {
 
         $settings->refresh();
 
-        expect($settings->gateway_url)->toBe('https://10.6.0.2')
-            ->and($settings->gateway_wg_ip)->toBe('10.6.0.2')
-            ->and($settings->ca_sha256)->toBe('aabbccdd')
-            ->and($settings->ca_pem_path)->toBe('/path/to/ca.pem')
-            ->and($settings->trusted_at)->toBeInstanceOf(Carbon::class);
+        expect($settings->gateway_url)
+            ->toBe('https://10.6.0.2')
+            ->and($settings->gateway_wg_ip)
+            ->toBe('10.6.0.2')
+            ->and($settings->ca_sha256)
+            ->toBe('aabbccdd')
+            ->and($settings->ca_pem_path)
+            ->toBe('/path/to/ca.pem')
+            ->and($settings->trusted_at)
+            ->toBeInstanceOf(Carbon::class);
     });
 
     it('does not include local_node_role field', function (): void {

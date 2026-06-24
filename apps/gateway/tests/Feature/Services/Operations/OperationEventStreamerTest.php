@@ -27,10 +27,15 @@ it('replays operation events after the last seen sequence', function (): void {
 
     $events = $this->streamer->eventsAfter($this->run, $first->sequence);
 
-    expect($first->id)->not->toBe($first->sequence)
-        ->and($events)->toHaveCount(1)
-        ->and($events->first()?->id)->toBe($second->id)
-        ->and($events->first()?->sequence)->toBe(2);
+    expect($first->id)
+        ->not
+        ->toBe($first->sequence)
+        ->and($events)
+        ->toHaveCount(1)
+        ->and($events->first()?->id)
+        ->toBe($second->id)
+        ->and($events->first()?->sequence)
+        ->toBe(2);
 });
 
 it('detects terminal operation events', function (): void {

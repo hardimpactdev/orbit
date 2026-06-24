@@ -21,8 +21,7 @@ uses(RefreshDatabase::class);
 
 describe('orbit:internal:bake-app-node', function (): void {
     beforeEach(function (): void {
-        $this->hostKeyPinner = new class
-        {
+        $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: ?string}> */
             public array $calls = [];
 
@@ -65,32 +64,40 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         assert($shell instanceof BakeAppNodeRemoteShell);
 
-        expect($node->getAttributes())->not->toHaveKeys(['role', 'environment'])
-            ->and($node->host)->toBe('10.6.0.4')
-            ->and($node->wireguard_address)->toBe('10.6.0.4')
-            ->and($node->gateway_endpoint)->toBe('10.6.0.2')
-            ->and($node->user)->toBe('orbit')
-            ->and($node->orbit_path)->toBe('/home/orbit/orbit')
-            ->and($node->tld)->toBe('test')
-            ->and($node->status)->toBe(NodeStatus::Active)
-            ->and($node->host_key_type)->toBe('ssh-ed25519')
-            ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeAppNodeHostKey')
-            ->and($node->host_key_fingerprint)->toBe('SHA256:bake-app-node-host-key')
-            ->and($node->host_key_pin_mode)->toBe('tofu')
-            ->and($node->host_key_pinned_at)->not->toBeNull()
-            ->and($this->hostKeyPinner->calls)->toBe([
+        expect($node->getAttributes())
+            ->not->toHaveKeys(['role', 'environment'])->and($node->host)->toBe(
+                '10.6.0.4',
+            )->and($node->wireguard_address)->toBe('10.6.0.4')->and($node->gateway_endpoint)->toBe(
+                '10.6.0.2',
+            )->and($node->user)->toBe('orbit')->and($node->orbit_path)->toBe(
+                '/home/orbit/orbit',
+            )->and($node->tld)->toBe(
+                'test',
+            )->and($node->status)->toBe(NodeStatus::Active)->and($node->host_key_type)->toBe(
+                'ssh-ed25519',
+            )->and($node->host_key_public)->toBe(
+                'AAAAC3NzaC1lZDI1NTE5AAAAIBakeAppNodeHostKey',
+            )->and($node->host_key_fingerprint)->toBe(
+                'SHA256:bake-app-node-host-key',
+            )->and($node->host_key_pin_mode)->toBe('tofu')->and($node->host_key_pinned_at)
+            ->not->toBeNull()->and($this->hostKeyPinner->calls)->toBe([
                 ['host' => '10.6.0.4', 'expected' => null],
-            ])
-            ->and(NodeTool::query()->where('node_id', $node->id)->pluck('name')->sort()->values()->all())->toBe([
+            ])->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->pluck('name')
+                    ->sort()
+                    ->values()
+                    ->all(),
+            )->toBe([
                 'caddy',
                 'composer',
                 'gh',
                 'laravel-installer',
                 'php-cli',
-            ])
-            ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()
-            ->and($shell->probeScripts())->toHaveCount(2)
-            ->and($shell->repairScripts())->toHaveCount(5);
+            ])->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()->and(
+                $shell->probeScripts(),
+            )->toHaveCount(2)->and($shell->repairScripts())->toHaveCount(5);
     });
 
     it('uses setup convergence when baking app-dev role intent', function (): void {
@@ -111,9 +118,11 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         $scripts = implode("\n", $shell->scripts);
 
-        expect($scripts)->not->toContain('doctor --restore')
-            ->and($scripts)->not->toContain(' orbit doctor ')
-            ->and(NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all())->toMatchArray([
+        expect($scripts)
+            ->not->toContain('doctor --restore')->and($scripts)
+            ->not->toContain(' orbit doctor ')->and(
+                NodeTool::query()->where('node_id', $node->id)->pluck('expected_state', 'name')->all(),
+            )->toMatchArray([
                 'caddy' => 'installed',
                 'composer' => 'installed',
                 'gh' => 'installed',
@@ -123,15 +132,16 @@ describe('orbit:internal:bake-app-node', function (): void {
     });
 
     it('emits app-dev bake phase timings', function (): void {
-        $this->artisan('orbit:internal:bake-app-node', [
-            'name' => 'app-dev-1',
-            '--role' => 'app-dev',
-            '--host' => 'dev',
-            '--wireguard-address' => '10.6.0.4',
-            '--gateway-endpoint' => 'gateway',
-            '--user' => 'orbit',
-            '--tld' => 'test',
-        ])
+        $this
+            ->artisan('orbit:internal:bake-app-node', [
+                'name' => 'app-dev-1',
+                '--role' => 'app-dev',
+                '--host' => 'dev',
+                '--wireguard-address' => '10.6.0.4',
+                '--gateway-endpoint' => 'gateway',
+                '--user' => 'orbit',
+                '--tld' => 'test',
+            ])
             ->expectsOutputToContain('__orbit_bake_timing dev host-key')
             ->expectsOutputToContain('__orbit_bake_timing dev registry')
             ->expectsOutputToContain('__orbit_bake_timing dev role-assignment')
@@ -158,9 +168,13 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->where('role', NodeRoleName::AppDevelopment->value)
             ->first();
 
-        expect($assignment)->not->toBeNull()
-            ->and($assignment?->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment?->settings)->toBe(['tld' => 'test']);
+        expect($assignment)
+            ->not
+            ->toBeNull()
+            ->and($assignment?->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment?->settings)
+            ->toBe(['tld' => 'test']);
     });
 
     it('is idempotent across repeated runs', function (): void {
@@ -178,12 +192,17 @@ describe('orbit:internal:bake-app-node', function (): void {
 
         $node = Node::query()->where('name', 'app-prod-1')->firstOrFail();
 
-        expect(Node::query()->where('name', 'app-prod-1')->count())->toBe(1)
-            ->and($node->tld)->toBeNull()
-            ->and(NodeRoleAssignment::query()
-                ->where('node_id', $node->id)
-                ->where('role', NodeRoleName::AppProduction->value)
-                ->count())->toBe(1);
+        expect(Node::query()->where('name', 'app-prod-1')->count())
+            ->toBe(1)
+            ->and($node->tld)
+            ->toBeNull()
+            ->and(
+                NodeRoleAssignment::query()
+                    ->where('node_id', $node->id)
+                    ->where('role', NodeRoleName::AppProduction->value)
+                    ->count(),
+            )
+            ->toBe(1);
     });
 
     it('stores the selected ingress node for production placement', function (): void {
@@ -215,8 +234,11 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->where('role', NodeRoleName::AppProduction->value)
             ->first();
 
-        expect($assignment)->not->toBeNull()
-            ->and($assignment?->settings)->toBe(['ingress_node_id' => $edge->id]);
+        expect($assignment)
+            ->not
+            ->toBeNull()
+            ->and($assignment?->settings)
+            ->toBe(['ingress_node_id' => $edge->id]);
     });
 
     it('preserves colocated ingress when production placement selects the same node', function (): void {
@@ -308,12 +330,18 @@ describe('orbit:internal:bake-app-node', function (): void {
             ->where('role', NodeRoleName::AppProduction->value)
             ->first();
 
-        expect($assignment)->not->toBeNull()
-            ->and($assignment?->settings)->toBe(['ingress_node_id' => $edge->id])
-            ->and(NodeRoleAssignment::query()
-                ->where('node_id', $appProd->id)
-                ->where('role', NodeRoleName::Ingress->value)
-                ->exists())->toBeFalse();
+        expect($assignment)
+            ->not
+            ->toBeNull()
+            ->and($assignment?->settings)
+            ->toBe(['ingress_node_id' => $edge->id])
+            ->and(
+                NodeRoleAssignment::query()
+                    ->where('node_id', $appProd->id)
+                    ->where('role', NodeRoleName::Ingress->value)
+                    ->exists(),
+            )
+            ->toBeFalse();
     });
 
     it('requires the selected ingress node to have an active ingress assignment', function (): void {
@@ -323,15 +351,18 @@ describe('orbit:internal:bake-app-node', function (): void {
             'wireguard_address' => '10.6.0.7',
         ]);
 
-        expect(fn () => $this->artisan('orbit:internal:bake-app-node', [
-            'name' => 'app-prod-1',
-            '--role' => 'app-prod',
-            '--host' => '10.6.0.5',
-            '--wireguard-address' => '10.6.0.5',
-            '--gateway-endpoint' => '10.6.0.2',
-            '--user' => 'orbit',
-            '--ingress-node' => 'edge-1',
-        ])->run())->toThrow(RuntimeException::class, 'Active ingress node [edge-1] was not found.');
+        expect(
+            fn () => $this->artisan('orbit:internal:bake-app-node', [
+                'name' => 'app-prod-1',
+                '--role' => 'app-prod',
+                '--host' => '10.6.0.5',
+                '--wireguard-address' => '10.6.0.5',
+                '--gateway-endpoint' => '10.6.0.2',
+                '--user' => 'orbit',
+                '--ingress-node' => 'edge-1',
+            ])->run(),
+        )
+            ->toThrow(RuntimeException::class, 'Active ingress node [edge-1] was not found.');
     });
 });
 
@@ -412,15 +443,31 @@ final class BakeAppNodeRemoteShell implements RemoteShell
             $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
 
             return $this->installed['caddy']
-                ? new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n", stderr: '', durationMs: 1)
-                : new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n", stderr: '', durationMs: 1);
+                ? new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n",
+                    stderr: '',
+                    durationMs: 1,
+                )
+                : new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n",
+                    stderr: '',
+                    durationMs: 1,
+                );
         }
 
         return match ($binary) {
             '/opt/orbit/php/8.5/bin/php' => $this->installedProbe('php-cli', "/opt/orbit/php/8.5/bin/php\t8.5.6\n"),
-            '/usr/local/bin/composer' => $this->installedProbe('composer', "/usr/local/bin/composer\tComposer version 2.9.0\n"),
+            '/usr/local/bin/composer' => $this->installedProbe(
+                'composer',
+                "/usr/local/bin/composer\tComposer version 2.9.0\n",
+            ),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
-            '/usr/local/bin/laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
+            '/usr/local/bin/laravel' => $this->installedProbe(
+                'laravel-installer',
+                "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n",
+            ),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };
     }
@@ -474,7 +521,10 @@ final class BakeAppNodeRemoteShell implements RemoteShell
             'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
             'php-cli' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
         ];
-        [$path, $version] = $installedPayloads[$name] ?? [is_string($tool['binary'] ?? null) ? $tool['binary'] : null, null];
+        [$path, $version] = $installedPayloads[$name] ?? [
+            is_string($tool['binary'] ?? null) ? $tool['binary'] : null,
+            null,
+        ];
         $installed = $this->installed[$name] ?? false;
 
         return [

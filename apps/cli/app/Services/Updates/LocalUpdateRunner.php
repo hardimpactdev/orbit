@@ -117,7 +117,12 @@ final readonly class LocalUpdateRunner
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
             $stepResults[self::STEP_DOWNLOAD] = 'failed';
-            $this->emit($onStep, self::STEP_DOWNLOAD, 'fail', $this->failureMessage($download['output'], $download['exit_code']));
+            $this->emit(
+                $onStep,
+                self::STEP_DOWNLOAD,
+                'fail',
+                $this->failureMessage($download['output'], $download['exit_code']),
+            );
 
             return new LocalUpdateResult(
                 status: LocalUpdateResult::STATUS_FAILED,
@@ -138,7 +143,12 @@ final readonly class LocalUpdateRunner
 
         if (! $replace['successful']) {
             $stepResults[self::STEP_REPLACE] = 'failed';
-            $this->emit($onStep, self::STEP_REPLACE, 'fail', $this->failureMessage($replace['output'], $replace['exit_code']));
+            $this->emit(
+                $onStep,
+                self::STEP_REPLACE,
+                'fail',
+                $this->failureMessage($replace['output'], $replace['exit_code']),
+            );
 
             return new LocalUpdateResult(
                 status: LocalUpdateResult::STATUS_FAILED,

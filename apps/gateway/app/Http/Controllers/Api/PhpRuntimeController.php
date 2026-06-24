@@ -33,9 +33,13 @@ final readonly class PhpRuntimeController implements Loggable
         $node = $this->resolvedNodeName($request);
 
         if (! $this->canAccessNode($caller, $node)) {
-            return $this->failure(new PhpRuntimeFailure('authorization_failed', 'This node is not authorized to inspect the PHP runtime target.', [
-                'node' => $node,
-            ]));
+            return $this->failure(new PhpRuntimeFailure(
+                'authorization_failed',
+                'This node is not authorized to inspect the PHP runtime target.',
+                [
+                    'node' => $node,
+                ],
+            ));
         }
 
         $result = $this->php->view(
@@ -118,13 +122,16 @@ final readonly class PhpRuntimeController implements Loggable
     {
         $failure ??= new PhpRuntimeFailure('validation_failed', 'Required input is missing or invalid.');
 
-        return response()->json([
-            'error' => [
-                'code' => $failure->code,
-                'message' => $failure->message,
-                'meta' => $failure->meta,
+        return response()->json(
+            [
+                'error' => [
+                    'code' => $failure->code,
+                    'message' => $failure->message,
+                    'meta' => $failure->meta,
+                ],
             ],
-        ], $failure->code === 'authorization_failed' ? 403 : 400);
+            $failure->code === 'authorization_failed' ? 403 : 400,
+        );
     }
 
     public function effect(): ActivityLogType

@@ -57,10 +57,11 @@ function incusImageDistributorResult(string $output = ''): ProcessResult
 
 function incusImageDistributorHost(string $host, object $recorder): IncusHost
 {
-    return new class(incusImageDistributorConfig($host), $recorder) extends IncusHost
-    {
-        public function __construct(E2EConfig $config, private readonly object $recorder)
-        {
+    return new class(incusImageDistributorConfig($host), $recorder) extends IncusHost {
+        public function __construct(
+            E2EConfig $config,
+            private readonly object $recorder,
+        ) {
             parent::__construct($config);
         }
 
@@ -111,13 +112,37 @@ it('exports from the build host and imports on target hosts', function (): void 
 
     $commands = collect($recorder->commands);
 
-    expect($commands->contains(fn (array $command): bool => $command['host'] === 'beast' && str_contains($command['command'], 'incus image export')))->toBeTrue()
-        ->and($commands->contains(fn (array $command): bool => $command['host'] === 'sidecar1' && str_contains($command['command'], 'incus image import')))->toBeTrue()
-        ->and($commands->contains(fn (array $command): bool => $command['host'] === 'sidecar2' && str_contains($command['command'], 'incus image import')))->toBeTrue();
+    expect($commands->contains(
+        fn (array $command): bool => $command['host'] === 'beast'
+        && str_contains($command['command'], 'incus image export'),
+    ))
+        ->toBeTrue()
+        ->and($commands->contains(
+            fn (array $command): bool => $command['host'] === 'sidecar1'
+            && str_contains($command['command'], 'incus image import'),
+        ))
+        ->toBeTrue()
+        ->and($commands->contains(
+            fn (array $command): bool => $command['host'] === 'sidecar2'
+            && str_contains($command['command'], 'incus image import'),
+        ))
+        ->toBeTrue();
 
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'beast') && str_contains($process->command, 'image-export.tar.gz'));
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'sidecar1') && str_contains($process->command, 'image-export.tar.gz'));
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'sidecar2') && str_contains($process->command, 'image-export.tar.gz'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'beast') && str_contains($process->command, 'image-export.tar.gz')
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'sidecar1') && str_contains($process->command, 'image-export.tar.gz')
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'sidecar2') && str_contains($process->command, 'image-export.tar.gz')
+        ),
+    );
 });
 
 it('does not distribute to the source host', function (): void {

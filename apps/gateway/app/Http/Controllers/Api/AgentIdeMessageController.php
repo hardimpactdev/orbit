@@ -130,8 +130,11 @@ final class AgentIdeMessageController implements Loggable
         ]);
     }
 
-    private function sendWorkspaceMessage(SendAgentIdeMessageApiRequest $request, Node $caller, string $workspaceSelector): JsonResponse
-    {
+    private function sendWorkspaceMessage(
+        SendAgentIdeMessageApiRequest $request,
+        Node $caller,
+        string $workspaceSelector,
+    ): JsonResponse {
         $workspace = $this->resolveWorkspace($workspaceSelector);
 
         if (! $workspace instanceof Workspace || ! $workspace->app instanceof App) {
@@ -183,9 +186,13 @@ final class AgentIdeMessageController implements Loggable
         return App::query()
             ->with('node')
             ->get()
-            ->first(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}");
+            ->first(
+                fn (App $app): bool => (
+                    $app->name === $selector
+                    || $app->domain === $selector
+                    || $app->url() === "https://{$selector}"
+                ),
+            );
     }
 
     private function resolveWorkspace(string $selector): ?Workspace
@@ -234,12 +241,15 @@ final class AgentIdeMessageController implements Loggable
         $node = $app->node;
 
         if (! $node instanceof Node) {
-            return array_filter([
-                'app' => $app->name,
-                'workspace' => $workspace?->name,
-                'reason' => 'serving_node_unresolved',
-                'missing_permission' => 'agent-ide:message',
-            ], static fn (mixed $value): bool => $value !== null);
+            return array_filter(
+                [
+                    'app' => $app->name,
+                    'workspace' => $workspace?->name,
+                    'reason' => 'serving_node_unresolved',
+                    'missing_permission' => 'agent-ide:message',
+                ],
+                static fn (mixed $value): bool => $value !== null,
+            );
         }
 
         $result = $this->authorizer->authorize($caller, $node, 'agent-ide:message');
@@ -248,13 +258,16 @@ final class AgentIdeMessageController implements Loggable
             return null;
         }
 
-        return array_filter([
-            'app' => $app->name,
-            'workspace' => $workspace?->name,
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $app->name,
+                'workspace' => $workspace?->name,
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     /**

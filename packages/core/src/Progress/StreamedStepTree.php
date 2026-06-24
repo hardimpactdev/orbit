@@ -96,10 +96,22 @@ final class StreamedStepTree
 
         match ($status) {
             'start' => $this->startStep($key),
-            'done' => $this->completeStep($index, $key, $this->summary->success($doneLabel, $this->labelWidth, (string) ($message ?? ''))),
-            'fail' => $this->completeStep($index, $key, $this->summary->failure($doneLabel, $this->labelWidth, (string) ($message ?? 'failed'))),
-            'skip' => $this->completeStep($index, $key, $this->summary->skipped($doneLabel, $this->labelWidth, (string) ($message ?? 'skipped'))),
-            default => $this->progressStep($index, $key, (string) ($message ?? $status)),
+            'done' => $this->completeStep(
+                $index,
+                $key,
+                $this->summary->success($doneLabel, $this->labelWidth, $message ?? ''),
+            ),
+            'fail' => $this->completeStep(
+                $index,
+                $key,
+                $this->summary->failure($doneLabel, $this->labelWidth, $message ?? 'failed'),
+            ),
+            'skip' => $this->completeStep(
+                $index,
+                $key,
+                $this->summary->skipped($doneLabel, $this->labelWidth, $message ?? 'skipped'),
+            ),
+            default => $this->progressStep($index, $key, $message ?? $status),
         };
     }
 
@@ -127,24 +139,31 @@ final class StreamedStepTree
         $frames = SpinnerTreeRenderer::spinnerFrames();
         $this->writeLine(
             $index,
-            $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth, $this->activeMessage),
+            $this->summary->spinnerLine(
+                $frames[$this->frame % count($frames)],
+                $step['label'],
+                $this->labelWidth,
+                $this->activeMessage,
+            ),
         );
         $this->frame++;
     }
 
     public function finish(string $footer, bool $success = true): void
     {
-        if ($this->tree === null) {
+        $tree = $this->tree;
+
+        if ($tree === null) {
             return;
         }
 
         $this->stopSpinnerProcess();
 
         $color = $success ? SpinnerTreeRenderer::ACCENT : SpinnerTreeRenderer::RED;
-        $this->tree->updateFooter($this->output, $this->tree->footerLine($footer, $color));
+        $tree->updateFooter($this->output, $tree->footerLine($footer, $color));
 
         if ($this->output->isDecorated()) {
-            $this->tree->showCursor($this->output);
+            $tree->showCursor($this->output);
         }
 
         $this->output->writeln('');
@@ -166,10 +185,21 @@ final class StreamedStepTree
         }
 
         $step = $this->steps[$index];
+        $summary = $this->summary;
+
+        if ($summary === null) {
+            return;
+        }
+
         $frames = SpinnerTreeRenderer::spinnerFrames();
         $this->writeLine(
             $index,
-            $this->summary->spinnerLine($frames[$this->frame % count($frames)], $step['label'], $this->labelWidth, $message),
+            $summary->spinnerLine(
+                $frames[$this->frame % count($frames)],
+                $step['label'],
+                $this->labelWidth,
+                $message,
+            ),
         );
         $this->lastFrameAtUs = (int) (microtime(true) * 1_000_000);
         $this->frame++;
@@ -263,9 +293,7 @@ final class StreamedStepTree
     {
         $stream = LiveRepaintOutput::resolveStream($this->output);
 
-        return is_resource($stream)
-            && function_exists('stream_isatty')
-            && stream_isatty($stream);
+        return is_resource($stream) && function_exists('stream_isatty') && stream_isatty($stream);
     }
 
     /**
@@ -273,7 +301,10 @@ final class StreamedStepTree
      */
     private function processTickerFrames(): array
     {
-        if ($this->activeKey === null || $this->tree === null || $this->summary === null) {
+        $tree = $this->tree;
+        $summary = $this->summary;
+
+        if ($this->activeKey === null || $tree === null || $summary === null) {
             return [];
         }
 
@@ -287,10 +318,10 @@ final class StreamedStepTree
         $spinnerFrames = SpinnerTreeRenderer::spinnerFrames();
 
         return array_map(
-            fn (int $offset): string => $this->tree->updateLineSequence(
+            fn (int $offset): string => $tree->updateLineSequence(
                 $index,
                 count($this->steps),
-                $this->summary->spinnerLine(
+                $summary->spinnerLine(
                     $spinnerFrames[($this->frame + $offset) % count($spinnerFrames)],
                     $step['label'],
                     $this->labelWidth,

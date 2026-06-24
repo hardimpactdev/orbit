@@ -27,12 +27,16 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         $local = $this->ca->issueLeaf($host);
         $remote = $this->expectedPathsFor($node, $host);
 
-        $this->remoteShell->run($node, $this->installScript(
-            certPath: $remote['cert'],
-            cert: File::get($local['cert']),
-            keyPath: $remote['key'],
-            key: File::get($local['key']),
-        ), ['throw' => true]);
+        $this->remoteShell->run(
+            $node,
+            $this->installScript(
+                certPath: $remote['cert'],
+                cert: File::get($local['cert']),
+                keyPath: $remote['key'],
+                key: File::get($local['key']),
+            ),
+            ['throw' => true],
+        );
 
         return $remote;
     }
@@ -56,13 +60,13 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
     {
         return sprintf(
             <<<'SH'
-set -e
-sudo install -d -m 0755 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0644 %s
-sudo chmod 0600 %s
-SH,
+                set -e
+                sudo install -d -m 0755 %s
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                sudo chmod 0644 %s
+                sudo chmod 0600 %s
+                SH,
             escapeshellarg(dirname($certPath)),
             escapeshellarg(base64_encode($cert)),
             escapeshellarg($certPath),

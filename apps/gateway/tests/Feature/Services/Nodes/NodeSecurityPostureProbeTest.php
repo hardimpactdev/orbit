@@ -20,7 +20,9 @@ final class RecordingNodeSecurityShell implements RemoteShell
     /** @var list<string> */
     public array $scripts = [];
 
-    public function __construct(private readonly string $stdout = '{}') {}
+    public function __construct(
+        private readonly string $stdout = '{}',
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
@@ -37,7 +39,8 @@ final class RecordingNodeSecurityShell implements RemoteShell
 
 it('does not depend on host PHP for host-lane node security probes', function (): void {
     expect((string) file_get_contents(app_path('Services/Nodes/NodeSecurityPostureProbe.php')))
-        ->not->toContain('php -r');
+        ->not
+        ->toContain('php -r');
 });
 
 it('reports missing host key material and missing runtime users under node security keys', function (): void {
@@ -98,16 +101,25 @@ it('accepts a custom steady-state SSH runtime user from the node record', functi
         'home_perms' => true,
     ], JSON_THROW_ON_ERROR));
 
-    $drift = (new NodeSecurityPostureProbe($shell))->diff($node);
+    $drift = new NodeSecurityPostureProbe($shell)->diff($node);
 
-    expect($drift)->toBe([])
-        ->and($shell->scripts[0])->toStartWith('set -eu')
-        ->and($shell->scripts[0])->not->toContain('php -r')
-        ->and($shell->scripts[0])->toContain("MANAGED_USER='nckrtl'")
-        ->and($shell->scripts[0])->toContain('id -u "$MANAGED_USER"')
-        ->and($shell->scripts[0])->toContain('AllowUsers $MANAGED_USER')
-        ->and($shell->scripts[0])->toContain('printf \'{"runtime_user":%s')
-        ->and($shell->scripts[0])->toContain('/home/nckrtl');
+    expect($drift)
+        ->toBe([])
+        ->and($shell->scripts[0])
+        ->toStartWith('set -eu')
+        ->and($shell->scripts[0])
+        ->not
+        ->toContain('php -r')
+        ->and($shell->scripts[0])
+        ->toContain("MANAGED_USER='nckrtl'")
+        ->and($shell->scripts[0])
+        ->toContain('id -u "$MANAGED_USER"')
+        ->and($shell->scripts[0])
+        ->toContain('AllowUsers $MANAGED_USER')
+        ->and($shell->scripts[0])
+        ->toContain('printf \'{"runtime_user":%s')
+        ->and($shell->scripts[0])
+        ->toContain('/home/nckrtl');
 });
 
 it('reports remote node security drift from the posture script', function (): void {
@@ -151,7 +163,7 @@ it('reports remote node security drift from the posture script', function (): vo
         'home_perms' => false,
     ], JSON_THROW_ON_ERROR));
 
-    $drift = (new NodeSecurityPostureProbe($shell))->diff($node);
+    $drift = new NodeSecurityPostureProbe($shell)->diff($node);
 
     expect(array_map(fn (DriftEntry $entry): string => $entry->key, $drift))
         ->toBe([
@@ -178,7 +190,10 @@ it('can adopt the first host key pin for legacy nodes', function (): void {
     $probe = app(NodeSecurityPostureProbe::class);
     $results = $probe->adopt($node, $probe->snapshotForAdopt($node, includeHostKey: true));
 
-    expect($results[0]->action->value)->toBe('updated')
-        ->and($node->refresh()->host_key_type)->toBe('ssh-ed25519')
-        ->and($node->host_key_fingerprint)->toBe(SshHostKeyPinner::fingerprintForPublicKey($publicKey));
+    expect($results[0]->action->value)
+        ->toBe('updated')
+        ->and($node->refresh()->host_key_type)
+        ->toBe('ssh-ed25519')
+        ->and($node->host_key_fingerprint)
+        ->toBe(SshHostKeyPinner::fingerprintForPublicKey($publicKey));
 });

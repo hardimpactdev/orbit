@@ -42,6 +42,8 @@ it('prefers the live guest IPv4 over stale Incus state', function (): void {
 
     $instance = new IncusInstance($host, 'orbit-e2e-gateway', commandTransport: true);
 
-    expect($instance->waitForIpv4())->toBe('10.231.7.248')
-        ->and(implode("\n", $commands))->not->toContain('/1.0/instances/orbit-e2e-gateway/state');
+    expect($instance->waitForIpv4())
+        ->toBe('10.231.7.248')
+        ->and(implode("\n", $commands))
+        ->not->toContain('/1.0/instances/orbit-e2e-gateway/state');
 });

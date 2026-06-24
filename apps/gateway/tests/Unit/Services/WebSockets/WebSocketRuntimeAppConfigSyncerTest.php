@@ -16,17 +16,21 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 it('syncs enabled binding credentials to each active websocket node runtime config', function (): void {
-    $websocketNode = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'host' => 'app-dev-1.example.com',
-        'wireguard_address' => '10.6.0.44',
-    ]);
+    $websocketNode = Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'host' => 'app-dev-1.example.com',
+            'wireguard_address' => '10.6.0.44',
+        ]);
 
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-disabled',
-        'status' => 'inactive',
-        'wireguard_address' => '10.6.0.45',
-    ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'ws-disabled',
+            'status' => 'inactive',
+            'wireguard_address' => '10.6.0.45',
+        ]);
 
     $app = App::factory()->create(['name' => 'docs']);
 
@@ -55,19 +59,27 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
 
     app(WebSocketRuntimeAppConfigSyncer::class)->sync();
 
-    expect($shell->nodes)->toHaveCount(1)
-        ->and($shell->nodes[0]->is($websocketNode))->toBeTrue()
-        ->and($shell->scripts[0])->toContain(WebSocketRuntimeSourceInstaller::AppsConfigPath)
-        ->and($shell->scripts[0])->toContain("docker container inspect 'orbit-websocket-app-dev-1'")
-        ->and($shell->scripts[0])->toContain("docker restart 'orbit-websocket-app-dev-1'")
-        ->and($shell->options[0]['metadata'])->toBe([
+    expect($shell->nodes)
+        ->toHaveCount(1)
+        ->and($shell->nodes[0]->is($websocketNode))
+        ->toBeTrue()
+        ->and($shell->scripts[0])
+        ->toContain(WebSocketRuntimeSourceInstaller::AppsConfigPath)
+        ->and($shell->scripts[0])
+        ->toContain("docker container inspect 'orbit-websocket-app-dev-1'")
+        ->and($shell->scripts[0])
+        ->toContain("docker restart 'orbit-websocket-app-dev-1'")
+        ->and($shell->options[0]['metadata'])
+        ->toBe([
             'ORBIT_OPERATION_ID' => 'websocket-runtime-app-config-sync',
         ]);
 
     $config = websocketRuntimeAppConfigFromScript($shell->scripts[0]);
 
-    expect($config)->toHaveCount(1)
-        ->and($config[0])->toMatchArray([
+    expect($config)
+        ->toHaveCount(1)
+        ->and($config[0])
+        ->toMatchArray([
             'key' => 'app-key',
             'secret' => 'app-secret',
             'app_id' => 'docs',
@@ -85,10 +97,12 @@ it('syncs enabled binding credentials to each active websocket node runtime conf
 });
 
 it('writes an empty runtime app list when no bindings are enabled', function (): void {
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.44',
-    ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
 
     AppWebSocketBinding::factory()->create([
         'enabled' => false,

@@ -60,7 +60,12 @@ final class WorkspaceStoreController implements Loggable
         $phpVersion = $validated['php_version'] ?? null;
 
         if ($name === 'main') {
-            return $this->error('validation_failed', "The workspace name 'main' is reserved.", ['field' => 'name'], 422);
+            return $this->error(
+                'validation_failed',
+                "The workspace name 'main' is reserved.",
+                ['field' => 'name'],
+                422,
+            );
         }
 
         $app = App::query()
@@ -73,10 +78,15 @@ final class WorkspaceStoreController implements Loggable
         }
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
-            return $this->error('validation_failed', 'Unsupported PHP version.', [
-                'field' => 'php_version',
-                'reason' => 'unsupported_php_version',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Unsupported PHP version.',
+                [
+                    'field' => 'php_version',
+                    'reason' => 'unsupported_php_version',
+                ],
+                422,
+            );
         }
 
         $existing = Workspace::query()
@@ -85,10 +95,15 @@ final class WorkspaceStoreController implements Loggable
             ->first();
 
         if ($existing instanceof Workspace) {
-            return $this->error('workspace.already_exists', "Workspace '{$name}' already exists for app '{$appName}'.", [
-                'name' => $name,
-                'app' => $appName,
-            ], 422);
+            return $this->error(
+                'workspace.already_exists',
+                "Workspace '{$name}' already exists for app '{$appName}'.",
+                [
+                    'name' => $name,
+                    'app' => $appName,
+                ],
+                422,
+            );
         }
 
         try {
@@ -143,7 +158,12 @@ final class WorkspaceStoreController implements Loggable
         $phpVersion = $validated['php_version'] ?? null;
 
         if ($name === 'main') {
-            return $this->error('validation_failed', "The workspace name 'main' is reserved.", ['field' => 'name'], 422);
+            return $this->error(
+                'validation_failed',
+                "The workspace name 'main' is reserved.",
+                ['field' => 'name'],
+                422,
+            );
         }
 
         $app = App::query()
@@ -156,10 +176,15 @@ final class WorkspaceStoreController implements Loggable
         }
 
         if ($phpVersion !== null && ! in_array($phpVersion, CreateWorkspace::SUPPORTED_PHP_VERSIONS, true)) {
-            return $this->error('validation_failed', 'Unsupported PHP version.', [
-                'field' => 'php_version',
-                'reason' => 'unsupported_php_version',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Unsupported PHP version.',
+                [
+                    'field' => 'php_version',
+                    'reason' => 'unsupported_php_version',
+                ],
+                422,
+            );
         }
 
         $existing = Workspace::query()
@@ -168,10 +193,15 @@ final class WorkspaceStoreController implements Loggable
             ->first();
 
         if ($existing instanceof Workspace) {
-            return $this->error('workspace.already_exists', "Workspace '{$name}' already exists for app '{$appName}'.", [
-                'name' => $name,
-                'app' => $appName,
-            ], 422);
+            return $this->error(
+                'workspace.already_exists',
+                "Workspace '{$name}' already exists for app '{$appName}'.",
+                [
+                    'name' => $name,
+                    'app' => $appName,
+                ],
+                422,
+            );
         }
 
         try {

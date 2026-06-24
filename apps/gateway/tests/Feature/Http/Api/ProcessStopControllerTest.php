@@ -53,12 +53,20 @@ describe('ProcessStopController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/stop', [
-            'app' => 'docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/stop',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.runtimes.0.runtime_unit', 'orbit_docs_main_vite')
             ->assertJsonPath('success.data.runtimes.0.event.type', 'stopped');
 
@@ -76,11 +84,19 @@ describe('ProcessStopController', function (): void {
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'failed', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes/stop', [
-            'app' => 'docs',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/stop',
+            [
+                'app' => 'docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'process.runtime_action_failed')
             ->assertJsonPath('error.meta.partial_state', 'partially_stopped')
             ->assertJsonPath('error.data.runtimes.1.state', 'failed');
@@ -94,12 +110,20 @@ describe('ProcessStopController', function (): void {
         $remoteShell = new ProcessStopApiRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes/stop', [
-            'app' => 'docs',
-            'name' => 'vite',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes/stop',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STOP_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:stop');

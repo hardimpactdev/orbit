@@ -38,7 +38,8 @@ final class NodeRoleListController implements Loggable
             'success' => [
                 'data' => [
                     'node' => $node->name,
-                    'roles' => $node->roleAssignments
+                    'roles' => $node
+                        ->roleAssignments
                         ->map(fn ($assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
                         ->all(),
                 ],

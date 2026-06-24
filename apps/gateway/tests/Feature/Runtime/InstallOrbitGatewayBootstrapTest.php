@@ -22,14 +22,15 @@ describe('install-orbit gateway bootstrap', function (): void {
         $bootstrapIndex = strpos($this->installer, 'bootstrap_gateway_state()');
         $migrationIndex = strpos($this->installer, 'run_migrations_in_gateway_image()');
 
-        expect($bootstrapIndex)->not->toBeFalse()
-            ->and($migrationIndex)->not->toBeFalse()
-            ->and($bootstrapIndex)->toBeLessThan($migrationIndex)
-            ->and($this->installer)->toContain('docker_cli run --rm')
-            ->and($this->installer)->toContain('--pull never')
-            ->and($this->installer)->toContain('"$GATEWAY_IMAGE"')
-            ->and($this->installer)->toContain('artisan --version')
-            ->and($this->installer)->toContain('migrate --no-interaction --path=/srv/orbit/apps/gateway/database/migrations --realpath');
+        expect($bootstrapIndex)
+            ->not->toBeFalse()->and($migrationIndex)
+            ->not->toBeFalse()->and($bootstrapIndex)->toBeLessThan($migrationIndex)->and($this->installer)->toContain(
+                'docker_cli run --rm',
+            )->and($this->installer)->toContain('--pull never')->and($this->installer)->toContain(
+                '"$GATEWAY_IMAGE"',
+            )->and($this->installer)->toContain('artisan --version')->and($this->installer)->toContain(
+                'migrate --no-interaction --path=/srv/orbit/apps/gateway/database/migrations --realpath',
+            );
     });
 
     it('mounts only the config root into disposable gateway image commands', function (): void {

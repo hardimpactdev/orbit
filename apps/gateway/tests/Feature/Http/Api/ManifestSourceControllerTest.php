@@ -18,6 +18,7 @@ use Illuminate\Testing\TestResponse;
 uses(RefreshDatabase::class);
 
 const MANIFEST_SOURCE_GATEWAY_WG_IP = '10.6.0.45';
+
 const MANIFEST_SOURCE_DEFAULT_URL = 'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json';
 
 beforeEach(function (): void {
@@ -108,15 +109,14 @@ it('allows non-gateway callers with gateway admin authority', function (): void 
 });
 
 it('declares gateway-wide permission on the manifest source controller', function (): void {
-    $attributes = (new ReflectionClass(ManifestSourceController::class))
+    $attributes = new ReflectionClass(ManifestSourceController::class)
         ->getAttributes(RequiresPermission::class);
 
     expect($attributes)->toHaveCount(1);
 
     $permission = $attributes[0]->newInstance();
 
-    expect($permission->permission)->toBe('*')
-        ->and($permission->servingNode)->toBe(ServingNode::Gateway);
+    expect($permission->permission)->toBe('*')->and($permission->servingNode)->toBe(ServingNode::Gateway);
 });
 
 it('lives in the logged authenticated gateway API group', function (string $routeName): void {
@@ -126,9 +126,12 @@ it('lives in the logged authenticated gateway API group', function (string $rout
 
     $middleware = $route->gatherMiddleware();
 
-    expect($middleware)->toContain(WireGuardIdentity::class)
-        ->and($middleware)->toContain(RequireGrantPermission::class)
-        ->and($middleware)->toContain(LogActivity::class);
+    expect($middleware)
+        ->toContain(WireGuardIdentity::class)
+        ->and($middleware)
+        ->toContain(RequireGrantPermission::class)
+        ->and($middleware)
+        ->toContain(LogActivity::class);
 })->with([
     'api.manifest.update',
     'api.manifest.destroy',
@@ -143,7 +146,14 @@ function manifestSourceRequest(
     array $payload = [],
     string $remoteAddress = MANIFEST_SOURCE_GATEWAY_WG_IP,
 ): TestResponse {
-    return test()->call($method, $path, $payload, [], [], [
-        'REMOTE_ADDR' => $remoteAddress,
-    ]);
+    return test()->call(
+        $method,
+        $path,
+        $payload,
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => $remoteAddress,
+        ],
+    );
 }

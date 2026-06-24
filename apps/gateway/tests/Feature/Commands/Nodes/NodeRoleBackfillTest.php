@@ -94,39 +94,56 @@ it('backfills vpn role assignments for active gateway role assignments', functio
 
     runGatewayCoupledVpnRoleBackfillMigration();
 
-    expect(DB::table('node_role')->where([
-        'node_id' => $activeGateway->id,
-        'role' => 'vpn',
-        'status' => 'active',
-        'settings' => json_encode([
-            'public_endpoint' => 'gateway.example.com',
-            'wireguard_cidr' => '10.6.0.0/24',
-            'wireguard_port' => 51820,
-            'dns_ip' => '10.6.0.1',
-        ], JSON_THROW_ON_ERROR),
-    ])->exists())->toBeTrue();
+    expect(
+        DB::table('node_role')
+            ->where([
+                'node_id' => $activeGateway->id,
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => json_encode([
+                    'public_endpoint' => 'gateway.example.com',
+                    'wireguard_cidr' => '10.6.0.0/24',
+                    'wireguard_port' => 51820,
+                    'dns_ip' => '10.6.0.1',
+                ], JSON_THROW_ON_ERROR),
+            ])
+            ->exists(),
+    )->toBeTrue();
 
-    expect(DB::table('node_role')->where([
-        'node_id' => $inactiveGateway->id,
-        'role' => 'vpn',
-    ])->exists())->toBeFalse();
+    expect(
+        DB::table('node_role')
+            ->where([
+                'node_id' => $inactiveGateway->id,
+                'role' => 'vpn',
+            ])
+            ->exists(),
+    )->toBeFalse();
 
-    expect(DB::table('node_role')->where([
-        'node_id' => $existingVpnGateway->id,
-        'role' => 'vpn',
-    ])->count())->toBe(1);
+    expect(
+        DB::table('node_role')
+            ->where([
+                'node_id' => $existingVpnGateway->id,
+                'role' => 'vpn',
+            ])
+            ->count(),
+    )
+        ->toBe(1);
 
-    expect(DB::table('node_role')->where([
-        'node_id' => $hostFallbackGateway->id,
-        'role' => 'vpn',
-        'status' => 'active',
-        'settings' => json_encode([
-            'public_endpoint' => 'gateway-4.internal',
-            'wireguard_cidr' => '10.6.0.0/24',
-            'wireguard_port' => 51820,
-            'dns_ip' => '10.6.0.1',
-        ], JSON_THROW_ON_ERROR),
-    ])->exists())->toBeTrue();
+    expect(
+        DB::table('node_role')
+            ->where([
+                'node_id' => $hostFallbackGateway->id,
+                'role' => 'vpn',
+                'status' => 'active',
+                'settings' => json_encode([
+                    'public_endpoint' => 'gateway-4.internal',
+                    'wireguard_cidr' => '10.6.0.0/24',
+                    'wireguard_port' => 51820,
+                    'dns_ip' => '10.6.0.1',
+                ], JSON_THROW_ON_ERROR),
+            ])
+            ->exists(),
+    )->toBeTrue();
 });
 
 it('preserves vpn role assignments on rollback', function (): void {
@@ -149,8 +166,12 @@ it('preserves vpn role assignments on rollback', function (): void {
 
     rollbackGatewayCoupledVpnRoleBackfillMigration();
 
-    expect(DB::table('node_role')->where([
-        'node_id' => $gateway->id,
-        'role' => 'vpn',
-    ])->exists())->toBeTrue();
+    expect(
+        DB::table('node_role')
+            ->where([
+                'node_id' => $gateway->id,
+                'role' => 'vpn',
+            ])
+            ->exists(),
+    )->toBeTrue();
 });

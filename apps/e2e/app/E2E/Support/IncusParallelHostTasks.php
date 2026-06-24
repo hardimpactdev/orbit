@@ -84,7 +84,9 @@ final readonly class IncusParallelHostTasks
         return implode("\n", [
             'dir="$(mktemp -d /tmp/orbit-e2e-parallel-XXXXXX)"',
             "trap 'rm -rf \"\$dir\"' EXIT",
-            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '.escapeshellarg('import time; print(int(time.time() * 1000))').'; else echo "$(($(date +%s) * 1000))"; fi; }',
+            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '
+                .escapeshellarg('import time; print(int(time.time() * 1000))')
+                .'; else echo "$(($(date +%s) * 1000))"; fi; }',
             ...$startLines,
             'STATUS=0',
             ...$waitLines,
@@ -98,8 +100,12 @@ final readonly class IncusParallelHostTasks
     /**
      * @param  list<string>  $labels
      */
-    private static function recordTimings(string $output, array $labels, E2EPhaseTimer $timer, string $timerPrefix): void
-    {
+    private static function recordTimings(
+        string $output,
+        array $labels,
+        E2EPhaseTimer $timer,
+        string $timerPrefix,
+    ): void {
         $allowed = array_fill_keys($labels, true);
 
         if (preg_match_all('/__orbit_task_timing\s+(\S+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER) === false) {
@@ -111,7 +117,7 @@ final readonly class IncusParallelHostTasks
                 continue;
             }
 
-            $timer->recordExternal("{$timerPrefix}.{$match[1]}", ((int) $match[2]) / 1000);
+            $timer->recordExternal("{$timerPrefix}.{$match[1]}", (int) $match[2] / 1000);
         }
     }
 

@@ -117,14 +117,15 @@ abstract class InternalExecutorCommand extends Command
      *
      * Returns the matched key path string on a hit, null if clean.
      *
-     * @param  array<string, mixed>  $data
+     * @param  array<array-key, mixed>  $data
      */
     private function findForbiddenField(array $data, string $prefix = ''): ?string
     {
         foreach ($data as $key => $value) {
-            $keyPath = $prefix !== '' ? "{$prefix}.{$key}" : (string) $key;
+            $keyName = (string) $key;
+            $keyPath = $prefix !== '' ? "{$prefix}.{$keyName}" : $keyName;
 
-            if ($this->isForbiddenKey((string) $key)) {
+            if ($this->isForbiddenKey($keyName)) {
                 return $keyPath;
             }
 

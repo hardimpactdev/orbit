@@ -85,7 +85,8 @@ it('rejects gateway selected without operator', function (): void {
         expect(fn () => $builder->buildSelectedRoles(
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
             ['gateway'],
-        ))->toThrow(RuntimeException::class, "Selected roles include 'gateway' but not 'operator'");
+        ))
+            ->toThrow(RuntimeException::class, "Selected roles include 'gateway' but not 'operator'");
     });
 });
 
@@ -105,7 +106,8 @@ it('rejects operator selected without gateway', function (): void {
         expect(fn () => $builder->buildSelectedRoles(
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
             ['operator'],
-        ))->toThrow(RuntimeException::class, "Selected roles include 'operator' but not 'gateway'");
+        ))
+            ->toThrow(RuntimeException::class, "Selected roles include 'operator' but not 'gateway'");
     });
 });
 
@@ -130,7 +132,10 @@ it('accepts agent selected alone without gateway or operator', function (): void
             }
 
             // instance exists check
-            if (str_contains($command, 'incus info') && ! str_contains($command, 'orbit-template-agent-agent-isolation')) {
+            if (
+                str_contains($command, 'incus info')
+                && ! str_contains($command, 'orbit-template-agent-agent-isolation')
+            ) {
                 return fakeSuccess(); // base template exists
             }
 
@@ -140,7 +145,10 @@ it('accepts agent selected alone without gateway or operator', function (): void
             }
 
             // slug template does not yet exist
-            if (str_contains($command, 'incus info') && str_contains($command, 'orbit-template-agent-agent-isolation')) {
+            if (
+                str_contains($command, 'incus info')
+                && str_contains($command, 'orbit-template-agent-agent-isolation')
+            ) {
                 return fakeFailure(); // not yet created
             }
 
@@ -178,7 +186,8 @@ it('accepts agent selected alone without gateway or operator', function (): void
         });
 
     // Stub instance exec calls (incus exec)
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->withArgs(fn (string $cmd) => str_contains($cmd, 'incus exec'))
         ->andReturnUsing(fn (): ProcessResult => fakeSuccess());
 
@@ -238,7 +247,8 @@ it('fails without a bundle staged', function (): void {
     expect(fn () => $builder->buildSelectedRoles(
         E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
         ['agent'],
-    ))->toThrow(RuntimeException::class, 'No provisioning bundle has been staged');
+    ))
+        ->toThrow(RuntimeException::class, 'No provisioning bundle has been staged');
 });
 
 it('rejects selected role rebakes into the shared base namespace', function (): void {
@@ -253,7 +263,11 @@ it('rejects selected role rebakes into the shared base namespace', function (): 
     expect(fn () => $builder->buildSelectedRoles(
         E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
         ['agent'],
-    ))->toThrow(RuntimeException::class, 'Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using selected Incus role rebakes');
+    ))
+        ->toThrow(
+            RuntimeException::class,
+            'Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using selected Incus role rebakes',
+        );
 });
 
 // ---------------------------------------------------------------------------
@@ -315,10 +329,14 @@ it('copies base template snapshot into slug namespace for each selected role', f
         ->toContain('orbit-template-agent-agent-isolation');
 
     // Manifest must contain the slug template and snapshot
-    expect($manifest)->toHaveCount(1)
-        ->and($manifest[0]['role'])->toBe('agent')
-        ->and($manifest[0]['name'])->toBe('orbit-template-agent-agent-isolation')
-        ->and($manifest[0]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent-agent-isolation');
+    expect($manifest)
+        ->toHaveCount(1)
+        ->and($manifest[0]['role'])
+        ->toBe('agent')
+        ->and($manifest[0]['name'])
+        ->toBe('orbit-template-agent-agent-isolation')
+        ->and($manifest[0]['snapshot'])
+        ->toBe('clean-operator_gateway_app-dev_app-prod_agent-agent-isolation');
 });
 
 it('boots selected VMs, applies bundle overlay, stops and snapshots them', function (): void {
@@ -375,9 +393,12 @@ it('boots selected VMs, applies bundle overlay, stops and snapshots them', funct
             : putenv("ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE={$previousNamespace}");
     }
 
-    expect($startedInstances)->toContain('orbit-template-agent-pr-123')
-        ->and($stoppedInstances)->toContain('orbit-template-agent-pr-123')
-        ->and($snapshotted)->toContain('orbit-template-agent-pr-123/clean-operator_gateway_app-dev_app-prod_agent-pr-123');
+    expect($startedInstances)
+        ->toContain('orbit-template-agent-pr-123')
+        ->and($stoppedInstances)
+        ->toContain('orbit-template-agent-pr-123')
+        ->and($snapshotted)
+        ->toContain('orbit-template-agent-pr-123/clean-operator_gateway_app-dev_app-prod_agent-pr-123');
 });
 
 it('applies bundle overlay to selected VMs via incus exec and incus file push', function (): void {
@@ -439,11 +460,17 @@ it('applies bundle overlay to selected VMs via incus exec and incus file push', 
     expect($allCommands)->toContain('incus file push');
 
     // Must extract the source archive directly (no install-orbit, no docker dependency)
-    $extractOccurrences = array_filter($sshCommands, fn (string $cmd) => str_contains($cmd, 'tar') && str_contains($cmd, 'orbit-source.tar.gz'));
+    $extractOccurrences = array_filter(
+        $sshCommands,
+        fn (string $cmd) => str_contains($cmd, 'tar') && str_contains($cmd, 'orbit-source.tar.gz'),
+    );
     expect($extractOccurrences)->not->toBeEmpty();
 
     // Must run composer install
-    $composerInstallOccurrences = array_filter($sshCommands, fn (string $cmd) => str_contains($cmd, 'composer') && str_contains($cmd, 'install'));
+    $composerInstallOccurrences = array_filter(
+        $sshCommands,
+        fn (string $cmd) => str_contains($cmd, 'composer') && str_contains($cmd, 'install'),
+    );
     expect($composerInstallOccurrences)->not->toBeEmpty();
 });
 
@@ -528,7 +555,8 @@ it('fails when existing slug template already exists without replaceExisting', f
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
             ['agent'],
             replaceExisting: false,
-        ))->toThrow(RuntimeException::class, 'already exists');
+        ))
+            ->toThrow(RuntimeException::class, 'already exists');
     } finally {
         $previousNamespace === false
             ? putenv('ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE')
@@ -566,7 +594,8 @@ it('fails when base template is missing', function (): void {
         expect(fn () => $builder->buildSelectedRoles(
             E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
             ['agent'],
-        ))->toThrow(RuntimeException::class, 'Base template');
+        ))
+            ->toThrow(RuntimeException::class, 'Base template');
     } finally {
         $previousNamespace === false
             ? putenv('ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE')
@@ -595,8 +624,10 @@ it('selects the websocket source kind when websocket artifact role is requested'
     ));
 
     // websocket maps to 'dev' Incus role in the websocket topology
-    expect($buildKind)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
-        ->and($sourceRoles)->toContain('dev');
+    expect($buildKind)
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
+        ->and($sourceRoles)
+        ->toContain('dev');
 });
 
 it('includes dev role in source roles when websocket artifact role is requested for websocket topology', function (): void {
@@ -622,11 +653,13 @@ it('includes dev role in source roles when websocket artifact role is requested 
         },
     ));
 
-    expect($sourceRoles)->toContain('dev')
-        ->and($sourceRoles)->not->toContain('operator')
-        ->and($sourceRoles)->not->toContain('gateway')
-        ->and($sourceRoles)->not->toContain('prod')
-        ->and($sourceRoles)->not->toContain('agent');
+    expect($sourceRoles)
+        ->toContain('dev')
+        ->and($sourceRoles)
+        ->not->toContain('operator')->and($sourceRoles)
+        ->not->toContain('gateway')->and($sourceRoles)
+        ->not->toContain('prod')->and($sourceRoles)
+        ->not->toContain('agent');
 });
 
 // ---------------------------------------------------------------------------
@@ -672,11 +705,13 @@ it('unselected roles do not appear in the rebake manifest', function (): void {
     $roles = array_column($manifest, 'role');
 
     // Only agent is rebuilt; operator, gateway, dev, prod are absent from manifest
-    expect($roles)->toBe(['agent'])
-        ->and($roles)->not->toContain('operator')
-        ->and($roles)->not->toContain('gateway')
-        ->and($roles)->not->toContain('dev')
-        ->and($roles)->not->toContain('prod');
+    expect($roles)
+        ->toBe(['agent'])
+        ->and($roles)
+        ->not->toContain('operator')->and($roles)
+        ->not->toContain('gateway')->and($roles)
+        ->not->toContain('dev')->and($roles)
+        ->not->toContain('prod');
 });
 
 it('acquisition falls back to base snapshot for unselected roles', function (): void {
@@ -693,7 +728,10 @@ it('acquisition falls back to base snapshot for unselected roles', function (): 
             }
 
             // Slug agent snapshot exists
-            if (str_contains($command, 'orbit-template-agent-agent-isolation') && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation')) {
+            if (
+                str_contains($command, 'orbit-template-agent-agent-isolation')
+                && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation')
+            ) {
                 return fakeSuccess();
             }
 
@@ -713,15 +751,21 @@ it('acquisition falls back to base snapshot for unselected roles', function (): 
         // For agent: should find the slug candidate
         $agentCandidates = IncusTopologyTemplate::snapshotCandidates($kind, 'agent');
 
-        expect($agentCandidates[0]['template'])->toBe('orbit-template-agent-agent-isolation')
-            ->and($agentCandidates[0]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation')
-            ->and($agentCandidates[1]['template'])->toBe('orbit-template-agent-base')
-            ->and($agentCandidates[1]['snapshot'])->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
+        expect($agentCandidates[0]['template'])
+            ->toBe('orbit-template-agent-agent-isolation')
+            ->and($agentCandidates[0]['snapshot'])
+            ->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation')
+            ->and($agentCandidates[1]['template'])
+            ->toBe('orbit-template-agent-base')
+            ->and($agentCandidates[1]['snapshot'])
+            ->toBe('clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
 
         // For operator: should find the base candidate (no slug override)
         $operatorCandidates = IncusTopologyTemplate::snapshotCandidates($kind, 'operator');
-        expect($operatorCandidates[0]['template'])->toBe('orbit-template-operator-agent-isolation')
-            ->and($operatorCandidates[1]['template'])->toBe('orbit-template-operator-base');
+        expect($operatorCandidates[0]['template'])
+            ->toBe('orbit-template-operator-agent-isolation')
+            ->and($operatorCandidates[1]['template'])
+            ->toBe('orbit-template-operator-base');
     } finally {
         $previousNamespace === false
             ? putenv('ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE')
@@ -737,7 +781,11 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
     fakeSelectedRoleBundleProcessing();
 
     $manifest = [
-        ['role' => 'agent', 'name' => 'orbit-template-agent-agent-isolation', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation'],
+        [
+            'role' => 'agent',
+            'name' => 'orbit-template-agent-agent-isolation',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation',
+        ],
     ];
 
     $capturedBuildKind = null;
@@ -746,9 +794,15 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
-    $builder->shouldReceive('buildSelectedRoles')
+    $builder
+        ->shouldReceive('buildSelectedRoles')
         ->once()
-        ->andReturnUsing(function (E2ETopologyKind $kind, array $roles, bool $replace) use ($manifest, &$capturedBuildKind, &$capturedRoles, &$capturedReplace): array {
+        ->andReturnUsing(function (E2ETopologyKind $kind, array $roles, bool $replace) use (
+            $manifest,
+            &$capturedBuildKind,
+            &$capturedRoles,
+            &$capturedReplace,
+        ): array {
             $capturedBuildKind = $kind;
             $capturedRoles = $roles;
             $capturedReplace = $replace;
@@ -771,23 +825,31 @@ it('command with --force and --roles dispatches buildSelectedRoles with correct 
         ])->assertSuccessful();
     });
 
-    expect($capturedBuildKind)->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
-        ->and($capturedRoles)->toBe(['agent'])
-        ->and($capturedReplace)->toBeTrue();
+    expect($capturedBuildKind)
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket)
+        ->and($capturedRoles)
+        ->toBe(['agent'])
+        ->and($capturedReplace)
+        ->toBeTrue();
 });
 
 it('command with --force and --roles=websocket dispatches buildSelectedRoles with dev Incus role for websocket topology', function (): void {
     fakeSelectedRoleBundleProcessing();
 
     $manifest = [
-        ['role' => 'dev', 'name' => 'orbit-template-app-dev-ws-branch', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-ws-branch'],
+        [
+            'role' => 'dev',
+            'name' => 'orbit-template-app-dev-ws-branch',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-ws-branch',
+        ],
     ];
 
     $capturedRoles = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
-    $builder->shouldReceive('buildSelectedRoles')
+    $builder
+        ->shouldReceive('buildSelectedRoles')
         ->once()
         ->andReturnUsing(function (E2ETopologyKind $kind, array $roles) use ($manifest, &$capturedRoles): array {
             $capturedRoles = $roles;
@@ -818,7 +880,11 @@ it('command with --force and --roles outputs JSON success with selected template
     fakeSelectedRoleBundleProcessing();
 
     $manifest = [
-        ['role' => 'agent', 'name' => 'orbit-template-agent-pr-123', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-pr-123'],
+        [
+            'role' => 'agent',
+            'name' => 'orbit-template-agent-pr-123',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent-pr-123',
+        ],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
@@ -842,11 +908,16 @@ it('command with --force and --roles outputs JSON success with selected template
 
         $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['dry_run'])->toBeFalse()
-            ->and($payload['success']['data']['provider'])->toBe('incus')
-            ->and($payload['success']['data']['templates'])->toHaveCount(1)
-            ->and($payload['success']['data']['templates'][0]['role'])->toBe('agent');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data']['dry_run'])
+            ->toBeFalse()
+            ->and($payload['success']['data']['provider'])
+            ->toBe('incus')
+            ->and($payload['success']['data']['templates'])
+            ->toHaveCount(1)
+            ->and($payload['success']['data']['templates'][0]['role'])
+            ->toBe('agent');
     });
 });
 
@@ -855,7 +926,8 @@ it('command with --force and gateway consistency failure surfaces as command fai
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
-    $builder->shouldReceive('buildSelectedRoles')
+    $builder
+        ->shouldReceive('buildSelectedRoles')
         ->andThrow(new RuntimeException("Selected roles include 'gateway' but not 'operator'."));
 
     $command = app(E2EPrepareTopologyCommand::class);
@@ -865,12 +937,13 @@ it('command with --force and gateway consistency failure surfaces as command fai
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'pr-1',
     ], function (): void {
-        $this->artisan('e2e:prepare-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--force' => true,
-            '--use-build-artifacts' => true,
-            '--roles' => 'gateway',
-        ])
+        $this
+            ->artisan('e2e:prepare-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--force' => true,
+                '--use-build-artifacts' => true,
+                '--roles' => 'gateway',
+            ])
             ->expectsOutputToContain("Selected roles include 'gateway' but not 'operator'")
             ->assertFailed();
     });

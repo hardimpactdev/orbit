@@ -464,10 +464,15 @@ it('s3 restore router_route_missing calls syncServiceRoute and returns fix resul
 
     $result = $probe->restore($router, $entry);
 
-    expect($result)->not->toBeNull()
-        ->and($result['key'])->toBe(S3ProxyDoctorProbe::RouterRouteKey)
-        ->and($result['status'])->toBe('completed')
-        ->and($result['mode'])->toBe('fix');
+    expect($result)
+        ->not
+        ->toBeNull()
+        ->and($result['key'])
+        ->toBe(S3ProxyDoctorProbe::RouterRouteKey)
+        ->and($result['status'])
+        ->toBe('completed')
+        ->and($result['mode'])
+        ->toBe('fix');
 })->group('s3', 'proxy-doctor');
 
 it('s3 restore router_backend_invalid calls syncServiceRoute and returns fix result', function (): void {
@@ -486,10 +491,15 @@ it('s3 restore router_backend_invalid calls syncServiceRoute and returns fix res
 
     $result = $probe->restore($router, $entry);
 
-    expect($result)->not->toBeNull()
-        ->and($result['key'])->toBe(S3ProxyDoctorProbe::RouterBackendKey)
-        ->and($result['status'])->toBe('completed')
-        ->and($result['mode'])->toBe('fix');
+    expect($result)
+        ->not
+        ->toBeNull()
+        ->and($result['key'])
+        ->toBe(S3ProxyDoctorProbe::RouterBackendKey)
+        ->and($result['status'])
+        ->toBe('completed')
+        ->and($result['mode'])
+        ->toBe('fix');
 })->group('s3', 'proxy-doctor');
 
 it('s3 restore public_route_missing calls syncPublicHosts and returns fix result', function (): void {
@@ -508,10 +518,15 @@ it('s3 restore public_route_missing calls syncPublicHosts and returns fix result
 
     $result = $probe->restore($ingress, $entry);
 
-    expect($result)->not->toBeNull()
-        ->and($result['key'])->toBe(S3ProxyDoctorProbe::PublicRouteKey)
-        ->and($result['status'])->toBe('completed')
-        ->and($result['mode'])->toBe('fix');
+    expect($result)
+        ->not
+        ->toBeNull()
+        ->and($result['key'])
+        ->toBe(S3ProxyDoctorProbe::PublicRouteKey)
+        ->and($result['status'])
+        ->toBe('completed')
+        ->and($result['mode'])
+        ->toBe('fix');
 })->group('s3', 'proxy-doctor');
 
 it('s3 restore public_route_missing returns null when seaweedfs_tool_id is missing from detail', function (): void {
@@ -554,7 +569,8 @@ it('s3 role resolves to categories including proxy', function (): void {
     $runner = app(DoctorReportRunner::class);
     $categories = $runner->categoriesForRole('s3');
 
-    expect($categories)->toContain('node')
+    expect($categories)
+        ->toContain('node')
         ->toContain('tool')
         ->toContain('proxy');
 })->group('s3', 'proxy-doctor');
@@ -570,7 +586,8 @@ it('s3 node categories for s3 role node includes proxy', function (): void {
     $runner = app(DoctorReportRunner::class);
     $categories = $runner->categoriesForNode($node);
 
-    expect($categories)->toContain('node')
+    expect($categories)
+        ->toContain('node')
         ->toContain('tool')
         ->toContain('proxy');
 })->group('s3', 'proxy-doctor');
@@ -671,9 +688,15 @@ it('s3 restore router_route_orphaned removes the s3.orbit service route row', fu
 
     $result = $probe->restore($router, $entry);
 
-    expect($result)->not->toBeNull()
-        ->and($result['key'])->toBe(S3ProxyDoctorProbe::RouterRouteOrphanedKey)
-        ->and($result['status'])->toBe('completed')
-        ->and($result['mode'])->toBe('fix')
-        ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())->toBeFalse();
+    expect($result)
+        ->not
+        ->toBeNull()
+        ->and($result['key'])
+        ->toBe(S3ProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result['status'])
+        ->toBe('completed')
+        ->and($result['mode'])
+        ->toBe('fix')
+        ->and(ProxyRoute::query()->where('domain', S3RouteRegistrar::ServiceDomain)->exists())
+        ->toBeFalse();
 })->group('s3', 'proxy-doctor');

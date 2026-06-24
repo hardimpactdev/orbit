@@ -194,13 +194,15 @@ final class FakeDoctrineController implements Loggable
 
 describe('LogActivity middleware', function (): void {
     beforeEach(function (): void {
-        Node::factory()->gateway()->create([
-            'name' => 'gw',
-            'host' => '10.6.0.1',
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.1',
-        ]);
+        Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'gw',
+                'host' => '10.6.0.1',
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.1',
+            ]);
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
             ->post('/_test/fake-write', FakeWriteController::class);
@@ -210,13 +212,15 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('logs an entry with causer hydrated from the authenticated node', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'caller',
-            'host' => LOG_TEST_WG_IP,
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => LOG_TEST_WG_IP,
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
@@ -236,13 +240,15 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('resumes correlation from X-Orbit-Request-Id header', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'caller',
-            'host' => LOG_TEST_WG_IP,
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => LOG_TEST_WG_IP,
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
@@ -255,13 +261,15 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('generates a fresh batch uuid when no header is supplied', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'caller',
-            'host' => LOG_TEST_WG_IP,
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => LOG_TEST_WG_IP,
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])
@@ -273,13 +281,15 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('does not log when controller does not implement Loggable', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'caller',
-            'host' => LOG_TEST_WG_IP,
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => LOG_TEST_WG_IP,
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
             ->get('/_test/no-log', fn () => response()->json(['ok' => true]));
@@ -293,13 +303,15 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('logs destructive effects', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'caller',
-            'host' => LOG_TEST_WG_IP,
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => LOG_TEST_WG_IP,
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
 
         Route::middleware([WireGuardIdentity::class, LogActivity::class])
             ->delete('/_test/fake-destructive', FakeDestructiveController::class);
@@ -317,13 +329,15 @@ describe('LogActivity middleware', function (): void {
     });
 
     it('uses the doctrine Loggable method names when writing activity', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'caller',
-            'host' => LOG_TEST_WG_IP,
-            'orbit_path' => '/home/test/orbit',
-            'status' => 'active',
-            'wireguard_address' => LOG_TEST_WG_IP,
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'caller',
+                'host' => LOG_TEST_WG_IP,
+                'orbit_path' => '/home/test/orbit',
+                'status' => 'active',
+                'wireguard_address' => LOG_TEST_WG_IP,
+            ]);
 
         $this
             ->withServerVariables(['REMOTE_ADDR' => LOG_TEST_WG_IP])

@@ -271,7 +271,7 @@ final class WgEasyVpnBackend implements VpnBackend
             throw new RuntimeException('VPN backend authentication failed.');
         }
 
-        $cookie = (string) $response->header('Set-Cookie');
+        $cookie = $response->header('Set-Cookie');
 
         if (preg_match('/wg-easy=([^;]+)/', $cookie, $matches) !== 1) {
             throw new RuntimeException('VPN backend authentication failed.');
@@ -283,18 +283,18 @@ final class WgEasyVpnBackend implements VpnBackend
     private function argon2Hash(string $password): string
     {
         $script = <<<'JS'
-const chunks = [];
-process.stdin.on('data', chunk => chunks.push(chunk));
-process.stdin.on('end', async () => {
-  try {
-    const argon2 = require('argon2');
-    console.log(await argon2.hash(Buffer.concat(chunks).toString()));
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
-  }
-});
-JS;
+            const chunks = [];
+            process.stdin.on('data', chunk => chunks.push(chunk));
+            process.stdin.on('end', async () => {
+              try {
+                const argon2 = require('argon2');
+                console.log(await argon2.hash(Buffer.concat(chunks).toString()));
+              } catch (error) {
+                console.error(error.message);
+                process.exit(1);
+              }
+            });
+            JS;
 
         $result = Process::timeout(15)
             ->input($password)
@@ -370,7 +370,10 @@ JS;
         string $failureMessage,
         array $transportOptions = [],
     ): void {
-        if (! $this->localExecutor instanceof RemoteLocalExecutor || ! $this->vpnNodeResolver instanceof VpnNodeResolver) {
+        if (
+            ! $this->localExecutor instanceof RemoteLocalExecutor
+            || ! $this->vpnNodeResolver instanceof VpnNodeResolver
+        ) {
             throw new WgEasyStatePreflightFailed($failureMessage);
         }
 
@@ -482,8 +485,10 @@ final class WgEasyStatePreflightFailed extends RuntimeException
     /**
      * @param  array<string, mixed>  $meta
      */
-    public function __construct(string $message, public readonly array $meta = [])
-    {
+    public function __construct(
+        string $message,
+        public readonly array $meta = [],
+    ) {
         parent::__construct($message);
     }
 }

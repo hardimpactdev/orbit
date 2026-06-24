@@ -175,7 +175,9 @@ final class AppSetupStepController implements Loggable
         }
 
         if (! $app->node instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", ['app' => $app->name]);
+            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
+                'app' => $app->name,
+            ]);
         }
 
         /** @var mixed $caller */
@@ -266,10 +268,15 @@ final class AppSetupStepController implements Loggable
 
     private function stepNotFound(int $id, string $app): JsonResponse
     {
-        return $this->error('app_setup.step_not_found', "Setup step '{$id}' not found for app '{$app}'.", [
-            'step_id' => $id,
-            'app' => $app,
-        ], 404);
+        return $this->error(
+            'app_setup.step_not_found',
+            "Setup step '{$id}' not found for app '{$app}'.",
+            [
+                'step_id' => $id,
+                'app' => $app,
+            ],
+            404,
+        );
     }
 
     /**

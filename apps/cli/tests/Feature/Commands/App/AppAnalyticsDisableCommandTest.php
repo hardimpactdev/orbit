@@ -25,13 +25,20 @@ describe('AppAnalyticsDisableCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/analytics/disable'
-            && $request->data() === []);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/analytics/disable'
+                && $request->data() === []
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['binding']['enabled'])->toBeFalse()
-            ->and($decoded['success']['data']['binding']['public_hosts'])->toBe([]);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['binding']['enabled'])
+            ->toBeFalse()
+            ->and($decoded['success']['data']['binding']['public_hosts'])
+            ->toBe([]);
     });
 
     it('renders disable responses in human mode', function (): void {
@@ -50,13 +57,20 @@ describe('AppAnalyticsDisableCommand', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('binding:')
-            ->and($output)->toContain('  app: docs')
-            ->and($output)->toContain('  enabled: false')
-            ->and($output)->toContain('  internal_host: analytics.orbit')
-            ->and($output)->toContain('  public_hosts: []')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('binding:')
+            ->and($output)
+            ->toContain('  app: docs')
+            ->and($output)
+            ->toContain('  enabled: false')
+            ->and($output)
+            ->toContain('  internal_host: analytics.orbit')
+            ->and($output)
+            ->toContain('  public_hosts: []')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {
@@ -70,8 +84,11 @@ describe('AppAnalyticsDisableCommand', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 });

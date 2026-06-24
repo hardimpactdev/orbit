@@ -37,14 +37,17 @@ final class AddProxyRouteRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'domain' => $this->domain,
-            'node' => $this->node,
-            'upstream' => $this->upstream,
-            'redirect' => $this->redirect,
-            'code' => $this->code,
-            'force' => $this->force,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'domain' => $this->domain,
+                'node' => $this->node,
+                'upstream' => $this->upstream,
+                'redirect' => $this->redirect,
+                'code' => $this->code,
+                'force' => $this->force,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ProxyRouteMutationResponse

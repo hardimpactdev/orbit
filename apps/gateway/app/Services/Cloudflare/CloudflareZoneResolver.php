@@ -9,7 +9,9 @@ use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareZoneResolver
 {
-    public function __construct(private CloudflareClient $client) {}
+    public function __construct(
+        private CloudflareClient $client,
+    ) {}
 
     /**
      * @return array{id: string, name: string, status: string}

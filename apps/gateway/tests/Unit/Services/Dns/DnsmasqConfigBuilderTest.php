@@ -8,15 +8,22 @@ use App\Services\Dns\DnsmasqConfigBuilder;
 use Illuminate\Database\Eloquent\Collection;
 
 it('renders only the resolver baseline when fleet has no resolvable nodes', function (): void {
-    $config = (new DnsmasqConfigBuilder)->build(new Collection);
+    $config = new DnsmasqConfigBuilder()->build(new Collection);
 
-    expect($config)->toContain('no-resolv')
-        ->and($config)->toContain('server=1.1.1.1')
-        ->and($config)->toContain('server=8.8.8.8')
-        ->and($config)->toContain('conf-dir=/etc/dnsmasq.d/,*.conf')
-        ->and($config)->toContain('log-queries')
-        ->and($config)->toContain('log-facility=-')
-        ->and($config)->not->toContain('address=/');
+    expect($config)
+        ->toContain('no-resolv')
+        ->and($config)
+        ->toContain('server=1.1.1.1')
+        ->and($config)
+        ->toContain('server=8.8.8.8')
+        ->and($config)
+        ->toContain('conf-dir=/etc/dnsmasq.d/,*.conf')
+        ->and($config)
+        ->toContain('log-queries')
+        ->and($config)
+        ->toContain('log-facility=-')
+        ->and($config)
+        ->not->toContain('address=/');
 });
 
 it('emits one address line per node with both tld and wireguard address', function (): void {
@@ -25,12 +32,16 @@ it('emits one address line per node with both tld and wireguard address', functi
         new Node(['name' => 'app-1', 'tld' => 'app-1.test', 'wireguard_address' => '10.6.0.3']),
     ]);
 
-    $config = (new DnsmasqConfigBuilder)->build($nodes);
+    $config = new DnsmasqConfigBuilder()->build($nodes);
 
-    expect($config)->toContain('address=/gateway/10.6.0.2')
-        ->and($config)->toContain('local=/gateway/')
-        ->and($config)->toContain('address=/app-1.test/10.6.0.3')
-        ->and($config)->toContain('local=/app-1.test/');
+    expect($config)
+        ->toContain('address=/gateway/10.6.0.2')
+        ->and($config)
+        ->toContain('local=/gateway/')
+        ->and($config)
+        ->toContain('address=/app-1.test/10.6.0.3')
+        ->and($config)
+        ->toContain('local=/app-1.test/');
 });
 
 it('emits concrete orbit node-host records for active nodes with tld and wireguard address', function (): void {
@@ -39,10 +50,9 @@ it('emits concrete orbit node-host records for active nodes with tld and wiregua
         new Node(['name' => 'app-1', 'tld' => 'test', 'wireguard_address' => '10.6.0.7']),
     ]);
 
-    $config = (new DnsmasqConfigBuilder)->build($nodes);
+    $config = new DnsmasqConfigBuilder()->build($nodes);
 
-    expect($config)->toContain('address=/orbit.mini/10.6.0.8')
-        ->and($config)->toContain('address=/orbit.test/10.6.0.7');
+    expect($config)->toContain('address=/orbit.mini/10.6.0.8')->and($config)->toContain('address=/orbit.test/10.6.0.7');
 });
 
 it('skips orbit node-host records that would collide with router-owned orbit service routes', function (): void {
@@ -54,10 +64,12 @@ it('skips orbit node-host records that would collide with router-owned orbit ser
     ]);
     $route->setRelation('node', $router);
 
-    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$route]));
+    $config = new DnsmasqConfigBuilder()->build(new Collection([$router]), new Collection([$route]));
 
-    expect($config)->toContain('address=/orbit/10.6.0.2')
-        ->and($config)->not->toContain('address=/orbit.orbit/10.6.0.2');
+    expect($config)
+        ->toContain('address=/orbit/10.6.0.2')
+        ->and($config)
+        ->not->toContain('address=/orbit.orbit/10.6.0.2');
 });
 
 it('emits router-owned orbit service routes as an orbit tld mapping to the router wireguard address', function (): void {
@@ -69,11 +81,14 @@ it('emits router-owned orbit service routes as an orbit tld mapping to the route
     ]);
     $route->setRelation('node', $router);
 
-    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$route]));
+    $config = new DnsmasqConfigBuilder()->build(new Collection([$router]), new Collection([$route]));
 
-    expect($config)->toContain('address=/orbit/10.6.0.2')
-        ->and($config)->toContain('local=/orbit/')
-        ->and($config)->not->toContain('address=/metrics.orbit/');
+    expect($config)
+        ->toContain('address=/orbit/10.6.0.2')
+        ->and($config)
+        ->toContain('local=/orbit/')
+        ->and($config)
+        ->not->toContain('address=/metrics.orbit/');
 });
 
 it('emits a single private orbit tld mapping for multiple router-owned orbit service routes', function (): void {
@@ -91,10 +106,15 @@ it('emits a single private orbit tld mapping for multiple router-owned orbit ser
     ]);
     $analyticsRoute->setRelation('node', $router);
 
-    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$metricsRoute, $analyticsRoute]));
+    $config = new DnsmasqConfigBuilder()->build(
+        new Collection([$router]),
+        new Collection([$metricsRoute, $analyticsRoute]),
+    );
 
-    expect($config)->toContain('address=/orbit/10.6.0.2')
-        ->and(substr_count($config, 'address=/orbit/10.6.0.2'))->toBe(1);
+    expect($config)
+        ->toContain('address=/orbit/10.6.0.2')
+        ->and(substr_count($config, 'address=/orbit/10.6.0.2'))
+        ->toBe(1);
 });
 
 it('resolves router-owned orbit service routes without requiring a loaded node relation', function (): void {
@@ -107,10 +127,9 @@ it('resolves router-owned orbit service routes without requiring a loaded node r
         'kind' => 'proxy',
     ]);
 
-    $config = (new DnsmasqConfigBuilder)->build(new Collection([$router]), new Collection([$route]));
+    $config = new DnsmasqConfigBuilder()->build(new Collection([$router]), new Collection([$route]));
 
-    expect($config)->toContain('address=/orbit/10.6.0.2')
-        ->and($config)->toContain('local=/orbit/');
+    expect($config)->toContain('address=/orbit/10.6.0.2')->and($config)->toContain('local=/orbit/');
 });
 
 it('skips nodes missing tld', function (): void {
@@ -119,10 +138,12 @@ it('skips nodes missing tld', function (): void {
         new Node(['name' => 'app-untagged', 'tld' => null, 'wireguard_address' => '10.6.0.3']),
     ]);
 
-    $config = (new DnsmasqConfigBuilder)->build($nodes);
+    $config = new DnsmasqConfigBuilder()->build($nodes);
 
-    expect($config)->toContain('address=/gateway/10.6.0.2')
-        ->and($config)->not->toContain('10.6.0.3');
+    expect($config)
+        ->toContain('address=/gateway/10.6.0.2')
+        ->and($config)
+        ->not->toContain('10.6.0.3');
 });
 
 it('skips nodes missing wireguard address', function (): void {
@@ -131,10 +152,12 @@ it('skips nodes missing wireguard address', function (): void {
         new Node(['name' => 'app-pending', 'tld' => 'pending.test', 'wireguard_address' => null]),
     ]);
 
-    $config = (new DnsmasqConfigBuilder)->build($nodes);
+    $config = new DnsmasqConfigBuilder()->build($nodes);
 
-    expect($config)->toContain('address=/app-1.test/10.6.0.3')
-        ->and($config)->not->toContain('pending.test');
+    expect($config)
+        ->toContain('address=/app-1.test/10.6.0.3')
+        ->and($config)
+        ->not->toContain('pending.test');
 });
 
 it('emits address lines in stable alphabetical order by tld', function (): void {
@@ -144,17 +167,22 @@ it('emits address lines in stable alphabetical order by tld', function (): void 
         new Node(['name' => 'm-app', 'tld' => 'mu', 'wireguard_address' => '10.6.0.6']),
     ]);
 
-    $config = (new DnsmasqConfigBuilder)->build($nodes);
+    $config = new DnsmasqConfigBuilder()->build($nodes);
 
     $alphaPos = strpos($config, 'address=/alpha/');
     $muPos = strpos($config, 'address=/mu/');
     $zetaPos = strpos($config, 'address=/zeta/');
 
-    expect($alphaPos)->toBeInt()
-        ->and($muPos)->toBeInt()
-        ->and($zetaPos)->toBeInt()
-        ->and($alphaPos)->toBeLessThan($muPos)
-        ->and($muPos)->toBeLessThan($zetaPos);
+    expect($alphaPos)
+        ->toBeInt()
+        ->and($muPos)
+        ->toBeInt()
+        ->and($zetaPos)
+        ->toBeInt()
+        ->and($alphaPos)
+        ->toBeLessThan($muPos)
+        ->and($muPos)
+        ->toBeLessThan($zetaPos);
 });
 
 it('produces byte-identical output for identical inputs', function (): void {
@@ -163,14 +191,14 @@ it('produces byte-identical output for identical inputs', function (): void {
         new Node(['name' => 'app-1', 'tld' => 'app-1.test', 'wireguard_address' => '10.6.0.3']),
     ]);
 
-    $first = (new DnsmasqConfigBuilder)->build($nodes);
-    $second = (new DnsmasqConfigBuilder)->build($nodes);
+    $first = new DnsmasqConfigBuilder()->build($nodes);
+    $second = new DnsmasqConfigBuilder()->build($nodes);
 
     expect($first)->toBe($second);
 });
 
 it('terminates with a trailing newline', function (): void {
-    $config = (new DnsmasqConfigBuilder)->build(new Collection);
+    $config = new DnsmasqConfigBuilder()->build(new Collection);
 
     expect(str_ends_with($config, "\n"))->toBeTrue();
 });

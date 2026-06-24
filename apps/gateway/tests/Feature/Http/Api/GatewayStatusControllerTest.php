@@ -11,7 +11,8 @@ describe('GatewayStatusController', function (): void {
     it('returns 200 with a canonical success envelope', function (): void {
         $response = $this->getJson('/api/status');
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonStructure([
                 'success' => [
                     'data' => [
@@ -30,22 +31,30 @@ describe('GatewayStatusController', function (): void {
             ->assertJsonPath('success.data.version', config('app.version', '0.1.0'));
 
         $time = $response->json('success.data.time');
-        expect($time)->toBeString()
-            ->and((int) strtotime((string) $time))->toBeGreaterThan(0);
+        expect($time)
+            ->toBeString()
+            ->and((int) strtotime((string) $time))
+            ->toBeGreaterThan(0);
     });
 
     it('does not require WireGuard peer authentication', function (): void {
         // Send the request with no REMOTE_ADDR header (no WireGuard peer).
-        $response = test()->call('GET', '/api/status', [], [], [], [
-            'HTTP_ACCEPT' => 'application/json',
-        ]);
+        $response = test()->call(
+            'GET',
+            '/api/status',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'application/json',
+            ],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.version', config('app.version', '0.1.0'));
     });
 
     it('is registered under the api.status route name', function (): void {
-        expect(route('api.status'))->toBeString()
-            ->and(route('api.status'))->toEndWith('/api/status');
+        expect(route('api.status'))->toBeString()->and(route('api.status'))->toEndWith('/api/status');
     });
 });

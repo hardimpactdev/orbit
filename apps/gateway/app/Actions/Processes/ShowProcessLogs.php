@@ -32,10 +32,14 @@ final readonly class ShowProcessLogs
         $result = $this->remoteShell->run($target['node'], $target['script']);
 
         if (! $result->successful()) {
-            throw new GatewayApiException('The runtime backend could not read the process log.', 'process.log_read_failed', [
-                'process' => $name,
-                'runtime_unit' => $target['runtime_unit'],
-            ]);
+            throw new GatewayApiException(
+                'The runtime backend could not read the process log.',
+                'process.log_read_failed',
+                [
+                    'process' => $name,
+                    'runtime_unit' => $target['runtime_unit'],
+                ],
+            );
         }
 
         $parsedLines = $this->parseLines($result->output());
@@ -75,10 +79,14 @@ final readonly class ShowProcessLogs
         $exitCode = $this->remoteShellStream->stream($target['node'], $target['script'], $onOutput);
 
         if ($exitCode !== 0) {
-            throw new GatewayApiException('The runtime backend could not stream the process log.', 'process.log_read_failed', [
-                'process' => $target['process']->name,
-                'runtime_unit' => $target['runtime_unit'],
-            ]);
+            throw new GatewayApiException(
+                'The runtime backend could not stream the process log.',
+                'process.log_read_failed',
+                [
+                    'process' => $target['process']->name,
+                    'runtime_unit' => $target['runtime_unit'],
+                ],
+            );
         }
     }
 
@@ -97,7 +105,11 @@ final readonly class ShowProcessLogs
         $process = $context->lifecycleProcesses($name)->first();
 
         if (! $process instanceof Process) {
-            throw new GatewayApiException("Process '{$name}' not found for {$context->label()}.", 'process.not_found', $context->errorMeta($name));
+            throw new GatewayApiException(
+                "Process '{$name}' not found for {$context->label()}.",
+                'process.not_found',
+                $context->errorMeta($name),
+            );
         }
 
         $app = $context->runtimeApp();

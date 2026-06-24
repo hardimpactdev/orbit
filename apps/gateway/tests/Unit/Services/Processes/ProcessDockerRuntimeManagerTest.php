@@ -29,13 +29,23 @@ it('converges a missing docker process container through the convergence resourc
     $outcome = new ProcessDockerRuntimeManager($shell, new DockerCommandBuilder)
         ->apply($node, $container);
 
-    expect($outcome)->toBe(ProcessDockerContainerApplyOutcome::Created)
-        ->and($shell->scripts[0])->toBe("docker network inspect 'orbit-network'")
-        ->and($shell->scripts[1])->toBe("docker network create --label 'orbit.managed=true' --label 'orbit.network.kind=runtime' 'orbit-network'")
-        ->and($shell->scripts[2])->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'")
-        ->and($shell->scripts[3])->toStartWith('docker create')
-        ->and($shell->scripts[3])->not->toContain('docker start')
-        ->and($shell->options)->toBe([
+    expect($outcome)
+        ->toBe(ProcessDockerContainerApplyOutcome::Created)
+        ->and($shell->scripts[0])
+        ->toBe("docker network inspect 'orbit-network'")
+        ->and($shell->scripts[1])
+        ->toBe(
+            "docker network create --label 'orbit.managed=true' --label 'orbit.network.kind=runtime' 'orbit-network'",
+        )
+        ->and($shell->scripts[2])
+        ->toBe("docker container inspect --format '{{json .}}' 'orbit_docs_main_queue'")
+        ->and($shell->scripts[3])
+        ->toStartWith('docker create')
+        ->and($shell->scripts[3])
+        ->not
+        ->toContain('docker start')
+        ->and($shell->options)
+        ->toBe([
             ['throw' => false],
             ['throw' => false],
             ['throw' => false],
@@ -67,8 +77,10 @@ it('wraps docker process container apply failures with the existing had-existing
         new ProcessDockerRuntimeManager($shell, new DockerCommandBuilder)
             ->apply($node, $container);
     } catch (ProcessDockerContainerApplyException $exception) {
-        expect($exception->hadExistingContainer)->toBeTrue()
-            ->and($exception->getMessage())->toBe('Failed to remove drifted orbit_docs_main_queue container on app-dev-1: permission denied');
+        expect($exception->hadExistingContainer)
+            ->toBeTrue()
+            ->and($exception->getMessage())
+            ->toBe('Failed to remove drifted orbit_docs_main_queue container on app-dev-1: permission denied');
 
         return;
     }
@@ -114,7 +126,9 @@ final class ProcessDockerRuntimeManagerShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

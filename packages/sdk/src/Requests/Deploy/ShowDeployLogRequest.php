@@ -28,11 +28,14 @@ final class ShowDeployLogRequest extends GatewayRequest
 
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'step' => $this->step,
-            'lines' => $this->lines,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'step' => $this->step,
+                'lines' => $this->lines,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): DeployResponse

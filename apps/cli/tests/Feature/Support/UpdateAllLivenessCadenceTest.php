@@ -7,16 +7,18 @@ require_once dirname(__DIR__, 2).'/Support/update_all_liveness_cadence.php';
 it('rejects spinner transitions that arrive before the cadence floor', function (): void {
     $result = validateUpdateAllLivenessCadence(100_000);
 
-    expect($result['cadence_ok'])->toBeFalse()
-        ->and($result['reason'])->toContain('before')
-        ->and($result['first_transition_us'])->toBe(100_000);
+    expect($result['cadence_ok'])
+        ->toBeFalse()
+        ->and($result['reason'])
+        ->toContain('before')
+        ->and($result['first_transition_us'])
+        ->toBe(100_000);
 });
 
 it('accepts spinner transitions that arrive around the 300ms cadence window', function (): void {
     $result = validateUpdateAllLivenessCadence(320_000);
 
-    expect($result['cadence_ok'])->toBeTrue()
-        ->and($result['first_transition_us'])->toBe(320_000);
+    expect($result['cadence_ok'])->toBeTrue()->and($result['first_transition_us'])->toBe(320_000);
 });
 
 it('records the first stable-row transition from polling observations', function (): void {
@@ -36,10 +38,14 @@ it('records the first stable-row transition from polling observations', function
 
     $result = validateUpdateAllLivenessCadence($state['first_transition_us']);
 
-    expect($result['cadence_ok'])->toBeTrue()
-        ->and($state['first_transition_us'])->toBe(300_000)
-        ->and($state['transition_count'])->toBe(1)
-        ->and($state['max_transition_gap_us'])->toBe(300_000);
+    expect($result['cadence_ok'])
+        ->toBeTrue()
+        ->and($state['first_transition_us'])
+        ->toBe(300_000)
+        ->and($state['transition_count'])
+        ->toBe(1)
+        ->and($state['max_transition_gap_us'])
+        ->toBe(300_000);
 });
 
 it('accepts cadence state when a late anchor undercounts the first transition but later gaps prove the interval', function (): void {
@@ -49,8 +55,7 @@ it('accepts cadence state when a late anchor undercounts the first transition bu
         'transition_count' => 4,
     ]);
 
-    expect($result['cadence_ok'])->toBeTrue()
-        ->and($result['first_transition_us'])->toBe(184_000);
+    expect($result['cadence_ok'])->toBeTrue()->and($result['first_transition_us'])->toBe(184_000);
 });
 
 it('rejects cadence state when every observed transition remains below the cadence floor', function (): void {
@@ -60,6 +65,5 @@ it('rejects cadence state when every observed transition remains below the caden
         'transition_count' => 4,
     ]);
 
-    expect($result['cadence_ok'])->toBeFalse()
-        ->and($result['reason'])->toContain('before');
+    expect($result['cadence_ok'])->toBeFalse()->and($result['reason'])->toContain('before');
 });

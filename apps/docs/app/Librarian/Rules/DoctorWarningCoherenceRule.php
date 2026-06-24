@@ -68,7 +68,9 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
                         $findings[] = $this->finding(
                             $file,
                             $example->line,
-                            "Warning code `{$code}` uses unknown doctor family `".(is_scalar($family) ? (string) $family : gettype($family)).'`.',
+                            "Warning code `{$code}` uses unknown doctor family `"
+                            .(is_scalar($family) ? (string) $family : gettype($family))
+                            .'`.',
                         );
 
                         continue;
@@ -129,11 +131,19 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
                     }
 
                     if (str_contains($nextCommand, '--fix') && ! $issue->hasFix) {
-                        $findings[] = $this->finding($file, $example->line, "Warning code `{$code}` points at --fix but is not listed in the {$family} doctor fix map.");
+                        $findings[] = $this->finding(
+                            $file,
+                            $example->line,
+                            "Warning code `{$code}` points at --fix but is not listed in the {$family} doctor fix map.",
+                        );
                     }
 
                     if (str_contains($nextCommand, '--adopt') && ! $issue->hasAdopt) {
-                        $findings[] = $this->finding($file, $example->line, "Warning code `{$code}` points at --adopt but is not listed in the {$family} doctor adopt map.");
+                        $findings[] = $this->finding(
+                            $file,
+                            $example->line,
+                            "Warning code `{$code}` points at --adopt but is not listed in the {$family} doctor adopt map.",
+                        );
                     }
                 }
             }
@@ -145,8 +155,12 @@ final readonly class DoctorWarningCoherenceRule implements GroupedRule
     /**
      * @param  array<string, array{family?: ?string, kind?: string, allowed_next_commands?: list<string>}>  $warningCodes
      */
-    private function isRegisteredCommandHandoff(array $warningCodes, string $code, string $family, string $nextCommand): bool
-    {
+    private function isRegisteredCommandHandoff(
+        array $warningCodes,
+        string $code,
+        string $family,
+        string $nextCommand,
+    ): bool {
         $warning = $warningCodes[$code] ?? null;
 
         if ($warning === null) {

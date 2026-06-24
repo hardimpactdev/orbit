@@ -109,9 +109,10 @@ final class ToolShowCommand extends GatewayCommand
             $host = is_string($endpoint['host'] ?? null) ? $endpoint['host'] : null;
             $port = is_scalar($endpoint['port'] ?? null) ? (string) $endpoint['port'] : null;
 
-            $labels[] = $host !== null && $port !== null
-                ? "{$name} ({$host}:{$port})"
-                : $name;
+            $labels[] =
+                $host !== null && $port !== null
+                    ? "{$name} ({$host}:{$port})"
+                    : $name;
         }
 
         return $labels === [] ? null : implode(', ', $labels);

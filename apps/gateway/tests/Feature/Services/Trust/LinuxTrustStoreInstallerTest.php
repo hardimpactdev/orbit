@@ -36,8 +36,12 @@ describe('LinuxTrustStoreInstaller', function (): void {
 
         $this->installer->trustCa($this->caPath, $this->label);
 
-        Process::assertRan(fn ($process) => str_contains($process->command, 'sudo cp')
-            && str_contains($process->command, 'sudo update-ca-certificates'));
+        Process::assertRan(
+            fn ($process) => (
+                str_contains($process->command, 'sudo cp')
+                && str_contains($process->command, 'sudo update-ca-certificates')
+            ),
+        );
     });
 
     it('throws TrustStoreInstallException when trust command fails', function (): void {
@@ -63,7 +67,6 @@ describe('LinuxTrustStoreInstaller', function (): void {
             $logs[] = $message;
         });
 
-        expect($logs)->toHaveCount(1)
-            ->and($logs[0])->toContain('cp');
+        expect($logs)->toHaveCount(1)->and($logs[0])->toContain('cp');
     });
 });

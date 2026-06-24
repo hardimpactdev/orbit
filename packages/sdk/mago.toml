@@ -1,0 +1,17 @@
+version = "1.40.1"
+php-version = "8.5"
+
+[source]
+paths = ["src", "tests"]
+includes = ["vendor"]
+excludes = ["build"]
+
+[formatter]
+preset = "laravel"
+
+[analyzer]
+baseline = "mago-analyzer-baseline.toml"
+
+[linter]
+baseline = "mago-linter-baseline.toml"
+integrations = ["laravel", "pest", "phpunit"]

@@ -58,10 +58,14 @@ class GatewayApiContainerInstaller
 
         $caddyLeaf = $this->installCaddyReadableLeaf($leaf, $wireguardAddress);
 
-        $this->runRequiredWithInput('sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null', $this->gatewayApiCaddyfile(
-            certPath: $caddyLeaf['cert'],
-            keyPath: $caddyLeaf['key'],
-        ), 'write Orbit API Caddy config');
+        $this->runRequiredWithInput(
+            'sudo tee /etc/caddy/orbit/orbit-api.caddy > /dev/null',
+            $this->gatewayApiCaddyfile(
+                certPath: $caddyLeaf['cert'],
+                keyPath: $caddyLeaf['key'],
+            ),
+            'write Orbit API Caddy config',
+        );
         $this->runRequired(CaddyTool::reloadCommand($this->containerNames->caddy()), 'reload orbit-caddy container');
     }
 
@@ -137,7 +141,10 @@ class GatewayApiContainerInstaller
     {
         $container = OrbitCaddyContainer::forPrivateNode($wireguardAddress, $this->containerNames);
 
-        $this->runRequired('sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites', 'prepare Caddy config directories');
+        $this->runRequired(
+            'sudo install -d -m 0755 /etc/caddy /etc/caddy/orbit /etc/caddy/sites',
+            'prepare Caddy config directories',
+        );
         $this->ensureGlobalCaddyfile();
 
         $script = $this->caddyTool->updateScript(['container' => $container->spec()]);
@@ -153,37 +160,37 @@ class GatewayApiContainerInstaller
         $port = self::GatewayApiPort;
 
         return <<<CADDY
-:80 {
-    request_header -X-Forwarded-For
-    request_header -X-Real-IP
-    request_header -Forwarded
-    request_header -X-Orbit-WireGuard-Ip
+            :80 {
+                request_header -X-Forwarded-For
+                request_header -X-Real-IP
+                request_header -Forwarded
+                request_header -X-Orbit-WireGuard-Ip
 
-    reverse_proxy http://{$gatewayAlias}:{$port} {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Forwarded-Proto http
-        header_up X-Orbit-WireGuard-Ip {remote_host}
-    }
-}
+                reverse_proxy http://{$gatewayAlias}:{$port} {
+                    flush_interval -1
+                    header_up Host {host}
+                    header_up X-Forwarded-Proto http
+                    header_up X-Orbit-WireGuard-Ip {remote_host}
+                }
+            }
 
-:443 {
-    tls {$certPath} {$keyPath}
+            :443 {
+                tls {$certPath} {$keyPath}
 
-    request_header -X-Forwarded-For
-    request_header -X-Real-IP
-    request_header -Forwarded
-    request_header -X-Orbit-WireGuard-Ip
+                request_header -X-Forwarded-For
+                request_header -X-Real-IP
+                request_header -Forwarded
+                request_header -X-Orbit-WireGuard-Ip
 
-    reverse_proxy http://{$gatewayAlias}:{$port} {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Forwarded-Proto https
-        header_up X-Orbit-WireGuard-Ip {remote_host}
-    }
-}
+                reverse_proxy http://{$gatewayAlias}:{$port} {
+                    flush_interval -1
+                    header_up Host {host}
+                    header_up X-Forwarded-Proto https
+                    header_up X-Orbit-WireGuard-Ip {remote_host}
+                }
+            }
 
-CADDY;
+            CADDY;
     }
 
     private function ensureGlobalCaddyfile(): void

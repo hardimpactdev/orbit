@@ -24,7 +24,11 @@ final class CfDnsRemoveCommand extends CloudflareGatewayCommand
 
     public function handle(): int
     {
-        $recordId = $this->requiredArgument('record-id', 'record_id', 'A Cloudflare DNS record ID and zone are required.');
+        $recordId = $this->requiredArgument(
+            'record-id',
+            'record_id',
+            'A Cloudflare DNS record ID and zone are required.',
+        );
 
         if (is_int($recordId)) {
             return $recordId;
@@ -36,7 +40,9 @@ final class CfDnsRemoveCommand extends CloudflareGatewayCommand
             return $this->failValidation('zone', 'A Cloudflare DNS record ID and zone are required.');
         }
 
-        $consent = $this->confirmDestructive('Removing a Cloudflare DNS record requires --force in non-interactive mode.');
+        $consent = $this->confirmDestructive(
+            'Removing a Cloudflare DNS record requires --force in non-interactive mode.',
+        );
 
         if (is_int($consent)) {
             return $consent;

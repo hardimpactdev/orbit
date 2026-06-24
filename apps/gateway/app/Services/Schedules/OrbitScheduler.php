@@ -92,7 +92,11 @@ final readonly class OrbitScheduler
             ->where('enabled', true)
             ->where('status', 'expected')
             ->get()
-            ->filter(fn (Schedule $schedule): bool => $this->interval->isDue($schedule->interval, $schedule->timezone, $now))
+            ->filter(fn (Schedule $schedule): bool => $this->interval->isDue(
+                $schedule->interval,
+                $schedule->timezone,
+                $now,
+            ))
             ->values()
             ->all();
     }

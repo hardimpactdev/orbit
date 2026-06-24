@@ -27,11 +27,14 @@ final class ChangeVpnWebUiPasswordRequest extends GatewayRequest
 
     protected function defaultBody(): array
     {
-        return array_filter([
-            'password' => $this->password,
-            'force' => $this->force,
-            'totp' => $this->totp,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'password' => $this->password,
+                'force' => $this->force,
+                'totp' => $this->totp,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): VpnPasswordResponse
@@ -39,7 +42,7 @@ final class ChangeVpnWebUiPasswordRequest extends GatewayRequest
         $data = $this->unwrapData($response);
 
         return new VpnPasswordResponse(
-            vpn: is_array($data['vpn'] ?? null) ? $data['vpn'] : [],
+            vpn: $this->stringKeyedArray($data['vpn'] ?? []),
         );
     }
 }

@@ -166,13 +166,19 @@ final class IncusProvider implements E2EProvider
                     try {
                         $instance->delete();
                     } catch (Throwable $exception) {
-                        fwrite(STDERR, "Could not delete E2E instance {$instance->name()}: {$exception->getMessage()}\n");
+                        fwrite(
+                            STDERR,
+                            "Could not delete E2E instance {$instance->name()}: {$exception->getMessage()}\n",
+                        );
                     }
                 }
 
                 $this->host->run(sprintf('rm -rf %s', escapeshellarg($run->workDirectory)), timeoutSeconds: 120);
             } catch (Throwable $exception) {
-                fwrite(STDERR, "Could not remove E2E run directory {$run->workDirectory}: {$exception->getMessage()}\n");
+                fwrite(
+                    STDERR,
+                    "Could not remove E2E run directory {$run->workDirectory}: {$exception->getMessage()}\n",
+                );
             }
         } finally {
             $this->releaseResourceLease();
@@ -181,9 +187,7 @@ final class IncusProvider implements E2EProvider
 
     private function aliasFor(E2EImage $image): string
     {
-        return match ($image) {
-            E2EImage::Base => $this->config->baseImage,
-        };
+        return match ($image) { E2EImage::Base => $this->config->baseImage };
     }
 
     private function ensureResourceLease(): void

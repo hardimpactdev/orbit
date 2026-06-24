@@ -145,8 +145,12 @@ abstract class DatabaseConnectionApiController implements Loggable
         return $this->authorizationFailed($caller, $permission, $servingNode);
     }
 
-    protected function authorizeConnectionPermission(Node $caller, DatabaseConnection $connection, string $permission, bool $requireAll = false): ?JsonResponse
-    {
+    protected function authorizeConnectionPermission(
+        Node $caller,
+        DatabaseConnection $connection,
+        string $permission,
+        bool $requireAll = false,
+    ): ?JsonResponse {
         if ($this->roles->nodeIsGateway($caller)) {
             return null;
         }
@@ -203,7 +207,12 @@ abstract class DatabaseConnectionApiController implements Loggable
      */
     protected function connectionServingNodes(DatabaseConnection $connection): array
     {
-        $connection->loadMissing(['node', 'targets.app.node', 'targets.workspace.app.node', 'instanceTargets.instance.app.node']);
+        $connection->loadMissing([
+            'node',
+            'targets.app.node',
+            'targets.workspace.app.node',
+            'instanceTargets.instance.app.node',
+        ]);
 
         $nodes = [];
 
@@ -212,12 +221,16 @@ abstract class DatabaseConnectionApiController implements Loggable
         }
 
         foreach ($connection->targets as $target) {
-            if ($target->app?->node instanceof Node) {
-                $nodes[$target->app->node->id] = $target->app->node;
+            $appNode = $target->app?->node;
+
+            if ($appNode instanceof Node) {
+                $nodes[$appNode->id] = $appNode;
             }
 
-            if ($target->workspace?->app?->node instanceof Node) {
-                $nodes[$target->workspace->app->node->id] = $target->workspace->app->node;
+            $workspaceNode = $target->workspace?->app?->node;
+
+            if ($workspaceNode instanceof Node) {
+                $nodes[$workspaceNode->id] = $workspaceNode;
             }
         }
 
@@ -276,18 +289,25 @@ abstract class DatabaseConnectionApiController implements Loggable
     /**
      * @param  list<string>  $servingNodes
      */
-    protected function authorizationFailed(Node $caller, string $permission, ?Node $servingNode = null, array $servingNodes = []): JsonResponse
-    {
+    protected function authorizationFailed(
+        Node $caller,
+        string $permission,
+        ?Node $servingNode = null,
+        array $servingNodes = [],
+    ): JsonResponse {
         return response()->json([
             'error' => [
                 'code' => 'authorization_failed',
                 'message' => 'This node is not authorized to manage database connections.',
-                'meta' => array_filter([
-                    'reason' => 'missing_permission',
-                    'missing_permission' => $permission,
-                    'serving_node' => $servingNode?->name,
-                    'serving_nodes' => $servingNodes === [] ? null : $servingNodes,
-                ], static fn (mixed $value): bool => $value !== null),
+                'meta' => array_filter(
+                    [
+                        'reason' => 'missing_permission',
+                        'missing_permission' => $permission,
+                        'serving_node' => $servingNode?->name,
+                        'serving_nodes' => $servingNodes === [] ? null : $servingNodes,
+                    ],
+                    static fn (mixed $value): bool => $value !== null,
+                ),
             ],
         ], 403);
     }
@@ -303,7 +323,7 @@ abstract class DatabaseConnectionApiController implements Loggable
         foreach (['slug', 'driver', 'host', 'database', 'path', 'username', 'password'] as $field) {
             $value = $this->stringValue($request->input($field));
 
-            if ($value !== null || (! $allowPartial && $request->has($field))) {
+            if ($value !== null || ! $allowPartial && $request->has($field)) {
                 $payload[$field] = $value;
             }
         }
@@ -326,11 +346,14 @@ abstract class DatabaseConnectionApiController implements Loggable
             }
         }
 
-        $this->setActivityProperties($request, array_filter([
-            'slug' => $payload['slug'] ?? $this->stringValue($request->route('connection')),
-            'driver' => $payload['driver'] ?? null,
-            'node' => $this->stringValue($request->input('node')),
-        ], static fn (mixed $value): bool => $value !== null));
+        $this->setActivityProperties($request, array_filter(
+            [
+                'slug' => $payload['slug'] ?? $this->stringValue($request->route('connection')),
+                'driver' => $payload['driver'] ?? null,
+                'node' => $this->stringValue($request->input('node')),
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        ));
 
         return $payload;
     }
@@ -345,36 +368,61 @@ abstract class DatabaseConnectionApiController implements Loggable
         $workspace = $this->stringValue($request->input('workspace'));
 
         if ($instance !== null && $app === null) {
-            return $this->validationFailed('app', 'The --app option is required when --instance is used.', ['field' => 'app'], 422);
+            return $this->validationFailed(
+                'app',
+                'The --app option is required when --instance is used.',
+                ['field' => 'app'],
+                422,
+            );
         }
 
-        if (($app === null && $workspace === null) || ($app !== null && $workspace !== null)) {
-            return $this->validationFailed('scope', 'Exactly one of app or workspace is required.', ['field' => 'scope'], 422);
+        if ($app === null && $workspace === null || $app !== null && $workspace !== null) {
+            return $this->validationFailed(
+                'scope',
+                'Exactly one of app or workspace is required.',
+                ['field' => 'scope'],
+                422,
+            );
         }
 
         if (! $this->resolver->validEnvPrefix($envPrefix)) {
-            return $this->validationFailed('env_prefix', 'Environment prefix must start with a letter and use only uppercase letters, digits, or underscores.', [
-                'field' => 'env_prefix',
-                'value' => $envPrefix,
-            ], 422);
+            return $this->validationFailed(
+                'env_prefix',
+                'Environment prefix must start with a letter and use only uppercase letters, digits, or underscores.',
+                [
+                    'field' => 'env_prefix',
+                    'value' => $envPrefix,
+                ],
+                422,
+            );
         }
 
         if ($app !== null) {
             $appModel = $this->resolver->resolveApp($app);
 
             if ($appModel === null) {
-                return $this->validationFailed('app', "Invalid value for --app: '{$app}'.", ['field' => 'app', 'value' => $app], 422);
+                return $this->validationFailed(
+                    'app',
+                    "Invalid value for --app: '{$app}'.",
+                    ['field' => 'app', 'value' => $app],
+                    422,
+                );
             }
 
             if ($instance !== null) {
                 $instanceModel = $this->resolver->resolveAppInstance($appModel, $instance);
 
                 if (! $instanceModel instanceof AppInstance) {
-                    return $this->validationFailed('instance', "Invalid value for --instance: '{$instance}'.", [
-                        'field' => 'instance',
-                        'app' => $appModel->name,
-                        'value' => $instance,
-                    ], 422);
+                    return $this->validationFailed(
+                        'instance',
+                        "Invalid value for --instance: '{$instance}'.",
+                        [
+                            'field' => 'instance',
+                            'app' => $appModel->name,
+                            'value' => $instance,
+                        ],
+                        422,
+                    );
                 }
 
                 return ['app_instance', $instanceModel];
@@ -386,14 +434,22 @@ abstract class DatabaseConnectionApiController implements Loggable
         $workspaceModel = $this->resolver->resolveWorkspace($workspace);
 
         if ($workspaceModel === null) {
-            return $this->validationFailed('workspace', "Invalid value for --workspace: '{$workspace}'.", ['field' => 'workspace', 'value' => $workspace], 422);
+            return $this->validationFailed(
+                'workspace',
+                "Invalid value for --workspace: '{$workspace}'.",
+                ['field' => 'workspace', 'value' => $workspace],
+                422,
+            );
         }
 
         return ['workspace', $workspaceModel];
     }
 
-    protected function connectionResponse(Request $request, DatabaseConnection|DatabaseConnectionRegistryFailure $result, int $successStatus): JsonResponse
-    {
+    protected function connectionResponse(
+        Request $request,
+        DatabaseConnection|DatabaseConnectionRegistryFailure $result,
+        int $successStatus,
+    ): JsonResponse {
         if ($result instanceof DatabaseConnectionRegistryFailure) {
             return $this->failureResponse($result);
         }
@@ -459,16 +515,30 @@ abstract class DatabaseConnectionApiController implements Loggable
                 'describe' => $this->executor->describe($connection, $table ?? ''),
                 default => $this->executor->schema($connection),
             };
-            $this->setActivityProperties($request, $this->audit->schema($operation, $connection, $target, $result['meta'], $table, [
-                'exit_status' => 'success',
-            ]));
+            $this->setActivityProperties($request, $this->audit->schema(
+                $operation,
+                $connection,
+                $target,
+                $result['meta'],
+                $table,
+                [
+                    'exit_status' => 'success',
+                ],
+            ));
 
             return $this->operationResponse($result['data'], $result['meta'], $connection);
         } catch (DatabaseQueryRunnerFailure $failure) {
-            $this->setActivityProperties($request, $this->audit->schema($operation, $connection, $target, $failure->meta, $table, [
-                'exit_status' => 'failed',
-                'error_code' => $failure->errorCode,
-            ]));
+            $this->setActivityProperties($request, $this->audit->schema(
+                $operation,
+                $connection,
+                $target,
+                $failure->meta,
+                $table,
+                [
+                    'exit_status' => 'failed',
+                    'error_code' => $failure->errorCode,
+                ],
+            ));
 
             return $this->queryFailureResponse($failure);
         }
@@ -494,13 +564,16 @@ abstract class DatabaseConnectionApiController implements Loggable
 
     protected function queryFailureResponse(DatabaseQueryRunnerFailure $failure): JsonResponse
     {
-        return response()->json([
-            'error' => [
-                'code' => $failure->errorCode,
-                'message' => $failure->getMessage(),
-                'meta' => $failure->meta === [] ? (object) [] : $failure->meta,
+        return response()->json(
+            [
+                'error' => [
+                    'code' => $failure->errorCode,
+                    'message' => $failure->getMessage(),
+                    'meta' => $failure->meta === [] ? (object) [] : $failure->meta,
+                ],
             ],
-        ], $failure->errorCode === 'database_query.write_not_allowed' ? 422 : 400);
+            $failure->errorCode === 'database_query.write_not_allowed' ? 422 : 400,
+        );
     }
 
     protected function failureResponse(DatabaseConnectionRegistryFailure $failure): JsonResponse

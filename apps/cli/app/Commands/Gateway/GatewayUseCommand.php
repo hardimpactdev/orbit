@@ -61,9 +61,11 @@ final class GatewayUseCommand extends LocalOnlyCommand
 
         $url = is_string($payload['url'] ?? null) ? $payload['url'] : null;
 
-        $this->line($url !== null
-            ? "Now using gateway '{$name}' ({$url})."
-            : "Now using gateway '{$name}'.");
+        $this->line(
+            $url !== null
+                ? "Now using gateway '{$name}' ({$url})."
+                : "Now using gateway '{$name}'.",
+        );
 
         return self::SUCCESS;
     }
@@ -74,14 +76,17 @@ final class GatewayUseCommand extends LocalOnlyCommand
      */
     private function gatewayPayload(string $name, array $entry): array
     {
-        return array_filter([
-            'name' => $name,
-            'active' => true,
-            'url' => is_string($entry['url'] ?? null) ? $entry['url'] : null,
-            'wireguard_ip' => is_string($entry['wireguard_ip'] ?? null) ? $entry['wireguard_ip'] : null,
-            'ca_fingerprint' => is_string($entry['ca_fingerprint'] ?? null) ? $entry['ca_fingerprint'] : null,
-            'timeout' => is_numeric($entry['timeout'] ?? null) ? (int) $entry['timeout'] : null,
-            'self_mode' => is_string($entry['self_mode'] ?? null) ? $entry['self_mode'] : null,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'name' => $name,
+                'active' => true,
+                'url' => is_string($entry['url'] ?? null) ? $entry['url'] : null,
+                'wireguard_ip' => is_string($entry['wireguard_ip'] ?? null) ? $entry['wireguard_ip'] : null,
+                'ca_fingerprint' => is_string($entry['ca_fingerprint'] ?? null) ? $entry['ca_fingerprint'] : null,
+                'timeout' => is_numeric($entry['timeout'] ?? null) ? (int) $entry['timeout'] : null,
+                'self_mode' => is_string($entry['self_mode'] ?? null) ? $entry['self_mode'] : null,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 }

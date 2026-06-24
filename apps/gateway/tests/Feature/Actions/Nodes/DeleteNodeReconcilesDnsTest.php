@@ -10,8 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    $this->reconciler = new class extends DnsmasqReconciler
-    {
+    $this->reconciler = new class extends DnsmasqReconciler {
         public int $reconciles = 0;
 
         public function __construct() {}

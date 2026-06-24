@@ -79,12 +79,14 @@ it('persists generated credentials to the seaweedfs NodeTool row on first config
 
     $fields = $seaweedfsTool->credentials['fields'] ?? null;
 
-    expect($fields)->toBeArray()
-        ->and($fields['access_key_id'])->toBeString()->not->toBeEmpty()
-        ->and($fields['secret_access_key'])->toBeString()->not->toBeEmpty()
-        ->and($fields['region'])->toBe('orbit')
-        ->and($fields['endpoint'])->toBe('https://s3.orbit')
-        ->and($fields['bucket_style'])->toBe('path');
+    expect($fields)
+        ->toBeArray()
+        ->and($fields['access_key_id'])
+        ->toBeString()
+        ->not->toBeEmpty()->and($fields['secret_access_key'])->toBeString()
+        ->not->toBeEmpty()->and($fields['region'])->toBe('orbit')->and($fields['endpoint'])->toBe(
+            'https://s3.orbit',
+        )->and($fields['bucket_style'])->toBe('path');
 });
 
 // ---------------------------------------------------------------------------
@@ -114,9 +116,12 @@ it('does not rotate existing credentials on re-configure', function (): void {
 
     $fields = $seaweedfsTool->credentials['fields'] ?? null;
 
-    expect($fields)->toBeArray()
-        ->and($fields['access_key_id'])->toBe('STOREDACCESSKEYID1234')
-        ->and($fields['secret_access_key'])->toBe('stored-secret-access-key-value-here');
+    expect($fields)
+        ->toBeArray()
+        ->and($fields['access_key_id'])
+        ->toBe('STOREDACCESSKEYID1234')
+        ->and($fields['secret_access_key'])
+        ->toBe('stored-secret-access-key-value-here');
 });
 
 it('does not change stored credentials when called multiple times (idempotent)', function (): void {
@@ -145,8 +150,10 @@ it('does not change stored credentials when called multiple times (idempotent)',
 
     $secondFields = $afterSecond->credentials['fields'];
 
-    expect($secondFields['access_key_id'])->toBe($firstFields['access_key_id'])
-        ->and($secondFields['secret_access_key'])->toBe($firstFields['secret_access_key']);
+    expect($secondFields['access_key_id'])
+        ->toBe($firstFields['access_key_id'])
+        ->and($secondFields['secret_access_key'])
+        ->toBe($firstFields['secret_access_key']);
 });
 
 // ---------------------------------------------------------------------------
@@ -159,9 +166,12 @@ it('returns an S3ServiceConfiguratorResult with a rendered runtime container', f
 
     $result = makeConfigurator()->configure($node, $assignment);
 
-    expect($result)->toBeInstanceOf(S3ServiceConfiguratorResult::class)
-        ->and($result->runtimeContainer)->toBeInstanceOf(S3RuntimeContainer::class)
-        ->and($result->serviceConfig)->toBeInstanceOf(S3ServiceConfig::class);
+    expect($result)
+        ->toBeInstanceOf(S3ServiceConfiguratorResult::class)
+        ->and($result->runtimeContainer)
+        ->toBeInstanceOf(S3RuntimeContainer::class)
+        ->and($result->serviceConfig)
+        ->toBeInstanceOf(S3ServiceConfig::class);
 });
 
 it('renders the chrislusf/seaweedfs:4.33 image in the runtime container', function (): void {
@@ -179,8 +189,10 @@ it('binds the runtime container to the WireGuard address on port 8333', function
 
     $result = makeConfigurator()->configure($node, $assignment);
 
-    expect($result->runtimeContainer->publishedPorts())->toContain('10.6.0.44:8333:8333')
-        ->and($result->runtimeContainer->environment())->toBe([]);
+    expect($result->runtimeContainer->publishedPorts())
+        ->toContain('10.6.0.44:8333:8333')
+        ->and($result->runtimeContainer->environment())
+        ->toBe([]);
 });
 
 it('mounts the role data path at /data in the runtime container', function (): void {
@@ -280,19 +292,22 @@ it('persists full metadata to the seaweedfs NodeTool config', function (): void 
         ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($seaweedfsTool->config)->toMatchArray([
-        'data_path' => '/srv/orbit/s3/data',
-        'service_host' => 's3.orbit',
-        'backend_host' => 'storage-1.s3.orbit',
-        'container_name' => S3RuntimeContainer::ContainerName,
-        'image' => 'chrislusf/seaweedfs:4.33',
-        'command' => 'weed server -filer -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json',
-        'api_port' => 8333,
-        'mode' => 'head',
-        'runtime' => 'docker-container',
-        's3_config_path' => '/srv/orbit/s3/data/s3.json',
-        'public_hosts' => [],
-    ])->and($seaweedfsTool->expected_state)->toBe('installed');
+    expect($seaweedfsTool->config)
+        ->toMatchArray([
+            'data_path' => '/srv/orbit/s3/data',
+            'service_host' => 's3.orbit',
+            'backend_host' => 'storage-1.s3.orbit',
+            'container_name' => S3RuntimeContainer::ContainerName,
+            'image' => 'chrislusf/seaweedfs:4.33',
+            'command' => 'weed server -filer -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json',
+            'api_port' => 8333,
+            'mode' => 'head',
+            'runtime' => 'docker-container',
+            's3_config_path' => '/srv/orbit/s3/data/s3.json',
+            'public_hosts' => [],
+        ])
+        ->and($seaweedfsTool->expected_state)
+        ->toBe('installed');
 });
 
 it('returns the persisted seaweedfs NodeTool in the result', function (): void {
@@ -301,7 +316,10 @@ it('returns the persisted seaweedfs NodeTool in the result', function (): void {
 
     $result = makeConfigurator()->configure($node, $assignment);
 
-    expect($result->seaweedfsTool)->toBeInstanceOf(NodeTool::class)
-        ->and($result->seaweedfsTool->name)->toBe('seaweedfs')
-        ->and($result->seaweedfsTool->node_id)->toBe($node->id);
+    expect($result->seaweedfsTool)
+        ->toBeInstanceOf(NodeTool::class)
+        ->and($result->seaweedfsTool->name)
+        ->toBe('seaweedfs')
+        ->and($result->seaweedfsTool->node_id)
+        ->toBe($node->id);
 });

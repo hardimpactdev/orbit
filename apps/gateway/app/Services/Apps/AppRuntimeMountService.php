@@ -24,7 +24,8 @@ final readonly class AppRuntimeMountService
 
         $app->loadMissing('runtimeMounts');
 
-        return $app->runtimeMounts
+        return $app
+            ->runtimeMounts
             ->map(fn (AppRuntimeMount $mount): array => $this->mountPayload($mount))
             ->values()
             ->all();
@@ -65,7 +66,8 @@ final readonly class AppRuntimeMountService
     {
         $target = $this->normalizePath($target, 'target');
 
-        $mount = $app->runtimeMounts()
+        $mount = $app
+            ->runtimeMounts()
             ->where('target', $target)
             ->first();
 
@@ -92,7 +94,8 @@ final readonly class AppRuntimeMountService
      */
     public function list(App $app): Collection
     {
-        return $app->runtimeMounts()
+        return $app
+            ->runtimeMounts()
             ->orderBy('target')
             ->get();
     }
@@ -105,7 +108,7 @@ final readonly class AppRuntimeMountService
         return [
             'source' => $mount->source,
             'target' => $mount->target,
-            'read_only' => (bool) $mount->read_only,
+            'read_only' => $mount->read_only,
         ];
     }
 
@@ -179,15 +182,14 @@ final readonly class AppRuntimeMountService
     {
         $app->loadMissing('node.roleAssignments');
 
-        return $app->node instanceof Node
-            && $app->node->hasActiveRole(NodeRoleName::AppDevelopment->value);
+        return $app->node instanceof Node && $app->node->hasActiveRole(NodeRoleName::AppDevelopment->value);
     }
 
     private function nodeUser(App $app): string
     {
         $app->loadMissing('node');
 
-        $nodeUser = trim((string) ($app->node?->user ?: 'orbit'));
+        $nodeUser = trim($app->node?->user ?: 'orbit');
 
         if ($nodeUser === '' || preg_match('/^[A-Za-z0-9._-]+$/', $nodeUser) !== 1) {
             throw $this->validationFailure(
@@ -274,7 +276,7 @@ final readonly class AppRuntimeMountService
             '/data',
         ];
 
-        $appPath = rtrim((string) $app->path, '/');
+        $appPath = rtrim($app->path, '/');
 
         if ($appPath !== '') {
             $reservedTargets[] = $appPath;
@@ -296,8 +298,11 @@ final readonly class AppRuntimeMountService
     /**
      * @param  array<string, mixed>  $meta
      */
-    private function validationFailure(string $reason, string $message, array $meta = []): AppRuntimeMountValidationException
-    {
+    private function validationFailure(
+        string $reason,
+        string $message,
+        array $meta = [],
+    ): AppRuntimeMountValidationException {
         return new AppRuntimeMountValidationException(
             reason: $reason,
             message: $message,

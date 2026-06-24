@@ -36,9 +36,20 @@ final readonly class ToolsFixer
         }
 
         $result = match ($entry->key) {
-            'tool.config_missing', 'tool.config_mismatch' => $this->runRepairCommand($tool, $this->configRepairCommand($tool), $entry),
-            'tool.credentials_missing', 'tool.credentials_mismatch' => $this->runRepairCommand($tool, $this->secretRepairCommand($tool), $entry),
-            'tool.container_missing', 'tool.container_not_running', 'tool.container_spec_mismatch' => $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry),
+            'tool.config_missing', 'tool.config_mismatch' => $this->runRepairCommand(
+                $tool,
+                $this->configRepairCommand($tool),
+                $entry,
+            ),
+            'tool.credentials_missing', 'tool.credentials_mismatch' => $this->runRepairCommand(
+                $tool,
+                $this->secretRepairCommand($tool),
+                $entry,
+            ),
+            'tool.container_missing',
+            'tool.container_not_running',
+            'tool.container_spec_mismatch',
+                => $this->runRepairCommand($tool, $this->containerRepairCommand($tool), $entry),
             'tool.agent_route_missing' => $this->fixAgentRoute($tool, $entry),
             'tool.agent_credentials_missing' => $this->fixAgentCredentials($tool, $entry),
             'tool.agent_user_missing' => $this->fixAgentUser($tool, $entry),
@@ -69,7 +80,7 @@ final readonly class ToolsFixer
     {
         return [
             'family' => 'tool',
-            'node' => $tool->node->name,
+            'node' => $tool->node?->name,
             'code' => $entry->key,
             'key' => $entry->key,
             'mode' => 'fix',
@@ -178,7 +189,7 @@ final readonly class ToolsFixer
                 return null;
             }
 
-            $existingOwner = is_array($existing->config) ? ($existing->config['owner_name'] ?? null) : null;
+            $existingOwner = is_array($existing->config) ? $existing->config['owner_name'] ?? null : null;
 
             if ($existingOwner !== $tool->name) {
                 return null;
@@ -191,7 +202,7 @@ final readonly class ToolsFixer
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
             [
-                'node_id' => $tool->node->id,
+                'node_id' => $tool->node?->id,
                 'app_id' => null,
                 'workspace_id' => null,
                 'owner_type' => 'tool',
@@ -274,7 +285,11 @@ final readonly class ToolsFixer
      */
     private function fixAgentUser(NodeTool $tool, DriftEntry $entry): array
     {
-        $this->remoteShell->run($tool->node, 'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent', ['throw' => true]);
+        $this->remoteShell->run(
+            $tool->node,
+            'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent',
+            ['throw' => true],
+        );
         $this->remoteShell->run($tool->node, 'sudo passwd -l agent >/dev/null 2>&1 || true', ['throw' => true]);
 
         return $this->fixResult($tool, $entry);
@@ -286,7 +301,7 @@ final readonly class ToolsFixer
 
         if ($assignment instanceof NodeRoleAssignment) {
             $settings = $assignment->settings ?? [];
-            $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+            $tld = is_array($settings) ? $settings['tld'] ?? null : null;
 
             if (is_string($tld) && trim($tld) !== '') {
                 return trim($tld);

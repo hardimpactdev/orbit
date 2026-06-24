@@ -42,7 +42,6 @@ describe('node role assignment service', function (): void {
     it('activates a compatible role after convergence succeeds', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-
         ]);
 
         $assignment = app(NodeRoleAssignmentService::class)->add($node, 'database', []);
@@ -52,7 +51,8 @@ describe('node role assignment service', function (): void {
             ->and($assignment->role)
             ->toBe('database')
             ->and($assignment->converged_at)
-            ->not->toBeNull()
+            ->not
+            ->toBeNull()
             ->and($assignment->last_error)
             ->toBeNull()
             ->and($assignment->settings)
@@ -62,7 +62,6 @@ describe('node role assignment service', function (): void {
     it('rejects duplicate role assignment before hitting the unique index', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-
         ]);
 
         NodeRoleAssignment::factory()->create([
@@ -128,9 +127,12 @@ describe('node role assignment service', function (): void {
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'test']))
             ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
 
-        expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->fresh()->last_error)->toBeNull();
+        expect($assignment->fresh()->settings)
+            ->toBe(['tld' => 'old'])
+            ->and($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->fresh()->last_error)
+            ->toBeNull();
     });
 
     it('syncs node tld from active app-dev and database roles', function (): void {
@@ -203,21 +205,21 @@ describe('node role assignment service', function (): void {
             ->where('serving_node_id', $node->id)
             ->first();
 
-        expect($selfGrant?->permissions)->toBe(['workspace:setup'])
-            ->and($selfGrant?->custom_permissions)->toBe([]);
+        expect($selfGrant?->permissions)->toBe(['workspace:setup'])->and($selfGrant?->custom_permissions)->toBe([]);
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 
-        expect(NodeAccess::query()
-            ->where('consumer_node_id', $node->id)
-            ->where('serving_node_id', $node->id)
-            ->exists())->toBeFalse();
+        expect(
+            NodeAccess::query()
+                ->where('consumer_node_id', $node->id)
+                ->where('serving_node_id', $node->id)
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('materializes docker as a desired tool for database roles', function (): void {
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
-
         ]);
 
         app(NodeRoleAssignmentService::class)->add($node, 'database', []);
@@ -227,12 +229,18 @@ describe('node role assignment service', function (): void {
             ->where('name', 'docker')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed')
-            ->and(NodeTool::query()
-                ->where('node_id', $node->id)
-                ->whereIn('name', ['mysql', 'postgres'])
-                ->exists())->toBeFalse();
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed')
+            ->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->whereIn('name', ['mysql', 'postgres'])
+                    ->exists(),
+            )
+            ->toBeFalse();
     });
 
     it('does not materialize sqlite3 as a desired tool for development app roles', function (): void {
@@ -279,10 +287,12 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node->refresh(), 'app-dev', force: true);
 
-        expect(NodeTool::query()
-            ->where('node_id', $node->id)
-            ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli'])
-            ->exists())->toBeFalse();
+        expect(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->whereIn('name', ['caddy', 'composer', 'laravel-installer', 'php-cli'])
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('materializes the production app runtime baseline as desired tools', function (): void {
@@ -339,8 +349,7 @@ describe('node role assignment service', function (): void {
             ->where('name', 'caddy')
             ->get();
 
-        expect($tools->pluck('name')->all())->toBe(['caddy'])
-            ->and($tools->first()?->expected_state)->toBe('installed');
+        expect($tools->pluck('name')->all())->toBe(['caddy'])->and($tools->first()?->expected_state)->toBe('installed');
     });
 
     it('rejects conflicting roles', function (): void {
@@ -420,8 +429,10 @@ describe('node role assignment service', function (): void {
             'ingress_node_id' => $node->id,
         ]);
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->settings)->toBe([
+        expect($assignment->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->settings)
+            ->toBe([
                 'ingress_node_id' => $node->id,
             ]);
     });
@@ -496,9 +507,12 @@ describe('node role assignment service', function (): void {
             'ingress_node_id' => $ingressNode->id,
         ]))->toThrow(InvalidArgumentException::class, 'The app-prod role requires an active ingress node.');
 
-        expect($assignment->fresh()->settings)->toBe(['ingress_node_id' => 999])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->fresh()->last_error)->toBeNull();
+        expect($assignment->fresh()->settings)
+            ->toBe(['ingress_node_id' => 999])
+            ->and($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->fresh()->last_error)
+            ->toBeNull();
     });
 
     it('rejects websocket assignment when redis node is not an active database node with a Redis process', function (callable $createRedisNode): void {
@@ -514,56 +528,78 @@ describe('node role assignment service', function (): void {
 
         expect($node->roleAssignments()->where('role', 'websocket')->exists())->toBeFalse();
     })->with([
-        'non-database node with redis process' => fn (): Node => tap(Node::factory()->create([
-            'platform' => 'ubuntu',
-            'status' => 'active',
-        ]), function (Node $node): void {
-            Process::factory()->forOwner($node)->create([
-                'name' => 'redis',
-                'runtime_config' => ['service' => 'redis'],
-            ]);
-        }),
-        'inactive database node with redis process' => fn (): Node => tap(Node::factory()->database()->create([
-            'platform' => 'ubuntu',
-            'status' => 'provisioning',
-        ]), function (Node $node): void {
-            Process::factory()->forOwner($node)->create([
-                'name' => 'redis',
-                'runtime_config' => ['service' => 'redis'],
-            ]);
-        }),
-        'database node without redis process' => fn (): Node => Node::factory()->database()->create([
-            'platform' => 'ubuntu',
-            'status' => 'active',
-        ]),
-        'database node with legacy redis tool row only' => fn (): Node => tap(Node::factory()->database()->create([
-            'platform' => 'ubuntu',
-            'status' => 'active',
-        ]), function (Node $node): void {
-            NodeTool::factory()->create([
-                'node_id' => $node->id,
-                'name' => 'redis',
-                'expected_state' => 'installed',
-            ]);
-        }),
+        'non-database node with redis process' => fn (): Node => tap(
+            Node::factory()->create([
+                'platform' => 'ubuntu',
+                'status' => 'active',
+            ]),
+            function (Node $node): void {
+                Process::factory()
+                    ->forOwner($node)
+                    ->create([
+                        'name' => 'redis',
+                        'runtime_config' => ['service' => 'redis'],
+                    ]);
+            },
+        ),
+        'inactive database node with redis process' => fn (): Node => tap(
+            Node::factory()
+                ->database()
+                ->create([
+                    'platform' => 'ubuntu',
+                    'status' => 'provisioning',
+                ]),
+            function (Node $node): void {
+                Process::factory()
+                    ->forOwner($node)
+                    ->create([
+                        'name' => 'redis',
+                        'runtime_config' => ['service' => 'redis'],
+                    ]);
+            },
+        ),
+        'database node without redis process' => fn (): Node => Node::factory()
+            ->database()
+            ->create([
+                'platform' => 'ubuntu',
+                'status' => 'active',
+            ]),
+        'database node with legacy redis tool row only' => fn (): Node => tap(
+            Node::factory()
+                ->database()
+                ->create([
+                    'platform' => 'ubuntu',
+                    'status' => 'active',
+                ]),
+            function (Node $node): void {
+                NodeTool::factory()->create([
+                    'node_id' => $node->id,
+                    'name' => 'redis',
+                    'expected_state' => 'installed',
+                ]);
+            },
+        ),
     ]);
 
     it('allows websocket assignment when redis node is an active database node with a Redis process', function (): void {
-        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct() {}
 
             public function converge(Node $node, NodeRoleAssignment $assignment): void {}
         });
 
-        $databaseNode = Node::factory()->database()->create([
-            'platform' => 'ubuntu',
-            'status' => 'active',
-        ]);
-        Process::factory()->forOwner($databaseNode)->create([
-            'name' => 'redis',
-            'runtime_config' => ['service' => 'redis'],
-        ]);
+        $databaseNode = Node::factory()
+            ->database()
+            ->create([
+                'platform' => 'ubuntu',
+                'status' => 'active',
+            ]);
+        Process::factory()
+            ->forOwner($databaseNode)
+            ->create([
+                'name' => 'redis',
+                'runtime_config' => ['service' => 'redis'],
+            ]);
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
@@ -573,26 +609,31 @@ describe('node role assignment service', function (): void {
             'redis_node_id' => $databaseNode->id,
         ]);
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->settings)->toBe(['redis_node_id' => $databaseNode->id]);
+        expect($assignment->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->settings)
+            ->toBe(['redis_node_id' => $databaseNode->id]);
     });
 
     it('rejects websocket updates with an invalid redis node and preserves the existing assignment', function (): void {
-        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct() {}
 
             public function converge(Node $node, NodeRoleAssignment $assignment): void {}
         });
 
-        $validRedisNode = Node::factory()->database()->create([
-            'platform' => 'ubuntu',
-            'status' => 'active',
-        ]);
-        Process::factory()->forOwner($validRedisNode)->create([
-            'name' => 'redis',
-            'runtime_config' => ['service' => 'redis'],
-        ]);
+        $validRedisNode = Node::factory()
+            ->database()
+            ->create([
+                'platform' => 'ubuntu',
+                'status' => 'active',
+            ]);
+        Process::factory()
+            ->forOwner($validRedisNode)
+            ->create([
+                'name' => 'redis',
+                'runtime_config' => ['service' => 'redis'],
+            ]);
         $invalidRedisNode = Node::factory()->create([
             'platform' => 'ubuntu',
             'status' => 'active',
@@ -617,9 +658,12 @@ describe('node role assignment service', function (): void {
             'redis_node_id' => $invalidRedisNode->id,
         ]))->toThrow(InvalidArgumentException::class, 'The websocket role requires redis_node_id to reference an active database node with a Redis process.');
 
-        expect($assignment->fresh()->settings)->toBe(['redis_node_id' => $validRedisNode->id])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->fresh()->last_error)->toBeNull();
+        expect($assignment->fresh()->settings)
+            ->toBe(['redis_node_id' => $validRedisNode->id])
+            ->and($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->fresh()->last_error)
+            ->toBeNull();
     });
 
     it('rejects pending and error role conflicts', function (string $status): void {
@@ -664,9 +708,12 @@ describe('node role assignment service', function (): void {
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']))
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' conflicts with {$status} role 'app-prod'.");
 
-        expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->fresh()->last_error)->toBeNull();
+        expect($assignment->fresh()->settings)
+            ->toBe(['tld' => 'old'])
+            ->and($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->fresh()->last_error)
+            ->toBeNull();
     })->with([
         NodeRoleStatus::Pending->value,
         NodeRoleStatus::Error->value,
@@ -725,8 +772,7 @@ describe('node role assignment service', function (): void {
     it('marks role as error when convergence fails', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
-        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct()
             {
                 parent::__construct(
@@ -851,10 +897,15 @@ describe('node role assignment service', function (): void {
 
         $assignment = app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']);
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->settings)->toBe(['tld' => 'new'])
-            ->and("{$configDir}/old.conf")->not->toBeFile()
-            ->and("{$configDir}/new.conf")->toBeFile();
+        expect($assignment->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->settings)
+            ->toBe(['tld' => 'new'])
+            ->and("{$configDir}/old.conf")
+            ->not
+            ->toBeFile()
+            ->and("{$configDir}/new.conf")
+            ->toBeFile();
     });
 
     it('rejects updates when a conflicting role is active', function (): void {
@@ -879,15 +930,17 @@ describe('node role assignment service', function (): void {
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, 'app-dev', ['tld' => 'new']))
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' conflicts with active role 'app-prod'.");
 
-        expect($assignment->fresh()->settings)->toBe(['tld' => 'old'])
-            ->and($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment->fresh()->last_error)->toBeNull();
+        expect($assignment->fresh()->settings)
+            ->toBe(['tld' => 'old'])
+            ->and($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($assignment->fresh()->last_error)
+            ->toBeNull();
     });
 
     it('rejects unsupported platforms', function (): void {
         $node = Node::factory()->create([
             'platform' => 'macos_15',
-
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, 'app-dev', ['tld' => 'test']))
@@ -898,10 +951,16 @@ describe('node role assignment service', function (): void {
         $node = Node::factory()->create(['platform' => 'ubuntu']);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->add($node, $role, []))
-            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+            ->toThrow(
+                InvalidArgumentException::class,
+                "Role '{$role}' is gateway-coupled and cannot be assigned independently.",
+            );
 
         expect(fn () => app(NodeRoleAssignmentService::class)->addDuringCreation($node, $role, []))
-            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+            ->toThrow(
+                InvalidArgumentException::class,
+                "Role '{$role}' is gateway-coupled and cannot be assigned independently.",
+            );
     })->with([
         'gateway' => 'gateway',
         'vpn' => 'vpn',
@@ -918,7 +977,10 @@ describe('node role assignment service', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->update($node, $role, []))
-            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+            ->toThrow(
+                InvalidArgumentException::class,
+                "Role '{$role}' is gateway-coupled and cannot be assigned independently.",
+            );
     })->with([
         'gateway' => 'gateway',
         'vpn' => 'vpn',
@@ -942,7 +1004,10 @@ describe('node role assignment service', function (): void {
         ]);
 
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, $role))
-            ->toThrow(InvalidArgumentException::class, "Role '{$role}' is gateway-coupled and cannot be assigned independently.");
+            ->toThrow(
+                InvalidArgumentException::class,
+                "Role '{$role}' is gateway-coupled and cannot be assigned independently.",
+            );
     })->with([
         'gateway' => 'gateway',
         'vpn' => 'vpn',
@@ -963,8 +1028,7 @@ describe('node role assignment service', function (): void {
             'wireguard_address' => '10.6.0.50',
         ]);
 
-        app()->instance(RemoteShell::class, new class implements RemoteShell
-        {
+        app()->instance(RemoteShell::class, new class implements RemoteShell {
             public function run(Node $node, string $script, array $options = []): RemoteShellResult
             {
                 return new RemoteShellResult(
@@ -978,8 +1042,7 @@ describe('node role assignment service', function (): void {
 
         $assignment = app(NodeRoleAssignmentService::class)->addDuringCreation($node, 'agent', ['tld' => 'agent']);
 
-        expect($assignment->role)->toBe('agent')
-            ->and($assignment->status)->toBe(NodeRoleStatus::Active);
+        expect($assignment->role)->toBe('agent')->and($assignment->status)->toBe(NodeRoleStatus::Active);
     });
 
     it('blocks removal when dependents exist and force is false', function (): void {
@@ -1006,8 +1069,7 @@ describe('node role assignment service', function (): void {
             'role' => 'app-dev',
             'status' => NodeRoleStatus::Active->value,
         ]);
-        $inspector = new class extends NodeRoleDependencyInspector
-        {
+        $inspector = new class extends NodeRoleDependencyInspector {
             public int $calls = 0;
 
             public bool $removed = false;
@@ -1029,9 +1091,12 @@ describe('node role assignment service', function (): void {
         expect(fn () => app(NodeRoleAssignmentService::class)->remove($node, 'app-dev'))
             ->toThrow(InvalidArgumentException::class, "Role 'app-dev' cannot be removed while dependents exist.");
 
-        expect($assignment->fresh()->status)->toBe(NodeRoleStatus::Active)
-            ->and($inspector->calls)->toBe(2)
-            ->and($inspector->removed)->toBeFalse();
+        expect($assignment->fresh()->status)
+            ->toBe(NodeRoleStatus::Active)
+            ->and($inspector->calls)
+            ->toBe(2)
+            ->and($inspector->removed)
+            ->toBeFalse();
     });
 
     it('requires force when purge data is requested', function (): void {
@@ -1059,16 +1124,21 @@ describe('node role assignment service', function (): void {
         $app = App::factory()->create([
             'node_id' => $node->id,
         ]);
-        ProxyRoute::factory()->forApp($app)->create([
-            'node_id' => $node->id,
-            'domain' => 'docs.test',
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'domain' => 'docs.test',
+            ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'app-dev', force: true);
 
-        expect(App::query()->whereKey($app->id)->exists())->toBeFalse()
-            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect(App::query()->whereKey($app->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
+            ->toBeFalse()
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
     });
 
     it('blocks ingress removal while public proxy route records depend on it', function (): void {
@@ -1086,12 +1156,14 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        ProxyRoute::factory()->forApp($app)->create([
-            'node_id' => $node->id,
-            'kind' => 'app',
-            'owner_type' => 'app',
-            'config' => ['placement' => 'ingress'],
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'kind' => 'app',
+                'owner_type' => 'app',
+                'config' => ['placement' => 'ingress'],
+            ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
@@ -1126,8 +1198,10 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'ingress');
 
-        expect(ProxyRoute::query()->where('node_id', $node->id)->count())->toBe(1)
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect(ProxyRoute::query()->where('node_id', $node->id)->count())
+            ->toBe(1)
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
     });
 
     it('forces ingress removal by deleting Orbit-owned public proxy route records', function (): void {
@@ -1145,12 +1219,14 @@ describe('node role assignment service', function (): void {
             'status' => NodeRoleStatus::Active->value,
         ]);
 
-        ProxyRoute::factory()->forApp($app)->create([
-            'node_id' => $node->id,
-            'kind' => 'app',
-            'owner_type' => 'app',
-            'config' => ['placement' => 'ingress'],
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'kind' => 'app',
+                'owner_type' => 'app',
+                'config' => ['placement' => 'ingress'],
+            ]);
         ProxyRoute::factory()->create([
             'node_id' => $node->id,
             'app_id' => $app->id,
@@ -1187,10 +1263,14 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'ingress', force: true);
 
-        expect(ProxyRoute::query()->where('node_id', $node->id)->count())->toBe(2)
-            ->and(ProxyRoute::query()->where('node_id', $node->id)->pluck('owner_type')->all())->toBe(['custom', 'custom'])
-            ->and(ProxyRoute::query()->count())->toBe(3)
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect(ProxyRoute::query()->where('node_id', $node->id)->count())
+            ->toBe(2)
+            ->and(ProxyRoute::query()->where('node_id', $node->id)->pluck('owner_type')->all())
+            ->toBe(['custom', 'custom'])
+            ->and(ProxyRoute::query()->count())
+            ->toBe(3)
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
     });
 
     it('removes Orbit-owned dependents before removing role baselines', function (): void {
@@ -1205,12 +1285,13 @@ describe('node role assignment service', function (): void {
         /** @var ArrayObject<int, string> $events */
         $events = new ArrayObject;
 
-        app()->instance(NodeRoleDependencyInspector::class, new class($events) extends NodeRoleDependencyInspector
-        {
+        app()->instance(NodeRoleDependencyInspector::class, new class($events) extends NodeRoleDependencyInspector {
             /**
              * @param  ArrayObject<int, string>  $events
              */
-            public function __construct(private readonly ArrayObject $events) {}
+            public function __construct(
+                private readonly ArrayObject $events,
+            ) {}
 
             public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
             {
@@ -1223,12 +1304,13 @@ describe('node role assignment service', function (): void {
             }
         });
 
-        app()->instance(NodeRoleBaselineConverger::class, new class($events) extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class($events) extends NodeRoleBaselineConverger {
             /**
              * @param  ArrayObject<int, string>  $events
              */
-            public function __construct(private readonly ArrayObject $events) {}
+            public function __construct(
+                private readonly ArrayObject $events,
+            ) {}
 
             public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void
             {
@@ -1253,16 +1335,21 @@ describe('node role assignment service', function (): void {
         $app = App::factory()->create([
             'node_id' => $node->id,
         ]);
-        ProxyRoute::factory()->forApp($app)->create([
-            'node_id' => $node->id,
-            'domain' => 'docs.test',
-        ]);
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'domain' => 'docs.test',
+            ]);
 
         app(NodeRoleAssignmentService::class)->remove($node, 'app-dev', force: true, purgeData: true);
 
-        expect(App::query()->whereKey($app->id)->exists())->toBeFalse()
-            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())->toBeFalse()
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect(App::query()->whereKey($app->id)->exists())
+            ->toBeFalse()
+            ->and(ProxyRoute::query()->where('domain', 'docs.test')->exists())
+            ->toBeFalse()
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
     });
 
     it('forces database role removal by deleting database dependents and clearing docker baseline intent', function (): void {
@@ -1273,10 +1360,12 @@ describe('node role assignment service', function (): void {
             'role' => 'database',
             'status' => NodeRoleStatus::Active->value,
         ]);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'postgres16',
-            'runtime_config' => ['service' => 'postgres'],
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'postgres16',
+                'runtime_config' => ['service' => 'postgres'],
+            ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
@@ -1285,9 +1374,12 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
 
-        expect(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())->toBeFalse()
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())
+            ->toBeFalse()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())
+            ->toBeFalse()
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
     });
 
     it('removes database dependents and passes purge intent when purge data is requested', function (): void {
@@ -1298,10 +1390,12 @@ describe('node role assignment service', function (): void {
             'role' => 'database',
             'status' => NodeRoleStatus::Active->value,
         ]);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'postgres16',
-            'runtime_config' => ['service' => 'postgres'],
-        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'postgres16',
+                'runtime_config' => ['service' => 'postgres'],
+            ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'docker',
@@ -1310,9 +1404,12 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true, purgeData: true);
 
-        expect(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())->toBeFalse()
-            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
-            ->and($node->fresh()->roleAssignments)->toHaveCount(0);
+        expect(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())
+            ->toBeFalse()
+            ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())
+            ->toBeFalse()
+            ->and($node->fresh()->roleAssignments)
+            ->toHaveCount(0);
     });
 
     it('leaves the assignment in error and keeps dependents intact when baseline removal fails', function (): void {
@@ -1326,12 +1423,13 @@ describe('node role assignment service', function (): void {
         $app = App::factory()->create([
             'node_id' => $node->id,
         ]);
-        ProxyRoute::factory()->forApp($app)->create([
-            'node_id' => $node->id,
-            'domain' => 'docs.test',
-        ]);
-        $inspector = new class extends NodeRoleDependencyInspector
-        {
+        ProxyRoute::factory()
+            ->forApp($app)
+            ->create([
+                'node_id' => $node->id,
+                'domain' => 'docs.test',
+            ]);
+        $inspector = new class extends NodeRoleDependencyInspector {
             public bool $removed = false;
 
             public function dependentSummaries(Node $node, NodeRoleAssignment $assignment): array
@@ -1346,8 +1444,7 @@ describe('node role assignment service', function (): void {
         };
         app()->instance(NodeRoleDependencyInspector::class, $inspector);
 
-        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct()
             {
                 parent::__construct(

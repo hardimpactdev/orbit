@@ -26,15 +26,22 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
         return $this->assertServiceName($serviceName);
     }
 
-    public function apply(Node $node, App $app, Process $process, ?Workspace $workspace = null, ?string $preApplyScript = null): bool
-    {
+    public function apply(
+        Node $node,
+        App $app,
+        Process $process,
+        ?Workspace $workspace = null,
+        ?string $preApplyScript = null,
+    ): bool {
         try {
             $runtimeUnit = $this->runtimeUnitName($app, $process, $workspace);
             $script = collect([
                 'set -euo pipefail',
                 $preApplyScript,
                 $this->applyScript($process, $runtimeUnit),
-            ])->filter(fn (?string $script): bool => $script !== null && trim($script) !== '')->implode(PHP_EOL);
+            ])
+                ->filter(fn (?string $script): bool => $script !== null && trim($script) !== '')
+                ->implode(PHP_EOL);
 
             return $this->remoteShell->run($node, $script)->successful();
         } catch (Throwable) {
@@ -44,7 +51,10 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function remove(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service rm '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run(
+            $node,
+            'docker service rm '.escapeshellarg($this->assertServiceName($runtimeUnit)),
+        )->successful();
     }
 
     public function cleanupScript(string $runtimeUnit): string
@@ -54,50 +64,71 @@ final readonly class DockerSwarmProcessRuntimeDriver implements ProcessRuntimeDr
 
     public function start(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service update --detach --replicas 1 '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run(
+            $node,
+            'docker service update --detach --replicas 1 '.escapeshellarg($this->assertServiceName($runtimeUnit)),
+        )->successful();
     }
 
     public function stop(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service update --detach --replicas 0 '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run(
+            $node,
+            'docker service update --detach --replicas 0 '.escapeshellarg($this->assertServiceName($runtimeUnit)),
+        )->successful();
     }
 
     public function restart(Node $node, string $runtimeUnit): bool
     {
-        return $this->remoteShell->run($node, 'docker service update --detach --force '.escapeshellarg($this->assertServiceName($runtimeUnit)))->successful();
+        return $this->remoteShell->run(
+            $node,
+            'docker service update --detach --force '.escapeshellarg($this->assertServiceName($runtimeUnit)),
+        )->successful();
     }
 
-    public function logScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string
-    {
+    public function logScript(
+        App $app,
+        Process $process,
+        ?Workspace $workspace,
+        string $runtimeUnit,
+        int $lines,
+        bool $follow,
+    ): string {
         return collect([
             'docker service logs',
             "--tail {$lines}",
             $follow ? '--follow' : null,
             escapeshellarg($this->assertServiceName($runtimeUnit)),
             '2>&1',
-        ])->filter()->implode(' ');
+        ])
+            ->filter()
+            ->implode(' ');
     }
 
     private function applyScript(Process $process, string $runtimeUnit): string
     {
         $config = $this->runtimeConfig($process);
-        $specHash = $this->optionalString($config, 'spec_hash') ?? $this->optionalString($this->stringMap($config['labels'] ?? []), 'orbit.process.spec_hash') ?? '';
+        $specHash =
+            $this->optionalString($config, 'spec_hash') ?? $this->optionalString(
+                $this->stringMap($config['labels'] ?? []),
+                'orbit.process.spec_hash',
+            ) ?? '';
 
         return sprintf(
             <<<'SH'
-needs_create=1
-if docker service inspect %1$s >/dev/null 2>&1; then
-  current_spec_hash="$(docker service inspect --format '{{ index .Spec.Labels "orbit.process.spec_hash" }}' %1$s 2>/dev/null || true)"
-  if [ "$current_spec_hash" = %2$s ]; then
-    needs_create=0
-  else
-    docker service rm %1$s
-  fi
-fi
-if [ "$needs_create" = 1 ]; then
-  %3$s
-fi
-SH,
+                needs_create=1
+                if docker service inspect %1$s >/dev/null 2>&1; then
+                  current_spec_hash="$(docker service inspect --format '{{ index .Spec.Labels "orbit.process.spec_hash" }}' %1$s 2>/dev/null || true)"
+                  if [ "$current_spec_hash" = %2$s ]; then
+                    needs_create=0
+                  else
+                    docker service rm %1$s
+                  fi
+                fi
+                if [ "$needs_create" = 1 ]; then
+                  %3$s
+                fi
+                SH,
             escapeshellarg($runtimeUnit),
             escapeshellarg($specHash),
             $this->createCommand($process, $runtimeUnit, $config),
@@ -177,7 +208,9 @@ SH,
         return match ($this->optionalString($config, 'command_mode') ?? 'shell') {
             'shell' => false,
             'image_entrypoint' => true,
-            default => throw new \InvalidArgumentException('Docker Swarm command_mode must be shell or image_entrypoint.'),
+            default => throw new \InvalidArgumentException(
+                'Docker Swarm command_mode must be shell or image_entrypoint.',
+            ),
         };
     }
 
@@ -209,7 +242,9 @@ SH,
             return $value;
         }
 
-        throw new \InvalidArgumentException("Process '{$process->name}' is missing runtime_config.{$key}; cannot render Docker Swarm service.");
+        throw new \InvalidArgumentException(
+            "Process '{$process->name}' is missing runtime_config.{$key}; cannot render Docker Swarm service.",
+        );
     }
 
     /**
@@ -289,11 +324,22 @@ SH,
             $source = is_string($mount['source'] ?? null) ? trim($mount['source']) : '';
             $target = is_string($mount['target'] ?? null) ? trim($mount['target']) : '';
 
-            if ($source === '' || $target === '' || ! str_starts_with($source, '/') || ! str_starts_with($target, '/')) {
+            if (
+                $source === ''
+                || $target === ''
+                || ! str_starts_with($source, '/')
+                || ! str_starts_with($target, '/')
+            ) {
                 return null;
             }
 
-            return 'type=bind,source='.$source.',target='.$target.((bool) ($mount['read_only'] ?? false) ? ',readonly' : '');
+            return (
+                'type=bind,source='
+                .$source
+                .',target='
+                .$target
+                .((bool) ($mount['read_only'] ?? false) ? ',readonly' : '')
+            );
         }, $value)));
     }
 
@@ -315,7 +361,7 @@ SH,
             $name = is_string($volume['name'] ?? null) ? trim($volume['name']) : null;
             $target = is_string($volume['target'] ?? null) ? trim($volume['target']) : null;
 
-            if (($source === null && $name === null) || $target === null || $target === '') {
+            if ($source === null && $name === null || $target === null || $target === '') {
                 return null;
             }
 

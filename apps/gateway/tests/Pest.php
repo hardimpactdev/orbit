@@ -69,17 +69,18 @@ ParallelRunner::resolveApplicationUsing(function (): Application {
 });
 
 /*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| The closure you provide to your test functions is always bound to a specific PHPUnit test
-| case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
-| need to change it using the "pest()" function to bind different classes or traits.
-|
-*/
+ |--------------------------------------------------------------------------
+ | Test Case
+ |--------------------------------------------------------------------------
+ |
+ | The closure you provide to your test functions is always bound to a specific PHPUnit test
+ | case class. By default, that class is "PHPUnit\Framework\TestCase". Of course, you may
+ | need to change it using the "pest()" function to bind different classes or traits.
+ |
+ */
 
-pest()->extend(TestCase::class)
+pest()
+    ->extend(TestCase::class)
     ->beforeEach(function (): void {
         if (orbitIsDnsCommandTest($this)) {
             $storagePath = orbitDnsTestStoragePath();
@@ -106,7 +107,8 @@ pest()->extend(TestCase::class)
 pest()->extend(TestCase::class, RefreshDatabase::class)
     ->in('Unit/Services/WireGuard');
 
-pest()->extend(TestCase::class)
+pest()
+    ->extend(TestCase::class)
     ->beforeEach(function (): void {
         if (env('ORBIT_E2E') !== '1' && orbitE2eRequiresEnvironment($this)) {
             $this->markTestSkipped('Set ORBIT_E2E=1 to run ephemeral E2E tests.');
@@ -116,26 +118,26 @@ pest()->extend(TestCase::class)
     ->in('E2E');
 
 /*
-|--------------------------------------------------------------------------
-| Expectations
-|--------------------------------------------------------------------------
-|
-| When you're writing tests, you often need to check that values meet certain conditions. The
-| "expect()" function gives you access to a set of "expectations" methods that you can use
-| to assert different things. Of course, you may extend the Expectation API at any time.
-|
-*/
+ |--------------------------------------------------------------------------
+ | Expectations
+ |--------------------------------------------------------------------------
+ |
+ | When you're writing tests, you often need to check that values meet certain conditions. The
+ | "expect()" function gives you access to a set of "expectations" methods that you can use
+ | to assert different things. Of course, you may extend the Expectation API at any time.
+ |
+ */
 
 /*
-|--------------------------------------------------------------------------
-| Functions
-|--------------------------------------------------------------------------
-|
-| While Pest is very powerful out-of-the-box, you may have some testing code specific to your
-| project that you don't want to repeat in every file. Here you can also expose helpers as
-| global functions to help you to reduce the number of lines of code in your test files.
-|
-*/
+ |--------------------------------------------------------------------------
+ | Functions
+ |--------------------------------------------------------------------------
+ |
+ | While Pest is very powerful out-of-the-box, you may have some testing code specific to your
+ | project that you don't want to repeat in every file. Here you can also expose helpers as
+ | global functions to help you to reduce the number of lines of code in your test files.
+ |
+ */
 
 /**
  * @param  array<string, mixed>|string|null  $body
@@ -212,8 +214,11 @@ function fakeGatewayCaRootThroughLaravelHttp(): void
  * @param  array<string, mixed>  $attributes
  * @param  array<string, mixed>  $settings
  */
-function createTestAppHostNode(array $attributes = [], string $role = 'app-dev', array $settings = ['tld' => 'test']): Node
-{
+function createTestAppHostNode(
+    array $attributes = [],
+    string $role = 'app-dev',
+    array $settings = ['tld' => 'test'],
+): Node {
     $node = Node::factory()->create([
         'status' => 'active',
         'tld' => $settings['tld'] ?? null,

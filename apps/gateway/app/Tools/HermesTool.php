@@ -32,63 +32,63 @@ final class HermesTool extends BaseTool
     public function installScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit install hermes
-set -e
-sudo -u agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
-sudo tee /usr/local/bin/hermes >/dev/null <<'SH'
-#!/usr/bin/env bash
-exec sudo -u agent -H /home/agent/.local/bin/hermes "$@"
-SH
-sudo chmod 0755 /usr/local/bin/hermes
-BASH;
+            #!/usr/bin/env bash
+            # orbit install hermes
+            set -e
+            sudo -u agent -H bash -lc 'curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash -s -- --skip-setup'
+            sudo tee /usr/local/bin/hermes >/dev/null <<'SH'
+            #!/usr/bin/env bash
+            exec sudo -u agent -H /home/agent/.local/bin/hermes "$@"
+            SH
+            sudo chmod 0755 /usr/local/bin/hermes
+            BASH;
     }
 
     public function removeScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit remove hermes
-set -e
-sudo -u agent -H bash -lc 'rm -rf "${HOME}/.hermes" 2>/dev/null || true'
-sudo -u agent -H bash -lc 'rm -f "${HOME}/.local/bin/hermes" 2>/dev/null || true'
-sudo rm -f /usr/local/bin/hermes
-BASH;
+            #!/usr/bin/env bash
+            # orbit remove hermes
+            set -e
+            sudo -u agent -H bash -lc 'rm -rf "${HOME}/.hermes" 2>/dev/null || true'
+            sudo -u agent -H bash -lc 'rm -f "${HOME}/.local/bin/hermes" 2>/dev/null || true'
+            sudo rm -f /usr/local/bin/hermes
+            BASH;
     }
 
     public function updateScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit update hermes
-set -e
-sudo -u agent -H bash -lc 'hermes update'
-BASH;
+            #!/usr/bin/env bash
+            # orbit update hermes
+            set -e
+            sudo -u agent -H bash -lc 'hermes update'
+            BASH;
     }
 
     public function credentialsScript(array $config = []): string
     {
         $hostname = $config['hostname'] ?? 'hermes.agent';
 
-        return <<<"BASH"
-cat <<EOF
-{
-  "url": "https://{$hostname}",
-  "username": "orbit",
-  "password": "<generated-password>"
-}
-EOF
-BASH;
+        return <<<BASH
+            cat <<EOF
+            {
+              "url": "https://{$hostname}",
+              "username": "orbit",
+              "password": "<generated-password>"
+            }
+            EOF
+            BASH;
     }
 
     public function reconfigureScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit reconfigure hermes
-set -e
-sudo -u agent -H bash -lc 'hermes setup 2>/dev/null || true'
-BASH;
+            #!/usr/bin/env bash
+            # orbit reconfigure hermes
+            set -e
+            sudo -u agent -H bash -lc 'hermes setup 2>/dev/null || true'
+            BASH;
     }
 
     #[\Override]

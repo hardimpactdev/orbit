@@ -75,7 +75,9 @@ final readonly class AppRuntimeContainerManager
             }
 
             return AppRuntimeContainerApplyOutcome::Unchanged;
-        } catch (AppRuntimeImageUnavailableException|AppRuntimeContainerApplyException|AppRuntimeUserUnavailableException $exception) {
+        } catch (
+            AppRuntimeImageUnavailableException|AppRuntimeContainerApplyException|AppRuntimeUserUnavailableException $exception
+        ) {
             throw $exception;
         } catch (Throwable $exception) {
             throw new AppRuntimeContainerApplyException(
@@ -132,8 +134,11 @@ final readonly class AppRuntimeContainerManager
         );
     }
 
-    private function withResolvedRuntimeUser(Node $node, AppRuntimeContainer $container, bool $hadExistingContainer): AppRuntimeContainer
-    {
+    private function withResolvedRuntimeUser(
+        Node $node,
+        AppRuntimeContainer $container,
+        bool $hadExistingContainer,
+    ): AppRuntimeContainer {
         $runtimeUser = $container->runtimeUser();
 
         if ($runtimeUser === null) {
@@ -263,16 +268,16 @@ final readonly class AppRuntimeContainerManager
     {
         $script = sprintf(
             <<<'SH'
-err="$(sudo test -e %1$s 2>&1)"
-ec=$?
-if [ "$ec" = "0" ]; then
-    printf 'orbit-container-config-probe:present\n'
-elif [ "$ec" = "1" ] && [ -z "$err" ]; then
-    printf 'orbit-container-config-probe:absent\n'
-else
-    printf 'orbit-container-config-probe:error\n'
-fi
-SH,
+                err="$(sudo test -e %1$s 2>&1)"
+                ec=$?
+                if [ "$ec" = "0" ]; then
+                    printf 'orbit-container-config-probe:present\n'
+                elif [ "$ec" = "1" ] && [ -z "$err" ]; then
+                    printf 'orbit-container-config-probe:absent\n'
+                else
+                    printf 'orbit-container-config-probe:error\n'
+                fi
+                SH,
             escapeshellarg($path),
         );
 
@@ -354,7 +359,9 @@ SH,
         $inspection = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
 
         if (! is_array($inspection)) {
-            throw new RuntimeException("Docker returned an invalid inspect payload for {$container->name()} on {$node->name}.");
+            throw new RuntimeException(
+                "Docker returned an invalid inspect payload for {$container->name()} on {$node->name}.",
+            );
         }
 
         return $inspection;
@@ -384,12 +391,12 @@ SH,
 
         return sprintf(
             <<<'SH'
-set -e
-sudo install -d -m 0755 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-%s
-%s
-SH,
+                set -e
+                sudo install -d -m 0755 %s
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                %s
+                %s
+                SH,
             escapeshellarg($phpIniDirectory),
             escapeshellarg(base64_encode($phpIniContent)),
             escapeshellarg($phpIniHostPath),
@@ -410,7 +417,9 @@ SH,
             $sourceUser = AppDevelopmentPackagesMount::userForSafeSource($mount['source']);
 
             if ($sourceUser === null) {
-                throw new RuntimeException("App runtime container {$container->name()} has an unsafe packages mount source.");
+                throw new RuntimeException(
+                    "App runtime container {$container->name()} has an unsafe packages mount source.",
+                );
             }
 
             $sources[$mount['source']] = $sourceUser;
@@ -451,7 +460,9 @@ SH,
             $sourceUser = $this->userForSafeConfiguredMountSource($mount['source']);
 
             if ($sourceUser === null) {
-                throw new RuntimeException("App runtime container {$container->name()} has an unsafe configured runtime mount source.");
+                throw new RuntimeException(
+                    "App runtime container {$container->name()} has an unsafe configured runtime mount source.",
+                );
             }
 
             $sources[$mount['source']] = $sourceUser;
@@ -493,15 +504,19 @@ SH,
 
     private function isBuiltInRuntimeMountTarget(string $target): bool
     {
-        return in_array($target, [
-            AppRuntimeContainer::SourceTarget,
-            AppRuntimeContainer::PhpIniMountTarget,
-            AppDevelopmentPackagesMount::Target,
-            AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath,
-            AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath,
-            '/config',
-            '/data',
-        ], true);
+        return in_array(
+            $target,
+            [
+                AppRuntimeContainer::SourceTarget,
+                AppRuntimeContainer::PhpIniMountTarget,
+                AppDevelopmentPackagesMount::Target,
+                AppDevelopmentInnerTlsPolicy::RuntimeTlsCertContainerPath,
+                AppDevelopmentInnerTlsPolicy::RuntimeTlsKeyContainerPath,
+                '/config',
+                '/data',
+            ],
+            true,
+        );
     }
 
     private function userForSafeConfiguredMountSource(string $source): ?string

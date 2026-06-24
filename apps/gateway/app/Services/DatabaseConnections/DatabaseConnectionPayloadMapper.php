@@ -32,7 +32,17 @@ final class DatabaseConnectionPayloadMapper
                 'env_prefix' => $target->env_prefix,
             ])->all(),
         ])
-            ->sortBy(fn (array $target): string => $target['type'].':'.($target['name'] ?? $target['app'] ?? '').':'.($target['instance'] ?? '').':'.$target['env_prefix'])
+            ->sortBy(
+                fn (array $target): string => (
+                    $target['type']
+                    .':'
+                    .($target['name'] ?? $target['app'] ?? '')
+                    .':'
+                    .($target['instance'] ?? '')
+                    .':'
+                    .$target['env_prefix']
+                ),
+            )
             ->values()
             ->all();
 

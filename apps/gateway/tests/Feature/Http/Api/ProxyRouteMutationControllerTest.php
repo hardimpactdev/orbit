@@ -17,7 +17,8 @@ function createProxyRouteMutationCallerNode(array $overrides = [], ?string $role
     $attributes = array_merge([
         'name' => 'caller',
         'host' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
-        'wireguard_address' => PROXY_ROUTE_MUTATION_CALLER_WG_IP], $overrides);
+        'wireguard_address' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+    ], $overrides);
 
     return match ($role) {
         'app-dev' => createTestAppHostNode($attributes),
@@ -32,7 +33,8 @@ function grantProxyRouteMutationAccess(Node $caller, Node $servingNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $servingNode->id,
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('ProxyRoute mutation API', function (): void {
@@ -41,12 +43,16 @@ describe('ProxyRoute mutation API', function (): void {
         $servingNode = createTestAppHostNode(['name' => 'app-1']);
         grantProxyRouteMutationAccess($caller, $servingNode);
 
-        $response = $this->withServerVariables(['REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP])->postJson('/api/proxy-routes', [
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->postJson('/api/proxy-routes', [
             'domain' => 'vite.docs.test',
             'node' => 'app-1',
-            'upstream' => 'http://127.0.0.1:5173']);
+            'upstream' => 'http://127.0.0.1:5173',
+        ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.route.domain', 'vite.docs.test')
             ->assertJsonPath('success.meta.action', 'created')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.enactment_deferred');
@@ -62,15 +68,20 @@ describe('ProxyRoute mutation API', function (): void {
             'app_id' => $app->id,
             'domain' => 'docs.test',
             'owner_type' => 'app',
-            'kind' => 'app']);
+            'kind' => 'app',
+        ]);
 
-        $response = $this->withServerVariables(['REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP])->postJson('/api/proxy-routes', [
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->postJson('/api/proxy-routes', [
             'domain' => 'docs.test',
             'node' => 'app-1',
             'upstream' => 'http://127.0.0.1:5173',
-            'force' => true]);
+            'force' => true,
+        ]);
 
-        $response->assertStatus(409)
+        $response
+            ->assertStatus(409)
             ->assertJsonPath('error.code', 'proxy.domain_conflict')
             ->assertJsonPath('error.meta.owner_type', 'app');
     });
@@ -84,12 +95,17 @@ describe('ProxyRoute mutation API', function (): void {
             'domain' => 'old.test',
             'owner_type' => 'custom',
             'kind' => 'redirect',
-            'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 302]]);
+            'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 302],
+        ]);
 
-        $response = $this->withServerVariables(['REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP])->deleteJson('/api/proxy-routes/old.test', [
-            'destructive_consent' => true]);
+        $response = $this->withServerVariables([
+            'REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP,
+        ])->deleteJson('/api/proxy-routes/old.test', [
+            'destructive_consent' => true,
+        ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.route.domain', 'old.test')
             ->assertJsonPath('success.data.route.status', 'removed_with_drift')
             ->assertJsonPath('success.meta.warnings.0.code', 'proxy.cleanup_deferred');
@@ -100,7 +116,9 @@ describe('ProxyRoute mutation API', function (): void {
     it('requires destructive consent before removing intent', function (): void {
         createProxyRouteMutationCallerNode(role: 'gateway');
 
-        $response = $this->withServerVariables(['REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP])->deleteJson('/api/proxy-routes/old.test');
+        $response = $this->withServerVariables(['REMOTE_ADDR' => PROXY_ROUTE_MUTATION_CALLER_WG_IP])->deleteJson(
+            '/api/proxy-routes/old.test',
+        );
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'destructive_consent_required');

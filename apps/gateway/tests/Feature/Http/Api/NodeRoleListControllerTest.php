@@ -16,7 +16,8 @@ describe('NodeRoleListController', function (): void {
 
         $response = getNodeRoleApiContractJson('/api/nodes/target-1/roles');
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node', 'target-1')
             ->assertJsonPath('success.data.roles.0.role', 'app-dev')
             ->assertJsonPath('success.data.roles.0.status', 'error')
@@ -32,7 +33,8 @@ describe('NodeRoleListController', function (): void {
 
         $response = getNodeRoleApiContractJson('/api/nodes/target-1/roles');
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [

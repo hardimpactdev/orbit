@@ -17,7 +17,13 @@ final readonly class AddAppSetupStep
         ?int $beforeStepId = null,
         ?int $afterStepId = null,
     ): AppSetupStep {
-        return DB::transaction(function () use ($appId, $command, $timeoutSeconds, $beforeStepId, $afterStepId): AppSetupStep {
+        return DB::transaction(function () use (
+            $appId,
+            $command,
+            $timeoutSeconds,
+            $beforeStepId,
+            $afterStepId,
+        ): AppSetupStep {
             $steps = AppSetupStep::query()->where('app_id', $appId);
 
             if ($beforeStepId !== null) {

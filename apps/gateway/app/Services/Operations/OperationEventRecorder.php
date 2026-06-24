@@ -19,8 +19,12 @@ final readonly class OperationEventRecorder
      * @param  array<string, mixed>  $payload
      * @param  array<string, mixed>  $metadata
      */
-    public function append(OperationRun|string $operationRun, string $eventType, array $payload, array $metadata = []): OperationEvent
-    {
+    public function append(
+        OperationRun|string $operationRun,
+        string $eventType,
+        array $payload,
+        array $metadata = [],
+    ): OperationEvent {
         $eventType = trim($eventType);
 
         if ($eventType === '') {
@@ -35,10 +39,11 @@ final readonly class OperationEventRecorder
         return DB::transaction(function () use ($operationRun, $eventType, $payload, $metadata): OperationEvent {
             $operationRun = $this->findOrFail($operationRun);
 
-            $sequence = (int) OperationEvent::query()
-                ->where('operation_run_id', $operationRun->id)
-                ->lockForUpdate()
-                ->max('sequence') + 1;
+            $sequence =
+                (int) OperationEvent::query()
+                    ->where('operation_run_id', $operationRun->id)
+                    ->lockForUpdate()
+                    ->max('sequence') + 1;
 
             return OperationEvent::query()->create([
                 'operation_run_id' => $operationRun->id,
@@ -54,12 +59,21 @@ final readonly class OperationEventRecorder
      * @param  list<array{key: string, label: string, doneLabel?: string}>  $steps
      * @param  array<string, mixed>  $metadata
      */
-    public function tree(OperationRun|string $operationRun, string $title, array $steps, array $metadata = []): OperationEvent
-    {
-        return $this->append($operationRun, 'tree', [
-            'title' => $title,
-            'steps' => $steps,
-        ], $metadata);
+    public function tree(
+        OperationRun|string $operationRun,
+        string $title,
+        array $steps,
+        array $metadata = [],
+    ): OperationEvent {
+        return $this->append(
+            $operationRun,
+            'tree',
+            [
+                'title' => $title,
+                'steps' => $steps,
+            ],
+            $metadata,
+        );
     }
 
     /**
@@ -137,10 +151,11 @@ final readonly class OperationEventRecorder
         return DB::transaction(function () use ($operationRun, $records): array {
             $operationRun = $this->findOrFail($operationRun);
 
-            $sequence = (int) OperationEvent::query()
-                ->where('operation_run_id', $operationRun->id)
-                ->lockForUpdate()
-                ->max('sequence') + 1;
+            $sequence =
+                (int) OperationEvent::query()
+                    ->where('operation_run_id', $operationRun->id)
+                    ->lockForUpdate()
+                    ->max('sequence') + 1;
 
             $events = [];
 
@@ -164,25 +179,44 @@ final readonly class OperationEventRecorder
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $metadata
      */
-    public function complete(OperationRun|string $operationRun, int $exitCode, array $data = [], array $metadata = []): OperationEvent
-    {
-        return $this->append($operationRun, 'complete', [
-            'exit_code' => $exitCode,
-            'data' => $data,
-        ], $metadata);
+    public function complete(
+        OperationRun|string $operationRun,
+        int $exitCode,
+        array $data = [],
+        array $metadata = [],
+    ): OperationEvent {
+        return $this->append(
+            $operationRun,
+            'complete',
+            [
+                'exit_code' => $exitCode,
+                'data' => $data,
+            ],
+            $metadata,
+        );
     }
 
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $metadata
      */
-    public function error(OperationRun|string $operationRun, string $message, int $exitCode = 1, array $data = [], array $metadata = []): OperationEvent
-    {
-        return $this->append($operationRun, 'error', [
-            'exit_code' => $exitCode,
-            'message' => $message,
-            'data' => $data,
-        ], $metadata);
+    public function error(
+        OperationRun|string $operationRun,
+        string $message,
+        int $exitCode = 1,
+        array $data = [],
+        array $metadata = [],
+    ): OperationEvent {
+        return $this->append(
+            $operationRun,
+            'error',
+            [
+                'exit_code' => $exitCode,
+                'message' => $message,
+                'data' => $data,
+            ],
+            $metadata,
+        );
     }
 
     private function findOrFail(OperationRun|string $operationRun): OperationRun

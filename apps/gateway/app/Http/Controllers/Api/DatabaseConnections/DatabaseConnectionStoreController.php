@@ -27,10 +27,15 @@ final class DatabaseConnectionStoreController extends DatabaseConnectionApiContr
         }
 
         if (isset($payload['__invalid_node'])) {
-            return $this->validationFailed('node', "Invalid value for --node: '{$payload['__invalid_node']}'.", [
-                'field' => 'node',
-                'value' => $payload['__invalid_node'],
-            ], 422);
+            return $this->validationFailed(
+                'node',
+                "Invalid value for --node: '{$payload['__invalid_node']}'.",
+                [
+                    'field' => 'node',
+                    'value' => $payload['__invalid_node'],
+                ],
+                422,
+            );
         }
 
         $servingNode = array_key_exists('node_id', $payload) && $payload['node_id'] !== null

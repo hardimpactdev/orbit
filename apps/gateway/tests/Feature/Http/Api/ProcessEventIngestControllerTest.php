@@ -35,14 +35,21 @@ describe('ProcessEventIngestController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
 
-        $response = $this->call('POST', '/api/events/process', [
-            'event_id' => 'evt-crash-1',
-            'event' => 'crashed',
-            'unit' => 'orbit_docs_main_vite',
-            'exit_code' => 1,
-            'exit_status' => 'exited',
-            'at' => '2026-04-21T12:00:00+00:00',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/events/process',
+            [
+                'event_id' => 'evt-crash-1',
+                'event' => 'crashed',
+                'unit' => 'orbit_docs_main_vite',
+                'exit_code' => 1,
+                'exit_status' => 'exited',
+                'at' => '2026-04-21T12:00:00+00:00',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        );
 
         $response->assertCreated()
             ->assertJsonPath('success.meta.matched', true);
@@ -66,14 +73,21 @@ describe('ProcessEventIngestController', function (): void {
         $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'feature-docs']);
         $process = Process::factory()->forOwner($app)->create(['name' => 'vite']);
 
-        $this->call('POST', '/api/events/process', [
-            'event_id' => 'evt-crash-workspace-1',
-            'event' => 'crashed',
-            'unit' => 'orbit_docs_feature-docs_vite',
-            'exit_code' => 1,
-            'exit_status' => 'exited',
-            'at' => '2026-04-21T12:00:00+00:00',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP])->assertCreated();
+        $this->call(
+            'POST',
+            '/api/events/process',
+            [
+                'event_id' => 'evt-crash-workspace-1',
+                'event' => 'crashed',
+                'unit' => 'orbit_docs_feature-docs_vite',
+                'exit_code' => 1,
+                'exit_status' => 'exited',
+                'at' => '2026-04-21T12:00:00+00:00',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        )->assertCreated();
 
         $this->assertDatabaseHas('process_events', [
             'event_id' => 'evt-crash-workspace-1',
@@ -86,14 +100,21 @@ describe('ProcessEventIngestController', function (): void {
     it('records unmatched crash events without intent foreign keys', function (): void {
         $node = createProcessEventIngestNode();
 
-        $response = $this->call('POST', '/api/events/process', [
-            'event_id' => 'evt-unmatched-1',
-            'event' => 'crashed',
-            'unit' => 'missing-runtime-unit',
-            'exit_code' => 137,
-            'exit_status' => 'signal',
-            'at' => '2026-04-21T12:00:00+00:00',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/events/process',
+            [
+                'event_id' => 'evt-unmatched-1',
+                'event' => 'crashed',
+                'unit' => 'missing-runtime-unit',
+                'exit_code' => 137,
+                'exit_status' => 'signal',
+                'at' => '2026-04-21T12:00:00+00:00',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        );
 
         $response->assertCreated()
             ->assertJsonPath('success.meta.matched', false);
@@ -120,25 +141,45 @@ describe('ProcessEventIngestController', function (): void {
             'at' => '2026-04-21T12:00:00+00:00',
         ];
 
-        $this->call('POST', '/api/events/process', $payload, [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP])->assertCreated();
-        $this->call('POST', '/api/events/process', $payload, [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP])
+        $this->call(
+            'POST',
+            '/api/events/process',
+            $payload,
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        )->assertCreated();
+        $this
+            ->call('POST', '/api/events/process', $payload, [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP])
             ->assertOk()
             ->assertJsonPath('success.meta.idempotent', true);
 
         expect(ProcessEvent::query()->where('event_id', 'evt-idempotent-1')->count())->toBe(1);
     });
 
-    it('rejects non-crashed events and non-app node identities', function (array $nodeOverrides, string $role, string $event, int $status): void {
+    it('rejects non-crashed events and non-app node identities', function (
+        array $nodeOverrides,
+        string $role,
+        string $event,
+        int $status,
+    ): void {
         createProcessEventIngestNode($nodeOverrides, $role);
 
-        $response = $this->call('POST', '/api/events/process', [
-            'event_id' => 'evt-rejected',
-            'event' => $event,
-            'unit' => 'orbit_docs_main_vite',
-            'exit_code' => 1,
-            'exit_status' => 'exited',
-            'at' => '2026-04-21T12:00:00+00:00',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/events/process',
+            [
+                'event_id' => 'evt-rejected',
+                'event' => $event,
+                'unit' => 'orbit_docs_main_vite',
+                'exit_code' => 1,
+                'exit_status' => 'exited',
+                'at' => '2026-04-21T12:00:00+00:00',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_EVENT_INGEST_APP_WG_IP],
+        );
 
         $response->assertStatus($status);
     })->with([

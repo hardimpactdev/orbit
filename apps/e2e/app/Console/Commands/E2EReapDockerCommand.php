@@ -42,21 +42,33 @@ class E2EReapDockerCommand extends Command
         try {
             foreach ($this->dockerHosts($config) as $hostName) {
                 $host = new DockerHost($config, $hostName);
-                $containers = $this->listNames($host, sprintf(
-                    'docker ps -a --format %s --filter %s',
-                    escapeshellarg('{{.Names}}'),
-                    escapeshellarg("name={$config->instancePrefix}-"),
-                ), $config->instancePrefix);
-                $networks = $this->listNames($host, sprintf(
-                    'docker network ls --format %s --filter %s',
-                    escapeshellarg('{{.Name}}'),
-                    escapeshellarg("name={$config->instancePrefix}-"),
-                ), $config->instancePrefix);
-                $volumes = $this->listNames($host, sprintf(
-                    'docker volume ls --format %s --filter %s',
-                    escapeshellarg('{{.Name}}'),
-                    escapeshellarg("name={$config->instancePrefix}-"),
-                ), $config->instancePrefix);
+                $containers = $this->listNames(
+                    $host,
+                    sprintf(
+                        'docker ps -a --format %s --filter %s',
+                        escapeshellarg('{{.Names}}'),
+                        escapeshellarg("name={$config->instancePrefix}-"),
+                    ),
+                    $config->instancePrefix,
+                );
+                $networks = $this->listNames(
+                    $host,
+                    sprintf(
+                        'docker network ls --format %s --filter %s',
+                        escapeshellarg('{{.Name}}'),
+                        escapeshellarg("name={$config->instancePrefix}-"),
+                    ),
+                    $config->instancePrefix,
+                );
+                $volumes = $this->listNames(
+                    $host,
+                    sprintf(
+                        'docker volume ls --format %s --filter %s',
+                        escapeshellarg('{{.Name}}'),
+                        escapeshellarg("name={$config->instancePrefix}-"),
+                    ),
+                    $config->instancePrefix,
+                );
 
                 foreach ($containers as $container) {
                     $resources['containers'][] = [
@@ -179,7 +191,9 @@ class E2EReapDockerCommand extends Command
         $result = $host->run($command);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not list Docker E2E resources on {$host->host}: ".trim($result->errorOutput().$result->output()));
+            throw new RuntimeException(
+                "Could not list Docker E2E resources on {$host->host}: ".trim($result->errorOutput().$result->output()),
+            );
         }
 
         return array_values(array_filter(
@@ -216,7 +230,11 @@ class E2EReapDockerCommand extends Command
             $this->line('Dry run. Pass --force to delete Docker E2E resources.');
         }
 
-        if ($result['resources']['containers'] === [] && $result['resources']['networks'] === [] && $result['resources']['volumes'] === []) {
+        if (
+            $result['resources']['containers'] === []
+            && $result['resources']['networks'] === []
+            && $result['resources']['volumes'] === []
+        ) {
             $this->line('No Docker E2E resources found.');
 
             return;

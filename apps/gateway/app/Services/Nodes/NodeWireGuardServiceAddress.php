@@ -14,7 +14,9 @@ final class NodeWireGuardServiceAddress
         $address = trim((string) $ownerNode->wireguard_address);
 
         if ($address === '') {
-            throw new RuntimeException("Node {$ownerNode->name} cannot provide {$serviceType} service address because it has no WireGuard address.");
+            throw new RuntimeException(
+                "Node {$ownerNode->name} cannot provide {$serviceType} service address because it has no WireGuard address.",
+            );
         }
 
         return $address;

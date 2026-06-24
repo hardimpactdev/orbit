@@ -64,11 +64,19 @@ describe('AppRootController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/apps/docs/root', [
-            'root' => 'web',
-        ], [], [], ['REMOTE_ADDR' => APP_ROOT_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/root',
+            [
+                'root' => 'web',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_ROOT_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app.root', 'web')
             ->assertJsonPath('success.data.result.changed', true)
             ->assertJsonPath('success.meta.node', 'app-1');
@@ -95,11 +103,19 @@ describe('AppRootController', function (): void {
 
         app()->instance(RemoteShell::class, new AppRootApiSequencedRemoteShell([]));
 
-        $response = $this->call('POST', '/api/apps/docs/root', [
-            'root' => 'web',
-        ], [], [], ['REMOTE_ADDR' => APP_ROOT_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/root',
+            [
+                'root' => 'web',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_ROOT_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:root')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
@@ -119,11 +135,13 @@ final class AppRootApiSequencedRemoteShell implements RemoteShell
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        return array_shift($this->results) ?? new RemoteShellResult(
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            durationMs: 1,
+        return (
+            array_shift($this->results) ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            )
         );
     }
 }

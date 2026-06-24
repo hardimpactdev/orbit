@@ -59,11 +59,11 @@ it('runs install-orbit without role semantics', function (): void {
     $provisioner = file_get_contents(provisionScript());
     $installer = file_get_contents(installerScript());
 
-    expect($provisioner)->not->toContain('"--role=')
-        ->and($provisioner)->not->toContain('--skip-prerequisites')
-        ->and($provisioner)->toContain('COMPOSER_HOME=')
-        ->and($installer)->toContain('ORBIT_INSTALL_SKIP_PREREQUISITES')
-        ->and($installer)->toContain('--skip-prerequisites');
+    expect($provisioner)
+        ->not->toContain('"--role=')->and($provisioner)
+        ->not->toContain('--skip-prerequisites')->and($provisioner)->toContain('COMPOSER_HOME=')->and(
+            $installer,
+        )->toContain('ORBIT_INSTALL_SKIP_PREREQUISITES')->and($installer)->toContain('--skip-prerequisites');
 });
 
 it('installs E2E base dependencies before running install-orbit', function (): void {
@@ -78,17 +78,34 @@ it('installs E2E base dependencies before running install-orbit', function (): v
 it('installs host Composer dependencies after install-orbit for prepared Incus templates', function (): void {
     $provisioner = file_get_contents(provisionScript());
 
-    expect(str_contains($provisioner, 'install_host_composer_dependencies'))->toBeTrue()
-        ->and(str_contains($provisioner, 'configure_github_auth'))->toBeTrue()
-        ->and(str_contains($provisioner, 'github-oauth'))->toBeTrue()
-        ->and(str_contains($provisioner, 'gh auth login --hostname github.com --with-token'))->toBeTrue()
-        ->and(str_contains($provisioner, 'start_step "Install host Composer dependencies"'))->toBeTrue()
-        ->and(str_contains($provisioner, 'COMPOSER_CACHE_DIR="${home_dir}/.composer/cache"'))->toBeTrue()
-        ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/gateway" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()
-        ->and(str_contains($provisioner, 'composer --working-dir="${target_dir}/apps/cli" install --no-interaction --prefer-dist --optimize-autoloader --no-progress'))->toBeTrue()
-        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/gateway/vendor/autoload.php"'))->toBeTrue()
-        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/cli/vendor/autoload.php"'))->toBeTrue()
-        ->and(str_contains($provisioner, 'if uses_binary_only_app_artifact; then'))->toBeTrue();
+    expect(str_contains($provisioner, 'install_host_composer_dependencies'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'configure_github_auth'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'github-oauth'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'gh auth login --hostname github.com --with-token'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'start_step "Install host Composer dependencies"'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'COMPOSER_CACHE_DIR="${home_dir}/.composer/cache"'))
+        ->toBeTrue()
+        ->and(str_contains(
+            $provisioner,
+            'composer --working-dir="${target_dir}/apps/gateway" install --no-interaction --prefer-dist --optimize-autoloader --no-progress',
+        ))
+        ->toBeTrue()
+        ->and(str_contains(
+            $provisioner,
+            'composer --working-dir="${target_dir}/apps/cli" install --no-interaction --prefer-dist --optimize-autoloader --no-progress',
+        ))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/gateway/vendor/autoload.php"'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'sudo_run test -f "${target_dir}/apps/cli/vendor/autoload.php"'))
+        ->toBeTrue()
+        ->and(str_contains($provisioner, 'if uses_binary_only_app_artifact; then'))
+        ->toBeTrue();
 });
 
 it('supports binary-only app node provisioning without a gateway source archive', function (): void {
@@ -110,10 +127,15 @@ it('keeps the E2E dependency helper off the SQLite CLI', function (): void {
     $basePackages = Process::run([depsScript(), '--base']);
     $phpPackages = Process::run([depsScript(), '--php']);
 
-    expect($basePackages->successful())->toBeTrue()
-        ->and($basePackages->output())->not->toMatch('/^sqlite3$/m')
-        ->and($phpPackages->successful())->toBeTrue()
-        ->and($phpPackages->output())->toContain('php8.5-sqlite3');
+    expect($basePackages->successful())
+        ->toBeTrue()
+        ->and($basePackages->output())
+        ->not
+        ->toMatch('/^sqlite3$/m')
+        ->and($phpPackages->successful())
+        ->toBeTrue()
+        ->and($phpPackages->output())
+        ->toContain('php8.5-sqlite3');
 });
 
 it('copies staged Docker image archives into user readable guest var tmp files before install', function (): void {
@@ -124,15 +146,27 @@ it('copies staged Docker image archives into user readable guest var tmp files b
         ->toContain('sudo_run install -d -m 0755 -o "$user" -g "$user" "$guest_stage_dir"')
         ->toContain('staged_source_archive="${guest_stage_dir}/orbit-source.tar.gz"')
         ->toContain('staged_installer="${guest_stage_dir}/install-orbit"')
-        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$GATEWAY_IMAGE_ARCHIVE" "$staged_gateway_image_archive"')
-        ->toContain('gateway_image_args=(--gateway-image="$GATEWAY_IMAGE" --gateway-image-archive="$staged_gateway_image_archive")')
-        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$CADDY_IMAGE_ARCHIVE" "$staged_caddy_image_archive"')
+        ->toContain(
+            'sudo_run install -m 0644 -o "$user" -g "$user" "$GATEWAY_IMAGE_ARCHIVE" "$staged_gateway_image_archive"',
+        )
+        ->toContain(
+            'gateway_image_args=(--gateway-image="$GATEWAY_IMAGE" --gateway-image-archive="$staged_gateway_image_archive")',
+        )
+        ->toContain(
+            'sudo_run install -m 0644 -o "$user" -g "$user" "$CADDY_IMAGE_ARCHIVE" "$staged_caddy_image_archive"',
+        )
         ->toContain('caddy_image_args=(--caddy-image-archive="$staged_caddy_image_archive")')
-        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$DNSMASQ_IMAGE_ARCHIVE" "$staged_dnsmasq_image_archive"')
+        ->toContain(
+            'sudo_run install -m 0644 -o "$user" -g "$user" "$DNSMASQ_IMAGE_ARCHIVE" "$staged_dnsmasq_image_archive"',
+        )
         ->toContain('dnsmasq_image_args=(--dnsmasq-image-archive="$staged_dnsmasq_image_archive")')
-        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$FRANKENPHP_IMAGE_ARCHIVE" "$staged_frankenphp_image_archive"')
+        ->toContain(
+            'sudo_run install -m 0644 -o "$user" -g "$user" "$FRANKENPHP_IMAGE_ARCHIVE" "$staged_frankenphp_image_archive"',
+        )
         ->toContain('frankenphp_image_args=(--frankenphp-image-archive="$staged_frankenphp_image_archive")')
-        ->toContain('sudo_run install -m 0644 -o "$user" -g "$user" "$WG_EASY_IMAGE_ARCHIVE" "$staged_wg_easy_image_archive"')
+        ->toContain(
+            'sudo_run install -m 0644 -o "$user" -g "$user" "$WG_EASY_IMAGE_ARCHIVE" "$staged_wg_easy_image_archive"',
+        )
         ->toContain('wg_easy_image_args=(--wg-easy-image-archive="$staged_wg_easy_image_archive")')
         ->toContain('${guest_stage_dir}/orbit-gateway-current.tar')
         ->toContain('${guest_stage_dir}/caddy-2-alpine.tar')
@@ -199,10 +233,14 @@ it('rejects retired role-shaped provisioner input', function (): void {
     $roleResult = Process::run([provisionScript(), $roleFlag, '--source-archive=/tmp/missing']);
     $controlResult = Process::run([provisionScript(), $controlKindFlag, '--source-archive=/tmp/missing']);
 
-    expect($roleResult->successful())->toBeFalse()
-        ->and($roleResult->errorOutput())->toContain("unknown option: {$roleFlag}")
-        ->and($controlResult->successful())->toBeFalse()
-        ->and($controlResult->errorOutput())->toContain('--node-kind must be: operator, gateway, or app');
+    expect($roleResult->successful())
+        ->toBeFalse()
+        ->and($roleResult->errorOutput())
+        ->toContain("unknown option: {$roleFlag}")
+        ->and($controlResult->successful())
+        ->toBeFalse()
+        ->and($controlResult->errorOutput())
+        ->toContain('--node-kind must be: operator, gateway, or app');
 });
 
 it('fails when --source-archive is missing', function (): void {
@@ -213,7 +251,11 @@ it('fails when --source-archive is missing', function (): void {
 });
 
 it('fails when source archive does not exist', function (): void {
-    $result = Process::run([provisionScript(), '--node-kind=operator', '--source-archive=/tmp/orbit-does-not-exist.tar.gz']);
+    $result = Process::run([
+        provisionScript(),
+        '--node-kind=operator',
+        '--source-archive=/tmp/orbit-does-not-exist.tar.gz',
+    ]);
 
     expect($result->successful())->toBeFalse();
     expect($result->errorOutput())->toContain('source archive not found');

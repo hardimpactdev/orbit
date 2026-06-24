@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "f8e4c0e0b8a1e8b42ab89316f317ca44",
+    "content-hash": "24023061c15a04007da9160e03c231e2",
     "packages": [
         {
             "name": "aws/aws-crt-php",
@@ -1475,7 +1475,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/core",
-                "reference": "c9e54bc80127ff891460f16185f3773d370b5e51"
+                "reference": "15c99d384630c32da4479e8ef75b8b654fe3eae0"
             },
             "require": {
                 "guzzlehttp/psr7": "^2.7",
@@ -1484,6 +1484,7 @@
                 "psr/http-message": "^2.0"
             },
             "require-dev": {
+                "carthage-software/mago": "^1.40.1",
                 "laravel/pint": "^1.29",
                 "pestphp/pest": "^4.6",
                 "phpstan/phpstan": "^2.1",
@@ -1540,7 +1541,7 @@
             "dist": {
                 "type": "path",
                 "url": "../../packages/sdk",
-                "reference": "ced2e0807c5a11c5d5cfe6707053061c960a8da0"
+                "reference": "d50de59b7be7c0bd2329c49c6a06e1c567b6b1cc"
             },
             "require": {
                 "illuminate/support": "^12.0 || ^13.0",
@@ -1549,6 +1550,7 @@
                 "saloonphp/saloon": "^4.0"
             },
             "require-dev": {
+                "carthage-software/mago": "^1.40.1",
                 "laravel/pint": "^1.29",
                 "mockery/mockery": "^1.6",
                 "pestphp/pest": "^4.6",
@@ -7486,6 +7488,65 @@
                 }
             ],
             "time": "2026-03-29T15:46:14+00:00"
+        },
+        {
+            "name": "carthage-software/mago",
+            "version": "1.40.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/carthage-software/mago.git",
+                "reference": "6149480afa9dd4eafb08cf834295e0a7d39d69b2"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/carthage-software/mago/zipball/6149480afa9dd4eafb08cf834295e0a7d39d69b2",
+                "reference": "6149480afa9dd4eafb08cf834295e0a7d39d69b2",
+                "shasum": ""
+            },
+            "require": {
+                "php": "~8.1 || ~8.2 || ~8.3 || ~8.4 || ~8.5 || ~8.6"
+            },
+            "suggest": {
+                "ext-curl": "To show binary download progress"
+            },
+            "bin": [
+                "composer/bin/mago"
+            ],
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "composer/src/functions.php",
+                    "composer/src/internal.php"
+                ],
+                "psr-4": {
+                    "Mago\\": "composer/src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT OR Apache-2.0"
+            ],
+            "authors": [
+                {
+                    "name": "Saif Eddin Gmati",
+                    "email": "azjezz@carthage.software"
+                }
+            ],
+            "description": "Mago is a toolchain for PHP that aims to provide a set of tools to help developers write better code.",
+            "keywords": [
+                "dev"
+            ],
+            "support": {
+                "issues": "https://github.com/carthage-software/mago/issues",
+                "source": "https://github.com/carthage-software/mago/tree/1.40.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/azjezz",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-06-24T12:01:37+00:00"
         },
         {
             "name": "fakerphp/faker",

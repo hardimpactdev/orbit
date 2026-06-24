@@ -27,7 +27,9 @@ final class DatabaseShowCommand extends GatewayCommand
         $connection = $this->stringArgument('connection');
 
         if ($connection === null) {
-            return $this->renderFailure('validation_failed', 'The connection argument is required.', ['field' => 'connection']);
+            return $this->renderFailure('validation_failed', 'The connection argument is required.', [
+                'field' => 'connection',
+            ]);
         }
 
         try {
@@ -124,7 +126,9 @@ final class DatabaseShowCommand extends GatewayCommand
             }
 
             $app = is_string($target['app'] ?? null) && $target['app'] !== '' ? $target['app'] : null;
-            $instance = is_string($target['instance'] ?? null) && $target['instance'] !== '' ? $target['instance'] : null;
+            $instance = is_string($target['instance'] ?? null) && $target['instance'] !== ''
+                ? $target['instance']
+                : null;
 
             if ($app !== null) {
                 $labels[] = $instance === null ? $app : "{$app} ({$instance})";

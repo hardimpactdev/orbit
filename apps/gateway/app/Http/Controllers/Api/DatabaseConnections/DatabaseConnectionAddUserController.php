@@ -28,13 +28,16 @@ final class DatabaseConnectionAddUserController extends DatabaseConnectionApiCon
         $password = $this->stringValue($request->input('password'));
         $nodeSelector = $this->stringValue($request->input('node'));
 
-        $this->setActivityProperties($request, array_filter([
-            'slug' => $connection,
-            'service' => $service,
-            'database' => $database,
-            'username' => $username,
-            'node' => $nodeSelector,
-        ], static fn (mixed $value): bool => $value !== null));
+        $this->setActivityProperties($request, array_filter(
+            [
+                'slug' => $connection,
+                'service' => $service,
+                'database' => $database,
+                'username' => $username,
+                'node' => $nodeSelector,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        ));
 
         foreach ([
             'service' => $service,
@@ -58,10 +61,15 @@ final class DatabaseConnectionAddUserController extends DatabaseConnectionApiCon
             $node = $this->resolver->resolveNode($nodeSelector);
 
             if (! $node instanceof Node) {
-                return $this->validationFailed('node', "Invalid value for --node: '{$nodeSelector}'.", [
-                    'field' => 'node',
-                    'value' => $nodeSelector,
-                ], 422);
+                return $this->validationFailed(
+                    'node',
+                    "Invalid value for --node: '{$nodeSelector}'.",
+                    [
+                        'field' => 'node',
+                        'value' => $nodeSelector,
+                    ],
+                    422,
+                );
             }
         }
 

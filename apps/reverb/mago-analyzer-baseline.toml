@@ -1,0 +1,13 @@
+variant = "loose"
+
+[[issues]]
+file = "config/app.php"
+code = "mixed-operand"
+message = "Casting `mixed` to `bool`."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2

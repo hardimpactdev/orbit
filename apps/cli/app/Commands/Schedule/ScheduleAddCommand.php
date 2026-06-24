@@ -60,13 +60,17 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         $interval = $this->resolveInterval();
 
         if ($interval === null) {
-            return $this->renderFailure('schedule.interval_invalid', 'The schedule interval is required.', ['field' => 'interval']);
+            return $this->renderFailure('schedule.interval_invalid', 'The schedule interval is required.', [
+                'field' => 'interval',
+            ]);
         }
 
         $timezone = $this->stringOption('timezone') ?? 'UTC';
 
         if (! in_array($timezone, timezone_identifiers_list(), true)) {
-            return $this->failValidation('timezone', 'The schedule timezone must be a valid IANA timezone.', ['value' => $timezone]);
+            return $this->failValidation('timezone', 'The schedule timezone must be a valid IANA timezone.', [
+                'value' => $timezone,
+            ]);
         }
 
         $payload = $this->filledQuery([
@@ -198,9 +202,13 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
             return null;
         }
 
-        return $this->failValidation('name', 'The schedule name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
-            'value' => $name,
-        ]);
+        return $this->failValidation(
+            'name',
+            'The schedule name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+            [
+                'value' => $name,
+            ],
+        );
     }
 
     /**
@@ -212,7 +220,10 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         $node = $this->stringOption('node');
 
         if ($app !== null && $node !== null) {
-            return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => ['app', 'node']]);
+            return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => [
+                'app',
+                'node',
+            ]]);
         }
 
         if ($app !== null || $node !== null) {
@@ -236,7 +247,10 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         }
 
         if (! $this->isInteractiveInput()) {
-            return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => ['app', 'node']]);
+            return $this->failValidation('target', 'Exactly one schedule target is required.', ['fields' => [
+                'app',
+                'node',
+            ]]);
         }
 
         $targetType = (string) select(
@@ -267,7 +281,11 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         $script = $this->stringOption('script');
 
         if ($command !== null && $script !== null) {
-            return $this->failValidation('execution_source', 'Exactly one schedule execution source is required.', ['fields' => ['command', 'script']]);
+            return $this->failValidation(
+                'execution_source',
+                'Exactly one schedule execution source is required.',
+                ['fields' => ['command', 'script']],
+            );
         }
 
         if ($command !== null || $script !== null) {
@@ -278,7 +296,11 @@ final class ScheduleAddCommand extends ScheduleGatewayCommand
         }
 
         if (! $this->isInteractiveInput()) {
-            return $this->failValidation('execution_source', 'Exactly one schedule execution source is required.', ['fields' => ['command', 'script']]);
+            return $this->failValidation(
+                'execution_source',
+                'Exactly one schedule execution source is required.',
+                ['fields' => ['command', 'script']],
+            );
         }
 
         $source = (string) select(

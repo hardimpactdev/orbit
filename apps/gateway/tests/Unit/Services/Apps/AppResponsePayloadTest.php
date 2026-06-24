@@ -26,8 +26,7 @@ it('defaults missing legacy app runtime attributes to php in response payloads',
         'tld' => 'test',
     ]));
 
-    $payload = (new AppResponsePayload)->forApp($app);
+    $payload = new AppResponsePayload()->forApp($app);
 
-    expect($payload['runtime'])->toBe('php')
-        ->and($payload['runtime_config'])->toBe(['proxy_transport' => 'http']);
+    expect($payload['runtime'])->toBe('php')->and($payload['runtime_config'])->toBe(['proxy_transport' => 'http']);
 });

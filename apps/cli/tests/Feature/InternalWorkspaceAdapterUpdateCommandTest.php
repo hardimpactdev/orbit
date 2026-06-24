@@ -15,7 +15,8 @@ describe('internal workspace adapter update command', function (): void {
             'allowed' => true,
         ]));
 
-        $this->workspaceAdapterUpdateTemp = sys_get_temp_dir().'/orbit-cli-workspace-adapter-update-'.bin2hex(random_bytes(8));
+        $this->workspaceAdapterUpdateTemp =
+            sys_get_temp_dir().'/orbit-cli-workspace-adapter-update-'.bin2hex(random_bytes(8));
         mkdir($this->workspaceAdapterUpdateTemp, recursive: true);
 
         putenv("ORBIT_POLYSCOPE_DB_PATH={$this->workspaceAdapterUpdateTemp}/polyscope.db");
@@ -36,8 +37,10 @@ describe('internal workspace adapter update command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -57,8 +60,10 @@ describe('internal workspace adapter update command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -70,8 +75,10 @@ describe('internal workspace adapter update command', function (): void {
             ...$parameters,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe($expected);
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe($expected);
     })->with([
         'adapter' => [
             ['--adapter' => 'opencode'],
@@ -97,8 +104,10 @@ describe('internal workspace adapter update command', function (): void {
             ...$parameters,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'The --workspace-id option is invalid.',
                 ['field' => 'workspace-id'],
@@ -119,8 +128,10 @@ describe('internal workspace adapter update command', function (): void {
             ...$parameters,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'The --branch option is invalid.',
                 ['field' => 'branch'],
@@ -145,8 +156,10 @@ describe('internal workspace adapter update command', function (): void {
 
         $row = workspaceAdapterUpdateDatabaseRow("{$this->workspaceAdapterUpdateTemp}/polyscope.db", $workspaceId);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'adapter' => 'polyscope',
                     'update' => 'workspace-branch',
@@ -156,7 +169,8 @@ describe('internal workspace adapter update command', function (): void {
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row)->toMatchArray([
+            ->and($row)
+            ->toMatchArray([
                 'id' => $workspaceId,
                 'branch' => 'feature-docs',
                 'branch_renamed' => 1,
@@ -169,8 +183,10 @@ describe('internal workspace adapter update command', function (): void {
     it('returns a failure envelope when the Polyscope database is missing', function (): void {
         [$exitCode, $output] = runWorkspaceAdapterUpdateCommand($this, validWorkspaceAdapterUpdateOptions());
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'database_missing',
                 'Polyscope database does not exist.',
                 ['adapter' => 'polyscope'],
@@ -185,8 +201,10 @@ describe('internal workspace adapter update command', function (): void {
 
         chmod("{$this->workspaceAdapterUpdateTemp}/polyscope.db", 0644);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'database_unwritable',
                 'Polyscope database is not writable.',
                 ['adapter' => 'polyscope'],
@@ -200,8 +218,10 @@ describe('internal workspace adapter update command', function (): void {
             '--workspace-id' => 'missing-worktree-404',
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'workspace_not_found',
                 'Polyscope workspace was not found.',
                 ['adapter' => 'polyscope', 'workspace_id' => 'missing-worktree-404'],
@@ -215,23 +235,28 @@ describe('internal workspace adapter update command', function (): void {
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload)
+            ->toBe(JsonEnvelope::failure(
                 'update_failed',
                 'Polyscope database update failed.',
                 ['adapter' => 'polyscope', 'update' => 'workspace-branch'],
             ))
-            ->and($output)->not->toContain('SQLSTATE')
-            ->and($output)->not->toContain('PDOException')
-            ->and($output)->not->toContain('worktrees');
+            ->and($output)
+            ->not->toContain('SQLSTATE')->and($output)
+            ->not->toContain('PDOException')->and($output)
+            ->not->toContain('worktrees');
     });
 
     it('hides the internal workspace adapter update command from php orbit list', function (): void {
         $process = new Process([PHP_BINARY, 'orbit', 'list'], base_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->not->toContain('internal:workspace-adapter:update');
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->not->toContain('internal:workspace-adapter:update');
     });
 });
 
@@ -250,14 +275,16 @@ function workspaceAdapterUpdateSignedOperationToken(
     $issuedAt ??= time() - 10;
     $expiresAt ??= time() + 120;
 
-    return (new OperationTokenSigner)->sign(
-        secret: 'gateway-secret',
-        id: $id,
-        node: $node,
-        command: $command,
-        issuedAt: $issuedAt,
-        expiresAt: $expiresAt,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'gateway-secret',
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
 }
 
 /**
@@ -297,7 +324,9 @@ function runWorkspaceAdapterUpdateCommand(object $test, array $parameters = []):
 function createPolyscopeWorkspaceUpdateDatabase(string $path, string $workspaceId = 'poly-worktree-1'): void
 {
     $pdo = createWritableWorkspaceAdapterUpdateDatabase($path);
-    $pdo->exec('create table worktrees (id text primary key, branch text not null, branch_renamed integer not null default 0)');
+    $pdo->exec(
+        'create table worktrees (id text primary key, branch text not null, branch_renamed integer not null default 0)',
+    );
 
     $statement = $pdo->prepare('insert into worktrees (id, branch, branch_renamed) values (:id, :branch, 0)');
     $statement->bindValue(':id', $workspaceId, PDO::PARAM_STR);

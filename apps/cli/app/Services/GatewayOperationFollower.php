@@ -37,7 +37,12 @@ class GatewayOperationFollower
                 $terminal = $this->events->replay(
                     $eventsUrl,
                     $lastEventId,
-                    function (ProgressEventType $type, array $payload, ?int $eventId) use (&$lastEventId, &$seenEventIds, &$sawEvent, $onEvent): void {
+                    function (ProgressEventType $type, array $payload, ?int $eventId) use (
+                        &$lastEventId,
+                        &$seenEventIds,
+                        &$sawEvent,
+                        $onEvent,
+                    ): void {
                         if ($eventId !== null) {
                             if (isset($seenEventIds[$eventId])) {
                                 return;
@@ -81,7 +86,10 @@ class GatewayOperationFollower
 
     private function shouldRetry(GatewayApiException $exception): bool
     {
-        if ($exception->failureKind() === GatewayApiFailureKind::Network || $exception->failureKind() === GatewayApiFailureKind::WireguardUnreachable) {
+        if (
+            $exception->failureKind() === GatewayApiFailureKind::Network
+            || $exception->failureKind() === GatewayApiFailureKind::WireguardUnreachable
+        ) {
             return true;
         }
 

@@ -52,9 +52,10 @@ final readonly class DriftIssueSuffixRule implements GroupedRule
             '/(?<![a-z0-9_.-])(?<code>[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*_orphaned)(?![a-z0-9_.-])/i',
             $contents,
             $matches,
+            PREG_SET_ORDER,
         );
 
-        $codes = array_values(array_unique($matches['code']));
+        $codes = array_values(array_unique(array_filter(array_column($matches, 'code'), is_string(...))));
         sort($codes);
 
         return $codes;

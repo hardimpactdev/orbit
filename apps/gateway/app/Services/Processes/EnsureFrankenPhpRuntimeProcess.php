@@ -58,7 +58,9 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         $app = $workspace->app;
 
         if (! $app instanceof App) {
-            throw new InvalidArgumentException("Workspace '{$workspace->name}' has no owning app; cannot ensure FrankenPHP runtime process.");
+            throw new InvalidArgumentException(
+                "Workspace '{$workspace->name}' has no owning app; cannot ensure FrankenPHP runtime process.",
+            );
         }
 
         $container = $this->workspaceRuntimeContainerRenderer->render($workspace);
@@ -96,7 +98,9 @@ final readonly class EnsureFrankenPhpRuntimeProcess
         $workspace->loadMissing('app');
 
         if (! $workspace->app instanceof App) {
-            throw new InvalidArgumentException("Workspace '{$workspace->name}' has no owning app; cannot name FrankenPHP runtime process.");
+            throw new InvalidArgumentException(
+                "Workspace '{$workspace->name}' has no owning app; cannot name FrankenPHP runtime process.",
+            );
         }
 
         return "frankenphp-{$workspace->app->name}-{$workspace->name}";

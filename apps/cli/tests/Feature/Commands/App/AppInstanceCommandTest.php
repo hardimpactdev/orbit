@@ -32,18 +32,19 @@ describe('app:instance', function (): void {
         Http::assertSent(function (Request $request): bool {
             $data = $request->data();
 
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/apps/billing/instances'
                 && $data['name'] === 'production-cloud'
                 && $data['driver'] === 'laravel-cloud'
                 && $data['cloud_application'] === 'app_123'
                 && $data['cloud_environment'] === 'env_123'
                 && $data['domain'] === 'platform11.nl'
-                && $data['php_extensions'] === ['redis', 'intl'];
+                && $data['php_extensions'] === ['redis', 'intl']
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['instance']['name'])->toBe('production-cloud');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['instance']['name'])->toBe('production-cloud');
     });
 
     it('renders human add output with the created instance name driver and extensions', function (): void {
@@ -70,14 +71,19 @@ describe('app:instance', function (): void {
             '--php-extension' => ['intl', 'redis'],
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Added instance 'production' to app 'billing'.")
-            ->and($output)->toContain('  driver: orbit')
-            ->and($output)->toContain('  extensions: intl, redis')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('instance: {')
-            ->and($output)->not->toContain('"driver_config"')
-            ->and($output)->not->toContain('cloud_compatibility');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Added instance 'production' to app 'billing'.")
+            ->and($output)
+            ->toContain('  driver: orbit')
+            ->and($output)
+            ->toContain('  extensions: intl, redis')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('instance: {')->and($output)
+            ->not->toContain('"driver_config"')->and($output)
+            ->not->toContain('cloud_compatibility');
     });
 
     it('renders human add output without an extensions line when none are required', function (): void {
@@ -103,11 +109,15 @@ describe('app:instance', function (): void {
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Added instance 'production' to app 'billing'.")
-            ->and($output)->toContain('  driver: orbit')
-            ->and($output)->not->toContain('extensions:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Added instance 'production' to app 'billing'.")
+            ->and($output)
+            ->toContain('  driver: orbit')
+            ->and($output)
+            ->not->toContain('extensions:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders human remove output with the removed instance name', function (): void {
@@ -126,10 +136,13 @@ describe('app:instance', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Removed instance 'production'.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('result:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Removed instance 'production'.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('result:');
     });
 
     it('supports --app as the app selector for scripts and agents', function (): void {
@@ -145,8 +158,12 @@ describe('app:instance', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/apps/billing/instances');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/apps/billing/instances'
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -187,26 +204,45 @@ describe('app:instance', function (): void {
             'app' => 'billing',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('APP')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('DRIVER')
-            ->and($output)->toContain('MODE')
-            ->and($output)->toContain('PHP')
-            ->and($output)->toContain('EXTENSIONS')
-            ->and($output)->toContain('DEPLOYMENT')
-            ->and($output)->toContain('production')
-            ->and($output)->toContain('orbit')
-            ->and($output)->toContain('worker')
-            ->and($output)->toContain('8.5')
-            ->and($output)->toContain('intl, redis')
-            ->and($output)->toContain('succeeded')
-            ->and($output)->toContain('cloud')
-            ->and($output)->toContain('laravel-cloud')
-            ->and($output)->toContain('classic')
-            ->and($output)->toContain('—')
-            ->and($output)->not->toContain('instances: [')
-            ->and($output)->not->toContain('"runtime"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('APP')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('DRIVER')
+            ->and($output)
+            ->toContain('MODE')
+            ->and($output)
+            ->toContain('PHP')
+            ->and($output)
+            ->toContain('EXTENSIONS')
+            ->and($output)
+            ->toContain('DEPLOYMENT')
+            ->and($output)
+            ->toContain('production')
+            ->and($output)
+            ->toContain('orbit')
+            ->and($output)
+            ->toContain('worker')
+            ->and($output)
+            ->toContain('8.5')
+            ->and($output)
+            ->toContain('intl, redis')
+            ->and($output)
+            ->toContain('succeeded')
+            ->and($output)
+            ->toContain('cloud')
+            ->and($output)
+            ->toContain('laravel-cloud')
+            ->and($output)
+            ->toContain('classic')
+            ->and($output)
+            ->toContain('—')
+            ->and($output)
+            ->not->toContain('instances: [')->and($output)
+            ->not->toContain('"runtime"');
     });
 
     it('renders human empty list output when no instances exist', function (): void {
@@ -220,8 +256,7 @@ describe('app:instance', function (): void {
             'app' => 'billing',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No instances found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No instances found.');
     });
 
     it('renders human show output as an instance detail summary', function (): void {
@@ -248,22 +283,37 @@ describe('app:instance', function (): void {
             '--instance' => 'production',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Instance: production')
-            ->and($output)->toContain('App')
-            ->and($output)->toContain('billing')
-            ->and($output)->toContain('Driver')
-            ->and($output)->toContain('orbit')
-            ->and($output)->toContain('Mode')
-            ->and($output)->toContain('worker')
-            ->and($output)->toContain('PHP')
-            ->and($output)->toContain('8.5')
-            ->and($output)->toContain('Extensions')
-            ->and($output)->toContain('intl, redis')
-            ->and($output)->toContain('Deployment')
-            ->and($output)->toContain('succeeded')
-            ->and($output)->not->toContain('instance: {')
-            ->and($output)->not->toContain('"driver_config"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Instance: production')
+            ->and($output)
+            ->toContain('App')
+            ->and($output)
+            ->toContain('billing')
+            ->and($output)
+            ->toContain('Driver')
+            ->and($output)
+            ->toContain('orbit')
+            ->and($output)
+            ->toContain('Mode')
+            ->and($output)
+            ->toContain('worker')
+            ->and($output)
+            ->toContain('PHP')
+            ->and($output)
+            ->toContain('8.5')
+            ->and($output)
+            ->toContain('Extensions')
+            ->and($output)
+            ->toContain('intl, redis')
+            ->and($output)
+            ->toContain('Deployment')
+            ->and($output)
+            ->toContain('succeeded')
+            ->and($output)
+            ->not->toContain('instance: {')->and($output)
+            ->not->toContain('"driver_config"');
     });
 
     it('fails deterministic validation when positional app and --app differ', function (): void {
@@ -281,9 +331,12 @@ describe('app:instance', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('requires force before removing an instance non-interactively', function (): void {
@@ -300,8 +353,11 @@ describe('app:instance', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 });

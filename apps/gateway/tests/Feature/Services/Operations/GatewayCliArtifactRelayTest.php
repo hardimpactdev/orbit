@@ -39,11 +39,13 @@ it('stages a manifest CLI artifact and serves it through the gateway endpoint', 
 
     $artifact = app(GatewayCliArtifactRelay::class)->artifactFor($run, $plan, 'linux-amd64');
 
-    expect($artifact)->toMatchArray([
-        'sha256' => $sha256,
-        'source_url' => 'https://artifacts.example/orbit-linux-amd64',
-    ])
-        ->and($artifact['url'])->toStartWith("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=");
+    expect($artifact)
+        ->toMatchArray([
+            'sha256' => $sha256,
+            'source_url' => 'https://artifacts.example/orbit-linux-amd64',
+        ])
+        ->and($artifact['url'])
+        ->toStartWith("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=");
 
     $response = $this->get(gatewayCliArtifactRelayPathFromUrl($artifact['url']));
 
@@ -56,10 +58,12 @@ it('uses the registered gateway address when the configured artifact base url is
     config()->set('app.url', 'http://localhost');
     config()->set('orbit.updates.artifact_base_url', 'http://localhost');
 
-    Node::factory()->gateway()->create([
-        'host' => 'gateway.internal',
-        'wireguard_address' => '10.6.0.2',
-    ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'host' => 'gateway.internal',
+            'wireguard_address' => '10.6.0.2',
+        ]);
 
     $binary = 'orbit-linux-binary';
     $sha256 = hash('sha256', $binary);

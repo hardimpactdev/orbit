@@ -29,10 +29,13 @@ final class ListNodesRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'role' => $this->role,
-            'doctor' => $this->doctor ? true : null,
-        ], static fn (mixed $v): bool => $v !== null);
+        return array_filter(
+            [
+                'role' => $this->role,
+                'doctor' => $this->doctor ? true : null,
+            ],
+            static fn (mixed $v): bool => $v !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): NodeListResponse
@@ -42,7 +45,7 @@ final class ListNodesRequest extends GatewayRequest
         $nodes = $data['nodes'] ?? [];
 
         return new NodeListResponse(
-            nodes: is_array($nodes) ? array_values($nodes) : [],
+            nodes: $this->listOfStringKeyedArrays($nodes),
             meta: $envelopeMeta,
         );
     }
@@ -55,7 +58,7 @@ final class ListNodesRequest extends GatewayRequest
         $body = $response->json();
 
         if (is_array($body) && isset($body['success']['meta']) && is_array($body['success']['meta'])) {
-            return $body['success']['meta'];
+            return $this->stringKeyedArray($body['success']['meta']);
         }
 
         return [];

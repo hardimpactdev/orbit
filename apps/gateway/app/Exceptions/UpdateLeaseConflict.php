@@ -19,7 +19,7 @@ final class UpdateLeaseConflict extends RuntimeException
         public readonly Carbon $expiresAt,
     ) {
         parent::__construct(
-            "Update resource [{$this->resourceType}:{$this->resourceKey}] is already leased by operation [{$this->operationRunId}] until {$this->expiresAt->toIso8601String()}."
+            "Update resource [{$this->resourceType}:{$this->resourceKey}] is already leased by operation [{$this->operationRunId}] until {$this->expiresAt->toIso8601String()}.",
         );
     }
 

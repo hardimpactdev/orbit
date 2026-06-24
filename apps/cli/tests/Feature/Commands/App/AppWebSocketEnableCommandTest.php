@@ -24,15 +24,22 @@ describe('AppWebSocketEnableCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/websocket/enable'
-            && $request->data() === [
-                'public_hosts' => ['ws.docs.test', 'events.docs.test'],
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/websocket/enable'
+                && $request->data() === [
+                    'public_hosts' => ['ws.docs.test', 'events.docs.test'],
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['binding']['internal_host'])->toBe('websocket.orbit')
-            ->and($decoded['success']['data']['binding']['public_hosts'])->toBe(['ws.docs.test', 'events.docs.test']);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['binding']['internal_host'])
+            ->toBe('websocket.orbit')
+            ->and($decoded['success']['data']['binding']['public_hosts'])
+            ->toBe(['ws.docs.test', 'events.docs.test']);
     });
 
     it('renders enable responses in human mode', function (): void {
@@ -50,15 +57,24 @@ describe('AppWebSocketEnableCommand', function (): void {
             '--host' => ['ws.docs.test'],
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('binding:')
-            ->and($output)->toContain('  app: docs')
-            ->and($output)->toContain('  internal_host: websocket.orbit')
-            ->and($output)->toContain('  public_hosts:')
-            ->and($output)->toContain('    - ws.docs.test')
-            ->and($output)->toContain('  allowed_origins:')
-            ->and($output)->toContain('    - https://docs.test')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('binding:')
+            ->and($output)
+            ->toContain('  app: docs')
+            ->and($output)
+            ->toContain('  internal_host: websocket.orbit')
+            ->and($output)
+            ->toContain('  public_hosts:')
+            ->and($output)
+            ->toContain('    - ws.docs.test')
+            ->and($output)
+            ->toContain('  allowed_origins:')
+            ->and($output)
+            ->toContain('    - https://docs.test')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {
@@ -72,9 +88,12 @@ describe('AppWebSocketEnableCommand', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
@@ -92,8 +111,11 @@ describe('AppWebSocketEnableCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('app:write');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('app:write');
     });
 });

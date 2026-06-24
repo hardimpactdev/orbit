@@ -33,7 +33,7 @@ final class ListVpnClientsRequest extends GatewayRequest
         $data = $this->unwrapData($response);
 
         return new VpnClientListResponse(
-            clients: is_array($data['clients'] ?? null) ? array_values($data['clients']) : [],
+            clients: $this->listOfStringKeyedArrays($data['clients'] ?? []),
             meta: $this->unwrapMeta($response),
         );
     }

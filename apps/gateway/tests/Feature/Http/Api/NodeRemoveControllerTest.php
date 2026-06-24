@@ -134,12 +134,17 @@ describe('NodeRemoveController', function (): void {
         grantRemoveNodeAccess($targetId, $gatewayId);
         grantRemoveNodeAccess($callerId, $otherId);
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -152,12 +157,17 @@ describe('NodeRemoveController', function (): void {
                 ],
             ]);
 
-        expect(DB::table('nodes')->where('name', 'app-1')->exists())->toBeFalse()
-            ->and(DB::table('node_access')->count())->toBe(2)
-            ->and(DB::table('node_access')
-                ->where('consumer_node_id', $callerId)
-                ->where('serving_node_id', $otherId)
-                ->exists())->toBeTrue();
+        expect(DB::table('nodes')->where('name', 'app-1')->exists())
+            ->toBeFalse()
+            ->and(DB::table('node_access')->count())
+            ->toBe(2)
+            ->and(
+                DB::table('node_access')
+                    ->where('consumer_node_id', $callerId)
+                    ->where('serving_node_id', $otherId)
+                    ->exists(),
+            )
+            ->toBeTrue();
     });
 
     it('logs activity for a successful node removal', function (): void {
@@ -168,10 +178,14 @@ describe('NodeRemoveController', function (): void {
         grantRemoveNodeAccess($callerId, $targetId);
         grantRemoveNodeAccess($targetId, $gatewayId);
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 
@@ -194,31 +208,43 @@ describe('NodeRemoveController', function (): void {
         $gatewayId = createRemoveGatewayNode();
         grantRemoveGatewayAccess($callerId, $gatewayId);
 
-        $response = deleteRemoveNodeJson('/api/nodes/control-caller', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'interactive_confirm',
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/control-caller',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'interactive_confirm',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.name', 'control-caller')
             ->assertJsonPath('success.data.action', 'removed')
             ->assertJsonPath('success.data.removed_self', true)
             ->assertJsonPath('success.data.wireguard_peer_removed', false)
             ->assertJsonPath('success.data.grants_removed', 1);
 
-        expect(DB::table('nodes')->where('name', 'control-caller')->exists())->toBeFalse()
-            ->and(DB::table('nodes')->where('name', 'gateway-1')->exists())->toBeTrue();
+        expect(DB::table('nodes')->where('name', 'control-caller')->exists())
+            ->toBeFalse()
+            ->and(DB::table('nodes')->where('name', 'gateway-1')->exists())
+            ->toBeTrue();
     });
 
     it('removes a node directly for a gateway caller', function (): void {
         createRemoveCallerNode('gateway');
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.name', 'app-1')
             ->assertJsonPath('success.data.grants_removed', 0);
 
@@ -229,12 +255,17 @@ describe('NodeRemoveController', function (): void {
         createRemoveCallerNode();
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:remove')
@@ -250,10 +281,14 @@ describe('NodeRemoveController', function (): void {
         grantRemoveGatewayAccess($callerId, $gatewayId);
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.name', 'app-1');
@@ -278,12 +313,17 @@ describe('NodeRemoveController', function (): void {
             'status' => 'active',
         ]);
 
-        $response = deleteRemoveNodeJson('/api/nodes/gateway-shadow-stale', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/gateway-shadow-stale',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.gateway_removal_denied')
             ->assertJsonPath('error.meta.role', 'gateway');
 
@@ -297,7 +337,8 @@ describe('NodeRemoveController', function (): void {
             'destructive_consent' => true,
         ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.')
             ->assertJsonPath('error.meta', []);
@@ -310,9 +351,13 @@ describe('NodeRemoveController', function (): void {
         $targetId = (int) DB::table('nodes')->insertGetId(apiRemoveNodeRow());
         grantRemoveNodeAccess($callerId, $targetId);
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.name', 'app-1');
@@ -325,11 +370,16 @@ describe('NodeRemoveController', function (): void {
         createRemoveGatewayNode();
         DB::table('nodes')->insert(apiRemoveNodeRow());
 
-        $response = deleteRemoveNodeJson('/api/nodes/app-1', [
-            'destructive_consent' => true,
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/app-1',
+            [
+                'destructive_consent' => true,
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:remove')
@@ -346,7 +396,8 @@ describe('NodeRemoveController', function (): void {
 
         $response = deleteRemoveNodeJson('/api/nodes/app-1', $data, ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Use --force to remove this node.')
             ->assertJsonPath('error.meta.field', 'force');
@@ -362,11 +413,16 @@ describe('NodeRemoveController', function (): void {
         $gatewayId = createRemoveGatewayNode();
         grantRemoveGatewayAccess($callerId, $gatewayId);
 
-        $response = deleteRemoveNodeJson('/api/nodes/missing-node', [
-            'destructive_consent' => true,
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/missing-node',
+            [
+                'destructive_consent' => true,
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'node.not_found')
             ->assertJsonPath('error.message', "Node 'missing-node' not found.")
             ->assertJsonPath('error.meta.name', 'missing-node');
@@ -377,11 +433,16 @@ describe('NodeRemoveController', function (): void {
         $gatewayId = createRemoveGatewayNode();
         grantRemoveGatewayAccess($callerId, $gatewayId);
 
-        $response = deleteRemoveNodeJson('/api/nodes/gateway-1', [
-            'destructive_consent' => true,
-        ], ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP]);
+        $response = deleteRemoveNodeJson(
+            '/api/nodes/gateway-1',
+            [
+                'destructive_consent' => true,
+            ],
+            ['REMOTE_ADDR' => REMOVE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.gateway_removal_denied')
             ->assertJsonPath('error.message', 'The gateway node cannot be removed with this command.')
             ->assertJsonPath('error.meta.name', 'gateway-1')

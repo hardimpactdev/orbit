@@ -23,10 +23,12 @@ it('does not start a process runtime unit after apply fails', function (): void 
     ]);
     app()->instance(RemoteShell::class, $shell);
 
-    $node = Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.4',
-    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
     $context = new ProcessOwnerContext($node, null, null, $node);
 
     $result = app(AddProcess::class)->handle(
@@ -41,10 +43,14 @@ it('does not start a process runtime unit after apply fails', function (): void 
         version: '8',
     );
 
-    expect(array_column($result['warnings'], 'code'))->toBe(['process.runtime_unit_apply_failed'])
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->scripts[0])->toContain('docker service create')
-        ->and(implode("\n", $shell->scripts))->not->toContain('docker service update --detach --replicas 1');
+    expect(array_column($result['warnings'], 'code'))
+        ->toBe(['process.runtime_unit_apply_failed'])
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->scripts[0])
+        ->toContain('docker service create')
+        ->and(implode("\n", $shell->scripts))
+        ->not->toContain('docker service update --detach --replicas 1');
 });
 
 it('does not restart a process runtime unit after apply fails', function (): void {
@@ -53,10 +59,12 @@ it('does not restart a process runtime unit after apply fails', function (): voi
     ]);
     app()->instance(RemoteShell::class, $shell);
 
-    $node = Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.4',
-    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
     $context = new ProcessOwnerContext($node, null, null, $node);
     $descriptor = app(ProcessServiceCatalog::class)->resolve(
         service: 'mysql',
@@ -66,14 +74,16 @@ it('does not restart a process runtime unit after apply fails', function (): voi
         processName: 'mysql8',
     );
 
-    Process::factory()->forOwner($node)->create([
-        'name' => 'mysql8',
-        'command' => $descriptor->command,
-        'restart_policy' => ProcessRestartPolicy::Never,
-        'crash_notification' => ProcessCrashNotification::None,
-        'runtime' => ProcessRuntime::DockerSwarm,
-        'runtime_config' => $descriptor->runtimeConfig,
-    ]);
+    Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'mysql8',
+            'command' => $descriptor->command,
+            'restart_policy' => ProcessRestartPolicy::Never,
+            'crash_notification' => ProcessCrashNotification::None,
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => $descriptor->runtimeConfig,
+        ]);
 
     $result = app(EditProcess::class)->handle(
         context: $context,
@@ -82,10 +92,14 @@ it('does not restart a process runtime unit after apply fails', function (): voi
         restart: true,
     );
 
-    expect(array_column($result['warnings'], 'code'))->toBe(['process.runtime_unit_apply_failed'])
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->scripts[0])->toContain('docker service create')
-        ->and(implode("\n", $shell->scripts))->not->toContain('docker service update --detach --force');
+    expect(array_column($result['warnings'], 'code'))
+        ->toBe(['process.runtime_unit_apply_failed'])
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->scripts[0])
+        ->toContain('docker service create')
+        ->and(implode("\n", $shell->scripts))
+        ->not->toContain('docker service update --detach --force');
 });
 
 final class ProcessRuntimeLifecycleRecordingShell implements RemoteShell

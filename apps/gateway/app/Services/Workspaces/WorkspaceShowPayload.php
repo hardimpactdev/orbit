@@ -43,9 +43,13 @@ class WorkspaceShowPayload
                 'name' => $node?->name,
                 'host' => $node?->host,
             ],
-            'inherited_processes' => $app?->processes->map(fn (Process $process): array => [
-                'name' => $process->name,
-            ])->values()->all() ?? [],
+            'inherited_processes' => $app
+                ?->processes
+                ->map(fn (Process $process): array => [
+                    'name' => $process->name,
+                ])
+                ->values()
+                ->all() ?? [],
         ];
     }
 }

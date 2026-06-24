@@ -30,14 +30,15 @@ describe('workspace:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/workspaces')
                 && str_contains($url, 'app=docs')
-                && str_contains($url, 'node=app-1');
+                && str_contains($url, 'node=app-1')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['workspaces'][0]['name'])->toBe('feature-docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['workspaces'][0]['name'])->toBe('feature-docs');
     });
 
     it('renders human output grouped by node then app as tables', function (): void {
@@ -69,19 +70,31 @@ describe('workspace:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Node: app-1')
-            ->and($output)->toContain('App: docs')
-            ->and($output)->toContain('Node: app-2')
-            ->and($output)->toContain('App: orbit')
-            ->and($output)->toContain('WORKSPACE')
-            ->and($output)->toContain('URL')
-            ->and($output)->toContain('LIFECYCLE STATUS')
-            ->and($output)->toContain('feature-docs')
-            ->and($output)->toContain('https://docs.test')
-            ->and($output)->toContain('setup-pending')
-            ->and($output)->not->toContain('workspaces: [')
-            ->and($output)->not->toContain('"lifecycle_status"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Node: app-1')
+            ->and($output)
+            ->toContain('App: docs')
+            ->and($output)
+            ->toContain('Node: app-2')
+            ->and($output)
+            ->toContain('App: orbit')
+            ->and($output)
+            ->toContain('WORKSPACE')
+            ->and($output)
+            ->toContain('URL')
+            ->and($output)
+            ->toContain('LIFECYCLE STATUS')
+            ->and($output)
+            ->toContain('feature-docs')
+            ->and($output)
+            ->toContain('https://docs.test')
+            ->and($output)
+            ->toContain('setup-pending')
+            ->and($output)
+            ->not->toContain('workspaces: [')->and($output)
+            ->not->toContain('"lifecycle_status"');
     });
 
     it('renders missing workspace cells as an em dash', function (): void {
@@ -93,8 +106,7 @@ describe('workspace:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('—');
+        expect($exitCode)->toBe(0)->and($output)->toContain('—');
     });
 
     it('renders human empty output when no workspaces are visible', function (): void {
@@ -104,8 +116,7 @@ describe('workspace:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No workspaces found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No workspaces found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
@@ -115,8 +126,7 @@ describe('workspace:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -126,7 +136,6 @@ describe('workspace:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

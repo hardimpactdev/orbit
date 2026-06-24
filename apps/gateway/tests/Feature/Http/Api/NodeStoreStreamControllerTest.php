@@ -22,8 +22,7 @@ uses(RefreshDatabase::class);
 beforeEach(function (): void {
     bindDevelopmentDnsMappingTestDoubles('node-store-stream-controller-dns');
 
-    app()->instance(SshHostKeyPinner::class, new class
-    {
+    app()->instance(SshHostKeyPinner::class, new class {
         public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
         {
             return new PinnedHostKey(
@@ -122,7 +121,8 @@ it('streams node creation from an operation_run source', function (): void {
         }
 
         if (str_contains($command, 'internal:wg-easy:state')) {
-            return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)."\n");
+            return Process::result(output: json_encode(['success' => ['data' => [], 'meta' => []]], JSON_THROW_ON_ERROR)
+                ."\n");
         }
 
         if (str_contains($command, 'com.docker.swarm.service.name=orbit_orbit-vpn')) {
@@ -134,29 +134,44 @@ it('streams node creation from an operation_run source', function (): void {
     Process::preventStrayProcesses();
     app()->instance(RemoteShell::class, new NodeStoreStreamConvergenceRemoteShell);
 
-    $response = $this->call('POST', '/api/nodes', [
-        'name' => 'app-dev-1',
-        'roles' => ['app-dev'],
-        'host' => '192.0.2.20',
-        'tld' => 'test',
-    ], [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => '10.6.0.3',
-    ]);
+    $response = $this->call(
+        'POST',
+        '/api/nodes',
+        [
+            'name' => 'app-dev-1',
+            'roles' => ['app-dev'],
+            'host' => '192.0.2.20',
+            'tld' => 'test',
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => '10.6.0.3',
+        ],
+    );
 
     $response->assertOk();
 
     $content = $response->streamedContent();
     $operationRun = OperationRun::query()->where('operation_type', 'node:new')->firstOrFail();
 
-    expect($content)->toContain('event: tree')
-        ->and($content)->toContain('Record operation state')
-        ->and($content)->toContain('Run node creation')
-        ->and($content)->toContain('event: complete')
-        ->and($content)->toContain($operationRun->id)
-        ->and($operationRun->status->value)->toBe('succeeded')
-        ->and($operationRun->caller_node_id)->toBe($callerId)
-        ->and($operationRun->result['success']['data']['node']['name'])->toBe('app-dev-1');
+    expect($content)
+        ->toContain('event: tree')
+        ->and($content)
+        ->toContain('Record operation state')
+        ->and($content)
+        ->toContain('Run node creation')
+        ->and($content)
+        ->toContain('event: complete')
+        ->and($content)
+        ->toContain($operationRun->id)
+        ->and($operationRun->status->value)
+        ->toBe('succeeded')
+        ->and($operationRun->caller_node_id)
+        ->toBe($callerId)
+        ->and($operationRun->result['success']['data']['node']['name'])
+        ->toBe('app-dev-1');
 });
 
 final class NodeStoreStreamConvergenceRemoteShell implements RemoteShell
@@ -220,7 +235,10 @@ final class NodeStoreStreamConvergenceRemoteShell implements RemoteShell
             '/opt/orbit/php/8.5/bin/php' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
             '/usr/local/bin/composer' => ['/usr/local/bin/composer', 'Composer version 2.9.0'],
             'gh' => ['/usr/bin/gh', 'gh version 2.60.0'],
-            'laravel', '/usr/local/bin/laravel', 'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
+            'laravel', '/usr/local/bin/laravel', 'laravel-installer' => [
+                '/usr/local/bin/laravel',
+                'Laravel Installer 5.0.0',
+            ],
             default => ['', ''],
         };
 

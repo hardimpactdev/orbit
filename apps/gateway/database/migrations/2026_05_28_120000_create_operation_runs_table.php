@@ -7,8 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         Schema::create('operation_runs', function (Blueprint $table): void {
@@ -40,7 +39,7 @@ return new class extends Migration
                 WHEN NEW.lane NOT IN ('host', 'runtime', 'local', 'gateway')
                 BEGIN
                     SELECT RAISE(ABORT, 'operation_runs.lane must be one of host, runtime, local, gateway');
-                END"
+                END",
             );
 
             DB::statement(
@@ -50,7 +49,7 @@ return new class extends Migration
                 WHEN NEW.lane NOT IN ('host', 'runtime', 'local', 'gateway')
                 BEGIN
                     SELECT RAISE(ABORT, 'operation_runs.lane must be one of host, runtime, local, gateway');
-                END"
+                END",
             );
         }
     }

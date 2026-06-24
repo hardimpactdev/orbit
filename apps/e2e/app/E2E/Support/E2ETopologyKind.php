@@ -56,15 +56,44 @@ enum E2ETopologyKind: string
         return match ($this) {
             self::Operator => [],
             self::OperatorGateway => ['operator-gateway'],
-            self::OperatorGatewayAppdev => ['operator-gateway-app-dev', 'operator-gateway-appdev', 'operator-gateway-dev'],
-            self::OperatorGatewayAppdevAppprod => ['operator-gateway-app-dev-app-prod', 'operator-gateway-appdev-appprod', 'operator-gateway-dev-prod'],
-            self::OperatorGatewayAppdevAppprodIngress => ['operator-gateway-app-dev-app-prod-ingress', 'operator-gateway-appdev-appprod-ingress', 'operator-gateway-dev-prod-ingress'],
+            self::OperatorGatewayAppdev => [
+                'operator-gateway-app-dev',
+                'operator-gateway-appdev',
+                'operator-gateway-dev',
+            ],
+            self::OperatorGatewayAppdevAppprod => [
+                'operator-gateway-app-dev-app-prod',
+                'operator-gateway-appdev-appprod',
+                'operator-gateway-dev-prod',
+            ],
+            self::OperatorGatewayAppdevAppprodIngress => [
+                'operator-gateway-app-dev-app-prod-ingress',
+                'operator-gateway-appdev-appprod-ingress',
+                'operator-gateway-dev-prod-ingress',
+            ],
             self::OperatorGatewayAgent => ['operator-gateway-agent'],
-            self::OperatorGatewayAppdevAppprodAgent => ['operator-gateway-app-dev-app-prod-agent', 'operator-gateway-appdev-appprod-agent'],
-            self::OperatorGatewayAppprodIngress => ['operator-gateway-app-prod-ingress', 'operator-gateway-appprod-ingress'],
-            self::OperatorGatewayAppdevWebsocket => ['operator-gateway-app-dev-websocket', 'operator-gateway-appdev-websocket', 'operator-gateway-dev-websocket'],
-            self::OperatorGatewayAppdevAppprodWebsocket => ['operator-gateway-app-dev-app-prod-websocket', 'operator-gateway-appdev-appprod-websocket', 'operator-gateway-dev-prod-websocket'],
-            self::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator-gateway-app-dev-app-prod-agent-websocket', 'operator-gateway-appdev-appprod-agent-websocket'],
+            self::OperatorGatewayAppdevAppprodAgent => [
+                'operator-gateway-app-dev-app-prod-agent',
+                'operator-gateway-appdev-appprod-agent',
+            ],
+            self::OperatorGatewayAppprodIngress => [
+                'operator-gateway-app-prod-ingress',
+                'operator-gateway-appprod-ingress',
+            ],
+            self::OperatorGatewayAppdevWebsocket => [
+                'operator-gateway-app-dev-websocket',
+                'operator-gateway-appdev-websocket',
+                'operator-gateway-dev-websocket',
+            ],
+            self::OperatorGatewayAppdevAppprodWebsocket => [
+                'operator-gateway-app-dev-app-prod-websocket',
+                'operator-gateway-appdev-appprod-websocket',
+                'operator-gateway-dev-prod-websocket',
+            ],
+            self::OperatorGatewayAppdevAppprodAgentWebsocket => [
+                'operator-gateway-app-dev-app-prod-agent-websocket',
+                'operator-gateway-appdev-appprod-agent-websocket',
+            ],
         };
     }
 

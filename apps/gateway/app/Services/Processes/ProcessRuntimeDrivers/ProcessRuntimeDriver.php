@@ -13,7 +13,13 @@ interface ProcessRuntimeDriver
 {
     public function runtimeUnitName(App $app, Process $process, ?Workspace $workspace = null): string;
 
-    public function apply(Node $node, App $app, Process $process, ?Workspace $workspace = null, ?string $preApplyScript = null): bool;
+    public function apply(
+        Node $node,
+        App $app,
+        Process $process,
+        ?Workspace $workspace = null,
+        ?string $preApplyScript = null,
+    ): bool;
 
     public function remove(Node $node, string $runtimeUnit): bool;
 
@@ -25,5 +31,12 @@ interface ProcessRuntimeDriver
 
     public function restart(Node $node, string $runtimeUnit): bool;
 
-    public function logScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string;
+    public function logScript(
+        App $app,
+        Process $process,
+        ?Workspace $workspace,
+        string $runtimeUnit,
+        int $lines,
+        bool $follow,
+    ): string;
 }

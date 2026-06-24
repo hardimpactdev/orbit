@@ -29,10 +29,13 @@ final class ListToolsRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolListResponse
@@ -41,7 +44,7 @@ final class ListToolsRequest extends GatewayRequest
         $tools = $data['tools'] ?? [];
 
         return new ToolListResponse(
-            tools: is_array($tools) ? array_values($tools) : [],
+            tools: $this->listOfStringKeyedArrays($tools),
         );
     }
 }

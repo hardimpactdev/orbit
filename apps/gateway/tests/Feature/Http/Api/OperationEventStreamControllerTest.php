@@ -48,21 +48,31 @@ it('replays operation events from the beginning as server sent events', function
 
     $response = operationEventStreamRequest($this->run);
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8')
         ->assertHeader('X-Accel-Buffering', 'no');
 
     $content = $response->streamedContent();
 
-    expect($content)->toContain("id: {$tree->sequence}\n")
-        ->and($content)->toContain("event: tree\n")
-        ->and($content)->toContain('"title":"Update all"')
-        ->and($content)->toContain("id: {$step->sequence}\n")
-        ->and($content)->toContain('"status":"running"')
-        ->and($content)->toContain("id: {$complete->sequence}\n")
-        ->and($content)->toContain("event: complete\n")
-        ->and($content)->toContain('"exit_code":0')
-        ->and($content)->toContain('"version":"1.2.3"');
+    expect($content)
+        ->toContain("id: {$tree->sequence}\n")
+        ->and($content)
+        ->toContain("event: tree\n")
+        ->and($content)
+        ->toContain('"title":"Update all"')
+        ->and($content)
+        ->toContain("id: {$step->sequence}\n")
+        ->and($content)
+        ->toContain('"status":"running"')
+        ->and($content)
+        ->toContain("id: {$complete->sequence}\n")
+        ->and($content)
+        ->toContain("event: complete\n")
+        ->and($content)
+        ->toContain('"exit_code":0')
+        ->and($content)
+        ->toContain('"version":"1.2.3"');
 });
 
 it('continues replay after the last seen event sequence', function (): void {
@@ -72,20 +82,25 @@ it('continues replay after the last seen event sequence', function (): void {
     $first = $this->recorder->step($this->run, 'gateway', 'running');
     $second = $this->recorder->step($this->run, 'gateway', 'done');
 
-    $response = operationEventStreamRequest($this->run, [
-        'HTTP_LAST_EVENT_ID' => (string) $first->sequence,
-    ], [
-        'once' => '1',
-    ]);
+    $response = operationEventStreamRequest(
+        $this->run,
+        [
+            'HTTP_LAST_EVENT_ID' => (string) $first->sequence,
+        ],
+        [
+            'once' => '1',
+        ],
+    );
 
     $response->assertOk();
 
     $content = $response->streamedContent();
 
-    expect($first->id)->not->toBe($first->sequence)
-        ->and($content)->not->toContain("id: {$first->sequence}\n")
-        ->and($content)->toContain("id: {$second->sequence}\n")
-        ->and($content)->toContain('"status":"done"');
+    expect($first->id)
+        ->not->toBe($first->sequence)->and($content)
+        ->not->toContain("id: {$first->sequence}\n")->and($content)->toContain("id: {$second->sequence}\n")->and(
+            $content,
+        )->toContain('"status":"done"');
 });
 
 it('streams terminal error state when the operation ended with an error event', function (): void {
@@ -100,10 +115,14 @@ it('streams terminal error state when the operation ended with an error event', 
 
     $response->assertOk();
 
-    expect($response->streamedContent())->toContain("id: {$terminal->sequence}\n")
-        ->and($response->streamedContent())->toContain("event: error\n")
-        ->and($response->streamedContent())->toContain('"message":"Gateway health failed"')
-        ->and($response->streamedContent())->toContain('"exit_code":17');
+    expect($response->streamedContent())
+        ->toContain("id: {$terminal->sequence}\n")
+        ->and($response->streamedContent())
+        ->toContain("event: error\n")
+        ->and($response->streamedContent())
+        ->toContain('"message":"Gateway health failed"')
+        ->and($response->streamedContent())
+        ->toContain('"exit_code":17');
 });
 
 it('emits heartbeats while following a non-terminal operation event stream', function (): void {
@@ -120,9 +139,17 @@ it('emits heartbeats while following a non-terminal operation event stream', fun
 });
 
 it('rejects requests that do not resolve to a WireGuard node identity', function (): void {
-    $this->call('GET', "/api/operations/{$this->run->id}/events", [], [], [], [
-        'REMOTE_ADDR' => '10.6.0.222',
-    ])
+    $this
+        ->call(
+            'GET',
+            "/api/operations/{$this->run->id}/events",
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => '10.6.0.222',
+            ],
+        )
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed');
 });
@@ -134,9 +161,17 @@ it('requires gateway admin authority for non-gateway callers', function (): void
         'wireguard_address' => '10.6.0.90',
     ]);
 
-    $this->call('GET', "/api/operations/{$this->run->id}/events", [], [], [], [
-        'REMOTE_ADDR' => '10.6.0.90',
-    ])
+    $this
+        ->call(
+            'GET',
+            "/api/operations/{$this->run->id}/events",
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => '10.6.0.90',
+            ],
+        )
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
         ->assertJsonPath('error.meta.missing_permission', '*')
@@ -158,11 +193,18 @@ it('allows non-gateway callers with gateway admin authority', function (): void 
 
     $this->recorder->step($this->run, 'gateway', 'running');
 
-    $response = $this->call('GET', "/api/operations/{$this->run->id}/events", [
-        'once' => '1',
-    ], [], [], [
-        'REMOTE_ADDR' => '10.6.0.90',
-    ]);
+    $response = $this->call(
+        'GET',
+        "/api/operations/{$this->run->id}/events",
+        [
+            'once' => '1',
+        ],
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => '10.6.0.90',
+        ],
+    );
 
     $response->assertOk();
 
@@ -170,15 +212,14 @@ it('allows non-gateway callers with gateway admin authority', function (): void 
 });
 
 it('declares gateway-wide permission on the controller', function (): void {
-    $attributes = (new ReflectionClass(OperationEventStreamController::class))
+    $attributes = new ReflectionClass(OperationEventStreamController::class)
         ->getAttributes(RequiresPermission::class);
 
     expect($attributes)->toHaveCount(1);
 
     $permission = $attributes[0]->newInstance();
 
-    expect($permission->permission)->toBe('*')
-        ->and($permission->servingNode)->toBe(ServingNode::Gateway);
+    expect($permission->permission)->toBe('*')->and($permission->servingNode)->toBe(ServingNode::Gateway);
 });
 
 it('uses WireGuard and grant middleware while bypassing LogActivity', function (): void {
@@ -188,10 +229,14 @@ it('uses WireGuard and grant middleware while bypassing LogActivity', function (
 
     $middleware = $route->gatherMiddleware();
 
-    expect($middleware)->toContain(CorrelationHeader::class)
-        ->and($middleware)->toContain(WireGuardIdentity::class)
-        ->and($middleware)->toContain(RequireGrantPermission::class)
-        ->and($middleware)->not->toContain(LogActivity::class);
+    expect($middleware)
+        ->toContain(CorrelationHeader::class)
+        ->and($middleware)
+        ->toContain(WireGuardIdentity::class)
+        ->and($middleware)
+        ->toContain(RequireGrantPermission::class)
+        ->and($middleware)
+        ->not->toContain(LogActivity::class);
 });
 
 /**
@@ -200,8 +245,15 @@ it('uses WireGuard and grant middleware while bypassing LogActivity', function (
  */
 function operationEventStreamRequest(OperationRun $run, array $server = [], array $query = []): TestResponse
 {
-    return test()->call('GET', "/api/operations/{$run->id}/events", $query, [], [], [
-        'REMOTE_ADDR' => OPERATION_EVENTS_GATEWAY_WG_IP,
-        ...$server,
-    ]);
+    return test()->call(
+        'GET',
+        "/api/operations/{$run->id}/events",
+        $query,
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => OPERATION_EVENTS_GATEWAY_WG_IP,
+            ...$server,
+        ],
+    );
 }

@@ -47,7 +47,7 @@ final readonly class SshHostKeyPinner
             }
 
             $failureReason = trim($result->errorOutput())
-                ?: ($result->successful() ? 'ssh-keyscan returned no host keys.' : 'ssh-keyscan failed');
+            ?: ($result->successful() ? 'ssh-keyscan returned no host keys.' : 'ssh-keyscan failed');
 
             if ($attempt < self::ScanAttempts && $this->scanRetryDelayMicroseconds > 0) {
                 usleep($this->scanRetryDelayMicroseconds);

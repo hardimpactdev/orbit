@@ -46,16 +46,20 @@ it('writes reads lists and removes retained topology manifests', function (): vo
 
     $store->write($payload);
 
-    expect($store->read('operator/dev topology'))->toMatchArray($payload)
-        ->and($store->list())->toHaveCount(1)
-        ->and($store->list()[0])->toMatchArray($payload)
-        ->and(glob("{$this->manifestDirectory}/*.json"))->toHaveCount(1)
-        ->and(basename((glob("{$this->manifestDirectory}/*.json") ?: [''])[0]))->toBe('operator_dev_topology.json');
+    expect($store->read('operator/dev topology'))
+        ->toMatchArray($payload)
+        ->and($store->list())
+        ->toHaveCount(1)
+        ->and($store->list()[0])
+        ->toMatchArray($payload)
+        ->and(glob("{$this->manifestDirectory}/*.json"))
+        ->toHaveCount(1)
+        ->and(basename((glob("{$this->manifestDirectory}/*.json") ?: [''])[0]))
+        ->toBe('operator_dev_topology.json');
 
     $store->remove('operator/dev topology');
 
-    expect($store->read('operator/dev topology'))->toBeNull()
-        ->and($store->list())->toBe([]);
+    expect($store->read('operator/dev topology'))->toBeNull()->and($store->list())->toBe([]);
 });
 
 it('defaults manifest storage to the apps e2e var path', function (): void {

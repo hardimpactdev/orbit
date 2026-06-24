@@ -43,7 +43,12 @@ final class ProxyRouteStoreController implements Loggable
                 caller: $caller,
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $caller;
@@ -76,10 +81,15 @@ final class ProxyRouteStoreController implements Loggable
         }
 
         if ($code !== null && ! in_array((int) $code, [301, 302, 307, 308], true)) {
-            return $this->error('validation_failed', 'Invalid redirect code.', [
-                'field' => 'code',
-                'allowed' => [301, 302, 307, 308],
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Invalid redirect code.',
+                [
+                    'field' => 'code',
+                    'allowed' => [301, 302, 307, 308],
+                ],
+                422,
+            );
         }
 
         return [

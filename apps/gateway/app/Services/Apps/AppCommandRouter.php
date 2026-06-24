@@ -65,7 +65,7 @@ final readonly class AppCommandRouter
      */
     private function wrapForHost(App $app, string $command, array $environment): string
     {
-        $appPath = rtrim((string) $app->path, '/');
+        $appPath = rtrim($app->path, '/');
         $phpVersion = $app->php_version;
         $runtimeUser = $this->appRuntimeUser->forApp($app);
         $envPrefix = '';
@@ -74,8 +74,12 @@ final readonly class AppCommandRouter
             $envPrefix .= "{$key}=".escapeshellarg($value).' ';
         }
 
-        $inner = 'cd '.escapeshellarg($appPath)
-            .' && PATH=/opt/orbit/php/'.escapeshellarg($phpVersion).'/bin:$PATH '
+        $inner =
+            'cd '
+            .escapeshellarg($appPath)
+            .' && PATH=/opt/orbit/php/'
+            .escapeshellarg($phpVersion)
+            .'/bin:$PATH '
             .$envPrefix
             .$command;
 

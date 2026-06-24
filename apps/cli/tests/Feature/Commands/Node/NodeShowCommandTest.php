@@ -19,11 +19,12 @@ describe('node:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/nodes/app-1'));
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/api/nodes/app-1'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['node']['name'])->toBe('app-1');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['node']['name'])->toBe('app-1');
     });
 
     it('resolves a missing name from OrbitConfigStore before calling the gateway', function (): void {
@@ -42,8 +43,7 @@ describe('node:show', function (): void {
 
         Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/api/nodes/default-app'));
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['node']['name'])->toBe('default-app');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['node']['name'])->toBe('default-app');
 
         @unlink($store->path());
     });
@@ -57,9 +57,12 @@ describe('node:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('name');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('name');
 
         @unlink($store->path());
     });
@@ -71,7 +74,13 @@ describe('node:show', function (): void {
                 'status' => 'active',
                 'platform' => 'ubuntu',
                 'roles' => [
-                    ['role' => 'gateway', 'status' => 'active', 'settings' => [], 'last_error' => null, 'converged_at' => null],
+                    [
+                        'role' => 'gateway',
+                        'status' => 'active',
+                        'settings' => [],
+                        'last_error' => null,
+                        'converged_at' => null,
+                    ],
                 ],
                 'addresses' => ['wireguard' => '10.6.0.2'],
                 'grants' => [
@@ -85,19 +94,32 @@ describe('node:show', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'node:show', ['name' => 'gateway-1']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Node: gateway-1')
-            ->and($output)->toContain('Role')
-            ->and($output)->toContain('gateway')
-            ->and($output)->toContain('OS')
-            ->and($output)->toContain('ubuntu')
-            ->and($output)->toContain('Peer IP')
-            ->and($output)->toContain('10.6.0.2')
-            ->and($output)->toContain('Serving')
-            ->and($output)->toContain('operator-1: *')
-            ->and($output)->toContain('Consuming')
-            ->and($output)->toContain('—')
-            ->and($output)->not->toContain('node: {');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Node: gateway-1')
+            ->and($output)
+            ->toContain('Role')
+            ->and($output)
+            ->toContain('gateway')
+            ->and($output)
+            ->toContain('OS')
+            ->and($output)
+            ->toContain('ubuntu')
+            ->and($output)
+            ->toContain('Peer IP')
+            ->and($output)
+            ->toContain('10.6.0.2')
+            ->and($output)
+            ->toContain('Serving')
+            ->and($output)
+            ->toContain('operator-1: *')
+            ->and($output)
+            ->toContain('Consuming')
+            ->and($output)
+            ->toContain('—')
+            ->and($output)
+            ->not->toContain('node: {');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -110,8 +132,7 @@ describe('node:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 
     it('surfaces gateway error envelopes without replacing the error code', function (): void {
@@ -124,8 +145,11 @@ describe('node:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.not_found')
-            ->and($decoded['error']['meta']['name'])->toBe('app-1');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('node.not_found')
+            ->and($decoded['error']['meta']['name'])
+            ->toBe('app-1');
     });
 });

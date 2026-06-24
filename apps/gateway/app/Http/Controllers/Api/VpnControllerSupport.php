@@ -85,9 +85,12 @@ abstract class VpnControllerSupport implements Loggable
      */
     public function properties(): array
     {
-        return array_filter([
-            'client' => request()->route('name'),
-        ], static fn (mixed $value): bool => is_string($value) && $value !== '');
+        return array_filter(
+            [
+                'client' => request()->route('name'),
+            ],
+            static fn (mixed $value): bool => is_string($value) && $value !== '',
+        );
     }
 
     public function description(): ?string

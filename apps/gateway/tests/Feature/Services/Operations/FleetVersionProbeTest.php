@@ -17,68 +17,81 @@ uses(RefreshDatabase::class);
 
 it('compares gateway image and workload CLI artifact identity from node DTOs', function (): void {
     $run = fleetVersionProbeRun();
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
-    ]);
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu_24-04',
-        'installed_cli' => fleetVersionProbeInstalledCliArtifact(sha256: str_repeat('c', 64)),
-    ]);
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
-    ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+        ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(sha256: str_repeat('c', 64)),
+        ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
     Node::factory()->operator()->create(['name' => 'operator-1']);
 
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
 
     $report = app(FleetVersionProbe::class)->probe($run, $plan);
 
-    expect($report->targetVersion)->toBe('2.0.0')
-        ->and($report->gatewayVersion)->toBe('2.0.0')
-        ->and($report->nodeVersions)->toBe([
+    expect($report->targetVersion)
+        ->toBe('2.0.0')
+        ->and($report->gatewayVersion)
+        ->toBe('2.0.0')
+        ->and($report->nodeVersions)
+        ->toBe([
             'agent-1' => '2.0.0',
             'app-dev-1' => '2.0.0',
         ])
-        ->and($report->outdatedCount)->toBe(1)
-        ->and($report->allCurrent())->toBeFalse();
+        ->and($report->outdatedCount)
+        ->toBe(1)
+        ->and($report->allCurrent())
+        ->toBeFalse();
 });
 
 it('treats missing workload CLI state as outdated', function (): void {
     $run = fleetVersionProbeRun();
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
-    ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+        ]);
     Node::factory()->agent()->create(['name' => 'agent-1', 'platform' => 'ubuntu_24-04']);
 
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
 
     $report = app(FleetVersionProbe::class)->probe($run, $plan);
 
-    expect($report->nodeVersions)->toBe(['agent-1' => null])
-        ->and($report->outdatedCount)->toBe(1);
+    expect($report->nodeVersions)->toBe(['agent-1' => null])->and($report->outdatedCount)->toBe(1);
 });
 
 it('counts the gateway as outdated when its tracked image is missing or differs', function (?InstalledGatewayImage $installedGatewayImage): void {
     $run = fleetVersionProbeRun();
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => $installedGatewayImage,
-    ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => $installedGatewayImage,
+        ]);
 
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
 
     $report = app(FleetVersionProbe::class)->probe($run, $plan);
 
-    expect($report->outdatedCount)->toBe(1)
-        ->and($report->allCurrent())->toBeFalse();
+    expect($report->outdatedCount)->toBe(1)->and($report->allCurrent())->toBeFalse();
 })->with([
     'missing image state' => [null],
     'different digest' => [fleetVersionProbeInstalledGatewayImage(digest: 'sha256:'.str_repeat('c', 64))],
@@ -86,28 +99,33 @@ it('counts the gateway as outdated when its tracked image is missing or differs'
 
 it('reports all current when the gateway digest and workload hashes match', function (): void {
     $run = fleetVersionProbeRun();
-    Node::factory()->gateway()->create([
-        'name' => 'gateway-1',
-        'platform' => 'debian_12',
-        'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
-    ]);
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu_24-04',
-        'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
-    ]);
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
-    ]);
+    Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway-1',
+            'platform' => 'debian_12',
+            'installed_gateway_image' => fleetVersionProbeInstalledGatewayImage(),
+        ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu_24-04',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => fleetVersionProbeInstalledCliArtifact(),
+        ]);
 
     $plan = app(OperationUpdatePlanStore::class)->create($run, fleetVersionProbeSnapshot('2.0.0'));
 
     $report = app(FleetVersionProbe::class)->probe($run, $plan);
 
-    expect($report->outdatedCount)->toBe(0)
-        ->and($report->allCurrent())->toBeTrue();
+    expect($report->outdatedCount)->toBe(0)->and($report->allCurrent())->toBeTrue();
 });
 
 it('falls back to the baked app version when no gateway node exists', function (): void {
@@ -118,9 +136,12 @@ it('falls back to the baked app version when no gateway node exists', function (
 
     $report = app(FleetVersionProbe::class)->probe($run, $plan);
 
-    expect($report->gatewayVersion)->toBe('2.0.0')
-        ->and($report->outdatedCount)->toBe(0)
-        ->and($report->allCurrent())->toBeTrue();
+    expect($report->gatewayVersion)
+        ->toBe('2.0.0')
+        ->and($report->outdatedCount)
+        ->toBe(0)
+        ->and($report->allCurrent())
+        ->toBeTrue();
 });
 
 function fleetVersionProbeRun(): OperationRun

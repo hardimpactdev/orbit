@@ -69,7 +69,13 @@ final class E2EResourceLease
         $path = $metadata['path'] ?? null;
         $owner = $metadata['owner'] ?? null;
 
-        if (! is_string($backend) || ! is_string($host) || ! is_int($slot) || ! is_string($path) || ! is_string($owner)) {
+        if (
+            ! is_string($backend)
+            || ! is_string($host)
+            || ! is_int($slot)
+            || ! is_string($path)
+            || ! is_string($owner)
+        ) {
             throw new RuntimeException('Retained E2E lease metadata is malformed.');
         }
 

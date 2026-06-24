@@ -43,36 +43,47 @@ describe('NodeConverger', function (): void {
             families: ['node', 'tool'],
         );
 
-        expect($result->successful())->toBeTrue()
-            ->and($result->remainingIssues())->toBe([])
-            ->and(collect($result->actions())->pluck('family')->unique()->values()->all())->toBe(['node', 'tool'])
-            ->and(collect($result->actions())->pluck('mode')->unique()->values()->all())->toBe(['setup'])
-            ->and(collect($result->actions())->pluck('details.tool')->filter()->sort()->values()->all())->toBe([
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($result->remainingIssues())
+            ->toBe([])
+            ->and(collect($result->actions())->pluck('family')->unique()->values()->all())
+            ->toBe(['node', 'tool'])
+            ->and(collect($result->actions())->pluck('mode')->unique()->values()->all())
+            ->toBe(['setup'])
+            ->and(collect($result->actions())->pluck('details.tool')->filter()->sort()->values()->all())
+            ->toBe([
                 'caddy',
                 'composer',
                 'gh',
                 'laravel-installer',
                 'php-cli',
             ])
-            ->and(collect($result->actions())->pluck('details.tool')->filter()->contains('redis'))->toBeFalse()
-            ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))->toBeTrue()
-            ->and(NodeTool::query()
-                ->where('node_id', $node->id)
-                ->whereIn('name', ['caddy', 'composer', 'gh', 'laravel-installer', 'php-cli'])
-                ->pluck('name')
-                ->sort()
-                ->values()
-                ->all())->toBe([
-                    'caddy',
-                    'composer',
-                    'gh',
-                    'laravel-installer',
-                    'php-cli',
-                ])
-            ->and(implode("\n", $shell->scripts))->not->toContain('doctor --restore')
-            ->and(implode("\n", $shell->scripts))->not->toContain(' orbit doctor ')
-            ->and($shell->probeScripts())->toHaveCount(2)
-            ->and($shell->repairScripts())->toHaveCount(5);
+            ->and(collect($result->actions())->pluck('details.tool')->filter()->contains('redis'))
+            ->toBeFalse()
+            ->and(File::exists(app(DevelopmentDnsMappingEnactor::class)->configDir().'/test.conf'))
+            ->toBeTrue()
+            ->and(
+                NodeTool::query()
+                    ->where('node_id', $node->id)
+                    ->whereIn('name', ['caddy', 'composer', 'gh', 'laravel-installer', 'php-cli'])
+                    ->pluck('name')
+                    ->sort()
+                    ->values()
+                    ->all(),
+            )
+            ->toBe([
+                'caddy',
+                'composer',
+                'gh',
+                'laravel-installer',
+                'php-cli',
+            ])
+            ->and(implode("\n", $shell->scripts))
+            ->not->toContain('doctor --restore')->and(implode("\n", $shell->scripts))
+            ->not->toContain(' orbit doctor ')->and($shell->probeScripts())->toHaveCount(2)->and(
+                $shell->repairScripts(),
+            )->toHaveCount(5);
     });
 
     it('keeps setup drift visible when repair fails', function (): void {
@@ -96,15 +107,18 @@ describe('NodeConverger', function (): void {
             families: ['tool'],
         );
 
-        expect($result->successful())->toBeFalse()
-            ->and($result->actions()[0])->toMatchArray([
+        expect($result->successful())
+            ->toBeFalse()
+            ->and($result->actions()[0])
+            ->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.capability_missing',
                 'mode' => 'setup',
                 'status' => 'failed',
             ])
-            ->and($result->remainingIssues()[0])->toMatchArray([
+            ->and($result->remainingIssues()[0])
+            ->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.capability_missing',
@@ -209,15 +223,31 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             $hash = OrbitCaddyContainer::forPrivateNode((string) $node->wireguard_address)->specHash();
 
             return $this->installed['caddy']
-                ? new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n", stderr: '', durationMs: 1)
-                : new RemoteShellResult(exitCode: 0, stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n", stderr: '', durationMs: 1);
+                ? new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "/usr/bin/docker\tDocker version 27.0.0\trunning\t\t\t\t\t1\trunning\t{$hash}\n",
+                    stderr: '',
+                    durationMs: 1,
+                )
+                : new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: "/usr/bin/docker\tDocker version 27.0.0\tmissing\t\t\t\t\t0\tmissing\t\n",
+                    stderr: '',
+                    durationMs: 1,
+                );
         }
 
         return match ($binary) {
             '/opt/orbit/php/8.5/bin/php' => $this->installedProbe('php-cli', "/opt/orbit/php/8.5/bin/php\t8.5.6\n"),
-            '/usr/local/bin/composer' => $this->installedProbe('composer', "/usr/local/bin/composer\tComposer version 2.9.0\n"),
+            '/usr/local/bin/composer' => $this->installedProbe(
+                'composer',
+                "/usr/local/bin/composer\tComposer version 2.9.0\n",
+            ),
             'gh' => $this->installedProbe('gh', "/usr/bin/gh\tgh version 2.60.0\n"),
-            '/usr/local/bin/laravel' => $this->installedProbe('laravel-installer', "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n"),
+            '/usr/local/bin/laravel' => $this->installedProbe(
+                'laravel-installer',
+                "/usr/local/bin/laravel\tLaravel Installer 5.0.0\n",
+            ),
             default => new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         };
     }
@@ -271,7 +301,10 @@ final class NodeConvergerSetupRemoteShell implements RemoteShell
             'laravel-installer' => ['/usr/local/bin/laravel', 'Laravel Installer 5.0.0'],
             'php-cli' => ['/opt/orbit/php/8.5/bin/php', '8.5.6'],
         ];
-        [$path, $version] = $installedPayloads[$name] ?? [is_string($tool['binary'] ?? null) ? $tool['binary'] : null, null];
+        [$path, $version] = $installedPayloads[$name] ?? [
+            is_string($tool['binary'] ?? null) ? $tool['binary'] : null,
+            null,
+        ];
         $installed = $this->installed[$name] ?? false;
 
         return [

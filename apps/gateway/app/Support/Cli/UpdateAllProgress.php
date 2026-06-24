@@ -216,7 +216,9 @@ final class UpdateAllProgress
 
         foreach ($newKeys as $key) {
             $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET);
-            $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'○  '.$this->labelFor($key).SpinnerTreeRenderer::RESET);
+            $this->output->writeln(
+                '  '.SpinnerTreeRenderer::DIM.'○  '.$this->labelFor($key).SpinnerTreeRenderer::RESET,
+            );
         }
 
         $this->output->writeln('  '.SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET);
@@ -270,7 +272,7 @@ final class UpdateAllProgress
 
     private function activeFrame(): string
     {
-        return $this->frame % 2 === 0
+        return ($this->frame % 2) === 0
             ? "\e[36m○\e[39m"
             : "\e[36m◉\e[39m";
     }
@@ -284,7 +286,9 @@ final class UpdateAllProgress
 
     private function labelFor(string $target): string
     {
-        return str_pad($target, $this->targetWidth).' '.$this->stageName($this->rows[$target]['stage'] ?? 'pulling_source');
+        return (
+            str_pad($target, $this->targetWidth).' '.$this->stageName($this->rows[$target]['stage'] ?? 'pulling_source')
+        );
     }
 
     private function stageName(string $stage): string

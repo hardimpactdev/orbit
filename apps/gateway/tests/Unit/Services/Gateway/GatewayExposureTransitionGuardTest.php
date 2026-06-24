@@ -27,7 +27,7 @@ it('passes when the full public exposure port set is released', function (): voi
         Process::result(exitCode: 1),
     ));
 
-    (new GatewayExposureTransitionGuard)->assertPublicPortsReleased();
+    new GatewayExposureTransitionGuard()->assertPublicPortsReleased();
 
     foreach (gatewayExposureTransitionCheckCommands() as $command) {
         Process::assertRan($command);
@@ -44,8 +44,11 @@ it('fails when a required public exposure port is still occupied', function (str
 
     Process::fake($fakes);
 
-    expect(fn () => (new GatewayExposureTransitionGuard)->assertPublicPortsReleased())
-        ->toThrow(RuntimeException::class, "Gateway exposure transition cannot continue because {$port} is still in use.");
+    expect(fn () => new GatewayExposureTransitionGuard()->assertPublicPortsReleased())
+        ->toThrow(
+            RuntimeException::class,
+            "Gateway exposure transition cannot continue because {$port} is still in use.",
+        );
 })->with([
     'tcp 80' => ['tcp/80'],
     'tcp 443' => ['tcp/443'],

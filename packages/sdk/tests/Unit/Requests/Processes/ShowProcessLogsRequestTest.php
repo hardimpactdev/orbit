@@ -17,9 +17,12 @@ uses(TestCase::class);
 it('targets the process log endpoint with query filters', function (): void {
     $request = new ShowProcessLogsRequest(name: 'vite', app: 'docs', workspace: 'feature-docs', lines: 50);
 
-    expect($request->getMethod())->toBe(Method::GET)
-        ->and($request->resolveEndpoint())->toBe('/api/processes/vite/log')
-        ->and($request->query()->all())->toBe([
+    expect($request->getMethod())
+        ->toBe(Method::GET)
+        ->and($request->resolveEndpoint())
+        ->toBe('/api/processes/vite/log')
+        ->and($request->query()->all())
+        ->toBe([
             'app' => 'docs',
             'workspace' => 'feature-docs',
             'lines' => 50,
@@ -49,7 +52,10 @@ it('returns a ProcessLogsResponse DTO with meta', function (): void {
 
     $dto = $connector->send(new ShowProcessLogsRequest(name: 'vite', app: 'docs', workspace: null))->dto();
 
-    expect($dto)->toBeInstanceOf(ProcessLogsResponse::class)
-        ->and($dto->data['logs']['runtime_unit'])->toBe('orbit_docs_main_vite')
-        ->and($dto->meta['line_count'])->toBe(1);
+    expect($dto)
+        ->toBeInstanceOf(ProcessLogsResponse::class)
+        ->and($dto->data['logs']['runtime_unit'])
+        ->toBe('orbit_docs_main_vite')
+        ->and($dto->meta['line_count'])
+        ->toBe(1);
 });

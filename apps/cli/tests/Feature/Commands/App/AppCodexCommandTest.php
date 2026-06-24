@@ -27,12 +27,15 @@ describe('app:codex', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/apps/docs/codex'
-            && $request->data() === ['node' => 'mini']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/apps/docs/codex'
+                && $request->data() === ['node' => 'mini']
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['codex_project']['ssh_alias'])->toBe('app-node');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['codex_project']['ssh_alias'])->toBe('app-node');
     });
 
     it('removes an app project through the gateway', function (): void {
@@ -51,9 +54,13 @@ describe('app:codex', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/apps/docs/codex'
-            && $request->data() === ['node' => 'mini']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/apps/docs/codex'
+                && $request->data() === ['node' => 'mini']
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -78,11 +85,14 @@ describe('app:codex', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/apps/codex/projects?node=mini');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/apps/codex/projects?node=mini'
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['codex_projects'][0]['app'])->toBe('docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['codex_projects'][0]['app'])->toBe('docs');
     });
 
     it('rejects app selectors when listing target-node Codex App projects', function (): void {
@@ -99,9 +109,12 @@ describe('app:codex', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('fails before gateway IO when required non-interactive input is missing', function (): void {
@@ -117,8 +130,11 @@ describe('app:codex', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node');
     });
 });

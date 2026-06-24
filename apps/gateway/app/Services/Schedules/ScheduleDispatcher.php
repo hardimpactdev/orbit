@@ -269,8 +269,11 @@ final readonly class ScheduleDispatcher
         return $schedule->execution_value;
     }
 
-    private function recordDispatchFailure(Schedule $schedule, Node $targetNode, string $message): ScheduleDispatchResult
-    {
+    private function recordDispatchFailure(
+        Schedule $schedule,
+        Node $targetNode,
+        string $message,
+    ): ScheduleDispatchResult {
         $startedAt = CarbonImmutable::now();
 
         return new ScheduleDispatchResult(

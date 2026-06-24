@@ -99,12 +99,15 @@ class Workspace extends Model
      */
     public function databaseConnections(): BelongsToMany
     {
-        return $this->belongsToMany(
-            related: DatabaseConnection::class,
-            table: 'database_connection_targets',
-            foreignPivotKey: 'workspace_id',
-            relatedPivotKey: 'database_connection_id',
-        )->withPivot('env_prefix')->withTimestamps();
+        return $this
+            ->belongsToMany(
+                related: DatabaseConnection::class,
+                table: 'database_connection_targets',
+                foreignPivotKey: 'workspace_id',
+                relatedPivotKey: 'database_connection_id',
+            )
+            ->withPivot('env_prefix')
+            ->withTimestamps();
     }
 
     public function effectivePhpVersion(): ?string

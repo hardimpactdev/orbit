@@ -30,10 +30,13 @@ final class ShowScheduleRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ScheduleShowResponse
@@ -43,7 +46,7 @@ final class ShowScheduleRequest extends GatewayRequest
         $schedule = $data['schedule'] ?? [];
 
         return new ScheduleShowResponse(
-            schedule: is_array($schedule) ? $schedule : [],
+            schedule: $this->stringKeyedArray($schedule),
             meta: $meta,
         );
     }

@@ -91,7 +91,9 @@ final readonly class AppRuntimeRequirementProbe
                 family: 'app',
                 key: 'app.runtime_extension_missing',
                 kind: DriftKind::Divergent,
-                summary: "App '{$app->name}' instance '{$instance->name}' is missing required PHP extension(s): ".implode(', ', $missing).'.',
+                summary: "App '{$app->name}' instance '{$instance->name}' is missing required PHP extension(s): "
+                .implode(', ', $missing)
+                .'.',
                 detail: [
                     'app' => $app->name,
                     'instance' => $instance->name,

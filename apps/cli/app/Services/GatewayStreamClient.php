@@ -72,7 +72,8 @@ final readonly class GatewayStreamClient
             },
             unavailableMessage: 'Gateway connection is required to stream command progress.',
             requireTerminalFrame: true,
-            onIdle: $onIdle ?? (ForkedFrameTicker::hasIdleCallback() ? ForkedFrameTicker::invokeIdleCallback(...) : null),
+            onIdle: $onIdle
+            ?? (ForkedFrameTicker::hasIdleCallback() ? ForkedFrameTicker::invokeIdleCallback(...) : null),
             idleIntervalMicroseconds: $idleIntervalMicroseconds,
         );
 
@@ -239,7 +240,8 @@ final readonly class GatewayStreamClient
     {
         $message = strtolower($exception->getMessage());
 
-        $isWireGuardReachabilityFailure = str_contains($message, 'timed out')
+        $isWireGuardReachabilityFailure =
+            str_contains($message, 'timed out')
             || str_contains($message, 'no route to host')
             || str_contains($message, 'network is unreachable')
             || str_contains($message, 'could not resolve host');

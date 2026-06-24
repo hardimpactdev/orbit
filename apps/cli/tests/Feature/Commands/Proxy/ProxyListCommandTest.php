@@ -32,15 +32,20 @@ describe('proxy:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/proxy-routes')
                 && str_contains($url, 'node=app-1')
-                && str_contains($url, 'filter=app');
+                && str_contains($url, 'filter=app')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['routes'][0]['domain'])->toBe('docs.test')
-            ->and($decoded['success']['meta']['filter'])->toBe('app');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['routes'][0]['domain'])
+            ->toBe('docs.test')
+            ->and($decoded['success']['meta']['filter'])
+            ->toBe('app');
     });
 
     it('renders human output as a table with uppercase headers and route cells', function (): void {
@@ -69,24 +74,41 @@ describe('proxy:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'proxy:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('DOMAIN')
-            ->and($output)->toContain('KIND')
-            ->and($output)->toContain('OWNER')
-            ->and($output)->toContain('NODE')
-            ->and($output)->toContain('TARGET')
-            ->and($output)->toContain('TLS')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('docs.test')
-            ->and($output)->toContain('app:docs')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('orbit')
-            ->and($output)->toContain('expected')
-            ->and($output)->toContain('redirect')
-            ->and($output)->toContain('custom')
-            ->and($output)->toContain('https://new.test')
-            ->and($output)->not->toContain('routes: [')
-            ->and($output)->not->toContain('"managed_by"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('DOMAIN')
+            ->and($output)
+            ->toContain('KIND')
+            ->and($output)
+            ->toContain('OWNER')
+            ->and($output)
+            ->toContain('NODE')
+            ->and($output)
+            ->toContain('TARGET')
+            ->and($output)
+            ->toContain('TLS')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('docs.test')
+            ->and($output)
+            ->toContain('app:docs')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('orbit')
+            ->and($output)
+            ->toContain('expected')
+            ->and($output)
+            ->toContain('redirect')
+            ->and($output)
+            ->toContain('custom')
+            ->and($output)
+            ->toContain('https://new.test')
+            ->and($output)
+            ->not->toContain('routes: [')->and($output)
+            ->not->toContain('"managed_by"');
     });
 
     it('renders a scope-aware empty state when filtered with no matches', function (): void {
@@ -97,8 +119,7 @@ describe('proxy:list', function (): void {
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No app proxy routes found on node app-1.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No app proxy routes found on node app-1.');
     });
 
     it('renders a plain empty state when unfiltered with no routes', function (): void {
@@ -106,8 +127,7 @@ describe('proxy:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'proxy:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No proxy routes found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No proxy routes found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
@@ -120,8 +140,7 @@ describe('proxy:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -131,7 +150,6 @@ describe('proxy:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

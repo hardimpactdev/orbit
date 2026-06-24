@@ -34,10 +34,14 @@ final class ToolInstallCommand extends ToolGatewayCommand
         $status = (string) $this->option('status');
 
         if (! in_array($status, self::STATUSES, true)) {
-            return $this->failValidation('status', "Invalid --status value '{$status}'. Valid values: installed, running.", [
-                'value' => $status,
-                'reason' => 'unsupported_value',
-            ]);
+            return $this->failValidation(
+                'status',
+                "Invalid --status value '{$status}'. Valid values: installed, running.",
+                [
+                    'value' => $status,
+                    'reason' => 'unsupported_value',
+                ],
+            );
         }
 
         if ($this->option('with-process') && $this->option('no-process')) {

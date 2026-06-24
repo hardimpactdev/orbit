@@ -7,16 +7,16 @@ use Illuminate\Support\Facades\Route;
 
 it('routes database connection endpoints to invokable controllers without mutable controller state', function (): void {
     $routes = [
-        ['GET', 'api/database-connections'],
-        ['POST', 'api/database-connections'],
-        ['POST', 'api/database-connections/query'],
-        ['GET', 'api/database-connections/tables'],
-        ['GET', 'api/database-connections/schema'],
-        ['GET', 'api/database-connections/describe'],
-        ['GET', 'api/database-connections/{connection}'],
-        ['PATCH', 'api/database-connections/{connection}'],
+        ['GET',    'api/database-connections'],
+        ['POST',   'api/database-connections'],
+        ['POST',   'api/database-connections/query'],
+        ['GET',    'api/database-connections/tables'],
+        ['GET',    'api/database-connections/schema'],
+        ['GET',    'api/database-connections/describe'],
+        ['GET',    'api/database-connections/{connection}'],
+        ['PATCH',  'api/database-connections/{connection}'],
         ['DELETE', 'api/database-connections/{connection}'],
-        ['POST', 'api/database-connections/{connection}/targets'],
+        ['POST',   'api/database-connections/{connection}/targets'],
         ['DELETE', 'api/database-connections/{connection}/targets'],
     ];
 
@@ -27,15 +27,21 @@ it('routes database connection endpoints to invokable controllers without mutabl
 
         $action = $route->getAction('controller');
 
-        expect($action)->toBeString()
-            ->and($action)->not->toContain('@');
+        expect($action)
+            ->toBeString()
+            ->and($action)
+            ->not->toContain('@');
 
         $controller = new ReflectionClass($action);
 
-        expect($controller->isFinal())->toBeTrue()
-            ->and($controller->hasMethod('__invoke'))->toBeTrue()
-            ->and($controller->getMethod('__invoke')->isPublic())->toBeTrue()
-            ->and(databaseConnectionMutableProperties($controller))->toBe([]);
+        expect($controller->isFinal())
+            ->toBeTrue()
+            ->and($controller->hasMethod('__invoke'))
+            ->toBeTrue()
+            ->and($controller->getMethod('__invoke')->isPublic())
+            ->toBeTrue()
+            ->and(databaseConnectionMutableProperties($controller))
+            ->toBe([]);
     }
 });
 

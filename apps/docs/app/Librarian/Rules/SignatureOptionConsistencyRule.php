@@ -37,7 +37,7 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
     }
 
     /**
-     * @param  array{contexts?: array<string, array{markers?: list<string>}>, options?: array<string, array{allowed_contexts?: list<string>}>}  $sharedOptions
+     * @param  array{contexts?: array<string, array{markers?: list<string>}>, options?: array<string, array{allowed_contexts?: list<string>, allowed_command_families?: list<string>, public_wording?: string}>}  $sharedOptions
      * @return list<Finding>
      */
     private function checkCommandDirectory(string $commandDirectory, array $sharedOptions): array
@@ -65,7 +65,7 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
 
     /**
      * @param  list<string>  $allowedOptions
-     * @param  array{contexts?: array<string, array{markers?: list<string>}>, options?: array<string, array{allowed_contexts?: list<string>}>}  $sharedOptions
+     * @param  array{contexts?: array<string, array{markers?: list<string>}>, options?: array<string, array{allowed_contexts?: list<string>, allowed_command_families?: list<string>, public_wording?: string}>}  $sharedOptions
      * @return list<Finding>
      */
     private function checkCompanionFile(string $file, array $allowedOptions, array $sharedOptions): array
@@ -220,13 +220,17 @@ final readonly class SignatureOptionConsistencyRule implements GroupedRule
 
     /**
      * @param  list<string>  $referenceContexts
-     * @param  array<string, array{allowed_contexts?: list<string>}>  $options
+     * @param  array<string, array{allowed_contexts?: list<string>, allowed_command_families?: list<string>, public_wording?: string}>  $options
      */
     private function isRegisteredSharedOption(string $option, array $referenceContexts, array $options): bool
     {
         $allowedContexts = $options[$option]['allowed_contexts'] ?? [];
 
-        return array_any($referenceContexts, fn ($referenceContext) => in_array($referenceContext, $allowedContexts, true));
+        return array_any($referenceContexts, fn ($referenceContext) => in_array(
+            $referenceContext,
+            $allowedContexts,
+            true,
+        ));
     }
 
     private function finding(string $path, string $message, int $line): Finding

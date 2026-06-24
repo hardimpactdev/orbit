@@ -18,9 +18,12 @@ uses(TestCase::class);
 it('serializes PHP runtime read filters', function (): void {
     $request = new ShowPhpRuntimeRequest(app: 'docs', workspace: 'feature-docs', node: 'app-1', live: true);
 
-    expect($request->resolveEndpoint())->toBe('/api/php/runtime')
-        ->and($request->getMethod())->toBe(Method::GET)
-        ->and($request->query()->all())->toBe([
+    expect($request->resolveEndpoint())
+        ->toBe('/api/php/runtime')
+        ->and($request->getMethod())
+        ->toBe(Method::GET)
+        ->and($request->query()->all())
+        ->toBe([
             'app' => 'docs',
             'workspace' => 'feature-docs',
             'node' => 'app-1',
@@ -29,11 +32,21 @@ it('serializes PHP runtime read filters', function (): void {
 });
 
 it('serializes PHP runtime write payload', function (): void {
-    $request = new UsePhpRuntimeRequest(version: '8.5', app: 'docs', workspace: null, node: null, inherit: false, cli: false);
+    $request = new UsePhpRuntimeRequest(
+        version: '8.5',
+        app: 'docs',
+        workspace: null,
+        node: null,
+        inherit: false,
+        cli: false,
+    );
 
-    expect($request->resolveEndpoint())->toBe('/api/php/use')
-        ->and($request->getMethod())->toBe(Method::POST)
-        ->and($request->body()->all())->toBe([
+    expect($request->resolveEndpoint())
+        ->toBe('/api/php/use')
+        ->and($request->getMethod())
+        ->toBe(Method::POST)
+        ->and($request->body()->all())
+        ->toBe([
             'version' => '8.5',
             'app' => 'docs',
             'inherit' => false,
@@ -65,6 +78,8 @@ it('returns typed response DTOs from gateway envelopes', function (): void {
     $connector = new GatewayConnector(baseUrl: 'https://10.6.0.2', caPemPath: '/path/to/ca.pem');
     $connector->withMockClient($mock);
 
-    expect($connector->send(new ShowPhpRuntimeRequest)->dto())->toBeInstanceOf(PhpRuntimeResponse::class)
-        ->and($connector->send(new UsePhpRuntimeRequest(version: '8.5', app: 'docs'))->dto())->toBeInstanceOf(PhpRuntimeUseResponse::class);
+    expect($connector->send(new ShowPhpRuntimeRequest)->dto())
+        ->toBeInstanceOf(PhpRuntimeResponse::class)
+        ->and($connector->send(new UsePhpRuntimeRequest(version: '8.5', app: 'docs'))->dto())
+        ->toBeInstanceOf(PhpRuntimeUseResponse::class);
 });

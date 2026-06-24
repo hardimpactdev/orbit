@@ -36,14 +36,16 @@ function configureRedactionTestGuard(): void
 
 function signRedactionToken(): string
 {
-    return (new OperationTokenSigner)->sign(
-        secret: 'redaction-secret',
-        id: 'redaction-op-1',
-        node: 'redaction-node',
-        command: 'test:redaction-command',
-        issuedAt: time() - 5,
-        expiresAt: time() + 120,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'redaction-secret',
+            id: 'redaction-op-1',
+            node: 'redaction-node',
+            command: 'test:redaction-command',
+            issuedAt: time() - 5,
+            expiresAt: time() + 120,
+        )
+        ->toString();
 }
 
 /**
@@ -84,9 +86,12 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret')
-            ->and($decoded['error']['meta']['field'])->toBe('operation_token');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('result_contains_secret')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('operation_token');
     });
 
     it('blocks result containing key "executor_secret"', function (): void {
@@ -94,8 +99,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing key "password"', function (): void {
@@ -103,8 +107,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing key "bearer"', function (): void {
@@ -112,8 +115,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing key "secret"', function (): void {
@@ -121,8 +123,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing key "_token"', function (): void {
@@ -130,8 +131,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing key "api_key"', function (): void {
@@ -139,8 +139,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing key matching case-insensitively (PASSWORD)', function (): void {
@@ -148,8 +147,7 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('result_contains_secret');
     });
 
     it('blocks result containing a PEM block value', function (): void {
@@ -159,9 +157,12 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret')
-            ->and($decoded['error']['meta']['field'])->toBe('key_data');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('result_contains_secret')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('key_data');
     });
 
     it('blocks nested result containing a forbidden key', function (): void {
@@ -175,9 +176,12 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret')
-            ->and($decoded['error']['meta']['field'])->toBe('config.password');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('result_contains_secret')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('config.password');
     });
 
     it('blocks result containing key "api_token" (pattern-equivalent via _token substring match)', function (): void {
@@ -191,9 +195,12 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret')
-            ->and($decoded['error']['meta']['field'])->toBe('api_token');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('result_contains_secret')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('api_token');
     });
 
     it('blocks camelCase result keys matching forbidden patterns after normalization', function (): void {
@@ -204,9 +211,12 @@ describe('InternalExecutorCommand redaction', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('result_contains_secret')
-            ->and($decoded['error']['meta']['field'])->toBe('apiKey');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('result_contains_secret')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('apiKey');
     });
 
     it('allows results with non-secret keys containing token substrings', function (): void {

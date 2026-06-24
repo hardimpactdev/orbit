@@ -16,14 +16,22 @@ it('emits progress events as server sent event frames', function (): void {
     $emitter->complete(0, ['workspace' => ['name' => 'feature-docs']]);
     $output = (string) ob_get_clean();
 
-    expect($output)->toContain("event: tree\n")
-        ->and($output)->toContain('"title":"Workspace - feature-docs"')
-        ->and($output)->toContain("event: step\n")
-        ->and($output)->toContain('"status":"start"')
-        ->and($output)->toContain('"status":"done"')
-        ->and($output)->toContain("event: complete\n")
-        ->and($output)->toContain('"exit_code":0')
-        ->and($output)->toContain('"workspace":{"name":"feature-docs"}');
+    expect($output)
+        ->toContain("event: tree\n")
+        ->and($output)
+        ->toContain('"title":"Workspace - feature-docs"')
+        ->and($output)
+        ->toContain("event: step\n")
+        ->and($output)
+        ->toContain('"status":"start"')
+        ->and($output)
+        ->toContain('"status":"done"')
+        ->and($output)
+        ->toContain("event: complete\n")
+        ->and($output)
+        ->toContain('"exit_code":0')
+        ->and($output)
+        ->toContain('"workspace":{"name":"feature-docs"}');
 });
 
 it('emits heartbeat comments', function (): void {
@@ -52,8 +60,7 @@ it('flushes output under fpm-fcgi, cli-server, and frankenphp sapi', function (s
         ob_end_clean();
     }
 
-    expect($flushedOutput)->toContain("event: tree\n")
-        ->and($flushedOutput)->toContain('"title":"Test"');
+    expect($flushedOutput)->toContain("event: tree\n")->and($flushedOutput)->toContain('"title":"Test"');
 })->with(['fpm-fcgi', 'cli-server', 'frankenphp']);
 
 it('skips flush under cli sapi', function (): void {
@@ -63,6 +70,5 @@ it('skips flush under cli sapi', function (): void {
     $emitter->tree('Test', [['key' => 'step', 'label' => 'Step']]);
     $output = (string) ob_get_clean();
 
-    expect($output)->toContain("event: tree\n")
-        ->and($output)->toContain('"title":"Test"');
+    expect($output)->toContain("event: tree\n")->and($output)->toContain('"title":"Test"');
 });

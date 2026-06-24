@@ -60,12 +60,11 @@ final readonly class RemoveApp
             ->where('app_id', $app->id)
             ->count();
         $processesRemoved = $app->processes()->count();
-        $removeAppPath = ! $app->adopted
-            && App::query()
-                ->where('id', '!=', $app->id)
-                ->where('node_id', $app->node_id)
-                ->where('path', $app->path)
-                ->doesntExist();
+        $removeAppPath = ! $app->adopted && App::query()
+            ->where('id', '!=', $app->id)
+            ->where('node_id', $app->node_id)
+            ->where('path', $app->path)
+            ->doesntExist();
 
         DB::transaction(function () use ($app, $proxyRouteIds): void {
             $workspaceIds = Workspace::query()
@@ -179,7 +178,8 @@ final readonly class RemoveApp
      */
     private function processCleanupScripts(App $app): array
     {
-        return $app->processes
+        return $app
+            ->processes
             ->map(function (Process $process) use ($app): string {
                 $driver = $this->runtimeDrivers->forProcess($process);
                 $runtimeUnit = $driver->runtimeUnitName($app, $process);

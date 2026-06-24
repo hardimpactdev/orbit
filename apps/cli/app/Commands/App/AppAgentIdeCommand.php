@@ -71,7 +71,8 @@ final class AppAgentIdeCommand extends AppGatewayCommand
             'Configuring App Agent IDE',
             $this->phases($response),
             work: static fn (): bool => true,
-            doneFooter: "App '{$selector}' agent IDE ".($this->action($response) === 'converged' ? 'unchanged' : 'configured'),
+            doneFooter: "App '{$selector}' agent IDE "
+            .($this->action($response) === 'converged' ? 'unchanged' : 'configured'),
         );
 
         if (! $outcome->isCompleted()) {
@@ -178,10 +179,12 @@ final class AppAgentIdeCommand extends AppGatewayCommand
 
     private function shouldPromptForCleanupConsent(GatewayApiException $exception, bool $force): bool
     {
-        return ! $force
+        return (
+            ! $force
             && ! $this->wantsJson()
             && $this->input->isInteractive()
-            && $exception->gatewayErrorCode() === 'workspace_cleanup_consent_required';
+            && $exception->gatewayErrorCode() === 'workspace_cleanup_consent_required'
+        );
     }
 
     private function confirmWorkspaceCleanup(GatewayApiException $exception): bool
@@ -229,7 +232,7 @@ final class AppAgentIdeCommand extends AppGatewayCommand
     private function workspacesRemoved(array $response): array
     {
         $cleanup = $this->successData($response)['cleanup'] ?? null;
-        $removed = is_array($cleanup) ? ($cleanup['workspaces_removed'] ?? null) : null;
+        $removed = is_array($cleanup) ? $cleanup['workspaces_removed'] ?? null : null;
 
         if (! is_array($removed)) {
             return [];

@@ -134,7 +134,11 @@ class GatewayCliArtifactRelay
 
         $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-        if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['url'] ?? null)
+            || ! is_string($artifact['sha256'] ?? null)
+        ) {
             throw new RuntimeException("Update plan does not contain a CLI artifact for platform [{$platform}].");
         }
 
@@ -222,10 +226,10 @@ class GatewayCliArtifactRelay
         $host = strtolower(trim($host, "[] \t\n\r\0\x0B"));
 
         return $host === 'localhost'
-            || $host === '0.0.0.0'
-            || $host === '::1'
-            || $host === 'host.docker.internal'
-            || str_starts_with($host, '127.');
+        || $host === '0.0.0.0'
+        || $host === '::1'
+        || $host === 'host.docker.internal'
+        || str_starts_with($host, '127.');
     }
 
     private function tokenMatches(OperationRun $operationRun, string $platform, string $sha256, ?string $token): bool
@@ -235,11 +239,15 @@ class GatewayCliArtifactRelay
 
     private function token(OperationRun $operationRun, string $platform, string $sha256): string
     {
-        return hash_hmac('sha256', implode('|', [
-            $operationRun->id,
-            $platform,
-            strtolower($sha256),
-        ]), $this->tokenKey());
+        return hash_hmac(
+            'sha256',
+            implode('|', [
+                $operationRun->id,
+                $platform,
+                strtolower($sha256),
+            ]),
+            $this->tokenKey(),
+        );
     }
 
     private function tokenKey(): string

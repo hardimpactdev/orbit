@@ -91,10 +91,15 @@ final class AppInstanceController implements Loggable
         }
 
         if ($targetApp->instances()->where('name', $name)->exists()) {
-            return $this->validationFailed('name', "Instance '{$name}' already exists for app '{$targetApp->name}'.", [
-                'app' => $targetApp->name,
-                'instance' => $name,
-            ], 422);
+            return $this->validationFailed(
+                'name',
+                "Instance '{$name}' already exists for app '{$targetApp->name}'.",
+                [
+                    'app' => $targetApp->name,
+                    'instance' => $name,
+                ],
+                422,
+            );
         }
 
         $driver = $this->driver($request);
@@ -112,14 +117,16 @@ final class AppInstanceController implements Loggable
             return $driverConfig;
         }
 
-        $instance = $targetApp->instances()->create([
-            'name' => $name,
-            'driver' => $driver,
-            'driver_config' => $driverConfig,
-            'runtime_requirements' => new AppInstanceRuntimeRequirementsData(
-                php_extensions: $this->phpExtensions($request),
-            ),
-        ]);
+        $instance = $targetApp
+            ->instances()
+            ->create([
+                'name' => $name,
+                'driver' => $driver,
+                'driver_config' => $driverConfig,
+                'runtime_requirements' => new AppInstanceRuntimeRequirementsData(
+                    php_extensions: $this->phpExtensions($request),
+                ),
+            ]);
 
         return $this->success($this->payloads->withCompatibility($instance));
     }
@@ -138,10 +145,15 @@ final class AppInstanceController implements Loggable
         $this->activitySubject = $targetApp;
 
         if (! $request->boolean('destructive_consent') && ! $request->boolean('force')) {
-            return $this->validationFailed('force', 'Removing an app instance requires destructive consent.', [
-                'field' => 'force',
-                'reason' => 'destructive_consent_required',
-            ], 422);
+            return $this->validationFailed(
+                'force',
+                'Removing an app instance requires destructive consent.',
+                [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                ],
+                422,
+            );
         }
 
         $targetInstance->delete();
@@ -162,11 +174,19 @@ final class AppInstanceController implements Loggable
         try {
             return AppInstanceDriver::from($value);
         } catch (ValueError) {
-            return $this->validationFailed('driver', 'Driver must be one of: orbit, laravel-cloud.', [
-                'field' => 'driver',
-                'value' => $value,
-                'allowed' => array_map(static fn (AppInstanceDriver $driver): string => $driver->value, AppInstanceDriver::cases()),
-            ], 422);
+            return $this->validationFailed(
+                'driver',
+                'Driver must be one of: orbit, laravel-cloud.',
+                [
+                    'field' => 'driver',
+                    'value' => $value,
+                    'allowed' => array_map(
+                        static fn (AppInstanceDriver $driver): string => $driver->value,
+                        AppInstanceDriver::cases(),
+                    ),
+                ],
+                422,
+            );
         }
     }
 
@@ -179,33 +199,48 @@ final class AppInstanceController implements Loggable
             : Node::query()->where('name', $nodeSelector)->first();
 
         if (! $node instanceof Node) {
-            return $this->validationFailed('node', 'Orbit app instances require a valid --node value.', [
-                'field' => 'node',
-                'value' => $nodeSelector,
-            ], 422);
+            return $this->validationFailed(
+                'node',
+                'Orbit app instances require a valid --node value.',
+                [
+                    'field' => 'node',
+                    'value' => $nodeSelector,
+                ],
+                422,
+            );
         }
 
         return new OrbitAppInstanceDriverConfigData(
             node_id: $node->id,
             node: $node->name,
             path: $this->stringInput($request, 'path') ?? $app->path,
-            document_root: $this->stringInput($request, 'root') ?? $this->stringInput($request, 'document_root') ?? $app->document_root,
+            document_root: $this->stringInput($request, 'root') ?? $this->stringInput($request, 'document_root')
+                ?? $app->document_root,
             domain: $this->stringInput($request, 'domain'),
         );
     }
 
     private function laravelCloudDriverConfig(Request $request): LaravelCloudAppInstanceDriverConfigData|JsonResponse
     {
-        $application = $this->stringInput($request, 'cloud_application')
-            ?? $this->stringInput($request, 'cloud_app')
-            ?? $this->stringInput($request, 'cloud_application_id')
-            ?? $this->stringInput($request, 'cloud_application_name');
-        $environment = $this->stringInput($request, 'cloud_environment')
-            ?? $this->stringInput($request, 'cloud_environment_id')
-            ?? $this->stringInput($request, 'cloud_environment_name');
+        $application =
+            $this->stringInput($request, 'cloud_application') ?? $this->stringInput(
+                $request,
+                'cloud_app',
+            ) ?? $this->stringInput($request, 'cloud_application_id') ?? $this->stringInput(
+                $request,
+                'cloud_application_name',
+            );
+        $environment =
+            $this->stringInput($request, 'cloud_environment') ?? $this->stringInput(
+                $request,
+                'cloud_environment_id',
+            ) ?? $this->stringInput($request, 'cloud_environment_name');
 
         if ($application === null) {
-            return $this->validationFailed('cloud_application', 'Laravel Cloud app selector is required for laravel-cloud instances.');
+            return $this->validationFailed(
+                'cloud_application',
+                'Laravel Cloud app selector is required for laravel-cloud instances.',
+            );
         }
 
         $environmentSelection = $this->laravelCloudEnvironmentSelection($request, $environment);
@@ -241,29 +276,50 @@ final class AppInstanceController implements Loggable
         $environments = $this->laravelCloudEnvironmentCandidates($request);
 
         if ($environment !== null) {
-            $candidate = $this->matchingLaravelCloudEnvironment($environments, $explicitId, $explicitName, $environment);
+            $candidate = $this->matchingLaravelCloudEnvironment(
+                $environments,
+                $explicitId,
+                $explicitName,
+                $environment,
+            );
 
             return [
                 'id' => $explicitId ?? $candidate['id'] ?? null,
                 'name' => $explicitName ?? $candidate['name'] ?? null,
                 'selector' => $environment,
-                'reused' => $environmentReused ?? ($candidate !== null && ! $environmentCreated),
+                'reused' => $environmentReused ?? $candidate !== null && ! $environmentCreated,
                 'created' => $environmentCreated,
             ];
         }
 
-        if (($this->booleanInput($request, 'cloud_environment_create') ?? false) || ($this->booleanInput($request, 'cloud_create_environment') ?? false)) {
-            return $this->validationFailed('cloud_environment', 'Laravel Cloud environment selector is required when creating a new environment.', [
-                'reason' => 'cloud_environment_creation_requires_selector',
-            ], 422);
+        if (
+            ($this->booleanInput($request, 'cloud_environment_create') ?? false)
+            || ($this->booleanInput($request, 'cloud_create_environment') ?? false)
+        ) {
+            return $this->validationFailed(
+                'cloud_environment',
+                'Laravel Cloud environment selector is required when creating a new environment.',
+                [
+                    'reason' => 'cloud_environment_creation_requires_selector',
+                ],
+                422,
+            );
         }
 
         $defaultEnvironmentId = $this->stringInput($request, 'cloud_default_environment_id');
 
         if ($defaultEnvironmentId !== null) {
-            $candidate = $this->matchingLaravelCloudEnvironment($environments, $defaultEnvironmentId, null, $defaultEnvironmentId);
+            $candidate = $this->matchingLaravelCloudEnvironment(
+                $environments,
+                $defaultEnvironmentId,
+                null,
+                $defaultEnvironmentId,
+            );
 
-            return $this->selectedLaravelCloudEnvironment($candidate['id'] ?? $defaultEnvironmentId, $candidate['name'] ?? null);
+            return $this->selectedLaravelCloudEnvironment(
+                $candidate['id'] ?? $defaultEnvironmentId,
+                $candidate['name'] ?? null,
+            );
         }
 
         $mainEnvironment = $this->namedLaravelCloudEnvironment($environments, 'main');
@@ -279,13 +335,21 @@ final class AppInstanceController implements Loggable
         }
 
         if (count($environments) > 1) {
-            return $this->validationFailed('cloud_environment', 'Laravel Cloud environment is ambiguous; choose an existing environment explicitly.', [
-                'reason' => 'ambiguous_cloud_environment',
-                'environments' => $environments,
-            ], 422);
+            return $this->validationFailed(
+                'cloud_environment',
+                'Laravel Cloud environment is ambiguous; choose an existing environment explicitly.',
+                [
+                    'reason' => 'ambiguous_cloud_environment',
+                    'environments' => $environments,
+                ],
+                422,
+            );
         }
 
-        return $this->validationFailed('cloud_environment', 'Laravel Cloud environment selector is required for laravel-cloud instances.');
+        return $this->validationFailed(
+            'cloud_environment',
+            'Laravel Cloud environment selector is required for laravel-cloud instances.',
+        );
     }
 
     /**
@@ -329,12 +393,16 @@ final class AppInstanceController implements Loggable
             return null;
         }
 
-        $id = $this->arrayStringInput($environment, 'id')
-            ?? $this->arrayStringInput($environment, 'environment_id')
-            ?? $this->arrayStringInput($environment, 'uuid');
-        $name = $this->arrayStringInput($environment, 'name')
-            ?? $this->arrayStringInput($environment, 'environment_name')
-            ?? $this->arrayStringInput($environment, 'slug');
+        $id =
+            $this->arrayStringInput($environment, 'id') ?? $this->arrayStringInput(
+                $environment,
+                'environment_id',
+            ) ?? $this->arrayStringInput($environment, 'uuid');
+        $name =
+            $this->arrayStringInput($environment, 'name') ?? $this->arrayStringInput(
+                $environment,
+                'environment_name',
+            ) ?? $this->arrayStringInput($environment, 'slug');
 
         return $id === null && $name === null ? null : ['id' => $id, 'name' => $name];
     }
@@ -343,8 +411,12 @@ final class AppInstanceController implements Loggable
      * @param  list<array{id: ?string, name: ?string}>  $environments
      * @return array{id: ?string, name: ?string}|null
      */
-    private function matchingLaravelCloudEnvironment(array $environments, ?string $id, ?string $name, string $selector): ?array
-    {
+    private function matchingLaravelCloudEnvironment(
+        array $environments,
+        ?string $id,
+        ?string $name,
+        string $selector,
+    ): ?array {
         foreach ($environments as $environment) {
             if ($id !== null && $environment['id'] === $id) {
                 return $environment;
@@ -407,7 +479,9 @@ final class AppInstanceController implements Loggable
         }
 
         $normalized = array_values(array_filter(
-            array_map(static fn (mixed $extension): ?string => is_string($extension) ? strtolower(trim($extension)) : null, $extensions),
+            array_map(static fn (mixed $extension): ?string => is_string($extension)
+                ? strtolower(trim($extension))
+                : null, $extensions),
             static fn (?string $extension): bool => $extension !== null && $extension !== '',
         ));
 
@@ -428,7 +502,8 @@ final class AppInstanceController implements Loggable
             return $this->appNotFound($app);
         }
 
-        $targetInstance = $targetApp->instances()
+        $targetInstance = $targetApp
+            ->instances()
             ->with(['app.node', 'app.runtimeMounts'])
             ->where('name', $instance)
             ->first();

@@ -24,7 +24,9 @@ final class NodeRoleAddController implements Loggable
 {
     private ?Node $activitySubject = null;
 
-    public function __construct(private readonly NodeRoleAssignmentService $service) {}
+    public function __construct(
+        private readonly NodeRoleAssignmentService $service,
+    ) {}
 
     public function __invoke(AddNodeRoleApiRequest $request, string $name): JsonResponse
     {
@@ -125,7 +127,8 @@ final class NodeRoleAddController implements Loggable
 
     private function existingRoleAssigned(Node $node, string $role): bool
     {
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('role', $role)
             ->exists();
     }
@@ -134,9 +137,13 @@ final class NodeRoleAddController implements Loggable
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>|JsonResponse
      */
-    private function resolveAppProductionSettings(Node $node, ?string $ingressNodeName, array $settings): array|JsonResponse
-    {
-        $ingressAssignment = $node->roleAssignments()
+    private function resolveAppProductionSettings(
+        Node $node,
+        ?string $ingressNodeName,
+        array $settings,
+    ): array|JsonResponse {
+        $ingressAssignment = $node
+            ->roleAssignments()
             ->where('role', 'ingress')
             ->where('status', NodeRoleStatus::Active->value)
             ->first();
@@ -191,8 +198,11 @@ final class NodeRoleAddController implements Loggable
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>|JsonResponse
      */
-    private function resolveAnalyticsSettings(array $settings, ?string $postgresNodeName, ?string $clickhouseNodeName): array|JsonResponse
-    {
+    private function resolveAnalyticsSettings(
+        array $settings,
+        ?string $postgresNodeName,
+        ?string $clickhouseNodeName,
+    ): array|JsonResponse {
         $postgresNodeName ??= is_string($settings['postgres_node'] ?? null) ? $settings['postgres_node'] : null;
         $clickhouseNodeName ??= is_string($settings['clickhouse_node'] ?? null) ? $settings['clickhouse_node'] : null;
 

@@ -9,7 +9,9 @@ use Orbit\Sdk\Laravel\GatewayApiException;
 
 final readonly class CloudflareManager
 {
-    public function __construct(private CloudflareClientFactory $clients) {}
+    public function __construct(
+        private CloudflareClientFactory $clients,
+    ) {}
 
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
@@ -47,16 +49,22 @@ final readonly class CloudflareManager
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    public function addDnsRecord(string $name, string $content, string $type = 'A', ?string $zoneIdentifier = null, bool $proxied = false): array
-    {
+    public function addDnsRecord(
+        string $name,
+        string $content,
+        string $type = 'A',
+        ?string $zoneIdentifier = null,
+        bool $proxied = false,
+    ): array {
         $type = strtoupper(trim($type));
         $this->validateAddressRecord($name, $content, $type);
 
         $client = $this->client();
         $resolver = $this->resolver($client);
-        $zone = $zoneIdentifier !== null && trim($zoneIdentifier) !== ''
-            ? $resolver->resolveZone($zoneIdentifier)
-            : $resolver->resolveZoneForRecordName($name);
+        $zone =
+            $zoneIdentifier !== null && trim($zoneIdentifier) !== ''
+                ? $resolver->resolveZone($zoneIdentifier)
+                : $resolver->resolveZoneForRecordName($name);
 
         $existingRecords = $client->dnsRecords($zone['id'], $name, $type);
 

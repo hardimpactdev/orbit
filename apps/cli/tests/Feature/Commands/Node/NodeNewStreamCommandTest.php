@@ -11,12 +11,11 @@ describe('NodeNewStream command', function (): void {
                     ['key' => 'operation', 'label' => 'Create operation'],
                     ['key' => 'node', 'label' => 'Create node'],
                 ],
-            ])
-            .gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Provisioning app-1'])
-            .gatewayProgressFrame('complete', [
-                'exit_code' => 0,
-                'data' => ['footer' => "Node 'app-1' created."],
-            ]),
+            ]).gatewayProgressFrame('step', ['key' => 'node', 'status' => 'running', 'message' => 'Provisioning app-1'])
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => ['footer' => "Node 'app-1' created."],
+                ]),
         );
 
         [$exitCode, $output] = runCommand($this, 'node:new', [
@@ -26,15 +25,22 @@ describe('NodeNewStream command', function (): void {
             '--tld' => 'test',
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/nodes'
-            && $request->hasHeader('Accept', 'text/event-stream'));
+            && $request->hasHeader('Accept', 'text/event-stream'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Creating Node')
-            ->and($output)->toContain('Create operation')
-            ->and($output)->toContain('Provisioning app-1')
-            ->and($output)->toContain("Node 'app-1' created.");
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Creating Node')
+            ->and($output)
+            ->toContain('Create operation')
+            ->and($output)
+            ->toContain('Provisioning app-1')
+            ->and($output)
+            ->toContain("Node 'app-1' created.");
     });
 
     it('fails when the NodeNewStream closes without a terminal frame', function (): void {
@@ -50,7 +56,6 @@ describe('NodeNewStream command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 });

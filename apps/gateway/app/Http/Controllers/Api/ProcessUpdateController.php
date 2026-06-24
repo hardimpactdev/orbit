@@ -52,7 +52,12 @@ final class ProcessUpdateController implements Loggable
                 workspaceName: $input['workspace'],
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:edit');
@@ -69,7 +74,12 @@ final class ProcessUpdateController implements Loggable
                 restart: $input['restart'],
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $context->subject();
@@ -98,20 +108,40 @@ final class ProcessUpdateController implements Loggable
         $runtimeInput = $this->optionalString($request, 'runtime');
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->error('validation_failed', 'A node context cannot be combined with app or workspace context.', [
-                'field' => 'context',
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'field' => 'context',
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
+                ],
+                422,
+            );
         }
 
         if ($node === null && $app === null && $workspace === null) {
-            return $this->error('validation_failed', 'A node, app, or workspace context is required.', ['field' => 'app'], 422);
+            return $this->error(
+                'validation_failed',
+                'A node, app, or workspace context is required.',
+                ['field' => 'app'],
+                422,
+            );
         }
 
-        if ($command === null && $restartPolicyInput === null && $crashNotificationInput === null && $runtimeInput === null) {
-            return $this->error('validation_failed', 'At least one editable field is required.', ['field' => 'editable_fields'], 422);
+        if (
+            $command === null
+            && $restartPolicyInput === null
+            && $crashNotificationInput === null
+            && $runtimeInput === null
+        ) {
+            return $this->error(
+                'validation_failed',
+                'At least one editable field is required.',
+                ['field' => 'editable_fields'],
+                422,
+            );
         }
 
         $changes = [];
@@ -124,11 +154,16 @@ final class ProcessUpdateController implements Loggable
             $restartPolicy = ProcessRestartPolicy::tryFrom($restartPolicyInput);
 
             if (! $restartPolicy instanceof ProcessRestartPolicy) {
-                return $this->error('validation_failed', 'Invalid restart policy.', [
-                    'field' => 'restart_policy',
-                    'value' => $restartPolicyInput,
-                    'allowed' => array_column(ProcessRestartPolicy::cases(), 'value'),
-                ], 422);
+                return $this->error(
+                    'validation_failed',
+                    'Invalid restart policy.',
+                    [
+                        'field' => 'restart_policy',
+                        'value' => $restartPolicyInput,
+                        'allowed' => array_column(ProcessRestartPolicy::cases(), 'value'),
+                    ],
+                    422,
+                );
             }
 
             $changes['restart_policy'] = $restartPolicy;
@@ -138,11 +173,16 @@ final class ProcessUpdateController implements Loggable
             $crashNotification = ProcessCrashNotification::tryFrom($crashNotificationInput);
 
             if (! $crashNotification instanceof ProcessCrashNotification) {
-                return $this->error('validation_failed', 'Invalid crash notification policy.', [
-                    'field' => 'crash_notification',
-                    'value' => $crashNotificationInput,
-                    'allowed' => array_column(ProcessCrashNotification::cases(), 'value'),
-                ], 422);
+                return $this->error(
+                    'validation_failed',
+                    'Invalid crash notification policy.',
+                    [
+                        'field' => 'crash_notification',
+                        'value' => $crashNotificationInput,
+                        'allowed' => array_column(ProcessCrashNotification::cases(), 'value'),
+                    ],
+                    422,
+                );
             }
 
             $changes['crash_notification'] = $crashNotification;
@@ -152,19 +192,30 @@ final class ProcessUpdateController implements Loggable
             $runtime = ProcessRuntime::tryFrom($runtimeInput);
 
             if (! $runtime instanceof ProcessRuntime) {
-                return $this->error('validation_failed', 'Invalid process runtime.', [
-                    'field' => 'runtime',
-                    'value' => $runtimeInput,
-                    'allowed' => array_column(ProcessRuntime::cases(), 'value'),
-                ], 422);
+                return $this->error(
+                    'validation_failed',
+                    'Invalid process runtime.',
+                    [
+                        'field' => 'runtime',
+                        'value' => $runtimeInput,
+                        'allowed' => array_column(ProcessRuntime::cases(), 'value'),
+                    ],
+                    422,
+                );
             }
 
             if ($node === null && $runtime->appWorkspaceCommandViolationReason() !== null) {
-                return $this->error('validation_failed', $runtime->appWorkspaceCommandViolationMessage() ?? 'The selected runtime is not valid for this process owner.', [
-                    'field' => 'runtime',
-                    'value' => $runtimeInput,
-                    'reason' => $runtime->appWorkspaceCommandViolationReason(),
-                ], 422);
+                return $this->error(
+                    'validation_failed',
+                    $runtime->appWorkspaceCommandViolationMessage()
+                    ?? 'The selected runtime is not valid for this process owner.',
+                    [
+                        'field' => 'runtime',
+                        'value' => $runtimeInput,
+                        'reason' => $runtime->appWorkspaceCommandViolationReason(),
+                    ],
+                    422,
+                );
             }
 
             $changes['runtime'] = $runtime;
@@ -187,11 +238,16 @@ final class ProcessUpdateController implements Loggable
             return null;
         }
 
-        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ], 403);
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$node->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+            403,
+        );
     }
 
     private function optionalString(Request $request, string $key): ?string

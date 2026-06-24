@@ -46,8 +46,11 @@ function incusAcquisitionReadinessConfig(): E2EConfig
     );
 }
 
-function incusAcquisitionReadinessResult(string $output = '', bool $successful = true, string $errorOutput = ''): ProcessResult
-{
+function incusAcquisitionReadinessResult(
+    string $output = '',
+    bool $successful = true,
+    string $errorOutput = '',
+): ProcessResult {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn($successful);
     $result->shouldReceive('output')->andReturn($output);
@@ -62,13 +65,14 @@ function incusAcquisitionReadinessResult(string $output = '', bool $successful =
 function incusAcquisitionReadinessCapturingHost(): array
 {
     $commands = [];
-    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, public array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -97,9 +101,12 @@ function incusAcquisitionReadinessCapturingHost(): array
         }
     };
 
-    return [$host, function () use ($host): array {
-        return $host->commands;
-    }];
+    return [
+        $host,
+        function () use ($host): array {
+            return $host->commands;
+        },
+    ];
 }
 
 it('awaits clone agents and refreshes network identity through one parallel host call', function (): void {
@@ -108,32 +115,35 @@ it('awaits clone agents and refreshes network identity through one parallel host
     IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGateway, 'runReady');
 
     $readinessCalls = array_values(array_filter($commands(), function (string $command): bool {
-        return str_contains($command, '__orbit_task_timing')
-            && str_contains($command, 'systemd-machine-id-setup');
+        return str_contains($command, '__orbit_task_timing') && str_contains($command, 'systemd-machine-id-setup');
     }));
 
     $agentProbeCalls = array_values(array_filter($commands(), function (string $command): bool {
         return str_contains($command, "incus exec 'orbit-e2e-runReady-operator' -- true");
     }));
 
-    expect($readinessCalls)->toHaveCount(1)
+    expect($readinessCalls)
+        ->toHaveCount(1)
         ->and($readinessCalls[0])
         ->toContain("'orbit-e2e-runReady-operator'")
         ->toContain("'orbit-e2e-runReady-gateway'")
         ->toContain('& PID_TASK_')
-        ->and($agentProbeCalls)->toHaveCount(1)
-        ->and($agentProbeCalls[0])->toBe($readinessCalls[0]);
+        ->and($agentProbeCalls)
+        ->toHaveCount(1)
+        ->and($agentProbeCalls[0])
+        ->toBe($readinessCalls[0]);
 });
 
 it('deletes started clones when readiness never completes', function (): void {
     $commands = [];
-    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, public array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -169,7 +179,8 @@ it('deletes started clones when readiness never completes', function (): void {
         return str_contains($command, 'incus delete --force');
     }));
 
-    expect($deleteCalls)->toHaveCount(1)
+    expect($deleteCalls)
+        ->toHaveCount(1)
         ->and($deleteCalls[0])
         ->toContain("'orbit-e2e-runFailed-operator'")
         ->toContain("'orbit-e2e-runFailed-gateway'")
@@ -178,13 +189,14 @@ it('deletes started clones when readiness never completes', function (): void {
 
 it('deletes partially created clones when batch copy fails', function (): void {
     $commands = [];
-    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, public array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -212,7 +224,8 @@ it('deletes partially created clones when batch copy fails', function (): void {
         return str_contains($command, 'incus delete --force');
     }));
 
-    expect($deleteCalls)->toHaveCount(1)
+    expect($deleteCalls)
+        ->toHaveCount(1)
         ->and($deleteCalls[0])
         ->toContain("'orbit-e2e-runBatchFailed-operator'")
         ->toContain("'orbit-e2e-runBatchFailed-gateway'")
@@ -221,13 +234,14 @@ it('deletes partially created clones when batch copy fails', function (): void {
 
 it('keeps the original readiness failure visible when clone cleanup fails', function (): void {
     $commands = [];
-    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusAcquisitionReadinessConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, public array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -270,7 +284,9 @@ it('keeps the original readiness failure visible when clone cleanup fails', func
     expect(fn () => IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGateway, 'runCleanupFailed'))
         ->toThrow(RuntimeException::class, 'Prepared topology clones never became ready');
 
-    expect($commands)->toContain('delete failed: orbit-e2e-runCleanupFailed-operator,orbit-e2e-runCleanupFailed-gateway');
+    expect($commands)->toContain(
+        'delete failed: orbit-e2e-runCleanupFailed-operator,orbit-e2e-runCleanupFailed-gateway',
+    );
 });
 
 it('waits for peer routes through one parallel host call chaining gateway probe before operator scan', function (): void {
@@ -279,18 +295,23 @@ it('waits for peer routes through one parallel host call chaining gateway probe 
 
     $method = new ReflectionMethod($provider, 'waitForPeerRoutes');
     $method->setAccessible(true);
-    $method->invoke($provider, [
-        'operator' => new IncusInstance($host, 'clone-operator', commandTransport: true),
-        'gateway' => new IncusInstance($host, 'clone-gateway', commandTransport: true),
-        'dev' => new IncusInstance($host, 'clone-dev', commandTransport: true),
-        'prod' => new IncusInstance($host, 'clone-prod', commandTransport: true),
-    ], incusAcquisitionReadinessConfig());
+    $method->invoke(
+        $provider,
+        [
+            'operator' => new IncusInstance($host, 'clone-operator', commandTransport: true),
+            'gateway' => new IncusInstance($host, 'clone-gateway', commandTransport: true),
+            'dev' => new IncusInstance($host, 'clone-dev', commandTransport: true),
+            'prod' => new IncusInstance($host, 'clone-prod', commandTransport: true),
+        ],
+        incusAcquisitionReadinessConfig(),
+    );
 
     $peerCalls = array_values(array_filter($commands(), function (string $command): bool {
         return str_contains($command, '__orbit_task_timing') && str_contains($command, '10.6.0.4');
     }));
 
-    expect($peerCalls)->toHaveCount(1)
+    expect($peerCalls)
+        ->toHaveCount(1)
         ->and($peerCalls[0])
         ->toContain('10.6.0.4')
         ->toContain('10.6.0.5')
@@ -300,9 +321,12 @@ it('waits for peer routes through one parallel host call chaining gateway probe 
     $devGatewayProbe = strpos($peerCalls[0], 'ServerAliveInterval=30');
     $devOperatorScan = strpos($peerCalls[0], 'ssh-keyscan');
 
-    expect($devGatewayProbe)->toBeInt()
-        ->and($devOperatorScan)->toBeInt()
-        ->and($devGatewayProbe)->toBeLessThan($devOperatorScan);
+    expect($devGatewayProbe)
+        ->toBeInt()
+        ->and($devOperatorScan)
+        ->toBeInt()
+        ->and($devGatewayProbe)
+        ->toBeLessThan($devOperatorScan);
 });
 
 it('installs the WireGuard mesh on every role through one parallel host call', function (): void {
@@ -321,7 +345,8 @@ it('installs the WireGuard mesh on every role through one parallel host call', f
         return str_contains($command, '__orbit_task_timing') && str_contains($command, 'wg-quick up wg-orbit');
     }));
 
-    expect($installCalls)->toHaveCount(1)
+    expect($installCalls)
+        ->toHaveCount(1)
         ->and($installCalls[0])
         ->toContain("'clone-operator'")
         ->toContain("'clone-gateway'")
@@ -335,20 +360,28 @@ it('runs acquisition retarget bakes for downstream roles in one parallel gateway
 
     $method = new ReflectionMethod($provider, 'retargetTopology');
     $method->setAccessible(true);
-    $method->invoke($provider, [
-        'operator' => new IncusInstance($host, 'clone-operator', commandTransport: true),
-        'gateway' => new IncusInstance($host, 'clone-gateway', commandTransport: true),
-        'dev' => new IncusInstance($host, 'clone-dev', commandTransport: true),
-        'prod' => new IncusInstance($host, 'clone-prod', commandTransport: true),
-        'agent' => new IncusInstance($host, 'clone-agent', commandTransport: true),
-    ], incusAcquisitionReadinessConfig(), new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'), E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, false);
+    $method->invoke(
+        $provider,
+        [
+            'operator' => new IncusInstance($host, 'clone-operator', commandTransport: true),
+            'gateway' => new IncusInstance($host, 'clone-gateway', commandTransport: true),
+            'dev' => new IncusInstance($host, 'clone-dev', commandTransport: true),
+            'prod' => new IncusInstance($host, 'clone-prod', commandTransport: true),
+            'agent' => new IncusInstance($host, 'clone-agent', commandTransport: true),
+        ],
+        incusAcquisitionReadinessConfig(),
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        false,
+    );
 
     $joined = implode("\n", $commands());
     $bakeCalls = array_values(array_filter($commands(), function (string $command): bool {
         return str_contains($command, '__orbit_task_timing') && str_contains($command, 'orbit:internal:bake-app-node');
     }));
 
-    expect($bakeCalls)->toHaveCount(1)
+    expect($bakeCalls)
+        ->toHaveCount(1)
         ->and($bakeCalls[0])
         ->toContain('orbit:internal:bake-app-node app-dev-1')
         ->toContain('orbit:internal:bake-app-node app-prod-1')
@@ -359,17 +392,23 @@ it('runs acquisition retarget bakes for downstream roles in one parallel gateway
     $parallelBake = strpos($joined, 'orbit:internal:bake-app-node app-dev-1');
     $seed = strpos($joined, 'ProcessServiceCatalog::class');
 
-    expect($parallelBake)->toBeInt()
-        ->and($seed)->toBeInt()
-        ->and($parallelBake)->toBeLessThan($seed);
+    expect($parallelBake)
+        ->toBeInt()
+        ->and($seed)
+        ->toBeInt()
+        ->and($parallelBake)
+        ->toBeLessThan($seed);
 
     // The prod chain bakes the co-hosted ingress role before the prod app role.
     $prodIngress = strpos($bakeCalls[0], 'orbit:internal:bake-ingress-node app-prod-1');
     $prodApp = strpos($bakeCalls[0], 'orbit:internal:bake-app-node app-prod-1');
 
-    expect($prodIngress)->toBeInt()
-        ->and($prodApp)->toBeInt()
-        ->and($prodIngress)->toBeLessThan($prodApp);
+    expect($prodIngress)
+        ->toBeInt()
+        ->and($prodApp)
+        ->toBeInt()
+        ->and($prodIngress)
+        ->toBeLessThan($prodApp);
 });
 
 it('clears known hosts on every clone through one parallel host call', function (): void {
@@ -387,7 +426,8 @@ it('clears known hosts on every clone through one parallel host call', function 
         return str_contains($command, 'known_hosts');
     }));
 
-    expect($clearCalls)->toHaveCount(1)
+    expect($clearCalls)
+        ->toHaveCount(1)
         ->and($clearCalls[0])
         ->toContain("'clone-operator'")
         ->toContain("'clone-gateway'");

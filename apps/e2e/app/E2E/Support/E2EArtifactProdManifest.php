@@ -33,8 +33,11 @@ final readonly class E2EArtifactProdManifest
         return OrbitCliBinaryBundle::bundledBinaryPath(self::binaryArtifactDirectory());
     }
 
-    public static function fromPreparedDockerRuntime(string $gatewayImage, ?string $gatewayImageId, ?string $cliBinary): self
-    {
+    public static function fromPreparedDockerRuntime(
+        string $gatewayImage,
+        ?string $gatewayImageId,
+        ?string $cliBinary,
+    ): self {
         return new self(
             version: self::currentVersion(),
             gatewayImage: $gatewayImage,

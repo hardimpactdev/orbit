@@ -12,9 +12,12 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 it('uses the singular node role table on a fresh schema', function (): void {
-    expect(Schema::hasTable('node_role'))->toBeTrue()
-        ->and(Schema::hasTable('node_roles'))->toBeFalse()
-        ->and((new NodeRoleAssignment)->getTable())->toBe('node_role');
+    expect(Schema::hasTable('node_role'))
+        ->toBeTrue()
+        ->and(Schema::hasTable('node_roles'))
+        ->toBeFalse()
+        ->and(new NodeRoleAssignment()->getTable())
+        ->toBe('node_role');
 });
 
 it('stores multiple role assignments with typed status and settings per node', function (): void {
@@ -40,11 +43,16 @@ it('stores multiple role assignments with typed status and settings per node', f
         ->toHaveCount(2)
         ->and($node->fresh()->roleAssignments->pluck('role')->all())
         ->toBe(['app-dev', 'database'])
-        ->and(DB::table('node_role')->where([
-            'node_id' => $node->id,
-            'role' => 'app-dev',
-            'status' => 'active',
-        ])->exists())->toBeTrue();
+        ->and(
+            DB::table('node_role')
+                ->where([
+                    'node_id' => $node->id,
+                    'role' => 'app-dev',
+                    'status' => 'active',
+                ])
+                ->exists(),
+        )
+        ->toBeTrue();
 });
 
 it('enforces one assignment per role per node', function (): void {
@@ -62,5 +70,6 @@ it('enforces one assignment per role per node', function (): void {
         'role' => 'database',
         'status' => 'active',
         'settings' => [],
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });

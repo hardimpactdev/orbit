@@ -51,7 +51,8 @@ it('returns gateway adapter choices for node scope without credentials or sessio
 
     $response = getAgentIdeChoicesJson('node');
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJson([
             'success' => [
                 'data' => [
@@ -83,7 +84,8 @@ it('returns app scope reserved tokens before registered adapters', function (): 
 
     $response = getAgentIdeChoicesJson('app');
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.scope', 'app')
         ->assertJsonPath('success.data.reserved_tokens', ['inherit', 'none'])
         ->assertJsonPath('success.data.adapters.0.name', 'opencode')
@@ -95,7 +97,8 @@ it('rejects unsupported adapter choice scopes', function (): void {
 
     $response = getAgentIdeChoicesJson('workspace');
 
-    $response->assertUnprocessable()
+    $response
+        ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.message', 'Agent IDE adapter scope is not supported.')
         ->assertJsonPath('error.meta.scope', 'workspace')

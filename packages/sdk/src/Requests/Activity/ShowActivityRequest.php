@@ -30,8 +30,8 @@ final class ShowActivityRequest extends GatewayRequest
         $related = $data['related'] ?? [];
 
         return new ActivityShowResponse(
-            activity: is_array($activity) ? $activity : [],
-            related: is_array($related) ? array_values($related) : [],
+            activity: $this->stringKeyedArray($activity),
+            related: $this->listOfStringKeyedArrays($related),
             meta: $this->envelopeMeta($response),
         );
     }
@@ -55,6 +55,6 @@ final class ShowActivityRequest extends GatewayRequest
 
         $meta = $success['meta'] ?? [];
 
-        return is_array($meta) ? $meta : [];
+        return $this->stringKeyedArray($meta);
     }
 }

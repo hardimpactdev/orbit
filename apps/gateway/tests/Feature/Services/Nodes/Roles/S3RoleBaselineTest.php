@@ -35,8 +35,11 @@ function s3BaselineNode(array $overrides = []): Node
     ], $overrides));
 }
 
-function s3BaselineAssignment(Node $node, NodeRoleStatus $status = NodeRoleStatus::Pending, array $settings = []): NodeRoleAssignment
-{
+function s3BaselineAssignment(
+    Node $node,
+    NodeRoleStatus $status = NodeRoleStatus::Pending,
+    array $settings = [],
+): NodeRoleAssignment {
     return NodeRoleAssignment::factory()->for($node)->create([
         'role' => NodeRoleName::S3->value,
         'status' => $status->value,
@@ -82,8 +85,11 @@ it('creates the seaweedfs NodeTool row on first converge', function (): void {
         ->where('name', 'seaweedfs')
         ->first();
 
-    expect($seaweedfsTool)->not->toBeNull()
-        ->and($seaweedfsTool->expected_state)->toBe('installed');
+    expect($seaweedfsTool)
+        ->not
+        ->toBeNull()
+        ->and($seaweedfsTool->expected_state)
+        ->toBe('installed');
 });
 
 it('writes credentials to the seaweedfs NodeTool row on first converge', function (): void {
@@ -99,11 +105,12 @@ it('writes credentials to the seaweedfs NodeTool row on first converge', functio
 
     $fields = $seaweedfsTool->credentials['fields'] ?? null;
 
-    expect($fields)->toBeArray()
-        ->and($fields['access_key_id'])->toBeString()->not->toBeEmpty()
-        ->and($fields['secret_access_key'])->toBeString()->not->toBeEmpty()
-        ->and($fields['region'])->toBe('orbit')
-        ->and($fields['endpoint'])->toBe('https://s3.orbit');
+    expect($fields)
+        ->toBeArray()
+        ->and($fields['access_key_id'])
+        ->toBeString()
+        ->not->toBeEmpty()->and($fields['secret_access_key'])->toBeString()
+        ->not->toBeEmpty()->and($fields['region'])->toBe('orbit')->and($fields['endpoint'])->toBe('https://s3.orbit');
 });
 
 it('renders the runtime container config and persists container metadata', function (): void {
@@ -117,8 +124,10 @@ it('renders the runtime container config and persists container metadata', funct
         ->where('name', 'seaweedfs')
         ->firstOrFail();
 
-    expect($seaweedfsTool->config['container_name'])->toBe(S3RuntimeContainer::ContainerName)
-        ->and($seaweedfsTool->config['runtime'])->toBe('docker-container');
+    expect($seaweedfsTool->config['container_name'])
+        ->toBe(S3RuntimeContainer::ContainerName)
+        ->and($seaweedfsTool->config['runtime'])
+        ->toBe('docker-container');
 });
 
 it('preserves the role-owned data path in the seaweedfs tool config', function (): void {
@@ -165,8 +174,10 @@ it('does not rotate credentials on re-converge', function (): void {
 
     $secondFields = $afterSecond->credentials['fields'];
 
-    expect($secondFields['access_key_id'])->toBe($firstFields['access_key_id'])
-        ->and($secondFields['secret_access_key'])->toBe($firstFields['secret_access_key']);
+    expect($secondFields['access_key_id'])
+        ->toBe($firstFields['access_key_id'])
+        ->and($secondFields['secret_access_key'])
+        ->toBe($firstFields['secret_access_key']);
 });
 
 // ---------------------------------------------------------------------------

@@ -36,7 +36,8 @@ function createDatabaseApiCallerNode(array $overrides = []): Node
     return Node::factory()->create(array_merge([
         'name' => 'database-api-caller',
         'host' => DATABASE_API_CALLER_WG_IP,
-        'wireguard_address' => DATABASE_API_CALLER_WG_IP], $overrides));
+        'wireguard_address' => DATABASE_API_CALLER_WG_IP,
+    ], $overrides));
 }
 
 function assignDatabaseApiGatewayRole(Node $node): void
@@ -49,7 +50,8 @@ function assignDatabaseApiRole(Node $node, string $role, string $status = 'activ
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
-        'status' => $status]);
+        'status' => $status,
+    ]);
 }
 
 /**
@@ -60,7 +62,8 @@ function grantDatabaseApiAccess(Node $consumer, Node $serving, array $permission
     NodeAccess::query()->create([
         'consumer_node_id' => $consumer->id,
         'serving_node_id' => $serving->id,
-        'permissions' => $permissions]);
+        'permissions' => $permissions,
+    ]);
 }
 
 describe('database connection api', function (): void {
@@ -70,12 +73,30 @@ describe('database connection api', function (): void {
         grantDatabaseApiAccess($caller, $node, ['database:read', 'database:write']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
-        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($connection, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'DB']);
 
-        $listResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
-        $attachResponse = $this->call('POST', '/api/database-connections/primary-db/targets', [
-            'app' => 'docs',
-            'env_prefix' => 'ANALYTICS_DB'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $listResponse = $this->call(
+            'GET',
+            '/api/database-connections',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
+        $attachResponse = $this->call(
+            'POST',
+            '/api/database-connections/primary-db/targets',
+            [
+                'app' => 'docs',
+                'env_prefix' => 'ANALYTICS_DB',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $listResponse->assertOk()
             ->assertJsonPath('success.data.connections.0.slug', 'primary-db');
@@ -85,14 +106,16 @@ describe('database connection api', function (): void {
             ->toContain([
                 'type' => 'app',
                 'name' => 'docs',
-                'env_prefix' => 'ANALYTICS_DB']);
+                'env_prefix' => 'ANALYTICS_DB',
+            ]);
     });
 
     it('allows granted app-role callers without treating the role as a blocker', function (): void {
         $caller = createDatabaseApiCallerNode([
             'name' => 'database-api-app-caller',
             'host' => '10.9.0.98',
-            'wireguard_address' => '10.9.0.98']);
+            'wireguard_address' => '10.9.0.98',
+        ]);
         assignDatabaseApiRole($caller, 'app-dev');
         $node = createTestAppHostNode(['name' => 'db-node']);
         grantDatabaseApiAccess($caller, $node, ['database:read']);
@@ -117,32 +140,46 @@ describe('database connection api', function (): void {
             'database' => null,
             'path' => '/srv/docs/database/database.sqlite',
             'username' => null,
-            'credentials' => ['password' => 'never-print-me']]);
+            'credentials' => ['password' => 'never-print-me'],
+        ]);
         $shell = new DatabaseApiQueryRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode([
                 'success' => [
                     'data' => [
                         'columns' => ['id'],
-                        'rows' => [['id' => 1]]],
-                    'meta' => ['mode' => 'read', 'returned_rows' => 1]]], JSON_THROW_ON_ERROR),
+                        'rows' => [['id' => 1]],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 5,
         ));
         bindDatabaseApiLocalExecutor($shell);
 
-        $response = $this->call('POST', '/api/database-connections/query', [
-            'target' => $connection->slug,
-            'sql' => 'select id from users'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/database-connections/query',
+            [
+                'target' => $connection->slug,
+                'sql' => 'select id from users',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.rows.0.id', 1)
             ->assertJsonPath('success.meta.connection', 'docs-db');
 
-        expect($response->getContent())->not->toContain('never-print-me')
-            ->and($shell->script)->not->toContain('never-print-me')
-            ->and($shell->script)->toContain('/usr/local/bin/orbit internal:database-query-local')
-            ->and($shell->options)->toHaveKey('input');
+        expect($response->getContent())
+            ->not->toContain('never-print-me')->and($shell->script)
+            ->not->toContain('never-print-me')->and($shell->script)->toContain(
+                '/usr/local/bin/orbit internal:database-query-local',
+            )->and($shell->options)->toHaveKey('input');
     });
 
     it('executes schema api requests through the typed api', function (): void {
@@ -157,23 +194,36 @@ describe('database connection api', function (): void {
             'port' => null,
             'database' => null,
             'path' => '/srv/docs/database/database.sqlite',
-            'username' => null]);
+            'username' => null,
+        ]);
         bindDatabaseApiLocalExecutor(new DatabaseApiQueryRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode([
                 'success' => [
                     'data' => [
                         'columns' => ['name'],
-                        'rows' => [['name' => 'users']]],
-                    'meta' => ['mode' => 'read', 'returned_rows' => 1]]], JSON_THROW_ON_ERROR),
+                        'rows' => [['name' => 'users']],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 5,
         )));
 
-        $response = $this->call('GET', '/api/database-connections/tables', [
-            'target' => 'docs-db'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/database-connections/tables',
+            [
+                'target' => 'docs-db',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.rows.0.name', 'users')
             ->assertJsonPath('success.meta.connection', 'docs-db');
     });
@@ -191,31 +241,55 @@ describe('database connection api', function (): void {
             'port' => null,
             'database' => null,
             'path' => '/srv/docs/database/database.sqlite',
-            'username' => null]);
-        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+            'username' => null,
+        ]);
+        DatabaseConnectionTarget::factory()
+            ->for($connection, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'DB']);
         bindDatabaseApiLocalExecutor(new DatabaseApiQueryRemoteShell(new RemoteShellResult(
             exitCode: 0,
             stdout: json_encode([
                 'success' => [
                     'data' => [
                         'columns' => ['id'],
-                        'rows' => [['id' => 1]]],
-                    'meta' => ['mode' => 'read', 'returned_rows' => 1]]], JSON_THROW_ON_ERROR),
+                        'rows' => [['id' => 1]],
+                    ],
+                    'meta' => ['mode' => 'read', 'returned_rows' => 1],
+                ],
+            ], JSON_THROW_ON_ERROR),
             stderr: '',
             durationMs: 5,
         )));
 
-        $readResponse = $this->call('POST', '/api/database-connections/query', [
-            'target' => 'docs',
-            'sql' => 'select id from users'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
-        $writeResponse = $this->call('POST', '/api/database-connections/query', [
-            'target' => 'docs',
-            'sql' => 'delete from users where id = 1',
-            'write' => true], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $readResponse = $this->call(
+            'POST',
+            '/api/database-connections/query',
+            [
+                'target' => 'docs',
+                'sql' => 'select id from users',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
+        $writeResponse = $this->call(
+            'POST',
+            '/api/database-connections/query',
+            [
+                'target' => 'docs',
+                'sql' => 'delete from users where id = 1',
+                'write' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $readResponse->assertOk()
             ->assertJsonPath('success.data.rows.0.id', 1);
-        $writeResponse->assertForbidden()
+        $writeResponse
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'database:query:write');
@@ -225,23 +299,27 @@ describe('database connection api', function (): void {
         $appCaller = createDatabaseApiCallerNode([
             'name' => 'database-api-app-caller',
             'host' => '10.9.0.98',
-            'wireguard_address' => '10.9.0.98']);
+            'wireguard_address' => '10.9.0.98',
+        ]);
         assignDatabaseApiRole($appCaller, 'app-dev');
 
         $databaseCaller = createDatabaseApiCallerNode([
             'name' => 'database-api-database-caller',
             'host' => '10.9.0.99',
-            'wireguard_address' => '10.9.0.99']);
+            'wireguard_address' => '10.9.0.99',
+        ]);
         assignDatabaseApiRole($databaseCaller, 'database');
 
         $appResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.98']);
         $databaseResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.99']);
 
-        $appResponse->assertForbidden()
+        $appResponse
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'database:read');
-        $databaseResponse->assertForbidden()
+        $databaseResponse
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'database:read');
@@ -251,20 +329,31 @@ describe('database connection api', function (): void {
         createDatabaseApiCallerNode([
             'name' => 'database-api-unassigned-app-caller',
             'host' => '10.9.0.100',
-            'wireguard_address' => '10.9.0.100']);
+            'wireguard_address' => '10.9.0.100',
+        ]);
         createDatabaseApiCallerNode([
             'name' => 'database-api-unassigned-database-caller',
             'host' => '10.9.0.101',
-            'wireguard_address' => '10.9.0.101']);
+            'wireguard_address' => '10.9.0.101',
+        ]);
 
         $appResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.100']);
-        $databaseResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => '10.9.0.101']);
+        $databaseResponse = $this->call(
+            'GET',
+            '/api/database-connections',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => '10.9.0.101'],
+        );
 
-        $appResponse->assertForbidden()
+        $appResponse
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'database:read');
-        $databaseResponse->assertForbidden()
+        $databaseResponse
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'database:read');
@@ -273,9 +362,17 @@ describe('database connection api', function (): void {
     it('rejects inactive control callers from registry endpoints', function (): void {
         createDatabaseApiCallerNode(['status' => 'inactive']);
 
-        $response = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/database-connections',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });
@@ -288,24 +385,46 @@ describe('database connection api', function (): void {
         $connection = DatabaseConnection::factory()->create([
             'slug' => 'primary-db',
             'node_id' => $node->id,
-            'credentials' => ['password' => 'secret']]);
-        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()
+            ->for($connection, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'DB']);
 
-        $listResponse = $this->call('GET', '/api/database-connections', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
-        $showResponse = $this->call('GET', '/api/database-connections/primary-db', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $listResponse = $this->call(
+            'GET',
+            '/api/database-connections',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
+        $showResponse = $this->call(
+            'GET',
+            '/api/database-connections/primary-db',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $listResponse->assertOk()
+        $listResponse
+            ->assertOk()
             ->assertJsonPath('success.meta.count', 1)
             ->assertJsonPath('success.data.connections.0.slug', 'primary-db');
-        $showResponse->assertOk()
+        $showResponse
+            ->assertOk()
             ->assertJsonPath('success.data.connection.slug', 'primary-db')
             ->assertJsonPath('success.data.connection.targets.0', [
                 'type' => 'app',
                 'name' => 'docs',
-                'env_prefix' => 'DB']);
+                'env_prefix' => 'DB',
+            ]);
 
-        expect($listResponse->getContent())->not->toContain('secret')
-            ->and($showResponse->getContent())->not->toContain('secret');
+        expect($listResponse->getContent())
+            ->not->toContain('secret')->and($showResponse->getContent())
+            ->not->toContain('secret');
     });
 
     it('creates, updates, attaches, detaches, and removes connections with activity logs', function (): void {
@@ -315,46 +434,82 @@ describe('database connection api', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $workspace = Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
-        $createResponse = $this->call('POST', '/api/database-connections', [
-            'slug' => 'primary-db',
-            'driver' => 'pgsql',
-            'host' => 'postgres.internal',
-            'port' => 5432,
-            'database' => 'orbit',
-            'username' => 'orbit',
-            'password' => 'secret',
-            'node' => 'db-node'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $createResponse = $this->call(
+            'POST',
+            '/api/database-connections',
+            [
+                'slug' => 'primary-db',
+                'driver' => 'pgsql',
+                'host' => 'postgres.internal',
+                'port' => 5432,
+                'database' => 'orbit',
+                'username' => 'orbit',
+                'password' => 'secret',
+                'node' => 'db-node',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $createResponse->assertOk()
             ->assertJsonPath('success.data.connection.slug', 'primary-db');
 
         $connection = DatabaseConnection::query()->where('slug', 'primary-db')->firstOrFail();
 
-        expect($createResponse->getContent())->not->toContain('secret')
-            ->and($connection->credentials)->toBe(['password' => 'secret']);
+        expect($createResponse->getContent())
+            ->not
+            ->toContain('secret')
+            ->and($connection->credentials)
+            ->toBe(['password' => 'secret']);
 
-        $updateResponse = $this->call('PATCH', '/api/database-connections/primary-db', [
-            'slug' => 'renamed-db',
-            'clear_password' => true], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $updateResponse = $this->call(
+            'PATCH',
+            '/api/database-connections/primary-db',
+            [
+                'slug' => 'renamed-db',
+                'clear_password' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $updateResponse->assertOk()
             ->assertJsonPath('success.data.connection.slug', 'renamed-db');
 
         expect(DatabaseConnection::query()->where('slug', 'renamed-db')->firstOrFail()->credentials)->toBe([]);
 
-        $attachResponse = $this->call('POST', '/api/database-connections/renamed-db/targets', [
-            'workspace' => 'feature-docs',
-            'env_prefix' => 'ANALYTICS_DB'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $attachResponse = $this->call(
+            'POST',
+            '/api/database-connections/renamed-db/targets',
+            [
+                'workspace' => 'feature-docs',
+                'env_prefix' => 'ANALYTICS_DB',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $attachResponse->assertOk()
             ->assertJsonPath('success.data.connection.targets.0', [
                 'type' => 'workspace',
                 'name' => 'feature-docs',
-                'env_prefix' => 'ANALYTICS_DB']);
+                'env_prefix' => 'ANALYTICS_DB',
+            ]);
 
-        $detachResponse = $this->call('DELETE', '/api/database-connections/renamed-db/targets', [
-            'workspace' => 'feature-docs',
-            'env_prefix' => 'ANALYTICS_DB'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $detachResponse = $this->call(
+            'DELETE',
+            '/api/database-connections/renamed-db/targets',
+            [
+                'workspace' => 'feature-docs',
+                'env_prefix' => 'ANALYTICS_DB',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $detachResponse->assertOk()
             ->assertJsonPath('success.data.result', [
@@ -362,29 +517,48 @@ describe('database connection api', function (): void {
                 'connection' => 'renamed-db',
                 'target_type' => 'workspace',
                 'target' => 'feature-docs',
-                'env_prefix' => 'ANALYTICS_DB']);
+                'env_prefix' => 'ANALYTICS_DB',
+            ]);
 
-        DatabaseConnectionTarget::factory()->forApp($app)->create([
-            'database_connection_id' => DatabaseConnection::query()->where('slug', 'renamed-db')->firstOrFail()->id,
-            'env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->forApp($app)
+            ->create([
+                'database_connection_id' => DatabaseConnection::query()->where('slug', 'renamed-db')->firstOrFail()->id,
+                'env_prefix' => 'DB',
+            ]);
 
-        $removeResponse = $this->call('DELETE', '/api/database-connections/renamed-db', [
-            'force' => true], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $removeResponse = $this->call(
+            'DELETE',
+            '/api/database-connections/renamed-db',
+            [
+                'force' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $removeResponse->assertOk()
             ->assertJsonPath('success.data.result', [
                 'action' => 'removed',
-                'connection' => 'renamed-db']);
+                'connection' => 'renamed-db',
+            ]);
 
-        expect(DatabaseConnection::query()->where('slug', 'renamed-db')->exists())->toBeFalse()
-            ->and(DatabaseConnectionTarget::query()->count())->toBe(0);
+        expect(DatabaseConnection::query()->where('slug', 'renamed-db')->exists())
+            ->toBeFalse()
+            ->and(DatabaseConnectionTarget::query()->count())
+            ->toBe(0);
 
         $properties = Activity::query()->pluck('properties')->all();
         $loggedJson = json_encode($properties, JSON_THROW_ON_ERROR);
 
-        expect($loggedJson)->not->toContain('secret')
-            ->and($loggedJson)->toContain('renamed-db')
-            ->and($loggedJson)->toContain('ANALYTICS_DB');
+        expect($loggedJson)
+            ->not
+            ->toContain('secret')
+            ->and($loggedJson)
+            ->toContain('renamed-db')
+            ->and($loggedJson)
+            ->toContain('ANALYTICS_DB');
     });
 
     it('returns documented validation and not-found error envelopes', function (): void {
@@ -393,15 +567,41 @@ describe('database connection api', function (): void {
         $node = createTestAppHostNode(['name' => 'db-node']);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
-        DatabaseConnectionTarget::factory()->for($connection, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($connection, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'DB']);
 
-        $removeWithoutForce = $this->call('DELETE', '/api/database-connections/primary-db', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
-        $missingShow = $this->call('GET', '/api/database-connections/missing-db', [], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
-        $invalidAttach = $this->call('POST', '/api/database-connections/primary-db/targets', [
-            'app' => 'docs',
-            'workspace' => 'feature-docs'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $removeWithoutForce = $this->call(
+            'DELETE',
+            '/api/database-connections/primary-db',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
+        $missingShow = $this->call(
+            'GET',
+            '/api/database-connections/missing-db',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
+        $invalidAttach = $this->call(
+            'POST',
+            '/api/database-connections/primary-db/targets',
+            [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $removeWithoutForce->assertUnprocessable()
+        $removeWithoutForce
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force')
             ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
@@ -415,11 +615,19 @@ describe('database connection api', function (): void {
         $caller = createDatabaseApiCallerNode();
         assignDatabaseApiGatewayRole($caller);
 
-        $response = $this->call('POST', '/api/database-connections', [
-            'slug' => 'broken-db',
-            'driver' => 'pgsql',
-            'host' => 'postgres.internal',
-            'password' => 'super-secret'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/database-connections',
+            [
+                'slug' => 'broken-db',
+                'driver' => 'pgsql',
+                'host' => 'postgres.internal',
+                'password' => 'super-secret',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed');
@@ -432,19 +640,37 @@ describe('database connection api', function (): void {
         assignDatabaseApiGatewayRole($caller);
         DatabaseConnection::factory()->create(['slug' => 'primary-db']);
 
-        $createResponse = $this->call('POST', '/api/database-connections', [
-            'slug' => 'broken-db',
-            'driver' => 'sqlite',
-            'node' => 'missing-node',
-            'path' => '/srv/orbit/database.sqlite'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $createResponse = $this->call(
+            'POST',
+            '/api/database-connections',
+            [
+                'slug' => 'broken-db',
+                'driver' => 'sqlite',
+                'node' => 'missing-node',
+                'path' => '/srv/orbit/database.sqlite',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $updateResponse = $this->call('PATCH', '/api/database-connections/primary-db', [
-            'node' => 'missing-node'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $updateResponse = $this->call(
+            'PATCH',
+            '/api/database-connections/primary-db',
+            [
+                'node' => 'missing-node',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $createResponse->assertUnprocessable()
+        $createResponse
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node');
-        $updateResponse->assertUnprocessable()
+        $updateResponse
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node');
     });
@@ -456,26 +682,46 @@ describe('database connection api', function (): void {
         $app = App::factory()->create([
             'name' => 'docs',
             'node_id' => $node->id,
-            'path' => '/srv/apps/docs']);
+            'path' => '/srv/apps/docs',
+        ]);
         $connection = DatabaseConnection::factory()->create(['slug' => 'primary-db']);
 
         $before = DB::table('database_connection_targets')->count();
 
-        $attachResponse = $this->call('POST', '/api/database-connections/primary-db/targets', [
-            'app' => 'docs',
-            'env_prefix' => 'DB'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $attachResponse = $this->call(
+            'POST',
+            '/api/database-connections/primary-db/targets',
+            [
+                'app' => 'docs',
+                'env_prefix' => 'DB',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $attachResponse->assertOk();
 
-        $detachResponse = $this->call('DELETE', '/api/database-connections/primary-db/targets', [
-            'app' => 'docs',
-            'env_prefix' => 'DB'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $detachResponse = $this->call(
+            'DELETE',
+            '/api/database-connections/primary-db/targets',
+            [
+                'app' => 'docs',
+                'env_prefix' => 'DB',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
         $detachResponse->assertOk();
 
-        expect($before)->toBe(0)
-            ->and(DB::table('database_connection_targets')->count())->toBe(0)
-            ->and(file_exists('/srv/apps/docs/.env'))->toBeFalse();
+        expect($before)
+            ->toBe(0)
+            ->and(DB::table('database_connection_targets')->count())
+            ->toBe(0)
+            ->and(file_exists('/srv/apps/docs/.env'))
+            ->toBeFalse();
     });
 
     it('rejects explicit query connections that are not attached to the target', function (): void {
@@ -487,12 +733,21 @@ describe('database connection api', function (): void {
         $other = DatabaseConnection::factory()->create(['slug' => 'other-db', 'node_id' => $node->id]);
         DatabaseConnectionTarget::factory()->for($attached, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
 
-        $response = $this->call('POST', '/api/database-connections/query', [
-            'target' => 'docs',
-            'connection' => $other->slug,
-            'sql' => 'select 1'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/database-connections/query',
+            [
+                'target' => 'docs',
+                'connection' => $other->slug,
+                'sql' => 'select 1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'database_connection.target_not_found')
             ->assertJsonPath('error.meta.slug', 'other-db');
     });
@@ -504,14 +759,29 @@ describe('database connection api', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $primary = DatabaseConnection::factory()->create(['slug' => 'primary-db', 'node_id' => $node->id]);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'analytics-db', 'node_id' => $node->id]);
-        DatabaseConnectionTarget::factory()->for($primary, 'connection')->forApp($app)->create(['env_prefix' => 'PRIMARY_DB']);
-        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->forApp($app)->create(['env_prefix' => 'ANALYTICS_DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($primary, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'PRIMARY_DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($analytics, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'ANALYTICS_DB']);
 
-        $response = $this->call('POST', '/api/database-connections/query', [
-            'target' => 'docs',
-            'sql' => 'select 1'], [], [], ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/database-connections/query',
+            [
+                'target' => 'docs',
+                'sql' => 'select 1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DATABASE_API_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'database_connection.ambiguous_target')
             ->assertJsonPath('error.meta.connections', ['analytics-db', 'primary-db']);
     });
@@ -541,7 +811,9 @@ final class DatabaseApiQueryRemoteShell implements RemoteExecutor
     /** @var array<string, mixed> */
     public array $options = [];
 
-    public function __construct(private readonly RemoteShellResult $result) {}
+    public function __construct(
+        private readonly RemoteShellResult $result,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

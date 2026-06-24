@@ -32,13 +32,21 @@ final class ShowProfileRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
+        $query = [];
+
+        foreach ([
             'target' => $this->target,
             'uri' => $this->uri,
             'auth_mode' => $this->authMode,
             'user' => $this->user,
             'node' => $this->node,
-        ], static fn (?string $value): bool => $value !== null && $value !== '');
+        ] as $key => $value) {
+            if ($value !== null && $value !== '') {
+                $query[$key] = $value;
+            }
+        }
+
+        return $query;
     }
 
     public function createDtoFromResponse(Response $response): ProfileResponse

@@ -18,7 +18,7 @@ describe(ProgressEventEncoder::class, function (): void {
         ));
 
         expect($frame)->toBe(
-            "event: step\ndata: {\"title\":\"Provisioning runtime\",\"percent\":25}\n\n"
+            "event: step\ndata: {\"title\":\"Provisioning runtime\",\"percent\":25}\n\n",
         );
     });
 
@@ -51,9 +51,13 @@ describe(ProgressEventDecoder::class, function (): void {
 
         $event = $decoder->decode("event: step\ndata: {\"title\":\"Provisioning runtime\",\"percent\":25}\n");
 
-        expect($event)->not->toBeNull()
-            ->and($event->type)->toBe(ProgressEventType::Step)
-            ->and($event->payload)->toBe(['title' => 'Provisioning runtime', 'percent' => 25]);
+        expect($event)
+            ->not
+            ->toBeNull()
+            ->and($event->type)
+            ->toBe(ProgressEventType::Step)
+            ->and($event->payload)
+            ->toBe(['title' => 'Provisioning runtime', 'percent' => 25]);
     });
 
     it('decodes a complete frame with an empty payload object', function (): void {
@@ -61,8 +65,7 @@ describe(ProgressEventDecoder::class, function (): void {
 
         $event = $decoder->decode("event: complete\ndata: {}\n");
 
-        expect($event?->type)->toBe(ProgressEventType::Complete)
-            ->and($event?->payload)->toBe([]);
+        expect($event?->type)->toBe(ProgressEventType::Complete)->and($event?->payload)->toBe([]);
     });
 
     it('returns null for an SSE comment keepalive', function (): void {
@@ -86,8 +89,7 @@ describe(ProgressEventDecoder::class, function (): void {
 
         $event = $decoder->decode(": keepalive\nevent: step\n: another comment\ndata: {\"percent\":75}\n");
 
-        expect($event?->type)->toBe(ProgressEventType::Step)
-            ->and($event?->payload)->toBe(['percent' => 75]);
+        expect($event?->type)->toBe(ProgressEventType::Step)->and($event?->payload)->toBe(['percent' => 75]);
     });
 
     it('concatenates multi-line data: payload with newlines', function (): void {
@@ -95,8 +97,10 @@ describe(ProgressEventDecoder::class, function (): void {
 
         $event = $decoder->decode("event: tree\ndata: {\"items\":[\ndata: 1,2,3\ndata: ]}\n");
 
-        expect($event?->type)->toBe(ProgressEventType::Tree)
-            ->and($event?->payload)->toBe(['items' => [1, 2, 3]]);
+        expect($event?->type)
+            ->toBe(ProgressEventType::Tree)
+            ->and($event?->payload)
+            ->toBe(['items' => [1, 2, 3]]);
     });
 
     it('throws when the event type is unknown', function (): void {

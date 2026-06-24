@@ -73,7 +73,13 @@ final class ToolRemoveController implements Loggable
             );
         }
 
-        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds, allowAnyActiveNode: true, tool: $tool);
+        $target = $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowAnyActiveNode: true,
+            tool: $tool,
+        );
 
         if ($target instanceof JsonResponse) {
             return $target;
@@ -184,13 +190,16 @@ final class ToolRemoveController implements Loggable
      */
     public function properties(): array
     {
-        return array_filter([
-            'tool' => $this->activityTool,
-            'node' => $this->activityNode,
-            'app' => $this->activityApp,
-            'destructive_consent' => $this->activityConsentSource !== null ? true : null,
-            'destructive_consent_source' => $this->activityConsentSource,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'tool' => $this->activityTool,
+                'node' => $this->activityNode,
+                'app' => $this->activityApp,
+                'destructive_consent' => $this->activityConsentSource !== null ? true : null,
+                'destructive_consent_source' => $this->activityConsentSource,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     private function destructiveConsentSource(Request $request): string

@@ -138,7 +138,7 @@ final class NodeNewCommand extends BootstrapGatewayCommand
             return false;
         }
 
-        $url = is_array($activeGateway) ? ($activeGateway['url'] ?? null) : null;
+        $url = is_array($activeGateway) ? $activeGateway['url'] ?? null : null;
 
         return is_string($url) && trim($url) !== '';
     }

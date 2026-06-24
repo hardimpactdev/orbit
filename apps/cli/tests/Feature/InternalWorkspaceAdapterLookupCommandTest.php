@@ -39,8 +39,10 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -59,8 +61,10 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -75,8 +79,10 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'Workspace adapter must be one of: polyscope, opencode.',
                 ['field' => 'adapter', 'adapter' => 'evil'],
@@ -94,8 +100,10 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'match' => true,
                     'workspace_name' => 'feature-docs',
@@ -117,8 +125,10 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'match' => true,
                     'workspace_name' => 'feature-open',
@@ -149,15 +159,18 @@ describe('internal workspace adapter lookup command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe(JsonEnvelope::success([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::success([
                 'server_id' => 'server-1',
                 'repository_id' => 'repo-docs',
                 'base_url' => 'https://polyscope.test',
             ]))
-            ->and($output)->not->toContain('api_token')
-            ->and($output)->not->toContain('poly-token')
-            ->and($output)->not->toContain('authToken');
+            ->and($output)
+            ->not->toContain('api_token')->and($output)
+            ->not->toContain('poly-token')->and($output)
+            ->not->toContain('authToken');
     });
 
     it('returns a failure envelope when the adapter database is missing', function (): void {
@@ -169,8 +182,10 @@ describe('internal workspace adapter lookup command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'adapter_database_missing',
                 'Workspace adapter database does not exist.',
                 ['adapter' => 'polyscope'],
@@ -190,22 +205,27 @@ describe('internal workspace adapter lookup command', function (): void {
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload)
+            ->toBe(JsonEnvelope::failure(
                 'adapter_database_query_failed',
                 'Workspace adapter database could not be queried.',
                 ['adapter' => 'opencode'],
             ))
-            ->and($output)->not->toContain('SQLSTATE')
-            ->and($output)->not->toContain('PDOException');
+            ->and($output)
+            ->not->toContain('SQLSTATE')->and($output)
+            ->not->toContain('PDOException');
     });
 
     it('hides the internal workspace adapter lookup command from php orbit list', function (): void {
         $process = new Process([PHP_BINARY, 'orbit', 'list'], base_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->not->toContain('internal:workspace-adapter:lookup');
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->not->toContain('internal:workspace-adapter:lookup');
     });
 });
 
@@ -224,14 +244,16 @@ function workspaceAdapterSignedOperationToken(
     $issuedAt ??= time() - 10;
     $expiresAt ??= time() + 120;
 
-    return (new OperationTokenSigner)->sign(
-        secret: 'gateway-secret',
-        id: $id,
-        node: $node,
-        command: $command,
-        issuedAt: $issuedAt,
-        expiresAt: $expiresAt,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'gateway-secret',
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
 }
 
 /**
@@ -252,18 +274,26 @@ function createPolyscopeWorkspaceDatabase(string $path): void
 {
     $pdo = createWritableSqliteDatabase($path);
     $pdo->exec('create table repositories (id text primary key, path text not null)');
-    $pdo->exec('create table worktrees (id text primary key, repo_id text not null, branch text not null, path text not null)');
+    $pdo->exec(
+        'create table worktrees (id text primary key, repo_id text not null, branch text not null, path text not null)',
+    );
     $pdo->exec("insert into repositories (id, path) values ('repo-docs', '/srv/docs/')");
-    $pdo->exec("insert into worktrees (id, repo_id, branch, path) values ('poly-worktree-1', 'repo-docs', 'feature-docs', '/srv/docs/.worktrees/feature-docs/')");
+    $pdo->exec(
+        "insert into worktrees (id, repo_id, branch, path) values ('poly-worktree-1', 'repo-docs', 'feature-docs', '/srv/docs/.worktrees/feature-docs/')",
+    );
 }
 
 function createOpenCodeWorkspaceDatabase(string $path): void
 {
     $pdo = createWritableSqliteDatabase($path);
     $pdo->exec('create table project (id text primary key, worktree text not null)');
-    $pdo->exec('create table workspace (id text primary key, project_id text not null, name text not null, branch text, directory text not null)');
+    $pdo->exec(
+        'create table workspace (id text primary key, project_id text not null, name text not null, branch text, directory text not null)',
+    );
     $pdo->exec("insert into project (id, worktree) values ('project-docs', '/srv/docs/')");
-    $pdo->exec("insert into workspace (id, project_id, name, branch, directory) values ('open-workspace-1', 'project-docs', 'Docs fallback', 'feature-open', '/srv/docs/.worktrees/feature-open/')");
+    $pdo->exec(
+        "insert into workspace (id, project_id, name, branch, directory) values ('open-workspace-1', 'project-docs', 'Docs fallback', 'feature-open', '/srv/docs/.worktrees/feature-open/')",
+    );
 }
 
 function createPolyscopeConfigDatabase(string $path): void

@@ -17,14 +17,20 @@ uses(RefreshDatabase::class);
 
 it('maps PHP runtime view with inherited workspace version', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
-    NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'php', 'config' => ['versions' => ['8.5'], 'cli_version' => '8.5']]);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'config' => ['versions' => ['8.5'], 'cli_version' => '8.5'],
+    ]);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'php_version' => '8.5']);
     Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id, 'php_version' => null]);
 
     $result = app(PhpRuntimeManager::class)->view(app: 'docs', workspace: 'feature-docs');
 
-    expect($result->failed())->toBeFalse()
-        ->and($result->payload['workspace'])->toBe([
+    expect($result->failed())
+        ->toBeFalse()
+        ->and($result->payload['workspace'])
+        ->toBe([
             'name' => 'feature-docs',
             'php_version' => '8.5',
             'inherits' => true,
@@ -46,9 +52,12 @@ it('frankenphp selects app runtime from approved image facts', function (): void
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs');
 
-    expect($result->failed())->toBeFalse()
-        ->and($app->refresh()->php_version)->toBe('8.5')
-        ->and($result->payload['result'])->toMatchArray([
+    expect($result->failed())
+        ->toBeFalse()
+        ->and($app->refresh()->php_version)
+        ->toBe('8.5')
+        ->and($result->payload['result'])
+        ->toMatchArray([
             'target' => 'app',
             'app' => 'docs',
             'version' => '8.5',
@@ -71,10 +80,14 @@ it('frankenphp exposes available image facts in runtime views', function (): voi
 
     $result = app(PhpRuntimeManager::class)->view(app: 'docs');
 
-    expect($result->failed())->toBeFalse()
-        ->and($result->payload)->toHaveKey('available_images')
-        ->and($result->payload['available_images'])->toBe(['8.5'])
-        ->and($result->payload)->not->toHaveKey('installed');
+    expect($result->failed())
+        ->toBeFalse()
+        ->and($result->payload)
+        ->toHaveKey('available_images')
+        ->and($result->payload['available_images'])
+        ->toBe(['8.5'])
+        ->and($result->payload)
+        ->not->toHaveKey('installed');
 });
 
 it('frankenphp rejects app writes when --node does not own the app', function (): void {
@@ -103,10 +116,14 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs', node: 'image-node');
 
-    expect($result->failed())->toBeTrue()
-        ->and($app->refresh()->php_version)->toBe('8.4')
-        ->and($result->failure?->code)->toBe('validation_failed')
-        ->and($result->failure?->meta)->toMatchArray([
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($app->refresh()->php_version)
+        ->toBe('8.4')
+        ->and($result->failure?->code)
+        ->toBe('validation_failed')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
             'field' => 'node',
             'reason' => 'target_mismatch',
             'node' => 'image-node',
@@ -132,9 +149,12 @@ it('rejects CLI PHP selection for versions other than 8.5', function (): void {
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.4', node: 'app-1', cli: true);
 
-    expect($result->failed())->toBeTrue()
-        ->and($tool->refresh()->config['cli_version'])->toBe('8.5')
-        ->and($result->failure?->meta)->toMatchArray([
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($tool->refresh()->config['cli_version'])
+        ->toBe('8.5')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
             'field' => 'version',
             'reason' => 'unsupported_cli_version',
             'supported' => ['8.5'],
@@ -168,10 +188,14 @@ it('frankenphp rejects workspace writes when --node does not own the parent app'
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', workspace: 'feature-docs', node: 'image-node');
 
-    expect($result->failed())->toBeTrue()
-        ->and($workspace->refresh()->php_version)->toBe('8.4')
-        ->and($result->failure?->code)->toBe('validation_failed')
-        ->and($result->failure?->meta)->toMatchArray([
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($workspace->refresh()->php_version)
+        ->toBe('8.4')
+        ->and($result->failure?->code)
+        ->toBe('validation_failed')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
             'field' => 'node',
             'reason' => 'target_mismatch',
             'node' => 'image-node',
@@ -199,10 +223,14 @@ it('frankenphp rejects host PHP and FPM fallback facts even when legacy version 
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs');
 
-    expect($result->failed())->toBeTrue()
-        ->and($app->refresh()->php_version)->toBe('8.4')
-        ->and($result->failure?->code)->toBe('validation_failed')
-        ->and($result->failure?->meta)->toMatchArray([
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($app->refresh()->php_version)
+        ->toBe('8.4')
+        ->and($result->failure?->code)
+        ->toBe('validation_failed')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
             'field' => 'version',
             'reason' => 'not_installed',
             'node' => 'app-1',
@@ -230,9 +258,12 @@ it('frankenphp rejects legacy versions-only PHP facts without approved image evi
 
     $result = app(PhpRuntimeManager::class)->use(version: '8.5', app: 'docs');
 
-    expect($result->failed())->toBeTrue()
-        ->and($app->refresh()->php_version)->toBe('8.4')
-        ->and($result->failure?->meta)->toMatchArray([
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($app->refresh()->php_version)
+        ->toBe('8.4')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
             'field' => 'version',
             'reason' => 'not_installed',
             'version' => '8.5',
@@ -255,9 +286,12 @@ it('frankenphp rejects workspace inheritance when inherited app version lacks ap
 
     $result = app(PhpRuntimeManager::class)->use(version: null, app: 'docs', workspace: 'feature-docs', inherit: true);
 
-    expect($result->failed())->toBeTrue()
-        ->and($workspace->refresh()->php_version)->toBe('8.4')
-        ->and($result->failure?->meta)->toMatchArray([
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($workspace->refresh()->php_version)
+        ->toBe('8.4')
+        ->and($result->failure?->meta)
+        ->toMatchArray([
             'field' => 'version',
             'reason' => 'not_installed',
             'version' => '8.5',

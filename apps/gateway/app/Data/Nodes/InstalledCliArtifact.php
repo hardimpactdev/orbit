@@ -73,9 +73,11 @@ final readonly class InstalledCliArtifact implements Arrayable, JsonSerializable
 
     public function matches(string $version, string $platform, string $sha256): bool
     {
-        return ltrim($this->version, 'v') === ltrim($version, 'v')
+        return (
+            ltrim($this->version, 'v') === ltrim($version, 'v')
             && $this->platform === $platform
-            && hash_equals($this->sha256, strtolower($sha256));
+            && hash_equals($this->sha256, strtolower($sha256))
+        );
     }
 
     /**

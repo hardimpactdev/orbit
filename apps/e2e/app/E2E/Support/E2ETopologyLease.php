@@ -154,7 +154,9 @@ final class E2ETopologyLease
             $payload = ($this->rebuild)($timer);
             $instances = $payload['instances'];
 
-            $this->operator = $instances['operator'] ?? throw new \RuntimeException('Rebuilt topology did not return an operator instance.');
+            $this->operator = $instances['operator'] ?? throw new \RuntimeException(
+                'Rebuilt topology did not return an operator instance.',
+            );
             $this->gateway = $instances['gateway'] ?? null;
             $this->dev = $instances['dev'] ?? null;
             $this->prod = $instances['prod'] ?? null;

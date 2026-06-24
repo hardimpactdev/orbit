@@ -84,7 +84,11 @@ final readonly class RemoveWorkspace
                 }
 
                 try {
-                    $configOutcome = $this->workspaceRuntimeContainerManager->removeRuntimeConfigFile($node, $appName, $name);
+                    $configOutcome = $this->workspaceRuntimeContainerManager->removeRuntimeConfigFile(
+                        $node,
+                        $appName,
+                        $name,
+                    );
                 } catch (Throwable) {
                     $configOutcome = WorkspaceRuntimeArtifactRemovalOutcome::FailedRemaining;
                 }
@@ -177,7 +181,8 @@ final readonly class RemoveWorkspace
             return [];
         }
 
-        return $app->processes
+        return $app
+            ->processes
             ->map(function (Process $process) use ($app, $workspace): string {
                 $driver = $this->runtimeDrivers->forProcess($process);
                 $runtimeUnit = $driver->runtimeUnitName($app, $process, $workspace);

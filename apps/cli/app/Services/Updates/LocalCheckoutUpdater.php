@@ -103,7 +103,15 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
 
         // Download away from the running binary, then swap after verification.
         $downloadResult = $this->runCommand([
-            'curl', '-fsSL', '--retry', '3', '--retry-delay', '2', '-o', $stagedBinary, $binaryUrl,
+            'curl',
+            '-fsSL',
+            '--retry',
+            '3',
+            '--retry-delay',
+            '2',
+            '-o',
+            $stagedBinary,
+            $binaryUrl,
         ], 120);
 
         if (! $downloadResult->successful()) {
@@ -246,10 +254,10 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
         }
 
         $envelope = $decoded['success'] ?? $decoded['error'] ?? null;
-        $data = is_array($envelope) ? ($envelope['data'] ?? null) : null;
-        $doctor = is_array($data) ? ($data['doctor'] ?? null) : null;
-        $summary = is_array($doctor) ? ($doctor['summary'] ?? null) : null;
-        $issues = is_array($summary) ? ($summary['issues'] ?? null) : null;
+        $data = is_array($envelope) ? $envelope['data'] ?? null : null;
+        $doctor = is_array($data) ? $data['doctor'] ?? null : null;
+        $summary = is_array($doctor) ? $doctor['summary'] ?? null : null;
+        $issues = is_array($summary) ? $summary['issues'] ?? null : null;
 
         return is_int($issues) ? $issues : null;
     }
@@ -401,7 +409,15 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     public function installDependencies(): array
     {
         $result = $this->runCommand(
-            ['docker', 'exec', 'orbit-gateway', 'composer', '--working-dir=apps/gateway', 'install', '--no-interaction'],
+            [
+                'docker',
+                'exec',
+                'orbit-gateway',
+                'composer',
+                '--working-dir=apps/gateway',
+                'install',
+                '--no-interaction',
+            ],
             120,
             $this->checkoutPathResolver->resolve(),
         );

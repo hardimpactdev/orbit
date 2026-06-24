@@ -55,7 +55,10 @@ final class AppRootCommand extends AppGatewayCommand
             'Updating App Root',
             [
                 ['label' => 'Apply and verify root change', 'doneLabel' => 'Applied and verified root change'],
-                ['label' => 'Apply runtime container configuration', 'doneLabel' => 'Applied runtime container configuration'],
+                [
+                    'label' => 'Apply runtime container configuration',
+                    'doneLabel' => 'Applied runtime container configuration',
+                ],
                 ['label' => 'Apply proxy routes', 'doneLabel' => 'Applied proxy routes'],
             ],
             work: function () use ($selector, $root, &$response): array {
@@ -102,9 +105,11 @@ final class AppRootCommand extends AppGatewayCommand
         $node = (string) ($app['node'] ?? '');
         $root = (string) ($app['root'] ?? '');
 
-        $this->line($this->changed($response)
-            ? "  Document root for app '{$name}' updated to '{$root}'."
-            : "  Document root for app '{$name}' is already '{$root}'.");
+        $this->line(
+            $this->changed($response)
+                ? "  Document root for app '{$name}' updated to '{$root}'."
+                : "  Document root for app '{$name}' is already '{$root}'.",
+        );
         $this->line("  Artifacts successfully re-applied on node '{$node}'.");
 
         foreach ($this->warnings($response) as $warning) {

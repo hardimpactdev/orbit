@@ -42,8 +42,8 @@ final class AppCodexCommand extends AppGatewayCommand
 
         try {
             $response = match ($action) {
-                'add' => $this->gatewayPost($this->apiAppPath((string) $app, '/codex'), ['node' => $node]),
-                'remove' => $this->gatewayDelete($this->apiAppPath((string) $app, '/codex'), ['node' => $node]),
+                'add' => $this->gatewayPost($this->apiAppPath($app, '/codex'), ['node' => $node]),
+                'remove' => $this->gatewayDelete($this->apiAppPath($app, '/codex'), ['node' => $node]),
                 'list' => $this->gatewayGet('/api/apps/codex/projects', ['node' => $node]),
             };
         } catch (GatewayApiException $exception) {

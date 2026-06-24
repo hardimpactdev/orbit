@@ -26,10 +26,9 @@ it('recognizes a Linux local WireGuard self route through loopback', function ()
         ),
     ]);
 
-    $result = (new NodeWireGuardSelfRouteProbe($shell))->probe($node);
+    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
 
-    expect($result['ok'])->toBeTrue()
-        ->and($shell->scripts)->toBe(["ip route get '10.6.0.4'"]);
+    expect($result['ok'])->toBeTrue()->and($shell->scripts)->toBe(["ip route get '10.6.0.4'"]);
 });
 
 it('recognizes an equivalent Linux local WireGuard self route', function (): void {
@@ -47,7 +46,7 @@ it('recognizes an equivalent Linux local WireGuard self route', function (): voi
         ),
     ]);
 
-    $result = (new NodeWireGuardSelfRouteProbe($shell))->probe($node);
+    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
 
     expect($result['ok'])->toBeTrue();
 });
@@ -67,14 +66,16 @@ it('inspects unknown node platforms instead of treating retained Linux topologie
         ),
     ]);
 
-    $result = (new NodeWireGuardSelfRouteProbe($shell))->probe($node);
+    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
 
-    expect($result)->toMatchArray([
-        'ok' => true,
-        'supported' => true,
-        'platform' => 'unknown',
-    ])
-        ->and($shell->scripts)->toBe(["ip route get '10.6.0.2'"]);
+    expect($result)
+        ->toMatchArray([
+            'ok' => true,
+            'supported' => true,
+            'platform' => 'unknown',
+        ])
+        ->and($shell->scripts)
+        ->toBe(["ip route get '10.6.0.2'"]);
 });
 
 it('reports Linux WireGuard self route misses without mutating routes', function (): void {
@@ -92,17 +93,20 @@ it('reports Linux WireGuard self route misses without mutating routes', function
         ),
     ]);
 
-    $result = (new NodeWireGuardSelfRouteProbe($shell))->probe($node);
+    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
 
-    expect($result)->toMatchArray([
-        'ok' => false,
-        'supported' => true,
-        'reason' => 'self_route_missing',
-        'message' => 'Linux node does not route its own WireGuard address locally.',
-    ])
-        ->and($shell->scripts)->toBe(["ip route get '10.6.0.4'"])
-        ->and($shell->scripts[0])->not->toContain(' route add ')
-        ->and($shell->scripts[0])->not->toContain(' route replace ');
+    expect($result)
+        ->toMatchArray([
+            'ok' => false,
+            'supported' => true,
+            'reason' => 'self_route_missing',
+            'message' => 'Linux node does not route its own WireGuard address locally.',
+        ])
+        ->and($shell->scripts)
+        ->toBe(["ip route get '10.6.0.4'"])
+        ->and($shell->scripts[0])
+        ->not->toContain(' route add ')->and($shell->scripts[0])
+        ->not->toContain(' route replace ');
 });
 
 it('reports macOS as unsupported without running route commands', function (): void {
@@ -113,15 +117,17 @@ it('reports macOS as unsupported without running route commands', function (): v
     ]);
     $shell = new NodeWireGuardSelfRouteProbeRemoteShell([]);
 
-    $result = (new NodeWireGuardSelfRouteProbe($shell))->probe($node);
+    $result = new NodeWireGuardSelfRouteProbe($shell)->probe($node);
 
-    expect($result)->toMatchArray([
-        'ok' => false,
-        'supported' => false,
-        'reason' => 'unsupported_platform',
-        'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
-    ])
-        ->and($shell->scripts)->toBe([]);
+    expect($result)
+        ->toMatchArray([
+            'ok' => false,
+            'supported' => false,
+            'reason' => 'unsupported_platform',
+            'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
+        ])
+        ->and($shell->scripts)
+        ->toBe([]);
 });
 
 final class NodeWireGuardSelfRouteProbeRemoteShell implements RemoteShell
@@ -134,7 +140,9 @@ final class NodeWireGuardSelfRouteProbeRemoteShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

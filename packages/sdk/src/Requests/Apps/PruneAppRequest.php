@@ -46,8 +46,8 @@ final class PruneAppRequest extends GatewayRequest implements HasBody
 
         return new PruneAppResponse(
             app: is_string($data['app'] ?? null) ? $data['app'] : '',
-            staleWorkspaces: is_array($data['stale_workspaces'] ?? null) ? array_values($data['stale_workspaces']) : [],
-            warnings: is_array($meta['warnings'] ?? null) ? array_values($meta['warnings']) : [],
+            staleWorkspaces: $this->listOfStringKeyedArrays($data['stale_workspaces'] ?? []),
+            warnings: $this->listOfStringArrays($meta['warnings'] ?? []),
             dryRun: (bool) ($data['dry_run'] ?? false),
         );
     }

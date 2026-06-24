@@ -99,7 +99,7 @@ final class SetupAppProgressPlan
             $reporter->stepStart($step['key']);
 
             try {
-                $message = (string) ($step['run'])();
+                $message = $step['run']();
             } catch (Throwable $exception) {
                 $this->failure ??= [
                     'code' => 'app.setup_failed',

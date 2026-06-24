@@ -232,7 +232,11 @@ class E2EReapIncusCommand extends Command
 
         if ($unsupported !== []) {
             throw new InvalidArgumentException(
-                'Unsupported --scope value(s): '.implode(', ', $unsupported).'. Supported scopes: '.implode(', ', self::SupportedScopes).', all.'
+                'Unsupported --scope value(s): '
+                .implode(', ', $unsupported)
+                .'. Supported scopes: '
+                .implode(', ', self::SupportedScopes)
+                .', all.',
             );
         }
 
@@ -281,7 +285,8 @@ class E2EReapIncusCommand extends Command
             if (! str_starts_with($name, $instancePrefix)) {
                 if (
                     $recordProtectedTemplateSkips
-                    && (str_starts_with($name, 'orbit-template-') || str_starts_with($name, 'orbit-ready-'))
+                    && (str_starts_with($name, 'orbit-template-')
+                    || str_starts_with($name, 'orbit-ready-'))
                 ) {
                     $skippedNames[] = $name;
                 }
@@ -318,7 +323,9 @@ class E2EReapIncusCommand extends Command
                 $deleteResult = $this->deleteInstance($host, $name);
 
                 if (! $deleteResult->successful()) {
-                    throw new RuntimeException("Could not delete instance {$name} on {$host->config->host}: {$deleteResult->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete instance {$name} on {$host->config->host}: {$deleteResult->errorOutput()}",
+                    );
                 }
 
                 $resource['deleted'] = true;
@@ -388,7 +395,9 @@ class E2EReapIncusCommand extends Command
                 $deleteResult = $this->deleteInstance($host, $name);
 
                 if (! $deleteResult->successful()) {
-                    throw new RuntimeException("Could not delete template {$name} on {$host->config->host}: {$deleteResult->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete template {$name} on {$host->config->host}: {$deleteResult->errorOutput()}",
+                    );
                 }
 
                 $resource['deleted'] = true;
@@ -482,7 +491,9 @@ class E2EReapIncusCommand extends Command
                 $deleteResult = $this->deleteNetwork($host, $name);
 
                 if (! $deleteResult->successful()) {
-                    throw new RuntimeException("Could not delete network {$name} on {$host->config->host}: {$deleteResult->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete network {$name} on {$host->config->host}: {$deleteResult->errorOutput()}",
+                    );
                 }
 
                 $resource['deleted'] = true;
@@ -567,7 +578,9 @@ class E2EReapIncusCommand extends Command
                 $deleteResult = $this->deleteImage($host, $alias);
 
                 if (! $deleteResult->successful()) {
-                    throw new RuntimeException("Could not delete image {$alias} on {$host->config->host}: {$deleteResult->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete image {$alias} on {$host->config->host}: {$deleteResult->errorOutput()}",
+                    );
                 }
 
                 $resource['deleted'] = true;
@@ -685,7 +698,9 @@ class E2EReapIncusCommand extends Command
                 $deleteResult = $this->deleteTmpPath($host, $path);
 
                 if (! $deleteResult->successful()) {
-                    throw new RuntimeException("Could not delete tmp path {$path} on {$host->config->host}: {$deleteResult->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete tmp path {$path} on {$host->config->host}: {$deleteResult->errorOutput()}",
+                    );
                 }
 
                 $resource['deleted'] = true;
@@ -703,9 +718,11 @@ class E2EReapIncusCommand extends Command
             return false;
         }
 
-        return str_starts_with($path, '/tmp/orbit-e2e-')
+        return (
+            str_starts_with($path, '/tmp/orbit-e2e-')
             || str_starts_with($path, '/tmp/orbit-current-transfer-')
-            || str_starts_with($path, '/tmp/orbit-e2e-sources/');
+            || str_starts_with($path, '/tmp/orbit-e2e-sources/')
+        );
     }
 
     private function listInstances($host): ProcessResult
@@ -729,12 +746,12 @@ class E2EReapIncusCommand extends Command
 
         return $this->runRemote($host, sprintf(
             <<<'BASH'
-set -euo pipefail
-find /tmp -mindepth 1 -maxdepth 1 \( \( -name 'orbit-e2e-*' ! -name 'orbit-e2e-sources' \) -o -name 'orbit-current-transfer-*' \) -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
-if [ -d /tmp/orbit-e2e-sources ]; then
-    find /tmp/orbit-e2e-sources -mindepth 1 -maxdepth 1 -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
-fi
-BASH,
+                set -euo pipefail
+                find /tmp -mindepth 1 -maxdepth 1 \( \( -name 'orbit-e2e-*' ! -name 'orbit-e2e-sources' \) -o -name 'orbit-current-transfer-*' \) -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
+                if [ -d /tmp/orbit-e2e-sources ]; then
+                    find /tmp/orbit-e2e-sources -mindepth 1 -maxdepth 1 -mmin +%1$d -printf '%%p\t%%TY-%%Tm-%%TdT%%TH:%%TM:%%TS%%Tz\t%%s\n' 2>/dev/null || true
+                fi
+                BASH,
             $minutes,
         ));
     }
@@ -781,8 +798,10 @@ BASH,
 
     private function isLocalHost(string $host): bool
     {
-        return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
-            || strtolower($host) === strtolower((string) gethostname());
+        return (
+            in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
+            || strtolower($host) === strtolower((string) gethostname())
+        );
     }
 
     /**

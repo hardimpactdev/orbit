@@ -48,7 +48,13 @@ final readonly class ToolRemover
         $result = $this->remoteShell->run($model->node, $script, ['throw' => false]);
 
         if (! $result->successful()) {
-            return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'remove', $result->exitCode, trim($result->stderr));
+            return ToolRegistryFailure::remoteActionFailed(
+                $tool,
+                $model->node?->name,
+                'remove',
+                $result->exitCode,
+                trim($result->stderr),
+            );
         }
 
         $model->credentials = null;
@@ -57,7 +63,7 @@ final readonly class ToolRemover
 
         return [
             'name' => $tool,
-            'node' => $model->node->name,
+            'node' => $model->node?->name,
         ];
     }
 }

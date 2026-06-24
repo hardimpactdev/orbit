@@ -126,9 +126,11 @@ final readonly class DockerHost
 
     public static function localDockerSocketGroupIdCommand(): string
     {
-        return 'for path in /var/run/docker.sock "${HOME}/.orbstack/run/docker.sock" "${HOME}/.docker/run/docker.sock"; do '
+        return (
+            'for path in /var/run/docker.sock "${HOME}/.orbstack/run/docker.sock" "${HOME}/.docker/run/docker.sock"; do '
             .'if [ -S "$path" ]; then stat -c %g "$path" 2>/dev/null || stat -f %g "$path"; exit 0; fi; '
-            .'done; exit 1';
+            .'done; exit 1'
+        );
     }
 
     private function resolveRemoteDockerSocketGroupId(): ProcessResult

@@ -32,8 +32,11 @@ final readonly class S3ServiceConfigResolver
      * @param  NodeRoleAssignment  $assignment  The active s3 role assignment carrying role settings.
      * @param  NodeTool|null  $seaweedfsTool  The seaweedfs tool row, if it exists.
      */
-    public function resolve(Node $node, NodeRoleAssignment $assignment, ?NodeTool $seaweedfsTool = null): S3ServiceConfig
-    {
+    public function resolve(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        ?NodeTool $seaweedfsTool = null,
+    ): S3ServiceConfig {
         $wireguardAddress = $this->requireWireguardAddress($node);
 
         $settings = S3RoleSettings::fromArray(

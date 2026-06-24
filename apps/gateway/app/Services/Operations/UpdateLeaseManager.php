@@ -162,8 +162,11 @@ class UpdateLeaseManager
         }
     }
 
-    protected function beforeActiveLeaseCreate(string $activeResourceKey, string $resourceType, string $resourceKey): void
-    {
+    protected function beforeActiveLeaseCreate(
+        string $activeResourceKey,
+        string $resourceType,
+        string $resourceKey,
+    ): void {
         //
     }
 
@@ -297,9 +300,11 @@ class UpdateLeaseManager
         $driverCode = (string) ($exception->errorInfo[1] ?? '');
         $message = strtolower($exception->getMessage());
 
-        return in_array($sqlState, ['23000', '23505'], true)
+        return (
+            in_array($sqlState, ['23000', '23505'], true)
             || in_array($driverCode, ['19', '1062'], true)
             || str_contains($message, 'unique constraint')
-            || str_contains($message, 'duplicate entry');
+            || str_contains($message, 'duplicate entry')
+        );
     }
 }

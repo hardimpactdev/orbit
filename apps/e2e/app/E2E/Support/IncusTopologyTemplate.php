@@ -22,7 +22,13 @@ final readonly class IncusTopologyTemplate
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
             E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => [
+                'operator',
+                'gateway',
+                'dev',
+                'prod',
+                'agent',
+            ],
         };
 
         if (E2EPreparedTopology::prodHostsIngressRole($kind)) {
@@ -85,7 +91,12 @@ final readonly class IncusTopologyTemplate
 
         foreach (self::rolesFor($kind) as $role) {
             $snapshotChecks = array_map(
-                static fn (array $candidate): string => 'incus info '.escapeshellarg($candidate['template']).' >/dev/null 2>&1 && '.self::snapshotExistsCommand($candidate['template'], $candidate['snapshot']),
+                static fn (array $candidate): string => (
+                    'incus info '
+                    .escapeshellarg($candidate['template'])
+                    .' >/dev/null 2>&1 && '
+                    .self::snapshotExistsCommand($candidate['template'], $candidate['snapshot'])
+                ),
                 self::snapshotCandidates($kind, $role),
             );
 
@@ -98,12 +109,27 @@ final readonly class IncusTopologyTemplate
     /**
      * @return array<string, IncusInstance>
      */
-    public static function clone(IncusHost $host, E2ETopologyKind $kind, string $runId, ?E2EPhaseTimer $timer = null, bool $stateful = false, bool $sourceMounted = false, ?IncusWorkerNetwork $network = null): array
-    {
+    public static function clone(
+        IncusHost $host,
+        E2ETopologyKind $kind,
+        string $runId,
+        ?E2EPhaseTimer $timer = null,
+        bool $stateful = false,
+        bool $sourceMounted = false,
+        ?IncusWorkerNetwork $network = null,
+    ): array {
         $timer ??= new E2EPhaseTimer;
         $roles = self::rolesFor($kind);
 
-        $script = self::buildBatchScript($host, $kind, $runId, $roles, stateful: $stateful, sourceMounted: $sourceMounted, network: $network);
+        $script = self::buildBatchScript(
+            $host,
+            $kind,
+            $runId,
+            $roles,
+            stateful: $stateful,
+            sourceMounted: $sourceMounted,
+            network: $network,
+        );
 
         $result = $timer->measure('batch.copy-start', fn () => $host->runWithoutMultiplexing($script));
 
@@ -111,7 +137,7 @@ final readonly class IncusTopologyTemplate
             self::deleteClonesIfPresent($host, $runId, $roles);
 
             throw new \RuntimeException(
-                "Topology batch failed for {$kind->value}: {$result->errorOutput()}"
+                "Topology batch failed for {$kind->value}: {$result->errorOutput()}",
             );
         }
 
@@ -125,7 +151,12 @@ final readonly class IncusTopologyTemplate
 
         $instances = [];
         foreach ($roles as $role) {
-            $instances[$role] = new IncusInstance($host, self::cloneName($runId, $role), commandTransport: true, sourceMountedCheckout: $sourceMounted);
+            $instances[$role] = new IncusInstance(
+                $host,
+                self::cloneName($runId, $role),
+                commandTransport: true,
+                sourceMountedCheckout: $sourceMounted,
+            );
         }
 
         return $instances;
@@ -162,7 +193,9 @@ final readonly class IncusTopologyTemplate
             $tasks[$role] = implode("\n", [
                 'deadline=$((SECONDS + '.$host->config->timeoutSeconds.'))',
                 "until incus exec {$clone} -- true >/dev/null 2>&1; do",
-                '    if [ "$SECONDS" -ge "$deadline" ]; then echo "Incus agent never became ready on '.self::cloneName($runId, $role).'." >&2; exit 1; fi',
+                '    if [ "$SECONDS" -ge "$deadline" ]; then echo "Incus agent never became ready on '
+                    .self::cloneName($runId, $role)
+                    .'." >&2; exit 1; fi',
                 '    sleep 1',
                 'done',
                 "incus exec {$clone} -- sh -lc ".escapeshellarg(IncusInstance::networkIdentityRefreshCommand()),
@@ -182,8 +215,15 @@ final readonly class IncusTopologyTemplate
     /**
      * @param  list<string>  $roles
      */
-    public static function buildBatchScript(IncusHost $host, E2ETopologyKind $kind, string $runId, array $roles, ?bool $stateful = null, bool $sourceMounted = false, ?IncusWorkerNetwork $network = null): string
-    {
+    public static function buildBatchScript(
+        IncusHost $host,
+        E2ETopologyKind $kind,
+        string $runId,
+        array $roles,
+        ?bool $stateful = null,
+        bool $sourceMounted = false,
+        ?IncusWorkerNetwork $network = null,
+    ): string {
         $cpus = escapeshellarg($host->config->topologyCpus);
         $memory = escapeshellarg($host->config->topologyMemory);
         $rootSize = escapeshellarg($host->config->topologyRootSize);
@@ -314,19 +354,32 @@ final readonly class IncusTopologyTemplate
                     escapeshellarg($candidate['template']),
                     self::snapshotExistsCommand($candidate['template'], $candidate['snapshot']),
                 );
-                $lines[] = '    echo '.escapeshellarg("__orbit_snapshot_source {$role} {$candidate['template']} {$candidate['snapshot']}");
+                $lines[] = '    echo '
+                .escapeshellarg(
+                    "__orbit_snapshot_source {$role} {$candidate['template']} {$candidate['snapshot']}",
+                );
             }
 
             $lines[] = 'else';
-            $lines[] = '    echo '.escapeshellarg("__orbit_snapshot_source {$role} {$fallbacks[$role]['template']} {$fallbacks[$role]['snapshot']}");
+            $lines[] = '    echo '
+            .escapeshellarg(
+                "__orbit_snapshot_source {$role} {$fallbacks[$role]['template']} {$fallbacks[$role]['snapshot']}",
+            );
             $lines[] = 'fi';
         }
 
         $result = $host->run(implode("\n", $lines), timeoutSeconds: 60);
         $resolved = [];
 
-        if ($result->successful()
-            && preg_match_all('/__orbit_snapshot_source\s+(\S+)\s+(\S+)\s+(\S+)/', $result->output(), $matches, PREG_SET_ORDER) !== false) {
+        if (
+            $result->successful()
+            && preg_match_all(
+                '/__orbit_snapshot_source\s+(\S+)\s+(\S+)\s+(\S+)/',
+                $result->output(),
+                $matches,
+                PREG_SET_ORDER,
+            ) !== false
+        ) {
             foreach ($matches as $match) {
                 $resolved[$match[1]] = [
                     'template' => $match[2],

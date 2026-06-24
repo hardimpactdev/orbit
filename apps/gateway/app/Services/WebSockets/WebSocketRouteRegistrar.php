@@ -145,7 +145,8 @@ class WebSocketRouteRegistrar
 
         if (
             $existingRoute instanceof ProxyRoute
-            && ($existingRoute->owner_type !== 'app-websocket' || $existingRoute->app_id !== $app->id)
+            && ($existingRoute->owner_type !== 'app-websocket'
+            || $existingRoute->app_id !== $app->id)
         ) {
             throw new RuntimeException("WebSocket public host '{$host}' conflicts with an existing proxy route.");
         }
@@ -279,7 +280,8 @@ class WebSocketRouteRegistrar
 
     private function routerNode(): Node
     {
-        $router = $this->nodeRoleAssignments->activeRouterNodeQuery()
+        $router = $this->nodeRoleAssignments
+            ->activeRouterNodeQuery()
             ->orderBy('id')
             ->first();
 
@@ -288,7 +290,9 @@ class WebSocketRouteRegistrar
         }
 
         if ($this->wireGuardAddress($router) === '') {
-            throw new RuntimeException('The websocket service route requires the router node to have a WireGuard address.');
+            throw new RuntimeException(
+                'The websocket service route requires the router node to have a WireGuard address.',
+            );
         }
 
         return $router;

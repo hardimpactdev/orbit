@@ -49,7 +49,7 @@ final readonly class AppWorkerReadiness
             );
         }
 
-        $appPath = rtrim((string) $app->path, '/');
+        $appPath = rtrim($app->path, '/');
 
         if ($appPath === '') {
             return AppWorkerReadinessResult::notReady(
@@ -118,48 +118,48 @@ final readonly class AppWorkerReadiness
         $escapedWorkerFile = escapeshellarg($workerFileRelative);
 
         return <<<SCRIPT
-set -u
-APP_PATH={$escapedAppPath}
-WORKER_FILE={$escapedWorkerFile}
-if [ -d "\$APP_PATH/vendor/laravel/octane" ]; then
-    echo octane:installed
-fi
-if [ -f "\$APP_PATH/\$WORKER_FILE" ]; then
-    echo frankenphp-worker-file:present
-fi
-if [ -f "\$APP_PATH/config/octane.php" ]; then
-    if awk '
-        BEGIN { in_block = 0 }
-        {
-            line = \$0
-            if (in_block) {
-                if (match(line, /\*\//)) {
-                    line = substr(line, RSTART + RLENGTH)
-                    in_block = 0
-                } else {
-                    next
-                }
-            }
-            while (match(line, /\/\*/)) {
-                close_pos = index(substr(line, RSTART + 2), "*/")
-                if (close_pos > 0) {
-                    line = substr(line, 1, RSTART - 1) substr(line, RSTART + 2 + close_pos + 1)
-                } else {
-                    line = substr(line, 1, RSTART - 1)
-                    in_block = 1
-                    break
-                }
-            }
-            sub(/\/\/.*/, "", line)
-            sub(/#.*/, "", line)
-            if (line ~ /["'\'']frankenphp["'\'']/) {
-                print line
-            }
-        }
-    ' "\$APP_PATH/config/octane.php" | grep -q .; then
-        echo frankenphp:configured
-    fi
-fi
-SCRIPT;
+            set -u
+            APP_PATH={$escapedAppPath}
+            WORKER_FILE={$escapedWorkerFile}
+            if [ -d "\$APP_PATH/vendor/laravel/octane" ]; then
+                echo octane:installed
+            fi
+            if [ -f "\$APP_PATH/\$WORKER_FILE" ]; then
+                echo frankenphp-worker-file:present
+            fi
+            if [ -f "\$APP_PATH/config/octane.php" ]; then
+                if awk '
+                    BEGIN { in_block = 0 }
+                    {
+                        line = \$0
+                        if (in_block) {
+                            if (match(line, /\*\//)) {
+                                line = substr(line, RSTART + RLENGTH)
+                                in_block = 0
+                            } else {
+                                next
+                            }
+                        }
+                        while (match(line, /\/\*/)) {
+                            close_pos = index(substr(line, RSTART + 2), "*/")
+                            if (close_pos > 0) {
+                                line = substr(line, 1, RSTART - 1) substr(line, RSTART + 2 + close_pos + 1)
+                            } else {
+                                line = substr(line, 1, RSTART - 1)
+                                in_block = 1
+                                break
+                            }
+                        }
+                        sub(/\/\/.*/, "", line)
+                        sub(/#.*/, "", line)
+                        if (line ~ /["'\'']frankenphp["'\'']/) {
+                            print line
+                        }
+                    }
+                ' "\$APP_PATH/config/octane.php" | grep -q .; then
+                    echo frankenphp:configured
+                fi
+            fi
+            SCRIPT;
     }
 }

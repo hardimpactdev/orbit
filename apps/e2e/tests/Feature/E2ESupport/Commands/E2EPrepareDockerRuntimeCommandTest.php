@@ -12,7 +12,8 @@ beforeEach(function (): void {
 it('documents docker runtime image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-runtime')
+    $this
+        ->artisan('e2e:prepare-docker-runtime')
         ->expectsOutputToContain('orbit-e2e-topology-runtime:prepared-current')
         ->expectsOutputToContain('orbit-gateway:prepared-current')
         ->expectsOutputToContain('orbit-reverb:current')
@@ -37,7 +38,8 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         return Process::result();
     });
 
-    $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
+    $this
+        ->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Built orbit-e2e-topology-runtime:prepared-current.')
         ->expectsOutputToContain('Built orbit-gateway:prepared-current.')
         ->expectsOutputToContain('Built orbit-reverb:current.')
@@ -49,62 +51,103 @@ it('builds the topology and gateway images and pulls the official Caddy image wh
         ->expectsOutputToContain('Pulled composer:2.')
         ->assertSuccessful();
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'docker/e2e/topology/Dockerfile')
-        && str_contains($process->command, 'orbit-e2e-topology-runtime:prepared-current')
-        && str_contains($process->command, repo_path()));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'docker/e2e/topology/Dockerfile')
+            && str_contains($process->command, 'orbit-e2e-topology-runtime:prepared-current')
+            && str_contains($process->command, repo_path())
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'docker/orbit-gateway/Dockerfile')
-        && str_contains($process->command, 'orbit-gateway:prepared-current')
-        && str_contains($process->command, repo_path()));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'docker/orbit-gateway/Dockerfile')
+            && str_contains($process->command, 'orbit-gateway:prepared-current')
+            && str_contains($process->command, repo_path())
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'docker/orbit-reverb/Dockerfile')
-        && str_contains($process->command, 'orbit-reverb:current')
-        && str_contains($process->command, repo_path()));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'docker/orbit-reverb/Dockerfile')
+            && str_contains($process->command, 'orbit-reverb:current')
+            && str_contains($process->command, repo_path())
+        ),
+    );
 
     $retiredRuntimeContext = 'docker/orbit'.'-runtime';
 
-    Process::assertNotRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, $retiredRuntimeContext));
+    Process::assertNotRan(
+        fn ($process): bool => is_string($process->command) && str_contains($process->command, $retiredRuntimeContext),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'caddy:2-alpine'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'caddy:2-alpine'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'composer:2'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'composer:2'")
+        ),
+    );
 
-    Process::assertNotRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'caddy:2-alpine'));
+    Process::assertNotRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'caddy:2-alpine')
+        ),
+    );
 
-    $gatewayBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-gateway/Dockerfile'));
-    $webSocketBuildCommand = collect($commands)->first(fn (string $command): bool => str_contains($command, 'docker/orbit-reverb/Dockerfile'));
+    $gatewayBuildCommand = collect($commands)->first(
+        fn (string $command): bool => str_contains($command, 'docker/orbit-gateway/Dockerfile'),
+    );
+    $webSocketBuildCommand = collect($commands)->first(
+        fn (string $command): bool => str_contains($command, 'docker/orbit-reverb/Dockerfile'),
+    );
 
     expect($gatewayBuildCommand)
         ->toContain('orbit-gateway:prepared-current')
-        ->not->toContain('apps/cli/orbit')
-        ->and($webSocketBuildCommand)
-        ->toContain('orbit-reverb:current')
-        ->and(implode("\n", $commands))
+        ->not->toContain('apps/cli/orbit')->and($webSocketBuildCommand)->toContain('orbit-reverb:current')->and(implode(
+            "\n",
+            $commands,
+        ))
         ->not->toContain('orbit'.'-runtime')
         ->not->toContain('apps/cli/orbit');
 });
@@ -120,8 +163,10 @@ it('records the production artifact manifest with gateway image and cli hash met
     chmod($binary, 0755);
 
     Process::fake(function ($process) {
-        if (str_contains((string) $process->command, 'docker image inspect')
-            && str_contains((string) $process->command, 'orbit-gateway:prepared-current')) {
+        if (
+            str_contains((string) $process->command, 'docker image inspect')
+            && str_contains((string) $process->command, 'orbit-gateway:prepared-current')
+        ) {
             return Process::result(output: 'sha256:'.str_repeat('a', 64)."\n");
         }
 
@@ -162,7 +207,8 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
         '*' => Process::result(),
     ]);
 
-    $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
+    $this
+        ->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
         ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm.')
         ->expectsOutputToContain('Pulled ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm.')
@@ -170,21 +216,37 @@ it('keeps the Caddy image local so docker run --pull never can start the contain
         ->expectsOutputToContain('Pulled composer:2.')
         ->assertSuccessful();
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'caddy:2-alpine'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'caddy:2-alpine'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.3-bookworm'")
+        ),
+    );
 });
 
 it('keeps the Docker topology runtime image source-less without a baked orbit launcher', function (): void {
@@ -235,7 +297,8 @@ it('fails clearly when the docker build fails', function (): void {
         '*' => Process::result(errorOutput: 'docker build failed', exitCode: 1),
     ]);
 
-    $this->artisan('e2e:prepare-docker-runtime', ['--force' => true])
+    $this
+        ->artisan('e2e:prepare-docker-runtime', ['--force' => true])
         ->expectsOutputToContain('docker build failed')
         ->assertFailed();
 });

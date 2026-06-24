@@ -124,7 +124,8 @@ final readonly class RoleSelfGrantMaterializer
      */
     private function activeRoleNames(Node $node): array
     {
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('status', NodeRoleStatus::Active->value)
             ->orderBy('role')
             ->pluck('role')

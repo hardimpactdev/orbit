@@ -189,11 +189,7 @@ final readonly class WgEasyAddressReservationProbe
 
         $parts = array_map(intval(...), explode('.', $address));
 
-        return $parts[0] === 10
-            && $parts[1] === 6
-            && $parts[2] === 0
-            && $parts[3] >= 1
-            && $parts[3] <= 254;
+        return $parts[0] === 10 && $parts[1] === 6 && $parts[2] === 0 && $parts[3] >= 1 && $parts[3] <= 254;
     }
 
     /**

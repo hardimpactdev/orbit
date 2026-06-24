@@ -14,17 +14,17 @@ final class UnattendedUpgradesAptConfig
     public function unattendedUpgrades(): string
     {
         return <<<'CONF'
-Unattended-Upgrade::Allowed-Origins {
-        "${distro_id}:${distro_codename}-security";
-        "${distro_id}ESMApps:${distro_codename}-apps-security";
-        "${distro_id}ESM:${distro_codename}-infra-security";
-};
-Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
-Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
-Unattended-Upgrade::Remove-Unused-Dependencies "true";
-Unattended-Upgrade::Automatic-Reboot "false";
+            Unattended-Upgrade::Allowed-Origins {
+                    "${distro_id}:${distro_codename}-security";
+                    "${distro_id}ESMApps:${distro_codename}-apps-security";
+                    "${distro_id}ESM:${distro_codename}-infra-security";
+            };
+            Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+            Unattended-Upgrade::Remove-New-Unused-Dependencies "true";
+            Unattended-Upgrade::Remove-Unused-Dependencies "true";
+            Unattended-Upgrade::Automatic-Reboot "false";
 
-CONF;
+            CONF;
     }
 
     public function autoUpgradesSha256(): string

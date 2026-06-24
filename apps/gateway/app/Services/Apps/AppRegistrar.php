@@ -84,7 +84,11 @@ final class AppRegistrar
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
-        if (! $existingApp instanceof App && $this->isInteractiveInput() && ! confirm('Adopt existing app path?', default: true)) {
+        if (
+            ! $existingApp instanceof App
+            && $this->isInteractiveInput()
+            && ! confirm('Adopt existing app path?', default: true)
+        ) {
             return $this->failValidation('path', 'App path adoption was cancelled.');
         }
 
@@ -160,10 +164,14 @@ final class AppRegistrar
         $app = $this->registerAppRecord($input, $node, $path, $existingApp);
         $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand([
-            'result' => ['action' => $action],
-            'app' => $this->appPayload($app),
-        ], $warnings, $node->name);
+        return $this->successCommand(
+            [
+                'result' => ['action' => $action],
+                'app' => $this->appPayload($app),
+            ],
+            $warnings,
+            $node->name,
+        );
     }
 
     /**
@@ -183,10 +191,14 @@ final class AppRegistrar
         $app = $this->registerAppRecord($input, $node, $path, $existingApp);
         $warnings = $enactAppRuntime->handle($app);
 
-        return $this->successCommand([
-            'result' => ['action' => $action],
-            'app' => $this->appPayload($app),
-        ], $warnings, $node->name);
+        return $this->successCommand(
+            [
+                'result' => ['action' => $action],
+                'app' => $this->appPayload($app),
+            ],
+            $warnings,
+            $node->name,
+        );
     }
 
     /**
@@ -309,7 +321,10 @@ final class AppRegistrar
             try {
                 AppRuntimeConfig::fromProxyTransportOption($runtimeProxyTransport);
             } catch (\InvalidArgumentException) {
-                return $this->failValidation('runtime_proxy_transport', "Runtime proxy transport must be 'http' or 'https'.");
+                return $this->failValidation(
+                    'runtime_proxy_transport',
+                    "Runtime proxy transport must be 'http' or 'https'.",
+                );
             }
         }
 
@@ -384,7 +399,10 @@ final class AppRegistrar
                     ->all();
 
                 if (count($nodeNames) !== 1) {
-                    return $this->failValidation('node', 'The --node option is required when the target app node cannot be inferred.');
+                    return $this->failValidation(
+                        'node',
+                        'The --node option is required when the target app node cannot be inferred.',
+                    );
                 }
 
                 $nodeName = (string) $nodeNames[0];
@@ -422,7 +440,11 @@ final class AppRegistrar
      */
     private function routeConflict(array $input, Node $node, ?App $existingApp): ?ProxyRoute
     {
-        $domain = $input['domain'] ?? ($existingApp instanceof App ? $existingApp->domain : null) ?? $this->developmentDomain($input['name'], $node);
+        $domain =
+            $input['domain'] ?? ($existingApp instanceof App ? $existingApp->domain : null) ?? $this->developmentDomain(
+                $input['name'],
+                $node,
+            );
 
         $route = ProxyRoute::query()->where('domain', $domain)->first();
 
@@ -520,7 +542,7 @@ final class AppRegistrar
             $action = (string) ($data['result']['action'] ?? '');
 
             $this->line($this->successLine($action, $app));
-            $this->line('URL: '.(string) ($app['url'] ?? ''));
+            $this->line('URL: '.($app['url'] ?? ''));
 
             if ($warnings !== []) {
                 $this->line('Warnings:');

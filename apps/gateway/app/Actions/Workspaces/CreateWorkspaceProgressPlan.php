@@ -100,7 +100,7 @@ final class CreateWorkspaceProgressPlan
                     $this->warnings = array_merge($this->warnings, $routeWarnings);
 
                     if ($routeWarnings !== []) {
-                        return 'skip:'.(string) ($routeWarnings[0]['message'] ?? 'Proxy route requires convergence.');
+                        return 'skip:'.($routeWarnings[0]['message'] ?? 'Proxy route requires convergence.');
                     }
 
                     return 'ready';
@@ -212,7 +212,7 @@ final class CreateWorkspaceProgressPlan
 
                     $this->setupWorkspace->markActive($this->workspace);
 
-                    return (string) $this->httpProbe['status'];
+                    return $this->httpProbe['status'];
                 },
             ],
         ];
@@ -232,7 +232,7 @@ final class CreateWorkspaceProgressPlan
             $reporter->stepStart($step['key']);
 
             try {
-                $message = (string) ($step['run'])();
+                $message = $step['run']();
             } catch (Throwable $e) {
                 $this->failure ??= [
                     'code' => 'workspace.enactment_failed',
@@ -299,6 +299,13 @@ final class CreateWorkspaceProgressPlan
             ];
         }
 
-        return $this->createWorkspace->result($this->workspace, $this->app, $this->node, $this->base, $this->httpProbe, $this->warnings);
+        return $this->createWorkspace->result(
+            $this->workspace,
+            $this->app,
+            $this->node,
+            $this->base,
+            $this->httpProbe,
+            $this->warnings,
+        );
     }
 }

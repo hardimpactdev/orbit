@@ -15,11 +15,16 @@ use Illuminate\Support\Facades\Schema;
 uses(RefreshDatabase::class);
 
 it('uses polymorphic process ownership instead of app or workspace columns', function (): void {
-    expect(Schema::hasColumn('processes', 'owner_type'))->toBeTrue()
-        ->and(Schema::hasColumn('processes', 'owner_id'))->toBeTrue()
-        ->and(Schema::hasColumn('processes', 'node_id'))->toBeTrue()
-        ->and(Schema::hasColumn('processes', 'app_id'))->toBeFalse()
-        ->and(Schema::hasColumn('processes', 'workspace_id'))->toBeFalse();
+    expect(Schema::hasColumn('processes', 'owner_type'))
+        ->toBeTrue()
+        ->and(Schema::hasColumn('processes', 'owner_id'))
+        ->toBeTrue()
+        ->and(Schema::hasColumn('processes', 'node_id'))
+        ->toBeTrue()
+        ->and(Schema::hasColumn('processes', 'app_id'))
+        ->toBeFalse()
+        ->and(Schema::hasColumn('processes', 'workspace_id'))
+        ->toBeFalse();
 });
 
 it('stores node owned process runtime configuration', function (): void {
@@ -141,17 +146,19 @@ it('stores workspace owned process runtime configuration', function (): void {
     $app = App::factory()->create(['node_id' => $node->id, 'name' => 'abc']);
     $workspace = Workspace::factory()->create(['app_id' => $app->id, 'name' => 'redesign']);
 
-    $process = $workspace->processes()->create([
-        'node_id' => $node->id,
-        'name' => 'horizon-redesign',
-        'runtime' => ProcessRuntime::Systemd,
-        'tool' => 'php-cli',
-        'command' => 'php artisan horizon',
-        'runtime_config' => [
-            'directory' => '/home/orbit/apps/abc/worktrees/redesign',
-        ],
-        'sort_order' => 1,
-    ]);
+    $process = $workspace
+        ->processes()
+        ->create([
+            'node_id' => $node->id,
+            'name' => 'horizon-redesign',
+            'runtime' => ProcessRuntime::Systemd,
+            'tool' => 'php-cli',
+            'command' => 'php artisan horizon',
+            'runtime_config' => [
+                'directory' => '/home/orbit/apps/abc/worktrees/redesign',
+            ],
+            'sort_order' => 1,
+        ]);
 
     expect($process->refresh())
         ->owner->toBeInstanceOf(Workspace::class)
@@ -174,9 +181,11 @@ it('defaults app and workspace host command processes to systemd when runtime is
         'sort_order' => 1,
     ]);
 
-    $factoryProcess = Process::factory()->forOwner($workspace)->create([
-        'name' => 'horizon-redesign',
-    ]);
+    $factoryProcess = Process::factory()
+        ->forOwner($workspace)
+        ->create([
+            'name' => 'horizon-redesign',
+        ]);
 
     DB::table('processes')->insert([
         'node_id' => $node->id,
@@ -189,7 +198,10 @@ it('defaults app and workspace host command processes to systemd when runtime is
         'updated_at' => now(),
     ]);
 
-    expect($relationProcess->refresh()->runtime)->toBe(ProcessRuntime::Systemd)
-        ->and($factoryProcess->refresh()->runtime)->toBe(ProcessRuntime::Systemd)
-        ->and(DB::table('processes')->where('name', 'vite-redesign')->value('runtime'))->toBe(ProcessRuntime::Systemd->value);
+    expect($relationProcess->refresh()->runtime)
+        ->toBe(ProcessRuntime::Systemd)
+        ->and($factoryProcess->refresh()->runtime)
+        ->toBe(ProcessRuntime::Systemd)
+        ->and(DB::table('processes')->where('name', 'vite-redesign')->value('runtime'))
+        ->toBe(ProcessRuntime::Systemd->value);
 });

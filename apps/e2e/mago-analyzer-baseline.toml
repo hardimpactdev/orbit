@@ -1,0 +1,1405 @@
+variant = "loose"
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "impossible-condition"
+message = "Redundant ternary operator: condition is always falsy."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "impossible-nonnull-entry-check"
+message = "Impossible `isset` check on key `'note'` accessed on `array{'curl_example'?: string, 'endpoint'?: string, 'instance': string, 'role': string, 'ssh_example': string}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "impossible-nonnull-entry-check"
+message = "Impossible `isset` check on key `'perf_example'` accessed on `array{'curl_example'?: string, 'endpoint'?: string, 'instance': string, 'role': string, 'ssh_example': string}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "impossible-nonnull-entry-check"
+message = "Impossible `isset` check on key `'provider'` accessed on `array{'checkouts': array<string, string>, 'gateway_ip': string, 'host': string, 'instances': array<string, string>}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "impossible-nonnull-entry-check"
+message = "Impossible `isset` check on key `'release_command'` accessed on `array{'checkouts': array<string, string>, 'created_at': string, 'gateway_ip': string, 'host': string, 'id': string, 'instances': array<string, string>, 'kind': string, 'provider': string, 'run_id': string, 'ssh_key_path': string}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "invalid-return-statement"
+message = '''Invalid return type for function `App\Console\Commands\E2EDevTopologyCommand::acquireRetainedTopology`: expected `array{'checkouts': array<string, string>, 'created_at': string, 'gateway_ip': string, 'host': string, 'id': string, 'instances': array<string, string>, 'kind': string, 'provider': string, 'run_id': string, 'ssh_key_path': string}`, but found `array<string, mixed>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "invalid-return-statement"
+message = '''Invalid return type for function `App\Console\Commands\E2EDevTopologyCommand::buildHandles`: expected `list<array{'curl_example'?: string, 'endpoint'?: string, 'instance': string, 'role': string, 'ssh_example': string}>`, but found `array{}|non-empty-list<array{'endpoint'?: non-empty-string, 'instance': string, 'note'?: string('Deploy an app from the operator (orbit app:new <name>), then `orbit app:show <name> --json` shows its domain; curl that domain through the gateway router with -w "%{time_total}s" to measure response time.'), 'perf_example'?: truthy-string, 'role': string, 'ssh_example': truthy-string}>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "invalid-type-cast"
+message = "Casting `mixed` to `float`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "mixed-argument"
+message = "Invalid argument type for argument #2 of `sprintf`: expected `Stringable|null|scalar`, but found `nonnull`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "mixed-operand"
+message = "Invalid right operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "mixed-property-access"
+message = "Attempting to access a property on a non-object type (`mixed`)."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2EDevTopologyCommand::buildHandles`: expected `array{'checkouts': array<string, string>, 'gateway_ip': string, 'host': string, 'instances': array<string, string>}`, but possibly received `array{'checkouts': array<string, string>, 'created_at': string, 'gateway_ip': string, 'host': string, 'id': string, 'instances': array<string, string>, 'kind': string, 'provider': string, 'run_id': string, 'ssh_key_path': string}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2EDevTopologyCommand::sourceMountedCheckout`: expected `array{'checkouts': array<string, string>}`, but possibly received `array{'checkouts': array<string, string>, 'created_at': string, 'gateway_ip': string, 'host': string, 'id': string, 'instances': array<string, string>, 'kind': string, 'provider': string, 'release_command': array<string, string>|string, 'run_id': string, 'ssh_key_path': string}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2EDevTopologyCommand::sourceMountedRuntimeCheckout`: expected `array{'checkouts': array<string, string>}`, but possibly received `array{'checkouts': array<string, string>, 'created_at': string, 'gateway_ip': string, 'host': string, 'id': string, 'instances': array<string, string>, 'kind': string, 'provider': string, 'release_command': array<string, string>|string, 'run_id': string, 'ssh_key_path': string}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "redundant-comparison"
+message = "Redundant `===` comparison: left-hand side is never identical to right-hand side."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side is always `null`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyCommand.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$checkout` is already `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyReleaseCommand.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\E2EResourceLease::fromMetadata`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyReleaseCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 9
+
+[[issues]]
+file = "app/Console/Commands/E2EDevTopologyReleaseCommand.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EEnsureArtifactsCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EEnsureArtifactsCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #2 of `App\Console\Commands\E2EEnsureArtifactsCommand::renderDryRun`: expected `list<array{'command': string, 'force_guarded'?: bool, 'lane': string, 'name': string, 'templates'?: list<array{'name': string, 'role': string, 'snapshot': string}>}>`, but possibly received `non-empty-list<array{'command': string, 'force_guarded'?: bool, 'lane': string, 'name': string, 'run_command'?: string, 'templates'?: list<array{'name': string, 'role': string, 'snapshot': string}>}>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EEnsureArtifactsCommand.php"
+code = "possibly-null-array-access"
+message = "Cannot perform array access on possibly `null` value."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "invalid-iterator"
+message = "The expression provided to `foreach` is not iterable. It resolved to type `mixed`, which is not iterable."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\Console\Commands\E2EIncusCommand::extractOperatorEnrollmentError`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\Console\Commands\E2EIncusCommand::extractOperatorEnrollment`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "less-specific-return-statement"
+message = '''Returned type `array{'wireguard': nonnull, ...}` is less specific than the declared return type `array<string, mixed>|null` for function `App\Console\Commands\E2EIncusCommand::extractOperatorEnrollment`.'''
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "mixed-array-access"
+message = "Unsafe array access on type `mixed`."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 23
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "mixed-operand"
+message = "Left operand in binary operation has type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EIncusCommand.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$count`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPreflightCommand.php"
+code = "mixed-property-type-coercion"
+message = 'A value with a less specific type `(closure(...mixed=): mixed)` is being assigned to property `$$hostPoolFactory` ((closure(): App\E2E\Support\IncusHostPool)|null).'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPreflightCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2EPreflightCommand::failPreflight`: expected `array{'hosts': list<array{'host': string, 'incus_version'?: string, 'reachable': bool, 'reason'?: string}>, 'provider': string}`, but possibly received `array{'hosts': non-empty-list<array{'host': string, 'incus_version': null|string, 'reachable': bool, 'reason': null|string('incus ls check failed')|string('incus version check failed')}>, 'provider': string('incus')}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPreflightCommand.php"
+code = "possibly-undefined-string-array-index"
+message = "Possibly undefined array key 'reason' accessed on `array{'host': string, 'incus_version'?: string, 'reachable': false, 'reason'?: string}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPreflightCommand.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerHostsCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerHostsCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #2 of `App\Console\Commands\E2EPrepareDockerHostsCommand::runBuildStep`: expected `array{'command': string, 'images': list<array{'image': string, 'role': string}>, 'name': string}`, but possibly received `array{'command': string, 'distribution_images'?: list<array{'image': string, 'role': string}>, 'images': list<array{'image': string, 'role': string}>, 'name': string}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerHostsCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #4 of `App\Console\Commands\E2EPrepareDockerHostsCommand::dryRun`: expected `list<array{'command': string, 'images': list<array{'image': string, 'role': string}>, 'name': string}>`, but possibly received `list<array{'command': string, 'distribution_images'?: list<array{'image': string, 'role': string}>, 'images': list<array{'image': string, 'role': string}>, 'name': string}>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerTopologyCommand.php"
+code = "ambiguous-object-method-access"
+message = "Cannot statically verify method call on a generic `object` type."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerTopologyCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerTopologyCommand.php"
+code = "mixed-argument"
+message = "Cannot unpack argument of type `mixed` because it is not guaranteed to be iterable."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerTopologyCommand.php"
+code = "mixed-array-access"
+message = "Unsafe array access on type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareDockerTopologyCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "invalid-iterator"
+message = "The expression provided to `foreach` is not iterable. It resolved to type `mixed`, which is not iterable."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusHost::cleanupBundle`: expected `string`, but found `nonnull`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusHost::pushBundle`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::useBundle`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::useGatewayArtifactBundle`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = "Invalid argument type for argument #1 of `is_dir`: expected `string`, but found `nonnull`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\Console\Commands\E2EPrepareTopologyCommand::cleanupRemoteCliBinaryBundle`: expected `string`, but found `nonnull`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\Console\Commands\E2EPrepareTopologyCommand::pushLocalGatewayArtifactBundle`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\OrbitCliBinaryBundle::buildLinuxBinaryInto`: expected `null|string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-array-access"
+message = "Unsafe array access on type `mixed`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 30
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareTopologyCommand.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 47
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareWarmTopologyCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareWarmTopologyCommand.php"
+code = "invalid-iterator"
+message = "The expression provided to `foreach` is not iterable. It resolved to type `mixed`, which is not iterable."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareWarmTopologyCommand.php"
+code = "mixed-array-access"
+message = "Unsafe array access on type `mixed`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EPrepareWarmTopologyCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EReapDockerCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapDockerCommand.php"
+code = "match-not-exhaustive"
+message = "Non-exhaustive `match` expression: subject of type `string` is not fully handled."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapDockerCommand.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 3
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "impossible-nonnull-entry-check"
+message = "Impossible `isset` check on key `'modified'` accessed on `array{'created': string, 'deleted': bool, 'host': string, 'id': string, 'name': string, 'type': string}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "impossible-nonnull-entry-check"
+message = "Impossible `isset` check on key `'reason'` accessed on `array{'created': string, 'deleted': bool, 'host': string, 'id': string, 'name': string, 'type': string}`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "invalid-return-statement"
+message = 'Invalid return type for function `App\Console\Commands\E2EReapIncusCommand::instances`: expected `list<array<string, mixed>>|null`, but found `array<array-key, mixed>|null`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\Console\Commands\E2EReapIncusCommand::imageAliasNames`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\Console\Commands\E2EReapIncusCommand::isOldImage`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "match-not-exhaustive"
+message = "Non-exhaustive `match` expression: subject of type `string` is not fully handled."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `Illuminate\Support\Facades\Process::timeout`: expected `Carbon\CarbonInterval|int`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 7
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 6
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "mixed-property-access"
+message = "Attempting to access a property on a non-object type (`mixed`)."
+count = 14
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2EReapIncusCommand::renderHuman`: expected `array{'dry_run': bool, 'older_than_minutes': int, 'provider': string, 'resources': list<array{'created': string, 'deleted': bool, 'host': string, 'id': string, 'name': string, 'type': string}>, 'skipped': list<string>}`, but possibly received `array{'dry_run': bool, 'older_than_minutes': int, 'provider': string('incus'), 'resources': list<array<string, mixed>>, 'skipped': list<string>}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side can never be `null` or undefined."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "redundant-null-coalesce"
+message = "Redundant null coalesce: left-hand side is always `null`."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2EReapIncusCommand.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "array-to-string-conversion"
+message = "Potentially casting `array` to `string`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "invalid-method-access"
+message = 'Cannot access protected method `Symfony\Component\Console\Style\OutputStyle::geterroroutput`.'
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "invalid-return-statement"
+message = '''Invalid return type for function `App\Console\Commands\E2ETestCommand::incusPlan`: expected `array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'timings_file'?: string}`, but found `array{'command': list{string('php'), string('artisan'), string('test'), string('--testsuite=E2E'), string('--group=e2e-provider-incus'), string('--exclude-group=e2e-provision'), string('--exclude-group=e2e-topology-contract'), string('php'), string('artisan'), string('test'), string('--testsuite=E2E'), string('--group=e2e-provider-incus'), string('--exclude-group=e2e-provision'), string('--exclude-group=e2e-topology-contract'), non-empty-string, non-empty-string, ...<string>}, 'environment': array{'ORBIT_E2E': string, 'ORBIT_E2E_CHECKOUT_CACHE': string, 'ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE': string, 'ORBIT_E2E_GATEWAY_API': string, 'ORBIT_E2E_INCUS_HOST_SLOTS': string, 'ORBIT_E2E_TOPOLOGY_CACHE': string, 'ORBIT_E2E_TOPOLOGY_PROVIDER': string, 'ORBIT_E2E_TOPOLOGY_PROVIDERS': string}, 'lane': string('incus'), 'test_files'?: non-empty-list<string>, 'test_path'?: truthy-string}`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "possibly-false-operand"
+message = "Possibly false middle operand used in string concatenation (type `false|int`)."
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2ETestCommand::executionEnvironment`: expected `array{'environment': array<string, string>}`, but possibly received `array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string, 'timings_file'?: string}`.'''
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2ETestCommand::registerInterruptHandlers`: expected `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string}>`, but possibly received `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string, 'timings_file'?: string}>`.'''
+count = 2
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2ETestCommand::runPlansSequentially`: expected `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string}>`, but possibly received `non-empty-array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string, 'timings_file'?: string}>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2ETestCommand::runPlans`: expected `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string}>`, but possibly received `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string, 'timings_file'?: string}>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #1 of `App\Console\Commands\E2ETestCommand::unavailableLaneReasons`: expected `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string}>`, but possibly received `array<string, array{'command': list<string>, 'environment': array<string, string>, 'lane': string, 'test_files'?: list<string>, 'test_path'?: string, 'timings_file'?: string}>`.'''
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "redundant-docblock-type"
+message = "Redundant docblock type for variable `$availability`."
+count = 1
+
+[[issues]]
+file = "app/Console/Commands/E2ETestCommand.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerHost.php"
+code = "possibly-false-operand"
+message = "Left operand in arithmetic operation might be `false` (type `false|non-negative-int`)."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyBuilder.php"
+code = "invalid-return-statement"
+message = '''Invalid return type for function `App\E2E\Support\DockerTopologyBuilder::build`: expected `list<array{'container': string, 'image': string, 'role': string}>`, but found `array{}|list<array{'container': non-empty-string, 'image': string, 'reused'?: true, 'role': string}>`.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyBuilder.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #2 of `App\E2E\Support\DockerDownstreamProvisioningScript::make`: expected `array<string, string>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #11 of `App\E2E\Support\E2ETopologyLease::__construct`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\DockerTopologyProvider::prepareGatewayState`: expected `App\E2E\Support\DockerTopologyNetworkPlan`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\DockerTopologyProvider::seedClientCliGateways`: expected `App\E2E\Support\DockerTopologyNetworkPlan`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\DockerTopologyProvider::seedOperatorIdentity`: expected `App\E2E\Support\DockerTopologyNetworkPlan`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\DockerTopologyProvider::primeGatewayApi`: expected `App\E2E\Support\DockerTopologyNetworkPlan`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\DockerTopologyProvider::seedGatewayRegistry`: expected `App\E2E\Support\DockerTopologyNetworkPlan`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #6 of `App\E2E\Support\DockerTopologyProvider::startContainers`: expected `App\E2E\Support\DockerTopologyNetworkPlan`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-array-access"
+message = "Unsafe array access on type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 8
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-operand"
+message = "Invalid left operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-operand"
+message = "Invalid right operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "mixed-return-statement"
+message = 'Could not infer a precise return type for function `App\E2E\Support\DockerTopologyProvider::sourceMountedCheckoutHostPath`. Saw type `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "possible-method-access-on-null"
+message = "Attempting to call a method on `null`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/DockerTopologyProvider.php"
+code = "possibly-undefined-string-array-index"
+message = "Possibly undefined array key 'command' accessed on `array{'command'?: string, 'container_names': list<string>, 'gateway_command': null|string, 'name': non-empty-string, 'node_command': string, 'volume_names': list<string>}`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EArtifactBuildFingerprint.php"
+code = "invalid-return-statement"
+message = 'Invalid return type for function `App\E2E\Support\E2EArtifactBuildFingerprint::forPaths`: expected `non-empty-string`, but found `string`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "invalid-method-access"
+message = "Attempting to access a method on a non-object type (`(closure(...mixed=): mixed)`)."
+count = 5
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "invalid-method-access"
+message = "Attempting to access a method on a non-object type (`(closure(string, bool=): void)`)."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "invalid-return-statement"
+message = '''Invalid return type for function `App\E2E\Support\E2ECurrentCheckout::readTopologyRoleWorkerPayload`: expected `array{'error'?: array{'message': string, 'type': string}, 'events'?: list<array{'name': string, 'seconds': float}>, 'path'?: string}`, but found `array<array-key, mixed>`.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "less-specific-nested-return-statement"
+message = '''Returned type `array{0: App\E2E\Support\E2EInstance, 1: string, 2: string}|list{App\E2E\Support\E2EInstance, nonnull, non-empty-string}` is less specific than the declared return type `array{0: App\E2E\Support\E2EInstance, 1: string, 2: string}` for function `App\E2E\Support\E2ECurrentCheckout::topologyRoleTarget` due to nested 'mixed'.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\E2ECurrentCheckout::copyArchive`: expected `string`, but found `nonnull`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-argument"
+message = "Invalid argument type for argument #1 of `is_file`: expected `string`, but found `nonnull`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-argument"
+message = "Invalid argument type for argument #1 of `rename`: expected `string`, but found `nonnull`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-argument"
+message = "Invalid argument type for argument #1 of `unlink`: expected `string`, but found `nonnull`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\E2ECurrentCheckout::requiredRole`: expected `string`, but found `nonnull`.'
+count = 7
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #4 of `App\E2E\Support\E2ECommand::ssh`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "mixed-property-type-coercion"
+message = "Mixed property type coercion"
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "possible-method-access-on-null"
+message = "Attempting to call a method on `null`."
+count = 5
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "possibly-false-argument"
+message = "Argument #1 of function `posix_kill` is possibly `false`, but parameter type `int` does not accept it."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ECurrentCheckout.php"
+code = "possibly-undefined-variable"
+message = "Variable `$status` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EDevTopologyManifestStore.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\E2E\Support\E2EDevTopologyManifestStore::read`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EDevTopologyManifestStore.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array{}|list<array<array-key, mixed>>` is less specific than the declared return type `list<array<string, mixed>>` for function `App\E2E\Support\E2EDevTopologyManifestStore::list`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EDevTopologyManifestStore.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/E2EGatewayApi.php"
+code = "mixed-return-statement"
+message = 'Could not infer a precise return type for function `App\E2E\Support\E2EGatewayApi::getNode`. Saw type `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EPhaseTimer.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionCheckpointManifest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 8
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionCheckpointManifest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionCheckpointStore.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\E2E\Support\E2EProvisionCheckpointStore::read`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionCheckpointStore.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always falsy and right operand is always falsy."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$key` (type `non-empty-string`) is already known to be `string`."
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$value` (type `bool|string`) is already known to be `scalar`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$key` is already `non-empty-string`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/E2EProvisionFingerprint.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$value` is already `bool|string`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLease.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\E2E\Support\E2EResourceLease::readPayload`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLease.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 6
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLeasePool.php"
+code = "invalid-return-statement"
+message = 'Invalid return type for function `App\E2E\Support\E2EResourceLeasePool::tryAcquireSlotSet`: expected `non-empty-list<App\E2E\Support\E2EResourceLease>|null`, but found `list<App\E2E\Support\E2EResourceLease>`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLeasePool.php"
+code = "less-specific-nested-argument-type"
+message = "Argument type mismatch for argument #2 of `implode`: expected `array<array-key, Stringable|null|scalar>|null`, but provided type `list<mixed>` is less specific."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLeasePool.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array<array-key, mixed>|null` is less specific than the declared return type `array<string, mixed>|null` for function `App\E2E\Support\E2EResourceLeasePool::readLeasePayload`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLeasePool.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/E2EResourceLeasePool.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ERun.php"
+code = "possibly-false-operand"
+message = "Possibly false middle operand used in string concatenation (type `false|int`)."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2ETopologyCache.php"
+code = "mixed-property-type-coercion"
+message = "Mixed property type coercion"
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EWgEasyGateway.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/E2EWgEasyGateway.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$json` is already `non-empty-string`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusHost.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 7
+
+[[issues]]
+file = "app/E2E/Support/IncusParallelHostTasks.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "invalid-array-element"
+message = "Cannot use spread operator on non-iterable type `mixed`."
+count = 5
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "invalid-type-cast"
+message = "Casting type `null` to `array` will produce an empty array."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installE2EBaseDependencies`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installRealWireGuard`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-argument"
+message = '''Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installRealWireGuard`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array{'gateway': App\E2E\Support\IncusInstance, ...}` is less specific.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #2 of `App\E2E\Support\IncusTopologyBuilder::checkpointSuccessfulPreparedRolesOrFail`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-nested-argument-type"
+message = '''Argument type mismatch for argument #3 of `App\E2E\Support\IncusTopologyBuilder::checkpointSuccessfulPreparedRolesOrFail`: expected `array<string, int>`, but provided type `array{'agent'?: int(0), 'dev'?: int(0), 'prod'?: int(0), 'websocket'?: mixed}|list<mixed>` is less specific.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, App\E2E\Support\IncusInstance>` for function `App\E2E\Support\IncusTopologyBuilder::buildPreparedFullStage`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-return-statement"
+message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, App\E2E\Support\IncusInstance>` for function `App\E2E\Support\IncusTopologyBuilder::buildPreparedFullWebSocketStage`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "less-specific-return-statement"
+message = '''Returned type `array{'gateway': App\E2E\Support\IncusInstance, ...}` is less specific than the declared return type `array<string, App\E2E\Support\IncusInstance>` for function `App\E2E\Support\IncusTopologyBuilder::buildGatewayFirstPreparedInstances`.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\E2EGatewayApi::waitForGatewayApi`: expected `App\E2E\Support\E2EInstance`, but found `mixed`.'
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::assertSuccessful`: expected `Illuminate\Contracts\Process\ProcessResult`, but found `mixed`.'
+count = 7
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::authorizePreparedRuntimeUserSsh`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::buildStages`: expected `enum(App\E2E\Support\E2ETopologyKind)`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::createSshKeyPair`: expected `string`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installPreparedAppRuntimePrerequisites`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::retargetOperator`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamAndWebSocketBakeInParallel`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamBakeInParallel`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::runPreparedWebSocketBake`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::seedAppdevDatabaseAndRedis`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::trustGatewayCaOnOperator`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::useWireGuardGatewayUrl`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = '''Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::waitForArtifactPreparedRoles`: expected `array{'done': string, 'error': string, 'exit': string, 'output': string, 'script': string}`, but found `mixed`.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::bootstrapGatewayLocal`: expected `string`, but found `mixed`.'
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::buildStages`: expected `App\E2E\Support\SshKeyPair`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::retargetOperator`: expected `string`, but found `mixed`.'
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDedicatedIngressBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamAndWebSocketBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #2 of `App\E2E\Support\IncusTopologyBuilder::runPreparedWebSocketBake`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\IncusTopologyBuilder::buildSelectedRoleTemplates`: expected `App\E2E\Support\SshKeyPair`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\IncusTopologyBuilder::buildStages`: expected `enum(App\E2E\Support\E2ETopologyKind)|null`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDedicatedIngressBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamAndWebSocketBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #3 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #4 of `App\E2E\Support\IncusTopologyBuilder::runAgentNodeNew`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #4 of `App\E2E\Support\IncusTopologyBuilder::runAppNodeNew`: expected `string`, but found `mixed`.'
+count = 3
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #4 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDedicatedIngressBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #4 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamAndWebSocketBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #4 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamBakeInParallel`: expected `string`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-array-access"
+message = "Unsafe array access on type `mixed`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 37
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 36
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-operand"
+message = "Invalid left operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-operand"
+message = "Invalid right operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-return-statement"
+message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:1160:52}`. Saw type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-return-statement"
+message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:1161:54}`. Saw type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-return-statement"
+message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:1162:56}`. Saw type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-return-statement"
+message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:970:52}`. Saw type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-return-statement"
+message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:971:54}`. Saw type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "mixed-return-statement"
+message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:972:56}`. Saw type `mixed`."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "possibly-invalid-argument"
+message = '''Possible argument type mismatch for argument #3 of `App\E2E\Support\IncusTopologyBuilder::checkpointSuccessfulPreparedRolesOrFail`: expected `array<string, int>`, but possibly received `array{'agent'?: int(0), 'dev'?: int(0), 'prod'?: int(0)}|list<mixed>`.'''
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "invalid-iterator"
+message = "The expression provided to `foreach` is not iterable. It resolved to type `mixed`, which is not iterable."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyProvider::retargetRealWireGuard`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyProvider::retargetTopology`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyProvider::seedGatewaySshAccess`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "less-specific-argument"
+message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyProvider::waitForPeerRoutes`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\E2EGatewayApi::start`: expected `App\E2E\Support\E2EInstance`, but found `nonnull`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "mixed-argument"
+message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyProvider::prepareInstances`: expected `array<string, App\E2E\Support\IncusInstance>`, but found `mixed`.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 10
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 11
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`nonnull`)."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyProvider.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyTemplate.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyTemplate.php"
+code = "mixed-method-access"
+message = "Attempting to access a method on a non-object type (`mixed`)."
+count = 2
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyTemplate.php"
+code = "possibly-null-argument"
+message = 'Argument #1 of method `App\E2E\Support\IncusTopologyTemplate::sourceMountCommands` is possibly `null`, but parameter type `string` does not accept it.'
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyTemplate.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Services/E2E/IncusBaseImagePreparer.php"
+code = "possibly-false-operand"
+message = "Possibly false middle operand used in string concatenation (type `false|int`)."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "mixed-operand"
+message = "Casting `mixed` to `bool`."
+count = 1
+
+[[issues]]
+file = "config/filesystems.php"
+code = "mixed-argument"
+message = "Invalid argument type for argument #1 of `rtrim`: expected `string`, but found `mixed`."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "mixed-operand"
+message = "Invalid middle operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "mixed-operand"
+message = "Invalid right operand: type `mixed` cannot be reliably used in string concatenation."
+count = 1

@@ -9,10 +9,14 @@ describe('CLI source entrypoint', function (): void {
     it('sets default launcher environment when invoked directly from source', function (): void {
         $capture = cliEntrypointProbe([]);
 
-        expect($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_HOST_CWD'])->toBe($capture['host_cwd'])
-            ->and($capture['PWD'])->toBe($capture['host_cwd'])
-            ->and($capture['args'])->toBe('[version]');
+        expect($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['ORBIT_HOST_CWD'])
+            ->toBe($capture['host_cwd'])
+            ->and($capture['PWD'])
+            ->toBe($capture['host_cwd'])
+            ->and($capture['args'])
+            ->toBe('[version]');
     });
 
     it('preserves a supplied host cwd when invoked directly from source', function (): void {
@@ -20,12 +24,18 @@ describe('CLI source entrypoint', function (): void {
             'ORBIT_HOST_CWD' => '/tmp/orbit-custom-cwd',
         ]);
 
-        expect($capture['ORBIT_APP'])->toBe('cli')
-            ->and($capture['ORBIT_HOST_CWD'])->toBe('/tmp/orbit-custom-cwd')
-            ->and($capture['ENV_ORBIT_HOST_CWD'])->toBe('/tmp/orbit-custom-cwd')
-            ->and($capture['SERVER_ORBIT_HOST_CWD'])->toBe('/tmp/orbit-custom-cwd')
-            ->and($capture['PWD'])->toBe($capture['host_cwd'])
-            ->and($capture['args'])->toBe('[version]');
+        expect($capture['ORBIT_APP'])
+            ->toBe('cli')
+            ->and($capture['ORBIT_HOST_CWD'])
+            ->toBe('/tmp/orbit-custom-cwd')
+            ->and($capture['ENV_ORBIT_HOST_CWD'])
+            ->toBe('/tmp/orbit-custom-cwd')
+            ->and($capture['SERVER_ORBIT_HOST_CWD'])
+            ->toBe('/tmp/orbit-custom-cwd')
+            ->and($capture['PWD'])
+            ->toBe($capture['host_cwd'])
+            ->and($capture['args'])
+            ->toBe('[version]');
     });
 
     it('preserves a supplied host cwd exactly, including surrounding spaces', function (): void {
@@ -33,11 +43,13 @@ describe('CLI source entrypoint', function (): void {
             'ORBIT_HOST_CWD' => '  /tmp/orbit-custom-cwd  ',
         ]);
 
-        expect($capture['ORBIT_HOST_CWD'])->toBe('  /tmp/orbit-custom-cwd  ')
-            ->and($capture['ENV_ORBIT_HOST_CWD'])->toBe('  /tmp/orbit-custom-cwd  ')
-            ->and($capture['SERVER_ORBIT_HOST_CWD'])->toBe('  /tmp/orbit-custom-cwd  ');
+        expect($capture['ORBIT_HOST_CWD'])
+            ->toBe('  /tmp/orbit-custom-cwd  ')
+            ->and($capture['ENV_ORBIT_HOST_CWD'])
+            ->toBe('  /tmp/orbit-custom-cwd  ')
+            ->and($capture['SERVER_ORBIT_HOST_CWD'])
+            ->toBe('  /tmp/orbit-custom-cwd  ');
     });
-
 });
 
 /**
@@ -64,10 +76,11 @@ function cliEntrypointProbe(array $environment): array
 
         $process->run();
 
-        expect($process->getExitCode())->toBe(
-            0,
-            $process->getErrorOutput().$process->getOutput(),
-        );
+        expect($process->getExitCode())
+            ->toBe(
+                0,
+                $process->getErrorOutput().$process->getOutput(),
+            );
         expect(File::exists($capturePath))->toBeTrue('expected the CLI entrypoint to execute the fake kernel');
 
         return cliEntrypointReadCapture($capturePath) + ['host_cwd' => realpath($hostCwd) ?: $hostCwd];
@@ -90,102 +103,102 @@ function cliEntrypointPrepareFakeCheckout(string $checkout, string $capturePath)
     chmod("{$checkout}/apps/cli/orbit", 0755);
 
     File::put("{$checkout}/apps/cli/vendor/autoload.php", <<<'PHP'
-<?php
-declare(strict_types=1);
+        <?php
+        declare(strict_types=1);
 
-namespace Illuminate\Contracts\Console {
-    interface Kernel
-    {
-        public function bootstrap(): void;
+        namespace Illuminate\Contracts\Console {
+            interface Kernel
+            {
+                public function bootstrap(): void;
 
-        public function handle($input, $output = null): int;
+                public function handle($input, $output = null): int;
 
-        public function terminate($input, $status): void;
+                public function terminate($input, $status): void;
 
-        public function call($command, array $parameters = [], $outputBuffer = null): int;
+                public function call($command, array $parameters = [], $outputBuffer = null): int;
 
-        public function queue($command, array $parameters = []): never;
+                public function queue($command, array $parameters = []): never;
 
-        public function all(): array;
+                public function all(): array;
 
-        public function output(): string;
-    }
-}
-
-namespace Symfony\Component\Console\Input {
-    class ArgvInput {}
-}
-
-namespace Symfony\Component\Console\Output {
-    class ConsoleOutput {}
-}
-PHP);
-
-    File::put("{$checkout}/apps/cli/bootstrap/app.php", <<<PHP
-<?php
-
-declare(strict_types=1);
-
-use Illuminate\Contracts\Console\Kernel;
-use Symfony\Component\Console\Input\InputInterface;
-use Symfony\Component\Console\Output\OutputInterface;
-
-return new class ('{$capturePath}') {
-    public function __construct(private readonly string \$capturePath) {}
-
-    public function make(string \$abstract): object
-    {
-        if (\$abstract !== Kernel::class) {
-            throw new RuntimeException('Unexpected abstract: '.\$abstract);
+                public function output(): string;
+            }
         }
 
-        return new class (\$this->capturePath) implements Kernel {
+        namespace Symfony\Component\Console\Input {
+            class ArgvInput {}
+        }
+
+        namespace Symfony\Component\Console\Output {
+            class ConsoleOutput {}
+        }
+        PHP);
+
+    File::put("{$checkout}/apps/cli/bootstrap/app.php", <<<PHP
+        <?php
+
+        declare(strict_types=1);
+
+        use Illuminate\Contracts\Console\Kernel;
+        use Symfony\Component\Console\Input\InputInterface;
+        use Symfony\Component\Console\Output\OutputInterface;
+
+        return new class ('{$capturePath}') {
             public function __construct(private readonly string \$capturePath) {}
 
-            public function bootstrap(): void {}
-
-            public function handle(\$input, \$output = null): int
+            public function make(string \$abstract): object
             {
-                file_put_contents(\$this->capturePath, json_encode([
-                    'ORBIT_APP' => getenv('ORBIT_APP') ?: '',
-                    'ORBIT_HOST_CWD' => getenv('ORBIT_HOST_CWD') ?: '',
-                    'ENV_ORBIT_HOST_CWD' => \$_ENV['ORBIT_HOST_CWD'] ?? '',
-                    'SERVER_ORBIT_HOST_CWD' => \$_SERVER['ORBIT_HOST_CWD'] ?? '',
-                    'PWD' => getcwd() ?: '',
-                    'args' => implode('', array_map(
-                        static fn (string \$argument): string => '['.\$argument.']',
-                        array_slice(\$_SERVER['argv'] ?? [], 1),
-                    )),
-                ], JSON_THROW_ON_ERROR));
+                if (\$abstract !== Kernel::class) {
+                    throw new RuntimeException('Unexpected abstract: '.\$abstract);
+                }
 
-                return 0;
-            }
+                return new class (\$this->capturePath) implements Kernel {
+                    public function __construct(private readonly string \$capturePath) {}
 
-            public function terminate(\$input, \$status): void {}
+                    public function bootstrap(): void {}
 
-            public function call(\$command, array \$parameters = [], \$outputBuffer = null): int
-            {
-                throw new BadMethodCallException('Not implemented.');
-            }
+                    public function handle(\$input, \$output = null): int
+                    {
+                        file_put_contents(\$this->capturePath, json_encode([
+                            'ORBIT_APP' => getenv('ORBIT_APP') ?: '',
+                            'ORBIT_HOST_CWD' => getenv('ORBIT_HOST_CWD') ?: '',
+                            'ENV_ORBIT_HOST_CWD' => \$_ENV['ORBIT_HOST_CWD'] ?? '',
+                            'SERVER_ORBIT_HOST_CWD' => \$_SERVER['ORBIT_HOST_CWD'] ?? '',
+                            'PWD' => getcwd() ?: '',
+                            'args' => implode('', array_map(
+                                static fn (string \$argument): string => '['.\$argument.']',
+                                array_slice(\$_SERVER['argv'] ?? [], 1),
+                            )),
+                        ], JSON_THROW_ON_ERROR));
 
-            public function queue(\$command, array \$parameters = []): never
-            {
-                throw new BadMethodCallException('Not implemented.');
-            }
+                        return 0;
+                    }
 
-            public function all(): array
-            {
-                return [];
-            }
+                    public function terminate(\$input, \$status): void {}
 
-            public function output(): string
-            {
-                return '';
+                    public function call(\$command, array \$parameters = [], \$outputBuffer = null): int
+                    {
+                        throw new BadMethodCallException('Not implemented.');
+                    }
+
+                    public function queue(\$command, array \$parameters = []): never
+                    {
+                        throw new BadMethodCallException('Not implemented.');
+                    }
+
+                    public function all(): array
+                    {
+                        return [];
+                    }
+
+                    public function output(): string
+                    {
+                        return '';
+                    }
+                };
             }
         };
-    }
-};
-PHP);
+        PHP);
 }
 
 /**

@@ -18,7 +18,8 @@ afterEach(function (): void {
 it('documents docker topology image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-dev_app-prod'])
+    $this
+        ->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-dev_app-prod'])
         ->expectsOutputToContain('orbit-e2e:operator_base')
         ->expectsOutputToContain('orbit-e2e:gateway_base')
         ->expectsOutputToContain('orbit-e2e:app-dev_base')
@@ -35,7 +36,8 @@ it('documents docker topology image preparation without force', function (): voi
 it('documents ingress docker topology image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
+    $this
+        ->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
         ->expectsOutputToContain('orbit-e2e:operator_base')
         ->expectsOutputToContain('orbit-e2e:gateway_base')
         ->expectsOutputToContain('orbit-e2e:app-dev_base')
@@ -53,7 +55,8 @@ it('documents ingress docker topology image preparation without force', function
 it('documents agent docker topology image preparation without force', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_agent'])
+    $this
+        ->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_agent'])
         ->expectsOutputToContain('orbit-e2e:operator_base')
         ->expectsOutputToContain('orbit-e2e:gateway_base')
         ->expectsOutputToContain('orbit-e2e:app-dev_base')
@@ -71,7 +74,8 @@ it('documents full docker topology image preparation from the default role image
     Process::fake();
 
     withE2ETopologyEnvironment([], function (): void {
-        $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
+        $this
+            ->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
             ->expectsOutputToContain('orbit-e2e:operator_base')
             ->expectsOutputToContain('orbit-e2e:gateway_base')
             ->expectsOutputToContain('orbit-e2e:app-dev_base')
@@ -89,7 +93,8 @@ it('documents app production ingress preparation from composable docker role ima
     Process::fake();
 
     withE2ETopologyEnvironment([], function (): void {
-        $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
+        $this
+            ->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
             ->expectsOutputToContain('orbit-e2e:operator_base')
             ->expectsOutputToContain('orbit-e2e:gateway_base')
             ->expectsOutputToContain('orbit-e2e:app-prod_base')
@@ -103,7 +108,8 @@ it('documents app production ingress preparation from composable docker role ima
 });
 
 it('rejects unknown kind', function (): void {
-    $this->artisan('e2e:prepare-docker-topology', ['kind' => 'invalid'])
+    $this
+        ->artisan('e2e:prepare-docker-topology', ['kind' => 'invalid'])
         ->expectsOutputToContain('Invalid topology kind')
         ->assertFailed();
 });
@@ -114,7 +120,8 @@ it('rejects custom artifact namespace preparation without explicit roles', funct
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function (): void {
-        $this->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_agent'])
+        $this
+            ->artisan('e2e:prepare-docker-topology', ['kind' => 'operator_gateway_agent'])
             ->expectsOutputToContain('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set')
             ->assertFailed();
     });
@@ -128,10 +135,11 @@ it('plans only selected branch Docker role images', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function (): void {
-        $this->artisan('e2e:prepare-docker-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--roles' => 'agent',
-        ])
+        $this
+            ->artisan('e2e:prepare-docker-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--roles' => 'agent',
+            ])
             ->expectsOutputToContain('planned: orbit-e2e:agent_agent-isolation')
             ->doesntExpectOutputToContain('orbit-e2e:operator_agent-isolation')
             ->doesntExpectOutputToContain('orbit-e2e:gateway_agent-isolation')
@@ -154,14 +162,14 @@ it('requires an explicit topology kind', function (): void {
         ->getDefinition()
         ->getArgument('kind');
 
-    expect($argument->isRequired())->toBeTrue()
-        ->and($argument->getDefault())->toBeNull();
+    expect($argument->isRequired())->toBeTrue()->and($argument->getDefault())->toBeNull();
 });
 
 it('documents dns-alias image names in dry run output', function (): void {
-    $this->artisan('e2e:prepare-docker-topology', [
-        'kind' => 'operator_gateway',
-    ])
+    $this
+        ->artisan('e2e:prepare-docker-topology', [
+            'kind' => 'operator_gateway',
+        ])
         ->expectsOutputToContain('orbit-e2e:operator_base')
         ->expectsOutputToContain('orbit-e2e:gateway_base')
         ->doesntExpectOutputToContain('orbit-e2e:operator_operator')
@@ -170,11 +178,16 @@ it('documents dns-alias image names in dry run output', function (): void {
 
 it('--force uses the docker topology builder and outputs json manifest', function (): void {
     $manifest = [
-        ['role' => 'operator', 'container' => 'orbit-e2e-build-operator-operator', 'image' => 'orbit-e2e:operator_base'],
+        [
+            'role' => 'operator',
+            'container' => 'orbit-e2e-build-operator-operator',
+            'image' => 'orbit-e2e:operator_base',
+        ],
     ];
 
     $builder = m::mock();
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGateway)
         ->once()
         ->andReturn($manifest);
@@ -194,11 +207,12 @@ it('--force uses the docker topology builder and outputs json manifest', functio
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-docker-topology', [
-        'kind' => 'operator',
-        '--force' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:prepare-docker-topology', [
+            'kind' => 'operator',
+            '--force' => true,
+            '--json' => true,
+        ])
         ->expectsOutput($expected)
         ->assertSuccessful();
 });
@@ -215,11 +229,13 @@ it('--force builds gateway-backed docker topology source images in composable or
     ];
 
     $builder = m::mock();
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGateway)
         ->once()
         ->andReturn($operatorGatewayManifest);
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent)
         ->once()
         ->andReturn($downstreamManifest);
@@ -228,11 +244,12 @@ it('--force builds gateway-backed docker topology source images in composable or
     $command->setBuilderFactory(fn () => $builder);
     $this->app->instance(E2EPrepareDockerTopologyCommand::class, $command);
 
-    $this->artisan('e2e:prepare-docker-topology', [
-        'kind' => 'operator_gateway_agent',
-        '--force' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:prepare-docker-topology', [
+            'kind' => 'operator_gateway_agent',
+            '--force' => true,
+            '--json' => true,
+        ])
         ->expectsOutput(json_encode([
             'success' => [
                 'data' => [
@@ -255,12 +272,12 @@ it('--force builds only selected Docker role artifacts for a custom namespace', 
     ];
 
     $builder = m::mock();
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, 'dns-alias', ['agent'])
         ->once()
         ->andReturn($manifest);
-    $builder->shouldNotReceive('build')
-        ->with(E2ETopologyKind::OperatorGateway);
+    $builder->shouldNotReceive('build')->with(E2ETopologyKind::OperatorGateway);
 
     $command = app(E2EPrepareDockerTopologyCommand::class);
     $command->setBuilderFactory(fn () => $builder);
@@ -269,12 +286,13 @@ it('--force builds only selected Docker role artifacts for a custom namespace', 
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function () use ($manifest): void {
-        $this->artisan('e2e:prepare-docker-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--force' => true,
-            '--json' => true,
-            '--roles' => 'agent',
-        ])
+        $this
+            ->artisan('e2e:prepare-docker-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--force' => true,
+                '--json' => true,
+                '--roles' => 'agent',
+            ])
             ->expectsOutput(json_encode([
                 'success' => [
                     'data' => [

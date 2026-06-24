@@ -49,7 +49,7 @@ final class AddNodeRoleRequest extends GatewayRequest implements HasBody
 
         return new NodeRoleMutationResponse(
             node: is_string($data['node'] ?? null) ? $data['node'] : $this->node,
-            assignment: is_array($data['assignment'] ?? null) ? $data['assignment'] : [],
+            assignment: $this->stringKeyedArray($data['assignment'] ?? []),
         );
     }
 }

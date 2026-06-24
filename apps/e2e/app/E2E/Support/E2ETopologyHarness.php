@@ -64,8 +64,11 @@ final class E2ETopologyHarness
 
     public function checkout(string $role): string
     {
-        return $this->checkouts[$role]
-            ?? throw new RuntimeException("Current checkout has not been installed for role [{$role}].");
+        return (
+            $this->checkouts[$role] ?? throw new RuntimeException(
+                "Current checkout has not been installed for role [{$role}].",
+            )
+        );
     }
 
     /**
@@ -107,8 +110,13 @@ final class E2ETopologyHarness
         );
     }
 
-    public function ssh(string $role, string $command, ?string $user = null, ?int $timeoutSeconds = null, bool $allowFailure = false): ProcessResult
-    {
+    public function ssh(
+        string $role,
+        string $command,
+        ?string $user = null,
+        ?int $timeoutSeconds = null,
+        bool $allowFailure = false,
+    ): ProcessResult {
         $user ??= $this->defaultUserFor($role);
 
         return E2ECommand::ssh(
@@ -125,12 +133,18 @@ final class E2ETopologyHarness
     {
         return match ($role) {
             'operator' => $this->lease->operator(),
-            'gateway' => $this->lease->gateway() ?? throw new RuntimeException('Topology does not include role [gateway].'),
+            'gateway' => $this->lease->gateway() ?? throw new RuntimeException(
+                'Topology does not include role [gateway].',
+            ),
             'dev' => $this->lease->devApp() ?? throw new RuntimeException('Topology does not include role [dev].'),
             'prod' => $this->lease->prodApp() ?? throw new RuntimeException('Topology does not include role [prod].'),
             'agent' => $this->lease->agent() ?? throw new RuntimeException('Topology does not include role [agent].'),
-            'ingress' => $this->lease->ingress() ?? throw new RuntimeException('Topology does not include role [ingress].'),
-            default => $this->lease->instance($role) ?? throw new RuntimeException("Topology does not include role [{$role}]."),
+            'ingress' => $this->lease->ingress() ?? throw new RuntimeException(
+                'Topology does not include role [ingress].',
+            ),
+            default => $this->lease->instance($role) ?? throw new RuntimeException(
+                "Topology does not include role [{$role}].",
+            ),
         };
     }
 

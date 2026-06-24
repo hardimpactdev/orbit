@@ -23,21 +23,37 @@ class SchedulePayload
 
         $visibleNodeIds = $this->visibleNodeIds($caller, 'schedule:read');
 
-        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
-            throw new GatewayApiException('This node is not authorized to read schedule intent.', 'authorization_failed', [
-                'reason' => 'missing_permission',
-                'missing_permission' => 'schedule:read',
-            ]);
+        if (
+            $caller instanceof Node
+            && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller)
+            && $visibleNodeIds === []
+        ) {
+            throw new GatewayApiException(
+                'This node is not authorized to read schedule intent.',
+                'authorization_failed',
+                [
+                    'reason' => 'missing_permission',
+                    'missing_permission' => 'schedule:read',
+                ],
+            );
         }
 
-        $query = $this->visibleSchedules($caller, $visibleNodeIds)
-            ->when($app !== null, fn (Builder $query): Builder => $query->where('scope', 'app')->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-            ->when($node !== null, fn (Builder $query): Builder => $query->where('scope', 'node')->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+        $query = $this
+            ->visibleSchedules($caller, $visibleNodeIds)
+            ->when($app !== null, fn (Builder $query): Builder => $query->where(
+                'scope',
+                'app',
+            )->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when($node !== null, fn (Builder $query): Builder => $query->where(
+                'scope',
+                'node',
+            )->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->orderBy('scope')
             ->orderBy('target_name')
             ->orderBy('name');
 
-        $schedules = $query->get()
+        $schedules = $query
+            ->get()
             ->map(fn (Schedule $schedule): array => $this->serialize($schedule))
             ->values()
             ->all();
@@ -68,23 +84,43 @@ class SchedulePayload
         ];
     }
 
-    public function find(string $name, ?string $app, ?string $node, ?Node $caller = null, string $permission = 'schedule:read'): Schedule
-    {
+    public function find(
+        string $name,
+        ?string $app,
+        ?string $node,
+        ?Node $caller = null,
+        string $permission = 'schedule:read',
+    ): Schedule {
         $this->ensureExclusiveFilters($app, $node);
 
         $visibleNodeIds = $this->visibleNodeIds($caller, $permission);
 
-        if ($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller) && $visibleNodeIds === []) {
-            throw new GatewayApiException('This node is not authorized to read schedule intent.', 'authorization_failed', [
-                'reason' => 'missing_permission',
-                'missing_permission' => $permission,
-            ]);
+        if (
+            $caller instanceof Node
+            && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller)
+            && $visibleNodeIds === []
+        ) {
+            throw new GatewayApiException(
+                'This node is not authorized to read schedule intent.',
+                'authorization_failed',
+                [
+                    'reason' => 'missing_permission',
+                    'missing_permission' => $permission,
+                ],
+            );
         }
 
-        $schedule = $this->visibleSchedules($caller, $visibleNodeIds)
+        $schedule = $this
+            ->visibleSchedules($caller, $visibleNodeIds)
             ->where('name', $name)
-            ->when($app !== null, fn (Builder $query): Builder => $query->where('scope', 'app')->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-            ->when($node !== null, fn (Builder $query): Builder => $query->where('scope', 'node')->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when($app !== null, fn (Builder $query): Builder => $query->where(
+                'scope',
+                'app',
+            )->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when($node !== null, fn (Builder $query): Builder => $query->where(
+                'scope',
+                'node',
+            )->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->orderBy('scope')
             ->orderBy('target_name')
             ->first();
@@ -117,20 +153,29 @@ class SchedulePayload
      */
     private function visibleSchedules(?Node $caller, ?array $visibleNodeIds): Builder
     {
-        $canSeeOrbitSchedules = $visibleNodeIds !== null
-            && array_intersect($visibleNodeIds, $this->gatewayNodeIds()) !== [];
+        $canSeeOrbitSchedules =
+            $visibleNodeIds !== null && array_intersect($visibleNodeIds, $this->gatewayNodeIds()) !== [];
 
         return Schedule::query()
             ->with(['app.node', 'node', 'latestRun'])
-            ->when($caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller), fn (Builder $query): Builder => $query->where(function (Builder $query) use ($visibleNodeIds, $canSeeOrbitSchedules): void {
-                $query
-                    ->whereIn('node_id', $visibleNodeIds ?? [])
-                    ->orWhereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds ?? []));
+            ->when(
+                $caller instanceof Node && ! app(NodeRoleAssignments::class)->nodeIsGateway($caller),
+                fn (Builder $query): Builder => $query->where(function (Builder $query) use (
+                    $visibleNodeIds,
+                    $canSeeOrbitSchedules,
+                ): void {
+                    $query
+                        ->whereIn('node_id', $visibleNodeIds ?? [])
+                        ->orWhereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                            'node_id',
+                            $visibleNodeIds ?? [],
+                        ));
 
-                if ($canSeeOrbitSchedules) {
-                    $query->orWhere('scope', 'orbit');
-                }
-            }));
+                    if ($canSeeOrbitSchedules) {
+                        $query->orWhere('scope', 'orbit');
+                    }
+                }),
+            );
     }
 
     /**
@@ -217,13 +262,15 @@ class SchedulePayload
                 'heartbeat_at' => $gatewayNode?->schedulerState?->heartbeat_at?->toIso8601String(),
                 'registry_synced_at' => $gatewayNode?->schedulerState?->registry_synced_at?->toIso8601String(),
             ],
-            'last_run' => $schedule->latestRun === null ? null : [
-                'id' => $schedule->latestRun->id,
-                'status' => $schedule->latestRun->status,
-                'exit_code' => $schedule->latestRun->exit_code,
-                'started_at' => $schedule->latestRun->started_at->toIso8601String(),
-                'finished_at' => $schedule->latestRun->finished_at?->toIso8601String(),
-            ],
+            'last_run' => $schedule->latestRun === null
+                ? null
+                : [
+                    'id' => $schedule->latestRun->id,
+                    'status' => $schedule->latestRun->status,
+                    'exit_code' => $schedule->latestRun->exit_code,
+                    'started_at' => $schedule->latestRun->started_at->toIso8601String(),
+                    'finished_at' => $schedule->latestRun->finished_at?->toIso8601String(),
+                ],
         ];
     }
 

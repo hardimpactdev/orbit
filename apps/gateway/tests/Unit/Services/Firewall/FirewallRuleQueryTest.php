@@ -28,8 +28,11 @@ function grantFirewallRuleQueryAccess(Node $caller, Node $servingNode, array $pe
     ]);
 }
 
-function assignFirewallRuleQueryAppHostRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
-{
+function assignFirewallRuleQueryAppHostRole(
+    Node $node,
+    string $role = 'app-dev',
+    array $settings = ['tld' => 'test'],
+): void {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,
@@ -70,15 +73,18 @@ describe('FirewallRuleQuery', function (): void {
 
         $result = app(FirewallRuleQuery::class)->list();
 
-        expect(array_map(fn (array $rule): string => "{$rule['node']}:{$rule['name']}", $result['rules']))->toBe([
-            'a-node:https',
-            'z-node:vite',
-        ])
-            ->and($result['meta'])->toBe([
+        expect(array_map(fn (array $rule): string => "{$rule['node']}:{$rule['name']}", $result['rules']))
+            ->toBe([
+                'a-node:https',
+                'z-node:vite',
+            ])
+            ->and($result['meta'])
+            ->toBe([
                 'node' => null,
                 'count' => 2,
             ])
-            ->and($result['rules'][0])->toMatchArray([
+            ->and($result['rules'][0])
+            ->toMatchArray([
                 'name' => 'https',
                 'node' => 'a-node',
                 'direction' => 'incoming',
@@ -106,8 +112,10 @@ describe('FirewallRuleQuery', function (): void {
         $query = app(FirewallRuleQuery::class);
         $result = $query->list(node: 'visible-node', caller: $caller);
 
-        expect(array_column($result['rules'], 'name'))->toBe(['visible'])
-            ->and($result['meta']['node'])->toBe('visible-node');
+        expect(array_column($result['rules'], 'name'))
+            ->toBe(['visible'])
+            ->and($result['meta']['node'])
+            ->toBe('visible-node');
 
         $query->list(node: 'hidden-node', caller: $caller);
     })->throws(GatewayApiException::class, 'The selected node is not a firewall target.');
@@ -129,7 +137,9 @@ describe('FirewallRuleQuery', function (): void {
         $eligibleNode = Node::factory()->create(['name' => 'app-1', 'platform' => 'ubuntu']);
         $controlNode = Node::factory()->create(['name' => 'control-1', 'platform' => 'ubuntu']);
         $macNode = Node::factory()->appDev()->create(['name' => 'mac-1', 'platform' => 'macos']);
-        $inactiveNode = Node::factory()->appDev()->create(['name' => 'inactive-1', 'platform' => 'ubuntu', 'status' => 'inactive']);
+        $inactiveNode = Node::factory()
+            ->appDev()
+            ->create(['name' => 'inactive-1', 'platform' => 'ubuntu', 'status' => 'inactive']);
         $unassignedAppOnlyNode = Node::factory()->create(['name' => 'unassigned-app-only', 'platform' => 'ubuntu']);
         assignFirewallRuleQueryAppHostRole($eligibleNode);
 
@@ -145,7 +155,18 @@ describe('FirewallRuleQuery', function (): void {
     });
 
     it('lists firewall rules for every active Ubuntu role target', function (): void {
-        foreach (['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3'] as $role) {
+        foreach ([
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+            'websocket',
+            's3',
+        ] as $role) {
             $node = Node::factory()->create(['name' => "{$role}-node", 'platform' => 'ubuntu', 'status' => 'active']);
             assignFirewallRuleQueryRole($node, $role);
             FirewallRule::factory()->create(['node_id' => $node->id, 'name' => "{$role}-rule"]);

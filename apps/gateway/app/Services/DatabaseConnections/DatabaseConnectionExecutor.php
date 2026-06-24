@@ -39,7 +39,11 @@ final readonly class DatabaseConnectionExecutor
             return $this->inspector->tables($connection);
         }
 
-        return $this->runSqliteLocal($connection, "select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name", ['full' => true]);
+        return $this->runSqliteLocal(
+            $connection,
+            "select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name",
+            ['full' => true],
+        );
     }
 
     /**
@@ -51,7 +55,11 @@ final readonly class DatabaseConnectionExecutor
             return $this->inspector->schema($connection);
         }
 
-        return $this->runSqliteLocal($connection, "select name, sql from sqlite_master where type in ('table', 'view') and name not like 'sqlite_%' order by name", ['full' => true]);
+        return $this->runSqliteLocal(
+            $connection,
+            "select name, sql from sqlite_master where type in ('table', 'view') and name not like 'sqlite_%' order by name",
+            ['full' => true],
+        );
     }
 
     /**
@@ -81,19 +89,25 @@ final readonly class DatabaseConnectionExecutor
             );
         }
 
-        $result = $this->localExecutor->runInternal($connection->node, 'internal:database-query-local', [], [], [
-            'input' => json_encode([
-                'connection' => $this->executionPayload($connection),
-                'sql' => $sql,
-                'write' => (bool) ($options['write'] ?? false),
-                'full' => (bool) ($options['full'] ?? false),
-                'limit' => $options['limit'] ?? null,
-                'timeout' => $options['timeout'] ?? null,
-                'max_json_bytes' => $options['max_json_bytes'] ?? null,
-            ], JSON_THROW_ON_ERROR),
-            'throw' => false,
-            'strict' => true,
-        ]);
+        $result = $this->localExecutor->runInternal(
+            $connection->node,
+            'internal:database-query-local',
+            [],
+            [],
+            [
+                'input' => json_encode([
+                    'connection' => $this->executionPayload($connection),
+                    'sql' => $sql,
+                    'write' => (bool) ($options['write'] ?? false),
+                    'full' => (bool) ($options['full'] ?? false),
+                    'limit' => $options['limit'] ?? null,
+                    'timeout' => $options['timeout'] ?? null,
+                    'max_json_bytes' => $options['max_json_bytes'] ?? null,
+                ], JSON_THROW_ON_ERROR),
+                'throw' => false,
+                'strict' => true,
+            ],
+        );
 
         if (! preg_match('/^\{.*\}\n?$/s', $result->stdout)) {
             throw new DatabaseQueryRunnerFailure(

@@ -77,30 +77,44 @@ it('profiles a completed local http request', function (): void {
     }
 
     file_put_contents($documentRoot.'/index.php', <<<'PHP'
-<?php
-header('Content-Type: text/plain');
-echo 'profile-ok';
-PHP);
+        <?php
+        header('Content-Type: text/plain');
+        echo 'profile-ok';
+        PHP);
 
     [$process, $pipes, $port] = startProfileTestServer($documentRoot);
 
     try {
         $result = app(CurlRequestProfiler::class)->profile("http://127.0.0.1:{$port}/index.php?probe=1");
 
-        expect($result['request']['method'])->toBe('GET')
-            ->and($result['request']['url'])->toBe("http://127.0.0.1:{$port}/index.php?probe=1")
-            ->and($result['request']['uri'])->toBe('/index.php?probe=1')
-            ->and($result['request']['status'])->toBe(200)
-            ->and($result['request']['bytes'])->toBeGreaterThan(0)
-            ->and($result['request']['completed'])->toBeTrue()
-            ->and($result['timings']['dns_ms'])->toBeGreaterThanOrEqual(0.0)
-            ->and($result['timings']['connect_ms'])->toBeGreaterThanOrEqual(0.0)
-            ->and($result['timings']['tls_ms'])->toBeGreaterThanOrEqual(0.0)
-            ->and($result['timings']['ttfb_ms'])->toBeGreaterThanOrEqual(0.0)
-            ->and($result['timings']['download_ms'])->toBeGreaterThanOrEqual(0.0)
-            ->and($result['timings']['total_ms'])->toBeGreaterThanOrEqual(0.0)
-            ->and($result['response_headers']['content-type'])->toContain('text/plain')
-            ->and($result['error'])->toBeNull();
+        expect($result['request']['method'])
+            ->toBe('GET')
+            ->and($result['request']['url'])
+            ->toBe("http://127.0.0.1:{$port}/index.php?probe=1")
+            ->and($result['request']['uri'])
+            ->toBe('/index.php?probe=1')
+            ->and($result['request']['status'])
+            ->toBe(200)
+            ->and($result['request']['bytes'])
+            ->toBeGreaterThan(0)
+            ->and($result['request']['completed'])
+            ->toBeTrue()
+            ->and($result['timings']['dns_ms'])
+            ->toBeGreaterThanOrEqual(0.0)
+            ->and($result['timings']['connect_ms'])
+            ->toBeGreaterThanOrEqual(0.0)
+            ->and($result['timings']['tls_ms'])
+            ->toBeGreaterThanOrEqual(0.0)
+            ->and($result['timings']['ttfb_ms'])
+            ->toBeGreaterThanOrEqual(0.0)
+            ->and($result['timings']['download_ms'])
+            ->toBeGreaterThanOrEqual(0.0)
+            ->and($result['timings']['total_ms'])
+            ->toBeGreaterThanOrEqual(0.0)
+            ->and($result['response_headers']['content-type'])
+            ->toContain('text/plain')
+            ->and($result['error'])
+            ->toBeNull();
     } finally {
         stopProfileTestServer($process, $pipes);
     }

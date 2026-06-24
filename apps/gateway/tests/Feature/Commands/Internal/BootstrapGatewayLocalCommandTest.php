@@ -29,8 +29,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         app()->useEnvironmentPath($this->tempStorage);
         File::put("{$this->tempStorage}/.env", "APP_NAME=Orbit\n");
 
-        app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService
-        {
+        app()->instance(OrbitCaService::class, new readonly class extends OrbitCaService {
             public function ensureRootCa(): void
             {
                 File::ensureDirectoryExists(storage_path('app/orbit/ca'));
@@ -44,8 +43,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         });
 
-        $this->gatewaySwarmInstaller = new class extends GatewaySwarmInstaller
-        {
+        $this->gatewaySwarmInstaller = new class extends GatewaySwarmInstaller {
             /**
              * @var list<array{
              *     wireguardAddress: string,
@@ -82,8 +80,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
-        $this->legacyGatewayApiContainerInstaller = new class
-        {
+        $this->legacyGatewayApiContainerInstaller = new class {
             /** @var list<string> */
             public array $addresses = [];
 
@@ -93,8 +90,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
-        $this->vpnDnsSwarmInstaller = new class extends VpnDnsSwarmInstaller
-        {
+        $this->vpnDnsSwarmInstaller = new class extends VpnDnsSwarmInstaller {
             /** @var list<array{publicHost: string, username: string, password: string, wireguardCidr: string, wireguardPort: int, dnsIp: string}> */
             public array $invocations = [];
 
@@ -132,8 +128,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             }
         };
 
-        $this->hostKeyPinner = new class
-        {
+        $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: string|null}> */
             public array $calls = [];
 
@@ -175,31 +170,47 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         $output = Artisan::output();
 
-        expect($exitCode)->toBe(0)
-            ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
-            ->and(Node::query()->where('name', 'gateway-1')->value('platform'))->toBe('ubuntu')
-            ->and(NodeRoleAssignment::query()
-                ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
-                ->orderBy('role')
-                ->pluck('role')
-                ->all())->toBe(['gateway', 'router', 'vpn'])
-            ->and(Node::query()->where('name', 'gateway-1')->value('host_key_type'))->toBe('ssh-ed25519')
-            ->and(Node::query()->where('name', 'gateway-1')->value('host_key_fingerprint'))->toBe('SHA256:gateway-bootstrap-local')
-            ->and($this->hostKeyPinner->calls)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and(Node::query()->where('name', 'gateway-1')->exists())
+            ->toBeTrue()
+            ->and(Node::query()->where('name', 'gateway-1')->value('platform'))
+            ->toBe('ubuntu')
+            ->and(
+                NodeRoleAssignment::query()
+                    ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
+                    ->orderBy('role')
+                    ->pluck('role')
+                    ->all(),
+            )
+            ->toBe(['gateway', 'router', 'vpn'])
+            ->and(Node::query()->where('name', 'gateway-1')->value('host_key_type'))
+            ->toBe('ssh-ed25519')
+            ->and(Node::query()->where('name', 'gateway-1')->value('host_key_fingerprint'))
+            ->toBe('SHA256:gateway-bootstrap-local')
+            ->and($this->hostKeyPinner->calls)
+            ->toBe([
                 ['host' => '203.0.113.10', 'expected' => null],
             ])
-            ->and(NodeRoleAssignment::query()
-                ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
-                ->where('role', 'vpn')
-                ->first()?->settings)->toBe([
-                    'public_endpoint' => '203.0.113.10',
-                    'wireguard_cidr' => '10.6.0.0/24',
-                    'wireguard_port' => 51820,
-                    'dns_ip' => '10.6.0.1',
-                ])
-            ->and($output)->toContain('-----BEGIN CERTIFICATE-----')
-            ->and($output)->toContain('-----END CERTIFICATE-----')
-            ->and($this->gatewaySwarmInstaller->installs)->toMatchArray([
+            ->and(
+                NodeRoleAssignment::query()
+                    ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
+                    ->where('role', 'vpn')
+                    ->first()
+                    ?->settings,
+            )
+            ->toBe([
+                'public_endpoint' => '203.0.113.10',
+                'wireguard_cidr' => '10.6.0.0/24',
+                'wireguard_port' => 51820,
+                'dns_ip' => '10.6.0.1',
+            ])
+            ->and($output)
+            ->toContain('-----BEGIN CERTIFICATE-----')
+            ->and($output)
+            ->toContain('-----END CERTIFICATE-----')
+            ->and($this->gatewaySwarmInstaller->installs)
+            ->toMatchArray([
                 [
                     'wireguardAddress' => '10.6.0.2',
                     'image' => 'orbit-gateway:current',
@@ -219,19 +230,27 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             '--skip-gateway-service-install' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and(Node::query()->where('name', 'gateway-1')->exists())->toBeTrue()
-            ->and($this->gatewaySwarmInstaller->installs)->toBe([])
-            ->and($this->vpnDnsSwarmInstaller->invocations)->toBe([]);
+        expect($exitCode)
+            ->toBe(0)
+            ->and(Node::query()->where('name', 'gateway-1')->exists())
+            ->toBeTrue()
+            ->and($this->gatewaySwarmInstaller->installs)
+            ->toBe([])
+            ->and($this->vpnDnsSwarmInstaller->invocations)
+            ->toBe([]);
     });
 
     it('keeps gateway bootstrap aligned with the host launcher install contract', function (): void {
         $installer = File::get(repo_path('bin/install-orbit'));
 
-        expect($installer)->toContain('link_target="$TARGET_DIR/bin/orbit-binary"')
-            ->and($installer)->toContain('ln -sf "$link_target" "$LINK_PATH"')
-            ->and($installer)->toContain('/usr/local/lib/orbit/%s-binary')
-            ->and($installer)->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
+        expect($installer)
+            ->toContain('link_target="$TARGET_DIR/bin/orbit-binary"')
+            ->and($installer)
+            ->toContain('ln -sf "$link_target" "$LINK_PATH"')
+            ->and($installer)
+            ->toContain('/usr/local/lib/orbit/%s-binary')
+            ->and($installer)
+            ->not->toContain('ln -sf "$TARGET_DIR/artisan" "$LINK_PATH"');
     });
 
     it('installs wg-easy before orbit-dns after the gateway API service', function (): void {
@@ -241,15 +260,23 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             '--public-host' => '203.0.113.10',
         ]);
 
-        expect($this->gatewaySwarmInstaller->installs)->toHaveCount(1)
-            ->and($this->vpnDnsSwarmInstaller->invocations)->toHaveCount(1)
-            ->and($this->vpnDnsSwarmInstaller->invocations[0]['publicHost'])->toBe('203.0.113.10')
-            ->and($this->vpnDnsSwarmInstaller->invocations[0]['username'])->toBe('orbit')
-            ->and($this->vpnDnsSwarmInstaller->invocations[0]['password'])->not->toBe('');
+        expect($this->gatewaySwarmInstaller->installs)
+            ->toHaveCount(1)
+            ->and($this->vpnDnsSwarmInstaller->invocations)
+            ->toHaveCount(1)
+            ->and($this->vpnDnsSwarmInstaller->invocations[0]['publicHost'])
+            ->toBe('203.0.113.10')
+            ->and($this->vpnDnsSwarmInstaller->invocations[0]['username'])
+            ->toBe('orbit')
+            ->and($this->vpnDnsSwarmInstaller->invocations[0]['password'])
+            ->not->toBe('');
     });
 
     it('passes configured gateway image and archive to the Swarm installer', function (): void {
-        config()->set('orbit.updates.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        config()->set(
+            'orbit.updates.gateway_image',
+            'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        );
         config()->set('orbit.updates.gateway_image_archive', '/var/tmp/orbit-gateway-current.tar');
 
         Artisan::call('orbit:internal:bootstrap-gateway-local', [
@@ -292,8 +319,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         $env = File::get(app()->environmentFilePath());
 
-        expect(File::exists(app()->environmentFilePath()))->toBeTrue()
-            ->and($env)->toContain('WG_EASY_PASSWORD=');
+        expect(File::exists(app()->environmentFilePath()))->toBeTrue()->and($env)->toContain('WG_EASY_PASSWORD=');
     });
 
     it('reuses an existing wg-easy admin password on re-bootstrap', function (): void {
@@ -356,8 +382,7 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
 
         $secondOutput = Artisan::output();
 
-        expect($firstOutput)->toBe($secondOutput)
-            ->and(Node::query()->where('name', 'gateway-1')->count())->toBe(1);
+        expect($firstOutput)->toBe($secondOutput)->and(Node::query()->where('name', 'gateway-1')->count())->toBe(1);
     });
 
     it('keeps existing operator identities role-free when creating the gateway record', function (): void {
@@ -373,12 +398,16 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             'wireguard-address' => '10.6.0.2',
         ]);
 
-        expect(Node::query()->where('name', 'operator-1')->first()?->isOperator())->toBeTrue()
-            ->and(NodeRoleAssignment::query()
-                ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
-                ->orderBy('role')
-                ->pluck('role')
-                ->all())->toBe(['gateway', 'router', 'vpn']);
+        expect(Node::query()->where('name', 'operator-1')->first()?->isOperator())
+            ->toBeTrue()
+            ->and(
+                NodeRoleAssignment::query()
+                    ->whereHas('node', fn ($query) => $query->where('name', 'gateway-1'))
+                    ->orderBy('role')
+                    ->pluck('role')
+                    ->all(),
+            )
+            ->toBe(['gateway', 'router', 'vpn']);
     });
 
     it('persists wireguard peers and configures the gateway interface idempotently', function (): void {
@@ -426,33 +455,61 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             ->where('serving_node_id', $gateway?->id)
             ->first();
 
-        expect($exitCode)->toBe(0)
-            ->and($gateway)->toBeInstanceOf(Node::class)
-            ->and($gateway->platform)->toBe('ubuntu')
-            ->and($control)->toBeInstanceOf(Node::class)
-            ->and($control->isOperator())->toBeTrue()
-            ->and($control->wireguard_address)->toBe('10.6.0.3')
-            ->and($initialGatewayGrant)->toBeInstanceOf(NodeAccess::class)
-            ->and($initialGatewayGrant->permissions)->toBe(['*'])
-            ->and($initialGatewayGrant->custom_permissions)->toBe([])
-            ->and($gatewayPeer)->toBeInstanceOf(WireGuardPeer::class)
-            ->and($gatewayPeer->public_key)->toBe('gateway-public-v1')
-            ->and($gatewayPeer->private_key)->toBe('gateway-private-v1')
-            ->and($gatewayPeer->allowed_ips)->toBe('10.6.0.2/32')
-            ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
-            ->and($controlPeer->public_key)->toBe('control-public-v1')
-            ->and($controlPeer->private_key)->toBe('control-private-v1')
-            ->and($controlPeer->allowed_ips)->toBe('10.6.0.3/32')
-            ->and($writtenConfig)->toContain('PrivateKey = gateway-private-v1')
-            ->and($writtenConfig)->toContain('Address = 10.6.0.2/24')
-            ->and($writtenConfig)->toContain('ListenPort = 51820')
-            ->and($writtenConfig)->toContain('PublicKey = control-public-v1')
-            ->and($writtenConfig)->toContain('AllowedIPs = 10.6.0.3/32');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($gateway)
+            ->toBeInstanceOf(Node::class)
+            ->and($gateway->platform)
+            ->toBe('ubuntu')
+            ->and($control)
+            ->toBeInstanceOf(Node::class)
+            ->and($control->isOperator())
+            ->toBeTrue()
+            ->and($control->wireguard_address)
+            ->toBe('10.6.0.3')
+            ->and($initialGatewayGrant)
+            ->toBeInstanceOf(NodeAccess::class)
+            ->and($initialGatewayGrant->permissions)
+            ->toBe(['*'])
+            ->and($initialGatewayGrant->custom_permissions)
+            ->toBe([])
+            ->and($gatewayPeer)
+            ->toBeInstanceOf(WireGuardPeer::class)
+            ->and($gatewayPeer->public_key)
+            ->toBe('gateway-public-v1')
+            ->and($gatewayPeer->private_key)
+            ->toBe('gateway-private-v1')
+            ->and($gatewayPeer->allowed_ips)
+            ->toBe('10.6.0.2/32')
+            ->and($controlPeer)
+            ->toBeInstanceOf(WireGuardPeer::class)
+            ->and($controlPeer->public_key)
+            ->toBe('control-public-v1')
+            ->and($controlPeer->private_key)
+            ->toBe('control-private-v1')
+            ->and($controlPeer->allowed_ips)
+            ->toBe('10.6.0.3/32')
+            ->and($writtenConfig)
+            ->toContain('PrivateKey = gateway-private-v1')
+            ->and($writtenConfig)
+            ->toContain('Address = 10.6.0.2/24')
+            ->and($writtenConfig)
+            ->toContain('ListenPort = 51820')
+            ->and($writtenConfig)
+            ->toContain('PublicKey = control-public-v1')
+            ->and($writtenConfig)
+            ->toContain('AllowedIPs = 10.6.0.3/32');
 
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'sudo mkdir -p /etc/wireguard'));
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'sudo tee /etc/wireguard/wg-orbit.conf'));
+        Process::assertRan(fn ($process): bool => str_contains(
+            $process->command,
+            'sudo tee /etc/wireguard/wg-orbit.conf',
+        ));
         Process::assertRan(fn ($process): bool => str_contains($process->command, 'sudo wg-quick up wg-orbit'));
-        Process::assertRan(fn ($process): bool => str_contains($process->command, 'sudo systemctl enable wg-quick@wg-orbit'));
+        Process::assertRan(fn ($process): bool => str_contains(
+            $process->command,
+            'sudo systemctl enable wg-quick@wg-orbit',
+        ));
 
         $replacementIdentity = [
             'gateway' => [
@@ -473,12 +530,18 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
             '--identity-json' => json_encode($replacementIdentity, JSON_THROW_ON_ERROR),
         ]);
 
-        expect(Node::query()->whereIn('name', ['gateway-1', 'mini'])->count())->toBe(2)
-            ->and(WireGuardPeer::query()->count())->toBe(2)
-            ->and($gatewayPeer->fresh()->public_key)->toBe('gateway-public-v1')
-            ->and($gatewayPeer->fresh()->private_key)->toBe('gateway-private-v1')
-            ->and($controlPeer->fresh()->public_key)->toBe('control-public-v1')
-            ->and($controlPeer->fresh()->private_key)->toBe('control-private-v1');
+        expect(Node::query()->whereIn('name', ['gateway-1', 'mini'])->count())
+            ->toBe(2)
+            ->and(WireGuardPeer::query()->count())
+            ->toBe(2)
+            ->and($gatewayPeer->fresh()->public_key)
+            ->toBe('gateway-public-v1')
+            ->and($gatewayPeer->fresh()->private_key)
+            ->toBe('gateway-private-v1')
+            ->and($controlPeer->fresh()->public_key)
+            ->toBe('control-public-v1')
+            ->and($controlPeer->fresh()->private_key)
+            ->toBe('control-private-v1');
     });
 
     it('configures the gateway host as a wg-easy peer during first-gateway bootstrap', function (): void {
@@ -527,14 +590,22 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
         $gatewayPeer = WireGuardPeer::query()->where('node_id', $gateway?->id)->first();
         $controlPeer = WireGuardPeer::query()->where('node_id', $control?->id)->first();
 
-        expect($exitCode)->toBe(0)
-            ->and($metadata['ca_cert'])->toContain('-----BEGIN CERTIFICATE-----')
-            ->and($metadata['wireguard_server_public_key'])->toBe('wg-easy-public-key')
-            ->and($gatewayPeer)->toBeInstanceOf(WireGuardPeer::class)
-            ->and($gatewayPeer->pre_shared_key)->toBe('gateway-psk-v1')
-            ->and($controlPeer)->toBeInstanceOf(WireGuardPeer::class)
-            ->and($controlPeer->pre_shared_key)->toBe('control-psk-v1')
-            ->and($this->vpnDnsSwarmInstaller->peers)->toMatchArray([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($metadata['ca_cert'])
+            ->toContain('-----BEGIN CERTIFICATE-----')
+            ->and($metadata['wireguard_server_public_key'])
+            ->toBe('wg-easy-public-key')
+            ->and($gatewayPeer)
+            ->toBeInstanceOf(WireGuardPeer::class)
+            ->and($gatewayPeer->pre_shared_key)
+            ->toBe('gateway-psk-v1')
+            ->and($controlPeer)
+            ->toBeInstanceOf(WireGuardPeer::class)
+            ->and($controlPeer->pre_shared_key)
+            ->toBe('control-psk-v1')
+            ->and($this->vpnDnsSwarmInstaller->peers)
+            ->toMatchArray([
                 [
                     'name' => 'gateway-1',
                     'private_key' => 'gateway-private-v1',
@@ -550,13 +621,20 @@ describe('orbit:internal:bootstrap-gateway-local', function (): void {
                     'address' => '10.6.0.3',
                 ],
             ])
-            ->and($writtenConfig)->toContain('PrivateKey = gateway-private-v1')
-            ->and($writtenConfig)->toContain('Address = 10.6.0.2/24')
-            ->and($writtenConfig)->toContain('PublicKey = wg-easy-public-key')
-            ->and($writtenConfig)->toContain('PresharedKey = gateway-psk-v1')
-            ->and($writtenConfig)->toContain('AllowedIPs = 10.6.0.0/24')
-            ->and($writtenConfig)->toContain('Endpoint = 203.0.113.10:51820')
-            ->and($writtenConfig)->not->toContain('ListenPort = 51820')
-            ->and($writtenConfig)->not->toContain('PublicKey = control-public-v1');
+            ->and($writtenConfig)
+            ->toContain('PrivateKey = gateway-private-v1')
+            ->and($writtenConfig)
+            ->toContain('Address = 10.6.0.2/24')
+            ->and($writtenConfig)
+            ->toContain('PublicKey = wg-easy-public-key')
+            ->and($writtenConfig)
+            ->toContain('PresharedKey = gateway-psk-v1')
+            ->and($writtenConfig)
+            ->toContain('AllowedIPs = 10.6.0.0/24')
+            ->and($writtenConfig)
+            ->toContain('Endpoint = 203.0.113.10:51820')
+            ->and($writtenConfig)
+            ->not->toContain('ListenPort = 51820')->and($writtenConfig)
+            ->not->toContain('PublicKey = control-public-v1');
     });
 });

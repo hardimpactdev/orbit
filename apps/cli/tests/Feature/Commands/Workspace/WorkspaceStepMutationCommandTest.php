@@ -29,17 +29,20 @@ describe('workspace step mutation commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/workspaces/steps/setup'
-            && $request->data() === [
-                'app' => 'docs',
-                'command' => 'composer install',
-                'timeout' => 900,
-                'before' => 12,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/workspaces/steps/setup'
+                && $request->data() === [
+                    'app' => 'docs',
+                    'command' => 'composer install',
+                    'timeout' => 900,
+                    'before' => 12,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['step']['phase'])->toBe('setup');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['step']['phase'])->toBe('setup');
     });
 
     it('posts workspace-teardown-step:add payloads to the gateway', function (): void {
@@ -62,14 +65,18 @@ describe('workspace step mutation commands', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/workspaces/steps/teardown'
-            && $request->data() === [
-                'app' => 'docs',
-                'command' => 'dropdb docs',
-                'timeout' => 600,
-                'after' => 10,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/workspaces/steps/teardown'
+                && $request->data() === [
+                    'app' => 'docs',
+                    'command' => 'dropdb docs',
+                    'timeout' => 600,
+                    'after' => 10,
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -93,14 +100,21 @@ describe('workspace step mutation commands', function (): void {
             '--timeout' => '900',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Setup step added for app 'docs'.")
-            ->and($output)->toContain('ID: 10')
-            ->and($output)->toContain('Command: composer install')
-            ->and($output)->toContain('Order: 2')
-            ->and($output)->toContain('Timeout: 900 seconds')
-            ->and($output)->not->toContain('result:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Setup step added for app 'docs'.")
+            ->and($output)
+            ->toContain('ID: 10')
+            ->and($output)
+            ->toContain('Command: composer install')
+            ->and($output)
+            ->toContain('Order: 2')
+            ->and($output)
+            ->toContain('Timeout: 900 seconds')
+            ->and($output)
+            ->not->toContain('result:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders workspace-teardown-step:add human output with the teardown label', function (): void {
@@ -121,13 +135,20 @@ describe('workspace step mutation commands', function (): void {
             '--command' => 'dropdb docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Teardown step added for app 'docs'.")
-            ->and($output)->toContain('ID: 11')
-            ->and($output)->toContain('Command: dropdb docs')
-            ->and($output)->toContain('Order: 1')
-            ->and($output)->toContain('Timeout: 600 seconds')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Teardown step added for app 'docs'.")
+            ->and($output)
+            ->toContain('ID: 11')
+            ->and($output)
+            ->toContain('Command: dropdb docs')
+            ->and($output)
+            ->toContain('Order: 1')
+            ->and($output)
+            ->toContain('Timeout: 600 seconds')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders workspace step add gateway failures as prose in human mode', function (): void {
@@ -143,9 +164,12 @@ describe('workspace step mutation commands', function (): void {
             '--before' => '99',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("Referenced insertion step '99' not found")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("Referenced insertion step '99' not found")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('rejects conflicting insertion anchors before contacting the gateway', function (): void {
@@ -163,11 +187,13 @@ describe('workspace step mutation commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('workspace.invalid_position');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('workspace.invalid_position');
     });
 
-    it('validates workspace step add inputs before contacting the gateway', function (array $params, string $field): void {
+    it('validates workspace step add inputs before contacting the gateway', function (
+        array $params,
+        string $field,
+    ): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'workspace-setup-step:add', [
@@ -180,9 +206,12 @@ describe('workspace step mutation commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe($field);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe($field);
     })->with([
         'command' => [[], 'command'],
         'timeout' => [['--command' => 'composer install', '--timeout' => '0'], 'timeout'],
@@ -190,7 +219,10 @@ describe('workspace step mutation commands', function (): void {
         'after' => [['--command' => 'composer install', '--after' => '-1'], 'after'],
     ]);
 
-    it('validates workspace step removal input before contacting the gateway', function (string $command, array $params): void {
+    it('validates workspace step removal input before contacting the gateway', function (
+        string $command,
+        array $params,
+    ): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, $command, [
@@ -204,9 +236,12 @@ describe('workspace step mutation commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('step');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('step');
     })->with([
         'setup missing step' => ['workspace-setup-step:remove', []],
         'teardown invalid step' => ['workspace-teardown-step:remove', ['--step' => 'zero']],
@@ -225,9 +260,12 @@ describe('workspace step mutation commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('deletes workspace setup steps with destructive consent when forced', function (): void {
@@ -249,12 +287,14 @@ describe('workspace step mutation commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && $url === 'https://gateway.test/api/workspaces/steps/setup/12?app=docs'
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
-                ];
+                ]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -279,12 +319,14 @@ describe('workspace step mutation commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && $url === 'https://gateway.test/api/workspaces/steps/teardown/14?app=docs'
                 && $request->data() === [
                     'destructive_consent' => true,
                     'destructive_consent_source' => 'force',
-                ];
+                ]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -305,12 +347,16 @@ describe('workspace step mutation commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("✓ Removed setup step 12 from app 'docs'.")
-            ->and($output)->toContain('Remaining steps renumbered.')
-            ->and($output)->not->toContain('no workspace setup steps')
-            ->and($output)->not->toContain('result:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("✓ Removed setup step 12 from app 'docs'.")
+            ->and($output)
+            ->toContain('Remaining steps renumbered.')
+            ->and($output)
+            ->not->toContain('no workspace setup steps')->and($output)
+            ->not->toContain('result:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders workspace-setup-step:remove empty-list hint when the last step is removed', function (): void {
@@ -328,10 +374,14 @@ describe('workspace step mutation commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("✓ Removed setup step 12 from app 'docs'.")
-            ->and($output)->toContain("App 'docs' now has no workspace setup steps.")
-            ->and($output)->not->toContain('Remaining steps renumbered.');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("✓ Removed setup step 12 from app 'docs'.")
+            ->and($output)
+            ->toContain("App 'docs' now has no workspace setup steps.")
+            ->and($output)
+            ->not->toContain('Remaining steps renumbered.');
     });
 
     it('renders workspace-teardown-step:remove human output with the teardown label', function (): void {
@@ -349,10 +399,14 @@ describe('workspace step mutation commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("✓ Removed teardown step 14 from app 'docs'.")
-            ->and($output)->toContain('Remaining steps renumbered.')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("✓ Removed teardown step 14 from app 'docs'.")
+            ->and($output)
+            ->toContain('Remaining steps renumbered.')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders workspace step removal gateway failures as prose in human mode', function (): void {
@@ -368,9 +422,12 @@ describe('workspace step mutation commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("Setup step '99' not found")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("Setup step '99' not found")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('prompts for setup step ids before confirmation in interactive mode', function (): void {
@@ -382,7 +439,8 @@ describe('workspace step mutation commands', function (): void {
             'new_step_count' => 0,
         ]));
 
-        $this->artisan('workspace-setup-step:remove', ['--app' => 'docs'])
+        $this
+            ->artisan('workspace-setup-step:remove', ['--app' => 'docs'])
             ->expectsQuestion('Step ID', '12')
             ->expectsConfirmation('Remove this workspace step?', 'yes')
             ->expectsOutputToContain("Removed setup step 12 from app 'docs'.")
@@ -391,8 +449,10 @@ describe('workspace step mutation commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'DELETE'
-                && $url === 'https://gateway.test/api/workspaces/steps/setup/12?app=docs';
+            return (
+                $request->method() === 'DELETE'
+                && $url === 'https://gateway.test/api/workspaces/steps/setup/12?app=docs'
+            );
         });
     });
 
@@ -405,7 +465,8 @@ describe('workspace step mutation commands', function (): void {
             'new_step_count' => 0,
         ]));
 
-        $this->artisan('workspace-teardown-step:remove', ['--app' => 'docs'])
+        $this
+            ->artisan('workspace-teardown-step:remove', ['--app' => 'docs'])
             ->expectsQuestion('Step ID', '14')
             ->expectsConfirmation('Remove this workspace step?', 'yes')
             ->expectsOutputToContain("Removed teardown step 14 from app 'docs'.")
@@ -414,8 +475,10 @@ describe('workspace step mutation commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'DELETE'
-                && $url === 'https://gateway.test/api/workspaces/steps/teardown/14?app=docs';
+            return (
+                $request->method() === 'DELETE'
+                && $url === 'https://gateway.test/api/workspaces/steps/teardown/14?app=docs'
+            );
         });
     });
 });

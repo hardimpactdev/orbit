@@ -32,12 +32,15 @@ final readonly class ProfileInput
      */
     public function query(): array
     {
-        return array_filter([
-            'target' => $this->target,
-            'uri' => $this->uri,
-            'auth_mode' => $this->authMode,
-            'user' => $this->user,
-            'node' => $this->node,
-        ], static fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'target' => $this->target,
+                'uri' => $this->uri,
+                'auth_mode' => $this->authMode,
+                'user' => $this->user,
+                'node' => $this->node,
+            ],
+            static fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 }

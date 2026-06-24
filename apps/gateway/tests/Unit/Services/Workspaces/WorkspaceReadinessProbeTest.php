@@ -18,13 +18,14 @@ it('retries transient unhealthy workspace responses', function (): void {
     $result = $probe->probeWith(function () use (&$attempts): array {
         $attempts++;
 
-        return $attempts < 3
-            ? ['reachable' => false, 'status' => $attempts === 1 ? '500' : '502']
-            : ['reachable' => true, 'status' => '200'];
+        return (
+            $attempts < 3
+                ? ['reachable' => false, 'status' => $attempts === 1 ? '500' : '502']
+                : ['reachable' => true, 'status' => '200']
+        );
     });
 
-    expect($result)->toBe(['reachable' => true, 'status' => '200'])
-        ->and($attempts)->toBe(3);
+    expect($result)->toBe(['reachable' => true, 'status' => '200'])->and($attempts)->toBe(3);
 });
 
 it('returns the last unhealthy readiness result after all attempts fail', function (): void {
@@ -37,8 +38,7 @@ it('returns the last unhealthy readiness result after all attempts fail', functi
         return ['reachable' => false, 'status' => $attempts === 1 ? '502' : 'error: Operation timed out'];
     });
 
-    expect($result)->toBe(['reachable' => false, 'status' => 'error: Operation timed out'])
-        ->and($attempts)->toBe(2);
+    expect($result)->toBe(['reachable' => false, 'status' => 'error: Operation timed out'])->and($attempts)->toBe(2);
 });
 
 it('keeps default readiness retries within the setup probe budget', function (): void {
@@ -51,8 +51,7 @@ it('keeps default readiness retries within the setup probe budget', function ():
         return ['reachable' => false, 'status' => '500'];
     });
 
-    expect($result)->toBe(['reachable' => false, 'status' => '500'])
-        ->and($attempts)->toBe(10);
+    expect($result)->toBe(['reachable' => false, 'status' => '500'])->and($attempts)->toBe(10);
 });
 
 it('does not retry non-transient workspace configuration failures', function (): void {
@@ -65,8 +64,7 @@ it('does not retry non-transient workspace configuration failures', function ():
         return ['reachable' => false, 'status' => 'no_app'];
     });
 
-    expect($result)->toBe(['reachable' => false, 'status' => 'no_app'])
-        ->and($attempts)->toBe(1);
+    expect($result)->toBe(['reachable' => false, 'status' => 'no_app'])->and($attempts)->toBe(1);
 });
 
 it('fails readiness when vite module assets are not reachable', function (): void {
@@ -86,7 +84,7 @@ it('fails readiness when vite module assets are not reachable', function (): voi
         "{$url}/@vite/client" => Http::response('Not found', 404),
     ]);
 
-    $result = (new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0))->probe($workspace);
+    $result = new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0)->probe($workspace);
 
     expect($result)->toBe(['reachable' => false, 'status' => 'asset_404']);
 });
@@ -110,7 +108,7 @@ it('passes readiness when vite module assets are reachable', function (): void {
         "{$viteUrl}/resources/js/app.ts" => Http::response('ok'),
     ]);
 
-    $result = (new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0))->probe($workspace);
+    $result = new WorkspaceReadinessProbe(maxAttempts: 1, retryDelayMilliseconds: 0)->probe($workspace);
 
     expect($result)->toBe(['reachable' => true, 'status' => '200']);
 });

@@ -677,8 +677,7 @@ final class WgEasyStateCommand extends InternalExecutorCommand
             return false;
         }
 
-        return @chown($path, posix_getuid())
-            && @chgrp($path, posix_getgid());
+        return @chown($path, posix_getuid()) && @chgrp($path, posix_getgid());
     }
 
     private function invalidOption(string $field): int
@@ -883,10 +882,8 @@ final class WgEasyStateCommand extends InternalExecutorCommand
 
         if (
             strlen($value) > strlen((string) PHP_INT_MAX)
-            || (
-                strlen($value) === strlen((string) PHP_INT_MAX)
-                && strcmp($value, (string) PHP_INT_MAX) > 0
-            )
+            || strlen($value) === strlen((string) PHP_INT_MAX)
+            && strcmp($value, (string) PHP_INT_MAX) > 0
         ) {
             return null;
         }

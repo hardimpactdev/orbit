@@ -75,11 +75,16 @@ class NodeRoleAssignments
     {
         if ($node->relationLoaded('roleAssignments')) {
             return $node->roleAssignments
-                ->first(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role
-                    && $assignment->status === NodeRoleStatus::Active);
+                ->first(
+                    fn (NodeRoleAssignment $assignment): bool => (
+                        $assignment->role === $role
+                        && $assignment->status === NodeRoleStatus::Active
+                    ),
+                );
         }
 
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('role', $role)
             ->where('status', NodeRoleStatus::Active->value)
             ->first();
@@ -152,20 +157,17 @@ class NodeRoleAssignments
 
     public function nodeIsGateway(Node $node): bool
     {
-        return $node->status === NodeStatus::Active
-            && $this->nodeHasActiveGatewayRole($node);
+        return $node->status === NodeStatus::Active && $this->nodeHasActiveGatewayRole($node);
     }
 
     public function nodeCanServeIngress(Node $node): bool
     {
-        return $node->status === NodeStatus::Active
-            && $this->nodeHasActiveIngressRole($node);
+        return $node->status === NodeStatus::Active && $this->nodeHasActiveIngressRole($node);
     }
 
     public function nodeCanServeRouter(Node $node): bool
     {
-        return $node->status === NodeStatus::Active
-            && $this->nodeHasActiveRouterRole($node);
+        return $node->status === NodeStatus::Active && $this->nodeHasActiveRouterRole($node);
     }
 
     public function nodeHasActiveAppHostRole(Node $node): bool
@@ -215,8 +217,7 @@ class NodeRoleAssignments
 
     public function nodeCanServeGatewayOrAppHostWorkloads(Node $node): bool
     {
-        return $this->nodeIsGateway($node)
-            || $this->nodeHasActiveAppHostRole($node);
+        return $this->nodeIsGateway($node) || $this->nodeHasActiveAppHostRole($node);
     }
 
     /**
@@ -248,22 +249,25 @@ class NodeRoleAssignments
      */
     public function nodeHostsOrbitCaddy(Node $node): bool
     {
-        return $this->nodeCanServeGatewayOrAppHostWorkloads($node)
+        return (
+            $this->nodeCanServeGatewayOrAppHostWorkloads($node)
             || $this->nodeCanServeRouter($node)
             || $this->nodeCanServeIngress($node)
-            || $this->nodeHasActiveAgentRole($node);
+            || $this->nodeHasActiveAgentRole($node)
+        );
     }
 
     public function nodeCanHostManagedTools(Node $node): bool
     {
-        return $this->nodeIsGateway($node)
-            || $this->nodeHasActiveToolHostRole($node);
+        return $this->nodeIsGateway($node) || $this->nodeHasActiveToolHostRole($node);
     }
 
     public function nodeCanHostMetricsExporter(Node $node): bool
     {
-        return $node->status === NodeStatus::Active
-            && $this->nodeHasAnyActiveRole($node, $this->metricsExporterHostRoles());
+        return (
+            $node->status === NodeStatus::Active
+            && $this->nodeHasAnyActiveRole($node, $this->metricsExporterHostRoles())
+        );
     }
 
     /**
@@ -272,15 +276,20 @@ class NodeRoleAssignments
     public function nodeHasAnyActiveRole(Node $node, array $roles): bool
     {
         if (! $node->relationLoaded('roleAssignments')) {
-            return $node->roleAssignments()
+            return $node
+                ->roleAssignments()
                 ->whereIn('role', $roles)
                 ->where('status', NodeRoleStatus::Active->value)
                 ->exists();
         }
 
         return $node->roleAssignments
-            ->contains(fn (NodeRoleAssignment $assignment): bool => in_array($assignment->role, $roles, true)
-                && $assignment->status === NodeRoleStatus::Active);
+            ->contains(
+                fn (NodeRoleAssignment $assignment): bool => (
+                    in_array($assignment->role, $roles, true)
+                    && $assignment->status === NodeRoleStatus::Active
+                ),
+            );
     }
 
     /**
@@ -385,7 +394,8 @@ class NodeRoleAssignments
 
     public function find(Node $node, string $role): ?NodeRoleAssignment
     {
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('role', $role)
             ->first();
     }
@@ -395,7 +405,8 @@ class NodeRoleAssignments
      */
     public function conflicting(Node $node, NodeRoleDefinition $definition): Collection
     {
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->whereIn('status', [
                 NodeRoleStatus::Active->value,
                 NodeRoleStatus::Pending->value,

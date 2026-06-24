@@ -100,7 +100,8 @@ final readonly class GatewayLogStreamClient
     {
         $message = strtolower($exception->getMessage());
 
-        $isWireGuardReachabilityFailure = str_contains($message, 'timed out')
+        $isWireGuardReachabilityFailure =
+            str_contains($message, 'timed out')
             || str_contains($message, 'no route to host')
             || str_contains($message, 'network is unreachable')
             || str_contains($message, 'could not resolve host');

@@ -106,19 +106,19 @@ final readonly class E2EWireGuardMesh
     {
         return sprintf(
             <<<'SH'
-set -euo pipefail
-command -v wg >/dev/null 2>&1 || { echo 'wg is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
-command -v wg-quick >/dev/null 2>&1 || { echo 'wg-quick is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
-sudo install -d -m 0700 /etc/wireguard
-cat <<'ORBIT_WG_CONFIG' | sudo tee /etc/wireguard/wg-orbit.conf >/dev/null
-%s
-ORBIT_WG_CONFIG
-sudo chmod 0600 /etc/wireguard/wg-orbit.conf
-sudo wg-quick down wg-orbit >/dev/null 2>&1 || true
-sudo ip link delete dev wg-orbit >/dev/null 2>&1 || true
-sudo wg-quick up wg-orbit
-sudo systemctl enable wg-quick@wg-orbit
-SH,
+                set -euo pipefail
+                command -v wg >/dev/null 2>&1 || { echo 'wg is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
+                command -v wg-quick >/dev/null 2>&1 || { echo 'wg-quick is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
+                sudo install -d -m 0700 /etc/wireguard
+                cat <<'ORBIT_WG_CONFIG' | sudo tee /etc/wireguard/wg-orbit.conf >/dev/null
+                %s
+                ORBIT_WG_CONFIG
+                sudo chmod 0600 /etc/wireguard/wg-orbit.conf
+                sudo wg-quick down wg-orbit >/dev/null 2>&1 || true
+                sudo ip link delete dev wg-orbit >/dev/null 2>&1 || true
+                sudo wg-quick up wg-orbit
+                sudo systemctl enable wg-quick@wg-orbit
+                SH,
             $this->peerConfig($role),
         );
     }
@@ -201,7 +201,9 @@ SH,
      */
     private function peer(string $role): array
     {
-        return $this->peers[$role] ?? throw new RuntimeException("WireGuard role [{$role}] is not present in this mesh.");
+        return (
+            $this->peers[$role] ?? throw new RuntimeException("WireGuard role [{$role}] is not present in this mesh.")
+        );
     }
 
     /**

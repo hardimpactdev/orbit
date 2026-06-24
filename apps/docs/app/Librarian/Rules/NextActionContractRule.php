@@ -41,7 +41,9 @@ final readonly class NextActionContractRule implements GroupedRule
                         if ($path !== 'success.data.next_steps') {
                             $findings[] = $this->finding(
                                 $file,
-                                'JSON example '.($example->blockIndex + 1)." uses next_steps at {$path}; next_steps is only allowed at success.data.next_steps.",
+                                'JSON example '
+                                .($example->blockIndex + 1)
+                                ." uses next_steps at {$path}; next_steps is only allowed at success.data.next_steps.",
                                 $example->line,
                             );
 
@@ -51,7 +53,9 @@ final readonly class NextActionContractRule implements GroupedRule
                         if (! $this->isStringList($field['value'])) {
                             $findings[] = $this->finding(
                                 $file,
-                                'JSON example '.($example->blockIndex + 1).' success.data.next_steps must be an array of prose strings.',
+                                'JSON example '
+                                .($example->blockIndex + 1)
+                                .' success.data.next_steps must be an array of prose strings.',
                                 $example->line,
                             );
                         }
@@ -73,7 +77,9 @@ final readonly class NextActionContractRule implements GroupedRule
 
                     $findings[] = $this->finding(
                         $file,
-                        'JSON example '.($example->blockIndex + 1)." uses next_command at {$path}; next_command is only allowed on warning or error recovery metadata.",
+                        'JSON example '
+                        .($example->blockIndex + 1)
+                        ." uses next_command at {$path}; next_command is only allowed on warning or error recovery metadata.",
                         $example->line,
                     );
                 }
@@ -143,26 +149,30 @@ final readonly class NextActionContractRule implements GroupedRule
             return true;
         }
 
-        return (count($path) === 5
+        return (
+            count($path) === 5
             && $path[0] === 'success'
             && $path[1] === 'meta'
             && $path[2] === 'warnings'
             && ctype_digit($path[3])
-            && $path[4] === 'next_command')
-            || (count($path) === 6
+            && $path[4] === 'next_command'
+            || count($path) === 6
             && $path[0] === 'success'
             && $path[1] === 'meta'
             && $path[2] === 'doctor'
             && $path[3] === 'failures'
             && ctype_digit($path[4])
-            && $path[5] === 'next_command');
+            && $path[5] === 'next_command'
+        );
     }
 
     private function isStringList(mixed $value): bool
     {
-        return is_array($value)
+        return (
+            is_array($value)
             && array_is_list($value)
-            && array_all($value, static fn (mixed $item): bool => is_string($item));
+            && array_all($value, static fn (mixed $item): bool => is_string($item))
+        );
     }
 
     private function finding(string $path, string $message, ?int $line = null): Finding

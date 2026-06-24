@@ -88,7 +88,7 @@ final class DeployStepRemoveCommand extends DeployGatewayCommand
     private function stepData(array $response): array
     {
         $data = $response['success']['data'] ?? null;
-        $step = is_array($data) ? ($data['step'] ?? null) : null;
+        $step = is_array($data) ? $data['step'] ?? null : null;
 
         return is_array($step) ? $step : [];
     }

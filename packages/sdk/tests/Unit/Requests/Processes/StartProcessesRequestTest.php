@@ -17,9 +17,12 @@ uses(TestCase::class);
 it('targets the process start gateway endpoint with optional filters', function (): void {
     $request = new StartProcessesRequest(app: 'docs', workspace: 'feature-docs', name: 'vite');
 
-    expect($request->getMethod())->toBe(Method::POST)
-        ->and($request->resolveEndpoint())->toBe('/api/processes/start')
-        ->and($request->body()->all())->toBe([
+    expect($request->getMethod())
+        ->toBe(Method::POST)
+        ->and($request->resolveEndpoint())
+        ->toBe('/api/processes/start')
+        ->and($request->body()->all())
+        ->toBe([
             'app' => 'docs',
             'workspace' => 'feature-docs',
             'name' => 'vite',
@@ -58,6 +61,8 @@ it('returns a ProcessStartResponse DTO', function (): void {
 
     $dto = $connector->send(new StartProcessesRequest(app: 'docs', workspace: null, name: 'vite'))->dto();
 
-    expect($dto)->toBeInstanceOf(ProcessStartResponse::class)
-        ->and($dto->data['runtimes'][0]['runtime_unit'])->toBe('orbit_docs_main_vite');
+    expect($dto)
+        ->toBeInstanceOf(ProcessStartResponse::class)
+        ->and($dto->data['runtimes'][0]['runtime_unit'])
+        ->toBe('orbit_docs_main_vite');
 });

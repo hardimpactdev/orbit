@@ -44,17 +44,37 @@ final readonly class SourceMountedCheckoutSyncer
             $this->prepareTargetAndAcquireLock($host, $targetPath);
 
             try {
-                $this->mustRun($this->sshCommand($host, $this->ownershipRepairCommand($targetPath)), "Could not repair source checkout ownership on {$host}:{$targetPath}");
-                $rsync = $this->mustRun($this->rsyncCommand($host, $targetPath), "Could not rsync source checkout to {$host}:{$targetPath}");
+                $this->mustRun(
+                    $this->sshCommand($host, $this->ownershipRepairCommand($targetPath)),
+                    "Could not repair source checkout ownership on {$host}:{$targetPath}",
+                );
+                $rsync = $this->mustRun(
+                    $this->rsyncCommand($host, $targetPath),
+                    "Could not rsync source checkout to {$host}:{$targetPath}",
+                );
                 $changed = trim($rsync->output()) !== '';
-                $this->mustRun($this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)), "Could not clear stale source checkout state on {$host}:{$targetPath}");
+                $this->mustRun(
+                    $this->sshCommand($host, $this->staleMutableStateCleanupCommand($targetPath)),
+                    "Could not clear stale source checkout state on {$host}:{$targetPath}",
+                );
                 $hydration = $this->dependencyHydrationSshCommand($host, $targetPath);
-                $this->mustRun($hydration['command'], "Could not hydrate source checkout dependencies on {$host}:{$targetPath}", input: $hydration['input']);
+                $this->mustRun(
+                    $hydration['command'],
+                    "Could not hydrate source checkout dependencies on {$host}:{$targetPath}",
+                    input: $hydration['input'],
+                );
                 $vendorArchive = $this->vendorArchiveSshCommand($host, $targetPath);
-                $this->mustRun($vendorArchive['command'], "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}", input: $vendorArchive['input']);
+                $this->mustRun(
+                    $vendorArchive['command'],
+                    "Could not archive source checkout vendor dependencies on {$host}:{$targetPath}",
+                    input: $vendorArchive['input'],
+                );
 
                 if ($changed) {
-                    $this->mustRun($this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)), "Could not normalize source checkout permissions on {$host}:{$targetPath}");
+                    $this->mustRun(
+                        $this->sshCommand($host, $this->permissionNormalizationCommand($targetPath)),
+                        "Could not normalize source checkout permissions on {$host}:{$targetPath}",
+                    );
                 }
             } finally {
                 $this->releaseLock($host, $targetPath);
@@ -198,12 +218,19 @@ final readonly class SourceMountedCheckoutSyncer
             'hostname > "$lock/host"',
         ]);
 
-        $this->mustRun($this->sshCommand($host, $command), "Could not acquire source checkout sync lock on {$host}:{$targetPath}", timeoutSeconds: self::LockAcquireTimeoutSeconds);
+        $this->mustRun(
+            $this->sshCommand($host, $command),
+            "Could not acquire source checkout sync lock on {$host}:{$targetPath}",
+            timeoutSeconds: self::LockAcquireTimeoutSeconds,
+        );
     }
 
     private function releaseLock(string $host, string $targetPath): void
     {
-        $this->run($this->sshCommand($host, 'rm -rf '.escapeshellarg("{$targetPath}/.orbit-e2e-source-sync.lock").' || true'), timeoutSeconds: 30);
+        $this->run(
+            $this->sshCommand($host, 'rm -rf '.escapeshellarg("{$targetPath}/.orbit-e2e-source-sync.lock").' || true'),
+            timeoutSeconds: 30,
+        );
     }
 
     private function rsyncCommand(string $host, string $targetPath): string
@@ -235,7 +262,11 @@ final readonly class SourceMountedCheckoutSyncer
             '  ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"',
             '  ORBIT_E2E_SOURCE_SYNC_GID="$(id -g)"',
             '  if command -v docker >/dev/null 2>&1; then',
-            '    if ! docker image inspect '.escapeshellarg($image).' >/dev/null 2>&1; then docker pull '.escapeshellarg($image).'; fi',
+            '    if ! docker image inspect '
+                .escapeshellarg($image)
+                .' >/dev/null 2>&1; then docker pull '
+                .escapeshellarg($image)
+                .'; fi',
             sprintf(
                 '    docker run --rm --mount "type=bind,src=${target},dst=/work" --env "ORBIT_E2E_SOURCE_SYNC_UID=${ORBIT_E2E_SOURCE_SYNC_UID}" --env "ORBIT_E2E_SOURCE_SYNC_GID=${ORBIT_E2E_SOURCE_SYNC_GID}" %s sh -lc %s',
                 escapeshellarg($image),
@@ -342,10 +373,16 @@ final readonly class SourceMountedCheckoutSyncer
         $githubEnvironment = implode(' ', E2EGitHubAuth::dockerEnvOptions());
 
         return implode("\n", [
-            'if ! command -v docker >/dev/null 2>&1; then echo "Remote source sync requires composer or docker with '.escapeshellarg($image).'" >&2; exit 1; fi',
+            'if ! command -v docker >/dev/null 2>&1; then echo "Remote source sync requires composer or docker with '
+                .escapeshellarg($image)
+                .'" >&2; exit 1; fi',
             'uid="$(id -u)"',
             'gid="$(id -g)"',
-            'if ! docker image inspect '.escapeshellarg($image).' >/dev/null 2>&1; then docker pull '.escapeshellarg($image).'; fi',
+            'if ! docker image inspect '
+                .escapeshellarg($image)
+                .' >/dev/null 2>&1; then docker pull '
+                .escapeshellarg($image)
+                .'; fi',
             sprintf(
                 'docker run --rm --mount %s --env "ORBIT_E2E_HOST_UID=${uid}" --env "ORBIT_E2E_HOST_GID=${gid}" %s sh -lc %s',
                 escapeshellarg("type=bind,src={$targetPath},dst=/work"),
@@ -396,10 +433,12 @@ final readonly class SourceMountedCheckoutSyncer
             'trap \'rm -f "$fingerprint_input"\' EXIT',
             $this->vendorArchiveFingerprintCommand(),
             'fingerprint="$(sha256sum "$fingerprint_input" | cut -d " " -f 1)"',
-            'if [ -f "$fingerprint_file" ] && [ "$(cat "$fingerprint_file")" = "$fingerprint" ] && '.implode(' && ', array_map(
-                fn (string $path): string => '[ -f '.escapeshellarg($path).' ]',
-                $archivePaths,
-            )).'; then',
+            'if [ -f "$fingerprint_file" ] && [ "$(cat "$fingerprint_file")" = "$fingerprint" ] && '
+                .implode(' && ', array_map(
+                    fn (string $path): string => '[ -f '.escapeshellarg($path).' ]',
+                    $archivePaths,
+                ))
+                .'; then',
             '  chmod a+rx "$archive_dir"',
             '  find "$archive_dir" -type f -exec chmod a+r {} +',
             '  exit 0',
@@ -471,7 +510,11 @@ final readonly class SourceMountedCheckoutSyncer
 
     private function gitSafeDirectoryCommand(): string
     {
-        return 'if command -v git >/dev/null 2>&1; then git config --global --add safe.directory '."'*'".' >/dev/null 2>&1 || true; fi';
+        return (
+            'if command -v git >/dev/null 2>&1; then git config --global --add safe.directory '
+            ."'*'"
+            .' >/dev/null 2>&1 || true; fi'
+        );
     }
 
     private function sshCommand(string $host, string $command): string
@@ -515,12 +558,18 @@ final readonly class SourceMountedCheckoutSyncer
 
     private function isLocalHost(string $host): bool
     {
-        return in_array(strtolower($host), ['local', '', 'localhost', '127.0.0.1', '::1'], true)
-            || strtolower($host) === strtolower((string) gethostname());
+        return (
+            in_array(strtolower($host), ['local', '', 'localhost', '127.0.0.1', '::1'], true)
+            || strtolower($host) === strtolower((string) gethostname())
+        );
     }
 
-    private function mustRun(string $command, string $message, ?int $timeoutSeconds = null, ?string $input = null): ProcessResult
-    {
+    private function mustRun(
+        string $command,
+        string $message,
+        ?int $timeoutSeconds = null,
+        ?string $input = null,
+    ): ProcessResult {
         $result = $this->run($command, $timeoutSeconds, $input);
 
         if (! $result->successful()) {

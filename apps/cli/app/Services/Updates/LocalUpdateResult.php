@@ -49,8 +49,7 @@ final readonly class LocalUpdateResult
      */
     public function skipped(): bool
     {
-        return $this->status === self::STATUS_SKIPPED_ALREADY
-            || $this->status === self::STATUS_SKIPPED_GATEWAY_BEHIND;
+        return $this->status === self::STATUS_SKIPPED_ALREADY || $this->status === self::STATUS_SKIPPED_GATEWAY_BEHIND;
     }
 
     /**

@@ -56,10 +56,12 @@ final class TrustFakeFetchGatewayRootCa implements FetchesGatewayRootCa
             throw $this->throws;
         }
 
-        return $this->result ?? new RootCaFetchResult(
-            TRUST_FAKE_PEM,
-            hash('sha256', TRUST_FAKE_PEM),
-            "https://{$gatewayIp}/api/ca/root",
+        return (
+            $this->result ?? new RootCaFetchResult(
+                TRUST_FAKE_PEM,
+                hash('sha256', TRUST_FAKE_PEM),
+                "https://{$gatewayIp}/api/ca/root",
+            )
         );
     }
 }
@@ -137,9 +139,12 @@ describe('gateway:trust', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['reason'])->toBe('missing');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('missing');
     });
 
     it('returns gateway_unavailable when CA fetch fails with connection error', function (): void {
@@ -149,8 +154,7 @@ describe('gateway:trust', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('returns node.gateway_api_error when CA material is invalid', function (): void {
@@ -160,8 +164,7 @@ describe('gateway:trust', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.gateway_api_error');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.gateway_api_error');
     });
 
     it('returns node.unsupported_platform when trust store is unsupported', function (): void {
@@ -171,8 +174,7 @@ describe('gateway:trust', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.unsupported_platform');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.unsupported_platform');
 
         cleanupTrust($tempDir);
     });
@@ -184,11 +186,16 @@ describe('gateway:trust', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['gateway_trust']['status'])->toBe('trusted')
-            ->and($decoded['success']['data']['gateway_trust']['trusted'])->toBeTrue()
-            ->and($decoded['success']['data']['gateway_trust']['gateway_url'])->toBe('https://10.6.0.2')
-            ->and($decoded['success']['data']['gateway_trust']['ca_sha256'])->toBe($fakeSha256);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['gateway_trust']['status'])
+            ->toBe('trusted')
+            ->and($decoded['success']['data']['gateway_trust']['trusted'])
+            ->toBeTrue()
+            ->and($decoded['success']['data']['gateway_trust']['gateway_url'])
+            ->toBe('https://10.6.0.2')
+            ->and($decoded['success']['data']['gateway_trust']['ca_sha256'])
+            ->toBe($fakeSha256);
 
         cleanupTrust($tempDir);
     });
@@ -210,10 +217,14 @@ describe('gateway:trust', function (): void {
         [$exitCode] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $config = $store->read();
 
-        expect($exitCode)->toBe(0)
-            ->and($config['active_gateway'])->toBe('incus-dev')
-            ->and($config['gateways']['incus-dev']['ca_pem_path'])->toContain('/gateways/incus-dev/ca.pem')
-            ->and($config['gateways']['default']['ca_pem_path'])->toContain('/gateways/default/ca.pem');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($config['active_gateway'])
+            ->toBe('incus-dev')
+            ->and($config['gateways']['incus-dev']['ca_pem_path'])
+            ->toContain('/gateways/incus-dev/ca.pem')
+            ->and($config['gateways']['default']['ca_pem_path'])
+            ->toContain('/gateways/default/ca.pem');
 
         cleanupTrust($tempDir);
     });
@@ -228,8 +239,10 @@ describe('gateway:trust', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:trust', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['gateway_trust']['status'])->toBe('already_trusted');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['gateway_trust']['status'])
+            ->toBe('already_trusted');
 
         cleanupTrust($tempDir);
     });
@@ -239,12 +252,17 @@ describe('gateway:trust', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:trust');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Trusting Gateway CA')
-            ->and($output)->toContain('Install local trust')
-            ->and($output)->toContain('Gateway CA trusted for https://10.6.0.2.')
-            ->and($output)->not->toContain('gateway_trust:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Trusting Gateway CA')
+            ->and($output)
+            ->toContain('Install local trust')
+            ->and($output)
+            ->toContain('Gateway CA trusted for https://10.6.0.2.')
+            ->and($output)
+            ->not->toContain('gateway_trust:')->and($output)
+            ->not->toContain('{');
 
         cleanupTrust($tempDir);
     });
@@ -255,10 +273,14 @@ describe('gateway:trust', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:trust');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Trusting Gateway CA')
-            ->and($output)->toContain('Gateway CA already trusted for https://10.6.0.2.')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Trusting Gateway CA')
+            ->and($output)
+            ->toContain('Gateway CA already trusted for https://10.6.0.2.')
+            ->and($output)
+            ->not->toContain('{');
 
         cleanupTrust($tempDir);
     });
@@ -268,10 +290,13 @@ describe('gateway:trust', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:trust');
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('No gateway is configured. Run orbit gateway:add first.')
-            ->and($output)->not->toContain('"error"')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('No gateway is configured. Run orbit gateway:add first.')
+            ->and($output)
+            ->not->toContain('"error"')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders gateway:trust gateway-unavailable failures as prose in human mode', function (): void {
@@ -280,9 +305,12 @@ describe('gateway:trust', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:trust');
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Could not fetch the gateway CA from https://10.6.0.2.')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Could not fetch the gateway CA from https://10.6.0.2.')
+            ->and($output)
+            ->not->toContain('"error"');
 
         cleanupTrust($tempDir);
     });

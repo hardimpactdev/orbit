@@ -47,7 +47,9 @@ class E2EPrepareDockerTopologyCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
+            return $this->failValidation(
+                "Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.',
+            );
         }
 
         if (! E2EPreparedTopology::supportsKind($kind)) {
@@ -187,7 +189,11 @@ class E2EPrepareDockerTopologyCommand extends Command
 
         return array_values(array_filter(
             $roles,
-            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForDockerRole($role), $artifactRoles, true),
+            fn (string $role): bool => in_array(
+                E2EPreparedTopology::artifactRoleForDockerRole($role),
+                $artifactRoles,
+                true,
+            ),
         ));
     }
 
@@ -204,7 +210,9 @@ class E2EPrepareDockerTopologyCommand extends Command
         }
 
         if (E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
-            throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
+            throw new InvalidArgumentException(
+                'Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.',
+            );
         }
 
         if ($roles === null) {

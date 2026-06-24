@@ -20,13 +20,18 @@ it('reserves addresses from wg-easy database files and runtime peers', function 
 
     $database = new PDO("sqlite:{$statePath}/wg-easy.db");
     $database->exec('create table clients_table (ipv4_address text not null, server_allowed_ips text not null)');
-    $database->exec("insert into clients_table (ipv4_address, server_allowed_ips) values ('10.6.0.4', '[\"10.6.0.4/32\"]')");
+    $database->exec(
+        "insert into clients_table (ipv4_address, server_allowed_ips) values ('10.6.0.4', '[\"10.6.0.4/32\"]')",
+    );
 
-    File::put("{$statePath}/wg0.conf", implode("\n", [
-        '[Peer]',
-        'PublicKey = phone-public-key',
-        'AllowedIPs = 10.6.0.5/32',
-    ]));
+    File::put(
+        "{$statePath}/wg0.conf",
+        implode("\n", [
+            '[Peer]',
+            'PublicKey = phone-public-key',
+            'AllowedIPs = 10.6.0.5/32',
+        ]),
+    );
 
     File::put("{$statePath}/wg0.json", json_encode([
         'clients' => [
@@ -57,7 +62,7 @@ it('reserves addresses from wg-easy database files and runtime peers', function 
     Process::preventStrayProcesses();
 
     try {
-        expect((new WgEasyAddressReservationProbe)->addresses())->toBe([
+        expect(new WgEasyAddressReservationProbe()->addresses())->toBe([
             '10.6.0.4',
             '10.6.0.5',
             '10.6.0.6',

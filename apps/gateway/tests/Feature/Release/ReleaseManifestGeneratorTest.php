@@ -59,7 +59,7 @@ it('generates a release manifest with gateway digest cli hashes and role image m
             ],
         ]);
     } finally {
-        (new Process(['rm', '-rf', $root]))->run();
+        new Process(['rm', '-rf', $root])->run();
     }
 });
 
@@ -111,7 +111,7 @@ it('generates a topology candidate manifest with candidate asset urls and build 
             ],
         ]);
     } finally {
-        (new Process(['rm', '-rf', $root]))->run();
+        new Process(['rm', '-rf', $root])->run();
     }
 });
 
@@ -126,6 +126,5 @@ it('rejects gateway images that cannot be pinned to a digest', function (): void
     ], repo_path());
     $process->run();
 
-    expect($process->getExitCode())->toBe(1)
-        ->and($process->getErrorOutput())->toContain('gateway digest');
+    expect($process->getExitCode())->toBe(1)->and($process->getErrorOutput())->toContain('gateway digest');
 });

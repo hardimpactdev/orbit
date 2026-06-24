@@ -44,7 +44,7 @@ class OrbitDnsServiceInstaller
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to start orbit-dns: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to start orbit-dns: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
     }
@@ -55,7 +55,7 @@ class OrbitDnsServiceInstaller
 
         if (! $result->successful() || trim($result->output()) === '') {
             throw new RuntimeException(
-                'wg-easy container is not running; install wg-easy before orbit-dns.'
+                'wg-easy container is not running; install wg-easy before orbit-dns.',
             );
         }
     }
@@ -63,17 +63,17 @@ class OrbitDnsServiceInstaller
     private function renderCompose(string $confPath): string
     {
         return <<<YAML
-services:
-  orbit-dns:
-    image: 4km3/dnsmasq:latest
-    container_name: orbit-dns
-    network_mode: "container:wg-easy"
-    restart: unless-stopped
-    cap_add:
-      - NET_ADMIN
-    volumes:
-      - {$confPath}:/etc/dnsmasq.conf:ro
+            services:
+              orbit-dns:
+                image: 4km3/dnsmasq:latest
+                container_name: orbit-dns
+                network_mode: "container:wg-easy"
+                restart: unless-stopped
+                cap_add:
+                  - NET_ADMIN
+                volumes:
+                  - {$confPath}:/etc/dnsmasq.conf:ro
 
-YAML;
+            YAML;
     }
 }

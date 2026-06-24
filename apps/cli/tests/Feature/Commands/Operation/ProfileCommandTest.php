@@ -27,14 +27,17 @@ describe('profile', function (): void {
         $server = startProfileCommandTestServer($toolbar);
 
         try {
-            fakeGateway(fakeSuccessEnvelope(fakeProfileResolutionData([
-                'auth_mode' => 'user',
-                'request' => [
-                    'method' => 'GET',
-                    'url' => "http://127.0.0.1:{$server['port']}/login?filter=active",
-                    'uri' => '/login?filter=active',
-                ],
-            ]), ['warnings' => []]));
+            fakeGateway(fakeSuccessEnvelope(
+                fakeProfileResolutionData([
+                    'auth_mode' => 'user',
+                    'request' => [
+                        'method' => 'GET',
+                        'url' => "http://127.0.0.1:{$server['port']}/login?filter=active",
+                        'uri' => '/login?filter=active',
+                    ],
+                ]),
+                ['warnings' => []],
+            ));
 
             [$exitCode, $output] = runCommand($this, 'profile', [
                 'target' => 'docs',
@@ -45,34 +48,53 @@ describe('profile', function (): void {
             ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-            $captured = json_decode(file_get_contents($server['capture']), associative: true, flags: JSON_THROW_ON_ERROR);
+            $captured = json_decode(
+                file_get_contents($server['capture']),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
 
             Http::assertSent(function (Request $request): bool {
                 $query = profileRequestQuery($request);
 
-                return $request->method() === 'GET'
+                return (
+                    $request->method() === 'GET'
                     && profileRequestPath($request) === '/api/profile/resolve'
                     && $query['target'] === 'docs'
                     && $query['uri'] === '/login?filter=active'
                     && $query['auth_mode'] === 'user'
                     && $query['user'] === '42'
-                    && $query['node'] === 'app-1';
+                    && $query['node'] === 'app-1'
+                );
             });
             Http::assertNotSent(fn (Request $request): bool => profileRequestPath($request) === '/api/profile');
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['origin'])->toBe('caller')
-                ->and($decoded['success']['data']['source'])->toBe('baseline+toolbar')
-                ->and($decoded['success']['data']['instrumented'])->toBeTrue()
-                ->and($decoded['success']['data']['auth_mode'])->toBe('user')
-                ->and($decoded['success']['data']['target']['app'])->toBe('docs')
-                ->and($decoded['success']['data']['request']['status'])->toBe(200)
-                ->and($decoded['success']['data']['request']['completed'])->toBeTrue()
-                ->and($decoded['success']['data']['toolbar']['queries']['count'])->toBe(5)
-                ->and($captured['uri'])->toBe('/login?filter=active')
-                ->and($captured['auth'])->toBe('user')
-                ->and($captured['user'])->toBe('42')
-                ->and($captured['request_id'])->toBe($decoded['success']['data']['request_id']);
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['origin'])
+                ->toBe('caller')
+                ->and($decoded['success']['data']['source'])
+                ->toBe('baseline+toolbar')
+                ->and($decoded['success']['data']['instrumented'])
+                ->toBeTrue()
+                ->and($decoded['success']['data']['auth_mode'])
+                ->toBe('user')
+                ->and($decoded['success']['data']['target']['app'])
+                ->toBe('docs')
+                ->and($decoded['success']['data']['request']['status'])
+                ->toBe(200)
+                ->and($decoded['success']['data']['request']['completed'])
+                ->toBeTrue()
+                ->and($decoded['success']['data']['toolbar']['queries']['count'])
+                ->toBe(5)
+                ->and($captured['uri'])
+                ->toBe('/login?filter=active')
+                ->and($captured['auth'])
+                ->toBe('user')
+                ->and($captured['user'])
+                ->toBe('42')
+                ->and($captured['request_id'])
+                ->toBe($decoded['success']['data']['request_id']);
         } finally {
             stopProfileCommandTestServer($server);
         }
@@ -82,13 +104,16 @@ describe('profile', function (): void {
         $server = startProfileCommandTestServer(redirectLocation: '/final');
 
         try {
-            fakeGateway(fakeSuccessEnvelope(fakeProfileResolutionData([
-                'request' => [
-                    'method' => 'GET',
-                    'url' => "http://127.0.0.1:{$server['port']}/redirect",
-                    'uri' => '/redirect',
-                ],
-            ]), ['warnings' => []]));
+            fakeGateway(fakeSuccessEnvelope(
+                fakeProfileResolutionData([
+                    'request' => [
+                        'method' => 'GET',
+                        'url' => "http://127.0.0.1:{$server['port']}/redirect",
+                        'uri' => '/redirect',
+                    ],
+                ]),
+                ['warnings' => []],
+            ));
 
             [$exitCode, $output] = runCommand($this, 'profile', [
                 'target' => 'docs',
@@ -96,12 +121,21 @@ describe('profile', function (): void {
             ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-            $captured = json_decode(file_get_contents($server['capture']), associative: true, flags: JSON_THROW_ON_ERROR);
+            $captured = json_decode(
+                file_get_contents($server['capture']),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            );
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['request']['status'])->toBe(302)
-                ->and($decoded['success']['data']['request'])->not->toHaveKey('effective_url')
-                ->and($captured['uri'])->toBe('/redirect');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['request']['status'])
+                ->toBe(302)
+                ->and($decoded['success']['data']['request'])
+                ->not
+                ->toHaveKey('effective_url')
+                ->and($captured['uri'])
+                ->toBe('/redirect');
         } finally {
             stopProfileCommandTestServer($server);
         }
@@ -110,13 +144,16 @@ describe('profile', function (): void {
     it('fails with caller-origin diagnostics when the local profile request cannot connect', function (): void {
         $port = unusedProfileCommandTestPort();
 
-        fakeGateway(fakeSuccessEnvelope(fakeProfileResolutionData([
-            'request' => [
-                'method' => 'GET',
-                'url' => "http://127.0.0.1:{$port}/",
-                'uri' => '/',
-            ],
-        ]), ['warnings' => []]));
+        fakeGateway(fakeSuccessEnvelope(
+            fakeProfileResolutionData([
+                'request' => [
+                    'method' => 'GET',
+                    'url' => "http://127.0.0.1:{$port}/",
+                    'uri' => '/',
+                ],
+            ]),
+            ['warnings' => []],
+        ));
 
         [$exitCode, $output] = runCommand($this, 'profile', [
             'target' => 'docs',
@@ -128,11 +165,16 @@ describe('profile', function (): void {
         Http::assertSent(fn (Request $request): bool => profileRequestPath($request) === '/api/profile/resolve');
         Http::assertNotSent(fn (Request $request): bool => profileRequestPath($request) === '/api/profile');
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('profile_request_failed')
-            ->and($decoded['error']['data']['request']['completed'])->toBeFalse()
-            ->and($decoded['error']['meta']['origin'])->toBe('caller')
-            ->and($decoded['error']['meta']['url'])->toBe("http://127.0.0.1:{$port}/");
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('profile_request_failed')
+            ->and($decoded['error']['data']['request']['completed'])
+            ->toBeFalse()
+            ->and($decoded['error']['meta']['origin'])
+            ->toBe('caller')
+            ->and($decoded['error']['meta']['url'])
+            ->toBe("http://127.0.0.1:{$port}/");
     });
 
     it('returns profile data as a canonical JSON envelope and forwards profile options', function (): void {
@@ -152,22 +194,31 @@ describe('profile', function (): void {
         Http::assertSent(function (Request $request): bool {
             $query = profileRequestQuery($request);
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && profileRequestPath($request) === '/api/profile/resolve'
                 && $query['target'] === 'docs'
                 && $query['uri'] === '/login'
                 && $query['auth_mode'] === 'user'
                 && $query['user'] === '42'
-                && $query['node'] === 'app-1';
+                && $query['node'] === 'app-1'
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['request']['url'])->toBe('https://docs.test/')
-            ->and($decoded['success']['data']['origin'])->toBe('caller')
-            ->and($decoded['success']['data']['auth_mode'])->toBe('user')
-            ->and($decoded['success']['meta']['warnings'])->toBe([])
-            ->and($profiler->calls[0]['headers']['X-TOOLBAR-AUTH'])->toBe('user')
-            ->and($profiler->calls[0]['headers']['X-TOOLBAR-USER'])->toBe('42');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['request']['url'])
+            ->toBe('https://docs.test/')
+            ->and($decoded['success']['data']['origin'])
+            ->toBe('caller')
+            ->and($decoded['success']['data']['auth_mode'])
+            ->toBe('user')
+            ->and($decoded['success']['meta']['warnings'])
+            ->toBe([])
+            ->and($profiler->calls[0]['headers']['X-TOOLBAR-AUTH'])
+            ->toBe('user')
+            ->and($profiler->calls[0]['headers']['X-TOOLBAR-USER'])
+            ->toBe('42');
     });
 
     it('splits full URL targets into gateway target and request URI', function (): void {
@@ -185,13 +236,12 @@ describe('profile', function (): void {
             $query = profileRequestQuery($request);
 
             return $query['target'] === 'docs.test'
-                && $query['uri'] === '/admin/users?filter=active'
-                && $query['auth_mode'] === 'guest'
-                && ! array_key_exists('user', $query);
+            && $query['uri'] === '/admin/users?filter=active'
+            && $query['auth_mode'] === 'guest'
+            && ! array_key_exists('user', $query);
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['target']['app'])->toBe('docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['target']['app'])->toBe('docs');
     });
 
     it('uses --app as the gateway target and supports first-user auth', function (): void {
@@ -207,13 +257,10 @@ describe('profile', function (): void {
         Http::assertSent(function (Request $request): bool {
             $query = profileRequestQuery($request);
 
-            return $query['target'] === 'docs'
-                && $query['uri'] === '/'
-                && $query['auth_mode'] === 'first-user';
+            return $query['target'] === 'docs' && $query['uri'] === '/' && $query['auth_mode'] === 'first-user';
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($profiler->calls[0]['headers']['X-TOOLBAR-AUTH'])->toBe('first-user');
+        expect($exitCode)->toBe(0)->and($profiler->calls[0]['headers']['X-TOOLBAR-AUTH'])->toBe('first-user');
     });
 
     it('forwards the host current working directory when target is omitted', function (): void {
@@ -229,8 +276,7 @@ describe('profile', function (): void {
             Http::assertSent(function (Request $request): bool {
                 $query = profileRequestQuery($request);
 
-                return $query['target'] === '/home/nick/sites/docs/current'
-                    && $query['uri'] === '/';
+                return $query['target'] === '/home/nick/sites/docs/current' && $query['uri'] === '/';
             });
 
             expect($exitCode)->toBe(0);
@@ -252,10 +298,14 @@ describe('profile', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('Use either target or --app, not both.')
-            ->and($decoded['error']['meta']['reason'])->toBe('conflicts_with_app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('Use either target or --app, not both.')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('conflicts_with_app');
     });
 
     it('fails validation before gateway IO when auth modes are combined', function (): void {
@@ -272,10 +322,14 @@ describe('profile', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('Use either --as-first-user or --user, not both.')
-            ->and($decoded['error']['meta']['reason'])->toBe('conflicting_auth_modes');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('Use either --as-first-user or --user, not both.')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('conflicting_auth_modes');
     });
 
     it('renders baseline and toolbar timing in human mode', function (): void {
@@ -310,20 +364,32 @@ describe('profile', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'profile', ['target' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('GET https://docs.test/ 200 in 115.42ms')
-            ->and($output)->toContain('DNS')
-            ->and($output)->toContain('Connect')
-            ->and($output)->toContain('Waiting for response')
-            ->and($output)->toContain('Middleware')
-            ->and($output)->toContain('Controller')
-            ->and($output)->toContain('Download response')
-            ->and($output)->toContain('44.1KB')
-            ->and($output)->toContain('5 queries, 1 slow, 2 duplicate');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('GET https://docs.test/ 200 in 115.42ms')
+            ->and($output)
+            ->toContain('DNS')
+            ->and($output)
+            ->toContain('Connect')
+            ->and($output)
+            ->toContain('Waiting for response')
+            ->and($output)
+            ->toContain('Middleware')
+            ->and($output)
+            ->toContain('Controller')
+            ->and($output)
+            ->toContain('Download response')
+            ->and($output)
+            ->toContain('44.1KB')
+            ->and($output)
+            ->toContain('5 queries, 1 slow, 2 duplicate');
     });
 
     it('maps gateway app-not-found to the profile target_not_found failure', function (): void {
-        fakeGateway(fakeErrorEnvelope('app.not_found', "App 'missing' not found or not visible.", ['app' => 'missing']), 404);
+        fakeGateway(fakeErrorEnvelope('app.not_found', "App 'missing' not found or not visible.", [
+            'app' => 'missing',
+        ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'profile', [
             'target' => 'missing',
@@ -332,10 +398,14 @@ describe('profile', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('target_not_found')
-            ->and($decoded['error']['message'])->toBe('No linked app found for the requested profile target.')
-            ->and($decoded['error']['meta']['app'])->toBe('missing');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('target_not_found')
+            ->and($decoded['error']['message'])
+            ->toBe('No linked app found for the requested profile target.')
+            ->and($decoded['error']['meta']['app'])
+            ->toBe('missing');
     });
 
     it('preserves caller-side profile request failure diagnostics', function (): void {
@@ -361,11 +431,16 @@ describe('profile', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('profile_request_failed')
-            ->and($decoded['error']['data']['request']['completed'])->toBeFalse()
-            ->and($decoded['error']['data']['profile_error']['message'])->toBe('Operation timed out')
-            ->and($decoded['error']['meta']['origin'])->toBe('caller');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('profile_request_failed')
+            ->and($decoded['error']['data']['request']['completed'])
+            ->toBeFalse()
+            ->and($decoded['error']['data']['profile_error']['message'])
+            ->toBe('Operation timed out')
+            ->and($decoded['error']['meta']['origin'])
+            ->toBe('caller');
     });
 
     it('renders caller-side profile request failure diagnostics in human mode', function (): void {
@@ -386,11 +461,16 @@ describe('profile', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'profile', ['target' => 'docs']);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Failed to complete profile request.')
-            ->and($output)->toContain('Origin: caller')
-            ->and($output)->toContain('URL: https://docs.test/')
-            ->and($output)->toContain('Error: Operation timed out');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Failed to complete profile request.')
+            ->and($output)
+            ->toContain('Origin: caller')
+            ->and($output)
+            ->toContain('URL: https://docs.test/')
+            ->and($output)
+            ->toContain('Error: Operation timed out');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -403,8 +483,7 @@ describe('profile', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });
 
@@ -522,47 +601,47 @@ function startProfileCommandTestServer(?array $toolbar = null, ?string $redirect
     $toolbarHeader = $toolbar === null ? '' : base64_encode(json_encode($toolbar, JSON_THROW_ON_ERROR));
 
     file_put_contents($router, <<<'PHP'
-<?php
+        <?php
 
-if (($_SERVER['REQUEST_URI'] ?? '') === '/__ready') {
-    echo 'ready';
+        if (($_SERVER['REQUEST_URI'] ?? '') === '/__ready') {
+            echo 'ready';
 
-    return;
-}
+            return;
+        }
 
-$capture = getenv('ORBIT_PROFILE_CAPTURE');
+        $capture = getenv('ORBIT_PROFILE_CAPTURE');
 
-if (is_string($capture) && $capture !== '') {
-    file_put_contents($capture, json_encode([
-        'method' => $_SERVER['REQUEST_METHOD'] ?? null,
-        'uri' => $_SERVER['REQUEST_URI'] ?? null,
-        'auth' => $_SERVER['HTTP_X_TOOLBAR_AUTH'] ?? null,
-        'user' => $_SERVER['HTTP_X_TOOLBAR_USER'] ?? null,
-        'request_id' => $_SERVER['HTTP_X_REQUEST_ID'] ?? null,
-    ], JSON_THROW_ON_ERROR));
-}
+        if (is_string($capture) && $capture !== '') {
+            file_put_contents($capture, json_encode([
+                'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+                'uri' => $_SERVER['REQUEST_URI'] ?? null,
+                'auth' => $_SERVER['HTTP_X_TOOLBAR_AUTH'] ?? null,
+                'user' => $_SERVER['HTTP_X_TOOLBAR_USER'] ?? null,
+                'request_id' => $_SERVER['HTTP_X_REQUEST_ID'] ?? null,
+            ], JSON_THROW_ON_ERROR));
+        }
 
-$toolbarHeader = getenv('ORBIT_PROFILE_TOOLBAR_SUMMARY');
+        $toolbarHeader = getenv('ORBIT_PROFILE_TOOLBAR_SUMMARY');
 
-if (($_SERVER['REQUEST_URI'] ?? '') === '/redirect') {
-    $redirectLocation = getenv('ORBIT_PROFILE_REDIRECT_LOCATION');
+        if (($_SERVER['REQUEST_URI'] ?? '') === '/redirect') {
+            $redirectLocation = getenv('ORBIT_PROFILE_REDIRECT_LOCATION');
 
-    if (is_string($redirectLocation) && $redirectLocation !== '') {
-        http_response_code(302);
-        header("Location: {$redirectLocation}");
-        echo 'redirecting';
+            if (is_string($redirectLocation) && $redirectLocation !== '') {
+                http_response_code(302);
+                header("Location: {$redirectLocation}");
+                echo 'redirecting';
 
-        return;
-    }
-}
+                return;
+            }
+        }
 
-if (is_string($toolbarHeader) && $toolbarHeader !== '') {
-    header("X-Toolbar-Summary: {$toolbarHeader}");
-}
+        if (is_string($toolbarHeader) && $toolbarHeader !== '') {
+            header("X-Toolbar-Summary: {$toolbarHeader}");
+        }
 
-header('Content-Type: text/plain');
-echo 'profile-ok';
-PHP);
+        header('Content-Type: text/plain');
+        echo 'profile-ok';
+        PHP);
 
     $port = unusedProfileCommandTestPort();
     $process = proc_open(

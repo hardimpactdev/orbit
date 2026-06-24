@@ -29,8 +29,14 @@ final readonly class ProcessServiceCatalog
         return array_key_exists($service, $this->services());
     }
 
-    public function resolve(string $service, ?string $version, ProcessRuntime $runtime, Node $node, string $processName, ?string $imageOverride = null): ProcessServiceDescriptor
-    {
+    public function resolve(
+        string $service,
+        ?string $version,
+        ProcessRuntime $runtime,
+        Node $node,
+        string $processName,
+        ?string $imageOverride = null,
+    ): ProcessServiceDescriptor {
         $catalog = $this->services();
         $entry = $catalog[$service] ?? null;
 
@@ -46,13 +52,20 @@ final readonly class ProcessServiceCatalog
         $allowedRuntimes = $this->allowedRuntimes($entry);
 
         if (! in_array($runtime, $allowedRuntimes, true)) {
-            throw new GatewayApiException("Managed service '{$service}' does not support runtime '{$runtime->value}'.", 'validation_failed', [
-                'field' => 'runtime',
-                'value' => $runtime->value,
-                'reason' => 'process_service_runtime_unsupported',
-                'service' => $service,
-                'allowed' => array_map(static fn (ProcessRuntime $runtime): string => $runtime->value, $allowedRuntimes),
-            ]);
+            throw new GatewayApiException(
+                "Managed service '{$service}' does not support runtime '{$runtime->value}'.",
+                'validation_failed',
+                [
+                    'field' => 'runtime',
+                    'value' => $runtime->value,
+                    'reason' => 'process_service_runtime_unsupported',
+                    'service' => $service,
+                    'allowed' => array_map(
+                        static fn (ProcessRuntime $runtime): string => $runtime->value,
+                        $allowedRuntimes,
+                    ),
+                ],
+            );
         }
 
         $resolved = $this->resolveVersion($service, $entry['versions'], $version);
@@ -424,23 +437,30 @@ final readonly class ProcessServiceCatalog
         foreach ($versions as $familyKey => $metadata) {
             $family = (string) $familyKey;
 
-            if ($version === $family || $version === $metadata['default'] || in_array($version, $metadata['versions'], true)) {
+            if (
+                $version === $family
+                || $version === $metadata['default']
+                || in_array($version, $metadata['versions'], true)
+            ) {
                 return [
                     'family' => $family,
                     'version' => $version === $family ? $metadata['default'] : $version,
                     'published_port' => $metadata['port'],
                 ];
             }
-
         }
 
-        throw new GatewayApiException("Managed service '{$service}' does not support version '{$version}'.", 'validation_failed', [
-            'field' => 'version',
-            'value' => $version,
-            'reason' => 'unsupported_value',
-            'service' => $service,
-            'allowed' => $this->versionFamilies($versions),
-        ]);
+        throw new GatewayApiException(
+            "Managed service '{$service}' does not support version '{$version}'.",
+            'validation_failed',
+            [
+                'field' => 'version',
+                'value' => $version,
+                'reason' => 'unsupported_value',
+                'service' => $service,
+                'allowed' => $this->versionFamilies($versions),
+            ],
+        );
     }
 
     /**
@@ -460,13 +480,16 @@ final readonly class ProcessServiceCatalog
         try {
             return $this->serviceAddress->forServiceOn($node, $node, 'process');
         } catch (RuntimeException) {
-            throw new GatewayApiException("Node '{$node->name}' cannot host service process endpoints without a WireGuard address.", 'validation_failed', [
-                'field' => 'node',
-                'value' => $node->name,
-                'reason' => 'wireguard_address_required',
-            ]);
+            throw new GatewayApiException(
+                "Node '{$node->name}' cannot host service process endpoints without a WireGuard address.",
+                'validation_failed',
+                [
+                    'field' => 'node',
+                    'value' => $node->name,
+                    'reason' => 'wireguard_address_required',
+                ],
+            );
         }
-
     }
 
     /**

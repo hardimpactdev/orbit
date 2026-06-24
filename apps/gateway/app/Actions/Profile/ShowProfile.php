@@ -17,8 +17,13 @@ class ShowProfile
      * @param  array{app: string, workspace: string|null, node: string|null, domain: string}  $target
      * @return array<string, mixed>
      */
-    public function handle(string $url, string $authMode, array $target, string $origin = 'gateway', ?string $user = null): array
-    {
+    public function handle(
+        string $url,
+        string $authMode,
+        array $target,
+        string $origin = 'gateway',
+        ?string $user = null,
+    ): array {
         $requestId = (string) Str::uuid();
         $probe = $this->profiler->profile($url, $this->headers($authMode, $requestId, $user));
 

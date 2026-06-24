@@ -1,0 +1,757 @@
+variant = "loose"
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 3
+
+[[issues]]
+file = "src/GatewayRootCaClient.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 3
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "halstead"
+message = "Method has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n\n"` should be passed as a named argument for clarity.'
+count = 2
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\r\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\r\n\r\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `'DELETE'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `0.0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `1_000_000` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `5` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `6` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 2
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "no-else-clause"
+message = "Avoid `else` clauses."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "readable-literal"
+message = "Numeric literal could use underscore separators for readability."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "src/OrbitSdkLaravelServiceProvider.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "src/Requests/Activity/ListActivityRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Activity/ShowActivityRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/AgentIde/ListAgentIdeAdaptersRequest.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "src/Requests/AgentIde/SendAgentIdeMessageRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/CreateAppRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/CreateAppRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RegisterAppRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RegisterAppRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RemoveAppRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "src/Requests/Apps/UpdateAppRootRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "src/Requests/Cloudflare/CloudflareRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
+file = "src/Requests/Deploy/AddDeployStepRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/AddDeployStepRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/DeployResponseFactory.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/DeployResponseFactory.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/DeployResponseFactory.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/ShowDeployLogRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/FixDoctorRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/RunDoctorRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Firewall/ListFirewallRulesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Firewall/StoreFirewallRuleRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/GenericGatewayStreamRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/CreateNodeRequest.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/CreateNodeRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/GrantNodeRequest.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/GrantNodeRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 3
+
+[[issues]]
+file = "src/Requests/Nodes/ListNodesRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "halstead"
+message = "Method has a high halstead effort"
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 4
+
+[[issues]]
+file = "src/Requests/Nodes/RemoveNodeRequest.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Php/UsePhpRuntimeRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/AddProcessRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/AddProcessRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "src/Requests/Processes/EditProcessRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/EditProcessRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "src/Requests/Processes/EditProcessRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/ListProcessesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/RemoveProcessRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "src/Requests/Processes/RestartProcessesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/ShowProcessLogsRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/ShowProcessLogsRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/StartProcessesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/StopProcessesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Profile/ShowProfileRequest.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "src/Requests/Proxy/AddProxyRouteRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Proxy/AddProxyRouteRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Proxy/ListProxyRoutesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/AddScheduleRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/AddScheduleRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/ListSchedulesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/RemoveScheduleRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/RunScheduleRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/ShowScheduleLogsRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/ShowScheduleRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ReconfigureToolRequest.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/ChangeVpnWebUiPasswordRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/ChangeVpnWebUiPasswordRequest.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/CreateVpnClientRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/RemoveVpnClientRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/CreateWorkspaceRequest.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ListWorkspaceStepsRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ListWorkspacesRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceLogRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `512` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceLogRequest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceRequest.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "src/Responses/Nodes/NodeGrantResponse.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Responses/Nodes/NodePermissionsResponse.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Responses/Nodes/NodeRemoveResponse.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Responses/Workspaces/CreateWorkspaceResponse.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Responses/Workspaces/SetupWorkspaceResponse.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Testing/GatewayMockResponse.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "src/Testing/GatewayPendingRequest.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "tests/Pest.php"
+code = "no-redundant-file"
+message = "Redundant file with no executable code or declarations."
+count = 1
+
+[[issues]]
+file = "tests/Unit/GatewayRequestTest.php"
+code = "function-name"
+message = "Function name `makeProbeRequest` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Unit/GatewayStreamTransportTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `IdleThenFramesStream` but class `SdkGatewayStreamMockResponse` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/GatewayStreamTransportTest.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "tests/Unit/UpdateAllGatewayStreamClientTest.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "tests/Unit/UpdateAllGatewayStreamClientTest.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `OneByteOnlyUpdateAllStream` but class `OneByteOnlyUpdateAllStreamResponse` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/UpdateAllGatewayStreamClientTest.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1

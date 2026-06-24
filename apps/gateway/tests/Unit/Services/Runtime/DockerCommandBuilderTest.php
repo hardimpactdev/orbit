@@ -14,7 +14,7 @@ use Tests\TestCase;
 uses(TestCase::class);
 
 it('builds escaped docker run commands for rendered runtime containers', function (): void {
-    $container = (new OrbitGatewayContainerRenderer(new OrbitContainerNames))->render(
+    $container = new OrbitGatewayContainerRenderer(new OrbitContainerNames)->render(
         orbitCheckoutPath: "/Users/nckrtl/Orbit Repo/it's fine",
         gatewayConfigRoot: "/Users/nckrtl/.config/orbit/it's fine",
         image: "orbit-gateway:sha'abc",
@@ -23,9 +23,10 @@ it('builds escaped docker run commands for rendered runtime containers', functio
         ],
     );
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toStartWith('docker run -d ')
+    expect($command)
+        ->toStartWith('docker run -d ')
         ->toContain('--pull '.escapeshellarg('never'))
         ->toContain('--name '.escapeshellarg('orbit-gateway'))
         ->toContain('--restart '.escapeshellarg('unless-stopped'))
@@ -35,22 +36,32 @@ it('builds escaped docker run commands for rendered runtime containers', functio
         ->toContain('--env '.escapeshellarg("ORBIT_CONFIG_ROOT=/Users/nckrtl/.config/orbit/it's fine"))
         ->toContain('--env '.escapeshellarg('ORBIT_SOURCE_PATH=/opt/orbit'))
         ->toContain('--mount '.escapeshellarg("type=bind,source=/Users/nckrtl/Orbit Repo/it's fine,target=/opt/orbit"))
-        ->toContain('--mount '.escapeshellarg("type=bind,source=/Users/nckrtl/.config/orbit/it's fine,target=/Users/nckrtl/.config/orbit/it's fine"))
+        ->toContain(
+            '--mount '
+                .escapeshellarg(
+                    "type=bind,source=/Users/nckrtl/.config/orbit/it's fine,target=/Users/nckrtl/.config/orbit/it's fine",
+                ),
+        )
         ->toContain('--mount '.escapeshellarg('type=bind,source=/var/run/docker.sock,target=/var/run/docker.sock'))
         ->toEndWith(' '.escapeshellarg("orbit-gateway:sha'abc"));
 });
 
 it('quotes docker mount fields containing csv separators and quotes', function (): void {
-    $container = (new OrbitGatewayContainerRenderer(new OrbitContainerNames))->render(
+    $container = new OrbitGatewayContainerRenderer(new OrbitContainerNames)->render(
         orbitCheckoutPath: '/Users/nckrtl/Orbit, "Repo"',
         gatewayConfigRoot: '/Users/nckrtl/.config/Orbit, "Root"',
     );
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
     expect($command)
         ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/Orbit, ""Repo""",target=/opt/orbit'))
-        ->toContain('--mount '.escapeshellarg('type=bind,"source=/Users/nckrtl/.config/Orbit, ""Root""","target=/Users/nckrtl/.config/Orbit, ""Root"""'));
+        ->toContain(
+            '--mount '
+                .escapeshellarg(
+                    'type=bind,"source=/Users/nckrtl/.config/Orbit, ""Root""","target=/Users/nckrtl/.config/Orbit, ""Root"""',
+                ),
+        );
 });
 
 it('emits numeric docker users for app runtime containers', function (): void {
@@ -73,11 +84,13 @@ it('emits numeric docker users for app runtime containers', function (): void {
         phpIni: [],
     )->withDockerUser('1001:1002');
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toContain('--user '.escapeshellarg('1001:1002'))
-        ->and($command)->not->toContain('/var/run/docker.sock')
-        ->and($command)->not->toContain('--group-add');
+    expect($command)
+        ->toContain('--user '.escapeshellarg('1001:1002'))
+        ->and($command)
+        ->not->toContain('/var/run/docker.sock')->and($command)
+        ->not->toContain('--group-add');
 });
 
 it('rejects non-numeric docker users for app runtime containers', function (): void {
@@ -94,16 +107,17 @@ it('rejects non-numeric docker users for app runtime containers', function (): v
         phpIni: [],
     )->withDockerUser('docs');
 
-    expect(fn () => (new DockerCommandBuilder)->runDetached($container))
+    expect(fn () => new DockerCommandBuilder()->runDetached($container))
         ->toThrow(InvalidArgumentException::class, 'numeric UID:GID');
 });
 
 it('emits route-artifact mounts, port publishing, and extra hosts for orbit-caddy containers', function (): void {
     $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50');
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toStartWith('docker run -d ')
+    expect($command)
+        ->toStartWith('docker run -d ')
         ->toContain('--name '.escapeshellarg('orbit-caddy'))
         ->toContain('--publish '.escapeshellarg('10.6.0.50:80:80'))
         ->toContain('--publish '.escapeshellarg('10.6.0.50:443:443'))
@@ -145,9 +159,9 @@ it('uses the managed target node namespace for Docker E2E Caddy and websocket co
         expect($builder->runDetached($caddy))
             ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-prod'))
             ->not->toContain('container:orbit-e2e-run123-gateway')
-            ->not->toContain('--network-alias')
-            ->and($builder->runDetached($websocket))
-            ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-dev'))
+            ->not->toContain('--network-alias')->and($builder->runDetached($websocket))->toContain(
+                '--network '.escapeshellarg('container:orbit-e2e-run123-dev'),
+            )
             ->not->toContain('container:orbit-e2e-run123-gateway')
             ->not->toContain('--network-alias');
     } finally {
@@ -188,7 +202,7 @@ it('uses the managed target node namespace without aliases for Docker E2E proces
             networkAliases: ['orbit_docs_main_queue'],
         );
 
-        expect((new DockerCommandBuilder)->createIdle($process))
+        expect(new DockerCommandBuilder()->createIdle($process))
             ->toContain('--network '.escapeshellarg('container:orbit-e2e-run123-dev'))
             ->not->toContain('--network-alias');
     } finally {
@@ -225,11 +239,13 @@ it('publishes process service ports without binding the Docker publish to a Wire
         ],
     );
 
-    $command = (new DockerCommandBuilder)->createIdle($process);
+    $command = new DockerCommandBuilder()->createIdle($process);
 
-    expect($command)->toContain("--publish '1025:1025'")
-        ->and($command)->not->toContain('10.6.0.7')
-        ->and($command)->not->toContain('8025:8025');
+    expect($command)
+        ->toContain("--publish '1025:1025'")
+        ->and($command)
+        ->not->toContain('10.6.0.7')->and($command)
+        ->not->toContain('8025:8025');
 });
 
 it('does not publish ports for app owned docker process containers', function (): void {
@@ -248,7 +264,7 @@ it('does not publish ports for app owned docker process containers', function ()
         networkAliases: ['orbit_docs_main_queue'],
     );
 
-    expect((new DockerCommandBuilder)->createIdle($process))->not->toContain('--publish');
+    expect(new DockerCommandBuilder()->createIdle($process))->not->toContain('--publish');
 });
 
 it('escapes docker lifecycle command arguments', function (): void {

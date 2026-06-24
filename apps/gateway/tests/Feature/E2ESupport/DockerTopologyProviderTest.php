@@ -62,8 +62,7 @@ it('runs docker exec for instance commands', function (): void {
 
     $result = $instance->exec('echo ok');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->output())->toBe("ok\n");
+    expect($result->successful())->toBeTrue()->and($result->output())->toBe("ok\n");
 });
 
 it('maps ssh transport to user-scoped docker exec for container feature topologies', function (): void {
@@ -75,8 +74,7 @@ it('maps ssh transport to user-scoped docker exec for container feature topologi
 
     $result = $instance->ssh('orbit', new SshKeyPair('/tmp/fake', '/tmp/fake.pub'), 'whoami');
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->output())->toBe("orbit\n");
+    expect($result->successful())->toBeTrue()->and($result->output())->toBe("orbit\n");
 });
 
 it('passes GitHub auth variable names into docker feature topology commands without embedding token values', function (): void {
@@ -104,10 +102,16 @@ it('passes GitHub auth variable names into docker feature topology commands with
 
 it('reads ipv4 from the named docker network only', function (): void {
     Process::fake([
-        "docker inspect -f '{{(index .NetworkSettings.Networks \"orbit-e2e-run\").IPAddress}}' 'orbit-e2e-run-operator'" => Process::result(output: "10.6.0.3\n"),
+        "docker inspect -f '{{(index .NetworkSettings.Networks \"orbit-e2e-run\").IPAddress}}' 'orbit-e2e-run-operator'" => Process::result(
+            output: "10.6.0.3\n",
+        ),
     ]);
 
-    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-run-operator', 'orbit-e2e-run');
+    $instance = new DockerInstance(
+        new DockerHost(E2EConfig::fromEnvironment()),
+        'orbit-e2e-run-operator',
+        'orbit-e2e-run',
+    );
 
     expect($instance->waitForIpv4())->toBe('10.6.0.3');
 });
@@ -135,15 +139,13 @@ it('starts Docker client topology nodes without a runtime sibling container', fu
 
     expect($setup)
         ->toContain('--group-add 999')
-        ->not->toContain('$(stat')
-        ->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")
-        ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'")
-        ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-var-lib-orbit,dst=/var/lib/orbit'")
-        ->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-run-php,dst=/run/php'")
-        ->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")
-        ->toContain("--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'")
-        ->toContain('ip addr add')
-        ->toContain('10.6.0.3/24')
+        ->not->toContain('$(stat')->toContain("--volume '/var/run/docker.sock:/var/run/docker.sock'")->toContain(
+            "--mount 'type=volume,src=orbit-e2e-run123-operator-home-orbit,dst=/home/orbit'",
+        )->toContain("--mount 'type=volume,src=orbit-e2e-run123-operator-var-lib-orbit,dst=/var/lib/orbit'")->toContain(
+            "--mount 'type=volume,src=orbit-e2e-run123-operator-run-php,dst=/run/php'",
+        )->toContain("--env 'ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'")->toContain(
+            "--env 'ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit'",
+        )->toContain('ip addr add')->toContain('10.6.0.3/24')
         ->not->toContain('ORBIT_GATEWAY_CONTAINER=orbit-e2e-run123-operator-orbit-gateway')
         ->not->toContain("docker run -d --restart unless-stopped --name 'orbit-e2e-run123-operator-orbit-gateway'")
         ->not->toContain("--mount 'type=bind,src=".repo_path().",dst=/home/orbit/orbit'")
@@ -165,13 +167,27 @@ it('marks Docker source-dev acquisitions with the mounted checkout path', functi
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    $preparedLease = $provider->acquire(E2ETopologyKind::Operator, 'prepared123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
-    $sourceDevLease = $provider->acquire(E2ETopologyKind::Operator, 'source123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions(sourceMountedCheckout: true));
+    $preparedLease = $provider->acquire(
+        E2ETopologyKind::Operator,
+        'prepared123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    );
+    $sourceDevLease = $provider->acquire(
+        E2ETopologyKind::Operator,
+        'source123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions(sourceMountedCheckout: true),
+    );
 
-    expect($preparedLease->operator())->toBeInstanceOf(DockerInstance::class)
-        ->and($preparedLease->operator()->sourceMountedCheckoutPath())->toBeNull()
-        ->and($sourceDevLease->operator())->toBeInstanceOf(DockerInstance::class)
-        ->and($sourceDevLease->operator()->sourceMountedCheckoutPath())->toBe('/home/orbit/orbit');
+    expect($preparedLease->operator())
+        ->toBeInstanceOf(DockerInstance::class)
+        ->and($preparedLease->operator()->sourceMountedCheckoutPath())
+        ->toBeNull()
+        ->and($sourceDevLease->operator())
+        ->toBeInstanceOf(DockerInstance::class)
+        ->and($sourceDevLease->operator()->sourceMountedCheckoutPath())
+        ->toBe('/home/orbit/orbit');
 
     $preparedLease->cleanup();
     $sourceDevLease->cleanup();
@@ -203,11 +219,17 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
     $setup = implode("\n", $commands);
     $gatewayRuntimeStart = array_find_key(
         $commands,
-        fn (string $command): bool => str_contains($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'"),
+        fn (string $command): bool => str_contains(
+            $command,
+            "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'",
+        ),
     );
     $gatewayScheduler = array_find_key(
         $commands,
-        fn (string $command): bool => str_contains($command, "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler"),
+        fn (string $command): bool => str_contains(
+            $command,
+            "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler",
+        ),
     );
     $gatewayCertificate = array_find_key(
         $commands,
@@ -215,26 +237,37 @@ it('does not use host PHP or host Caddy paths while starting Docker gateway API 
     );
     $gatewayConfigRepairAfterCertificate = array_find_key(
         $commands,
-        fn (string $command, int $index): bool => is_int($gatewayCertificate)
+        fn (string $command, int $index): bool => (
+            is_int($gatewayCertificate)
             && $index > $gatewayCertificate
             && str_contains($command, 'chown -R orbit:orbit')
-            && str_contains($command, '/home/orbit/.config/orbit'),
+            && str_contains($command, '/home/orbit/.config/orbit')
+        ),
     );
 
-    expect($gatewayRuntimeStart)->toBeInt()
-        ->and($gatewayScheduler)->toBeInt()
-        ->and($gatewayCertificate)->toBeInt()
-        ->and($gatewayConfigRepairAfterCertificate)->toBeInt()
-        ->and($gatewayRuntimeStart)->toBeLessThan($gatewayScheduler)
-        ->and($gatewayScheduler)->toBeLessThan($gatewayCertificate)
-        ->and($gatewayCertificate)->toBeLessThan($gatewayConfigRepairAfterCertificate);
+    expect($gatewayRuntimeStart)
+        ->toBeInt()
+        ->and($gatewayScheduler)
+        ->toBeInt()
+        ->and($gatewayCertificate)
+        ->toBeInt()
+        ->and($gatewayConfigRepairAfterCertificate)
+        ->toBeInt()
+        ->and($gatewayRuntimeStart)
+        ->toBeLessThan($gatewayScheduler)
+        ->and($gatewayScheduler)
+        ->toBeLessThan($gatewayCertificate)
+        ->and($gatewayCertificate)
+        ->toBeLessThan($gatewayConfigRepairAfterCertificate);
 
     expect($setup)
         ->toContain('php apps/gateway/artisan tinker --execute=')
         ->toContain('php -d display_errors=0 -d max_execution_time=0 -S')
         ->toContain('PHP_CLI_SERVER_WORKERS=4')
         ->toContain("'orbit-gateway:prepared-current' tail -f /dev/null")
-        ->toContain("docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler")
+        ->toContain(
+            "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler",
+        )
         ->not->toContain('orbit serve --host=')
         ->not->toContain('php artisan')
         ->not->toContain('nohup php')
@@ -266,8 +299,7 @@ it('reports docker unavailable when prepared per-role image is missing', functio
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
     $availability = $provider->availability(E2ETopologyKind::Operator);
 
-    expect($availability->available)->toBeFalse()
-        ->and($availability->message)->toContain('orbit-e2e:operator_base');
+    expect($availability->available)->toBeFalse()->and($availability->message)->toContain('orbit-e2e:operator_base');
 });
 
 it('falls back from namespaced docker role images to base images per role', function (): void {
@@ -285,7 +317,8 @@ it('falls back from namespaced docker role images to base images per role', func
             return Process::result(exitCode: 1);
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:branch-a-b-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -311,10 +344,17 @@ it('falls back from namespaced docker role images to base images per role', func
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+        $lease = $provider->acquire(
+            E2ETopologyKind::OperatorGateway,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions,
+        );
 
-        expect($lease->operator()->name())->toBe('orbit-e2e-run123-operator')
-            ->and($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway');
+        expect($lease->operator()->name())
+            ->toBe('orbit-e2e-run123-operator')
+            ->and($lease->gateway()?->name())
+            ->toBe('orbit-e2e-run123-gateway');
 
         $lease->cleanup();
     });
@@ -327,10 +367,18 @@ it('falls back from namespaced docker role images to base images per role', func
         ->toContain("docker image inspect 'orbit-e2e:gateway_branch-a-b' >/dev/null")
         ->not->toContain("docker image inspect 'orbit-e2e:gateway_base' >/dev/null");
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "docker run -d --name 'orbit-e2e-run123-operator'")
-        && str_contains((string) $process->command, "'orbit-e2e:operator_base'"));
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "docker run -d --name 'orbit-e2e-run123-gateway'")
-        && str_contains((string) $process->command, "'orbit-e2e:gateway_branch-a-b'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker run -d --name 'orbit-e2e-run123-operator'")
+            && str_contains((string) $process->command, "'orbit-e2e:operator_base'")
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "docker run -d --name 'orbit-e2e-run123-gateway'")
+            && str_contains((string) $process->command, "'orbit-e2e:gateway_branch-a-b'")
+        ),
+    );
 });
 
 it('requires the orbit gateway sibling image only for gateway-backed Docker topology', function (): void {
@@ -354,9 +402,12 @@ it('requires the orbit gateway sibling image only for gateway-backed Docker topo
     $operatorAvailability = $provider->availability(E2ETopologyKind::Operator);
     $gatewayAvailability = $provider->availability(E2ETopologyKind::OperatorGateway);
 
-    expect($operatorAvailability->available)->toBeTrue()
-        ->and($gatewayAvailability->available)->toBeFalse()
-        ->and($gatewayAvailability->message)->toContain('orbit-gateway:prepared-current');
+    expect($operatorAvailability->available)
+        ->toBeTrue()
+        ->and($gatewayAvailability->available)
+        ->toBeFalse()
+        ->and($gatewayAvailability->message)
+        ->toContain('orbit-gateway:prepared-current');
 });
 
 it('requires every supported FrankenPHP image for app-node Docker topologies', function (): void {
@@ -365,7 +416,10 @@ it('requires every supported FrankenPHP image for app-node Docker topologies', f
             return Process::result();
         }
 
-        if ($process->command === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null") {
+        if (
+            $process->command
+            === "docker image inspect 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm' >/dev/null"
+        ) {
             return Process::result(exitCode: 1);
         }
 
@@ -380,9 +434,12 @@ it('requires every supported FrankenPHP image for app-node Docker topologies', f
     $operatorGatewayAvailability = $provider->availability(E2ETopologyKind::OperatorGateway);
     $appDevAvailability = $provider->availability(E2ETopologyKind::OperatorGatewayAppdev);
 
-    expect($operatorGatewayAvailability->available)->toBeTrue()
-        ->and($appDevAvailability->available)->toBeFalse()
-        ->and($appDevAvailability->message)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
+    expect($operatorGatewayAvailability->available)
+        ->toBeTrue()
+        ->and($appDevAvailability->available)
+        ->toBeFalse()
+        ->and($appDevAvailability->message)
+        ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm');
 });
 
 it('advertises container feature capabilities', function (): void {
@@ -406,7 +463,7 @@ it('targets remote docker hosts through docker host environment', function (): v
         return Process::result();
     });
 
-    (new DockerHost(E2EConfig::fromEnvironment(), 'beast'))->run('docker info >/dev/null');
+    new DockerHost(E2EConfig::fromEnvironment(), 'beast')->run('docker info >/dev/null');
 
     expect($seenEnvironment)->toMatchArray(['DOCKER_HOST' => 'ssh://beast']);
 });
@@ -448,17 +505,18 @@ it('selects the first docker test runner with image availability', function (): 
 
         $availability = $provider->availability(E2ETopologyKind::Operator);
 
-        expect($availability->available)->toBeTrue()
-            ->and($availability->message)->toContain('local');
+        expect($availability->available)->toBeTrue()->and($availability->message)->toContain('local');
     });
 });
 
 it('keeps remote docker runners available without a preconfigured source path', function (): void {
     Process::fake(function ($process) {
-        if ($process->command === 'command -v docker >/dev/null'
+        if (
+            $process->command === 'command -v docker >/dev/null'
             || $process->command === 'docker info >/dev/null'
             || str_starts_with($process->command, 'docker image inspect ')
-            || str_starts_with($process->command, 'docker ps ')) {
+            || str_starts_with($process->command, 'docker ps ')
+        ) {
             return Process::result();
         }
 
@@ -471,8 +529,7 @@ it('keeps remote docker runners available without a preconfigured source path', 
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::Operator);
 
-        expect($availability->available)->toBeTrue()
-            ->and($availability->message)->toContain('beast');
+        expect($availability->available)->toBeTrue()->and($availability->message)->toContain('beast');
     });
 });
 
@@ -515,8 +572,7 @@ it('selects the next docker test runner when the first runner is missing images'
 
         $availability = $provider->availability(E2ETopologyKind::Operator);
 
-        expect($availability->available)->toBeTrue()
-            ->and($availability->message)->toContain('beast');
+        expect($availability->available)->toBeTrue()->and($availability->message)->toContain('beast');
     });
 });
 
@@ -524,7 +580,11 @@ it('allows slow remote docker metadata probes during host selection', function (
     $probeTimeouts = [];
 
     Process::fake(function ($process) use (&$probeTimeouts) {
-        if ($process->command === 'docker info >/dev/null' || str_starts_with($process->command, 'docker image inspect ') || str_starts_with($process->command, 'docker ps ')) {
+        if (
+            $process->command === 'docker info >/dev/null'
+            || str_starts_with($process->command, 'docker image inspect ')
+            || str_starts_with($process->command, 'docker ps ')
+        ) {
             $probeTimeouts[$process->command] = $process->timeout;
         }
 
@@ -538,9 +598,12 @@ it('allows slow remote docker metadata probes during host selection', function (
     ], function () use (&$probeTimeouts): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        expect($provider->availability(E2ETopologyKind::Operator)->available)->toBeTrue()
-            ->and($probeTimeouts['docker info >/dev/null'])->toBe(120)
-            ->and($probeTimeouts["docker image inspect 'orbit-e2e:operator_base' >/dev/null"])->toBe(120);
+        expect($provider->availability(E2ETopologyKind::Operator)->available)
+            ->toBeTrue()
+            ->and($probeTimeouts['docker info >/dev/null'])
+            ->toBe(120)
+            ->and($probeTimeouts["docker image inspect 'orbit-e2e:operator_base' >/dev/null"])
+            ->toBe(120);
     });
 });
 
@@ -556,14 +619,16 @@ it('uses the configured remote docker source path for source-mounted bind mounts
             return $publicKeyResult;
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || str_starts_with($command, 'docker image inspect ')
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || str_starts_with($command, 'docker network create ')
             || str_starts_with($command, 'docker exec ')
             || str_starts_with($command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
-            || str_starts_with($command, 'rsync -az --delete ')) {
+            || str_starts_with($command, 'rsync -az --delete ')
+        ) {
             return Process::result();
         }
 
@@ -624,7 +689,12 @@ it('counts running docker containers with the configured e2e instance prefix', f
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        expect(fn () => $provider->acquire(E2ETopologyKind::Operator, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
+        expect(fn () => $provider->acquire(
+            E2ETopologyKind::Operator,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions,
+        ))
             ->toThrow(RuntimeException::class, 'docker capacity exceeded');
     });
 });
@@ -651,7 +721,12 @@ it('accounts for the gateway sibling container when checking docker capacity', f
     ], function (): void {
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        expect(fn () => $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
+        expect(fn () => $provider->acquire(
+            E2ETopologyKind::OperatorGateway,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions,
+        ))
             ->toThrow(RuntimeException::class, 'docker capacity exceeded');
     });
 });
@@ -679,8 +754,10 @@ it('fails websocket docker topology availability when the reverb runtime image i
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::OperatorGatewayAppdevWebsocket);
 
-        expect($availability->available)->toBeFalse()
-            ->and($availability->message)->toContain('Docker websocket image orbit-reverb:current is not available');
+        expect($availability->available)
+            ->toBeFalse()
+            ->and($availability->message)
+            ->toContain('Docker websocket image orbit-reverb:current is not available');
     });
 });
 
@@ -716,9 +793,12 @@ it('does not fail availability on transient docker capacity when host slots are 
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
         $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
 
-        expect($availability->available)->toBeTrue()
-            ->and($availability->message)->toContain('sidecar1')
-            ->and($probedCapacity)->toBeFalse();
+        expect($availability->available)
+            ->toBeTrue()
+            ->and($availability->message)
+            ->toContain('sidecar1')
+            ->and($probedCapacity)
+            ->toBeFalse();
     });
 });
 
@@ -735,10 +815,14 @@ it('acquires an operator-gateway lease by launching containers from prepared ima
             || $command === 'docker info >/dev/null'
             || str_starts_with($command, 'docker image inspect ')
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
-            || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
+            || str_starts_with($command, "docker network create --subnet '10.")
+            && str_ends_with($command, "'orbit-e2e-run123'")
             || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-operator' ")
             || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway' ")
-            || str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' ")
+            || str_starts_with(
+                $command,
+                "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' ",
+            )
             || str_starts_with($command, 'docker exec ')
         ) {
             return str_contains($command, 'docker run -d ')
@@ -751,10 +835,17 @@ it('acquires an operator-gateway lease by launching containers from prepared ima
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+    $lease = $provider->acquire(
+        E2ETopologyKind::OperatorGateway,
+        'run123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    );
 
-    expect($lease->operator()->name())->toBe('orbit-e2e-run123-operator')
-        ->and($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway');
+    expect($lease->operator()->name())
+        ->toBe('orbit-e2e-run123-operator')
+        ->and($lease->gateway()?->name())
+        ->toBe('orbit-e2e-run123-gateway');
 
     $lease->cleanup();
 });
@@ -775,10 +866,14 @@ it('prepares source mounted gateway state before seeding docker gateway records'
             || $command === 'docker info >/dev/null'
             || str_starts_with($command, 'docker image inspect ')
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
-            || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
+            || str_starts_with($command, "docker network create --subnet '10.")
+            && str_ends_with($command, "'orbit-e2e-run123'")
             || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-operator' ")
             || str_starts_with($command, "docker run -d --name 'orbit-e2e-run123-gateway' ")
-            || str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' ")
+            || str_starts_with(
+                $command,
+                "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' ",
+            )
             || str_starts_with($command, 'docker exec ')
         ) {
             return str_contains($command, 'docker run -d ')
@@ -790,12 +885,20 @@ it('prepares source mounted gateway state before seeding docker gateway records'
     });
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
-    $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+    $lease = $provider->acquire(
+        E2ETopologyKind::OperatorGateway,
+        'run123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    );
     $setup = implode("\n", $commands);
 
     $runtimeStart = array_find_key(
         $commands,
-        fn (string $command): bool => str_starts_with($command, "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'"),
+        fn (string $command): bool => str_starts_with(
+            $command,
+            "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway'",
+        ),
     );
     $stateBootstrap = array_find_key(
         $commands,
@@ -803,49 +906,75 @@ it('prepares source mounted gateway state before seeding docker gateway records'
     );
     $stateMigrate = array_find_key(
         $commands,
-        fn (string $command): bool => str_contains($command, 'php apps/gateway/artisan migrate --force --no-interaction --ansi'),
+        fn (string $command): bool => str_contains(
+            $command,
+            'php apps/gateway/artisan migrate --force --no-interaction --ansi',
+        ),
     );
     $scheduler = array_find_key(
         $commands,
-        fn (string $command): bool => $command === "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler",
+        fn (string $command): bool => (
+            $command
+            === "docker exec --detach --workdir '/home/orbit/orbit' 'orbit-e2e-run123-gateway-orbit-gateway' orbit orbit-scheduler"
+        ),
     );
     $seedOperatorIdentity = array_find_key(
         $commands,
-        fn (string $command): bool => str_starts_with($command, "docker exec 'orbit-e2e-run123-gateway' sh -lc")
+        fn (string $command): bool => (
+            str_starts_with($command, "docker exec 'orbit-e2e-run123-gateway' sh -lc")
             && str_contains($command, 'sudo -iu orbit env')
             && str_contains($command, 'DB_DATABASE="${DB_DATABASE:-/home/orbit/.config/orbit/gateway.sqlite}"')
             && str_contains($command, 'cd /home/orbit/orbit && export ORBIT_CONFIG_ROOT=')
-            && str_contains($command, 'base64_decode'),
+            && str_contains($command, 'base64_decode')
+        ),
     );
     $operatorClientGateway = array_find_key(
         $commands,
-        fn (string $command): bool => str_starts_with($command, "docker exec 'orbit-e2e-run123-operator' sh -lc")
+        fn (string $command): bool => (
+            str_starts_with($command, "docker exec 'orbit-e2e-run123-operator' sh -lc")
             && str_contains($command, 'ORBIT_GATEWAY_URL=%s')
             && str_contains($command, 'http://gateway')
-            && str_contains($command, '/home/orbit/.config/orbit/config.json'),
+            && str_contains($command, '/home/orbit/.config/orbit/config.json')
+        ),
     );
 
-    expect($runtimeStart)->toBeInt()
-        ->and($stateBootstrap)->toBeInt()
-        ->and($stateMigrate)->toBeInt()
-        ->and($scheduler)->toBeInt()
-        ->and($operatorClientGateway)->toBeInt()
-        ->and($seedOperatorIdentity)->toBeInt()
-        ->and($runtimeStart)->toBeLessThan($stateBootstrap)
-        ->and($runtimeStart)->toBeLessThan($operatorClientGateway)
-        ->and($operatorClientGateway)->toBeLessThan($seedOperatorIdentity)
-        ->and($stateBootstrap)->toBeLessThan($scheduler)
-        ->and($scheduler)->toBeLessThan($seedOperatorIdentity)
-        ->and($stateBootstrap)->toBeLessThan($seedOperatorIdentity)
-        ->and($stateMigrate)->toBeLessThan($seedOperatorIdentity);
+    expect($runtimeStart)
+        ->toBeInt()
+        ->and($stateBootstrap)
+        ->toBeInt()
+        ->and($stateMigrate)
+        ->toBeInt()
+        ->and($scheduler)
+        ->toBeInt()
+        ->and($operatorClientGateway)
+        ->toBeInt()
+        ->and($seedOperatorIdentity)
+        ->toBeInt()
+        ->and($runtimeStart)
+        ->toBeLessThan($stateBootstrap)
+        ->and($runtimeStart)
+        ->toBeLessThan($operatorClientGateway)
+        ->and($operatorClientGateway)
+        ->toBeLessThan($seedOperatorIdentity)
+        ->and($stateBootstrap)
+        ->toBeLessThan($scheduler)
+        ->and($scheduler)
+        ->toBeLessThan($seedOperatorIdentity)
+        ->and($stateBootstrap)
+        ->toBeLessThan($seedOperatorIdentity)
+        ->and($stateMigrate)
+        ->toBeLessThan($seedOperatorIdentity);
 
     $stateCommand = $commands[$stateBootstrap];
     $appKey = strpos($stateCommand, 'php apps/gateway/artisan key:generate --force --no-interaction');
     $migrate = strpos($stateCommand, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
 
-    expect($appKey)->toBeInt()
-        ->and($migrate)->toBeInt()
-        ->and($appKey)->toBeLessThan($migrate);
+    expect($appKey)
+        ->toBeInt()
+        ->and($migrate)
+        ->toBeInt()
+        ->and($appKey)
+        ->toBeLessThan($migrate);
 
     expect($setup)
         ->toContain('ORBIT_CONFIG_ROOT=/home/orbit/.config/orbit')
@@ -865,7 +994,8 @@ it('reuses image resolution from host selection when starting docker containers'
             return $publicKeyResult;
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
             || str_starts_with($command, 'docker network create ')
@@ -886,64 +1016,87 @@ it('reuses image resolution from host selection when starting docker containers'
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+    $lease = $provider->acquire(
+        E2ETopologyKind::OperatorGateway,
+        'run123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    );
 
-    expect($imageInspectCounts["docker image inspect 'orbit-e2e:operator_base' >/dev/null"])->toBe(1)
-        ->and($imageInspectCounts["docker image inspect 'orbit-e2e:gateway_base' >/dev/null"])->toBe(1);
+    expect($imageInspectCounts["docker image inspect 'orbit-e2e:operator_base' >/dev/null"])
+        ->toBe(1)
+        ->and($imageInspectCounts["docker image inspect 'orbit-e2e:gateway_base' >/dev/null"])
+        ->toBe(1);
 
     $lease->cleanup();
 });
 
 it('retries run-scoped docker subnets when Docker reports an overlap', function (): void {
-    withE2EEnvironment(['TEST_TOKEN'], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
-    ], function (): void {
-        $commands = [];
-        $firstPlan = DockerTopologyNetworkPlan::fromEnvironment('run123');
-        $retryPlan = DockerTopologyNetworkPlan::fromEnvironment('run123', attempt: 1);
+    withE2EEnvironment(
+        ['TEST_TOKEN'],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
+        ],
+        function (): void {
+            $commands = [];
+            $firstPlan = DockerTopologyNetworkPlan::fromEnvironment('run123');
+            $retryPlan = DockerTopologyNetworkPlan::fromEnvironment('run123', attempt: 1);
 
-        Process::fake(function ($process) use (&$commands, $firstPlan, $retryPlan) {
-            $command = (string) $process->command;
+            Process::fake(function ($process) use (&$commands, $firstPlan, $retryPlan) {
+                $command = (string) $process->command;
 
-            if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
-                return $publicKeyResult;
-            }
-            $commands[] = $command;
+                if (($publicKeyResult = dockerTopologyProviderProcessFake($command)) !== null) {
+                    return $publicKeyResult;
+                }
+                $commands[] = $command;
 
-            if ($command === 'command -v docker >/dev/null'
-                || $command === 'docker info >/dev/null'
-                || str_starts_with($command, 'docker image inspect ')
-                || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
-                || str_starts_with($command, 'docker exec ')
-            ) {
-                return Process::result();
-            }
+                if (
+                    $command === 'command -v docker >/dev/null'
+                    || $command === 'docker info >/dev/null'
+                    || str_starts_with($command, 'docker image inspect ')
+                    || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
+                    || str_starts_with($command, 'docker exec ')
+                ) {
+                    return Process::result();
+                }
 
-            if ($command === "docker network create --subnet '{$firstPlan->subnet()}' 'orbit-e2e-run123'") {
-                return Process::result(errorOutput: 'Error response from daemon: invalid pool request: Pool overlaps with other one on this address space', exitCode: 1);
-            }
+                if ($command === "docker network create --subnet '{$firstPlan->subnet()}' 'orbit-e2e-run123'") {
+                    return Process::result(
+                        errorOutput: 'Error response from daemon: invalid pool request: Pool overlaps with other one on this address space',
+                        exitCode: 1,
+                    );
+                }
 
-            if ($command === "docker network create --subnet '{$retryPlan->subnet()}' 'orbit-e2e-run123'") {
-                return Process::result();
-            }
+                if ($command === "docker network create --subnet '{$retryPlan->subnet()}' 'orbit-e2e-run123'") {
+                    return Process::result();
+                }
 
-            if (str_starts_with($command, 'docker run -d ')) {
-                return Process::result(output: "container-id\n");
-            }
+                if (str_starts_with($command, 'docker run -d ')) {
+                    return Process::result(output: "container-id\n");
+                }
 
-            return Process::result(exitCode: 1, errorOutput: $command);
-        });
+                return Process::result(exitCode: 1, errorOutput: $command);
+            });
 
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        expect($lease->gatewayApiIp())->toBe($retryPlan->ipForRole('gateway'))
-            ->and($commands)->toContain("docker network create --subnet '{$firstPlan->subnet()}' 'orbit-e2e-run123'")
-            ->and($commands)->toContain("docker network create --subnet '{$retryPlan->subnet()}' 'orbit-e2e-run123'");
+            expect($lease->gatewayApiIp())
+                ->toBe($retryPlan->ipForRole('gateway'))
+                ->and($commands)
+                ->toContain("docker network create --subnet '{$firstPlan->subnet()}' 'orbit-e2e-run123'")
+                ->and($commands)
+                ->toContain("docker network create --subnet '{$retryPlan->subnet()}' 'orbit-e2e-run123'");
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 });
 
 it('launches operator-gateway from the prepared base image', function (): void {
@@ -961,7 +1114,8 @@ it('launches operator-gateway from the prepared base image', function (): void {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -972,8 +1126,7 @@ it('launches operator-gateway from the prepared base image', function (): void {
             return Process::result();
         }
 
-        if (str_contains($command, 'operator_base')
-            || str_contains($command, 'gateway_base')) {
+        if (str_contains($command, 'operator_base') || str_contains($command, 'gateway_base')) {
             return Process::result();
         }
 
@@ -988,30 +1141,48 @@ it('launches operator-gateway from the prepared base image', function (): void {
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:4',
-    ], function () use (&$commands): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:4',
+        ],
+        function () use (&$commands): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        expect($lease->operator()->name())->toBe('orbit-e2e-run123-operator')
-            ->and($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway')
-            ->and($lease->devApp())->toBeNull()
-            ->and($lease->prodApp())->toBeNull();
+            expect($lease->operator()->name())
+                ->toBe('orbit-e2e-run123-operator')
+                ->and($lease->gateway()?->name())
+                ->toBe('orbit-e2e-run123-gateway')
+                ->and($lease->devApp())
+                ->toBeNull()
+                ->and($lease->prodApp())
+                ->toBeNull();
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $setup = implode("\n", $commands);
 
-    expect($setup)->toContain("docker image inspect 'orbit-e2e:operator_base' >/dev/null")
-        ->and($setup)->toContain("docker image inspect 'orbit-e2e:gateway_base' >/dev/null")
-        ->and($setup)->toContain('orbit-e2e:operator_base')
-        ->and($setup)->toContain('orbit-e2e:gateway_base')
-        ->and($setup)->not->toContain('orbit-e2e-run123-dev')
-        ->and($setup)->not->toContain('orbit-e2e-run123-prod')
-        ->and($setup)->not->toContain('orbit-e2e-run123-agent');
+    expect($setup)
+        ->toContain("docker image inspect 'orbit-e2e:operator_base' >/dev/null")
+        ->and($setup)
+        ->toContain("docker image inspect 'orbit-e2e:gateway_base' >/dev/null")
+        ->and($setup)
+        ->toContain('orbit-e2e:operator_base')
+        ->and($setup)
+        ->toContain('orbit-e2e:gateway_base')
+        ->and($setup)
+        ->not->toContain('orbit-e2e-run123-dev')->and($setup)
+        ->not->toContain('orbit-e2e-run123-prod')->and($setup)
+        ->not->toContain('orbit-e2e-run123-agent');
 });
 
 it('launches app production ingress as a prod-node role', function (): void {
@@ -1029,7 +1200,8 @@ it('launches app production ingress as a prod-node role', function (): void {
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'orbit-e2e-topology-runtime:prepared-current' >/dev/null"
@@ -1044,9 +1216,11 @@ it('launches app production ingress as a prod-node role', function (): void {
             return Process::result();
         }
 
-        if (str_contains($command, 'operator_base')
+        if (
+            str_contains($command, 'operator_base')
             || str_contains($command, 'gateway_base')
-            || str_contains($command, 'app-prod_base')) {
+            || str_contains($command, 'app-prod_base')
+        ) {
             return Process::result();
         }
 
@@ -1061,30 +1235,39 @@ it('launches app production ingress as a prod-node role', function (): void {
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:6',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:6',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGatewayAppprodIngress,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions(startGatewayApi: true),
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGatewayAppprodIngress,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions(startGatewayApi: true),
+            );
 
-        expect($lease->operator()->name())->toBe('orbit-e2e-run123-operator')
-            ->and($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway')
-            ->and($lease->prodApp()?->name())->toBe('orbit-e2e-run123-prod')
-            ->and($lease->ingress()?->name())->toBe('orbit-e2e-run123-prod')
-            ->and($lease->instanceNames())->toBe([
-                'orbit-e2e-run123-operator',
-                'orbit-e2e-run123-gateway',
-                'orbit-e2e-run123-prod',
-            ]);
+            expect($lease->operator()->name())
+                ->toBe('orbit-e2e-run123-operator')
+                ->and($lease->gateway()?->name())
+                ->toBe('orbit-e2e-run123-gateway')
+                ->and($lease->prodApp()?->name())
+                ->toBe('orbit-e2e-run123-prod')
+                ->and($lease->ingress()?->name())
+                ->toBe('orbit-e2e-run123-prod')
+                ->and($lease->instanceNames())
+                ->toBe([
+                    'orbit-e2e-run123-operator',
+                    'orbit-e2e-run123-gateway',
+                    'orbit-e2e-run123-prod',
+                ]);
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $setup = implode("\n", $commands);
 
@@ -1116,7 +1299,8 @@ it('seeds gateway registry rows for composed docker app roles in parallel at acq
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -1142,27 +1326,37 @@ it('seeds gateway registry rows for composed docker app roles in parallel at acq
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGatewayAppdevAppprod,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions,
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGatewayAppdevAppprod,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $scriptWrite = collect($commands)
-        ->first(fn (string $command): bool => str_contains($command, 'cat >')
-            && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh'));
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, 'cat >') && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh')
+            ),
+        );
     $scriptRun = collect($commands)
-        ->first(fn (string $command): bool => str_contains($command, '/tmp/orbit-e2e-docker-runtime-downstream.sh')
-            && str_contains($command, 'bash'));
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, '/tmp/orbit-e2e-docker-runtime-downstream.sh') && str_contains($command, 'bash')
+            ),
+        );
 
     expect($scriptWrite)
         ->toBeString()
@@ -1199,7 +1393,8 @@ it('seeds dedicated ingress before app production references it at acquire time'
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -1226,24 +1421,31 @@ it('seeds dedicated ingress before app production references it at acquire time'
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions,
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $scriptWrite = collect($commands)
-        ->first(fn (string $command): bool => str_contains($command, 'cat >')
-            && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh'));
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, 'cat >') && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh')
+            ),
+        );
 
     expect($scriptWrite)
         ->toBeString()
@@ -1255,7 +1457,8 @@ it('seeds dedicated ingress before app production references it at acquire time'
 
     expect(strpos($scriptWrite, 'orbit:internal:bake-ingress-node edge-1'))
         ->toBeLessThan(strpos($scriptWrite, '--ingress-node=edge-1'))
-        ->and($scriptWrite)->not->toContain('PID_NODE_NEW_INGRESS=$!');
+        ->and($scriptWrite)
+        ->not->toContain('PID_NODE_NEW_INGRESS=$!');
 });
 
 it('registers websocket on the app-dev node for docker prepared topologies', function (): void {
@@ -1273,7 +1476,8 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
             return Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n");
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -1298,33 +1502,43 @@ it('registers websocket on the app-dev node for docker prepared topologies', fun
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions,
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        expect($lease->devApp()?->name())->toBe('orbit-e2e-run123-dev')
-            ->and($lease->instance('websocket'))->toBeNull()
-            ->and($lease->instanceNames())->toBe([
-                'orbit-e2e-run123-operator',
-                'orbit-e2e-run123-gateway',
-                'orbit-e2e-run123-dev',
-            ]);
+            expect($lease->devApp()?->name())
+                ->toBe('orbit-e2e-run123-dev')
+                ->and($lease->instance('websocket'))
+                ->toBeNull()
+                ->and($lease->instanceNames())
+                ->toBe([
+                    'orbit-e2e-run123-operator',
+                    'orbit-e2e-run123-gateway',
+                    'orbit-e2e-run123-dev',
+                ]);
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $setup = implode("\n", $commands);
     $scriptWrite = collect($commands)
-        ->first(fn (string $command): bool => str_contains($command, 'cat >')
-            && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh'));
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, 'cat >') && str_contains($command, 'orbit-e2e-docker-runtime-downstream.sh')
+            ),
+        );
 
     expect($setup)
         ->toContain('orbit:internal:bake-app-node app-dev-1 --role=app-dev')
@@ -1359,7 +1573,8 @@ it('authorizes the active docker gateway ssh key into gateway self ssh and compo
             return $publicKeyResult;
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -1383,20 +1598,24 @@ it('authorizes the active docker gateway ssh key into gateway self ssh and compo
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGatewayAppdev,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions,
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGatewayAppdev,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $setup = implode("\n", $commands);
 
@@ -1419,7 +1638,8 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
             return $publicKeyResult;
         }
 
-        if ($command === 'command -v docker >/dev/null'
+        if (
+            $command === 'command -v docker >/dev/null'
             || $command === 'docker info >/dev/null'
             || $command === "docker image inspect 'orbit-gateway:prepared-current' >/dev/null"
             || $command === "docker image inspect 'caddy:2-alpine' >/dev/null"
@@ -1439,24 +1659,32 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
         return Process::result(exitCode: 1, errorOutput: $command);
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:1:8',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGateway,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions,
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
     $shimCommand = collect($commands)
-        ->first(fn (string $command): bool => str_contains($command, 'ORBIT_E2E_GATEWAY_DOCKER_SHIM')
-            && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway'));
+        ->first(
+            fn (string $command): bool => (
+                str_contains($command, 'ORBIT_E2E_GATEWAY_DOCKER_SHIM')
+                && str_contains($command, 'orbit-e2e-run123-gateway-orbit-gateway')
+            ),
+        );
 
     expect($shimCommand)
         ->toBeString()
@@ -1482,7 +1710,8 @@ it('maps gateway local orbit-gateway docker commands to the per-run runtime cont
         ->toContain('rest="${rest//,target=\/home/,target=\/home\/orbit}"')
         ->toContain('rest="${rest/:\/home/:\/home\/orbit}"')
         ->toContain('source_path="${ORBIT_SOURCE_PATH:-/home/orbit/orbit}"')
-        ->not->toContain('/proc/1/environ')
+        ->not
+        ->toContain('/proc/1/environ')
         ->toContain('orbit-gateway)')
         ->toContain('/opt/orbit/*)')
         ->toContain('exec "${real_docker}" "${args[@]}"');
@@ -1501,7 +1730,9 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
         "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
         "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(output: "operator-id\n"),
         "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' *" => Process::result(
+            output: "runtime-id\n",
+        ),
         '*cat ~/.ssh/id_ed25519.pub*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *' => Process::result(),
         'docker rm -f *' => Process::result(),
@@ -1515,10 +1746,17 @@ it('uses the parallel worker token to create a non-overlapping docker network', 
     try {
         $networkPlan = DockerTopologyNetworkPlan::fromEnvironment('run123');
         $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
-        $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+        $lease = $provider->acquire(
+            E2ETopologyKind::OperatorGateway,
+            'run123',
+            new E2EPhaseTimer,
+            new E2ETopologyAcquisitionOptions,
+        );
 
-        expect($lease->operator()->name())->toBe('orbit-e2e-run123-operator')
-            ->and($lease->gatewayApiIp())->toBe($networkPlan->ipForRole('gateway'));
+        expect($lease->operator()->name())
+            ->toBe('orbit-e2e-run123-operator')
+            ->and($lease->gatewayApiIp())
+            ->toBe($networkPlan->ipForRole('gateway'));
 
         Process::assertRan("docker network create --subnet '{$networkPlan->subnet()}' 'orbit-e2e-run123'");
 
@@ -1562,8 +1800,7 @@ it('leases docker host slots independently from the parallel worker token', func
             return Process::result();
         }
 
-        if (str_starts_with($command, "docker network create --subnet '10.90.")
-            && str_contains($command, ".0/24'")) {
+        if (str_starts_with($command, "docker network create --subnet '10.90.") && str_contains($command, ".0/24'")) {
             $networkHost = $host;
 
             return Process::result();
@@ -1577,8 +1814,10 @@ it('leases docker host slots independently from the parallel worker token', func
             return Process::result();
         }
 
-        if (str_starts_with($command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
-            || str_starts_with($command, 'rsync -az --delete ')) {
+        if (
+            str_starts_with($command, 'ssh -o BatchMode=yes -o ConnectTimeout=10 ')
+            || str_starts_with($command, 'rsync -az --delete ')
+        ) {
             return Process::result();
         }
 
@@ -1596,7 +1835,12 @@ it('leases docker host slots independently from the parallel worker token', func
         ], function () use (&$networkHost): void {
             $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-            $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+            $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
 
             expect($networkHost)->toBe('ssh://sidecar1');
         });
@@ -1629,7 +1873,9 @@ it('releases docker host slots during topology cleanup', function (): void {
         '*docker rm -f*' => Process::result(),
         '*docker volume rm*' => Process::result(),
         '*docker network rm*' => Process::result(),
-        '*ssh -o BatchMode=yes -o ConnectTimeout=10*stat -c %g /var/run/docker.sock*' => Process::result(output: "1000\n"),
+        '*ssh -o BatchMode=yes -o ConnectTimeout=10*stat -c %g /var/run/docker.sock*' => Process::result(
+            output: "1000\n",
+        ),
         '*ssh -o BatchMode=yes -o ConnectTimeout=10*' => Process::result(),
         '*rsync -az --delete*' => Process::result(),
     ]);
@@ -1642,7 +1888,12 @@ it('releases docker host slots during topology cleanup', function (): void {
             'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
         ], function () use ($leaseDirectory): void {
             $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
-            $lease = $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            );
             $pool = new E2EResourceLeasePool($leaseDirectory, waitSeconds: 0, staleSeconds: 60);
 
             expect($pool->snapshot('docker', ['sidecar1' => 1]))->toMatchArray([
@@ -1674,16 +1925,32 @@ it('keeps the docker network until final cleanup across fresh resets', function 
     });
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
-    $lease = $provider->acquire(E2ETopologyKind::Operator, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions);
+    $lease = $provider->acquire(
+        E2ETopologyKind::Operator,
+        'run123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    );
 
     $lease->reset();
 
-    expect(collect($commands)->filter(fn (string $command): bool => str_starts_with($command, 'docker network create '))->count())->toBe(1)
-        ->and(collect($commands)->contains("docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true"))->toBeFalse();
+    expect(
+        collect($commands)->filter(
+            fn (string $command): bool => str_starts_with($command, 'docker network create '),
+        )->count(),
+    )
+        ->toBe(1)
+        ->and(collect($commands)->contains("docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true"))
+        ->toBeFalse();
 
     $lease->cleanup();
 
-    expect(collect($commands)->filter(fn (string $command): bool => $command === "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true")->count())->toBe(1);
+    expect(
+        collect($commands)->filter(
+            fn (string $command): bool => $command === "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true",
+        )->count(),
+    )
+        ->toBe(1);
 });
 
 it('cleans containers and network when docker acquire fails partway through', function (): void {
@@ -1699,9 +1966,12 @@ it('cleans containers and network when docker acquire fails partway through', fu
             || $command === 'docker info >/dev/null'
             || str_starts_with($command, 'docker image inspect ')
             || $command === "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'"
-            || (str_starts_with($command, "docker network create --subnet '10.") && str_ends_with($command, "'orbit-e2e-run123'"))
-            || $command === "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true"
-            || $command === "docker volume rm -f 'orbit-e2e-run123-operator-home-orbit' 'orbit-e2e-run123-operator-var-lib-orbit' 'orbit-e2e-run123-operator-run-php' 'orbit-e2e-run123-gateway-home-orbit' 'orbit-e2e-run123-gateway-var-lib-orbit' 'orbit-e2e-run123-gateway-run-php' >/dev/null 2>&1 || true"
+            || str_starts_with($command, "docker network create --subnet '10.")
+            && str_ends_with($command, "'orbit-e2e-run123'")
+            || $command
+                === "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true"
+            || $command
+                === "docker volume rm -f 'orbit-e2e-run123-operator-home-orbit' 'orbit-e2e-run123-operator-var-lib-orbit' 'orbit-e2e-run123-operator-run-php' 'orbit-e2e-run123-gateway-home-orbit' 'orbit-e2e-run123-gateway-var-lib-orbit' 'orbit-e2e-run123-gateway-run-php' >/dev/null 2>&1 || true"
             || $command === "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true"
         ) {
             return Process::result();
@@ -1720,10 +1990,17 @@ it('cleans containers and network when docker acquire fails partway through', fu
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    expect(fn () => $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
+    expect(fn () => $provider->acquire(
+        E2ETopologyKind::OperatorGateway,
+        'run123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    ))
         ->toThrow(RuntimeException::class, 'Could not start container');
 
-    Process::assertRan("docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true");
+    Process::assertRan(
+        "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true",
+    );
     Process::assertRan("docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true");
 });
 
@@ -1757,17 +2034,24 @@ it('retains docker acquisition failures for diagnosis when requested', function 
 
         $this->fail('Expected Docker acquisition to be retained after failure.');
     } catch (E2ETopologyAcquisitionRetainedForDiagnosis $exception) {
-        expect($exception->provider)->toBe('docker')
-            ->and($exception->host)->toBe('local')
-            ->and($exception->runId)->toBe('run123')
-            ->and($exception->network)->toBe('orbit-e2e-run123')
-            ->and($exception->instances)->toMatchArray([
+        expect($exception->provider)
+            ->toBe('docker')
+            ->and($exception->host)
+            ->toBe('local')
+            ->and($exception->runId)
+            ->toBe('run123')
+            ->and($exception->network)
+            ->toBe('orbit-e2e-run123')
+            ->and($exception->instances)
+            ->toMatchArray([
                 'operator' => 'orbit-e2e-run123-operator',
                 'gateway' => 'orbit-e2e-run123-gateway',
                 'dev' => 'orbit-e2e-run123-dev',
             ])
-            ->and($exception->managedContainers)->toContain('orbit-e2e-run123-dev-orbit-caddy')
-            ->and($exception->volumes)->toContain('orbit-e2e-run123-dev-etc-caddy');
+            ->and($exception->managedContainers)
+            ->toContain('orbit-e2e-run123-dev-orbit-caddy')
+            ->and($exception->volumes)
+            ->toContain('orbit-e2e-run123-dev-etc-caddy');
     }
 
     expect(implode("\n", $commands))
@@ -1776,41 +2060,63 @@ it('retains docker acquisition failures for diagnosis when requested', function 
 });
 
 it('starts docker containers as a batch and rolls back when one start fails', function (): void {
-    withE2EEnvironment(['ORBIT_E2E_DOCKER_PARALLEL_STARTS', 'TEST_TOKEN'], [
-        'ORBIT_E2E_DOCKER_PARALLEL_STARTS' => '1',
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
-    ], function (): void {
-        Process::fake([
-            '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
-            'command -v docker >/dev/null' => Process::result(),
-            'docker info >/dev/null' => Process::result(),
-            "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
-            "docker image inspect 'caddy:2-alpine' >/dev/null" => Process::result(),
-            "docker image inspect 'orbit-e2e:operator_base' >/dev/null" => Process::result(),
-            "docker image inspect 'orbit-e2e:gateway_base' >/dev/null" => Process::result(),
-            "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
-            "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
-            "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(exitCode: 1, errorOutput: "operator failed\n"),
-            "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
-            "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true" => Process::result(),
-            'docker volume rm -f *' => Process::result(),
-            "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true" => Process::result(),
-        ]);
+    withE2EEnvironment(
+        ['ORBIT_E2E_DOCKER_PARALLEL_STARTS', 'TEST_TOKEN'],
+        [
+            'ORBIT_E2E_DOCKER_PARALLEL_STARTS' => '1',
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
+        ],
+        function (): void {
+            Process::fake([
+                '*for path in /var/run/docker.sock*' => Process::result(output: "999\n"),
+                'command -v docker >/dev/null' => Process::result(),
+                'docker info >/dev/null' => Process::result(),
+                "docker image inspect 'orbit-gateway:prepared-current' >/dev/null" => Process::result(),
+                "docker image inspect 'caddy:2-alpine' >/dev/null" => Process::result(),
+                "docker image inspect 'orbit-e2e:operator_base' >/dev/null" => Process::result(),
+                "docker image inspect 'orbit-e2e:gateway_base' >/dev/null" => Process::result(),
+                "docker ps --format '{{.Names}}' --filter 'name=orbit-e2e-'" => Process::result(),
+                "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
+                "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(
+                    exitCode: 1,
+                    errorOutput: "operator failed\n",
+                ),
+                "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
+                "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true" =>
+                    Process::result(),
+                'docker volume rm -f *' => Process::result(),
+                "docker network rm 'orbit-e2e-run123' >/dev/null 2>&1 || true" => Process::result(),
+            ]);
 
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        expect(fn () => $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
-            ->toThrow(RuntimeException::class, 'Could not start container orbit-e2e-run123-operator');
+            expect(fn () => $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions,
+            ))
+                ->toThrow(RuntimeException::class, 'Could not start container orbit-e2e-run123-operator');
 
-        Process::assertRan(fn ($process): bool => is_string($process->command)
-            && str_contains($process->command, "docker run -d --name 'orbit-e2e-run123-gateway'")
-            && str_contains($process->command, '--group-add 999')
-            && ! str_contains($process->command, '$(stat')
-            && str_contains($process->command, "--volume '/var/run/docker.sock:/var/run/docker.sock'")
-            && str_contains($process->command, "--env 'ORBIT_GATEWAY_CONTAINER=orbit-e2e-run123-gateway-orbit-gateway'")
-            && str_contains($process->command, "'orbit-e2e:gateway_base'"));
-        Process::assertRan("docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true");
-    });
+            Process::assertRan(
+                fn ($process): bool => (
+                    is_string($process->command)
+                    && str_contains($process->command, "docker run -d --name 'orbit-e2e-run123-gateway'")
+                    && str_contains($process->command, '--group-add 999')
+                    && ! str_contains($process->command, '$(stat')
+                    && str_contains($process->command, "--volume '/var/run/docker.sock:/var/run/docker.sock'")
+                    && str_contains(
+                        $process->command,
+                        "--env 'ORBIT_GATEWAY_CONTAINER=orbit-e2e-run123-gateway-orbit-gateway'",
+                    )
+                    && str_contains($process->command, "'orbit-e2e:gateway_base'")
+                ),
+            );
+            Process::assertRan(
+                "docker rm -f 'orbit-e2e-run123-operator-orbit-caddy' 'orbit-e2e-run123-operator' 'orbit-e2e-run123-gateway-orbit-gateway' 'orbit-e2e-run123-gateway-orbit-caddy' 'orbit-e2e-run123-gateway' >/dev/null 2>&1 || true",
+            );
+        },
+    );
 });
 
 it('starts docker containers sequentially by default to avoid ssh startup bursts', function (): void {
@@ -1832,7 +2138,12 @@ it('starts docker containers sequentially by default to avoid ssh startup bursts
 
     $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-    expect(fn () => $provider->acquire(E2ETopologyKind::OperatorGateway, 'run123', new E2EPhaseTimer, new E2ETopologyAcquisitionOptions))
+    expect(fn () => $provider->acquire(
+        E2ETopologyKind::OperatorGateway,
+        'run123',
+        new E2EPhaseTimer,
+        new E2ETopologyAcquisitionOptions,
+    ))
         ->toThrow(RuntimeException::class, 'Could not start container orbit-e2e-run123-operator');
 
     expect(implode("\n", $commands))->not->toContain("docker run -d --name 'orbit-e2e-run123-gateway'");
@@ -1851,7 +2162,9 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
         "docker network create --subnet * 'orbit-e2e-run123'" => Process::result(),
         "docker run -d --name 'orbit-e2e-run123-operator' *" => Process::result(output: "operator-id\n"),
         "docker run -d --name 'orbit-e2e-run123-gateway' *" => Process::result(output: "gateway-id\n"),
-        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' *" => Process::result(output: "runtime-id\n"),
+        "docker run -d --restart unless-stopped --name 'orbit-e2e-run123-gateway-orbit-gateway' *" => Process::result(
+            output: "runtime-id\n",
+        ),
         '*cat ~/.ssh/id_ed25519.pub*' => Process::result(output: "ssh-ed25519 AAAATEST orbit-e2e-gateway\n"),
         'docker exec *' => Process::result(),
         'docker rm -f *' => Process::result(),
@@ -1859,30 +2172,42 @@ it('uses dns aliases and primes the gateway api in Docker topology runs', functi
         'docker network rm *' => Process::result(),
     ]);
 
-    withE2EEnvironment(['TEST_TOKEN'], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
-    ], function (): void {
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        ['TEST_TOKEN'],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
+        ],
+        function (): void {
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGateway,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions(startGatewayApi: true),
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions(startGatewayApi: true),
+            );
 
-        expect($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway');
+            expect($lease->gateway()?->name())->toBe('orbit-e2e-run123-gateway');
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'bootstrap-gateway-local')
-        && str_contains($process->command, '/home/orbit/.config/orbit/gateway.sqlite'));
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'issueLeaf')
-        && str_contains($process->command, 'gateway')
-        && str_contains($process->command, '10.6.0.2'));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'bootstrap-gateway-local')
+            && str_contains($process->command, '/home/orbit/.config/orbit/gateway.sqlite')
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'issueLeaf')
+            && str_contains($process->command, 'gateway')
+            && str_contains($process->command, '10.6.0.2')
+        ),
+    );
 });
 
 it('maps parallel docker subnet peer ips back to canonical dns-alias identities', function (): void {
@@ -1900,25 +2225,31 @@ it('maps parallel docker subnet peer ips back to canonical dns-alias identities'
         return Process::result();
     });
 
-    withE2EEnvironment(['TEST_TOKEN'], [
-        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
-        'TEST_TOKEN' => '1',
-    ], function () use (&$networkPlan): void {
-        $networkPlan = DockerTopologyNetworkPlan::fromEnvironment('run123');
-        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+    withE2EEnvironment(
+        ['TEST_TOKEN'],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'local:8:64',
+            'TEST_TOKEN' => '1',
+        ],
+        function () use (&$networkPlan): void {
+            $networkPlan = DockerTopologyNetworkPlan::fromEnvironment('run123');
+            $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
 
-        $lease = $provider->acquire(
-            E2ETopologyKind::OperatorGateway,
-            'run123',
-            new E2EPhaseTimer,
-            new E2ETopologyAcquisitionOptions(startGatewayApi: true),
-        );
+            $lease = $provider->acquire(
+                E2ETopologyKind::OperatorGateway,
+                'run123',
+                new E2EPhaseTimer,
+                new E2ETopologyAcquisitionOptions(startGatewayApi: true),
+            );
 
-        $lease->cleanup();
-    });
+            $lease->cleanup();
+        },
+    );
 
-    expect($networkPlan)->toBeInstanceOf(DockerTopologyNetworkPlan::class)
-        ->and($commands)->toContain("docker network create --subnet '{$networkPlan->subnet()}' 'orbit-e2e-run123'");
+    expect($networkPlan)
+        ->toBeInstanceOf(DockerTopologyNetworkPlan::class)
+        ->and($commands)
+        ->toContain("docker network create --subnet '{$networkPlan->subnet()}' 'orbit-e2e-run123'");
     expect(implode("\n", $commands))
         ->toContain('sudo docker exec --detach')
         ->toContain('php apps/gateway/artisan tinker --execute=')

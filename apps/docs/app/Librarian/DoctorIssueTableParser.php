@@ -48,13 +48,21 @@ final class DoctorIssueTableParser
             PREG_SET_ORDER | PREG_OFFSET_CAPTURE,
         );
 
-        return array_map(
-            fn (array $match): array => [
-                'body' => $match['body'][0],
-                'offset' => $match['body'][1],
-            ],
-            $matches,
-        );
+        $sections = [];
+
+        foreach ($matches as $match) {
+            $body = $match['body'][0] ?? '';
+            $offset = $match['body'][1] ?? 0;
+
+            if (is_string($body)) {
+                $sections[] = [
+                    'body' => $body,
+                    'offset' => (int) $offset,
+                ];
+            }
+        }
+
+        return $sections;
     }
 
     /**
@@ -73,7 +81,12 @@ final class DoctorIssueTableParser
         $codes = [];
 
         foreach ($matches as $match) {
-            $codes[$match['code'][0]] = $this->lineForOffset($contents, $section['offset'] + $match[0][1]);
+            $code = $match['code'][0] ?? null;
+            $offset = $match[0][1] ?? 0;
+
+            if (is_string($code)) {
+                $codes[$code] = $this->lineForOffset($contents, $section['offset'] + (int) $offset);
+            }
         }
 
         return $codes;

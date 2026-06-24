@@ -200,7 +200,7 @@ final class AppInstanceCommand extends AppGatewayCommand
     private function extensionsLabel(array $instance): string
     {
         $extensions = $this->extensionsList(
-            is_array($instance['runtime'] ?? null) ? ($instance['runtime']['required_php_extensions'] ?? null) : null,
+            is_array($instance['runtime'] ?? null) ? $instance['runtime']['required_php_extensions'] ?? null : null,
         );
 
         return $extensions === [] ? '—' : implode(', ', $extensions);
@@ -216,7 +216,9 @@ final class AppInstanceCommand extends AppGatewayCommand
         }
 
         return array_values(array_filter(
-            array_map(static fn (mixed $extension): ?string => is_string($extension) && $extension !== '' ? $extension : null, $extensions),
+            array_map(static fn (mixed $extension): ?string => is_string($extension) && $extension !== ''
+                ? $extension
+                : null, $extensions),
             static fn (?string $extension): bool => $extension !== null,
         ));
     }
@@ -313,9 +315,10 @@ final class AppInstanceCommand extends AppGatewayCommand
     {
         $payload = $this->instanceFromGatewayResponse($response);
         $name = $payload === null ? $instance : $this->instanceString($payload, 'name');
-        $appName = $payload !== null && ($payload['app'] ?? null) !== null
-            ? $this->instanceString($payload, 'app')
-            : $app;
+        $appName =
+            $payload !== null && ($payload['app'] ?? null) !== null
+                ? $this->instanceString($payload, 'app')
+                : $app;
 
         $this->line("Added instance '{$name}' to app '{$appName}'.");
 
@@ -338,9 +341,10 @@ final class AppInstanceCommand extends AppGatewayCommand
     private function renderRemovedInstance(string $instance, array $response): int
     {
         $result = $this->successData($response)['result'] ?? null;
-        $name = is_array($result) && is_string($result['instance'] ?? null) && $result['instance'] !== ''
-            ? $result['instance']
-            : $instance;
+        $name =
+            is_array($result) && is_string($result['instance'] ?? null) && $result['instance'] !== ''
+                ? $result['instance']
+                : $instance;
 
         $this->line("Removed instance '{$name}'.");
 
@@ -353,7 +357,10 @@ final class AppInstanceCommand extends AppGatewayCommand
         $option = $this->stringOption('app');
 
         if ($argument !== null && $option !== null && $argument !== $option) {
-            return $this->failValidation('app', 'The [app] argument and --app option must match when both are provided.');
+            return $this->failValidation(
+                'app',
+                'The [app] argument and --app option must match when both are provided.',
+            );
         }
 
         $app = $option ?? $argument;
@@ -395,7 +402,10 @@ final class AppInstanceCommand extends AppGatewayCommand
      */
     private function filledPayload(array $payload): array
     {
-        return array_filter($payload, static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
+        return array_filter(
+            $payload,
+            static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== [],
+        );
     }
 
     /**

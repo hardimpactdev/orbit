@@ -30,7 +30,10 @@ final class CfDnsAddCommand extends CloudflareGatewayCommand
         $content = $this->stringArgument('content');
 
         if ($name === null || $content === null) {
-            return $this->failValidation($name === null ? 'name' : 'content', 'DNS record name and content are required.');
+            return $this->failValidation(
+                $name === null ? 'name' : 'content',
+                'DNS record name and content are required.',
+            );
         }
 
         $endpointZone = $this->stringOption('zone') ?? $name;
@@ -76,7 +79,7 @@ final class CfDnsAddCommand extends CloudflareGatewayCommand
     private function successLine(string $name, string $content, array $response): string
     {
         $record = $this->successData($response);
-        $type = is_string($record['type'] ?? null) ? $record['type'] : ($this->stringOption('type') ?? 'A');
+        $type = is_string($record['type'] ?? null) ? $record['type'] : $this->stringOption('type') ?? 'A';
         $recordName = is_string($record['name'] ?? null) ? $record['name'] : $name;
         $recordContent = is_string($record['content'] ?? null) ? $record['content'] : $content;
         $state = ($this->successMeta($response)['already_present'] ?? false) === true ? 'already present' : 'created';

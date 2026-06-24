@@ -11,7 +11,8 @@ it('keeps CLI-owned code behind the Orbit SDK boundary', function (): void {
         "{$repoRoot}/tests",
     ]) as $path) {
         expect(file_get_contents($path) ?: '')
-            ->not->toContain($needle, "{$path} imports SDK HTTP-client internals directly.");
+            ->not
+            ->toContain($needle, "{$path} imports SDK HTTP-client internals directly.");
     }
 });
 

@@ -53,7 +53,9 @@ final readonly class ProxyRouteRenderer
             'app', 'workspace' => $this->renderPhpFastCgi($route),
             'proxy' => $this->renderProxy($route),
             'redirect' => $this->renderRedirect($route),
-            default => throw new RuntimeException("Proxy route kind '{$route->kind}' is not renderable by the custom proxy route renderer."),
+            default => throw new RuntimeException(
+                "Proxy route kind '{$route->kind}' is not renderable by the custom proxy route renderer.",
+            ),
         };
     }
 
@@ -67,11 +69,13 @@ final readonly class ProxyRouteRenderer
         $config = is_array($route->config) ? $route->config : [];
         $routerUpstream = $config['router_upstream'] ?? null;
         $tls = $this->tlsDirective($route);
-        $encode = ($this->isWebSocketProtocol($route) || $this->isS3Protocol($route)) ? "\n" : "    encode gzip\n\n";
+        $encode = $this->isWebSocketProtocol($route) || $this->isS3Protocol($route) ? "\n" : "    encode gzip\n\n";
         $streaming = $this->uploadSafeStreamingDirectives($route);
         $analyticsMatcher = $this->isPublicAnalyticsRoute($route) ? $this->analyticsTrackingMatcher($route) : '';
         $analyticsProxyMatcher = $this->isPublicAnalyticsRoute($route) ? ' @plausible_tracking' : '';
-        $analyticsForwardedFor = $this->isAnalyticsProtocol($route) ? '        header_up X-Forwarded-For {remote_host}'."\n" : '';
+        $analyticsForwardedFor = $this->isAnalyticsProtocol($route)
+            ? '        header_up X-Forwarded-For {remote_host}'."\n"
+            : '';
         $analyticsFallback = $this->isPublicAnalyticsRoute($route) ? '    respond 404'."\n" : '';
 
         if (! is_array($routerUpstream)) {
@@ -87,16 +91,16 @@ final readonly class ProxyRouteRenderer
         $routerUrl = $this->validatedRouterUrl($routerUrl);
 
         return <<<CADDY
-{$route->domain} {
-    {$tls}
-{$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$routerUrl} {
-{$streaming}        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-{$analyticsForwardedFor}    }
-{$analyticsFallback}}
+            {$route->domain} {
+                {$tls}
+            {$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$routerUrl} {
+            {$streaming}        header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {scheme}
+            {$analyticsForwardedFor}    }
+            {$analyticsFallback}}
 
-CADDY;
+            CADDY;
     }
 
     public function renderRouterRoute(ProxyRoute $route): string
@@ -144,27 +148,29 @@ CADDY;
             ->all();
 
         $upstreams = implode(' ', $backendLines);
-        $encode = ($this->isWebSocketProtocol($route) || $this->isS3Protocol($route)) ? '' : "    encode gzip\n\n";
+        $encode = $this->isWebSocketProtocol($route) || $this->isS3Protocol($route) ? '' : "    encode gzip\n\n";
         $streaming = $this->uploadSafeStreamingDirectives($route);
         $siteAddress = $this->routerSiteAddress($route);
         $siteTls = $this->routerSiteTlsDirective($route);
         $backendTransport = $this->routerBackendTransportDirectives($route);
         $analyticsMatcher = $this->isPublicAnalyticsRoute($route) ? $this->analyticsTrackingMatcher($route) : '';
         $analyticsProxyMatcher = $this->isPublicAnalyticsRoute($route) ? ' @plausible_tracking' : '';
-        $analyticsForwardedFor = $this->isAnalyticsProtocol($route) ? '        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}'."\n" : '';
+        $analyticsForwardedFor = $this->isAnalyticsProtocol($route)
+            ? '        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}'."\n"
+            : '';
         $analyticsFallback = $this->isPublicAnalyticsRoute($route) ? '    respond 404'."\n" : '';
 
         return <<<CADDY
-{$siteAddress} {
-{$siteTls}{$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$upstreams} {
-        lb_policy first
-{$streaming}        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-{$analyticsForwardedFor}{$backendTransport}    }
-{$analyticsFallback}}
+            {$siteAddress} {
+            {$siteTls}{$encode}{$analyticsMatcher}    reverse_proxy{$analyticsProxyMatcher} {$upstreams} {
+                    lb_policy first
+            {$streaming}        header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+            {$analyticsForwardedFor}{$backendTransport}    }
+            {$analyticsFallback}}
 
-CADDY;
+            CADDY;
     }
 
     /**
@@ -197,58 +203,66 @@ CADDY;
             $runtimeUpstream = $this->runtimeUpstreamForRoute($route, $runtimeUpstream);
 
             if (! is_string($runtimeUpstream) || $runtimeUpstream === '') {
-                throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a runtime container upstream.");
+                throw new RuntimeException(
+                    "Proxy route '{$route->domain}' backend artifact is missing a runtime container upstream.",
+                );
             }
 
             $runtimeUpstream = $this->validatedHttpUpstream($route, $runtimeUpstream);
 
             return <<<CADDY
-http://{$route->domain}:{$port} {
-    encode gzip
+                http://{$route->domain}:{$port} {
+                    encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
+                    import security_headers
+                    import profiling_headers
+                    {$pathBlocking}
+                    import security_txt
+                    import cache_headers
 
-    reverse_proxy {$runtimeUpstream} {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-    }
-}
+                    reverse_proxy {$runtimeUpstream} {
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                    }
+                }
 
-CADDY;
+                CADDY;
         }
 
         if (! is_string($documentRoot) || $documentRoot === '') {
             throw new RuntimeException("Proxy route '{$route->domain}' backend artifact is missing a document root.");
         }
 
-        $documentRoot = $this->validatedAbsolutePath($route, $documentRoot, 'backend artifact has an invalid document root.');
+        $documentRoot = $this->validatedAbsolutePath(
+            $route,
+            $documentRoot,
+            'backend artifact has an invalid document root.',
+        );
 
         if ($isStaticApp) {
             return <<<CADDY
-http://{$route->domain}:{$port} {
-    root * {$documentRoot}
-    encode gzip
+                http://{$route->domain}:{$port} {
+                    root * {$documentRoot}
+                    encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
-    file_server
-}
+                    import security_headers
+                    import profiling_headers
+                    {$pathBlocking}
+                    import security_txt
+                    import cache_headers
+                    file_server
+                }
 
-CADDY;
+                CADDY;
         }
 
         // App and workspace routes must have a resolved runtime of
         // `php` or `static`. Reaching this line means the route config is
         // malformed or the runtime is unrecognised.
-        throw new RuntimeException("Proxy route '{$route->domain}' backend artifact has an unresolvable runtime target.");
+        throw new RuntimeException(
+            "Proxy route '{$route->domain}' backend artifact has an unresolvable runtime target.",
+        );
     }
 
     private function renderProxy(ProxyRoute $route): string
@@ -266,26 +280,26 @@ CADDY;
 
         if ($this->isS3Protocol($route)) {
             return <<<CADDY
-{$route->domain} {
-    {$tls}
-    reverse_proxy {$upstream} {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
+                {$route->domain} {
+                    {$tls}
+                    reverse_proxy {$upstream} {
+                        flush_interval -1
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                    }
+                }
 
-CADDY;
+                CADDY;
         }
 
         return <<<CADDY
-{$route->domain} {
-    {$tls}
-    reverse_proxy {$upstream}
-}
+            {$route->domain} {
+                {$tls}
+                reverse_proxy {$upstream}
+            }
 
-CADDY;
+            CADDY;
     }
 
     /**
@@ -294,11 +308,13 @@ CADDY;
      */
     public static function normalizeHostLoopback(string $upstream): string
     {
-        return preg_replace_callback(
-            '~(?<scheme>https?://)(?<host>127\.0\.0\.1|localhost)(?=$|[:/?\#])~i',
-            fn (array $matches): string => $matches['scheme'].self::HostLoopbackHostname,
-            $upstream,
-        ) ?? $upstream;
+        return (
+            preg_replace_callback(
+                '~(?<scheme>https?://)(?<host>127\.0\.0\.1|localhost)(?=$|[:/?\#])~i',
+                fn (array $matches): string => $matches['scheme'].self::HostLoopbackHostname,
+                $upstream,
+            ) ?? $upstream
+        );
     }
 
     private function renderRedirect(ProxyRoute $route): string
@@ -314,12 +330,12 @@ CADDY;
         $tls = $this->tlsDirective($route);
 
         return <<<CADDY
-{$route->domain} {
-    {$tls}
-    redir {$target}{uri} {$code}
-}
+            {$route->domain} {
+                {$tls}
+                redir {$target}{uri} {$code}
+            }
 
-CADDY;
+            CADDY;
     }
 
     private function renderPhpFastCgi(ProxyRoute $route): string
@@ -349,24 +365,24 @@ CADDY;
             $transport = $this->runtimeUpstreamTransportDirectives($route, $config);
 
             return <<<CADDY
-{$route->domain} {
-    {$tls}
-    encode gzip
+                {$route->domain} {
+                    {$tls}
+                    encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
+                    import security_headers
+                    import profiling_headers
+                    {$pathBlocking}
+                    import security_txt
+                    import cache_headers
 
-    reverse_proxy {$runtimeUpstream} {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-{$transport}    }
-}
+                    reverse_proxy {$runtimeUpstream} {
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                {$transport}    }
+                }
 
-CADDY;
+                CADDY;
         }
 
         if (! is_string($documentRoot) || $documentRoot === '') {
@@ -375,20 +391,20 @@ CADDY;
 
         if ($isStaticApp) {
             return <<<CADDY
-{$route->domain} {
-    {$tls}
-    root * {$documentRoot}
-    encode gzip
+                {$route->domain} {
+                    {$tls}
+                    root * {$documentRoot}
+                    encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
-    file_server
-}
+                    import security_headers
+                    import profiling_headers
+                    {$pathBlocking}
+                    import security_txt
+                    import cache_headers
+                    file_server
+                }
 
-CADDY;
+                CADDY;
         }
 
         // App and workspace routes must have a resolved runtime of
@@ -413,8 +429,8 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
         $tls = $config['tls'] ?? null;
         $managedBy = is_array($tls)
-            ? ($tls['managed_by'] ?? $config['tls_managed_by'] ?? null)
-            : ($config['tls_managed_by'] ?? null);
+            ? $tls['managed_by'] ?? $config['tls_managed_by'] ?? null
+            : $config['tls_managed_by'] ?? null;
 
         if ($managedBy === 'acme') {
             return true;
@@ -454,9 +470,11 @@ CADDY;
         $config = is_array($route->config) ? $route->config : [];
         $tls = $config['tls'] ?? null;
 
-        return is_array($tls)
+        return (
+            is_array($tls)
             && ($tls['trusted_by_gateway_ca'] ?? null) === true
-            && (array_key_exists('cert_path', $tls) || array_key_exists('key_path', $tls));
+            && (array_key_exists('cert_path', $tls) || array_key_exists('key_path', $tls))
+        );
     }
 
     private function routerBackendTransportDirectives(ProxyRoute $route): string
@@ -476,9 +494,7 @@ CADDY;
             'has an invalid router backend CA path.',
         );
 
-        return "        transport http {\n"
-            ."            tls_trust_pool file {$caPath}\n"
-            ."        }\n";
+        return "        transport http {\n"."            tls_trust_pool file {$caPath}\n"."        }\n";
     }
 
     /**
@@ -515,9 +531,11 @@ CADDY;
     {
         $config = is_array($route->config) ? $route->config : [];
 
-        return $route->owner_type === 'router'
+        return (
+            $route->owner_type === 'router'
             && isset($config['router_upstream'])
-            && ($config['placement'] ?? null) !== 'ingress';
+            && ($config['placement'] ?? null) !== 'ingress'
+        );
     }
 
     private function isWebSocketProtocol(ProxyRoute $route): bool
@@ -543,8 +561,7 @@ CADDY;
 
     private function isPublicAnalyticsRoute(ProxyRoute $route): bool
     {
-        return $route->owner_type === 'app-analytics'
-            && $this->isAnalyticsProtocol($route);
+        return $route->owner_type === 'app-analytics' && $this->isAnalyticsProtocol($route);
     }
 
     private function analyticsTrackingMatcher(ProxyRoute $route): string
@@ -621,7 +638,8 @@ CADDY;
 
     private function validatedBackendUrl(string $url): string
     {
-        if ($this->containsUnsafeCharacters($url)
+        if (
+            $this->containsUnsafeCharacters($url)
             || filter_var($url, FILTER_VALIDATE_URL) === false
             || preg_match('#^https?://#', $url) !== 1
         ) {
@@ -633,7 +651,8 @@ CADDY;
 
     private function validatedRouterUrl(string $url): string
     {
-        if ($this->containsUnsafeCharacters($url)
+        if (
+            $this->containsUnsafeCharacters($url)
             || filter_var($url, FILTER_VALIDATE_URL) === false
             || preg_match('#^https?://#', $url) !== 1
         ) {
@@ -700,10 +719,12 @@ CADDY;
 
         if ($route->kind === 'workspace' && $route->workspace !== null) {
             if ($this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
-                return "https://orbit-ws-{$slug}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+                return (
+                    "https://orbit-ws-{$slug}-{$route->workspace?->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort
+                );
             }
 
-            return "http://orbit-ws-{$slug}-{$route->workspace->name}";
+            return "http://orbit-ws-{$slug}-{$route->workspace?->name}";
         }
 
         if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
@@ -717,12 +738,18 @@ CADDY;
     {
         if (! $this->usesIngressPlacement($route)) {
             if ($route->kind === 'workspace') {
-                if ($route->workspace instanceof Workspace && $this->innerTlsPolicy->appliesToWorkspace($route->workspace)) {
+                if (
+                    $route->workspace instanceof Workspace
+                    && $this->innerTlsPolicy->appliesToWorkspace($route->workspace)
+                ) {
                     $route->workspace->loadMissing('app');
-                    $app = $route->workspace->app;
+                    $app = $route->workspace?->app;
 
                     if ($app instanceof App && is_string($app->name) && $app->name !== '') {
-                        return "https://orbit-ws-{$app->name}-{$route->workspace->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+                        return (
+                            "https://orbit-ws-{$app->name}-{$route->workspace?->name}:"
+                            .AppDevelopmentInnerTlsPolicy::InternalTlsPort
+                        );
                     }
                 }
 
@@ -730,7 +757,7 @@ CADDY;
             }
 
             if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
-                return "https://orbit-app-{$route->app->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
+                return "https://orbit-app-{$route->app?->name}:".AppDevelopmentInnerTlsPolicy::InternalTlsPort;
             }
         }
 
@@ -788,7 +815,7 @@ CADDY;
         }
 
         if ($route->app instanceof App && $this->innerTlsPolicy->appliesToApp($route->app)) {
-            $node = $route->node ?? $route->app->node;
+            $node = $route->node ?? $route->app?->node;
 
             if ($node === null) {
                 return null;
@@ -805,7 +832,8 @@ CADDY;
 
     private function validatedHttpUpstream(ProxyRoute $route, string $value): string
     {
-        if ($this->containsUnsafeCharacters($value)
+        if (
+            $this->containsUnsafeCharacters($value)
             || filter_var($value, FILTER_VALIDATE_URL) === false
             || preg_match('#^https?://#', $value) !== 1
         ) {

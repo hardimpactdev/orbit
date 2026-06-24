@@ -66,76 +66,76 @@ final readonly class WorkspacesProbe
         ];
 
         $script = <<<'SH_WRAP'
-        set -eu
-        name=__NAME__
-        path=__PATH__
-        runtime_user=__RUNTIME_USER__
-        runtime_image=__RUNTIME_IMAGE__
-        container_name=__CONTAINER_NAME__
-        container_spec_hash_label=__CONTAINER_SPEC_HASH_LABEL__
-        path_exists=0
-        path_usable=0
-        system_user_exists=0
-        fs_permissions_ok=0
-        docker_available=0
-        runtime_image_available=0
-        runtime_image_probe_failed=0
-        container_exists=0
-        container_running=0
-        container_spec_hash=''
-        if [ -d "$path" ]; then
-            path_exists=1
-            if [ -r "$path" ] && [ -x "$path" ]; then
-                path_usable=1
-            fi
-        fi
-        if [ -n "$runtime_user" ] && id -u "$runtime_user" >/dev/null 2>&1; then
-            system_user_exists=1
-        fi
-        owner=''
-        mode=''
-        if [ "$path_exists" = "1" ]; then
-            owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path" 2>/dev/null || printf '')
-            mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || printf '')
-        fi
-        if [ "$path_exists" = "1" ] && [ -n "$runtime_user" ] && [ "$owner" = "$runtime_user" ] && [ -n "$mode" ]; then
-            group_digit=${mode%?}
-            group_digit=${group_digit#${group_digit%?}}
-            other_digit=${mode#${mode%?}}
-            case "$group_digit:$other_digit" in
-                0:0|0:1|0:4|0:5|1:0|1:1|1:4|1:5|4:0|4:1|4:4|4:5|5:0|5:1|5:4|5:5)
-                    fs_permissions_ok=1
-                    ;;
-            esac
-        fi
-        if command -v docker >/dev/null 2>&1; then
-            docker_available=1
-            if [ -n "$runtime_image" ]; then
-                image_error="$(docker image inspect "$runtime_image" >/dev/null 2>&1 || printf '%s' "$?")"
-                if [ -z "$image_error" ]; then
-                    runtime_image_available=1
-                elif docker image inspect "$runtime_image" 2>&1 | grep -qi 'No such image'; then
-                    runtime_image_available=0
-                else
-                    runtime_image_probe_failed=1
+            set -eu
+            name=__NAME__
+            path=__PATH__
+            runtime_user=__RUNTIME_USER__
+            runtime_image=__RUNTIME_IMAGE__
+            container_name=__CONTAINER_NAME__
+            container_spec_hash_label=__CONTAINER_SPEC_HASH_LABEL__
+            path_exists=0
+            path_usable=0
+            system_user_exists=0
+            fs_permissions_ok=0
+            docker_available=0
+            runtime_image_available=0
+            runtime_image_probe_failed=0
+            container_exists=0
+            container_running=0
+            container_spec_hash=''
+            if [ -d "$path" ]; then
+                path_exists=1
+                if [ -r "$path" ] && [ -x "$path" ]; then
+                    path_usable=1
                 fi
             fi
-            if [ -n "$container_name" ]; then
-                container_status="$(docker container inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
-                if [ -n "$container_status" ]; then
-                    container_exists=1
-                    if [ "$container_status" = "running" ]; then
-                        container_running=1
+            if [ -n "$runtime_user" ] && id -u "$runtime_user" >/dev/null 2>&1; then
+                system_user_exists=1
+            fi
+            owner=''
+            mode=''
+            if [ "$path_exists" = "1" ]; then
+                owner=$(stat -c '%U' "$path" 2>/dev/null || stat -f '%Su' "$path" 2>/dev/null || printf '')
+                mode=$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || printf '')
+            fi
+            if [ "$path_exists" = "1" ] && [ -n "$runtime_user" ] && [ "$owner" = "$runtime_user" ] && [ -n "$mode" ]; then
+                group_digit=${mode%?}
+                group_digit=${group_digit#${group_digit%?}}
+                other_digit=${mode#${mode%?}}
+                case "$group_digit:$other_digit" in
+                    0:0|0:1|0:4|0:5|1:0|1:1|1:4|1:5|4:0|4:1|4:4|4:5|5:0|5:1|5:4|5:5)
+                        fs_permissions_ok=1
+                        ;;
+                esac
+            fi
+            if command -v docker >/dev/null 2>&1; then
+                docker_available=1
+                if [ -n "$runtime_image" ]; then
+                    image_error="$(docker image inspect "$runtime_image" >/dev/null 2>&1 || printf '%s' "$?")"
+                    if [ -z "$image_error" ]; then
+                        runtime_image_available=1
+                    elif docker image inspect "$runtime_image" 2>&1 | grep -qi 'No such image'; then
+                        runtime_image_available=0
+                    else
+                        runtime_image_probe_failed=1
                     fi
-                    container_spec_hash="$(docker container inspect --format "{{ index .Config.Labels \"$container_spec_hash_label\" }}" "$container_name" 2>/dev/null || true)"
-                    if [ "$container_spec_hash" = "<no value>" ]; then
-                        container_spec_hash=''
+                fi
+                if [ -n "$container_name" ]; then
+                    container_status="$(docker container inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || true)"
+                    if [ -n "$container_status" ]; then
+                        container_exists=1
+                        if [ "$container_status" = "running" ]; then
+                            container_running=1
+                        fi
+                        container_spec_hash="$(docker container inspect --format "{{ index .Config.Labels \"$container_spec_hash_label\" }}" "$container_name" 2>/dev/null || true)"
+                        if [ "$container_spec_hash" = "<no value>" ]; then
+                            container_spec_hash=''
+                        fi
                     fi
                 fi
             fi
-        fi
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$path_exists" "$path_usable" "$system_user_exists" "$fs_permissions_ok" "$docker_available" "$runtime_image_available" "$runtime_image_probe_failed" "$container_exists" "$container_running" "$container_spec_hash"
-        SH_WRAP;
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$path_exists" "$path_usable" "$system_user_exists" "$fs_permissions_ok" "$docker_available" "$runtime_image_available" "$runtime_image_probe_failed" "$container_exists" "$container_running" "$container_spec_hash"
+            SH_WRAP;
 
         $script = strtr($script, [
             '__NAME__' => escapeshellarg($spec['name']),
@@ -146,9 +146,9 @@ final readonly class WorkspacesProbe
             '__CONTAINER_SPEC_HASH_LABEL__' => escapeshellarg($spec['container_spec_hash_label']),
         ]);
 
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app->node, $script, [
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($workspace->app?->node, $script, [
             'throw' => true,
-            'input' => (string) json_encode($spec, JSON_THROW_ON_ERROR),
+            'input' => json_encode($spec, JSON_THROW_ON_ERROR),
         ]);
 
         $items = [];
@@ -272,7 +272,10 @@ final readonly class WorkspacesProbe
             return [];
         }
 
-        if (($observed['runtime_image_probe_failed'] ?? null) === true || ($observed['runtime_image_available'] ?? null) === false) {
+        if (
+            ($observed['runtime_image_probe_failed'] ?? null) === true
+            || ($observed['runtime_image_available'] ?? null) === false
+        ) {
             return [];
         }
 
@@ -312,7 +315,9 @@ final readonly class WorkspacesProbe
             ];
         }
 
-        $expectedHash = is_string($observed['container_expected_hash'] ?? null) ? $observed['container_expected_hash'] : '';
+        $expectedHash = is_string($observed['container_expected_hash'] ?? null)
+            ? $observed['container_expected_hash']
+            : '';
         $actualHash = is_string($observed['container_spec_hash'] ?? null) ? $observed['container_spec_hash'] : '';
 
         if ($expectedHash !== '' && $actualHash !== $expectedHash) {
@@ -427,18 +432,18 @@ final readonly class WorkspacesProbe
                     summary: "Workspace {$workspace->name} belongs to a production app role where workspaces are disabled.",
                     detail: [
                         'workspace' => $workspace->name,
-                        'app' => $workspace->app->name,
-                        'node' => $workspace->app->node->name,
+                        'app' => $workspace->app?->name,
+                        'node' => $workspace->app?->node?->name,
                     ],
                 ),
             ];
         }
 
-        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app->node, 'app-dev')) {
+        if (! $this->nodeRoleAssignments()->nodeHasActiveRole($workspace->app?->node, 'app-dev')) {
             return [];
         }
 
-        if ($workspace->app->runtime === AppRuntimeKind::Php) {
+        if ($workspace->app?->runtime === AppRuntimeKind::Php) {
             return [];
         }
 

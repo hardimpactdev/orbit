@@ -32,8 +32,9 @@ final readonly class VersionInfoResolver
         }
 
         if ($releasedAt === null) {
-            $currentRelease = $this->releaseManifest(sprintf(self::VersionManifestUrl, $version))
-                ?? $this->apiRelease("tags/v{$version}");
+            $currentRelease = $this->releaseManifest(sprintf(self::VersionManifestUrl, $version)) ?? $this->apiRelease(
+                "tags/v{$version}",
+            );
             $releasedAt = $currentRelease['published_at'] ?? null;
         }
 

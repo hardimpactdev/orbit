@@ -17,7 +17,8 @@ function createToolShowCallerNode(array $overrides = []): Node
     return Node::factory()->create(array_merge([
         'name' => 'caller',
         'host' => TOOL_SHOW_CALLER_WG_IP,
-        'wireguard_address' => TOOL_SHOW_CALLER_WG_IP], $overrides));
+        'wireguard_address' => TOOL_SHOW_CALLER_WG_IP,
+    ], $overrides));
 }
 
 function grantToolShowAccess(Node $caller, Node $appNode): void
@@ -26,7 +27,8 @@ function grantToolShowAccess(Node $caller, Node $appNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('ToolShowController', function (): void {
@@ -39,11 +41,20 @@ describe('ToolShowController', function (): void {
             'name' => 'composer',
             'node_id' => $node->id,
             'expected_state' => 'installed',
-            'expected_version' => '2.8']);
+            'expected_version' => '2.8',
+        ]);
 
-        $response = $this->call('GET', '/api/tools/composer?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/composer?node=app-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.tool.name', 'composer')
             ->assertJsonPath('success.data.tool.node', 'app-1')
             ->assertJsonPath('success.data.tool.expected_state', 'installed')
@@ -60,9 +71,17 @@ describe('ToolShowController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
         NodeTool::factory()->create(['name' => 'php', 'node_id' => $node->id]);
 
-        $response = $this->call('GET', '/api/tools/php?app=docs', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/php?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.tool.name', 'php')
             ->assertJsonPath('success.data.tool.node', 'app-1');
     });
@@ -76,7 +95,8 @@ describe('ToolShowController', function (): void {
 
         $response = $this->call('GET', '/api/tools/caddy', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'target');
     });
@@ -90,7 +110,8 @@ describe('ToolShowController', function (): void {
 
         $response = $this->call('GET', '/api/tools/composer', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'target');
     });
@@ -100,9 +121,17 @@ describe('ToolShowController', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1']);
         grantToolShowAccess($caller, $node);
 
-        $response = $this->call('GET', '/api/tools/composer?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/composer?node=app-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'tool.not_found')
             ->assertJsonPath('error.meta.tool', 'composer')
             ->assertJsonPath('error.meta.node', 'app-1');
@@ -111,9 +140,17 @@ describe('ToolShowController', function (): void {
     it('rejects unsupported tool catalog slugs', function (): void {
         createToolShowCallerNode([]);
 
-        $response = $this->call('GET', '/api/tools/not-a-tool?node=app-1', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/not-a-tool?node=app-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'tool.unsupported_action')
             ->assertJsonPath('error.meta.tool', 'not-a-tool');
     });
@@ -122,7 +159,14 @@ describe('ToolShowController', function (): void {
         createToolShowCallerNode();
         Node::factory()->create(['name' => 'hidden']);
 
-        $response = $this->call('GET', '/api/tools/composer?node=hidden', [], [], [], ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/composer?node=hidden',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_SHOW_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -131,7 +175,8 @@ describe('ToolShowController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/tools/composer');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

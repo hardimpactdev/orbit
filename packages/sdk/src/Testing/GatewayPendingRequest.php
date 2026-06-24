@@ -36,7 +36,19 @@ final readonly class GatewayPendingRequest
     {
         $body = $this->pendingRequest->body()?->all() ?? [];
 
-        return is_array($body) ? $body : [];
+        if (! is_array($body)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($body as $key => $value) {
+            if (is_string($key)) {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 
     /**

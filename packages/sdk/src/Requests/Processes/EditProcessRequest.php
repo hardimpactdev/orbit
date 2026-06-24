@@ -38,14 +38,17 @@ final class EditProcessRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'command' => $this->command,
-            'restart_policy' => $this->restartPolicy,
-            'crash_notification' => $this->crashNotification,
-            'runtime' => $this->runtime,
-            'restart' => $this->restart,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'command' => $this->command,
+                'restart_policy' => $this->restartPolicy,
+                'crash_notification' => $this->crashNotification,
+                'runtime' => $this->runtime,
+                'restart' => $this->restart,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ProcessEditResponse
@@ -58,7 +61,7 @@ final class EditProcessRequest extends GatewayRequest implements HasBody
             $meta = $body['success']['meta'];
 
             if (isset($meta['warnings']) && is_array($meta['warnings'])) {
-                $warnings = array_values($meta['warnings']);
+                $warnings = $this->listOfStringKeyedArrays($meta['warnings']);
             }
         }
 

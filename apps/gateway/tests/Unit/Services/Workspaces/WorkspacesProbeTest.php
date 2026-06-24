@@ -53,7 +53,7 @@ describe('source path reality', function (): void {
             ]);
         $shell = new WorkspacesProbeRecordingRemoteShell("feature\t1\t1\t1\t1\t1\t1\t0\t0\t0\t\n");
 
-        $snapshot = (new WorkspacesProbe($shell))->introspect($workspace);
+        $snapshot = new WorkspacesProbe($shell)->introspect($workspace);
 
         expect($snapshot->get('feature'))->toMatchArray([
             'path_exists' => true,
@@ -66,11 +66,17 @@ describe('source path reality', function (): void {
             'container_exists' => false,
             'container_running' => false,
         ]);
-        expect($shell->scripts[0])->not->toContain('php -r')
-            ->and($shell->scripts[0])->toContain('path_exists=')
-            ->and($shell->scripts[0])->toContain('docker container inspect')
-            ->and($shell->scripts[0])->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
-            ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))->toMatchArray([
+        expect($shell->scripts[0])
+            ->not
+            ->toContain('php -r')
+            ->and($shell->scripts[0])
+            ->toContain('path_exists=')
+            ->and($shell->scripts[0])
+            ->toContain('docker container inspect')
+            ->and($shell->scripts[0])
+            ->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
+            ->and(json_decode((string) ($shell->options[0]['input'] ?? ''), true))
+            ->toMatchArray([
                 'name' => 'feature',
                 'path' => "{$app->path}/.worktrees/feature",
                 'container_name' => 'orbit-ws-'.$app->name.'-feature',
@@ -93,7 +99,7 @@ describe('source path reality', function (): void {
             ],
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.path_missing')?->kind)->toBe(DriftKind::Missing);
         expect(issue($drift, 'workspace.path_unusable'))->toBeNull();
@@ -110,7 +116,7 @@ describe('source path reality', function (): void {
             ],
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.path_unusable')?->kind)->toBe(DriftKind::Unverifiable);
     });
@@ -124,7 +130,7 @@ describe('source path reality', function (): void {
                 'path' => '/home/orbit/other/feature',
             ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -138,7 +144,7 @@ describe('source path reality', function (): void {
                 'path' => '/home/orbit/apps/docs/feature',
             ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -154,7 +160,7 @@ describe('source path reality', function (): void {
                 'agent_ide_workspace_id' => 'poly-123',
             ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
@@ -176,7 +182,7 @@ describe('PHP runtime reality', function (): void {
             ],
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.php_version_unavailable')?->kind)->toBe(DriftKind::Missing);
     });
@@ -195,7 +201,7 @@ describe('PHP runtime reality', function (): void {
             ],
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
     });
@@ -214,7 +220,7 @@ describe('PHP runtime reality', function (): void {
             ],
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.php_version_unavailable'))->toBeNull();
     });
@@ -227,7 +233,7 @@ describe('PHP runtime reality', function (): void {
             'lifecycle_status' => $lifecycleStatus,
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
                 'docker_available' => true,
                 'runtime_image_available' => false,
@@ -250,7 +256,7 @@ describe('PHP runtime reality', function (): void {
             'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
                 'docker_available' => true,
                 'runtime_image_available' => true,
@@ -271,7 +277,7 @@ describe('PHP runtime reality', function (): void {
             'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
                 'docker_available' => true,
                 'runtime_image_available' => true,
@@ -293,7 +299,7 @@ describe('PHP runtime reality', function (): void {
         ]);
         $expectedHash = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace)->specHash();
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
                 'docker_available' => true,
                 'runtime_image_available' => true,
@@ -316,7 +322,7 @@ describe('PHP runtime reality', function (): void {
             'lifecycle_status' => WorkspaceLifecycleStatus::Active,
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
                 'docker_available' => true,
                 'runtime_image_available' => false,
@@ -335,7 +341,7 @@ describe('PHP runtime reality', function (): void {
             'lifecycle_status' => $lifecycleStatus,
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([
             'feature' => convergedRuntimeSnapshot([
                 'docker_available' => true,
                 'runtime_image_available' => true,
@@ -366,10 +372,12 @@ describe('workspace security reality', function (): void {
             ]),
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
-        expect(issue($drift, 'workspace.security.system_user')?->kind)->toBe(DriftKind::Missing)
-            ->and(issue($drift, 'workspace.security.fs_permissions')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.security.system_user')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'workspace.security.fs_permissions')?->kind)
+            ->toBe(DriftKind::Divergent);
     });
 
     it('does not report host runtime isolation drift for Docker-first PHP workspaces', function (): void {
@@ -383,17 +391,19 @@ describe('workspace security reality', function (): void {
             ]),
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
-        expect(issue($drift, 'workspace.security.system_user'))->toBeNull()
-            ->and(issue($drift, 'workspace.security.fs_permissions'))->toBeNull();
+        expect(issue($drift, 'workspace.security.system_user'))
+            ->toBeNull()
+            ->and(issue($drift, 'workspace.security.fs_permissions'))
+            ->toBeNull();
     });
 
     it('flags workspaces that belong to production app nodes', function (): void {
         $app = workspaceableApp(['environment' => 'production'], role: 'app-prod');
         $workspace = workspaceFor($app, ['name' => 'feature']);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, new ProbeSnapshot([]));
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.unsupported_for_production')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -408,7 +418,7 @@ describe('docker-first runtime (no FPM drift for PHP workspaces)', function (): 
             'feature' => convergedRuntimeSnapshot(),
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.fpm_config_missing'))->toBeNull();
         expect(issue($drift, 'workspace.fpm_config_mismatch'))->toBeNull();
@@ -425,7 +435,7 @@ describe('docker-first runtime (no FPM drift for PHP workspaces)', function (): 
             ]),
         ]);
 
-        $drift = (new WorkspacesProbe)->diff($workspace, $snapshot);
+        $drift = new WorkspacesProbe()->diff($workspace, $snapshot);
 
         expect(issue($drift, 'workspace.security.fpm_pool_isolation'))->toBeNull();
         expect(issue($drift, 'workspace.security.fpm_systemd_hardening'))->toBeNull();
@@ -565,7 +575,9 @@ final class WorkspacesProbeRecordingRemoteShell implements RemoteShell
      */
     public array $options = [];
 
-    public function __construct(private readonly string $stdout) {}
+    public function __construct(
+        private readonly string $stdout,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

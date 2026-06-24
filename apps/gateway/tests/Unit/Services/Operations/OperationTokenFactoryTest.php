@@ -20,22 +20,33 @@ describe(OperationTokenFactory::class, function (): void {
             command: 'internal:executor:verify',
         );
 
-        expect($token)->toBeInstanceOf(OperationToken::class)
-            ->and($token->id)->toBe('operation-verify-1')
-            ->and($token->node)->toBe('app-dev')
-            ->and($token->command)->toBe('internal:executor:verify')
-            ->and($token->issuedAt)->toBe($issuedAt)
-            ->and($token->expiresAt)->toBe($issuedAt + 120)
-            ->and($token->signature)->not->toBe('')
-            ->and(explode('.', $token->toString()))->toHaveCount(6)
-            ->and(OperationToken::parse($token->toString()))->toEqual($token)
+        expect($token)
+            ->toBeInstanceOf(OperationToken::class)
+            ->and($token->id)
+            ->toBe('operation-verify-1')
+            ->and($token->node)
+            ->toBe('app-dev')
+            ->and($token->command)
+            ->toBe('internal:executor:verify')
+            ->and($token->issuedAt)
+            ->toBe($issuedAt)
+            ->and($token->expiresAt)
+            ->toBe($issuedAt + 120)
+            ->and($token->signature)
+            ->not
+            ->toBe('')
+            ->and(explode('.', $token->toString()))
+            ->toHaveCount(6)
+            ->and(OperationToken::parse($token->toString()))
+            ->toEqual($token)
             ->and(operationTokenFactoryTestVerifier()->verify(
                 secret: 'gateway-secret',
                 token: $token,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
                 now: $issuedAt,
-            ))->toBeTrue();
+            ))
+            ->toBeTrue();
     });
 
     it('mints tokens that fail verification for the wrong command', function (): void {
@@ -98,14 +109,16 @@ describe(OperationTokenFactory::class, function (): void {
 
         $tampered = OperationToken::parse(implode('.', $segments));
 
-        expect($tampered->id)->toBe('operation-verify-tampered')
+        expect($tampered->id)
+            ->toBe('operation-verify-tampered')
             ->and(operationTokenFactoryTestVerifier()->verify(
                 secret: 'gateway-secret',
                 token: $tampered,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
                 now: 1_798_105_200,
-            ))->toBeFalse();
+            ))
+            ->toBeFalse();
     });
 
     it('throws instead of signing when the secret is empty', function (string $secret): void {
@@ -139,14 +152,16 @@ describe(OperationTokenFactory::class, function (): void {
             command: 'internal:executor:verify',
         );
 
-        expect($token->expiresAt - $token->issuedAt)->toBe(30)
+        expect($token->expiresAt - $token->issuedAt)
+            ->toBe(30)
             ->and(operationTokenFactoryTestVerifier()->verify(
                 secret: 'gateway-app-key',
                 token: $token,
                 expectedNode: 'app-dev',
                 expectedCommand: 'internal:executor:verify',
                 now: $token->issuedAt,
-            ))->toBeTrue();
+            ))
+            ->toBeTrue();
     });
 });
 

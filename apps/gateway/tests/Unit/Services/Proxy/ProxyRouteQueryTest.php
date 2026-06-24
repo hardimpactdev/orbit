@@ -58,13 +58,16 @@ describe('ProxyRouteQuery', function (): void {
 
         $result = app(ProxyRouteQuery::class)->list();
 
-        expect(array_column($result['routes'], 'domain'))->toBe(['docs.test', 'z.test'])
-            ->and($result['meta'])->toBe([
+        expect(array_column($result['routes'], 'domain'))
+            ->toBe(['docs.test', 'z.test'])
+            ->and($result['meta'])
+            ->toBe([
                 'filter' => 'all',
                 'node' => null,
                 'count' => 2,
             ])
-            ->and($result['routes'][0])->toMatchArray([
+            ->and($result['routes'][0])
+            ->toMatchArray([
                 'domain' => 'docs.test',
                 'kind' => 'app',
                 'owner' => ['type' => 'app', 'name' => 'docs'],
@@ -74,7 +77,8 @@ describe('ProxyRouteQuery', function (): void {
                 'tls' => ['managed_by' => 'orbit', 'trusted_by_gateway_ca' => true],
                 'status' => 'expected',
             ])
-            ->and($result['routes'][1])->toMatchArray([
+            ->and($result['routes'][1])
+            ->toMatchArray([
                 'domain' => 'z.test',
                 'kind' => 'redirect',
                 'owner' => ['type' => 'custom', 'name' => null],
@@ -113,19 +117,21 @@ describe('ProxyRouteQuery', function (): void {
 
         $route = app(ProxyRouteQuery::class)->list()['routes'][0];
 
-        expect($route)->toMatchArray([
-            'domain' => 'docs.test',
-            'node' => 'edge-1',
-            'placement' => 'ingress',
-            'router' => [
-                'node' => 'gateway-1',
-                'url' => 'http://10.6.0.2:80',
-                'backend_pool' => [
-                    ['node' => 'web-1', 'url' => 'http://10.6.0.21:80'],
+        expect($route)
+            ->toMatchArray([
+                'domain' => 'docs.test',
+                'node' => 'edge-1',
+                'placement' => 'ingress',
+                'router' => [
+                    'node' => 'gateway-1',
+                    'url' => 'http://10.6.0.2:80',
+                    'backend_pool' => [
+                        ['node' => 'web-1', 'url' => 'http://10.6.0.21:80'],
+                    ],
                 ],
-            ],
-        ])
-            ->and($route['router']['backend_pool'][0])->not->toHaveKey('node_id');
+            ])
+            ->and($route['router']['backend_pool'][0])
+            ->not->toHaveKey('node_id');
     });
 
     it('normalizes websocket service routes and selects them via the websocket service filter', function (): void {
@@ -150,12 +156,14 @@ describe('ProxyRouteQuery', function (): void {
 
         $result = app(ProxyRouteQuery::class)->list(filter: 'websocket');
 
-        expect($result['meta'])->toBe([
-            'filter' => 'websocket',
-            'node' => null,
-            'count' => 1,
-        ])
-            ->and($result['routes'][0])->toMatchArray([
+        expect($result['meta'])
+            ->toBe([
+                'filter' => 'websocket',
+                'node' => null,
+                'count' => 1,
+            ])
+            ->and($result['routes'][0])
+            ->toMatchArray([
                 'domain' => 'websocket.orbit',
                 'kind' => 'proxy',
                 'owner' => ['type' => 'router', 'name' => 'websocket.orbit'],
@@ -188,8 +196,7 @@ describe('ProxyRouteQuery', function (): void {
 
         $result = app(ProxyRouteQuery::class)->list(filter: 'websocket');
 
-        expect($result['meta']['count'])->toBe(1)
-            ->and($result['routes'][0]['domain'])->toBe('websocket.orbit');
+        expect($result['meta']['count'])->toBe(1)->and($result['routes'][0]['domain'])->toBe('websocket.orbit');
     });
 
     it('normalizes app websocket public routes and filters them by owner', function (): void {
@@ -223,12 +230,14 @@ describe('ProxyRouteQuery', function (): void {
 
         $result = app(ProxyRouteQuery::class)->list(filter: 'app-websocket');
 
-        expect($result['meta'])->toBe([
-            'filter' => 'app-websocket',
-            'node' => null,
-            'count' => 1,
-        ])
-            ->and($result['routes'][0])->toMatchArray([
+        expect($result['meta'])
+            ->toBe([
+                'filter' => 'app-websocket',
+                'node' => null,
+                'count' => 1,
+            ])
+            ->and($result['routes'][0])
+            ->toMatchArray([
                 'domain' => 'ws.docs.test',
                 'kind' => 'proxy',
                 'owner' => ['type' => 'app-websocket', 'name' => 'docs'],
@@ -281,10 +290,14 @@ describe('ProxyRouteQuery', function (): void {
 
         $query = app(ProxyRouteQuery::class);
 
-        expect(array_column($query->list(filter: 'app')['routes'], 'domain'))->toBe(['docs.test'])
-            ->and(array_column($query->list(filter: 'workspace')['routes'], 'domain'))->toBe(['feature.docs.test'])
-            ->and(array_column($query->list(filter: 'custom')['routes'], 'domain'))->toBe(['custom.test'])
-            ->and(array_column($query->list(filter: 'redirect')['routes'], 'domain'))->toBe(['old.test']);
+        expect(array_column($query->list(filter: 'app')['routes'], 'domain'))
+            ->toBe(['docs.test'])
+            ->and(array_column($query->list(filter: 'workspace')['routes'], 'domain'))
+            ->toBe(['feature.docs.test'])
+            ->and(array_column($query->list(filter: 'custom')['routes'], 'domain'))
+            ->toBe(['custom.test'])
+            ->and(array_column($query->list(filter: 'redirect')['routes'], 'domain'))
+            ->toBe(['old.test']);
     });
 
     it('s3 service filter selects router-owned s3.orbit route and public s3 host routes', function (): void {
@@ -322,8 +335,7 @@ describe('ProxyRouteQuery', function (): void {
         $domains = array_column($result['routes'], 'domain');
         sort($domains);
 
-        expect($domains)->toBe(['s3.example.com', 's3.orbit'])
-            ->and($result['meta']['count'])->toBe(2);
+        expect($domains)->toBe(['s3.example.com', 's3.orbit'])->and($result['meta']['count'])->toBe(2);
     });
 
     it('filters by visible serving node and rejects unknown node scope', function (): void {
@@ -338,8 +350,10 @@ describe('ProxyRouteQuery', function (): void {
         $query = app(ProxyRouteQuery::class);
         $result = $query->list(node: 'visible-node', caller: $caller);
 
-        expect(array_column($result['routes'], 'domain'))->toBe(['visible.test'])
-            ->and($result['meta']['node'])->toBe('visible-node');
+        expect(array_column($result['routes'], 'domain'))
+            ->toBe(['visible.test'])
+            ->and($result['meta']['node'])
+            ->toBe('visible-node');
 
         $query->list(node: 'hidden-node', caller: $caller);
     })->throws(GatewayApiException::class, "Unknown node: 'hidden-node'.");

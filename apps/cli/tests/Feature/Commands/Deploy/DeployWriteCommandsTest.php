@@ -32,7 +32,8 @@ describe('deploy write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/steps')
                 && $request->data() === [
                     'app' => 'docs',
@@ -41,12 +42,16 @@ describe('deploy write commands', function (): void {
                     'order' => 20,
                     'timeout' => 120,
                     'retention' => 5,
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['step']['id'])->toBe(12)
-            ->and($decoded['success']['meta']['action'])->toBe('created');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['step']['id'])
+            ->toBe(12)
+            ->and($decoded['success']['meta']['action'])
+            ->toBe('created');
     });
 
     it('rejects deploy:step-add missing input before contacting the gateway', function (): void {
@@ -61,9 +66,12 @@ describe('deploy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('command');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('command');
     });
 
     it('rejects invalid deploy:step-add numeric options before contacting the gateway', function (): void {
@@ -80,9 +88,12 @@ describe('deploy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('timeout');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('timeout');
     });
 
     it('requires force for deploy:step-remove before contacting the gateway', function (): void {
@@ -98,9 +109,12 @@ describe('deploy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('destructive_consent_required')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('destructive_consent_required')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('deletes deployment steps when force is supplied', function (): void {
@@ -127,17 +141,22 @@ describe('deploy write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && str_contains($request->url(), '/api/deploy/steps/Run%20migrations')
                 && $request->data() === [
                     'app' => 'docs',
                     'destructive_consent' => true,
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['step']['id'])->toBe(12)
-            ->and($decoded['success']['meta']['history_preserved'])->toBeTrue();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['step']['id'])
+            ->toBe(12)
+            ->and($decoded['success']['meta']['history_preserved'])
+            ->toBeTrue();
     });
 
     it('posts deploy:run payloads to the gateway', function (): void {
@@ -163,17 +182,21 @@ describe('deploy write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         assertGatewayStreamSent(function (FakeGatewayStreamRequest $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/deploy/run')
                 && $request->hasHeader('Accept', 'text/event-stream')
                 && $request->data() === [
                     'app' => 'docs',
                     'detach' => true,
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe([
                 'event' => 'complete',
                 'data' => $complete,
             ]);
@@ -190,9 +213,12 @@ describe('deploy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('passes through gateway errors from deploy writes', function (): void {
@@ -207,9 +233,12 @@ describe('deploy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('deploy:run');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('deploy:run');
     });
 
     it('renders a concise human summary for deploy:step-add without dumping the envelope', function (): void {
@@ -233,14 +262,20 @@ describe('deploy write commands', function (): void {
             '--retention' => '5',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Added deployment step #12 'Run migrations' to app 'docs'.")
-            ->and($output)->toContain('php artisan migrate --force')
-            ->and($output)->toContain('order 20')
-            ->and($output)->toContain('retention 5')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('step:')
-            ->and($output)->not->toContain('timeout_seconds:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Added deployment step #12 'Run migrations' to app 'docs'.")
+            ->and($output)
+            ->toContain('php artisan migrate --force')
+            ->and($output)
+            ->toContain('order 20')
+            ->and($output)
+            ->toContain('retention 5')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('step:')->and($output)
+            ->not->toContain('timeout_seconds:');
     });
 
     it('renders retention as unlimited for deploy:step-add when no retention is set', function (): void {
@@ -262,10 +297,14 @@ describe('deploy write commands', function (): void {
             '--title' => 'Clear cache',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Added deployment step #13 'Clear cache' to app 'docs'.")
-            ->and($output)->toContain('retention unlimited')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Added deployment step #13 'Clear cache' to app 'docs'.")
+            ->and($output)
+            ->toContain('retention unlimited')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders a concise human summary for deploy:step-remove without dumping the envelope', function (): void {
@@ -288,12 +327,17 @@ describe('deploy write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Removed deployment step #12 'Run migrations' from app 'docs'.")
-            ->and($output)->toContain('order 20')
-            ->and($output)->toContain('history preserved')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('step:')
-            ->and($output)->not->toContain('history_preserved:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Removed deployment step #12 'Run migrations' from app 'docs'.")
+            ->and($output)
+            ->toContain('order 20')
+            ->and($output)
+            ->toContain('history preserved')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('step:')->and($output)
+            ->not->toContain('history_preserved:');
     });
 });

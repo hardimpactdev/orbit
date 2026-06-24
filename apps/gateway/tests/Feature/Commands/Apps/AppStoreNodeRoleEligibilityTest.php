@@ -71,18 +71,27 @@ describe('AppStore node role eligibility', function (): void {
         assignRole($target, 'app-dev', settings: ['tld' => 'test']);
         grantAppStoreRoleAccess($caller, $target);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => $target->name,
-            'root' => 'public',
-            'php_version' => '8.5',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => $target->name,
+                'root' => 'public',
+                'php_version' => '8.5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.app.node', $target->name);
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and(App::query()->where('name', 'docs')->value('environment'))->toBe('development');
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeTrue()
+            ->and(App::query()->where('name', 'docs')->value('environment'))
+            ->toBe('development');
     });
 
     it('accepts a node with active app-prod for production app creation', function (): void {
@@ -107,13 +116,20 @@ describe('AppStore node role eligibility', function (): void {
         assignRole($target, 'app-prod', settings: ['ingress_node_id' => $ingress->id]);
         grantAppStoreRoleAccess($caller, $target);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => $target->name,
-            'domain' => 'docs.example.com',
-            'root' => 'public',
-            'php_version' => '8.5',
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => $target->name,
+                'domain' => 'docs.example.com',
+                'root' => 'public',
+                'php_version' => '8.5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.app.url', 'https://docs.example.com');
@@ -127,10 +143,17 @@ describe('AppStore node role eligibility', function (): void {
         assignRole($target, 'database');
         grantAppStoreRoleAccess($caller, $target);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => $target->name,
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => $target->name,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP],
+        );
 
         $response->assertStatus(400)
             ->assertJsonPath('error.code', 'app.ineligible_node');
@@ -144,10 +167,17 @@ describe('AppStore node role eligibility', function (): void {
         assignRole($target, 'app-dev', $status, ['tld' => 'test']);
         grantAppStoreRoleAccess($caller, $target);
 
-        $response = $this->call('POST', '/api/apps', [
-            'name' => 'docs',
-            'node' => $target->name,
-        ], [], [], ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps',
+            [
+                'name' => 'docs',
+                'node' => $target->name,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_STORE_ROLE_CALLER_WG_IP],
+        );
 
         $response->assertStatus(400)
             ->assertJsonPath('error.code', 'app.ineligible_node');

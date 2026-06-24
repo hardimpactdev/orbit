@@ -25,7 +25,7 @@ it('syncs the initiating worktree to a generated remote path without dependency 
     });
 
     try {
-        $path = (new SourceMountedCheckoutSyncer)->sync('beast', 'docker');
+        $path = new SourceMountedCheckoutSyncer()->sync('beast', 'docker');
         $commandsOutput = implode("\n", $commands);
         $ownershipRepairOffset = strpos($commandsOutput, 'ORBIT_E2E_SOURCE_SYNC_UID="$(id -u)"');
         $rsyncOffset = strpos($commandsOutput, 'rsync -az --delete');
@@ -33,7 +33,10 @@ it('syncs the initiating worktree to a generated remote path without dependency 
         $hydrationOffset = strpos($commandsOutput, 'if command -v composer >/dev/null 2>&1; then');
         $vendorArchiveOffset = strpos($commandsOutput, 'archive_dir=');
         $permissionOffset = strpos($commandsOutput, 'find . -type d -exec chmod a+rx {} +');
-        $worktreeSlug = trim(strtolower((string) preg_replace('/[^A-Za-z0-9._-]+/', '-', basename(repo_path()))), '-._');
+        $worktreeSlug = trim(
+            strtolower((string) preg_replace('/[^A-Za-z0-9._-]+/', '-', basename(repo_path()))),
+            '-._',
+        );
         $expectedPathPrefix = '/tmp/orbit-e2e-sources/'.($worktreeSlug !== '' ? $worktreeSlug : 'orbit').'-docker-';
 
         expect($path)
@@ -100,17 +103,17 @@ it('syncs the initiating worktree to a generated remote path without dependency 
             ->toContain('apps/gateway/storage')
             ->toContain('apps/gateway/bootstrap/cache')
             ->toContain('.orbit-e2e-source-sync.lock')
-            ->and($ownershipRepairOffset)->not->toBeFalse()
-            ->and($cleanupOffset)->not->toBeFalse()
-            ->and($rsyncOffset)->not->toBeFalse()
-            ->and($hydrationOffset)->not->toBeFalse()
-            ->and($vendorArchiveOffset)->not->toBeFalse()
-            ->and($permissionOffset)->not->toBeFalse()
-            ->and($ownershipRepairOffset)->toBeLessThan($rsyncOffset)
-            ->and($rsyncOffset)->toBeLessThan($cleanupOffset)
-            ->and($cleanupOffset)->toBeLessThan($hydrationOffset)
-            ->and($hydrationOffset)->toBeLessThan($vendorArchiveOffset)
-            ->and($vendorArchiveOffset)->toBeLessThan($permissionOffset);
+            ->and($ownershipRepairOffset)
+            ->not->toBeFalse()->and($cleanupOffset)
+            ->not->toBeFalse()->and($rsyncOffset)
+            ->not->toBeFalse()->and($hydrationOffset)
+            ->not->toBeFalse()->and($vendorArchiveOffset)
+            ->not->toBeFalse()->and($permissionOffset)
+            ->not->toBeFalse()->and($ownershipRepairOffset)->toBeLessThan($rsyncOffset)->and(
+                $rsyncOffset,
+            )->toBeLessThan($cleanupOffset)->and($cleanupOffset)->toBeLessThan($hydrationOffset)->and(
+                $hydrationOffset,
+            )->toBeLessThan($vendorArchiveOffset)->and($vendorArchiveOffset)->toBeLessThan($permissionOffset);
     } finally {
         if (is_string($previousTestToken)) {
             putenv("TEST_TOKEN={$previousTestToken}");
@@ -134,7 +137,7 @@ it('passes GitHub auth to remote dependency hydration through SSH input', functi
     withE2EConfigEnvironment([
         'GH_TOKEN' => 'ghp_source_sync_secret',
     ], function (): void {
-        (new SourceMountedCheckoutSyncer)->sync('sidecar1', 'docker');
+        new SourceMountedCheckoutSyncer()->sync('sidecar1', 'docker');
     });
 
     $commandsOutput = implode("\n", $commands);
@@ -142,7 +145,8 @@ it('passes GitHub auth to remote dependency hydration through SSH input', functi
 
     expect($commandsOutput)
         ->toContain("ssh -o BatchMode=yes -o ConnectTimeout=10 'sidecar1' 'bash -s'")
-        ->not->toContain('ghp_source_sync_secret')
+        ->not
+        ->toContain('ghp_source_sync_secret')
         ->and($inputsOutput)
         ->toContain("export GH_TOKEN='ghp_source_sync_secret'")
         ->toContain("export GITHUB_TOKEN='ghp_source_sync_secret'")
@@ -186,7 +190,7 @@ it('uses explicit provider source paths as the sync target', function (): void {
         'ORBIT_E2E_DOCKER_SOURCE_PATH' => '/srv/global-orbit-source',
         'ORBIT_E2E_DOCKER_SOURCE_PATH_BEAST' => '/srv/beast-orbit-source',
     ], function (): void {
-        expect((new SourceMountedCheckoutSyncer)->sync('beast', 'docker'))
+        expect(new SourceMountedCheckoutSyncer()->sync('beast', 'docker'))
             ->toBe('/srv/beast-orbit-source');
     });
 });
@@ -194,7 +198,7 @@ it('uses explicit provider source paths as the sync target', function (): void {
 it('uses the local worktree directly for local source mounts', function (): void {
     Process::fake(fn () => Process::result());
 
-    expect((new SourceMountedCheckoutSyncer)->sync('local', 'docker'))->toBe(repo_path());
+    expect(new SourceMountedCheckoutSyncer()->sync('local', 'docker'))->toBe(repo_path());
 
     Process::assertNothingRan();
 });
@@ -210,7 +214,7 @@ it('guards the ownership repair chown behind a foreign-owner probe', function ()
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     $commandsOutput = implode("\n", $commands);
 
@@ -218,7 +222,10 @@ it('guards the ownership repair chown behind a foreign-owner probe', function ()
         ->toContain('! -user "$(id -un)"')
         ->toContain('-print -quit')
         ->and(strpos($commandsOutput, '! -user "$(id -un)"'))
-        ->toBeLessThan(strpos($commandsOutput, 'chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work'));
+        ->toBeLessThan(strpos(
+            $commandsOutput,
+            'chown -R "${ORBIT_E2E_SOURCE_SYNC_UID}:${ORBIT_E2E_SOURCE_SYNC_GID}" /work',
+        ));
 });
 
 it('bounds source sync lock waits and records the remote lock owner', function (): void {
@@ -229,7 +236,7 @@ it('bounds source sync lock waits and records the remote lock owner', function (
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     $commandsOutput = implode("\n", $commands);
 
@@ -253,7 +260,7 @@ it('itemizes rsync changes so unchanged syncs can skip maintenance work', functi
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     expect(implode("\n", $commands))->toContain('rsync -az --delete --itemize-changes');
 });
@@ -269,7 +276,7 @@ it('skips permission normalization when rsync reports no changes', function (): 
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     expect(implode("\n", $commands))
         ->not->toContain('find . -type d -exec chmod a+rx {} +')
@@ -292,7 +299,7 @@ it('normalizes permissions when rsync reports changed files', function (): void 
         return Process::result();
     });
 
-    (new SourceMountedCheckoutSyncer)->sync('beast', 'incus');
+    new SourceMountedCheckoutSyncer()->sync('beast', 'incus');
 
     expect(implode("\n", $commands))
         ->toContain('find . -type d -exec chmod a+rx {} +')

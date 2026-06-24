@@ -7,7 +7,12 @@ use App\E2E\Support\E2EGatewayApi;
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+pest()->group(
+    'e2e-feature',
+    'e2e-provider-incus',
+    'e2e-feature-operator_gateway_app-dev',
+    'e2e-feature-operator-gateway-dev',
+);
 
 it('serves an app created on a prepared app-dev topology', function (): void {
     $config = E2EConfig::fromEnvironment();
@@ -44,8 +49,7 @@ it('serves an app created on a prepared app-dev topology', function (): void {
         );
         $appNewData = e2eJsonCommandResultData(e2eJsonCommandPayload($appNewResult->output()));
 
-        expect($appNewData['app']['name'])->toBe($appName)
-            ->and($appNewData['app']['node'])->toBe('app-dev-1');
+        expect($appNewData['app']['name'])->toBe($appName)->and($appNewData['app']['node'])->toBe('app-dev-1');
 
         $indexPhp = "<?php\nhttp_response_code(200);\necho 'orbit-e2e-serving-ok';\n";
         $composerJson = json_encode([
@@ -60,8 +64,16 @@ it('serves an app created on a prepared app-dev topology', function (): void {
                 'sudo -u orbit bash -lc %s',
                 escapeshellarg(implode(' && ', [
                     sprintf('mkdir -p %s', escapeshellarg("{$appPath}/public")),
-                    sprintf('printf %%s %s > %s', escapeshellarg($indexPhp), escapeshellarg("{$appPath}/public/index.php")),
-                    sprintf('printf %%s %s > %s', escapeshellarg($composerJson), escapeshellarg("{$appPath}/composer.json")),
+                    sprintf(
+                        'printf %%s %s > %s',
+                        escapeshellarg($indexPhp),
+                        escapeshellarg("{$appPath}/public/index.php"),
+                    ),
+                    sprintf(
+                        'printf %%s %s > %s',
+                        escapeshellarg($composerJson),
+                        escapeshellarg("{$appPath}/composer.json"),
+                    ),
                 ])),
             ),
             timeoutSeconds: 60,
@@ -71,14 +83,19 @@ it('serves an app created on a prepared app-dev topology', function (): void {
             'dev',
             sprintf(
                 'sudo -u orbit bash -lc %s',
-                escapeshellarg('cd '.escapeshellarg($appPath).' && HOME=/home/orbit /usr/local/bin/composer install --no-interaction --no-progress'),
+                escapeshellarg(
+                    'cd '
+                    .escapeshellarg($appPath)
+                    .' && HOME=/home/orbit /usr/local/bin/composer install --no-interaction --no-progress',
+                ),
             ),
             timeoutSeconds: 300,
         );
 
-        expect($composerInstallResult->successful())->toBeTrue(
-            "composer install on app-dev failed: {$composerInstallResult->output()}{$composerInstallResult->errorOutput()}"
-        );
+        expect($composerInstallResult->successful())
+            ->toBeTrue(
+                "composer install on app-dev failed: {$composerInstallResult->output()}{$composerInstallResult->errorOutput()}",
+            );
 
         appServingRestoreDoctorFamily($topology, 'app');
         appServingRestoreDoctorFamily($topology, 'proxy');
@@ -94,10 +111,12 @@ it('serves an app created on a prepared app-dev topology', function (): void {
             timeoutSeconds: 120,
         );
 
-        expect($curlResult->successful())->toBeTrue(
-            "curl of served app failed: {$curlResult->output()}{$curlResult->errorOutput()}"
-        )
-            ->and($curlResult->output())->toContain('orbit-e2e-serving-ok');
+        expect($curlResult->successful())
+            ->toBeTrue(
+                "curl of served app failed: {$curlResult->output()}{$curlResult->errorOutput()}",
+            )
+            ->and($curlResult->output())
+            ->toContain('orbit-e2e-serving-ok');
 
         $phpVersionResult = $topology->ssh(
             'dev',
@@ -107,18 +126,29 @@ it('serves an app created on a prepared app-dev topology', function (): void {
 
         expect(trim($phpVersionResult->output()))->toBe('8.5');
 
-        $composerVersionResult = $topology->ssh('dev', 'cd /home/orbit && HOME=/home/orbit /usr/local/bin/composer --version --no-interaction 2>&1', timeoutSeconds: 30);
-        $laravelVersionResult = $topology->ssh('dev', 'cd /home/orbit && HOME=/home/orbit /usr/local/bin/laravel --version 2>&1', timeoutSeconds: 30);
+        $composerVersionResult = $topology->ssh(
+            'dev',
+            'cd /home/orbit && HOME=/home/orbit /usr/local/bin/composer --version --no-interaction 2>&1',
+            timeoutSeconds: 30,
+        );
+        $laravelVersionResult = $topology->ssh(
+            'dev',
+            'cd /home/orbit && HOME=/home/orbit /usr/local/bin/laravel --version 2>&1',
+            timeoutSeconds: 30,
+        );
 
-        expect($composerVersionResult->output())->toContain('Composer')
-            ->and($laravelVersionResult->output())->toContain('Laravel');
+        expect($composerVersionResult->output())
+            ->toContain('Composer')
+            ->and($laravelVersionResult->output())
+            ->toContain('Laravel');
     } finally {
         $topology->ssh(
             'dev',
-            'sudo rm -rf '.escapeshellarg($appPath)
-                .' && sudo systemctl disable --now redis-server >/dev/null 2>&1 || true'
-                .' && sudo rm -f /etc/systemd/system/redis-server.service /usr/local/bin/redis-server'
-                .' && sudo systemctl daemon-reload >/dev/null 2>&1 || true',
+            'sudo rm -rf '
+            .escapeshellarg($appPath)
+            .' && sudo systemctl disable --now redis-server >/dev/null 2>&1 || true'
+            .' && sudo rm -f /etc/systemd/system/redis-server.service /usr/local/bin/redis-server'
+            .' && sudo systemctl daemon-reload >/dev/null 2>&1 || true',
             timeoutSeconds: 60,
         );
         $topology->cleanup();
@@ -138,9 +168,10 @@ function appServingRestoreDoctorFamily(E2ETopologyHarness $topology, string $fam
     );
     $doctorData = e2eJsonCommandData(e2eJsonCommandPayload($doctorResult->output()));
 
-    expect($doctorData['doctor']['healthy'])->toBeTrue(
-        "doctor --family={$family} --restore left the node unhealthy: ".json_encode($doctorData, JSON_PRETTY_PRINT)
-    );
+    expect($doctorData['doctor']['healthy'])
+        ->toBeTrue(
+            "doctor --family={$family} --restore left the node unhealthy: ".json_encode($doctorData, JSON_PRETTY_PRINT),
+        );
 }
 
 function appServingAssertDoctorHealthy(E2ETopologyHarness $topology, string $family, ?string $key = null): void
@@ -158,45 +189,46 @@ function appServingAssertDoctorHealthy(E2ETopologyHarness $topology, string $fam
     );
     $doctorData = e2eJsonCommandData(e2eJsonCommandPayload($doctorResult->output()));
 
-    expect($doctorData['doctor']['healthy'])->toBeTrue(
-        "plain doctor --family={$family} check was unhealthy: ".json_encode($doctorData, JSON_PRETTY_PRINT)
-    );
+    expect($doctorData['doctor']['healthy'])
+        ->toBeTrue(
+            "plain doctor --family={$family} check was unhealthy: ".json_encode($doctorData, JSON_PRETTY_PRINT),
+        );
 }
 
 function appServingPrepareRedisProbe(E2ETopologyHarness $topology): void
 {
     $redisServer = <<<'BASH'
-#!/usr/bin/env bash
-set -euo pipefail
+        #!/usr/bin/env bash
+        set -euo pipefail
 
-if [ "${1:-}" = "--version" ]; then
-    echo 'Redis server v=7.2.0'
-    exit 0
-fi
+        if [ "${1:-}" = "--version" ]; then
+            echo 'Redis server v=7.2.0'
+            exit 0
+        fi
 
-exec sleep infinity
-BASH;
+        exec sleep infinity
+        BASH;
 
     $service = <<<'SYSTEMD'
-[Unit]
-Description=Orbit E2E Redis probe service
+        [Unit]
+        Description=Orbit E2E Redis probe service
 
-[Service]
-ExecStart=/usr/local/bin/redis-server
-Restart=always
+        [Service]
+        ExecStart=/usr/local/bin/redis-server
+        Restart=always
 
-[Install]
-WantedBy=multi-user.target
-SYSTEMD;
+        [Install]
+        WantedBy=multi-user.target
+        SYSTEMD;
 
     $topology->ssh(
         'dev',
         sprintf(
             'printf %%s %s | sudo tee /usr/local/bin/redis-server >/dev/null'
-                .' && sudo chmod 0755 /usr/local/bin/redis-server'
-                .' && printf %%s %s | sudo tee /etc/systemd/system/redis-server.service >/dev/null'
-                .' && sudo systemctl daemon-reload'
-                .' && sudo systemctl enable --now redis-server',
+            .' && sudo chmod 0755 /usr/local/bin/redis-server'
+            .' && printf %%s %s | sudo tee /etc/systemd/system/redis-server.service >/dev/null'
+            .' && sudo systemctl daemon-reload'
+            .' && sudo systemctl enable --now redis-server',
             escapeshellarg($redisServer),
             escapeshellarg($service),
         ),
@@ -208,28 +240,28 @@ function appServingGrantAccess(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-], [
-    'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+        ], [
+            'permissions' => json_encode(['app:new'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-echo 'granted';
-PHP;
+        echo 'granted';
+        PHP;
 
     $topology->ssh(
         'gateway',

@@ -71,7 +71,13 @@ final class WorkspaceSetupController implements Loggable
         $callerCwd = $validated['caller_cwd'] ?? null;
 
         try {
-            [$workspace, $app, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve($name, $appName, $path, $callerCwd, $caller);
+            [$workspace, $app, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve(
+                $name,
+                $appName,
+                $path,
+                $callerCwd,
+                $caller,
+            );
         } catch (WorkspaceSetupResolutionFailed $e) {
             return $this->error($e->errorCode, $e->getMessage(), $e->meta, 422);
         } catch (\RuntimeException $e) {
@@ -167,7 +173,13 @@ final class WorkspaceSetupController implements Loggable
         $callerCwd = $validated['caller_cwd'] ?? null;
 
         try {
-            [$workspace, $app, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve($name, $appName, $path, $callerCwd, $caller);
+            [$workspace, $app, $node, $isAdoption] = app(WorkspaceSetupTargetResolver::class)->resolve(
+                $name,
+                $appName,
+                $path,
+                $callerCwd,
+                $caller,
+            );
         } catch (WorkspaceSetupResolutionFailed $e) {
             return $this->error($e->errorCode, $e->getMessage(), $e->meta, 422);
         } catch (\RuntimeException $e) {

@@ -14,7 +14,9 @@ it('uses gh for github clones and reuses an existing github checkout', function 
         ->toContain("gh repo clone 'hardimpactdev/hauser' '/home/nckrtl/apps/hauser'")
         ->toContain("test -d '/home/nckrtl/apps/hauser'")
         ->toContain("git -C '/home/nckrtl/apps/hauser' remote get-url origin")
-        ->toContain("'git@github.com:hardimpactdev/hauser.git'|'https://github.com/hardimpactdev/hauser.git'|'ssh://git@github.com/hardimpactdev/hauser.git'");
+        ->toContain(
+            "'git@github.com:hardimpactdev/hauser.git'|'https://github.com/hardimpactdev/hauser.git'|'ssh://git@github.com/hardimpactdev/hauser.git'",
+        );
 });
 
 it('uses git for non github clones and reuses an existing matching checkout', function (): void {

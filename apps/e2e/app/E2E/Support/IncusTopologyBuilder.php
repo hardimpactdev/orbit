@@ -133,7 +133,11 @@ class IncusTopologyBuilder
             $resumeCheckpoints = $checkpointPlan['resume'];
         }
 
-        $plan = $this->timer->measure('preflight', fn (): array => $this->validatePreFlight($kind, $replaceExisting, $resumeCheckpoints));
+        $plan = $this->timer->measure('preflight', fn (): array => $this->validatePreFlight(
+            $kind,
+            $replaceExisting,
+            $resumeCheckpoints,
+        ));
 
         $workDirectory = $this->timer->measure('workdir', fn (): string => $this->createWorkDirectory());
 
@@ -141,11 +145,15 @@ class IncusTopologyBuilder
             $key = $this->timer->measure('ssh-key', fn (): SshKeyPair => $this->createSshKeyPair($workDirectory));
             $manifests = $this->buildStages($plan['target'], $key, $plan['reusableBase'], $resumeCheckpoints);
 
-            return $manifests[$kind->value]
-                ?? $manifests[E2EPreparedTopology::incusSourceKindFor($kind)->value]
-                ?? throw new RuntimeException("Prepared topology manifest [{$kind->value}] was not built.");
+            return (
+                $manifests[$kind->value] ?? $manifests[E2EPreparedTopology::incusSourceKindFor(
+                    $kind,
+                )->value] ?? throw new RuntimeException("Prepared topology manifest [{$kind->value}] was not built.")
+            );
         } finally {
-            $this->timer->measure('workdir.cleanup', fn () => $this->host->run('rm -rf '.escapeshellarg((string) $workDirectory)));
+            $this->timer->measure('workdir.cleanup', fn () => $this->host->run(
+                'rm -rf '.escapeshellarg((string) $workDirectory),
+            ));
         }
     }
 
@@ -156,17 +164,24 @@ class IncusTopologyBuilder
      *     reusableBase: E2ETopologyKind|null,
      * }
      */
-    private function validatePreFlight(E2ETopologyKind $kind, bool $replaceExisting, array $resumeCheckpoints = []): array
-    {
+    private function validatePreFlight(
+        E2ETopologyKind $kind,
+        bool $replaceExisting,
+        array $resumeCheckpoints = [],
+    ): array {
         $baseImage = $this->host->config->baseImage;
 
         if (! $this->host->imageExists($baseImage)) {
             throw new RuntimeException("Required base image [{$baseImage}] not found on host.");
         }
 
-        if ($this->remoteBundleDir === null && $this->remoteSourcePath === null && $this->remoteGatewayArtifactBundleDir === null) {
+        if (
+            $this->remoteBundleDir === null
+            && $this->remoteSourcePath === null
+            && $this->remoteGatewayArtifactBundleDir === null
+        ) {
             throw new RuntimeException(
-                'No source checkout or provisioning bundle has been staged. Call useSourcePath(), useBundle(), or useGatewayArtifactBundle() before build().'
+                'No source checkout or provisioning bundle has been staged. Call useSourcePath(), useBundle(), or useGatewayArtifactBundle() before build().',
             );
         }
 
@@ -204,8 +219,10 @@ class IncusTopologyBuilder
 
     private function resolveReusableBaseStage(E2ETopologyKind $kind): ?E2ETopologyKind
     {
-        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent
-            || $kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket) {
+        if (
+            $kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent
+            || $kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket
+        ) {
             return null;
         }
 
@@ -280,8 +297,12 @@ class IncusTopologyBuilder
      * @param  list<array{role: string, name: string, snapshot: string}>  $resumeCheckpoints
      * @return array<string, list<array{role: string, name: string, snapshot: string}>>
      */
-    private function buildStages(E2ETopologyKind $target, SshKeyPair $key, ?E2ETopologyKind $reusableBase, array $resumeCheckpoints = []): array
-    {
+    private function buildStages(
+        E2ETopologyKind $target,
+        SshKeyPair $key,
+        ?E2ETopologyKind $reusableBase,
+        array $resumeCheckpoints = [],
+    ): array {
         $manifests = [];
         $instances = [];
         $stages = $this->stagesThrough($target);
@@ -296,7 +317,9 @@ class IncusTopologyBuilder
             $baseIndex = array_search($reusableBase, $stages, true);
 
             if ($baseIndex === false) {
-                throw new RuntimeException("Reusable base [{$reusableBase->value}] is not a prerequisite for [{$target->value}].");
+                throw new RuntimeException(
+                    "Reusable base [{$reusableBase->value}] is not a prerequisite for [{$target->value}].",
+                );
             }
 
             $startIndex = $baseIndex + 1;
@@ -317,12 +340,23 @@ class IncusTopologyBuilder
                 E2ETopologyKind::OperatorGatewayAppdev => $this->buildDevelopmentAppStage($key),
                 E2ETopologyKind::OperatorGatewayAppdevAppprod => $this->buildProductionAppStage($key),
                 E2ETopologyKind::OperatorGatewayAgent => $this->buildAgentOnlyStage($key),
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildPreparedFullStage($key, $stage === $target ? $resumeCheckpoints : []),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent => $this->buildPreparedFullStage(
+                    $key,
+                    $stage === $target ? $resumeCheckpoints : [],
+                ),
                 E2ETopologyKind::OperatorGatewayAppdevAppprodIngress => $this->buildPreparedDedicatedIngressStage($key),
                 E2ETopologyKind::OperatorGatewayAppprodIngress => $this->buildIngressProductionStage($key),
-                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => $this->buildPreparedFullWebSocketStage($key, $stage === $target ? $resumeCheckpoints : []),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => $this->buildPreparedFullWebSocketStage(
+                    $key,
+                    $stage === $target ? $resumeCheckpoints : [],
+                ),
                 E2ETopologyKind::OperatorGatewayAppdevWebsocket,
-                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => throw new RuntimeException("Build websocket topology source [{$stage->value}] through [".E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value.'].'),
+                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+                    => throw new RuntimeException(
+                    "Build websocket topology source [{$stage->value}] through ["
+                    .E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value
+                    .'].',
+                ),
             };
 
             $stageManifest = $this->finalizeInstances($stage, $instances);
@@ -347,7 +381,10 @@ class IncusTopologyBuilder
         $validCheckpoints = E2EProvisionCheckpointManifest::validCheckpoints(
             manifest: $manifest,
             currentFingerprint: (array) $this->provisionFingerprint,
-            snapshotExists: fn (string $template, string $snapshot): bool => $this->host->snapshotExists($template, $snapshot),
+            snapshotExists: fn (string $template, string $snapshot): bool => $this->host->snapshotExists(
+                $template,
+                $snapshot,
+            ),
         );
         $validRoles = array_column($validCheckpoints, 'role');
 
@@ -369,17 +406,20 @@ class IncusTopologyBuilder
      */
     private function canResumePreparedCheckpoint(E2ETopologyKind $kind, array $checkpoints): bool
     {
-        if (! in_array($kind, [
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-        ], true)) {
+        if (! in_array(
+            $kind,
+            [
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            ],
+            true,
+        )) {
             return false;
         }
 
         $roles = array_column($checkpoints, 'role');
 
-        return in_array('operator', $roles, true)
-            && in_array('gateway', $roles, true);
+        return in_array('operator', $roles, true) && in_array('gateway', $roles, true);
     }
 
     /**
@@ -409,8 +449,10 @@ class IncusTopologyBuilder
 
     private function usesCopiedReusableBase(E2ETopologyKind $target, E2ETopologyKind $reusableBase): bool
     {
-        return $target === E2ETopologyKind::OperatorGatewayAppprodIngress
-            && $reusableBase === E2ETopologyKind::OperatorGateway;
+        return (
+            $target === E2ETopologyKind::OperatorGatewayAppprodIngress
+            && $reusableBase === E2ETopologyKind::OperatorGateway
+        );
     }
 
     private function restoreReusableBaseStage(E2ETopologyKind $stage): void
@@ -421,12 +463,17 @@ class IncusTopologyBuilder
             IncusTopologyTemplate::rolesFor($stage),
         );
 
-        $result = $this->timer->measure("base.stop.{$stage->value}", fn () => $this->host->stopInstancesIfRunning($names));
+        $result = $this->timer->measure("base.stop.{$stage->value}", fn () => $this->host->stopInstancesIfRunning(
+            $names,
+        ));
         if (! $result->successful()) {
             throw new RuntimeException("Could not stop reusable base [{$stage->value}]: {$result->errorOutput()}");
         }
 
-        $result = $this->timer->measure("base.restore.{$stage->value}", fn () => $this->host->restoreSnapshotsConcurrently($names, $snapshot));
+        $result = $this->timer->measure(
+            "base.restore.{$stage->value}",
+            fn () => $this->host->restoreSnapshotsConcurrently($names, $snapshot),
+        );
         if (! $result->successful()) {
             throw new RuntimeException("Could not restore reusable base [{$stage->value}]: {$result->errorOutput()}");
         }
@@ -459,7 +506,9 @@ class IncusTopologyBuilder
                 );
 
                 if (! $result->successful()) {
-                    throw new RuntimeException("Could not delete downstream snapshot [{$template}/{$snapshot}]: {$result->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete downstream snapshot [{$template}/{$snapshot}]: {$result->errorOutput()}",
+                    );
                 }
             }
         }
@@ -471,13 +520,15 @@ class IncusTopologyBuilder
     private function stagesThrough(E2ETopologyKind $target): array
     {
         if ($target === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent) {
-            return $this->remoteGatewayArtifactBundleDir !== null
-                ? [E2ETopologyKind::OperatorGatewayAppdevAppprodAgent]
-                : [
-                    E2ETopologyKind::Operator,
-                    E2ETopologyKind::OperatorGateway,
-                    E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-                ];
+            return (
+                $this->remoteGatewayArtifactBundleDir !== null
+                    ? [E2ETopologyKind::OperatorGatewayAppdevAppprodAgent]
+                    : [
+                        E2ETopologyKind::Operator,
+                        E2ETopologyKind::OperatorGateway,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                    ]
+            );
         }
 
         if ($target === E2ETopologyKind::OperatorGatewayAppprodIngress) {
@@ -489,29 +540,35 @@ class IncusTopologyBuilder
         }
 
         if ($target === E2ETopologyKind::OperatorGatewayAppdevAppprodIngress) {
-            return $this->remoteGatewayArtifactBundleDir !== null
-                ? [
-                    E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-                    E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
-                ]
-                : [
-                    E2ETopologyKind::Operator,
-                    E2ETopologyKind::OperatorGateway,
-                    E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
-                    E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
-                ];
+            return (
+                $this->remoteGatewayArtifactBundleDir !== null
+                    ? [
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+                    ]
+                    : [
+                        E2ETopologyKind::Operator,
+                        E2ETopologyKind::OperatorGateway,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+                    ]
+            );
         }
 
-        if ($target === E2ETopologyKind::OperatorGatewayAppdevWebsocket
+        if (
+            $target === E2ETopologyKind::OperatorGatewayAppdevWebsocket
             || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket
-            || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket) {
-            return $this->remoteGatewayArtifactBundleDir !== null
-                ? [E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket]
-                : [
-                    E2ETopologyKind::Operator,
-                    E2ETopologyKind::OperatorGateway,
-                    E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-                ];
+            || $target === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket
+        ) {
+            return (
+                $this->remoteGatewayArtifactBundleDir !== null
+                    ? [E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket]
+                    : [
+                        E2ETopologyKind::Operator,
+                        E2ETopologyKind::OperatorGateway,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+                    ]
+            );
         }
 
         if ($target === E2ETopologyKind::OperatorGatewayAgent) {
@@ -552,8 +609,11 @@ class IncusTopologyBuilder
     /**
      * @return list<string>
      */
-    private function templateNamesForRefresh(E2ETopologyKind $kind, ?E2ETopologyKind $reusableBase, bool $includeLegacyNames): array
-    {
+    private function templateNamesForRefresh(
+        E2ETopologyKind $kind,
+        ?E2ETopologyKind $reusableBase,
+        bool $includeLegacyNames,
+    ): array {
         $names = [];
         $baseRoles = $reusableBase !== null
             ? IncusTopologyTemplate::rolesFor($reusableBase)
@@ -584,7 +644,9 @@ class IncusTopologyBuilder
                 $names[] = E2ETopologyArtifactNamespace::incusTemplateName("orbit-template-{$stage->value}-{$role}");
 
                 foreach ($stage->deprecatedValues() as $deprecatedValue) {
-                    $names[] = E2ETopologyArtifactNamespace::incusTemplateName("orbit-template-{$deprecatedValue}-{$role}");
+                    $names[] = E2ETopologyArtifactNamespace::incusTemplateName(
+                        "orbit-template-{$deprecatedValue}-{$role}",
+                    );
                 }
             }
         }
@@ -592,8 +654,11 @@ class IncusTopologyBuilder
         return array_reverse(array_values(array_unique($names)));
     }
 
-    private function preservesReusableTemplate(E2ETopologyKind $target, string $role, ?E2ETopologyKind $reusableBase): bool
-    {
+    private function preservesReusableTemplate(
+        E2ETopologyKind $target,
+        string $role,
+        ?E2ETopologyKind $reusableBase,
+    ): bool {
         if ($reusableBase === null) {
             return false;
         }
@@ -602,8 +667,12 @@ class IncusTopologyBuilder
             return false;
         }
 
-        return IncusTopologyTemplate::templateName($target, $role)
-            === IncusTopologyTemplate::templateName($reusableBase, $role);
+        return (
+            IncusTopologyTemplate::templateName($target, $role) === IncusTopologyTemplate::templateName(
+                $reusableBase,
+                $role,
+            )
+        );
     }
 
     /**
@@ -633,15 +702,36 @@ class IncusTopologyBuilder
     {
         $instances = [];
         $operatorName = IncusTopologyTemplate::templateName(E2ETopologyKind::Operator, 'operator');
-        $this->timer->measure('operator.launch', fn () => $this->launchBase($operatorName, attachSource: $this->remoteOrbitBinaryBundleDir === null));
+        $this->timer->measure('operator.launch', fn () => $this->launchBase(
+            $operatorName,
+            attachSource: $this->remoteOrbitBinaryBundleDir === null,
+        ));
         $operator = new IncusInstance($this->host, $operatorName);
         $this->timer->measure('operator.agent.ready', fn () => $operator->waitForAgent());
-        $this->timer->measure('operator.provision', fn () => $this->provisionPreparedInstance($operator, 'operator', $this->host->config->operatorUser));
-        $this->timer->measure('operator.ssh-authorize', fn () => $operator->authorizeSsh($this->host->config->operatorUser, $key));
-        $this->timer->measure('operator.ssh-ready', fn () => $operator->waitForSsh($this->host->config->operatorUser, $key));
+        $this->timer->measure('operator.provision', fn () => $this->provisionPreparedInstance(
+            $operator,
+            'operator',
+            $this->host->config->operatorUser,
+        ));
+        $this->timer->measure('operator.ssh-authorize', fn () => $operator->authorizeSsh(
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('operator.ssh-ready', fn () => $operator->waitForSsh(
+            $this->host->config->operatorUser,
+            $key,
+        ));
         $this->timer->measure('operator.ipv4', fn (): string => $operator->waitForIpv4());
-        $this->timer->measure('operator.provisioning-ssh-key', fn () => $this->installPrivateSshKey($operator, $key, $this->host->config->operatorUser));
-        $this->timer->measure('operator.identity', fn () => E2EOperatorIdentity::ensure($operator, $this->host->config->operatorUser, $key));
+        $this->timer->measure('operator.provisioning-ssh-key', fn () => $this->installPrivateSshKey(
+            $operator,
+            $key,
+            $this->host->config->operatorUser,
+        ));
+        $this->timer->measure('operator.identity', fn () => E2EOperatorIdentity::ensure(
+            $operator,
+            $this->host->config->operatorUser,
+            $key,
+        ));
         $instances['operator'] = $operator;
 
         return $instances;
@@ -658,16 +748,39 @@ class IncusTopologyBuilder
         $gatewayIp = $this->timer->measure('gateway.ipv4', fn (): string => $gateway->waitForIpv4());
         $instances['gateway'] = $gateway;
 
-        $this->timer->measure('gateway.provision', fn () => $this->provisionPreparedInstance($gateway, 'gateway', 'orbit'));
+        $this->timer->measure('gateway.provision', fn () => $this->provisionPreparedInstance(
+            $gateway,
+            'gateway',
+            'orbit',
+        ));
         $this->timer->measure('gateway.real-wireguard', fn () => $this->installRealWireGuard($instances));
         $this->timer->measure('gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($gateway, $gatewayIp));
-        $this->timer->measure('gateway.trust-operator', fn () => $this->trustGatewayCaOnOperator($operator, $gateway, $key));
-        $this->timer->measure('gateway.seed-operator', fn () => E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $this->host->config->operatorUser));
-        $this->timer->measure('gateway.retarget-operator', fn () => $this->retargetOperator($operator, $gatewayIp, $key));
+        $this->timer->measure('gateway.trust-operator', fn () => $this->trustGatewayCaOnOperator(
+            $operator,
+            $gateway,
+            $key,
+        ));
+        $this->timer->measure('gateway.seed-operator', fn () => E2EGatewayApi::seedOperatorIdentity(
+            $gateway,
+            self::OperatorWireGuardIp,
+            $this->host->config->operatorUser,
+        ));
+        $this->timer->measure('gateway.retarget-operator', fn () => $this->retargetOperator(
+            $operator,
+            $gatewayIp,
+            $key,
+        ));
         $this->timer->measure('gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl($operator, $key));
-        $this->timer->measure('gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($gateway, $key));
+        $this->timer->measure('gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey(
+            $gateway,
+            $key,
+        ));
         $this->timer->measure('gateway.api.start', fn () => E2EGatewayApi::start($gateway, 'template-gateway'));
-        $this->timer->measure('gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($operator, $this->host->config->operatorUser, $key));
+        $this->timer->measure('gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+            $operator,
+            $this->host->config->operatorUser,
+            $key,
+        ));
         $this->timer->measure('gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($gateway));
 
         return $instances;
@@ -681,9 +794,18 @@ class IncusTopologyBuilder
         $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
 
         $this->timer->measure('dev.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure('dev.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-dev'));
-        $this->timer->measure('dev.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('dev.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+        $this->timer->measure('dev.gateway.api.start', fn () => E2EGatewayApi::start(
+            $instances['gateway'],
+            'template-dev',
+        ));
+        $this->timer->measure('dev.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('dev.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+            $instances['gateway'],
+        ));
 
         $dev = $this->launchBaseRole('dev', $key);
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $dev->waitForIpv4());
@@ -710,9 +832,18 @@ class IncusTopologyBuilder
         $instances = $this->startTemplateRoles(['operator', 'gateway', 'dev'], $key);
 
         $this->timer->measure('prod.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure('prod.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prod'));
-        $this->timer->measure('prod.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('prod.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+        $this->timer->measure('prod.gateway.api.start', fn () => E2EGatewayApi::start(
+            $instances['gateway'],
+            'template-prod',
+        ));
+        $this->timer->measure('prod.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('prod.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+            $instances['gateway'],
+        ));
 
         $prod = $this->launchBaseRole('prod', $key);
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
@@ -739,9 +870,18 @@ class IncusTopologyBuilder
         $instances = $this->startTemplateRoles(['operator', 'gateway'], $key);
 
         $this->timer->measure('agent.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure('agent.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-agent'));
-        $this->timer->measure('agent.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('agent.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
+        $this->timer->measure('agent.gateway.api.start', fn () => E2EGatewayApi::start(
+            $instances['gateway'],
+            'template-agent',
+        ));
+        $this->timer->measure('agent.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('agent.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+            $instances['gateway'],
+        ));
 
         $agent = $this->launchBaseRole('agent', $key, E2ETopologyKind::OperatorGatewayAgent);
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $agent->waitForIpv4());
@@ -779,10 +919,22 @@ class IncusTopologyBuilder
 
         if (! $gatewayFirst) {
             $this->timer->measure('prepared.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-            $this->timer->measure('prepared.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-full'));
-            $this->timer->measure('prepared.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-            $this->timer->measure('prepared.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
-            $this->timer->measure('prepared.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
+            $this->timer->measure('prepared.gateway.api.start', fn () => E2EGatewayApi::start(
+                $instances['gateway'],
+                'template-prepared-full',
+            ));
+            $this->timer->measure('prepared.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+                $instances['operator'],
+                $this->host->config->operatorUser,
+                $key,
+            ));
+            $this->timer->measure('prepared.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+                $instances['gateway'],
+            ));
+            $this->timer->measure('prepared.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey(
+                $instances['gateway'],
+                $key,
+            ));
         }
 
         $rolesToBake = [];
@@ -807,7 +959,12 @@ class IncusTopologyBuilder
 
         $instances = [
             ...$instances,
-            ...$this->timer->measure('prepared.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind, 'prepared.downstream.prepare')),
+            ...$this->timer->measure('prepared.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel(
+                $rolesToPrepare,
+                $key,
+                $kind,
+                'prepared.downstream.prepare',
+            )),
         ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -815,12 +972,19 @@ class IncusTopologyBuilder
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
         if ($rolesToBake !== []) {
-            $this->timer->measure('prepared.downstream.real-wireguard', fn () => $this->installRealWireGuard($instances));
+            $this->timer->measure('prepared.downstream.real-wireguard', fn () => $this->installRealWireGuard(
+                $instances,
+            ));
         }
 
         if (in_array('dev', $rolesToBake, true)) {
-            $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites($instances['dev']));
-            $this->timer->measure('prepared.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh($instances['dev'], $key));
+            $this->timer->measure('prepared.dev.runtime-prerequisites', fn () => $this->installPreparedAppRuntimePrerequisites(
+                $instances['dev'],
+            ));
+            $this->timer->measure('prepared.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh(
+                $instances['dev'],
+                $key,
+            ));
         }
 
         if ($rolesToBake !== []) {
@@ -841,9 +1005,15 @@ class IncusTopologyBuilder
             $instances,
             $downstreamStatuses,
         );
-        $this->timer->measure('prepared.gateway.api.ready-after-node-new', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
+        $this->timer->measure('prepared.gateway.api.ready-after-node-new', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
         $this->timer->measure('prepared.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
-        $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+        $this->timer->measure('dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis(
+            $instances['gateway'],
+        ));
 
         return $instances;
     }
@@ -857,14 +1027,32 @@ class IncusTopologyBuilder
         $instances = $this->startTemplateRoles(['operator', 'gateway', 'dev', 'prod'], $key, $kind);
 
         if ($this->remoteBundleDir !== null) {
-            $this->timer->measure('prepared-ingress.gateway.bundle-overlay', fn () => $this->applyBundleOverlay($instances['gateway'], 'gateway', $key));
+            $this->timer->measure('prepared-ingress.gateway.bundle-overlay', fn () => $this->applyBundleOverlay(
+                $instances['gateway'],
+                'gateway',
+                $key,
+            ));
         }
 
-        $this->timer->measure('prepared-ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure('prepared-ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-dedicated-ingress'));
-        $this->timer->measure('prepared-ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('prepared-ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
-        $this->timer->measure('prepared-ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
+        $this->timer->measure('prepared-ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard(
+            $instances,
+        ));
+        $this->timer->measure('prepared-ingress.gateway.api.start', fn () => E2EGatewayApi::start(
+            $instances['gateway'],
+            'template-prepared-dedicated-ingress',
+        ));
+        $this->timer->measure('prepared-ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('prepared-ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+            $instances['gateway'],
+        ));
+        $this->timer->measure('prepared-ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey(
+            $instances['gateway'],
+            $key,
+        ));
 
         $ingress = $this->launchBaseRole('ingress', $key, $kind);
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -879,8 +1067,14 @@ class IncusTopologyBuilder
             $prodIp,
             $ingressIp,
         ));
-        $this->timer->measure('prepared-ingress.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('prepared-ingress.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+        $this->timer->measure('prepared-ingress.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('prepared-ingress.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis(
+            $instances['gateway'],
+        ));
         $this->timer->measure('prepared-ingress.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
         $this->timer->measure('prepared-ingress.real-wireguard', fn () => $this->installRealWireGuard($instances));
 
@@ -902,16 +1096,35 @@ class IncusTopologyBuilder
             $resumedInstances = [];
             $gatewayFirst = $this->remoteGatewayArtifactBundleDir !== null;
             $instances = $gatewayFirst
-                ? $this->buildGatewayFirstPreparedInstances($key, $kind, 'prepared-websocket', 'template-prepared-full-websocket')
+                ? $this->buildGatewayFirstPreparedInstances(
+                    $key,
+                    $kind,
+                    'prepared-websocket',
+                    'template-prepared-full-websocket',
+                )
                 : $this->startTemplateRoles(['operator', 'gateway'], $key);
         }
 
         if (! $gatewayFirst) {
-            $this->timer->measure('prepared-websocket.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-            $this->timer->measure('prepared-websocket.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-prepared-full-websocket'));
-            $this->timer->measure('prepared-websocket.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-            $this->timer->measure('prepared-websocket.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
-            $this->timer->measure('prepared-websocket.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
+            $this->timer->measure('prepared-websocket.real-wireguard.retarget', fn () => $this->installRealWireGuard(
+                $instances,
+            ));
+            $this->timer->measure('prepared-websocket.gateway.api.start', fn () => E2EGatewayApi::start(
+                $instances['gateway'],
+                'template-prepared-full-websocket',
+            ));
+            $this->timer->measure('prepared-websocket.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+                $instances['operator'],
+                $this->host->config->operatorUser,
+                $key,
+            ));
+            $this->timer->measure('prepared-websocket.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+                $instances['gateway'],
+            ));
+            $this->timer->measure('prepared-websocket.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey(
+                $instances['gateway'],
+                $key,
+            ));
         }
 
         $rolesToBake = [];
@@ -936,7 +1149,12 @@ class IncusTopologyBuilder
 
         $instances = [
             ...$instances,
-            ...$this->timer->measure('prepared-websocket.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel($rolesToPrepare, $key, $kind, 'prepared-websocket.downstream.prepare')),
+            ...$this->timer->measure('prepared-websocket.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel(
+                $rolesToPrepare,
+                $key,
+                $kind,
+                'prepared-websocket.downstream.prepare',
+            )),
         ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -944,7 +1162,9 @@ class IncusTopologyBuilder
         $agentIp = $this->timer->measure('agent.ipv4', fn (): string => $instances['agent']->waitForIpv4());
 
         if ($rolesToBake !== []) {
-            $this->timer->measure('prepared-websocket.downstream.real-wireguard', fn () => $this->installRealWireGuard($instances));
+            $this->timer->measure('prepared-websocket.downstream.real-wireguard', fn () => $this->installRealWireGuard(
+                $instances,
+            ));
         }
 
         if (in_array('dev', $rolesToBake, true)) {
@@ -952,12 +1172,19 @@ class IncusTopologyBuilder
                 $instances['dev'],
                 includeGatewayImage: true,
             ));
-            $this->timer->measure('prepared-websocket.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh($instances['dev'], $key));
+            $this->timer->measure('prepared-websocket.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh(
+                $instances['dev'],
+                $key,
+            ));
         }
 
         if ($rolesToBake === [] && $resumeCheckpoints !== []) {
-            $this->timer->measure('prepared-websocket.downstream.real-wireguard', fn () => $this->installRealWireGuard($instances));
-            $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+            $this->timer->measure('prepared-websocket.downstream.real-wireguard', fn () => $this->installRealWireGuard(
+                $instances,
+            ));
+            $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis(
+                $instances['gateway'],
+            ));
             $downstreamStatuses['websocket'] = $this->timer->measure('prepared-websocket.websocket.bake', fn (): int => $this->runPreparedWebSocketBake(
                 $instances['gateway'],
                 $devIp,
@@ -974,7 +1201,9 @@ class IncusTopologyBuilder
                     timerPrefix: 'prepared-websocket.downstream.bake',
                     beforeDevelopmentBake: null,
                     afterDevelopmentBake: function () use ($instances): void {
-                        $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis($instances['gateway']));
+                        $this->timer->measure('prepared-websocket.dev.database-redis-seed', fn () => $this->seedAppdevDatabaseAndRedis(
+                            $instances['gateway'],
+                        ));
                     },
                 )),
             ];
@@ -984,7 +1213,11 @@ class IncusTopologyBuilder
             $instances,
             $downstreamStatuses,
         );
-        $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
+        $this->timer->measure('prepared-websocket.gateway.api.ready-after-downstream-bake', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
         $this->timer->measure('prepared-websocket.e2e-deps', fn () => $this->installE2EBaseDependencies($instances));
 
         return $instances;
@@ -1011,17 +1244,43 @@ class IncusTopologyBuilder
      */
     private function buildIngressProductionStage(SshKeyPair $key): array
     {
-        $instances = $this->startTemplateRoles(['operator', 'gateway'], $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
+        $instances = $this->startTemplateRoles(
+            ['operator', 'gateway'],
+            $key,
+            E2ETopologyKind::OperatorGatewayAppprodIngress,
+        );
         $gatewayIp = $this->timer->measure('ingress.gateway.ipv4', fn (): string => $instances['gateway']->waitForIpv4());
 
         $this->timer->measure('ingress.real-wireguard.retarget', fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure('ingress.gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal($instances['gateway'], $gatewayIp));
-        $this->timer->measure('ingress.gateway.retarget-operator', fn () => $this->retargetOperator($instances['operator'], $gatewayIp, $key));
-        $this->timer->measure('ingress.gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl($instances['operator'], $key));
-        $this->timer->measure('ingress.gateway.api.start', fn () => E2EGatewayApi::start($instances['gateway'], 'template-ingress'));
-        $this->timer->measure('ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure('ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard($instances['gateway']));
-        $this->timer->measure('ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey($instances['gateway'], $key));
+        $this->timer->measure('ingress.gateway.bootstrap-local', fn () => $this->bootstrapGatewayLocal(
+            $instances['gateway'],
+            $gatewayIp,
+        ));
+        $this->timer->measure('ingress.gateway.retarget-operator', fn () => $this->retargetOperator(
+            $instances['operator'],
+            $gatewayIp,
+            $key,
+        ));
+        $this->timer->measure('ingress.gateway.use-wireguard-url', fn () => $this->useWireGuardGatewayUrl(
+            $instances['operator'],
+            $key,
+        ));
+        $this->timer->measure('ingress.gateway.api.start', fn () => E2EGatewayApi::start(
+            $instances['gateway'],
+            'template-ingress',
+        ));
+        $this->timer->measure('ingress.gateway.api.ready', fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure('ingress.gateway.wg-easy.ready', fn () => $this->waitForGatewayWireGuard(
+            $instances['gateway'],
+        ));
+        $this->timer->measure('ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey(
+            $instances['gateway'],
+            $key,
+        ));
 
         $prod = $this->launchBaseRole('prod', $key, E2ETopologyKind::OperatorGatewayAppprodIngress);
         $prodIp = $this->timer->measure('prod.ipv4', fn (): string => $prod->waitForIpv4());
@@ -1062,19 +1321,19 @@ class IncusTopologyBuilder
     private function installE2EBaseDependenciesCommand(): string
     {
         $script = <<<'BASH'
-missing=''
-for command in composer git systemctl wg wg-quick dig ufw; do
-    if ! command -v "$command" >/dev/null 2>&1; then
-        missing="${missing} ${command}"
-    fi
-done
+            missing=''
+            for command in composer git systemctl wg wg-quick dig ufw; do
+                if ! command -v "$command" >/dev/null 2>&1; then
+                    missing="${missing} ${command}"
+                fi
+            done
 
-if [ -n "$missing" ]; then
-    echo "prepared Incus base image is missing E2E dependencies:${missing}. Rebuild the base image and prepared topology." >&2
-    exit 1
-fi
+            if [ -n "$missing" ]; then
+                echo "prepared Incus base image is missing E2E dependencies:${missing}. Rebuild the base image and prepared topology." >&2
+                exit 1
+            fi
 
-BASH;
+            BASH;
 
         return 'bash -lc '.escapeshellarg($script);
     }
@@ -1094,13 +1353,19 @@ BASH;
         }
 
         if ($nodeKind === 'operator' && $this->remoteOrbitBinaryBundleDir !== null) {
-            $this->timer->measure('operator.provision.binary', fn () => $this->installOrbitBinaryFromBundle($instance, $user));
+            $this->timer->measure('operator.provision.binary', fn () => $this->installOrbitBinaryFromBundle(
+                $instance,
+                $user,
+            ));
 
             return;
         }
 
         if ($nodeKind === 'gateway' && $this->remoteGatewayArtifactBundleDir !== null) {
-            $this->timer->measure('gateway.provision.binary', fn () => $this->installOrbitBinaryFromBundle($instance, $user));
+            $this->timer->measure('gateway.provision.binary', fn () => $this->installOrbitBinaryFromBundle(
+                $instance,
+                $user,
+            ));
             $this->installGatewayImageFromArtifactBundle($instance);
             $this->timer->measure('gateway.provision.migrate', fn () => E2ECommand::gatewayArtisan(
                 $instance,
@@ -1134,15 +1399,57 @@ BASH;
         $result = $this->host->run(implode("\n", [
             'set -euo pipefail',
             'test -f '.escapeshellarg($binary),
-            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('id '.escapeshellarg($user).' >/dev/null 2>&1 || useradd -m -s /bin/bash '.escapeshellarg($user)),
-            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('install -d -m 0755 -o '.escapeshellarg($user).' -g '.escapeshellarg($user).' /home/'.escapeshellarg($user).'/orbit/bin'),
+            'incus exec '
+                .escapeshellarg($name)
+                .' -- sh -lc '
+                .escapeshellarg(
+                    'id '.escapeshellarg($user).' >/dev/null 2>&1 || useradd -m -s /bin/bash '.escapeshellarg($user),
+                ),
+            'incus exec '
+                .escapeshellarg($name)
+                .' -- sh -lc '
+                .escapeshellarg(
+                    'install -d -m 0755 -o '
+                    .escapeshellarg($user)
+                    .' -g '
+                    .escapeshellarg($user)
+                    .' /home/'
+                    .escapeshellarg($user)
+                    .'/orbit/bin',
+                ),
             'incus file push '.escapeshellarg($binary).' '.escapeshellarg("{$name}{$target}"),
-            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('chown '.escapeshellarg($user).':'.escapeshellarg($user).' '.escapeshellarg($target).' && chmod 0755 '.escapeshellarg($target).' && ln -sf '.escapeshellarg($target).' /usr/local/bin/orbit'),
-            'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('runuser -u '.escapeshellarg($user).' -- env HOME=/home/'.escapeshellarg($user).' PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'),
+            'incus exec '
+                .escapeshellarg($name)
+                .' -- sh -lc '
+                .escapeshellarg(
+                    'chown '
+                    .escapeshellarg($user)
+                    .':'
+                    .escapeshellarg($user)
+                    .' '
+                    .escapeshellarg($target)
+                    .' && chmod 0755 '
+                    .escapeshellarg($target)
+                    .' && ln -sf '
+                    .escapeshellarg($target)
+                    .' /usr/local/bin/orbit',
+                ),
+            'incus exec '
+                .escapeshellarg($name)
+                .' -- sh -lc '
+                .escapeshellarg(
+                    'runuser -u '
+                    .escapeshellarg($user)
+                    .' -- env HOME=/home/'
+                    .escapeshellarg($user)
+                    .' PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null',
+                ),
         ]), timeoutSeconds: 120);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not install Orbit CLI binary on {$name}: {$result->errorOutput()}{$result->output()}");
+            throw new RuntimeException(
+                "Could not install Orbit CLI binary on {$name}: {$result->errorOutput()}{$result->output()}",
+            );
         }
     }
 
@@ -1168,7 +1475,8 @@ BASH;
 
         $this->assertSuccessful(
             $this->timer->measure('gateway.provision.image.config-dir', fn (): ProcessResult => $this->host->run(
-                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('install -d -m 0700 -o orbit -g orbit /home/orbit/.config/orbit'),
+                'incus exec '.escapeshellarg($name).' -- sh -lc '
+                    .escapeshellarg('install -d -m 0700 -o orbit -g orbit /home/orbit/.config/orbit'),
                 timeoutSeconds: 30,
             )),
             "Could not prepare Orbit config directory on {$name}",
@@ -1176,7 +1484,10 @@ BASH;
 
         $this->assertSuccessful(
             $this->timer->measure('gateway.provision.image.docker-start', fn (): ProcessResult => $this->host->run(
-                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('if command -v systemctl >/dev/null 2>&1; then systemctl enable --now docker || systemctl start docker || true; fi'),
+                'incus exec '.escapeshellarg($name).' -- sh -lc '
+                    .escapeshellarg(
+                        'if command -v systemctl >/dev/null 2>&1; then systemctl enable --now docker || systemctl start docker || true; fi',
+                    ),
                 timeoutSeconds: 60,
             )),
             "Could not start Docker on {$name}",
@@ -1184,7 +1495,8 @@ BASH;
 
         $this->assertSuccessful(
             $this->timer->measure('gateway.provision.image.load', fn (): ProcessResult => $this->host->run(
-                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker load').' < '.escapeshellarg($archive),
+                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker load').' < '
+                    .escapeshellarg($archive),
                 timeoutSeconds: 300,
             )),
             "Could not load gateway image artifact on {$name}",
@@ -1192,7 +1504,8 @@ BASH;
 
         $this->assertSuccessful(
             $this->timer->measure('gateway.provision.image.inspect-prepared', fn (): ProcessResult => $this->host->run(
-                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker image inspect '.escapeshellarg($preparedImage).' >/dev/null'),
+                'incus exec '.escapeshellarg($name).' -- sh -lc '
+                    .escapeshellarg('docker image inspect '.escapeshellarg($preparedImage).' >/dev/null'),
                 timeoutSeconds: 60,
             )),
             "Could not inspect prepared gateway image on {$name}",
@@ -1200,7 +1513,8 @@ BASH;
 
         $this->assertSuccessful(
             $this->timer->measure('gateway.provision.image.tag-current', fn (): ProcessResult => $this->host->run(
-                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('docker tag '.escapeshellarg($preparedImage).' orbit-gateway:current'),
+                'incus exec '.escapeshellarg($name).' -- sh -lc '
+                    .escapeshellarg('docker tag '.escapeshellarg($preparedImage).' orbit-gateway:current'),
                 timeoutSeconds: 60,
             )),
             "Could not tag current gateway image on {$name}",
@@ -1208,7 +1522,12 @@ BASH;
 
         $this->assertSuccessful(
             $this->timer->measure('gateway.provision.image.inspect-runtime-user', fn (): ProcessResult => $this->host->run(
-                'incus exec '.escapeshellarg($name).' -- sh -lc '.escapeshellarg('runuser -u orbit -- docker image inspect '.escapeshellarg($preparedImage).' >/dev/null && runuser -u orbit -- docker image inspect orbit-gateway:current >/dev/null'),
+                'incus exec '.escapeshellarg($name).' -- sh -lc '
+                    .escapeshellarg(
+                        'runuser -u orbit -- docker image inspect '
+                        .escapeshellarg($preparedImage)
+                        .' >/dev/null && runuser -u orbit -- docker image inspect orbit-gateway:current >/dev/null',
+                    ),
                 timeoutSeconds: 60,
             )),
             "Could not inspect gateway image as orbit on {$name}",
@@ -1260,7 +1579,11 @@ BASH;
             'install -d -m 0755 -o "$user" -g "$user" "$target"',
             'runuser -u "$user" -- bash -lc '.escapeshellarg($copyCommand),
             'for app in apps/gateway apps/cli; do',
-            '  archive='.escapeshellarg(self::PreparedSourceMountPath).'"/'.SourceMountedCheckoutSyncer::VendorArchiveDirectory.'/$(printf "%s" "$app" | tr "/" "-")-vendor.tar"',
+            '  archive='
+                .escapeshellarg(self::PreparedSourceMountPath)
+                .'"/'
+                .SourceMountedCheckoutSyncer::VendorArchiveDirectory
+                .'/$(printf "%s" "$app" | tr "/" "-")-vendor.tar"',
             '  if [ -f "$archive" ]; then',
             '    rm -rf "$target/$app/vendor"',
             '    mkdir -p "$target/$app"',
@@ -1309,7 +1632,7 @@ BASH;
 
     private function verifySourceMountedDockerImagesCommand(): string
     {
-        $frankenPhpImage = (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+        $frankenPhpImage = new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
         $sourceGatewayArtisanImage = DockerTopologyProvider::sourceGatewayArtisanImage();
         $webSocketRuntimeImage = DockerTopologyProvider::webSocketRuntimeImage();
         $caddyImage = OrbitCaddyContainer::Image;
@@ -1318,7 +1641,17 @@ BASH;
         $script = implode("\n", [
             'set -euo pipefail',
             'if command -v systemctl >/dev/null 2>&1; then sudo systemctl enable --now docker || sudo systemctl start docker || true; fi',
-            'for image in '.escapeshellarg($frankenPhpImage).' '.escapeshellarg($sourceGatewayArtisanImage).' '.escapeshellarg($webSocketRuntimeImage).' '.escapeshellarg($caddyImage).' '.escapeshellarg($wgEasyImage).'; do',
+            'for image in '
+                .escapeshellarg($frankenPhpImage)
+                .' '
+                .escapeshellarg($sourceGatewayArtisanImage)
+                .' '
+                .escapeshellarg($webSocketRuntimeImage)
+                .' '
+                .escapeshellarg($caddyImage)
+                .' '
+                .escapeshellarg($wgEasyImage)
+                .'; do',
             '  docker image inspect "$image" >/dev/null 2>&1 || { echo "prepared Incus runtime base image is missing Docker image: $image. Rebuild it with composer e2e:prepare-base-image -- --force." >&2; exit 1; }',
             'done',
         ]);
@@ -1326,8 +1659,10 @@ BASH;
         return 'bash -lc '.escapeshellarg($script);
     }
 
-    private function installPreparedAppRuntimePrerequisites(IncusInstance $instance, bool $includeGatewayImage = false): void
-    {
+    private function installPreparedAppRuntimePrerequisites(
+        IncusInstance $instance,
+        bool $includeGatewayImage = false,
+    ): void {
         $bundleDir = $this->remoteBundleDir;
 
         if ($bundleDir === null) {
@@ -1377,7 +1712,9 @@ BASH;
             ), timeoutSeconds: 300);
 
             if (! $push->successful()) {
-                throw new RuntimeException("Could not push runtime image archive [{$archive['host']}] into [{$instance->name()}]: {$push->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not push runtime image archive [{$archive['host']}] into [{$instance->name()}]: {$push->errorOutput()}",
+                );
             }
         }
 
@@ -1387,11 +1724,13 @@ BASH;
                 caddyImageArchive: '/var/tmp/caddy-2-alpine.tar',
                 frankenPhpImageArchive: '/var/tmp/frankenphp-1-php8.5-bookworm.tar',
                 caddyImage: OrbitCaddyContainer::Image,
-                frankenPhpImage: (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT),
+                frankenPhpImage: new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT),
                 webSocketImageArchive: '/var/tmp/orbit-reverb-current.tar',
                 webSocketImage: DockerTopologyProvider::webSocketRuntimeImage(),
                 bootstrapUser: $this->host->config->bootstrapUser,
-                gatewayImageArchive: $includeGatewayImage ? '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive : null,
+                gatewayImageArchive: $includeGatewayImage
+                    ? '/var/tmp/'.E2EArtifactProdManifest::GatewayImageArchive
+                    : null,
                 preparedGatewayImage: $includeGatewayImage ? DockerTopologyProvider::gatewayImage() : null,
             ),
             "Could not install prepared app runtime prerequisites on {$instance->name()}",
@@ -1411,24 +1750,29 @@ BASH;
         $guestArchive = '/var/tmp/'.E2EArtifactProdManifest::WebSocketImageArchive;
         $image = DockerTopologyProvider::webSocketRuntimeImage();
 
-        $push = $this->timer->measure('prepared-artifact-runtime.websocket-image.push', fn (): ProcessResult => $this->host->run(sprintf(
-            'incus file push %s %s',
-            escapeshellarg($archive),
-            escapeshellarg("{$instance->name()}{$guestArchive}"),
-        ), timeoutSeconds: 300));
+        $push = $this->timer->measure('prepared-artifact-runtime.websocket-image.push', fn (): ProcessResult => $this->host->run(
+            sprintf(
+                'incus file push %s %s',
+                escapeshellarg($archive),
+                escapeshellarg("{$instance->name()}{$guestArchive}"),
+            ),
+            timeoutSeconds: 300,
+        ));
 
         if (! $push->successful()) {
-            throw new RuntimeException("Could not push websocket image archive [{$archive}] into [{$instance->name()}]: {$push->errorOutput()}");
+            throw new RuntimeException(
+                "Could not push websocket image archive [{$archive}] into [{$instance->name()}]: {$push->errorOutput()}",
+            );
         }
 
         $this->timer->measure('prepared-artifact-runtime.docker-start', fn () => E2ECommand::exec(
             $instance,
             <<<'BASH'
-set -euo pipefail
-if command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl enable --now docker || sudo systemctl start docker || true
-fi
-BASH,
+                set -euo pipefail
+                if command -v systemctl >/dev/null 2>&1; then
+                    sudo systemctl enable --now docker || sudo systemctl start docker || true
+                fi
+                BASH,
             "Could not start Docker for prepared runtime image install on {$instance->name()}",
             timeoutSeconds: 60,
         ));
@@ -1444,12 +1788,12 @@ BASH,
             $instance,
             sprintf(
                 <<<'BASH'
-set -euo pipefail
-sudo docker image inspect %s >/dev/null
-if getent passwd orbit >/dev/null 2>&1; then
-    sudo -u orbit docker image inspect %s >/dev/null
-fi
-BASH,
+                    set -euo pipefail
+                    sudo docker image inspect %s >/dev/null
+                    if getent passwd orbit >/dev/null 2>&1; then
+                        sudo -u orbit docker image inspect %s >/dev/null
+                    fi
+                    BASH,
                 escapeshellarg($image),
                 escapeshellarg($image),
             ),
@@ -1487,12 +1831,12 @@ BASH,
             $gatewayImageScript = sprintf(
                 <<<'BASH'
 
-sudo docker load -i %s
-if sudo docker image inspect %s >/dev/null 2>&1; then
-    sudo docker tag %s 'orbit-gateway:current'
-fi
-sudo docker image inspect 'orbit-gateway:current' >/dev/null
-BASH,
+                    sudo docker load -i %s
+                    if sudo docker image inspect %s >/dev/null 2>&1; then
+                        sudo docker tag %s 'orbit-gateway:current'
+                    fi
+                    sudo docker image inspect 'orbit-gateway:current' >/dev/null
+                    BASH,
                 escapeshellarg($gatewayImageArchive),
                 escapeshellarg($preparedGatewayImage),
                 escapeshellarg($preparedGatewayImage),
@@ -1501,52 +1845,52 @@ BASH,
 
         $script = sprintf(
             <<<'BASH'
-set -euo pipefail
-bootstrap_user=%s
-runtime_user=orbit
+                set -euo pipefail
+                bootstrap_user=%s
+                runtime_user=orbit
 
-if ! command -v docker >/dev/null 2>&1; then
-    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io
-fi
+                if ! command -v docker >/dev/null 2>&1; then
+                    sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io
+                fi
 
-if command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl enable --now docker || sudo systemctl start docker || true
-fi
+                if command -v systemctl >/dev/null 2>&1; then
+                    sudo systemctl enable --now docker || sudo systemctl start docker || true
+                fi
 
-if getent group docker >/dev/null 2>&1; then
-    sudo usermod -aG docker "$(id -un)"
-    if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
-        sudo usermod -aG docker "$bootstrap_user"
-    fi
-    if getent passwd "$runtime_user" >/dev/null 2>&1; then
-        sudo usermod -aG docker "$runtime_user"
-    fi
-fi
+                if getent group docker >/dev/null 2>&1; then
+                    sudo usermod -aG docker "$(id -un)"
+                    if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
+                        sudo usermod -aG docker "$bootstrap_user"
+                    fi
+                    if getent passwd "$runtime_user" >/dev/null 2>&1; then
+                        sudo usermod -aG docker "$runtime_user"
+                    fi
+                fi
 
-sudo docker load -i %s
-sudo docker image inspect %s >/dev/null
-sudo docker load -i %s
-sudo docker image inspect %s >/dev/null%s
-sudo docker load -i %s
-sudo docker image inspect %s >/dev/null
-if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
-    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
-    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
-    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
-    if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
-        sudo -u "$bootstrap_user" docker image inspect 'orbit-gateway:current' >/dev/null
-    fi
-fi
-if getent passwd "$runtime_user" >/dev/null 2>&1; then
-    sudo -u "$runtime_user" docker image inspect %s >/dev/null
-    sudo -u "$runtime_user" docker image inspect %s >/dev/null
-    sudo -u "$runtime_user" docker image inspect %s >/dev/null
-    if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
-        sudo -u "$runtime_user" docker image inspect 'orbit-gateway:current' >/dev/null
-    fi
-fi
-BASH,
+                sudo docker load -i %s
+                sudo docker image inspect %s >/dev/null
+                sudo docker load -i %s
+                sudo docker image inspect %s >/dev/null%s
+                sudo docker load -i %s
+                sudo docker image inspect %s >/dev/null
+                if getent passwd "$bootstrap_user" >/dev/null 2>&1; then
+                    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
+                    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
+                    sudo -u "$bootstrap_user" docker image inspect %s >/dev/null
+                    if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
+                        sudo -u "$bootstrap_user" docker image inspect 'orbit-gateway:current' >/dev/null
+                    fi
+                fi
+                if getent passwd "$runtime_user" >/dev/null 2>&1; then
+                    sudo -u "$runtime_user" docker image inspect %s >/dev/null
+                    sudo -u "$runtime_user" docker image inspect %s >/dev/null
+                    sudo -u "$runtime_user" docker image inspect %s >/dev/null
+                    if sudo docker image inspect 'orbit-gateway:current' >/dev/null 2>&1; then
+                        sudo -u "$runtime_user" docker image inspect 'orbit-gateway:current' >/dev/null
+                    fi
+                fi
+                BASH,
             escapeshellarg($bootstrapUser),
             escapeshellarg($caddyImageArchive),
             escapeshellarg($caddyImage),
@@ -1581,35 +1925,81 @@ BASH,
     /**
      * @return array<string, IncusInstance>
      */
-    private function buildGatewayFirstPreparedInstances(SshKeyPair $key, E2ETopologyKind $kind, string $timerPrefix, string $apiLabel): array
-    {
+    private function buildGatewayFirstPreparedInstances(
+        SshKeyPair $key,
+        E2ETopologyKind $kind,
+        string $timerPrefix,
+        string $apiLabel,
+    ): array {
         $gateway = $this->launchBaseRole('gateway', $key, $kind);
         $gatewayIp = $this->timer->measure("{$timerPrefix}.gateway.ipv4", fn (): string => $gateway->waitForIpv4());
         $backgroundPrepare = $this->timer->measure(
             "{$timerPrefix}.operator-downstream.prepare.start",
-            fn (): array => $this->startArtifactPreparedRolesInBackground(['operator', 'dev', 'prod', 'agent'], $key, $kind),
+            fn (): array => $this->startArtifactPreparedRolesInBackground(
+                ['operator', 'dev', 'prod', 'agent'],
+                $key,
+                $kind,
+            ),
         );
 
-        $this->timer->measure('gateway.provision', fn () => $this->provisionPreparedInstance($gateway, 'gateway', 'orbit'));
+        $this->timer->measure('gateway.provision', fn () => $this->provisionPreparedInstance(
+            $gateway,
+            'gateway',
+            'orbit',
+        ));
 
         $instances = [
             'gateway' => $gateway,
             ...$this->timer->measure(
                 "{$timerPrefix}.operator-downstream.prepare",
-                fn (): array => $this->waitForArtifactPreparedRoles($backgroundPrepare, ['operator', 'dev', 'prod', 'agent'], $kind, $timerPrefix),
+                fn (): array => $this->waitForArtifactPreparedRoles(
+                    $backgroundPrepare,
+                    ['operator', 'dev', 'prod', 'agent'],
+                    $kind,
+                    $timerPrefix,
+                ),
             ),
         ];
 
-        $this->timer->measure("{$timerPrefix}.real-wireguard.retarget", fn () => $this->installRealWireGuard($instances));
-        $this->timer->measure("{$timerPrefix}.gateway.bootstrap-local", fn () => $this->bootstrapGatewayLocal($gateway, $gatewayIp));
-        $this->timer->measure("{$timerPrefix}.gateway.trust-operator", fn () => $this->trustGatewayCaOnOperator($instances['operator'], $gateway, $key));
-        $this->timer->measure("{$timerPrefix}.gateway.seed-operator", fn () => E2EGatewayApi::seedOperatorIdentity($gateway, self::OperatorWireGuardIp, $this->host->config->operatorUser));
-        $this->timer->measure("{$timerPrefix}.gateway.retarget-operator", fn () => $this->retargetOperator($instances['operator'], $gatewayIp, $key));
-        $this->timer->measure("{$timerPrefix}.gateway.use-wireguard-url", fn () => $this->useWireGuardGatewayUrl($instances['operator'], $key));
-        $this->timer->measure("{$timerPrefix}.gateway.provisioning-ssh-key", fn () => E2EGatewayApi::installProvisioningSshKey($gateway, $key));
+        $this->timer->measure("{$timerPrefix}.real-wireguard.retarget", fn () => $this->installRealWireGuard(
+            $instances,
+        ));
+        $this->timer->measure("{$timerPrefix}.gateway.bootstrap-local", fn () => $this->bootstrapGatewayLocal(
+            $gateway,
+            $gatewayIp,
+        ));
+        $this->timer->measure("{$timerPrefix}.gateway.trust-operator", fn () => $this->trustGatewayCaOnOperator(
+            $instances['operator'],
+            $gateway,
+            $key,
+        ));
+        $this->timer->measure("{$timerPrefix}.gateway.seed-operator", fn () => E2EGatewayApi::seedOperatorIdentity(
+            $gateway,
+            self::OperatorWireGuardIp,
+            $this->host->config->operatorUser,
+        ));
+        $this->timer->measure("{$timerPrefix}.gateway.retarget-operator", fn () => $this->retargetOperator(
+            $instances['operator'],
+            $gatewayIp,
+            $key,
+        ));
+        $this->timer->measure("{$timerPrefix}.gateway.use-wireguard-url", fn () => $this->useWireGuardGatewayUrl(
+            $instances['operator'],
+            $key,
+        ));
+        $this->timer->measure(
+            "{$timerPrefix}.gateway.provisioning-ssh-key",
+            fn () => E2EGatewayApi::installProvisioningSshKey($gateway, $key),
+        );
         $this->timer->measure("{$timerPrefix}.gateway.api.start", fn () => E2EGatewayApi::start($gateway, $apiLabel));
-        $this->timer->measure("{$timerPrefix}.gateway.api.ready", fn () => E2EGatewayApi::waitForGatewayApi($instances['operator'], $this->host->config->operatorUser, $key));
-        $this->timer->measure("{$timerPrefix}.gateway.wg-easy.ready", fn () => $this->waitForGatewayWireGuard($gateway));
+        $this->timer->measure("{$timerPrefix}.gateway.api.ready", fn () => E2EGatewayApi::waitForGatewayApi(
+            $instances['operator'],
+            $this->host->config->operatorUser,
+            $key,
+        ));
+        $this->timer->measure("{$timerPrefix}.gateway.wg-easy.ready", fn () => $this->waitForGatewayWireGuard(
+            $gateway,
+        ));
 
         return $instances;
     }
@@ -1618,8 +2008,11 @@ BASH,
      * @param  list<string>  $roles
      * @return array{script: string, output: string, error: string, done: string, exit: string}
      */
-    private function startArtifactPreparedRolesInBackground(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind): array
-    {
+    private function startArtifactPreparedRolesInBackground(
+        array $roles,
+        SshKeyPair $key,
+        E2ETopologyKind $templateKind,
+    ): array {
         $roles = array_values(array_intersect(['operator', 'dev', 'prod', 'agent'], $roles));
 
         if ($roles === []) {
@@ -1673,28 +2066,32 @@ BASH,
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
-    private function waitForArtifactPreparedRoles(array $paths, array $roles, E2ETopologyKind $templateKind, string $timerPrefix): array
-    {
+    private function waitForArtifactPreparedRoles(
+        array $paths,
+        array $roles,
+        E2ETopologyKind $templateKind,
+        string $timerPrefix,
+    ): array {
         $result = $this->host->run(sprintf(
             <<<'BASH'
-deadline=$(($(date +%%s) + 900))
-while [ ! -f %s ]; do
-    if [ "$(date +%%s)" -ge "$deadline" ]; then
-        echo "prepared role launch did not finish" >&2
-        cat %s >&2 2>/dev/null || true
-        cat %s >&2 2>/dev/null || true
-        exit 1
-    fi
+                deadline=$(($(date +%%s) + 900))
+                while [ ! -f %s ]; do
+                    if [ "$(date +%%s)" -ge "$deadline" ]; then
+                        echo "prepared role launch did not finish" >&2
+                        cat %s >&2 2>/dev/null || true
+                        cat %s >&2 2>/dev/null || true
+                        exit 1
+                    fi
 
-    sleep 2
-done
+                    sleep 2
+                done
 
-cat %s 2>/dev/null || true
-cat %s >&2 2>/dev/null || true
-code="$(cat %s 2>/dev/null || echo 1)"
-rm -f %s %s %s %s %s
-exit "$code"
-BASH,
+                cat %s 2>/dev/null || true
+                cat %s >&2 2>/dev/null || true
+                code="$(cat %s 2>/dev/null || echo 1)"
+                rm -f %s %s %s %s %s
+                exit "$code"
+                BASH,
             escapeshellarg($paths['done']),
             escapeshellarg($paths['output']),
             escapeshellarg($paths['error']),
@@ -1723,7 +2120,10 @@ BASH,
         $instances = [];
 
         foreach ($roles as $role) {
-            $instances[$role] = new IncusInstance($this->host, IncusTopologyTemplate::templateName($templateKind, $role));
+            $instances[$role] = new IncusInstance(
+                $this->host,
+                IncusTopologyTemplate::templateName($templateKind, $role),
+            );
         }
 
         return $instances;
@@ -1752,7 +2152,13 @@ BASH,
                 escapeshellarg($role),
                 $this->launchTopologyInstanceCommand($name, attachSource: false),
             );
-            $startLines[] = sprintf('prepare_role %s %s > %s 2>&1 & %s=$!;', escapeshellarg($role), escapeshellarg($name), escapeshellarg($logPath), $pid);
+            $startLines[] = sprintf(
+                'prepare_role %s %s > %s 2>&1 & %s=$!;',
+                escapeshellarg($role),
+                escapeshellarg($name),
+                escapeshellarg($logPath),
+                $pid,
+            );
             $statusLines[] = "{$status}=0;";
             $waitLines[] = sprintf(
                 'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; }; cat %4$s || true;',
@@ -1766,157 +2172,157 @@ BASH,
 
         return sprintf(
             <<<'BASH'
-set -euo pipefail;
+                set -euo pipefail;
 
-bootstrap_user=%s
-operator_user=%s
-binary_bundle_dir=%s
-private_key_path=%s
-public_key_path=%s
-timeout_seconds=%d
+                bootstrap_user=%s
+                operator_user=%s
+                binary_bundle_dir=%s
+                private_key_path=%s
+                public_key_path=%s
+                timeout_seconds=%d
 
-now_ms() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import time; print(int(time.time() * 1000))'
+                now_ms() {
+                    if command -v python3 >/dev/null 2>&1; then
+                        python3 -c 'import time; print(int(time.time() * 1000))'
 
-        return
-    fi
+                        return
+                    fi
 
-    echo "$(($(date +%%s) * 1000))"
-}
+                    echo "$(($(date +%%s) * 1000))"
+                }
 
-record_timing() {
-    local role="$1"
-    local phase="$2"
-    local start_ms="$3"
-    local end_ms
+                record_timing() {
+                    local role="$1"
+                    local phase="$2"
+                    local start_ms="$3"
+                    local end_ms
 
-    end_ms="$(now_ms)"
-    echo "__orbit_prepare_timing ${role} ${phase} $((end_ms - start_ms))"
-}
+                    end_ms="$(now_ms)"
+                    echo "__orbit_prepare_timing ${role} ${phase} $((end_ms - start_ms))"
+                }
 
-wait_for_agent() {
-    local name="$1"
-    local deadline=$((SECONDS + timeout_seconds))
+                wait_for_agent() {
+                    local name="$1"
+                    local deadline=$((SECONDS + timeout_seconds))
 
-    until incus exec "$name" -- true >/dev/null 2>&1; do
-        if [ "$SECONDS" -ge "$deadline" ]; then
-            echo "Incus agent never became ready on ${name}." >&2
-            return 1
-        fi
+                    until incus exec "$name" -- true >/dev/null 2>&1; do
+                        if [ "$SECONDS" -ge "$deadline" ]; then
+                            echo "Incus agent never became ready on ${name}." >&2
+                            return 1
+                        fi
 
-        sleep 2
-    done
-}
+                        sleep 2
+                    done
+                }
 
-instance_ipv4() {
-    local name="$1"
+                instance_ipv4() {
+                    local name="$1"
 
-    incus exec "$name" -- sh -lc 'ip -o -4 addr show scope global' \
-        | awk '$2 !~ /^(lo|docker0|docker_gwbridge|wg-orbit|wg0|br-|veth)/ && found != 1 { split($4, parts, "/"); print parts[1]; found = 1 }'
-}
+                    incus exec "$name" -- sh -lc 'ip -o -4 addr show scope global' \
+                        | awk '$2 !~ /^(lo|docker0|docker_gwbridge|wg-orbit|wg0|br-|veth)/ && found != 1 { split($4, parts, "/"); print parts[1]; found = 1 }'
+                }
 
-authorize_ssh() {
-    local name="$1"
-    local user="$2"
+                authorize_ssh() {
+                    local name="$1"
+                    local user="$2"
 
-    incus exec "$name" -- sh -lc "install -d -m 700 -o ${user} -g ${user} /home/${user}/.ssh"
-    incus file push "$public_key_path" "${name}/home/${user}/.ssh/authorized_keys"
-    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/authorized_keys && chmod 600 /home/${user}/.ssh/authorized_keys && usermod -p '*' ${user} && (systemctl start ssh || systemctl start sshd || true)"
-}
+                    incus exec "$name" -- sh -lc "install -d -m 700 -o ${user} -g ${user} /home/${user}/.ssh"
+                    incus file push "$public_key_path" "${name}/home/${user}/.ssh/authorized_keys"
+                    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/authorized_keys && chmod 600 /home/${user}/.ssh/authorized_keys && usermod -p '*' ${user} && (systemctl start ssh || systemctl start sshd || true)"
+                }
 
-install_private_key() {
-    local name="$1"
-    local user="$2"
+                install_private_key() {
+                    local name="$1"
+                    local user="$2"
 
-    incus file push "$private_key_path" "${name}/home/${user}/.ssh/id_ed25519"
-    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/id_ed25519 && chmod 600 /home/${user}/.ssh/id_ed25519"
-}
+                    incus file push "$private_key_path" "${name}/home/${user}/.ssh/id_ed25519"
+                    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/id_ed25519 && chmod 600 /home/${user}/.ssh/id_ed25519"
+                }
 
-wait_for_ssh() {
-    local name="$1"
-    local user="$2"
-    local deadline=$((SECONDS + timeout_seconds))
-    local ipv4=''
+                wait_for_ssh() {
+                    local name="$1"
+                    local user="$2"
+                    local deadline=$((SECONDS + timeout_seconds))
+                    local ipv4=''
 
-    while [ "$SECONDS" -lt "$deadline" ]; do
-        ipv4="$(instance_ipv4 "$name")"
+                    while [ "$SECONDS" -lt "$deadline" ]; do
+                        ipv4="$(instance_ipv4 "$name")"
 
-        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
-            return 0
-        fi
+                        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
+                            return 0
+                        fi
 
-        sleep 3
-    done
+                        sleep 3
+                    done
 
-    echo "SSH never became ready on ${name} for ${user}." >&2
-    return 1
-}
+                    echo "SSH never became ready on ${name} for ${user}." >&2
+                    return 1
+                }
 
-install_orbit_binary() {
-    local name="$1"
-    local user="$2"
-    local binary="${binary_bundle_dir}/orbit-binary"
+                install_orbit_binary() {
+                    local name="$1"
+                    local user="$2"
+                    local binary="${binary_bundle_dir}/orbit-binary"
 
-    if [ ! -f "$binary" ]; then
-        echo "Orbit binary artifact missing from prepared topology bundle: ${binary}" >&2
-        return 1
-    fi
+                    if [ ! -f "$binary" ]; then
+                        echo "Orbit binary artifact missing from prepared topology bundle: ${binary}" >&2
+                        return 1
+                    fi
 
-    incus exec "$name" -- sh -lc "id ${user} >/dev/null 2>&1 || useradd -m -s /bin/bash ${user}"
-    incus exec "$name" -- sh -lc "install -d -m 0755 -o ${user} -g ${user} /home/${user}/orbit/bin"
-    incus file push "$binary" "${name}/home/${user}/orbit/bin/orbit-binary"
-    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/orbit/bin/orbit-binary && chmod 0755 /home/${user}/orbit/bin/orbit-binary && ln -sf /home/${user}/orbit/bin/orbit-binary /usr/local/bin/orbit"
-    incus exec "$name" -- sh -lc "runuser -u ${user} -- env HOME=/home/${user} PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null"
-}
+                    incus exec "$name" -- sh -lc "id ${user} >/dev/null 2>&1 || useradd -m -s /bin/bash ${user}"
+                    incus exec "$name" -- sh -lc "install -d -m 0755 -o ${user} -g ${user} /home/${user}/orbit/bin"
+                    incus file push "$binary" "${name}/home/${user}/orbit/bin/orbit-binary"
+                    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/orbit/bin/orbit-binary && chmod 0755 /home/${user}/orbit/bin/orbit-binary && ln -sf /home/${user}/orbit/bin/orbit-binary /usr/local/bin/orbit"
+                    incus exec "$name" -- sh -lc "runuser -u ${user} -- env HOME=/home/${user} PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null"
+                }
 
-prepare_role() {
-    local role="$1"
-    local name="$2"
-    local user="$bootstrap_user"
-    local binary_user="orbit"
-    local phase_start
+                prepare_role() {
+                    local role="$1"
+                    local name="$2"
+                    local user="$bootstrap_user"
+                    local binary_user="orbit"
+                    local phase_start
 
-    if [ "$role" = "operator" ]; then
-        user="$operator_user"
-        binary_user="$operator_user"
-    fi
+                    if [ "$role" = "operator" ]; then
+                        user="$operator_user"
+                        binary_user="$operator_user"
+                    fi
 
-    phase_start="$(now_ms)"
-    case "$role" in
-%s
-    *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
-    esac
-    record_timing "$role" launch "$phase_start"
+                    phase_start="$(now_ms)"
+                    case "$role" in
+                %s
+                    *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
+                    esac
+                    record_timing "$role" launch "$phase_start"
 
-    phase_start="$(now_ms)"
-    wait_for_agent "$name"
-    record_timing "$role" agent-ready "$phase_start"
-    phase_start="$(now_ms)"
-    install_orbit_binary "$name" "$binary_user"
-    record_timing "$role" orbit-binary "$phase_start"
-    phase_start="$(now_ms)"
-    authorize_ssh "$name" "$user"
-    if [ "$binary_user" != "$user" ]; then
-        authorize_ssh "$name" "$binary_user"
-    fi
-    if [ "$role" = "operator" ]; then
-        install_private_key "$name" "$user"
-    fi
-    record_timing "$role" ssh-authorize "$phase_start"
-    phase_start="$(now_ms)"
-    wait_for_ssh "$name" "$user"
-    record_timing "$role" ssh-ready "$phase_start"
-}
+                    phase_start="$(now_ms)"
+                    wait_for_agent "$name"
+                    record_timing "$role" agent-ready "$phase_start"
+                    phase_start="$(now_ms)"
+                    install_orbit_binary "$name" "$binary_user"
+                    record_timing "$role" orbit-binary "$phase_start"
+                    phase_start="$(now_ms)"
+                    authorize_ssh "$name" "$user"
+                    if [ "$binary_user" != "$user" ]; then
+                        authorize_ssh "$name" "$binary_user"
+                    fi
+                    if [ "$role" = "operator" ]; then
+                        install_private_key "$name" "$user"
+                    fi
+                    record_timing "$role" ssh-authorize "$phase_start"
+                    phase_start="$(now_ms)"
+                    wait_for_ssh "$name" "$user"
+                    record_timing "$role" ssh-ready "$phase_start"
+                }
 
-%s
+                %s
 
-STATUS=0;
-%s
-%s
-%s
-exit "$STATUS";
-BASH,
+                STATUS=0;
+                %s
+                %s
+                %s
+                exit "$STATUS";
+                BASH,
             escapeshellarg($this->host->config->bootstrapUser),
             escapeshellarg($this->host->config->operatorUser),
             escapeshellarg((string) $this->remoteOrbitBinaryBundleDir),
@@ -1935,8 +2341,11 @@ BASH,
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
-    private function startTemplateRoles(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Operator): array
-    {
+    private function startTemplateRoles(
+        array $roles,
+        SshKeyPair $key,
+        E2ETopologyKind $templateKind = E2ETopologyKind::Operator,
+    ): array {
         $instances = [];
 
         foreach ($roles as $role) {
@@ -1960,7 +2369,9 @@ BASH,
         $stopResult = $this->timer->measure('checkpoint.stop', fn () => $this->host->stopInstancesIfRunning($names));
 
         if (! $stopResult->successful()) {
-            throw new RuntimeException("Could not stop checkpoint templates before restore: {$stopResult->errorOutput()}");
+            throw new RuntimeException(
+                "Could not stop checkpoint templates before restore: {$stopResult->errorOutput()}",
+            );
         }
 
         $restoreLines = [];
@@ -2000,11 +2411,23 @@ BASH,
             $this->timer->measure("checkpoint.agent-ready.{$role}", fn () => $instance->waitForAgent());
 
             if ($role === 'operator') {
-                $this->timer->measure("checkpoint.ssh-authorize.{$role}", fn () => $instance->authorizeSsh($this->host->config->operatorUser, $key));
-                $this->timer->measure("checkpoint.ssh-ready.{$role}", fn () => $instance->waitForSsh($this->host->config->operatorUser, $key));
+                $this->timer->measure("checkpoint.ssh-authorize.{$role}", fn () => $instance->authorizeSsh(
+                    $this->host->config->operatorUser,
+                    $key,
+                ));
+                $this->timer->measure("checkpoint.ssh-ready.{$role}", fn () => $instance->waitForSsh(
+                    $this->host->config->operatorUser,
+                    $key,
+                ));
             } elseif ($role !== 'gateway') {
-                $this->timer->measure("checkpoint.ssh-authorize.{$role}", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
-                $this->timer->measure("checkpoint.ssh-ready.{$role}", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
+                $this->timer->measure("checkpoint.ssh-authorize.{$role}", fn () => $instance->authorizeSsh(
+                    $this->host->config->bootstrapUser,
+                    $key,
+                ));
+                $this->timer->measure("checkpoint.ssh-ready.{$role}", fn () => $instance->waitForSsh(
+                    $this->host->config->bootstrapUser,
+                    $key,
+                ));
             }
 
             $instances[$role] = $instance;
@@ -2013,8 +2436,11 @@ BASH,
         return $instances;
     }
 
-    private function startTemplateRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Operator): IncusInstance
-    {
+    private function startTemplateRole(
+        string $role,
+        SshKeyPair $key,
+        E2ETopologyKind $templateKind = E2ETopologyKind::Operator,
+    ): IncusInstance {
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
 
         $start = $this->timer->measure("{$role}.start", fn () => $this->host->startInstance($name));
@@ -2026,25 +2452,43 @@ BASH,
         $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
 
         if ($role === 'operator') {
-            $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->operatorUser, $key));
-            $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->operatorUser, $key));
+            $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh(
+                $this->host->config->operatorUser,
+                $key,
+            ));
+            $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh(
+                $this->host->config->operatorUser,
+                $key,
+            ));
         }
 
         return $instance;
     }
 
-    private function launchBaseRole(string $role, SshKeyPair $key, E2ETopologyKind $templateKind = E2ETopologyKind::Operator): IncusInstance
-    {
+    private function launchBaseRole(
+        string $role,
+        SshKeyPair $key,
+        E2ETopologyKind $templateKind = E2ETopologyKind::Operator,
+    ): IncusInstance {
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
         $attachSource = $role === 'gateway' || $this->remoteOrbitBinaryBundleDir === null;
         $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name, attachSource: $attachSource));
         $instance = new IncusInstance($this->host, $name);
         $this->timer->measure("{$role}.agent.ready", fn () => $instance->waitForAgent());
         if ($this->remoteSourcePath !== null && $role !== 'gateway' && $this->remoteOrbitBinaryBundleDir === null) {
-            $this->timer->measure("{$role}.source-runtime", fn () => $this->installSourceMountedRuntime($instance, $this->host->config->bootstrapUser));
+            $this->timer->measure("{$role}.source-runtime", fn () => $this->installSourceMountedRuntime(
+                $instance,
+                $this->host->config->bootstrapUser,
+            ));
         }
-        $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh($this->host->config->bootstrapUser, $key));
-        $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh($this->host->config->bootstrapUser, $key));
+        $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh(
+            $this->host->config->bootstrapUser,
+            $key,
+        ));
+        $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh(
+            $this->host->config->bootstrapUser,
+            $key,
+        ));
 
         return $instance;
     }
@@ -2053,8 +2497,12 @@ BASH,
      * @param  list<string>  $roles
      * @return array<string, IncusInstance>
      */
-    private function launchBaseRolesInParallel(array $roles, SshKeyPair $key, E2ETopologyKind $templateKind, string $timerPrefix = 'prepared.downstream.prepare'): array
-    {
+    private function launchBaseRolesInParallel(
+        array $roles,
+        SshKeyPair $key,
+        E2ETopologyKind $templateKind,
+        string $timerPrefix = 'prepared.downstream.prepare',
+    ): array {
         $roles = array_values(array_intersect(['dev', 'prod', 'agent'], $roles));
 
         if ($roles === []) {
@@ -2079,7 +2527,13 @@ BASH,
                 escapeshellarg($role),
                 $this->launchTopologyInstanceCommand($name, attachSource: $this->remoteOrbitBinaryBundleDir === null),
             );
-            $startLines[] = sprintf('prepare_role %s %s > %s 2>&1 & %s=$!;', escapeshellarg($role), escapeshellarg($name), escapeshellarg($logPath), $pid);
+            $startLines[] = sprintf(
+                'prepare_role %s %s > %s 2>&1 & %s=$!;',
+                escapeshellarg($role),
+                escapeshellarg($name),
+                escapeshellarg($logPath),
+                $pid,
+            );
             $statusLines[] = "{$status}=0;";
             $waitLines[] = sprintf(
                 'wait "$%1$s" || { %2$s=$?; echo %3$s >&2; cat %4$s >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$%2$s; fi; }; cat %4$s || true;',
@@ -2094,169 +2548,169 @@ BASH,
         $sourceRuntimeInstallCommand = $this->sourceMountedRuntimeInstallCommand($this->host->config->bootstrapUser);
         $script = sprintf(
             <<<'BASH'
-set -euo pipefail;
+                set -euo pipefail;
 
-bootstrap_user=%s
-bundle_dir=%s
-binary_bundle_dir=%s
-source_path=%s
-private_key_path=%s
-public_key_path=%s
-timeout_seconds=%d
-source_runtime_install_command=%s
+                bootstrap_user=%s
+                bundle_dir=%s
+                binary_bundle_dir=%s
+                source_path=%s
+                private_key_path=%s
+                public_key_path=%s
+                timeout_seconds=%d
+                source_runtime_install_command=%s
 
-now_ms() {
-    if command -v python3 >/dev/null 2>&1; then
-        python3 -c 'import time; print(int(time.time() * 1000))'
+                now_ms() {
+                    if command -v python3 >/dev/null 2>&1; then
+                        python3 -c 'import time; print(int(time.time() * 1000))'
 
-        return
-    fi
+                        return
+                    fi
 
-    echo "$(($(date +%%s) * 1000))"
-}
+                    echo "$(($(date +%%s) * 1000))"
+                }
 
-record_timing() {
-    local role="$1"
-    local phase="$2"
-    local start_ms="$3"
-    local end_ms
+                record_timing() {
+                    local role="$1"
+                    local phase="$2"
+                    local start_ms="$3"
+                    local end_ms
 
-    end_ms="$(now_ms)"
-    echo "__orbit_prepare_timing ${role} ${phase} $((end_ms - start_ms))"
-}
+                    end_ms="$(now_ms)"
+                    echo "__orbit_prepare_timing ${role} ${phase} $((end_ms - start_ms))"
+                }
 
-wait_for_agent() {
-    local name="$1"
-    local deadline=$((SECONDS + timeout_seconds))
+                wait_for_agent() {
+                    local name="$1"
+                    local deadline=$((SECONDS + timeout_seconds))
 
-    until incus exec "$name" -- true >/dev/null 2>&1; do
-        if [ "$SECONDS" -ge "$deadline" ]; then
-            echo "Incus agent never became ready on ${name}." >&2
-            return 1
-        fi
+                    until incus exec "$name" -- true >/dev/null 2>&1; do
+                        if [ "$SECONDS" -ge "$deadline" ]; then
+                            echo "Incus agent never became ready on ${name}." >&2
+                            return 1
+                        fi
 
-        sleep 2
-    done
-}
+                        sleep 2
+                    done
+                }
 
-authorize_ssh() {
-    local name="$1"
-    local user="$2"
+                authorize_ssh() {
+                    local name="$1"
+                    local user="$2"
 
-    incus exec "$name" -- sh -lc "install -d -m 700 -o ${user} -g ${user} /home/${user}/.ssh"
-    incus file push "$public_key_path" "${name}/home/${user}/.ssh/authorized_keys"
-    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/authorized_keys && chmod 600 /home/${user}/.ssh/authorized_keys && usermod -p '*' ${user} && (systemctl start ssh || systemctl start sshd || true)"
-}
+                    incus exec "$name" -- sh -lc "install -d -m 700 -o ${user} -g ${user} /home/${user}/.ssh"
+                    incus file push "$public_key_path" "${name}/home/${user}/.ssh/authorized_keys"
+                    incus exec "$name" -- sh -lc "chown ${user}:${user} /home/${user}/.ssh/authorized_keys && chmod 600 /home/${user}/.ssh/authorized_keys && usermod -p '*' ${user} && (systemctl start ssh || systemctl start sshd || true)"
+                }
 
-instance_ipv4() {
-    local name="$1"
+                instance_ipv4() {
+                    local name="$1"
 
-    incus exec "$name" -- sh -lc 'ip -o -4 addr show scope global' \
-        | awk '$2 !~ /^(lo|docker0|docker_gwbridge|wg-orbit|wg0|br-|veth)/ && found != 1 { split($4, parts, "/"); print parts[1]; found = 1 }'
-}
+                    incus exec "$name" -- sh -lc 'ip -o -4 addr show scope global' \
+                        | awk '$2 !~ /^(lo|docker0|docker_gwbridge|wg-orbit|wg0|br-|veth)/ && found != 1 { split($4, parts, "/"); print parts[1]; found = 1 }'
+                }
 
-wait_for_ssh() {
-    local name="$1"
-    local user="$2"
-    local deadline=$((SECONDS + timeout_seconds))
-    local ipv4=''
+                wait_for_ssh() {
+                    local name="$1"
+                    local user="$2"
+                    local deadline=$((SECONDS + timeout_seconds))
+                    local ipv4=''
 
-    while [ "$SECONDS" -lt "$deadline" ]; do
-        ipv4="$(instance_ipv4 "$name")"
+                    while [ "$SECONDS" -lt "$deadline" ]; do
+                        ipv4="$(instance_ipv4 "$name")"
 
-        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
-            return 0
-        fi
+                        if [ -n "$ipv4" ] && ssh -i "$private_key_path" -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "${user}@${ipv4}" 'test "$(uname -s)" = Linux && test -r /etc/os-release' >/dev/null 2>&1; then
+                            return 0
+                        fi
 
-        sleep 3
-    done
+                        sleep 3
+                    done
 
-    echo "SSH never became ready on ${name} for ${user}." >&2
-    return 1
-}
+                    echo "SSH never became ready on ${name} for ${user}." >&2
+                    return 1
+                }
 
-install_orbit_binary() {
-    local name="$1"
-    local binary="${binary_bundle_dir}/orbit-binary"
+                install_orbit_binary() {
+                    local name="$1"
+                    local binary="${binary_bundle_dir}/orbit-binary"
 
-    if [ ! -f "$binary" ]; then
-        echo "Orbit binary artifact missing from prepared topology bundle: ${binary}" >&2
-        return 1
-    fi
+                    if [ ! -f "$binary" ]; then
+                        echo "Orbit binary artifact missing from prepared topology bundle: ${binary}" >&2
+                        return 1
+                    fi
 
-    incus exec "$name" -- sh -lc 'id orbit >/dev/null 2>&1 || useradd -m -s /bin/bash orbit'
-    incus exec "$name" -- sh -lc 'install -d -m 0755 -o orbit -g orbit /home/orbit/orbit/bin'
-    incus file push "$binary" "${name}/home/orbit/orbit/bin/orbit-binary"
-    incus exec "$name" -- sh -lc 'chown orbit:orbit /home/orbit/orbit/bin/orbit-binary && chmod 0755 /home/orbit/orbit/bin/orbit-binary && ln -sf /home/orbit/orbit/bin/orbit-binary /usr/local/bin/orbit'
-    incus exec "$name" -- sh -lc 'runuser -u orbit -- env HOME=/home/orbit PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'
-}
+                    incus exec "$name" -- sh -lc 'id orbit >/dev/null 2>&1 || useradd -m -s /bin/bash orbit'
+                    incus exec "$name" -- sh -lc 'install -d -m 0755 -o orbit -g orbit /home/orbit/orbit/bin'
+                    incus file push "$binary" "${name}/home/orbit/orbit/bin/orbit-binary"
+                    incus exec "$name" -- sh -lc 'chown orbit:orbit /home/orbit/orbit/bin/orbit-binary && chmod 0755 /home/orbit/orbit/bin/orbit-binary && ln -sf /home/orbit/orbit/bin/orbit-binary /usr/local/bin/orbit'
+                    incus exec "$name" -- sh -lc 'runuser -u orbit -- env HOME=/home/orbit PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /usr/local/bin/orbit --version >/dev/null'
+                }
 
-install_source_runtime() {
-    local name="$1"
+                install_source_runtime() {
+                    local name="$1"
 
-    if [ -z "$source_path" ]; then
-        return 1
-    fi
+                    if [ -z "$source_path" ]; then
+                        return 1
+                    fi
 
-    if incus config device get "$name" orbit-source path >/dev/null 2>&1; then
-        incus config device set "$name" orbit-source source="$source_path"
-        incus config device set "$name" orbit-source path='%s'
-        incus config device set "$name" orbit-source shift=true
-    else
-        incus config device add "$name" orbit-source disk source="$source_path" path='%s' shift=true
-    fi
+                    if incus config device get "$name" orbit-source path >/dev/null 2>&1; then
+                        incus config device set "$name" orbit-source source="$source_path"
+                        incus config device set "$name" orbit-source path='%s'
+                        incus config device set "$name" orbit-source shift=true
+                    else
+                        incus config device add "$name" orbit-source disk source="$source_path" path='%s' shift=true
+                    fi
 
-    incus exec "$name" -- bash -lc "$source_runtime_install_command"
-}
+                    incus exec "$name" -- bash -lc "$source_runtime_install_command"
+                }
 
-prepare_role() {
-    local role="$1"
-    local name="$2"
-    local phase_start
+                prepare_role() {
+                    local role="$1"
+                    local name="$2"
+                    local phase_start
 
-    phase_start="$(now_ms)"
-    case "$role" in
-%s
-    *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
-    esac
-    record_timing "$role" launch "$phase_start"
+                    phase_start="$(now_ms)"
+                    case "$role" in
+                %s
+                    *) echo "Unsupported prepared role: ${role}" >&2; return 1 ;;
+                    esac
+                    record_timing "$role" launch "$phase_start"
 
-    phase_start="$(now_ms)"
-    wait_for_agent "$name"
-    record_timing "$role" agent-ready "$phase_start"
+                    phase_start="$(now_ms)"
+                    wait_for_agent "$name"
+                    record_timing "$role" agent-ready "$phase_start"
 
-    if [ -n "$binary_bundle_dir" ]; then
-        phase_start="$(now_ms)"
-        install_orbit_binary "$name"
-        record_timing "$role" orbit-binary "$phase_start"
-    elif [ -n "$source_path" ]; then
-        phase_start="$(now_ms)"
-        install_source_runtime "$name"
-        record_timing "$role" source-runtime "$phase_start"
-    else
-        phase_start="$(now_ms)"
-        install_orbit_binary "$name"
-        record_timing "$role" orbit-binary "$phase_start"
-    fi
-    phase_start="$(now_ms)"
-    authorize_ssh "$name" "$bootstrap_user"
-    if [ "$bootstrap_user" != "orbit" ]; then
-        authorize_ssh "$name" "orbit"
-    fi
-    record_timing "$role" ssh-authorize "$phase_start"
-    phase_start="$(now_ms)"
-    wait_for_ssh "$name" "$bootstrap_user"
-    record_timing "$role" ssh-ready "$phase_start"
-}
+                    if [ -n "$binary_bundle_dir" ]; then
+                        phase_start="$(now_ms)"
+                        install_orbit_binary "$name"
+                        record_timing "$role" orbit-binary "$phase_start"
+                    elif [ -n "$source_path" ]; then
+                        phase_start="$(now_ms)"
+                        install_source_runtime "$name"
+                        record_timing "$role" source-runtime "$phase_start"
+                    else
+                        phase_start="$(now_ms)"
+                        install_orbit_binary "$name"
+                        record_timing "$role" orbit-binary "$phase_start"
+                    fi
+                    phase_start="$(now_ms)"
+                    authorize_ssh "$name" "$bootstrap_user"
+                    if [ "$bootstrap_user" != "orbit" ]; then
+                        authorize_ssh "$name" "orbit"
+                    fi
+                    record_timing "$role" ssh-authorize "$phase_start"
+                    phase_start="$(now_ms)"
+                    wait_for_ssh "$name" "$bootstrap_user"
+                    record_timing "$role" ssh-ready "$phase_start"
+                }
 
-%s
+                %s
 
-STATUS=0;
-%s
-%s
-%s
-exit "$STATUS";
-BASH,
+                STATUS=0;
+                %s
+                %s
+                %s
+                exit "$STATUS";
+                BASH,
             escapeshellarg($this->host->config->bootstrapUser),
             escapeshellarg((string) $this->remoteBundleDir),
             escapeshellarg((string) $this->remoteOrbitBinaryBundleDir),
@@ -2282,10 +2736,15 @@ BASH,
         );
 
         if (! $writeResult->successful()) {
-            throw new RuntimeException("Could not write prepared downstream role script: {$writeResult->errorOutput()}");
+            throw new RuntimeException(
+                "Could not write prepared downstream role script: {$writeResult->errorOutput()}",
+            );
         }
 
-        $result = $this->host->run($scriptPathArgument, timeoutSeconds: max(900, $this->host->config->timeoutSeconds * 4));
+        $result = $this->host->run($scriptPathArgument, timeoutSeconds: max(
+            900,
+            $this->host->config->timeoutSeconds * 4,
+        ));
         $output = $result->output()."\n".$result->errorOutput();
         $this->recordPreparedRoleTimings($output, $roles, 'prepare', $timerPrefix);
         $statuses = $this->parsePreparedRoleStatuses($output, $roles, 'prepare');
@@ -2301,7 +2760,10 @@ BASH,
         $instances = [];
 
         foreach ($roles as $role) {
-            $instances[$role] = new IncusInstance($this->host, IncusTopologyTemplate::templateName($templateKind, $role));
+            $instances[$role] = new IncusInstance(
+                $this->host,
+                IncusTopologyTemplate::templateName($templateKind, $role),
+            );
         }
 
         return $instances;
@@ -2309,11 +2771,21 @@ BASH,
 
     private function useWireGuardGatewayUrl(IncusInstance $operator, SshKeyPair $key): void
     {
-        $this->updateOperatorCliGatewayUrl($operator, $key, 'https://'.self::GatewayWireGuardIp, self::GatewayWireGuardIp);
+        $this->updateOperatorCliGatewayUrl(
+            $operator,
+            $key,
+            'https://'.self::GatewayWireGuardIp,
+            self::GatewayWireGuardIp,
+        );
     }
 
-    private function writeOperatorCliConfig(IncusInstance $operator, SshKeyPair $key, string $gatewayUrl = 'https://10.6.0.2', ?string $caPemPath = null, ?string $caSha256 = null): void
-    {
+    private function writeOperatorCliConfig(
+        IncusInstance $operator,
+        SshKeyPair $key,
+        string $gatewayUrl = 'https://10.6.0.2',
+        ?string $caPemPath = null,
+        ?string $caSha256 = null,
+    ): void {
         $operatorUser = $this->host->config->operatorUser;
         $configDir = '/home/'.$operatorUser.'/.config/orbit';
         $configPath = $configDir.'/config.json';
@@ -2335,78 +2807,85 @@ BASH,
         );
     }
 
-    private function updateOperatorCliGatewayUrl(IncusInstance $operator, SshKeyPair $key, string $gatewayUrl, string $gatewayIp): void
-    {
+    private function updateOperatorCliGatewayUrl(
+        IncusInstance $operator,
+        SshKeyPair $key,
+        string $gatewayUrl,
+        string $gatewayIp,
+    ): void {
         $operatorUser = $this->host->config->operatorUser;
         $configPath = var_export('/home/'.$operatorUser.'/.config/orbit/config.json', true);
         $gatewayUrlValue = var_export($gatewayUrl, true);
         $gatewayIpValue = var_export($gatewayIp, true);
 
         $php = <<<PHP
-\$configPath = {$configPath};
-\$gatewayUrl = {$gatewayUrlValue};
-\$gatewayIp = {$gatewayIpValue};
-\$config = [];
+            \$configPath = {$configPath};
+            \$gatewayUrl = {$gatewayUrlValue};
+            \$gatewayIp = {$gatewayIpValue};
+            \$config = [];
 
-if (is_file(\$configPath)) {
-    \$contents = file_get_contents(\$configPath);
+            if (is_file(\$configPath)) {
+                \$contents = file_get_contents(\$configPath);
 
-    if (is_string(\$contents) && trim(\$contents) !== '') {
-        \$decoded = json_decode(\$contents, true, flags: JSON_THROW_ON_ERROR);
+                if (is_string(\$contents) && trim(\$contents) !== '') {
+                    \$decoded = json_decode(\$contents, true, flags: JSON_THROW_ON_ERROR);
 
-        if (is_array(\$decoded)) {
-            \$config = \$decoded;
-        }
-    }
-}
+                    if (is_array(\$decoded)) {
+                        \$config = \$decoded;
+                    }
+                }
+            }
 
-\$config['schema_version'] = 1;
-\$config['active_gateway'] = 'default';
-\$config['defaults'] = \$config['defaults'] ?? ['node' => null, 'profile' => null];
-\$config['meta'] = \$config['meta'] ?? ['imported_from' => 'incus-e2e-topology', 'imported_at' => date(DATE_ATOM)];
-\$config['gateways'] = is_array(\$config['gateways'] ?? null) ? \$config['gateways'] : [];
-\$gateway = is_array(\$config['gateways']['default'] ?? null) ? \$config['gateways']['default'] : [];
-\$config['gateways']['default'] = array_merge([
-    'ca_pem_path' => null,
-    'ca_sha256' => null,
-    'ca_fingerprint' => null,
-    'timeout' => 30,
-    'self_mode' => 'wireguard_https',
-], \$gateway, [
-    'url' => \$gatewayUrl,
-    'wireguard_ip' => \$gatewayIp,
-]);
+            \$config['schema_version'] = 1;
+            \$config['active_gateway'] = 'default';
+            \$config['defaults'] = \$config['defaults'] ?? ['node' => null, 'profile' => null];
+            \$config['meta'] = \$config['meta'] ?? ['imported_from' => 'incus-e2e-topology', 'imported_at' => date(DATE_ATOM)];
+            \$config['gateways'] = is_array(\$config['gateways'] ?? null) ? \$config['gateways'] : [];
+            \$gateway = is_array(\$config['gateways']['default'] ?? null) ? \$config['gateways']['default'] : [];
+            \$config['gateways']['default'] = array_merge([
+                'ca_pem_path' => null,
+                'ca_sha256' => null,
+                'ca_fingerprint' => null,
+                'timeout' => 30,
+                'self_mode' => 'wireguard_https',
+            ], \$gateway, [
+                'url' => \$gatewayUrl,
+                'wireguard_ip' => \$gatewayIp,
+            ]);
 
-if (! is_dir(dirname(\$configPath))) {
-    mkdir(dirname(\$configPath), 0700, true);
-}
+            if (! is_dir(dirname(\$configPath))) {
+                mkdir(dirname(\$configPath), 0700, true);
+            }
 
-file_put_contents(\$configPath, json_encode(\$config, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
-chmod(\$configPath, 0600);
-PHP;
+            file_put_contents(\$configPath, json_encode(\$config, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES).PHP_EOL);
+            chmod(\$configPath, 0600);
+            PHP;
 
         $this->runOperatorPhp($operator, $key, $php);
     }
 
     private function cliJsonConfigBody(string $gatewayUrl, ?string $caPemPath = null, ?string $caSha256 = null): string
     {
-        return json_encode([
-            'schema_version' => 1,
-            'active_gateway' => 'default',
-            'gateways' => [
-                'default' => [
-                    'url' => $gatewayUrl,
-                    'wireguard_ip' => self::GatewayWireGuardIp,
-                    'ca_pem_path' => $caPemPath,
-                    'ca_sha256' => $caSha256,
-                    'ca_fingerprint' => null,
-                    'timeout' => 30,
-                    'self_mode' => 'wireguard_https',
+        return json_encode(
+            [
+                'schema_version' => 1,
+                'active_gateway' => 'default',
+                'gateways' => [
+                    'default' => [
+                        'url' => $gatewayUrl,
+                        'wireguard_ip' => self::GatewayWireGuardIp,
+                        'ca_pem_path' => $caPemPath,
+                        'ca_sha256' => $caSha256,
+                        'ca_fingerprint' => null,
+                        'timeout' => 30,
+                        'self_mode' => 'wireguard_https',
+                    ],
                 ],
+                'defaults' => ['node' => null, 'profile' => null],
+                'meta' => ['imported_from' => 'incus-e2e-topology', 'imported_at' => date(DATE_ATOM)],
             ],
-            'defaults' => ['node' => null, 'profile' => null],
-            'meta' => ['imported_from' => 'incus-e2e-topology', 'imported_at' => date(DATE_ATOM)],
-        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+        );
     }
 
     private function runAppNodeNew(
@@ -2531,11 +3010,15 @@ PHP;
             '--user='.escapeshellarg($this->host->config->bootstrapUser),
             '--tld='.escapeshellarg('agent'),
         ]));
-        $commands = array_filter([
-            'dev' => $devCommand,
-            'prod' => $prodCommand,
-            'agent' => $agentCommand,
-        ], fn (string $role): bool => in_array($role, $roles, true), ARRAY_FILTER_USE_KEY);
+        $commands = array_filter(
+            [
+                'dev' => $devCommand,
+                'prod' => $prodCommand,
+                'agent' => $agentCommand,
+            ],
+            fn (string $role): bool => in_array($role, $roles, true),
+            ARRAY_FILTER_USE_KEY,
+        );
         $labels = [
             'dev' => 'app-dev',
             'prod' => 'app-prod',
@@ -2597,7 +3080,9 @@ PHP;
                 'while [ ! -f "$DEV_READY_MARKER" ]; do',
                 '    if [ "$(date +%s)" -ge "$DEV_READY_DEADLINE" ]; then',
                 '        STATUS_DEV=1;',
-                '        echo '.escapeshellarg('timed out waiting for app-dev runtime prerequisites before bake').' >&2;',
+                '        echo '
+                    .escapeshellarg('timed out waiting for app-dev runtime prerequisites before bake')
+                    .' >&2;',
                 '        if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_DEV; fi;',
                 '        break;',
                 '    fi;',
@@ -2615,7 +3100,9 @@ PHP;
             '#!/usr/bin/env bash',
             'set -euo pipefail;',
             'cd /home/orbit/orbit;',
-            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '.escapeshellarg('import time; print(int(time.time() * 1000))').'; else echo "$(($(date +%s) * 1000))"; fi; }',
+            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '
+                .escapeshellarg('import time; print(int(time.time() * 1000))')
+                .'; else echo "$(($(date +%s) * 1000))"; fi; }',
             'TIMING_FILE='.escapeshellarg($timingPath).';',
             ': > "$TIMING_FILE";',
             ...$startLines,
@@ -2682,22 +3169,22 @@ PHP;
 
             $result = $gateway->exec(sprintf(
                 <<<'BASH'
-deadline=$(($(date +%%s) + 900))
-while [ ! -f %s ]; do
-    if [ "$(date +%%s)" -ge "$deadline" ]; then
-        echo "prepared downstream bake did not finish" >&2
-        cat %s >&2 2>/dev/null || true
-        cat %s >&2 2>/dev/null || true
-        exit 1
-    fi
+                    deadline=$(($(date +%%s) + 900))
+                    while [ ! -f %s ]; do
+                        if [ "$(date +%%s)" -ge "$deadline" ]; then
+                            echo "prepared downstream bake did not finish" >&2
+                            cat %s >&2 2>/dev/null || true
+                            cat %s >&2 2>/dev/null || true
+                            exit 1
+                        fi
 
-    sleep 2
-done
+                        sleep 2
+                    done
 
-cat %s 2>/dev/null || true
-cat %s >&2 2>/dev/null || true
-exit "$(cat %s 2>/dev/null || echo 1)"
-BASH,
+                    cat %s 2>/dev/null || true
+                    cat %s >&2 2>/dev/null || true
+                    exit "$(cat %s 2>/dev/null || echo 1)"
+                    BASH,
                 escapeshellarg($donePath),
                 escapeshellarg($outputPath),
                 escapeshellarg($errorPath),
@@ -2796,11 +3283,15 @@ BASH,
             '--redis-node='.escapeshellarg('app-dev-1'),
             '--converge-runtime',
         ]));
-        $commands = array_filter([
-            'dev' => $devCommand,
-            'prod' => $prodCommand,
-            'agent' => $agentCommand,
-        ], fn (string $role): bool => in_array($role, $roles, true), ARRAY_FILTER_USE_KEY);
+        $commands = array_filter(
+            [
+                'dev' => $devCommand,
+                'prod' => $prodCommand,
+                'agent' => $agentCommand,
+            ],
+            fn (string $role): bool => in_array($role, $roles, true),
+            ARRAY_FILTER_USE_KEY,
+        );
         $labels = [
             'dev' => 'app-dev',
             'prod' => 'app-prod',
@@ -2855,27 +3346,30 @@ BASH,
 
         if (in_array('dev', $roles, true)) {
             $rolesWithWebSocket[] = 'websocket';
-            $developmentLines = $deferDevelopmentBake ? [
-                'DEV_READY_DEADLINE=$(($(date +%s) + 900));',
-                'while [ ! -f "$DEV_READY_MARKER" ]; do',
-                '    if [ "$(date +%s)" -ge "$DEV_READY_DEADLINE" ]; then',
-                '        STATUS_DEV=1;',
-                '        echo '.escapeshellarg('timed out waiting for app-dev runtime prerequisites before bake').' >&2;',
-                '        if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_DEV; fi;',
-                '        break;',
-                '    fi;',
-                '    sleep 1;',
-                'done;',
-                'if [ "$STATUS_DEV" -eq 0 ]; then',
-                ...array_map(fn (string $line): string => "    {$line}", $developmentStartLines),
-                ...array_map(fn (string $line): string => "    {$line}", $waitDevLines),
-                'else',
-                '    record_status dev "$STATUS_DEV";',
-                'fi;',
-            ] : [
-                ...$developmentStartLines,
-                ...$waitDevLines,
-            ];
+            $developmentLines = $deferDevelopmentBake
+                ? [
+                    'DEV_READY_DEADLINE=$(($(date +%s) + 900));',
+                    'while [ ! -f "$DEV_READY_MARKER" ]; do',
+                    '    if [ "$(date +%s)" -ge "$DEV_READY_DEADLINE" ]; then',
+                    '        STATUS_DEV=1;',
+                    '        echo '
+                        .escapeshellarg('timed out waiting for app-dev runtime prerequisites before bake')
+                        .' >&2;',
+                    '        if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_DEV; fi;',
+                    '        break;',
+                    '    fi;',
+                    '    sleep 1;',
+                    'done;',
+                    'if [ "$STATUS_DEV" -eq 0 ]; then',
+                    ...array_map(fn (string $line): string => "    {$line}", $developmentStartLines),
+                    ...array_map(fn (string $line): string => "    {$line}", $waitDevLines),
+                    'else',
+                    '    record_status dev "$STATUS_DEV";',
+                    'fi;',
+                ] : [
+                    ...$developmentStartLines,
+                    ...$waitDevLines,
+                ];
             $webSocketLines = [
                 'STATUS_WEBSOCKET=0;',
                 'if [ "$STATUS_DEV" -eq 0 ]; then',
@@ -2883,16 +3377,28 @@ BASH,
                 '    until [ -f "$SEED_MARKER" ]; do',
                 '        if [ "$(date +%s)" -ge "$SEED_DEADLINE" ]; then',
                 '            STATUS_WEBSOCKET=1;',
-                '            echo '.escapeshellarg('timed out waiting for app-dev registry seed before websocket bake').' >&2;',
+                '            echo '
+                    .escapeshellarg('timed out waiting for app-dev registry seed before websocket bake')
+                    .' >&2;',
                 '            if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_WEBSOCKET; fi;',
                 '            break;',
                 '        fi;',
                 '        sleep 1;',
                 '    done;',
                 '    if [ "$STATUS_WEBSOCKET" -eq 0 ]; then',
-                sprintf('        (BAKE_START_MS="$(now_ms)"; (%s); BAKE_STATUS=$?; BAKE_END_MS="$(now_ms)"; echo "__orbit_bake_timing websocket total $((BAKE_END_MS - BAKE_START_MS))" | tee -a "$STATUS_FILE"; exit "$BAKE_STATUS") > %s 2>&1 & PID_BAKE_WEBSOCKET=$!;', $webSocketCommand, escapeshellarg('/tmp/orbit-e2e-bake-websocket.log')),
-                '        wait "$PID_BAKE_WEBSOCKET" || { STATUS_WEBSOCKET=$?; echo '.escapeshellarg('bake websocket failed').' >&2; cat '.escapeshellarg('/tmp/orbit-e2e-bake-websocket.log').' >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_WEBSOCKET; fi; };',
-                '        grep "__orbit_bake_timing " '.escapeshellarg('/tmp/orbit-e2e-bake-websocket.log').' >> "$STATUS_FILE" 2>/dev/null || true;',
+                sprintf(
+                    '        (BAKE_START_MS="$(now_ms)"; (%s); BAKE_STATUS=$?; BAKE_END_MS="$(now_ms)"; echo "__orbit_bake_timing websocket total $((BAKE_END_MS - BAKE_START_MS))" | tee -a "$STATUS_FILE"; exit "$BAKE_STATUS") > %s 2>&1 & PID_BAKE_WEBSOCKET=$!;',
+                    $webSocketCommand,
+                    escapeshellarg('/tmp/orbit-e2e-bake-websocket.log'),
+                ),
+                '        wait "$PID_BAKE_WEBSOCKET" || { STATUS_WEBSOCKET=$?; echo '
+                    .escapeshellarg('bake websocket failed')
+                    .' >&2; cat '
+                    .escapeshellarg('/tmp/orbit-e2e-bake-websocket.log')
+                    .' >&2 || true; if [ "$STATUS" -eq 0 ]; then STATUS=$STATUS_WEBSOCKET; fi; };',
+                '        grep "__orbit_bake_timing " '
+                    .escapeshellarg('/tmp/orbit-e2e-bake-websocket.log')
+                    .' >> "$STATUS_FILE" 2>/dev/null || true;',
                 '    fi;',
                 'else',
                 '    STATUS_WEBSOCKET=1;',
@@ -2918,7 +3424,9 @@ BASH,
             'SEED_MARKER='.escapeshellarg($seedMarkerPath).';',
             'DEV_READY_MARKER='.escapeshellarg($devReadyMarkerPath).';',
             ': > "$STATUS_FILE";',
-            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '.escapeshellarg('import time; print(int(time.time() * 1000))').'; else echo "$(($(date +%s) * 1000))"; fi; }',
+            'now_ms() { if command -v python3 >/dev/null 2>&1; then python3 -c '
+                .escapeshellarg('import time; print(int(time.time() * 1000))')
+                .'; else echo "$(($(date +%s) * 1000))"; fi; }',
             'record_status() { echo "__orbit_bake_status $1 $2" | tee -a "$STATUS_FILE"; }',
             ...$startLines,
             '',
@@ -2978,7 +3486,14 @@ BASH,
                 );
             }
 
-            $developmentBakeStatus = $this->waitForPreparedBakeRoleStatus($gateway, 'dev', $statusPath, $donePath, $outputPath, $errorPath);
+            $developmentBakeStatus = $this->waitForPreparedBakeRoleStatus(
+                $gateway,
+                'dev',
+                $statusPath,
+                $donePath,
+                $outputPath,
+                $errorPath,
+            );
 
             if ($developmentBakeStatus === 0) {
                 if ($afterDevelopmentBake !== null) {
@@ -2998,23 +3513,23 @@ BASH,
             'prepared-websocket.websocket.bake',
             fn (): ProcessResult => $gateway->exec(sprintf(
                 <<<'BASH'
-deadline=$(($(date +%%s) + 900))
-while [ ! -f %s ]; do
-    if [ "$(date +%%s)" -ge "$deadline" ]; then
-        echo "prepared downstream websocket bake did not finish" >&2
-        cat %s >&2 2>/dev/null || true
-        cat %s >&2 2>/dev/null || true
-        exit 1
-    fi
+                    deadline=$(($(date +%%s) + 900))
+                    while [ ! -f %s ]; do
+                        if [ "$(date +%%s)" -ge "$deadline" ]; then
+                            echo "prepared downstream websocket bake did not finish" >&2
+                            cat %s >&2 2>/dev/null || true
+                            cat %s >&2 2>/dev/null || true
+                            exit 1
+                        fi
 
-    sleep 2
-done
+                        sleep 2
+                    done
 
-cat %s 2>/dev/null || true
-cat %s 2>/dev/null || true
-cat %s >&2 2>/dev/null || true
-exit "$(cat %s 2>/dev/null || echo 1)"
-BASH,
+                    cat %s 2>/dev/null || true
+                    cat %s 2>/dev/null || true
+                    cat %s >&2 2>/dev/null || true
+                    exit "$(cat %s 2>/dev/null || echo 1)"
+                    BASH,
                 escapeshellarg($donePath),
                 escapeshellarg($outputPath),
                 escapeshellarg($errorPath),
@@ -3041,28 +3556,28 @@ BASH,
     ): int {
         $result = $gateway->exec(sprintf(
             <<<'BASH'
-deadline=$(($(date +%%s) + 900))
-while true; do
-    if grep -E %s %s 2>/dev/null; then
-        exit 0
-    fi
+                deadline=$(($(date +%%s) + 900))
+                while true; do
+                    if grep -E %s %s 2>/dev/null; then
+                        exit 0
+                    fi
 
-    if [ -f %s ]; then
-        cat %s 2>/dev/null || true
-        cat %s >&2 2>/dev/null || true
-        exit 1
-    fi
+                    if [ -f %s ]; then
+                        cat %s 2>/dev/null || true
+                        cat %s >&2 2>/dev/null || true
+                        exit 1
+                    fi
 
-    if [ "$(date +%%s)" -ge "$deadline" ]; then
-        echo "timed out waiting for prepared bake status [%s]" >&2
-        cat %s >&2 2>/dev/null || true
-        cat %s >&2 2>/dev/null || true
-        exit 1
-    fi
+                    if [ "$(date +%%s)" -ge "$deadline" ]; then
+                        echo "timed out waiting for prepared bake status [%s]" >&2
+                        cat %s >&2 2>/dev/null || true
+                        cat %s >&2 2>/dev/null || true
+                        exit 1
+                    fi
 
-    sleep 1
-done
-BASH,
+                    sleep 1
+                done
+                BASH,
             escapeshellarg("^__orbit_bake_status {$role} "),
             escapeshellarg($statusPath),
             escapeshellarg($donePath),
@@ -3095,7 +3610,10 @@ BASH,
     {
         $statuses = array_fill_keys($roles, 1);
 
-        if (preg_match_all('/__orbit_'.$phase.'_status\s+([a-z-]+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER) !== false) {
+        if (
+            preg_match_all('/__orbit_'.$phase.'_status\s+([a-z-]+)\s+(\d+)/', $output, $matches, PREG_SET_ORDER)
+            !== false
+        ) {
             foreach ($matches as $match) {
                 $role = $match[1];
 
@@ -3140,8 +3658,11 @@ BASH,
      * @param  array<string, IncusInstance>  $instances
      * @param  array<string, int>  $statuses
      */
-    private function checkpointSuccessfulPreparedRolesOrFail(E2ETopologyKind $kind, array $instances, array $statuses): void
-    {
+    private function checkpointSuccessfulPreparedRolesOrFail(
+        E2ETopologyKind $kind,
+        array $instances,
+        array $statuses,
+    ): void {
         $failedRoles = array_keys(array_filter(
             $statuses,
             fn (int $status): bool => $status !== 0,
@@ -3167,7 +3688,12 @@ BASH,
             ? "\n\n".$this->lastPreparedBakeOutput
             : '';
 
-        throw new RuntimeException('Could not bake prepared downstream roles: '.implode(', ', $failedRoles).'. Successful sibling checkpoints were retained when possible.'.$details);
+        throw new RuntimeException(
+            'Could not bake prepared downstream roles: '
+            .implode(', ', $failedRoles)
+            .'. Successful sibling checkpoints were retained when possible.'
+            .$details,
+        );
     }
 
     private function runPreparedDedicatedIngressBakeInParallel(
@@ -3205,20 +3731,20 @@ BASH,
             '--ingress-node='.escapeshellarg('edge-1'),
         ]));
         $script = <<<BASH
-set -euo pipefail;
-cd /home/orbit/orbit;
-({$devCommand}) > /tmp/orbit-e2e-bake-dev.log 2>&1 & PID_BAKE_DEV=\$!;
-({$ingressCommand}) > /tmp/orbit-e2e-bake-ingress.log 2>&1 & PID_BAKE_INGRESS=\$!;
+            set -euo pipefail;
+            cd /home/orbit/orbit;
+            ({$devCommand}) > /tmp/orbit-e2e-bake-dev.log 2>&1 & PID_BAKE_DEV=\$!;
+            ({$ingressCommand}) > /tmp/orbit-e2e-bake-ingress.log 2>&1 & PID_BAKE_INGRESS=\$!;
 
-STATUS=0;
-wait "\$PID_BAKE_DEV" || { CODE=\$?; echo "bake app-dev failed" >&2; cat /tmp/orbit-e2e-bake-dev.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-wait "\$PID_BAKE_INGRESS" || { CODE=\$?; echo "bake ingress failed" >&2; cat /tmp/orbit-e2e-bake-ingress.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-if [ "\$STATUS" -ne 0 ]; then exit "\$STATUS"; fi;
+            STATUS=0;
+            wait "\$PID_BAKE_DEV" || { CODE=\$?; echo "bake app-dev failed" >&2; cat /tmp/orbit-e2e-bake-dev.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+            wait "\$PID_BAKE_INGRESS" || { CODE=\$?; echo "bake ingress failed" >&2; cat /tmp/orbit-e2e-bake-ingress.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+            if [ "\$STATUS" -ne 0 ]; then exit "\$STATUS"; fi;
 
-({$prodCommand}) > /tmp/orbit-e2e-bake-prod.log 2>&1 & PID_BAKE_PROD=\$!;
-wait "\$PID_BAKE_PROD" || { CODE=\$?; echo "bake app-prod failed" >&2; cat /tmp/orbit-e2e-bake-prod.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
-exit "\$STATUS";
-BASH;
+            ({$prodCommand}) > /tmp/orbit-e2e-bake-prod.log 2>&1 & PID_BAKE_PROD=\$!;
+            wait "\$PID_BAKE_PROD" || { CODE=\$?; echo "bake app-prod failed" >&2; cat /tmp/orbit-e2e-bake-prod.log >&2 || true; if [ "\$STATUS" -eq 0 ]; then STATUS=\$CODE; fi; };
+            exit "\$STATUS";
+            BASH;
         $scriptPath = '/tmp/orbit-e2e-prepared-dedicated-ingress-bake.sh';
         $scriptPathArgument = escapeshellarg($scriptPath);
 
@@ -3262,7 +3788,12 @@ BASH;
 
     private function retargetOperator(IncusInstance $operator, string $gatewayPublicEndpoint, SshKeyPair $key): void
     {
-        $this->updateOperatorCliGatewayUrl($operator, $key, 'https://'.$gatewayPublicEndpoint, self::GatewayWireGuardIp);
+        $this->updateOperatorCliGatewayUrl(
+            $operator,
+            $key,
+            'https://'.$gatewayPublicEndpoint,
+            self::GatewayWireGuardIp,
+        );
     }
 
     private function trustGatewayCaOnOperator(IncusInstance $operator, IncusInstance $gateway, SshKeyPair $key): void
@@ -3275,26 +3806,39 @@ BASH;
         )->output();
 
         $rootCaValue = var_export($rootCa, true);
-        $pemPathValue = var_export('/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt', true);
+        $pemPathValue = var_export(
+            '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt',
+            true,
+        );
 
         $php = <<<PHP
-\$rootCa = {$rootCaValue};
-\$pemPath = {$pemPathValue};
+            \$rootCa = {$rootCaValue};
+            \$pemPath = {$pemPathValue};
 
-if (! is_dir(dirname(\$pemPath))) {
-    mkdir(dirname(\$pemPath), 0700, true);
-}
+            if (! is_dir(dirname(\$pemPath))) {
+                mkdir(dirname(\$pemPath), 0700, true);
+            }
 
-file_put_contents(\$pemPath, \$rootCa);
-chmod(\$pemPath, 0600);
-PHP;
+            file_put_contents(\$pemPath, \$rootCa);
+            chmod(\$pemPath, 0600);
+            PHP;
 
-        $this->writeOperatorCliConfig($operator, $key, 'https://'.self::GatewayWireGuardIp, '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt', hash('sha256', $rootCa));
+        $this->writeOperatorCliConfig(
+            $operator,
+            $key,
+            'https://'.self::GatewayWireGuardIp,
+            '/home/'.$this->host->config->operatorUser.'/.config/orbit/gateway-ca/orbit.crt',
+            hash('sha256', $rootCa),
+        );
         $this->runOperatorPhp($operator, $key, $php, timeoutSeconds: 120);
     }
 
-    private function runOperatorPhp(IncusInstance $operator, SshKeyPair $key, string $php, int $timeoutSeconds = 60): void
-    {
+    private function runOperatorPhp(
+        IncusInstance $operator,
+        SshKeyPair $key,
+        string $php,
+        int $timeoutSeconds = 60,
+    ): void {
         E2ECommand::ssh(
             $operator,
             $this->host->config->operatorUser,
@@ -3363,14 +3907,18 @@ PHP;
             $mesh->installRole($instances[$role], $role);
         }
 
-        $mesh->verifyRole($gateway, 'gateway', array_values(array_filter([
-            'operator',
-            isset($instances['dev']) ? 'dev' : null,
-            isset($instances['prod']) ? 'prod' : null,
-            isset($instances['agent']) ? 'agent' : null,
-            isset($instances['ingress']) ? 'ingress' : null,
-            isset($instances['websocket']) ? 'websocket' : null,
-        ])));
+        $mesh->verifyRole(
+            $gateway,
+            'gateway',
+            array_values(array_filter([
+                'operator',
+                isset($instances['dev']) ? 'dev' : null,
+                isset($instances['prod']) ? 'prod' : null,
+                isset($instances['agent']) ? 'agent' : null,
+                isset($instances['ingress']) ? 'ingress' : null,
+                isset($instances['websocket']) ? 'websocket' : null,
+            ])),
+        );
     }
 
     /**
@@ -3428,7 +3976,9 @@ PHP;
             $this->timer->measure("finalize.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
 
             if (isset($this->sourceMountedInstances[$name])) {
-                $this->timer->measure("finalize.detach-source.{$role}", fn () => $this->detachPreparedSourceMount($instance));
+                $this->timer->measure("finalize.detach-source.{$role}", fn () => $this->detachPreparedSourceMount(
+                    $instance,
+                ));
             }
 
             $names[] = $name;
@@ -3440,16 +3990,24 @@ PHP;
             ];
         }
 
-        $this->timer->measure('finalize.delete-snapshots', fn () => $this->host->deleteSnapshotsIfPresent($names, $snapshot));
+        $this->timer->measure('finalize.delete-snapshots', fn () => $this->host->deleteSnapshotsIfPresent(
+            $names,
+            $snapshot,
+        ));
 
         $stopResult = $this->timer->measure('finalize.stop', fn () => $this->host->stopInstancesIfRunning($names));
         if (! $stopResult->successful()) {
             throw new RuntimeException("Could not stop prepared topology instances: {$stopResult->errorOutput()}");
         }
 
-        $snapshotResult = $this->timer->measure('finalize.snapshot', fn () => $this->host->snapshotInstancesConcurrently($names, $snapshot));
+        $snapshotResult = $this->timer->measure('finalize.snapshot', fn () => $this->host->snapshotInstancesConcurrently(
+            $names,
+            $snapshot,
+        ));
         if (! $snapshotResult->successful()) {
-            throw new RuntimeException("Could not snapshot prepared topology instances: {$snapshotResult->errorOutput()}");
+            throw new RuntimeException(
+                "Could not snapshot prepared topology instances: {$snapshotResult->errorOutput()}",
+            );
         }
 
         return $manifest;
@@ -3473,8 +4031,8 @@ PHP;
     {
         $instance->exec(
             'for d in /root /home/*; do '
-                .'[ -d "$d/.ssh" ] || continue; '
-                .'rm -f "$d/.ssh/known_hosts" "$d/.ssh/known_hosts.old"; '
+            .'[ -d "$d/.ssh" ] || continue; '
+            .'rm -f "$d/.ssh/known_hosts" "$d/.ssh/known_hosts.old"; '
             .'done',
             timeoutSeconds: 30,
         );
@@ -3504,16 +4062,21 @@ PHP;
      * @param  list<string>  $selectedRoles  Incus role names (e.g. operator, gateway, dev, prod, agent)
      * @return list<array{role: string, name: string, snapshot: string}>
      */
-    public function buildSelectedRoles(E2ETopologyKind $sourceKind, array $selectedRoles, bool $replaceExisting = false): array
-    {
+    public function buildSelectedRoles(
+        E2ETopologyKind $sourceKind,
+        array $selectedRoles,
+        bool $replaceExisting = false,
+    ): array {
         if ($this->remoteBundleDir === null) {
             throw new RuntimeException(
-                'No provisioning bundle has been staged. Call useBundle() before buildSelectedRoles().'
+                'No provisioning bundle has been staged. Call useBundle() before buildSelectedRoles().',
             );
         }
 
         if (E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet) {
-            throw new RuntimeException('Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using selected Incus role rebakes; omit --roles to rebuild the shared base artifact set.');
+            throw new RuntimeException(
+                'Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using selected Incus role rebakes; omit --roles to rebuild the shared base artifact set.',
+            );
         }
 
         $this->validateGatewayConsistency($selectedRoles);
@@ -3525,7 +4088,9 @@ PHP;
 
             return $this->buildSelectedRoleTemplates($sourceKind, $selectedRoles, $key, $replaceExisting);
         } finally {
-            $this->timer->measure('workdir.cleanup', fn () => $this->host->run('rm -rf '.escapeshellarg((string) $workDirectory)));
+            $this->timer->measure('workdir.cleanup', fn () => $this->host->run(
+                'rm -rf '.escapeshellarg((string) $workDirectory),
+            ));
         }
     }
 
@@ -3547,13 +4112,13 @@ PHP;
 
         if ($hasGateway && ! $hasOperator) {
             throw new RuntimeException(
-                "Selected roles include 'gateway' but not 'operator'. Gateway and operator share CA trust and WireGuard contracts; both must be rebuilt together for a coherent artifact set. Add 'operator' to --roles."
+                "Selected roles include 'gateway' but not 'operator'. Gateway and operator share CA trust and WireGuard contracts; both must be rebuilt together for a coherent artifact set. Add 'operator' to --roles.",
             );
         }
 
         if ($hasOperator && ! $hasGateway) {
             throw new RuntimeException(
-                "Selected roles include 'operator' but not 'gateway'. Gateway and operator share CA trust and WireGuard contracts; both must be rebuilt together for a coherent artifact set. Add 'gateway' to --roles."
+                "Selected roles include 'operator' but not 'gateway'. Gateway and operator share CA trust and WireGuard contracts; both must be rebuilt together for a coherent artifact set. Add 'gateway' to --roles.",
             );
         }
     }
@@ -3579,26 +4144,28 @@ PHP;
 
             if (! $this->host->instanceExists($baseTemplateName)) {
                 throw new RuntimeException(
-                    "Base template [{$baseTemplateName}] not found. Prepare the base artifact set first with composer e2e:prepare-topology."
+                    "Base template [{$baseTemplateName}] not found. Prepare the base artifact set first with composer e2e:prepare-topology.",
                 );
             }
 
             if (! $this->host->snapshotExists($baseTemplateName, $baseSnapshotName)) {
                 throw new RuntimeException(
-                    "Base snapshot [{$baseTemplateName}/{$baseSnapshotName}] not found. Prepare the base artifact set first."
+                    "Base snapshot [{$baseTemplateName}/{$baseSnapshotName}] not found. Prepare the base artifact set first.",
                 );
             }
 
             if ($this->host->instanceExists($slugTemplateName)) {
                 if (! $replaceExisting) {
                     throw new RuntimeException(
-                        "Template [{$slugTemplateName}] already exists. Pass --force to replace it."
+                        "Template [{$slugTemplateName}] already exists. Pass --force to replace it.",
                     );
                 }
 
                 $deleteResult = $this->host->deleteInstance($slugTemplateName);
                 if (! $deleteResult->successful()) {
-                    throw new RuntimeException("Could not delete existing template [{$slugTemplateName}]: {$deleteResult->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not delete existing template [{$slugTemplateName}]: {$deleteResult->errorOutput()}",
+                    );
                 }
             }
         }
@@ -3624,7 +4191,10 @@ PHP;
         }
 
         $copyScript = implode("\n", [...$copyLines, ...$waitLines]);
-        $copyResult = $this->timer->measure('copy.base-templates', fn () => $this->host->run($copyScript, timeoutSeconds: 600));
+        $copyResult = $this->timer->measure('copy.base-templates', fn () => $this->host->run(
+            $copyScript,
+            timeoutSeconds: 600,
+        ));
         if (! $copyResult->successful()) {
             throw new RuntimeException("Could not copy base templates: {$copyResult->errorOutput()}");
         }
@@ -3633,7 +4203,9 @@ PHP;
         foreach ($selectedRoles as $role) {
             $slugTemplateName = IncusTopologyTemplate::templateName($sourceKind, $role);
 
-            $startResult = $this->timer->measure("selected.start.{$role}", fn () => $this->host->startInstance($slugTemplateName));
+            $startResult = $this->timer->measure("selected.start.{$role}", fn () => $this->host->startInstance(
+                $slugTemplateName,
+            ));
             if (! $startResult->successful()) {
                 throw new RuntimeException("Could not start [{$slugTemplateName}]: {$startResult->errorOutput()}");
             }
@@ -3641,18 +4213,29 @@ PHP;
             $instance = new IncusInstance($this->host, $slugTemplateName);
             $this->timer->measure("selected.agent-ready.{$role}", fn () => $instance->waitForAgent());
 
-            $this->timer->measure("selected.bundle-overlay.{$role}", fn () => $this->applyBundleOverlay($instance, $role, $key));
+            $this->timer->measure("selected.bundle-overlay.{$role}", fn () => $this->applyBundleOverlay(
+                $instance,
+                $role,
+                $key,
+            ));
 
             $this->timer->measure("selected.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
 
-            $stopResult = $this->timer->measure("selected.stop.{$role}", fn () => $this->host->stopInstance($slugTemplateName));
+            $stopResult = $this->timer->measure("selected.stop.{$role}", fn () => $this->host->stopInstance(
+                $slugTemplateName,
+            ));
             if (! $stopResult->successful()) {
                 throw new RuntimeException("Could not stop [{$slugTemplateName}]: {$stopResult->errorOutput()}");
             }
 
-            $snapResult = $this->timer->measure("selected.snapshot.{$role}", fn () => $this->host->snapshotInstance($slugTemplateName, $slugSnapshotName));
+            $snapResult = $this->timer->measure("selected.snapshot.{$role}", fn () => $this->host->snapshotInstance(
+                $slugTemplateName,
+                $slugSnapshotName,
+            ));
             if (! $snapResult->successful()) {
-                throw new RuntimeException("Could not snapshot [{$slugTemplateName}/{$slugSnapshotName}]: {$snapResult->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not snapshot [{$slugTemplateName}/{$slugSnapshotName}]: {$snapResult->errorOutput()}",
+                );
             }
 
             $manifest[] = [
@@ -3696,7 +4279,9 @@ PHP;
         ), timeoutSeconds: 300);
 
         if (! $pushResult->successful()) {
-            throw new RuntimeException("Could not push overlay bundle into [{$instance->name()}]: {$pushResult->errorOutput()}");
+            throw new RuntimeException(
+                "Could not push overlay bundle into [{$instance->name()}]: {$pushResult->errorOutput()}",
+            );
         }
 
         // Determine the orbit install path for this role.
@@ -3717,7 +4302,9 @@ PHP;
         );
 
         if (! $extractResult->successful()) {
-            throw new RuntimeException("Could not extract source archive on [{$instance->name()}] role={$role}: {$extractResult->errorOutput()}");
+            throw new RuntimeException(
+                "Could not extract source archive on [{$instance->name()}] role={$role}: {$extractResult->errorOutput()}",
+            );
         }
 
         // Run composer install in sub-apps to pick up dependency changes.
@@ -3734,7 +4321,8 @@ PHP;
         // Using a script file avoids multi-line quoting issues across the
         // incus exec → sh -lc → bash -lc invocation stack.
         $scriptPath = '/tmp/orbit-e2e-selected-rebake-composer.sh';
-        $scriptContent = "#!/bin/bash\nset -euo pipefail\n"
+        $scriptContent =
+            "#!/bin/bash\nset -euo pipefail\n"
             ."cd {$orbitPath}\n"
             ."if command -v composer >/dev/null 2>&1; then\n"
             ."  for app in apps/gateway apps/cli apps/e2e packages/core packages/sdk apps/docs; do\n"
@@ -3751,7 +4339,9 @@ PHP;
         );
 
         if (! $writeResult->successful()) {
-            throw new RuntimeException("Could not write composer install script on [{$instance->name()}]: {$writeResult->errorOutput()}");
+            throw new RuntimeException(
+                "Could not write composer install script on [{$instance->name()}]: {$writeResult->errorOutput()}",
+            );
         }
 
         $composerResult = $instance->exec(
@@ -3760,7 +4350,9 @@ PHP;
         );
 
         if (! $composerResult->successful()) {
-            throw new RuntimeException("Composer install failed on [{$instance->name()}] role={$role}: {$composerResult->errorOutput()}");
+            throw new RuntimeException(
+                "Composer install failed on [{$instance->name()}] role={$role}: {$composerResult->errorOutput()}",
+            );
         }
 
         // Cleanup overlay bundle from guest.
@@ -3770,17 +4362,26 @@ PHP;
     private function launchBase(string $target, bool $attachSource = true): void
     {
         if ($this->remoteSourcePath !== null) {
-            $result = $this->host->run($this->launchTopologyInstanceCommand($target, $attachSource), timeoutSeconds: $this->host->config->timeoutSeconds);
+            $result = $this->host->run(
+                $this->launchTopologyInstanceCommand($target, $attachSource),
+                timeoutSeconds: $this->host->config->timeoutSeconds,
+            );
 
             if (! $result->successful()) {
-                throw new RuntimeException("Could not launch {$target} from {$this->host->config->baseImage}: {$result->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not launch {$target} from {$this->host->config->baseImage}: {$result->errorOutput()}",
+                );
             }
 
             return;
         }
 
         $sourceImageAlias = $this->host->config->baseImage;
-        $result = $this->host->launchTopologyInstance($sourceImageAlias, $target, timeoutSeconds: $this->host->config->timeoutSeconds);
+        $result = $this->host->launchTopologyInstance(
+            $sourceImageAlias,
+            $target,
+            timeoutSeconds: $this->host->config->timeoutSeconds,
+        );
 
         if (! $result->successful()) {
             throw new RuntimeException("Could not launch {$target} from {$sourceImageAlias}: {$result->errorOutput()}");

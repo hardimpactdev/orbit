@@ -18,7 +18,8 @@ function createWorkspaceHistoryCallerNode(array $overrides = [], ?string $role =
     $attributes = array_merge([
         'name' => 'caller',
         'host' => WORKSPACE_HISTORY_CALLER_WG_IP,
-        'wireguard_address' => WORKSPACE_HISTORY_CALLER_WG_IP], $overrides);
+        'wireguard_address' => WORKSPACE_HISTORY_CALLER_WG_IP,
+    ], $overrides);
 
     if ($role === 'gateway') {
         return createTestGatewayNode($attributes);
@@ -35,7 +36,8 @@ function grantWorkspaceHistoryAccess(Node $caller, Node $appNode): void
         'permissions' => json_encode(['workspace:history'], JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('WorkspaceHistoryController', function (): void {
@@ -50,16 +52,26 @@ describe('WorkspaceHistoryController', function (): void {
             'workspace_id' => $workspace->id,
             'status' => 'failed',
             'started_at' => '2026-05-01 10:00:00',
-            'completed_at' => '2026-05-01 10:01:00']);
+            'completed_at' => '2026-05-01 10:01:00',
+        ]);
         WorkspaceRun::factory()->create([
             'workspace_id' => $workspace->id,
             'status' => 'completed',
             'started_at' => '2026-05-02 10:00:00',
-            'completed_at' => '2026-05-02 10:02:00']);
+            'completed_at' => '2026-05-02 10:02:00',
+        ]);
 
-        $response = $this->call('GET', '/api/workspaces/feature-docs/history?app=docs&limit=1', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs/history?app=docs&limit=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.runs')
             ->assertJsonPath('success.data.runs.0.status', 'completed')
             ->assertJsonPath('success.meta.pagination.total', 2)
@@ -73,9 +85,17 @@ describe('WorkspaceHistoryController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
-        $response = $this->call('GET', '/api/workspaces/feature-docs/history?limit=900', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs/history?limit=900',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.meta.pagination.limit', 500)
             ->assertJsonPath('success.meta.pagination.limit_capped', true);
     });
@@ -88,10 +108,18 @@ describe('WorkspaceHistoryController', function (): void {
         $workspace = Workspace::factory()->create([
             'name' => 'feature-docs',
             'app_id' => $app->id,
-            'path' => '/srv/docs/.worktrees/feature-docs']);
+            'path' => '/srv/docs/.worktrees/feature-docs',
+        ]);
         WorkspaceRun::factory()->create(['workspace_id' => $workspace->id, 'started_at' => '2026-05-02 10:00:00']);
 
-        $response = $this->call('GET', '/api/workspaces/history/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/history/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.runs.0.workspace', 'feature-docs');
@@ -100,9 +128,17 @@ describe('WorkspaceHistoryController', function (): void {
     it('returns validation errors for invalid filters', function (): void {
         createWorkspaceHistoryCallerNode(role: 'gateway');
 
-        $response = $this->call('GET', '/api/workspaces/feature-docs/history?limit=0', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs/history?limit=0',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'limit');
     });
@@ -113,9 +149,17 @@ describe('WorkspaceHistoryController', function (): void {
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $app->id]);
 
-        $response = $this->call('GET', '/api/workspaces/feature-docs/history', [], [], [], ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs/history',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_HISTORY_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'workspace:history');

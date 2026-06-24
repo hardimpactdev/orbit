@@ -13,7 +13,9 @@ final readonly class AnalyticsRoleSettings implements NodeRoleSettings
         public int $clickhouseNodeId,
     ) {
         if ($postgresNodeId < 1 || $clickhouseNodeId < 1) {
-            throw new InvalidArgumentException('The analytics role requires valid postgres_node_id and clickhouse_node_id settings.');
+            throw new InvalidArgumentException(
+                'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+            );
         }
     }
 
@@ -32,7 +34,9 @@ final readonly class AnalyticsRoleSettings implements NodeRoleSettings
         $clickhouseNodeId = $settings['clickhouse_node_id'] ?? null;
 
         if (! is_int($postgresNodeId) || ! is_int($clickhouseNodeId)) {
-            throw new InvalidArgumentException('The analytics role requires valid postgres_node_id and clickhouse_node_id settings.');
+            throw new InvalidArgumentException(
+                'The analytics role requires valid postgres_node_id and clickhouse_node_id settings.',
+            );
         }
 
         return new self(

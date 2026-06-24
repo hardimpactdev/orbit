@@ -40,9 +40,12 @@ it('resolves remote local-bind tool config through the node wireguard address', 
 
     $config = app(OpenCodeServerConfigResolver::class)->resolve($app);
 
-    expect($config->url)->toBe('http://10.6.0.7:4096')
-        ->and($config->username)->toBeNull()
-        ->and($config->password)->toBeNull();
+    expect($config->url)
+        ->toBe('http://10.6.0.7:4096')
+        ->and($config->username)
+        ->toBeNull()
+        ->and($config->password)
+        ->toBeNull();
 });
 
 it('prefers explicit opencode credentials url and auth fields', function (): void {
@@ -71,9 +74,12 @@ it('prefers explicit opencode credentials url and auth fields', function (): voi
 
     $config = app(OpenCodeServerConfigResolver::class)->resolve($app);
 
-    expect($config->url)->toBe('https://opencode.beast.test')
-        ->and($config->username)->toBe('orbit')
-        ->and($config->password)->toBe('secret');
+    expect($config->url)
+        ->toBe('https://opencode.beast.test')
+        ->and($config->username)
+        ->toBe('orbit')
+        ->and($config->password)
+        ->toBe('secret');
 });
 
 it('resolves remote credential host and port through the node wireguard address', function (): void {

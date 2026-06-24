@@ -424,8 +424,13 @@ final readonly class S3ProxyDoctorProbe
      * @param  array<string, mixed>  $detail
      * @return list<DriftEntry>
      */
-    private function routeDrift(ProxyRoute $intent, string $key, string $missingSummary, string $mismatchSummary, array $detail = []): array
-    {
+    private function routeDrift(
+        ProxyRoute $intent,
+        string $key,
+        string $missingSummary,
+        string $mismatchSummary,
+        array $detail = [],
+    ): array {
         $route = ProxyRoute::query()
             ->where('domain', $intent->domain)
             ->first();

@@ -45,7 +45,7 @@ final readonly class OperationTokenFactory
             throw new InvalidArgumentException('Operation token clock returned an invalid timestamp.');
         }
 
-        if ($issuedAt > PHP_INT_MAX - $this->ttlSeconds) {
+        if ($issuedAt > (PHP_INT_MAX - $this->ttlSeconds)) {
             throw new InvalidArgumentException('Operation token expiry timestamp is invalid.');
         }
 

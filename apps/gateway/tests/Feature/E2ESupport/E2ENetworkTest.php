@@ -25,7 +25,8 @@ it('ensures the synthetic source WireGuard address exists before adding a peer r
     $command = null;
     $instance = m::mock(E2EInstance::class);
 
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->withArgs(function (string $execCommand, ?int $timeoutSeconds) use (&$command): bool {
             $command = $execCommand;
@@ -38,7 +39,10 @@ it('ensures the synthetic source WireGuard address exists before adding a peer r
 
     E2ENetwork::routeWireGuardPeer($instance, '10.6.0.2', '10.231.7.38', '10.6.0.4');
 
-    expect($command)->toContain("grep -Fxq '10.6.0.4'")
-        ->and($command)->toContain("ip addr add '10.6.0.4/32' dev \"\$iface\"")
-        ->and($command)->toContain("ip route replace '10.6.0.2/32' via '10.231.7.38' dev \"\$iface\" src '10.6.0.4'");
+    expect($command)
+        ->toContain("grep -Fxq '10.6.0.4'")
+        ->and($command)
+        ->toContain("ip addr add '10.6.0.4/32' dev \"\$iface\"")
+        ->and($command)
+        ->toContain("ip route replace '10.6.0.2/32' via '10.231.7.38' dev \"\$iface\" src '10.6.0.4'");
 });

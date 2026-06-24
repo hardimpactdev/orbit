@@ -128,7 +128,11 @@ final readonly class WorkspaceReadinessProbe
             $url = $this->absoluteUrl($baseUrl, $src);
             $path = parse_url($url, PHP_URL_PATH) ?: '';
 
-            if (str_starts_with($path, '/@vite/') || str_starts_with($path, '/@react-refresh') || str_starts_with($path, '/resources/')) {
+            if (
+                str_starts_with($path, '/@vite/')
+                || str_starts_with($path, '/@react-refresh')
+                || str_starts_with($path, '/resources/')
+            ) {
                 $urls[] = $url;
             }
         }
@@ -157,10 +161,12 @@ final readonly class WorkspaceReadinessProbe
         }
 
         if (str_starts_with($status, 'error: ')) {
-            return str_contains($status, 'Operation timed out')
+            return (
+                str_contains($status, 'Operation timed out')
                 || str_contains($status, 'Connection refused')
                 || str_contains($status, 'Connection reset')
-                || str_contains($status, 'Empty reply from server');
+                || str_contains($status, 'Empty reply from server')
+            );
         }
 
         return in_array($status, ['000', '500', '502', '503', '504'], true);

@@ -171,7 +171,7 @@ final readonly class ProcessDockerContainerRenderer
     private function resolveSourcePath(App $app, ?Workspace $workspace, Process $process): string
     {
         $path = $workspace instanceof Workspace ? $workspace->path : $app->path;
-        $path = rtrim((string) $path, '/');
+        $path = rtrim($path, '/');
 
         if ($path === '') {
             throw new InvalidArgumentException(

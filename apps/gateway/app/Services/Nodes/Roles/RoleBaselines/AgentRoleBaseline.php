@@ -42,7 +42,9 @@ class AgentRoleBaseline implements RoleBaseline
         $result = $this->developmentDnsMappingEnactor->convergeDevelopmentRole($node, $tld);
 
         if (($result['status'] ?? null) === 'not_applicable') {
-            throw new RuntimeException('The agent role requires a WireGuard address so the agent DNS mapping can be materialized.');
+            throw new RuntimeException(
+                'The agent role requires a WireGuard address so the agent DNS mapping can be materialized.',
+            );
         }
 
         $this->convergeAgentUser($node);
@@ -70,17 +72,23 @@ class AgentRoleBaseline implements RoleBaseline
     {
         $shell = $this->remoteShell ?? app(RemoteShell::class);
 
-        $shell->run($node, 'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent', ['throw' => true]);
+        $shell->run($node, 'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent', [
+            'throw' => true,
+        ]);
         $shell->run($node, 'sudo passwd -l agent >/dev/null 2>&1 || true', ['throw' => true]);
-        $shell->run($node, <<<'SH'
-if ! command -v setfacl >/dev/null 2>&1; then
-    sudo apt-get update >/dev/null
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y acl >/dev/null
-fi
+        $shell->run(
+            $node,
+            <<<'SH'
+                if ! command -v setfacl >/dev/null 2>&1; then
+                    sudo apt-get update >/dev/null
+                    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y acl >/dev/null
+                fi
 
-sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin
-sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary
-SH, ['throw' => true]);
+                sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin
+                sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary
+                SH,
+            ['throw' => true],
+        );
     }
 
     private function isValidTld(string $tld): bool

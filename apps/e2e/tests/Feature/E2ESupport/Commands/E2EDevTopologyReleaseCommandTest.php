@@ -49,10 +49,11 @@ function devReleaseConfig(string $host = 'beast'): E2EConfig
 
 function recordingIncusHost(E2EConfig $config, ArrayObject $log): IncusHost
 {
-    return new class($config, $log) extends IncusHost
-    {
-        public function __construct(E2EConfig $config, private readonly ArrayObject $log)
-        {
+    return new class($config, $log) extends IncusHost {
+        public function __construct(
+            E2EConfig $config,
+            private readonly ArrayObject $log,
+        ) {
             parent::__construct($config);
         }
 
@@ -76,7 +77,7 @@ function recordingIncusHost(E2EConfig $config, ArrayObject $log): IncusHost
 
 function writeRetainedManifest(string $directory, string $id, string $host = 'beast'): void
 {
-    (new E2EDevTopologyManifestStore($directory))->write([
+    new E2EDevTopologyManifestStore($directory)->write([
         'id' => $id,
         'kind' => 'operator_gateway_app-dev',
         'provider' => 'incus',
@@ -98,7 +99,7 @@ function writeRetainedManifest(string $directory, string $id, string $host = 'be
 
 function writeRetainedDockerManifest(string $directory, string $id, string $host = 'local'): void
 {
-    (new E2EDevTopologyManifestStore($directory))->write([
+    new E2EDevTopologyManifestStore($directory)->write([
         'id' => $id,
         'kind' => 'operator_gateway_app-dev',
         'provider' => 'docker',
@@ -172,14 +173,17 @@ it('reaps the recorded instances and removes the manifest and ssh key', function
     $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
         ->assertSuccessful();
 
-    expect($log['deleted'])->toBe([[
-        'orbit-e2e-dev-abc123-operator',
-        'orbit-e2e-dev-abc123-gateway',
-        'orbit-e2e-dev-abc123-dev',
-    ]])
+    expect($log['deleted'])
+        ->toBe([[
+            'orbit-e2e-dev-abc123-operator',
+            'orbit-e2e-dev-abc123-gateway',
+            'orbit-e2e-dev-abc123-dev',
+        ]])
         // The dedicated per-run ssh key directory is removed on the host.
-        ->and($log['runs'])->toContain("rm -rf '/tmp/orbit-e2e-topology-dev-abc123'")
-        ->and((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull();
+        ->and($log['runs'])
+        ->toContain("rm -rf '/tmp/orbit-e2e-topology-dev-abc123'")
+        ->and(new E2EDevTopologyManifestStore($this->manifestDirectory)->read('dev-abc123'))
+        ->toBeNull();
 });
 
 it('releases docker retained topology resources from the manifest', function (): void {
@@ -190,12 +194,18 @@ it('releases docker retained topology resources from the manifest', function ():
     $this->artisan('e2e:dev-topology:release', ['id' => 'dev-abc123', '--json' => true])
         ->assertSuccessful();
 
-    Process::assertRan("docker rm -f 'orbit-e2e-dev-abc123-operator-orbit-caddy' 'orbit-e2e-dev-abc123-operator' 'orbit-e2e-dev-abc123-gateway-orbit-gateway' 'orbit-e2e-dev-abc123-gateway-orbit-caddy' 'orbit-e2e-dev-abc123-gateway' 'orbit-e2e-dev-abc123-dev-orbit-caddy' 'orbit-e2e-dev-abc123-dev' >/dev/null 2>&1 || true");
-    Process::assertRan("docker volume rm -f 'orbit-e2e-dev-abc123-operator-home-orbit' 'orbit-e2e-dev-abc123-operator-etc-caddy' 'orbit-e2e-dev-abc123-gateway-home-orbit' 'orbit-e2e-dev-abc123-gateway-etc-caddy' 'orbit-e2e-dev-abc123-dev-home-orbit' 'orbit-e2e-dev-abc123-dev-etc-caddy' >/dev/null 2>&1 || true");
+    Process::assertRan(
+        "docker rm -f 'orbit-e2e-dev-abc123-operator-orbit-caddy' 'orbit-e2e-dev-abc123-operator' 'orbit-e2e-dev-abc123-gateway-orbit-gateway' 'orbit-e2e-dev-abc123-gateway-orbit-caddy' 'orbit-e2e-dev-abc123-gateway' 'orbit-e2e-dev-abc123-dev-orbit-caddy' 'orbit-e2e-dev-abc123-dev' >/dev/null 2>&1 || true",
+    );
+    Process::assertRan(
+        "docker volume rm -f 'orbit-e2e-dev-abc123-operator-home-orbit' 'orbit-e2e-dev-abc123-operator-etc-caddy' 'orbit-e2e-dev-abc123-gateway-home-orbit' 'orbit-e2e-dev-abc123-gateway-etc-caddy' 'orbit-e2e-dev-abc123-dev-home-orbit' 'orbit-e2e-dev-abc123-dev-etc-caddy' >/dev/null 2>&1 || true",
+    );
     Process::assertRan("docker network rm 'orbit-e2e-dev-abc123' >/dev/null 2>&1 || true");
 
-    expect((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull()
-        ->and(is_file("{$this->manifestDirectory}/docker-local-1.lease"))->toBeFalse();
+    expect(new E2EDevTopologyManifestStore($this->manifestDirectory)->read('dev-abc123'))
+        ->toBeNull()
+        ->and(is_file("{$this->manifestDirectory}/docker-local-1.lease"))
+        ->toBeFalse();
 });
 
 it('returns the reaped instances in the json payload', function (): void {
@@ -233,15 +243,15 @@ it('releases every recorded topology with --all', function (): void {
 
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
 
-    expect($log['deleted'])->toHaveCount(2)
-        ->and($store->list())->toBe([]);
+    expect($log['deleted'])->toHaveCount(2)->and($store->list())->toBe([]);
 });
 
 it('treats releasing the dry-run placeholder as a no-op success', function (): void {
     $log = new ArrayObject(['deleted' => [], 'runs' => []]);
     releaseCommandWith($log);
 
-    $this->artisan('e2e:dev-topology:release', ['id' => 'dry-run', '--json' => true])
+    $this
+        ->artisan('e2e:dev-topology:release', ['id' => 'dry-run', '--json' => true])
         ->expectsOutputToContain('"id":"dry-run"')
         ->assertSuccessful();
 
@@ -270,7 +280,8 @@ it('requires an id when --all is not passed', function (): void {
     $log = new ArrayObject(['deleted' => [], 'runs' => []]);
     releaseCommandWith($log);
 
-    $this->artisan('e2e:dev-topology:release', ['--json' => true])
+    $this
+        ->artisan('e2e:dev-topology:release', ['--json' => true])
         ->expectsOutputToContain('A retained E2E topology id is required')
         ->assertExitCode(1);
 });

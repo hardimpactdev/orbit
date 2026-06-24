@@ -29,18 +29,25 @@ describe('proxy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/proxy-routes'
-            && $request->data() === [
-                'domain' => 'vite.docs.test',
-                'node' => 'app-1',
-                'upstream' => 'http://127.0.0.1:5173',
-                'force' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/proxy-routes'
+                && $request->data() === [
+                    'domain' => 'vite.docs.test',
+                    'node' => 'app-1',
+                    'upstream' => 'http://127.0.0.1:5173',
+                    'force' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['route']['domain'])->toBe('vite.docs.test')
-            ->and($decoded['success']['meta']['action'])->toBe('created');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['route']['domain'])
+            ->toBe('vite.docs.test')
+            ->and($decoded['success']['meta']['action'])
+            ->toBe('created');
     });
 
     it('uses the local default node for proxy:add when --node is omitted', function (): void {
@@ -69,18 +76,21 @@ describe('proxy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/proxy-routes'
-            && $request->data() === [
-                'domain' => 'old.test',
-                'node' => 'default-app',
-                'redirect' => 'https://docs.test',
-                'code' => 302,
-                'force' => false,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/proxy-routes'
+                && $request->data() === [
+                    'domain' => 'old.test',
+                    'node' => 'default-app',
+                    'redirect' => 'https://docs.test',
+                    'code' => 302,
+                    'force' => false,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['route']['node'])->toBe('default-app');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['route']['node'])->toBe('default-app');
 
         @unlink($store->path());
     });
@@ -101,9 +111,12 @@ describe('proxy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node_target_required')
-            ->and($decoded['error']['meta']['field'])->toBe('node');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('node_target_required')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node');
 
         @unlink($store->path());
     });
@@ -123,9 +136,12 @@ describe('proxy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['fields'])->toBe(['upstream', 'redirect']);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['fields'])
+            ->toBe(['upstream', 'redirect']);
     });
 
     it('preserves gateway error envelopes for proxy:add', function (): void {
@@ -143,9 +159,12 @@ describe('proxy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('proxy.domain_conflict')
-            ->and($decoded['error']['meta']['owner_type'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('proxy.domain_conflict')
+            ->and($decoded['error']['meta']['owner_type'])
+            ->toBe('app');
     });
 
     it('requires force before removing a proxy route non-interactively', function (): void {
@@ -160,9 +179,12 @@ describe('proxy write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('destructive_consent_required')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('destructive_consent_required')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('deletes proxy:remove targets with destructive consent when forced', function (): void {
@@ -186,15 +208,18 @@ describe('proxy write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/proxy-routes/old.test'
-            && $request->data() === [
-                'destructive_consent' => true,
-                'destructive_consent_source' => 'force',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/proxy-routes/old.test'
+                && $request->data() === [
+                    'destructive_consent' => true,
+                    'destructive_consent_source' => 'force',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['route']['status'])->toBe('removed_with_drift');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['route']['status'])->toBe('removed_with_drift');
     });
 
     it('prompts before removing a proxy route without force in interactive mode', function (): void {
@@ -210,13 +235,18 @@ describe('proxy write commands', function (): void {
             'warnings' => [],
         ]));
 
-        $this->artisan('proxy:remove', ['domain' => 'old.test'])
+        $this
+            ->artisan('proxy:remove', ['domain' => 'old.test'])
             ->expectsConfirmation("Remove proxy route 'old.test'?", 'yes')
             ->expectsOutputToContain('route')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/proxy-routes/old.test');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/proxy-routes/old.test'
+            ),
+        );
     });
 
     it('renders proxy:add human output as a progress tree with route detail', function (): void {
@@ -242,15 +272,24 @@ describe('proxy write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Adding Proxy Route')
-            ->and($output)->toContain('Apply and verify TLS material')
-            ->and($output)->toContain("Proxy route 'vite.docs.test' added")
-            ->and($output)->toContain('Domain: vite.docs.test')
-            ->and($output)->toContain('Serving node: app-1')
-            ->and($output)->toContain('Target: upstream http://127.0.0.1:5173')
-            ->and($output)->toContain('Backend apply: enacted')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Adding Proxy Route')
+            ->and($output)
+            ->toContain('Apply and verify TLS material')
+            ->and($output)
+            ->toContain("Proxy route 'vite.docs.test' added")
+            ->and($output)
+            ->toContain('Domain: vite.docs.test')
+            ->and($output)
+            ->toContain('Serving node: app-1')
+            ->and($output)
+            ->toContain('Target: upstream http://127.0.0.1:5173')
+            ->and($output)
+            ->toContain('Backend apply: enacted')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders proxy:add redirect code detail for redirect routes', function (): void {
@@ -277,9 +316,12 @@ describe('proxy write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Kind: redirect')
-            ->and($output)->toContain('Redirect code: 302');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Kind: redirect')
+            ->and($output)
+            ->toContain('Redirect code: 302');
     });
 
     it('renders proxy:add gateway failures as prose in human mode', function (): void {
@@ -291,9 +333,12 @@ describe('proxy write commands', function (): void {
             '--upstream' => 'http://127.0.0.1:5173',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('is owned by app')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('is owned by app')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders proxy:remove human output as a progress tree with cleanup detail', function (): void {
@@ -315,15 +360,24 @@ describe('proxy write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Removing Proxy Route')
-            ->and($output)->toContain('Apply and verify proxy removal')
-            ->and($output)->toContain("Proxy route 'old.test' removed")
-            ->and($output)->toContain('Domain: old.test')
-            ->and($output)->toContain('Serving node: app-1')
-            ->and($output)->toContain('Backend cleanup: completed')
-            ->and($output)->toContain('TLS cleanup: skipped')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Removing Proxy Route')
+            ->and($output)
+            ->toContain('Apply and verify proxy removal')
+            ->and($output)
+            ->toContain("Proxy route 'old.test' removed")
+            ->and($output)
+            ->toContain('Domain: old.test')
+            ->and($output)
+            ->toContain('Serving node: app-1')
+            ->and($output)
+            ->toContain('Backend cleanup: completed')
+            ->and($output)
+            ->toContain('TLS cleanup: skipped')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders proxy:remove gateway failures as prose in human mode', function (): void {
@@ -334,8 +388,11 @@ describe('proxy write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Backend cleanup failed')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Backend cleanup failed')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 });

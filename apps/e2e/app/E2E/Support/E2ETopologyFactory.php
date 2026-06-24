@@ -71,7 +71,10 @@ final readonly class E2ETopologyFactory
 
         try {
             $config = E2EConfig::fromEnvironment();
-            $selection = E2ETopologyProviderPool::fromEnvironment($config)->select($resolved, $this->capabilityRequirements);
+            $selection = E2ETopologyProviderPool::fromEnvironment($config)->select(
+                $resolved,
+                $this->capabilityRequirements,
+            );
 
             if (! $selection->available()) {
                 throw new E2ETopologyUnavailable('Prepared topology not available: '.$selection->message);

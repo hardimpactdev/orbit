@@ -49,7 +49,9 @@ final readonly class FirewallRuleProbe
 
     public function introspectNode(Node $node): ProbeSnapshot
     {
-        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $this->introspectionScript(), ['throw' => true]);
+        $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $this->introspectionScript(), [
+            'throw' => true,
+        ]);
 
         return $this->snapshotFromStdout($result->stdout);
     }
@@ -62,7 +64,9 @@ final readonly class FirewallRuleProbe
         $result = $remoteShell->run($node, $this->introspectionScript(), ['throw' => false]);
 
         if (! $result->successful()) {
-            $error = trim($result->stderr) !== '' ? trim($result->stderr) : "UFW introspection exited with code {$result->exitCode}.";
+            $error = trim($result->stderr) !== ''
+                ? trim($result->stderr)
+                : "UFW introspection exited with code {$result->exitCode}.";
 
             return [null, $error];
         }
@@ -92,13 +96,13 @@ final readonly class FirewallRuleProbe
     private function introspectionScript(): string
     {
         return <<<'SH'
-set -euo pipefail
-sudo ufw status numbered
-sudo awk '
-    FILENAME ~ /user6\.rules$/ && /^-A ufw6-user-input/ { print "__orbit_ufw_file:user6:" $0 }
-    FILENAME ~ /user\.rules$/ && /^-A ufw-user-input/ { print "__orbit_ufw_file:user:" $0 }
-' /etc/ufw/user.rules /etc/ufw/user6.rules 2>/dev/null || true
-SH;
+            set -euo pipefail
+            sudo ufw status numbered
+            sudo awk '
+                FILENAME ~ /user6\.rules$/ && /^-A ufw6-user-input/ { print "__orbit_ufw_file:user6:" $0 }
+                FILENAME ~ /user\.rules$/ && /^-A ufw-user-input/ { print "__orbit_ufw_file:user:" $0 }
+            ' /etc/ufw/user.rules /etc/ufw/user6.rules 2>/dev/null || true
+            SH;
     }
 
     /**
@@ -213,7 +217,8 @@ SH;
             || $rule->port === ''
             || ! in_array($rule->protocol, self::Protocols, true)
             || ! in_array($rule->address_family, ['v4', 'v6', 'both'], true)
-            || ($rule->interface !== null && ! in_array($rule->interface, ['public', 'wireguard'], true))
+            || $rule->interface !== null
+            && ! in_array($rule->interface, ['public', 'wireguard'], true)
             || $rule->source_hash === ''
         ) {
             return [
@@ -247,7 +252,11 @@ SH;
             ];
         }
 
-        if (! $rule->node->isActive() || ! $this->isUbuntuPlatform($rule->node) || ! $this->canOwnFirewallRules($rule->node)) {
+        if (
+            ! $rule->node->isActive()
+            || ! $this->isUbuntuPlatform($rule->node)
+            || ! $this->canOwnFirewallRules($rule->node)
+        ) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -282,7 +291,14 @@ SH;
      */
     private function checkBaselinePolicyBoundary(FirewallRule $rule): array
     {
-        if ($rule->direction === 'incoming' && $rule->action === 'allow' && $rule->source === 'any' && $rule->destination === null && $rule->protocol === 'tcp' && $rule->port === '22') {
+        if (
+            $rule->direction === 'incoming'
+            && $rule->action === 'allow'
+            && $rule->source === 'any'
+            && $rule->destination === null
+            && $rule->protocol === 'tcp'
+            && $rule->port === '22'
+        ) {
             return [
                 new DriftEntry(
                     family: $this->key(),
@@ -379,7 +395,8 @@ SH;
                 && ($observed['action'] ?? null) === $expected['action']
                 && ($observed['port'] ?? null) === $expected['port']
                 && ($observed['protocol'] ?? null) === $expected['protocol']
-                && (($expected['address_family'] ?? 'both') === 'both' || ($observed['address_family'] ?? 'both') === ($expected['address_family'] ?? 'both'))
+                && (($expected['address_family'] ?? 'both') === 'both'
+                || ($observed['address_family'] ?? 'both') === ($expected['address_family'] ?? 'both'))
             ) {
                 return $observed;
             }
@@ -395,7 +412,14 @@ SH;
     {
         $line = trim($line);
 
-        if ($line === '' || ! preg_match('/^\[\s*\d+\]\s+(.+?)\s{2,}(ALLOW|DENY)\s+(IN|OUT)\s{2,}(.+?)(?:\s{2,}#\s*(.*))?$/', $line, $matches)) {
+        if (
+            $line === ''
+            || ! preg_match(
+                '/^\[\s*\d+\]\s+(.+?)\s{2,}(ALLOW|DENY)\s+(IN|OUT)\s{2,}(.+?)(?:\s{2,}#\s*(.*))?$/',
+                $line,
+                $matches,
+            )
+        ) {
             return null;
         }
 
@@ -463,7 +487,9 @@ SH;
             'port' => $port,
             'protocol' => $protocol,
             'address_family' => $matches[1] === 'user6' ? 'v6' : 'v4',
-            'interface' => ($interface = $this->tokenAfter($tokens, '-i')) === null ? null : $this->normalizeInterface($interface),
+            'interface' => ($interface = $this->tokenAfter($tokens, '-i')) === null
+                ? null
+                : $this->normalizeInterface($interface),
             'comment' => '',
         ];
     }
@@ -531,12 +557,14 @@ SH;
      */
     private function isBaselineRule(array $observed): bool
     {
-        return $observed['direction'] === 'incoming'
+        return (
+            $observed['direction'] === 'incoming'
             && $observed['action'] === 'allow'
             && $observed['source'] === 'any'
             && $observed['destination'] === null
             && $observed['protocol'] === 'tcp'
-            && $observed['port'] === '22';
+            && $observed['port'] === '22'
+        );
     }
 
     /**

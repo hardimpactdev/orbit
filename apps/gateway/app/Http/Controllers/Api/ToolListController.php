@@ -30,10 +30,14 @@ final readonly class ToolListController implements Loggable
         }
 
         $defaultVisibleNodeIds = $this->visibleToolNodeIds($caller, includeMetricsExporterNodes: true);
-        $targetVisibleNodeIds = $this->visibleToolNodeIds($caller, allowAnyActiveNode: true, includeMetricsExporterNodes: true);
+        $targetVisibleNodeIds = $this->visibleToolNodeIds(
+            $caller,
+            allowAnyActiveNode: true,
+            includeMetricsExporterNodes: true,
+        );
         $node = $request->query('node');
         $app = $request->query('app');
-        $hasExplicitTarget = (is_string($node) && $node !== '') || (is_string($app) && $app !== '');
+        $hasExplicitTarget = is_string($node) && $node !== '' || is_string($app) && $app !== '';
         $authorizationNodeIds = $hasExplicitTarget ? $targetVisibleNodeIds : $defaultVisibleNodeIds;
 
         if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $authorizationNodeIds === []) {
@@ -43,10 +47,20 @@ final readonly class ToolListController implements Loggable
         $nodeFilter = null;
 
         if (is_string($node) && $node !== '') {
-            $nodeFilter = $this->resolveNodeFilter($node, $caller, $targetVisibleNodeIds, allowAnyActiveNode: true, includeMetricsExporterNodes: true);
+            $nodeFilter = $this->resolveNodeFilter(
+                $node,
+                $caller,
+                $targetVisibleNodeIds,
+                allowAnyActiveNode: true,
+                includeMetricsExporterNodes: true,
+            );
 
             if (! $nodeFilter instanceof Node) {
-                return $this->validationFailed('node', $node, "Invalid value for --node: '{$node}'. Expected a visible tool node name.");
+                return $this->validationFailed(
+                    'node',
+                    $node,
+                    "Invalid value for --node: '{$node}'. Expected a visible tool node name.",
+                );
             }
         }
 
@@ -54,17 +68,28 @@ final readonly class ToolListController implements Loggable
             $appNode = $this->resolveAppNodeFilter($app, $caller, $targetVisibleNodeIds);
 
             if (! $appNode instanceof Node) {
-                return $this->validationFailed('app', $app, "Invalid value for --app: '{$app}'. Expected a visible app name or domain.");
+                return $this->validationFailed(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. Expected a visible app name or domain.",
+                );
             }
 
             if ($nodeFilter instanceof Node && $nodeFilter->id !== $appNode->id) {
-                return $this->validationFailed('app', $app, "Invalid value for --app: '{$app}'. App is not owned by the selected node.");
+                return $this->validationFailed(
+                    'app',
+                    $app,
+                    "Invalid value for --app: '{$app}'. App is not owned by the selected node.",
+                );
             }
 
             $nodeFilter = $appNode;
         }
 
-        $tools = $this->fetchTools($nodeFilter instanceof Node ? $targetVisibleNodeIds : $defaultVisibleNodeIds, $nodeFilter);
+        $tools = $this->fetchTools(
+            $nodeFilter instanceof Node ? $targetVisibleNodeIds : $defaultVisibleNodeIds,
+            $nodeFilter,
+        );
 
         return response()->json([
             'success' => [
@@ -84,15 +109,19 @@ final readonly class ToolListController implements Loggable
         return NodeTool::query()
             ->with('node')
             ->whereIn('node_id', $visibleNodeIds)
-            ->when($node instanceof Node, fn (Builder $query): Builder => $query->where('node_id', $node->id))
+            ->when($node instanceof Node, fn (Builder $query): Builder => $query->where('node_id', $node?->id))
             ->get()
-            ->sort(fn (NodeTool $first, NodeTool $second): int => [
-                mb_strtolower((string) $first->node?->name),
-                mb_strtolower($first->name),
-            ] <=> [
-                mb_strtolower((string) $second->node?->name),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (NodeTool $first, NodeTool $second): int => (
+                    [
+                        mb_strtolower((string) $first->node?->name),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        mb_strtolower((string) $second->node?->name),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->values();
     }
 

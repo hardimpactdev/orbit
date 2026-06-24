@@ -155,14 +155,20 @@ class Node extends Model
     public function hasActiveRole(string $role): bool
     {
         if (! $this->relationLoaded('roleAssignments')) {
-            return $this->roleAssignments()
+            return $this
+                ->roleAssignments()
                 ->where('role', $role)
                 ->where('status', NodeRoleStatus::Active->value)
                 ->exists();
         }
 
         return $this->roleAssignments
-            ->contains(fn (NodeRoleAssignment $assignment): bool => $assignment->role === $role && $assignment->status === NodeRoleStatus::Active);
+            ->contains(
+                fn (NodeRoleAssignment $assignment): bool => (
+                    $assignment->role === $role
+                    && $assignment->status === NodeRoleStatus::Active
+                ),
+            );
     }
 
     public function isActive(): bool
@@ -177,7 +183,8 @@ class Node extends Model
 
     public function isOperator(): bool
     {
-        return ! $this->roleAssignments()
+        return ! $this
+            ->roleAssignments()
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();
     }
@@ -191,7 +198,7 @@ class Node extends Model
         /** @var NodeRoleAssignment|null $primary */
         $primary = $this->roleAssignments()->where('status', NodeRoleStatus::Active->value)->orderBy('role')->first();
 
-        return $primary->role;
+        return $primary?->role;
     }
 
     /**

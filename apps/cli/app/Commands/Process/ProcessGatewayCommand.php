@@ -51,9 +51,13 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         }
 
         if (! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $name)) {
-            return $this->failValidation('name', 'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
-                'value' => $name,
-            ]);
+            return $this->failValidation(
+                'name',
+                'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+                [
+                    'value' => $name,
+                ],
+            );
         }
 
         return null;
@@ -95,21 +99,32 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         ]);
     }
 
-    protected function validateAppWorkspaceCommandRuntime(?string $runtime, ?string $node, ?string $service = null): ?int
-    {
+    protected function validateAppWorkspaceCommandRuntime(
+        ?string $runtime,
+        ?string $node,
+        ?string $service = null,
+    ): ?int {
         if ($runtime === null || $node !== null || $service !== null || $runtime === 'systemd') {
             return null;
         }
 
         return match ($runtime) {
-            'docker' => $this->failValidation('runtime', 'The docker runtime is only valid for managed services or Orbit-managed runtime processes.', [
-                'value' => $runtime,
-                'reason' => 'docker_runtime_requires_service_or_managed_process',
-            ]),
-            'docker-swarm' => $this->failValidation('runtime', 'The docker-swarm runtime is only valid for node-owned processes.', [
-                'value' => $runtime,
-                'reason' => 'docker_swarm_requires_node_owned_process',
-            ]),
+            'docker' => $this->failValidation(
+                'runtime',
+                'The docker runtime is only valid for managed services or Orbit-managed runtime processes.',
+                [
+                    'value' => $runtime,
+                    'reason' => 'docker_runtime_requires_service_or_managed_process',
+                ],
+            ),
+            'docker-swarm' => $this->failValidation(
+                'runtime',
+                'The docker-swarm runtime is only valid for node-owned processes.',
+                [
+                    'value' => $runtime,
+                    'reason' => 'docker_swarm_requires_node_owned_process',
+                ],
+            ),
             default => null,
         };
     }
@@ -192,7 +207,11 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         foreach ($warnings as $warning) {
             if (is_string($warning) && trim($warning) !== '') {
                 $messages[] = trim($warning);
-            } elseif (is_array($warning) && is_string($warning['message'] ?? null) && trim($warning['message']) !== '') {
+            } elseif (
+                is_array($warning)
+                && is_string($warning['message'] ?? null)
+                && trim($warning['message']) !== ''
+            ) {
                 $messages[] = trim($warning['message']);
             }
         }

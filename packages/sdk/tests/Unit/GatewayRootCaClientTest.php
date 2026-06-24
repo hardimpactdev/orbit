@@ -27,11 +27,14 @@ it('fetches the gateway root CA over HTTP without following ordinary responses',
         },
     ]);
 
-    $response = (new GatewayRootCaClient(timeout: 5))->fetch('10.6.0.2');
+    $response = new GatewayRootCaClient(timeout: 5)->fetch('10.6.0.2');
 
-    expect($response->successful())->toBeTrue()
-        ->and($response->body())->toBe('CA CERT')
-        ->and($requests)->toBe(['http://10.6.0.2/api/ca/root']);
+    expect($response->successful())
+        ->toBeTrue()
+        ->and($response->body())
+        ->toBe('CA CERT')
+        ->and($requests)
+        ->toBe(['http://10.6.0.2/api/ca/root']);
 });
 
 it('follows same-gateway HTTPS redirects for root CA bootstrap', function (): void {
@@ -51,11 +54,14 @@ it('follows same-gateway HTTPS redirects for root CA bootstrap', function (): vo
         },
     ]);
 
-    $response = (new GatewayRootCaClient(timeout: 5))->fetch('10.6.0.2');
+    $response = new GatewayRootCaClient(timeout: 5)->fetch('10.6.0.2');
 
-    expect($response->successful())->toBeTrue()
-        ->and($response->body())->toBe('HTTPS CA CERT')
-        ->and($requests)->toBe([
+    expect($response->successful())
+        ->toBeTrue()
+        ->and($response->body())
+        ->toBe('HTTPS CA CERT')
+        ->and($requests)
+        ->toBe([
             'http://10.6.0.2/api/ca/root',
             'https://10.6.0.2/api/ca/root',
         ]);
@@ -74,9 +80,12 @@ it('does not follow redirects away from the requested gateway root CA endpoint',
         },
     ]);
 
-    $response = (new GatewayRootCaClient(timeout: 5))->fetch('10.6.0.2');
+    $response = new GatewayRootCaClient(timeout: 5)->fetch('10.6.0.2');
 
-    expect($response->status())->toBe(302)
-        ->and($response->header('Location'))->toBe('https://other.example.com/api/ca/root')
-        ->and($requests)->toBe(['http://10.6.0.2/api/ca/root']);
+    expect($response->status())
+        ->toBe(302)
+        ->and($response->header('Location'))
+        ->toBe('https://other.example.com/api/ca/root')
+        ->and($requests)
+        ->toBe(['http://10.6.0.2/api/ca/root']);
 });

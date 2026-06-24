@@ -11,54 +11,54 @@ function workspaceHistorySeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
-\Illuminate\Support\Facades\DB::table('workspaces')->delete();
-\App\Models\App::query()->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'permissions' => json_encode(['workspace:history'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('workspaces')->delete();
+        \App\Models\App::query()->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->insert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+            'permissions' => json_encode(['workspace:history'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-$app = \App\Models\App::query()->create([
-    'name' => 'docs',
-    'node_id' => $nodes->get('app-dev-1'),
-    'path' => '/srv/docs',
-    'document_root' => 'public',
-]);
+        $app = \App\Models\App::query()->create([
+            'name' => 'docs',
+            'node_id' => $nodes->get('app-dev-1'),
+            'path' => '/srv/docs',
+            'document_root' => 'public',
+        ]);
 
-$workspace = \App\Models\Workspace::query()->create([
-    'app_id' => $app->id,
-    'name' => 'feature-docs',
-    'path' => '/srv/docs/.worktrees/feature-docs',
-    'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
-]);
+        $workspace = \App\Models\Workspace::query()->create([
+            'app_id' => $app->id,
+            'name' => 'feature-docs',
+            'path' => '/srv/docs/.worktrees/feature-docs',
+            'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
+        ]);
 
-\App\Models\WorkspaceRun::query()->create([
-    'workspace_id' => $workspace->id,
-    'phase' => \App\Enums\WorkspaceLifecyclePhase::Setup,
-    'status' => 'completed',
-    'started_at' => '2026-05-02 10:00:00',
-    'completed_at' => '2026-05-02 10:01:00',
-]);
+        \App\Models\WorkspaceRun::query()->create([
+            'workspace_id' => $workspace->id,
+            'phase' => \App\Enums\WorkspaceLifecyclePhase::Setup,
+            'status' => 'completed',
+            'started_at' => '2026-05-02 10:00:00',
+            'completed_at' => '2026-05-02 10:01:00',
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -76,7 +76,12 @@ it('reads workspace history from a non-gateway caller through the gateway api', 
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-history');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         workspaceHistorySeed($topology);
 
@@ -92,10 +97,14 @@ it('reads workspace history from a non-gateway caller through the gateway api', 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $runs = $payload['success']['data']['runs'] ?? null;
 
-        expect($runs)->toBeArray()
-            ->and($runs[0]['workspace'])->toBe('feature-docs')
-            ->and($runs[0]['app'])->toBe('docs')
-            ->and($runs[0]['status'])->toBe('completed');
+        expect($runs)
+            ->toBeArray()
+            ->and($runs[0]['workspace'])
+            ->toBe('feature-docs')
+            ->and($runs[0]['app'])
+            ->toBe('docs')
+            ->and($runs[0]['status'])
+            ->toBe('completed');
     } finally {
         $topology->cleanup();
     }

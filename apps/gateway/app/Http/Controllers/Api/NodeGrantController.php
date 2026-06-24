@@ -68,8 +68,7 @@ final readonly class NodeGrantController implements Loggable
         $normalized = app(NodePermissionNormalizer::class)->normalize($permissions);
         $permissions = $normalized->permissions;
 
-        $isGatewayAdmin = in_array('*', $permissions, true)
-            && $this->nodeRoleAssignments->nodeIsGateway($serving);
+        $isGatewayAdmin = in_array('*', $permissions, true) && $this->nodeRoleAssignments->nodeIsGateway($serving);
 
         if ($isGatewayAdmin && ! $request->force()) {
             return $this->error(
@@ -102,7 +101,8 @@ final readonly class NodeGrantController implements Loggable
                 $warnings[] = [
                     'code' => 'node.redundant_permissions',
                     'family' => 'node',
-                    'message' => 'Redundant permissions were removed: '.implode(', ', $normalizedForWarning->removed).'.',
+                    'message' =>
+                        'Redundant permissions were removed: '.implode(', ', $normalizedForWarning->removed).'.',
                     'next_command' => null,
                     'permissions' => $normalizedForWarning->removed,
                 ];

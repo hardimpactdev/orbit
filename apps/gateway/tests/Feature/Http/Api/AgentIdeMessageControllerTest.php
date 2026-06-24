@@ -102,10 +102,12 @@ function postAgentIdeMessageJson(array $data, array $server = []): TestResponse
 
 it('sends an app-target message for an authorized control caller', function (): void {
     $caller = createAgentIdeMessageCallerNode();
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-        'agent_ide_config' => ['adapter' => 'polyscope'],
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+            'agent_ide_config' => ['adapter' => 'polyscope'],
+        ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
     App::factory()->create([
@@ -122,7 +124,8 @@ it('sends an app-target message for an authorized control caller', function (): 
         'app' => 'docs',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
         ->assertJsonPath('success.data.agent_ide.source', 'app')
         ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
@@ -132,15 +135,16 @@ it('sends an app-target message for an authorized control caller', function (): 
         ->assertJsonPath('success.data.agent_ide.delivery.message_bytes', 13)
         ->assertJsonPath('success.data.agent_ide.delivery.input', 'argument');
 
-    expect($adapter->deliveries)->toHaveCount(1)
-        ->and($adapter->deliveries[0]['message'])->toBe('Ship the docs');
+    expect($adapter->deliveries)->toHaveCount(1)->and($adapter->deliveries[0]['message'])->toBe('Ship the docs');
 });
 
 it('logs message delivery activity without storing message bodies', function (): void {
     $caller = createAgentIdeMessageCallerNode();
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+        ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
     $app = App::factory()->create([
@@ -174,10 +178,12 @@ it('logs message delivery activity without storing message bodies', function ():
 
 it('sends an app-target message for an authorized app caller', function (): void {
     $caller = createAgentIdeMessageCallerNode(role: 'app-dev');
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-2',
-        'agent_ide_config' => ['adapter' => 'polyscope'],
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-2',
+            'agent_ide_config' => ['adapter' => 'polyscope'],
+        ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
     App::factory()->create([
@@ -194,22 +200,24 @@ it('sends an app-target message for an authorized app caller', function (): void
         'app' => 'docs',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
         ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
         ->assertJsonPath('success.data.agent_ide.target.node', 'app-2')
         ->assertJsonPath('success.data.agent_ide.session.id', 'sess_456');
 
-    expect($adapter->deliveries)->toHaveCount(1)
-        ->and($adapter->deliveries[0]['message'])->toBe('Ship the docs');
+    expect($adapter->deliveries)->toHaveCount(1)->and($adapter->deliveries[0]['message'])->toBe('Ship the docs');
 });
 
 it('sends a workspace-target message for an authorized caller', function (): void {
     $caller = createAgentIdeMessageCallerNode();
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-        'agent_ide_config' => ['adapter' => 'polyscope'],
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+            'agent_ide_config' => ['adapter' => 'polyscope'],
+        ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
     $app = App::factory()->create([
@@ -232,22 +240,27 @@ it('sends a workspace-target message for an authorized caller', function (): voi
         'workspace' => 'feature-docs',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.agent_ide.adapter', 'polyscope')
         ->assertJsonPath('success.data.agent_ide.source', 'workspace')
         ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
         ->assertJsonPath('success.data.agent_ide.target.workspace', 'feature-docs')
         ->assertJsonPath('success.data.agent_ide.target.node', 'app-1');
 
-    expect($adapter->deliveries)->toHaveCount(1)
-        ->and($adapter->deliveries[0]['target']['workspace'])->toBe('feature-docs');
+    expect($adapter->deliveries)
+        ->toHaveCount(1)
+        ->and($adapter->deliveries[0]['target']['workspace'])
+        ->toBe('feature-docs');
 });
 
 it('resolves a workspace-target message from a forwarded path', function (): void {
     $caller = createAgentIdeMessageCallerNode();
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+        ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
     $app = App::factory()->create([
@@ -271,20 +284,25 @@ it('resolves a workspace-target message from a forwarded path', function (): voi
         'path' => '/srv/docs/.worktrees/feature-docs/nested',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.agent_ide.source', 'workspace')
         ->assertJsonPath('success.data.agent_ide.target.app', 'docs')
         ->assertJsonPath('success.data.agent_ide.target.workspace', 'feature-docs');
 
-    expect($adapter->deliveries)->toHaveCount(1)
-        ->and($adapter->deliveries[0]['target']['workspace'])->toBe('feature-docs');
+    expect($adapter->deliveries)
+        ->toHaveCount(1)
+        ->and($adapter->deliveries[0]['target']['workspace'])
+        ->toBe('feature-docs');
 });
 
 it('returns adapter delivery diagnostics under error data', function (): void {
     $caller = createAgentIdeMessageCallerNode();
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+        ]);
     grantAgentIdeMessageAccess($caller, $appNode);
 
     App::factory()->create([
@@ -315,7 +333,8 @@ it('returns adapter delivery diagnostics under error data', function (): void {
         'app' => 'docs',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
-    $response->assertStatus(500)
+    $response
+        ->assertStatus(500)
         ->assertJsonPath('error.code', 'adapter_delivery_failed')
         ->assertJsonPath('error.data.adapter_error.message', 'Request timed out')
         ->assertJsonPath('error.meta.adapter', 'opencode');
@@ -323,9 +342,11 @@ it('returns adapter delivery diagnostics under error data', function (): void {
 
 it('rejects unauthorized callers without delivering', function (): void {
     createAgentIdeMessageCallerNode();
-    $appNode = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-    ]);
+    $appNode = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+        ]);
 
     App::factory()->create([
         'name' => 'docs',
@@ -341,7 +362,8 @@ it('rejects unauthorized callers without delivering', function (): void {
         'app' => 'docs',
     ], ['REMOTE_ADDR' => AGENT_IDE_MESSAGE_CALLER_WG_IP]);
 
-    $response->assertForbidden()
+    $response
+        ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed')
         ->assertJsonPath('error.meta.app', 'docs')
         ->assertJsonPath('error.meta.reason', 'missing_permission')

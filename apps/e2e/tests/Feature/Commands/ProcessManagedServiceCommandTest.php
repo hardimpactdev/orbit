@@ -66,12 +66,15 @@ it('creates MySQL and Redis node managed services through process commands on a 
             $runtimeUnit = "orbit-{$name}";
             $add = $topology->ssh(
                 'gateway',
-                "cd {$checkout} && orbit process:add ".escapeshellarg($name)
-                    .' --node=app-dev-1'
-                    .' --service='.escapeshellarg($service['service'])
-                    .' --version='.escapeshellarg($service['version_input'])
-                    .' --runtime=docker-swarm'
-                    .' --json',
+                "cd {$checkout} && orbit process:add "
+                .escapeshellarg($name)
+                .' --node=app-dev-1'
+                .' --service='
+                .escapeshellarg($service['service'])
+                .' --version='
+                .escapeshellarg($service['version_input'])
+                .' --runtime=docker-swarm'
+                .' --json',
                 timeoutSeconds: 180,
                 allowFailure: true,
             );
@@ -82,15 +85,17 @@ it('creates MySQL and Redis node managed services through process commands on a 
 
             $addPayload = processManagedServiceCommandPayload($add->output());
 
-            expect($addPayload['success']['data']['process'])->toMatchArray([
-                'name' => $name,
-                'node' => 'app-dev-1',
-                'app' => null,
-                'workspace' => null,
-                'runtime' => 'docker-swarm',
-                'tool' => null,
-            ])
-                ->and($addPayload['success']['data']['runtime_units'][0])->toMatchArray([
+            expect($addPayload['success']['data']['process'])
+                ->toMatchArray([
+                    'name' => $name,
+                    'node' => 'app-dev-1',
+                    'app' => null,
+                    'workspace' => null,
+                    'runtime' => 'docker-swarm',
+                    'tool' => null,
+                ])
+                ->and($addPayload['success']['data']['runtime_units'][0])
+                ->toMatchArray([
                     'name' => $runtimeUnit,
                     'context' => 'node',
                 ]);
@@ -119,8 +124,10 @@ it('creates MySQL and Redis node managed services through process commands on a 
             $listed = $processes->get($name);
             $record = $snapshot->get($name);
 
-            expect($listed)->toBeArray()
-                ->and($listed)->toMatchArray([
+            expect($listed)
+                ->toBeArray()
+                ->and($listed)
+                ->toMatchArray([
                     'node' => 'app-dev-1',
                     'app' => null,
                     'workspace' => null,
@@ -149,8 +156,11 @@ it('creates MySQL and Redis node managed services through process commands on a 
                         'credential_fields' => $service['credential_fields'],
                     ],
                 ])
-                ->and($listed['service'])->not->toHaveKey('credentials')
-                ->and($record)->toMatchArray([
+                ->and($listed['service'])
+                ->not
+                ->toHaveKey('credentials')
+                ->and($record)
+                ->toMatchArray([
                     'name' => $name,
                     'command' => $service['command'],
                     'runtime' => 'docker-swarm',
@@ -189,9 +199,13 @@ function processManagedServiceCommandAssertWarnings(array $payload, string $runt
     expect($warnings)->toBeArray();
 
     $unexpected = collect($warnings)
-        ->reject(fn (mixed $warning): bool => is_array($warning)
-            && ($warning['code'] ?? null) === 'process.runtime_unit_apply_failed'
-            && str_contains((string) ($warning['message'] ?? ''), $runtimeUnit))
+        ->reject(
+            fn (mixed $warning): bool => (
+                is_array($warning)
+                && ($warning['code'] ?? null) === 'process.runtime_unit_apply_failed'
+                && str_contains((string) ($warning['message'] ?? ''), $runtimeUnit)
+            ),
+        )
         ->values()
         ->all();
 
@@ -203,9 +217,9 @@ function processManagedServiceCommandNodeServiceHost(E2ETopologyHarness $topolog
     $result = processManagedServiceCommandRunGatewayTinker(
         $topology,
         <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-echo trim((string) $node->wireguard_address);
-PHP,
+            $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+            echo trim((string) $node->wireguard_address);
+            PHP,
     );
     $host = trim($result->output());
 
@@ -227,48 +241,48 @@ function processManagedServiceCommandSnapshot(E2ETopologyHarness $topology, arra
     }
 
     $script = str_replace('__NAMES__', json_encode(array_values($names), JSON_THROW_ON_ERROR), <<<'PHP'
-$names = __NAMES__;
-$rows = \App\Models\Process::query()
-    ->whereIn('name', $names)
-    ->get()
-    ->map(function (\App\Models\Process $process): array {
-        $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $credentials = is_array($config['credentials'] ?? null) ? array_keys($config['credentials']) : [];
+        $names = __NAMES__;
+        $rows = \App\Models\Process::query()
+            ->whereIn('name', $names)
+            ->get()
+            ->map(function (\App\Models\Process $process): array {
+                $config = is_array($process->runtime_config) ? $process->runtime_config : [];
+                $credentials = is_array($config['credentials'] ?? null) ? array_keys($config['credentials']) : [];
 
-        sort($credentials);
+                sort($credentials);
 
-        return [
-            'name' => $process->name,
-            'command' => $process->command,
-            'runtime' => $process->runtime->value,
-            'tool' => $process->tool,
-            'runtime_config' => [
-                'service' => $config['service'] ?? null,
-                'version_family' => $config['version_family'] ?? null,
-                'version' => $config['version'] ?? null,
-                'image' => $config['image'] ?? null,
-                'service_name' => $config['service_name'] ?? null,
-                'healthcheck' => [
-                    'kind' => $config['healthcheck']['kind'] ?? null,
-                    'command' => $config['healthcheck']['command'] ?? null,
-                ],
-                'ports' => collect($config['ports'] ?? [])
-                    ->map(fn (mixed $port): array => [
-                        'published' => (int) ($port['published'] ?? 0),
-                        'target' => (int) ($port['target'] ?? 0),
-                        'protocol' => (string) ($port['protocol'] ?? ''),
-                    ])
-                    ->values()
-                    ->all(),
-                'credential_fields' => $credentials,
-            ],
-        ];
-    })
-    ->values()
-    ->all();
+                return [
+                    'name' => $process->name,
+                    'command' => $process->command,
+                    'runtime' => $process->runtime->value,
+                    'tool' => $process->tool,
+                    'runtime_config' => [
+                        'service' => $config['service'] ?? null,
+                        'version_family' => $config['version_family'] ?? null,
+                        'version' => $config['version'] ?? null,
+                        'image' => $config['image'] ?? null,
+                        'service_name' => $config['service_name'] ?? null,
+                        'healthcheck' => [
+                            'kind' => $config['healthcheck']['kind'] ?? null,
+                            'command' => $config['healthcheck']['command'] ?? null,
+                        ],
+                        'ports' => collect($config['ports'] ?? [])
+                            ->map(fn (mixed $port): array => [
+                                'published' => (int) ($port['published'] ?? 0),
+                                'target' => (int) ($port['target'] ?? 0),
+                                'protocol' => (string) ($port['protocol'] ?? ''),
+                            ])
+                            ->values()
+                            ->all(),
+                        'credential_fields' => $credentials,
+                    ],
+                ];
+            })
+            ->values()
+            ->all();
 
-echo json_encode($rows, JSON_THROW_ON_ERROR);
-PHP);
+        echo json_encode($rows, JSON_THROW_ON_ERROR);
+        PHP);
 
     return json_decode(
         processManagedServiceCommandRunGatewayTinker($topology, $script)->output(),
@@ -296,10 +310,10 @@ function processManagedServiceCommandRemovePreparedRedis(E2ETopologyHarness $top
     );
 
     $script = <<<'PHP'
-if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
-    $node->processes()->where('name', 'redis')->delete();
-}
-PHP;
+        if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
+            $node->processes()->where('name', 'redis')->delete();
+        }
+        PHP;
 
     processManagedServiceCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
@@ -318,7 +332,9 @@ function processManagedServiceCommandCleanup(E2ETopologyHarness $topology, array
     foreach ($names as $name) {
         $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:remove ".escapeshellarg($name).' --node=app-dev-1 --force --json >/dev/null 2>&1 || true',
+            "cd {$checkout} && orbit process:remove "
+            .escapeshellarg($name)
+            .' --node=app-dev-1 --force --json >/dev/null 2>&1 || true',
             timeoutSeconds: 180,
             allowFailure: true,
         );
@@ -337,22 +353,26 @@ function processManagedServiceCommandCleanup(E2ETopologyHarness $topology, array
     );
 
     $script = str_replace('__NAMES__', json_encode(array_values($names), JSON_THROW_ON_ERROR), <<<'PHP'
-$names = __NAMES__;
+        $names = __NAMES__;
 
-if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
-    $node->processes()->whereIn('name', $names)->delete();
-}
-PHP);
+        if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
+            $node->processes()->whereIn('name', $names)->delete();
+        }
+        PHP);
 
     processManagedServiceCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
 
-function processManagedServiceCommandRunGatewayTinker(E2ETopologyHarness $topology, string $script, bool $allowFailure = false): ProcessResult
-{
+function processManagedServiceCommandRunGatewayTinker(
+    E2ETopologyHarness $topology,
+    string $script,
+    bool $allowFailure = false,
+): ProcessResult {
     return e2eRunInRoleRuntime(
         $topology,
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($script),
         timeoutSeconds: 180,
         allowFailure: $allowFailure,
     );

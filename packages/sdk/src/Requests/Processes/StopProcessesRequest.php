@@ -34,11 +34,14 @@ final class StopProcessesRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'name' => $this->name,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'name' => $this->name,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ProcessStopResponse

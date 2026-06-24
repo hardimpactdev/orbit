@@ -34,7 +34,9 @@ class E2EPrepareWarmTopologyCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
+            return $this->failValidation(
+                "Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.',
+            );
         }
 
         if (! E2EPreparedTopology::supportsKind($kind)) {
@@ -44,7 +46,9 @@ class E2EPrepareWarmTopologyCommand extends Command
         $config = E2EConfig::fromEnvironment();
 
         if (! in_array('incus', $config->providerNames, true)) {
-            return $this->failCommand('No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.');
+            return $this->failCommand(
+                'No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.',
+            );
         }
 
         $host = IncusHostPool::fromEnvironment($config)->first();
@@ -70,7 +74,12 @@ class E2EPrepareWarmTopologyCommand extends Command
         try {
             $manifest = $timer->measure(
                 'warm.prepare',
-                fn (): array => new IncusTopologyProvider($config)->prepareWarmSnapshots($kind, $slots, $timer, replaceExisting: (bool) $this->option('rebuild')),
+                fn (): array => new IncusTopologyProvider($config)->prepareWarmSnapshots(
+                    $kind,
+                    $slots,
+                    $timer,
+                    replaceExisting: (bool) $this->option('rebuild'),
+                ),
             );
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
@@ -97,7 +106,7 @@ class E2EPrepareWarmTopologyCommand extends Command
         $this->info("Built warm topology [{$kind->value}].");
 
         foreach ($manifest as $slot) {
-            $verb = ($slot['reused'] ?? false) ? 'reused' : 'created';
+            $verb = $slot['reused'] ?? false ? 'reused' : 'created';
 
             $this->line("{$verb}: slot {$slot['slot']} (snapshot: {$slot['snapshot']})");
         }
@@ -127,7 +136,9 @@ class E2EPrepareWarmTopologyCommand extends Command
         $maxSlots = IncusWarmTopologyPool::maxSlotsForHost($config, $kind, $host);
 
         if ($slots > $maxSlots) {
-            throw new RuntimeException("Warm topology {$kind->value} requested {$slots} slots, but {$host} can fit {$maxSlots} warm slot(s).");
+            throw new RuntimeException(
+                "Warm topology {$kind->value} requested {$slots} slots, but {$host} can fit {$maxSlots} warm slot(s).",
+            );
         }
 
         return $slots;

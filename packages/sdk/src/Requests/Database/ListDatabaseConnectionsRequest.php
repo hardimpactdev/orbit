@@ -30,11 +30,14 @@ final class ListDatabaseConnectionsRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'node' => $this->node,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'node' => $this->node,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): DatabaseConnectionListResponse
@@ -44,7 +47,7 @@ final class ListDatabaseConnectionsRequest extends GatewayRequest
         $connections = $data['connections'] ?? [];
 
         return new DatabaseConnectionListResponse(
-            connections: is_array($connections) ? array_values($connections) : [],
+            connections: $this->listOfStringKeyedArrays($connections),
             count: (int) ($meta['count'] ?? 0),
         );
     }

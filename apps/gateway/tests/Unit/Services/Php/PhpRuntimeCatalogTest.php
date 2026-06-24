@@ -7,12 +7,18 @@ namespace Tests\Unit\Services\Php;
 use App\Services\Php\PhpRuntimeCatalog;
 use InvalidArgumentException;
 
-it('frankenphp resolves supported PHP versions to approved glibc image references', function (string $version, string $image): void {
+it('frankenphp resolves supported PHP versions to approved glibc image references', function (
+    string $version,
+    string $image,
+): void {
     $catalog = new PhpRuntimeCatalog;
 
-    expect($catalog->imageFor($version))->toBe($image)
-        ->and($catalog->versionForImage($image))->toBe($version)
-        ->and($catalog->isApprovedImage($image))->toBeTrue();
+    expect($catalog->imageFor($version))
+        ->toBe($image)
+        ->and($catalog->versionForImage($image))
+        ->toBe($version)
+        ->and($catalog->isApprovedImage($image))
+        ->toBeTrue();
 })->with([
     'php 8.5' => ['8.5', 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
     'php 8.4' => ['8.4', 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.4-bookworm'],
@@ -29,7 +35,8 @@ it('frankenphp rejects unsupported PHP versions before image resolution', functi
 it('frankenphp rejects host PHP FPM CLI and Alpine fallback image references', function (string $image): void {
     $catalog = new PhpRuntimeCatalog;
 
-    expect($catalog->isApprovedImage($image))->toBeFalse()
+    expect($catalog->isApprovedImage($image))
+        ->toBeFalse()
         ->and(fn (): string => $catalog->versionForImage($image))
         ->toThrow(InvalidArgumentException::class);
 })->with([

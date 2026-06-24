@@ -64,9 +64,17 @@ describe('ActivityShowController', function (): void {
 
         $activity = createShowActivityEntry('node.created', 'write', $gateway);
 
-        $response = $this->call('GET', "/api/activity/{$activity->id}", [], [], [], ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            "/api/activity/{$activity->id}",
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'activity:read')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
@@ -85,9 +93,17 @@ describe('ActivityShowController', function (): void {
         $selected->forceFill(['created_at' => now()->subMinute(), 'updated_at' => now()->subMinute()])->save();
         $secondRelated->forceFill(['created_at' => now(), 'updated_at' => now()])->save();
 
-        $response = $this->call('GET', "/api/activity/{$selected->id}", [], [], [], ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            "/api/activity/{$selected->id}",
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.activity.id', $selected->id)
             ->assertJsonPath('success.data.activity.type', 'node.created')
             ->assertJsonPath('success.data.activity.effect', 'write')
@@ -110,7 +126,8 @@ describe('ActivityShowController', function (): void {
 
         $response = $this->call('GET', '/api/activity/999', [], [], [], ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP]);
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'activity_not_found')
             ->assertJsonPath('error.meta.id', 999);
 
@@ -128,9 +145,17 @@ describe('ActivityShowController', function (): void {
     it('validates activity ids', function (): void {
         createActivityShowCallerNode();
 
-        $response = $this->call('GET', '/api/activity/not-an-id', [], [], [], ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/activity/not-an-id',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => ACTIVITY_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'id')
             ->assertJsonPath('error.meta.reason', 'invalid');

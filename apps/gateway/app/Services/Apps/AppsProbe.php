@@ -69,8 +69,8 @@ final readonly class AppsProbe
 
         $script = $this->renderIntrospectScript([
             'APP_NAME' => $app->name,
-            'APP_PATH' => rtrim((string) $app->path, '/'),
-            'APP_DOCUMENT_ROOT' => (string) $app->document_root,
+            'APP_PATH' => rtrim($app->path, '/'),
+            'APP_DOCUMENT_ROOT' => $app->document_root,
             'RUNTIME_KIND' => $app->runtimeKind()->value,
             'RUNTIME_USER' => $this->appRuntimeUser()->forApp($app),
             'RUNTIME_CONTAINER_NAME' => $containerName,
@@ -151,114 +151,114 @@ final readonly class AppsProbe
         }
 
         return <<<SH
-set -eu
-{$assignments}
-path_exists=0
-[ -d "\$APP_PATH" ] && path_exists=1
+            set -eu
+            {$assignments}
+            path_exists=0
+            [ -d "\$APP_PATH" ] && path_exists=1
 
-root_rel=\${APP_DOCUMENT_ROOT#/}
-root_rel=\${root_rel%/}
-if [ -z "\$root_rel" ] || [ "\$root_rel" = "." ]; then
-    root_path="\$APP_PATH"
-else
-    root_path="\$APP_PATH/\$root_rel"
-fi
+            root_rel=\${APP_DOCUMENT_ROOT#/}
+            root_rel=\${root_rel%/}
+            if [ -z "\$root_rel" ] || [ "\$root_rel" = "." ]; then
+                root_path="\$APP_PATH"
+            else
+                root_path="\$APP_PATH/\$root_rel"
+            fi
 
-root_exists=0
-[ -d "\$root_path" ] && root_exists=1
+            root_exists=0
+            [ -d "\$root_path" ] && root_exists=1
 
-root_inside_path=0
-case "\$root_path" in
-    "\$APP_PATH"|"\$APP_PATH"/*) root_inside_path=1 ;;
-esac
+            root_inside_path=0
+            case "\$root_path" in
+                "\$APP_PATH"|"\$APP_PATH"/*) root_inside_path=1 ;;
+            esac
 
-docker_available=0
-if command -v docker >/dev/null 2>&1; then
-    docker_available=1
-fi
+            docker_available=0
+            if command -v docker >/dev/null 2>&1; then
+                docker_available=1
+            fi
 
-container_exists=0
-container_spec_matches=0
-container_running=0
+            container_exists=0
+            container_spec_matches=0
+            container_running=0
 
-if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$RUNTIME_CONTAINER_NAME" ] && [ "\$docker_available" -eq 1 ]; then
-    if docker container inspect "\$RUNTIME_CONTAINER_NAME" >/dev/null 2>&1; then
-        container_exists=1
-        observed_hash=\$(docker container inspect --format '{{index .Config.Labels "orbit.app.spec_hash"}}' "\$RUNTIME_CONTAINER_NAME" 2>/dev/null || printf '')
-        if [ -n "\$EXPECTED_SPEC_HASH" ] && [ "\$observed_hash" = "\$EXPECTED_SPEC_HASH" ]; then
-            container_spec_matches=1
-        fi
-        running=\$(docker container inspect --format '{{.State.Running}}' "\$RUNTIME_CONTAINER_NAME" 2>/dev/null || printf 'false')
-        if [ "\$running" = "true" ]; then
-            container_running=1
-        fi
-    fi
-elif [ "\$RUNTIME_KIND" = "static" ]; then
-    container_spec_matches=1
-fi
+            if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$RUNTIME_CONTAINER_NAME" ] && [ "\$docker_available" -eq 1 ]; then
+                if docker container inspect "\$RUNTIME_CONTAINER_NAME" >/dev/null 2>&1; then
+                    container_exists=1
+                    observed_hash=\$(docker container inspect --format '{{index .Config.Labels "orbit.app.spec_hash"}}' "\$RUNTIME_CONTAINER_NAME" 2>/dev/null || printf '')
+                    if [ -n "\$EXPECTED_SPEC_HASH" ] && [ "\$observed_hash" = "\$EXPECTED_SPEC_HASH" ]; then
+                        container_spec_matches=1
+                    fi
+                    running=\$(docker container inspect --format '{{.State.Running}}' "\$RUNTIME_CONTAINER_NAME" 2>/dev/null || printf 'false')
+                    if [ "\$running" = "true" ]; then
+                        container_running=1
+                    fi
+                fi
+            elif [ "\$RUNTIME_KIND" = "static" ]; then
+                container_spec_matches=1
+            fi
 
-system_user_exists=0
-if [ -n "\$RUNTIME_USER" ] && id -u "\$RUNTIME_USER" >/dev/null 2>&1; then
-    system_user_exists=1
-fi
+            system_user_exists=0
+            if [ -n "\$RUNTIME_USER" ] && id -u "\$RUNTIME_USER" >/dev/null 2>&1; then
+                system_user_exists=1
+            fi
 
-fs_permissions_ok=0
-if [ "\$path_exists" -eq 1 ] && [ -n "\$RUNTIME_USER" ]; then
-    observed_owner=\$(stat -c '%U' "\$APP_PATH" 2>/dev/null || stat -f '%Su' "\$APP_PATH" 2>/dev/null || printf '')
-    not_world_writable=\$(find "\$APP_PATH" -maxdepth 0 ! -perm /022 -print 2>/dev/null || printf '')
-    if [ "\$observed_owner" = "\$RUNTIME_USER" ] && [ -n "\$not_world_writable" ]; then
-        fs_permissions_ok=1
-    fi
-fi
+            fs_permissions_ok=0
+            if [ "\$path_exists" -eq 1 ] && [ -n "\$RUNTIME_USER" ]; then
+                observed_owner=\$(stat -c '%U' "\$APP_PATH" 2>/dev/null || stat -f '%Su' "\$APP_PATH" 2>/dev/null || printf '')
+                not_world_writable=\$(find "\$APP_PATH" -maxdepth 0 ! -perm /022 -print 2>/dev/null || printf '')
+                if [ "\$observed_owner" = "\$RUNTIME_USER" ] && [ -n "\$not_world_writable" ]; then
+                    fs_permissions_ok=1
+                fi
+            fi
 
-runtime_config_exists=0
-runtime_config_matches=0
-if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$RUNTIME_CONFIG_PATH" ]; then
-    if sudo test -e "\$RUNTIME_CONFIG_PATH" 2>/dev/null; then
-        runtime_config_exists=1
-        observed_config_hash=\$(sudo sha256sum "\$RUNTIME_CONFIG_PATH" 2>/dev/null | awk '{print \$1}' || printf '')
-        if [ -n "\$EXPECTED_RUNTIME_CONFIG_HASH" ] && [ "\$observed_config_hash" = "\$EXPECTED_RUNTIME_CONFIG_HASH" ]; then
-            runtime_config_matches=1
-        fi
-    fi
-elif [ "\$RUNTIME_KIND" = "static" ]; then
-    runtime_config_matches=1
-fi
+            runtime_config_exists=0
+            runtime_config_matches=0
+            if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$RUNTIME_CONFIG_PATH" ]; then
+                if sudo test -e "\$RUNTIME_CONFIG_PATH" 2>/dev/null; then
+                    runtime_config_exists=1
+                    observed_config_hash=\$(sudo sha256sum "\$RUNTIME_CONFIG_PATH" 2>/dev/null | awk '{print \$1}' || printf '')
+                    if [ -n "\$EXPECTED_RUNTIME_CONFIG_HASH" ] && [ "\$observed_config_hash" = "\$EXPECTED_RUNTIME_CONFIG_HASH" ]; then
+                        runtime_config_matches=1
+                    fi
+                fi
+            elif [ "\$RUNTIME_KIND" = "static" ]; then
+                runtime_config_matches=1
+            fi
 
-runtime_image_available=0
-runtime_image_probe_failed=0
-if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$EXPECTED_RUNTIME_IMAGE" ] && [ "\$docker_available" -eq 1 ]; then
-    set +e
-    image_err=\$(docker image inspect "\$EXPECTED_RUNTIME_IMAGE" 2>&1 >/dev/null)
-    image_ec=\$?
-    set -e
-    if [ "\$image_ec" = "0" ]; then
-        runtime_image_available=1
-    elif printf '%s' "\$image_err" | grep -qi 'no such image'; then
-        runtime_image_available=0
-    else
-        runtime_image_probe_failed=1
-    fi
-elif [ "\$RUNTIME_KIND" = "static" ]; then
-    runtime_image_available=1
-fi
+            runtime_image_available=0
+            runtime_image_probe_failed=0
+            if [ "\$RUNTIME_KIND" = "php" ] && [ -n "\$EXPECTED_RUNTIME_IMAGE" ] && [ "\$docker_available" -eq 1 ]; then
+                set +e
+                image_err=\$(docker image inspect "\$EXPECTED_RUNTIME_IMAGE" 2>&1 >/dev/null)
+                image_ec=\$?
+                set -e
+                if [ "\$image_ec" = "0" ]; then
+                    runtime_image_available=1
+                elif printf '%s' "\$image_err" | grep -qi 'no such image'; then
+                    runtime_image_available=0
+                else
+                    runtime_image_probe_failed=1
+                fi
+            elif [ "\$RUNTIME_KIND" = "static" ]; then
+                runtime_image_available=1
+            fi
 
-printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
-    "\$APP_NAME" \\
-    "\$path_exists" \\
-    "\$root_exists" \\
-    "\$root_inside_path" \\
-    "\$docker_available" \\
-    "\$container_exists" \\
-    "\$container_spec_matches" \\
-    "\$container_running" \\
-    "\$system_user_exists" \\
-    "\$fs_permissions_ok" \\
-    "\$runtime_config_exists" \\
-    "\$runtime_config_matches" \\
-    "\$runtime_image_available" \\
-    "\$runtime_image_probe_failed"
-SH;
+            printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \\
+                "\$APP_NAME" \\
+                "\$path_exists" \\
+                "\$root_exists" \\
+                "\$root_inside_path" \\
+                "\$docker_available" \\
+                "\$container_exists" \\
+                "\$container_spec_matches" \\
+                "\$container_running" \\
+                "\$system_user_exists" \\
+                "\$fs_permissions_ok" \\
+                "\$runtime_config_exists" \\
+                "\$runtime_config_matches" \\
+                "\$runtime_image_available" \\
+                "\$runtime_image_probe_failed"
+            SH;
     }
 
     /**
@@ -279,40 +279,40 @@ SH;
         // empty snapshot — that would hide stale runtime_config_extra
         // artifacts.
         $script = <<<'BASH'
-set -u
-dir='/etc/orbit/apps'
+            set -u
+            dir='/etc/orbit/apps'
 
-dir_err="$(sudo test -d "$dir" 2>&1)"
-dir_ec=$?
-if [ "$dir_ec" = "1" ] && [ -z "$dir_err" ]; then
-    printf 'orbit-config-dir:absent\n'
-    exit 0
-fi
-if [ "$dir_ec" != "0" ]; then
-    printf 'orbit-config-dir:error %s\n' "$dir_err"
-    exit 0
-fi
+            dir_err="$(sudo test -d "$dir" 2>&1)"
+            dir_ec=$?
+            if [ "$dir_ec" = "1" ] && [ -z "$dir_err" ]; then
+                printf 'orbit-config-dir:absent\n'
+                exit 0
+            fi
+            if [ "$dir_ec" != "0" ]; then
+                printf 'orbit-config-dir:error %s\n' "$dir_err"
+                exit 0
+            fi
 
-err_file="$(mktemp 2>/dev/null || printf '/tmp/orbit-config-dir.%d' $$)"
-set +e
-list_out="$(sudo find "$dir" -maxdepth 1 -type f -name '*.ini' -print 2>"$err_file")"
-list_ec=$?
-set -e
-list_err="$(cat "$err_file" 2>/dev/null)"
-rm -f "$err_file"
+            err_file="$(mktemp 2>/dev/null || printf '/tmp/orbit-config-dir.%d' $$)"
+            set +e
+            list_out="$(sudo find "$dir" -maxdepth 1 -type f -name '*.ini' -print 2>"$err_file")"
+            list_ec=$?
+            set -e
+            list_err="$(cat "$err_file" 2>/dev/null)"
+            rm -f "$err_file"
 
-if [ "$list_ec" = "0" ]; then
-    printf 'orbit-config-dir:present\n'
-    if [ -n "$list_out" ]; then
-        printf '%s\n' "$list_out"
-    fi
-else
-    if [ -z "$list_err" ]; then
-        list_err="sudo find failed (ec=$list_ec)"
-    fi
-    printf 'orbit-config-dir:error %s\n' "$list_err"
-fi
-BASH;
+            if [ "$list_ec" = "0" ]; then
+                printf 'orbit-config-dir:present\n'
+                if [ -n "$list_out" ]; then
+                    printf '%s\n' "$list_out"
+                fi
+            else
+                if [ -z "$list_err" ]; then
+                    list_err="sudo find failed (ec=$list_ec)"
+                fi
+                printf 'orbit-config-dir:error %s\n' "$list_err"
+            fi
+            BASH;
 
         try {
             $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script);
@@ -338,7 +338,9 @@ BASH;
             return new NodeRuntimeConfigsProbe(
                 status: NodeRuntimeConfigsProbeStatus::Error,
                 configs: new ProbeSnapshot([]),
-                error: $remoteError !== '' ? $remoteError : 'remote shell call failed during managed runtime config scan',
+                error: $remoteError !== ''
+                    ? $remoteError
+                    : 'remote shell call failed during managed runtime config scan',
             );
         }
 
@@ -424,35 +426,35 @@ BASH;
     public function introspectNode(Node $node): NodeRuntimeContainersProbe
     {
         $script = <<<'BASH'
-set -u
-if ! command -v docker >/dev/null 2>&1; then
-    printf 'orbit-container-scan:absent\n'
-    exit 0
-fi
+            set -u
+            if ! command -v docker >/dev/null 2>&1; then
+                printf 'orbit-container-scan:absent\n'
+                exit 0
+            fi
 
-err_file="$(mktemp 2>/dev/null || printf '/tmp/orbit-container-scan.%d' $$)"
-set +e
-scan_out="$(docker container ls --all \
-    --filter 'label=orbit.managed=true' \
-    --filter 'label=orbit.container.kind=app-runtime' \
-    --format '{{.Names}}\t{{.Label "orbit.app"}}' 2>"$err_file")"
-scan_ec=$?
-set -e
-scan_err="$(cat "$err_file" 2>/dev/null)"
-rm -f "$err_file"
+            err_file="$(mktemp 2>/dev/null || printf '/tmp/orbit-container-scan.%d' $$)"
+            set +e
+            scan_out="$(docker container ls --all \
+                --filter 'label=orbit.managed=true' \
+                --filter 'label=orbit.container.kind=app-runtime' \
+                --format '{{.Names}}\t{{.Label "orbit.app"}}' 2>"$err_file")"
+            scan_ec=$?
+            set -e
+            scan_err="$(cat "$err_file" 2>/dev/null)"
+            rm -f "$err_file"
 
-if [ "$scan_ec" = "0" ]; then
-    printf 'orbit-container-scan:present\n'
-    if [ -n "$scan_out" ]; then
-        printf '%s\n' "$scan_out"
-    fi
-else
-    if [ -z "$scan_err" ]; then
-        scan_err="docker container ls failed (ec=$scan_ec)"
-    fi
-    printf 'orbit-container-scan:error %s\n' "$scan_err"
-fi
-BASH;
+            if [ "$scan_ec" = "0" ]; then
+                printf 'orbit-container-scan:present\n'
+                if [ -n "$scan_out" ]; then
+                    printf '%s\n' "$scan_out"
+                fi
+            else
+                if [ -z "$scan_err" ]; then
+                    scan_err="docker container ls failed (ec=$scan_ec)"
+                fi
+                printf 'orbit-container-scan:error %s\n' "$scan_err"
+            fi
+            BASH;
 
         try {
             $result = ($this->remoteShell ?? app(RemoteShell::class))->run($node, $script);
@@ -470,7 +472,9 @@ BASH;
             return new NodeRuntimeContainersProbe(
                 status: NodeRuntimeContainersProbeStatus::Error,
                 containers: new ProbeSnapshot([]),
-                error: $remoteError !== '' ? $remoteError : 'remote shell call failed during app runtime container scan',
+                error: $remoteError !== ''
+                    ? $remoteError
+                    : 'remote shell call failed during app runtime container scan',
             );
         }
 
@@ -606,20 +610,22 @@ BASH;
             $observed === null
             || ($observed['path_exists'] ?? null) === false
             || ($observed['docker_available'] ?? null) === false
-            // When the selected image is proven absent the runtime container
-            // cannot exist either; checkPhpRuntime emits the canonical
-            // `app.php_version_unavailable` drift in that case. Unknown
-            // image-probe failures (Docker daemon unreachable, permission,
-            // transport error) do NOT short-circuit here — they fall through
-            // to surface as the documented `app.runtime_container_missing`
-            // (when no container exists) or `app.runtime_container_mismatch`
-            // (when one does) so the doctor restore path can re-attempt apply.
+        // When the selected image is proven absent the runtime container
+        // cannot exist either; checkPhpRuntime emits the canonical
+        // `app.php_version_unavailable` drift in that case. Unknown
+        // image-probe failures (Docker daemon unreachable, permission,
+        // transport error) do NOT short-circuit here — they fall through
+        // to surface as the documented `app.runtime_container_missing`
+        // (when no container exists) or `app.runtime_container_mismatch`
+        // (when one does) so the doctor restore path can re-attempt apply.
         ) {
             return [];
         }
 
-        if (($observed['runtime_image_available'] ?? null) === false
-            && ($observed['runtime_image_probe_failed'] ?? null) !== true) {
+        if (
+            ($observed['runtime_image_available'] ?? null) === false
+            && ($observed['runtime_image_probe_failed'] ?? null) !== true
+        ) {
             // Image proven missing: checkPhpRuntime owns the
             // `app.php_version_unavailable` drift; suppress container drift
             // because the container cannot exist without its image.
@@ -862,10 +868,8 @@ BASH;
         if (
             $app->runtimeKind() === AppRuntimeKind::Php
             && ($observed['docker_available'] ?? null) === true
-            && (
-                ($observed['container_exists'] ?? null) === false
-                || ($observed['container_spec_matches'] ?? null) === false
-            )
+            && (($observed['container_exists'] ?? null) === false
+            || ($observed['container_spec_matches'] ?? null) === false)
         ) {
             $drift[] = new DriftEntry(
                 family: $this->key(),
@@ -1074,8 +1078,7 @@ BASH;
 
     private function appRuntimeContainerRenderer(): AppRuntimeContainerRenderer
     {
-        return $this->appRuntimeContainerRenderer
-            ?? app(AppRuntimeContainerRenderer::class);
+        return $this->appRuntimeContainerRenderer ?? app(AppRuntimeContainerRenderer::class);
     }
 
     private function phpRuntimeCatalog(): PhpRuntimeCatalog
@@ -1097,7 +1100,10 @@ BASH;
     {
         $app->loadMissing('node');
 
-        return $app->environment === 'production'
-            || ($app->node instanceof Node && $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, 'app-prod'));
+        return (
+            $app->environment === 'production'
+            || $app->node instanceof Node
+            && $this->nodeRoleAssignments()->nodeHasActiveRole($app->node, 'app-prod')
+        );
     }
 }

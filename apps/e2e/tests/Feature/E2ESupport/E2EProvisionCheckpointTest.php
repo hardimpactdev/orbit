@@ -26,7 +26,10 @@ it('does not invalidate provision checkpoints for assertion-only e2e test change
             baseImageIdentity: 'orbit-base@sha256:base',
         );
 
-        file_put_contents("{$root}/apps/e2e/tests/Feature/Commands/AppAssertionTest.php", "<?php\nit('changes only assertions', fn () => expect(true)->toBeTrue());\n");
+        file_put_contents(
+            "{$root}/apps/e2e/tests/Feature/Commands/AppAssertionTest.php",
+            "<?php\nit('changes only assertions', fn () => expect(true)->toBeTrue());\n",
+        );
 
         $after = E2EProvisionFingerprint::fromRoot(
             root: $root,
@@ -35,8 +38,10 @@ it('does not invalidate provision checkpoints for assertion-only e2e test change
             baseImageIdentity: 'orbit-base@sha256:base',
         );
 
-        expect($after['fingerprints'])->toBe($before['fingerprints'])
-            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+        expect($after['fingerprints'])
+            ->toBe($before['fingerprints'])
+            ->and($after['role_fingerprints'])
+            ->toBe($before['role_fingerprints']);
     } finally {
         remove_directory($root);
     }
@@ -53,10 +58,22 @@ it('does not invalidate provision checkpoints for acquisition-only incus support
             baseImageIdentity: 'orbit-base@sha256:base',
         );
 
-        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusTopologyProvider.php", "<?php\nreturn 'provider changed';\n");
-        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusTopologyTemplate.php", "<?php\nreturn 'template clone changed';\n");
-        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusWorkerNetwork.php", "<?php\nreturn 'worker network changed';\n");
-        file_put_contents("{$root}/apps/e2e/app/E2E/Support/E2EResourceLeaseSet.php", "<?php\nreturn 'lease changed';\n");
+        file_put_contents(
+            "{$root}/apps/e2e/app/E2E/Support/IncusTopologyProvider.php",
+            "<?php\nreturn 'provider changed';\n",
+        );
+        file_put_contents(
+            "{$root}/apps/e2e/app/E2E/Support/IncusTopologyTemplate.php",
+            "<?php\nreturn 'template clone changed';\n",
+        );
+        file_put_contents(
+            "{$root}/apps/e2e/app/E2E/Support/IncusWorkerNetwork.php",
+            "<?php\nreturn 'worker network changed';\n",
+        );
+        file_put_contents(
+            "{$root}/apps/e2e/app/E2E/Support/E2EResourceLeaseSet.php",
+            "<?php\nreturn 'lease changed';\n",
+        );
 
         $after = E2EProvisionFingerprint::fromRoot(
             root: $root,
@@ -65,8 +82,10 @@ it('does not invalidate provision checkpoints for acquisition-only incus support
             baseImageIdentity: 'orbit-base@sha256:base',
         );
 
-        expect($after['fingerprints'])->toBe($before['fingerprints'])
-            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+        expect($after['fingerprints'])
+            ->toBe($before['fingerprints'])
+            ->and($after['role_fingerprints'])
+            ->toBe($before['role_fingerprints']);
     } finally {
         remove_directory($root);
     }
@@ -84,7 +103,10 @@ it('does not invalidate gateway artifact checkpoints for gateway test-only chang
         );
 
         mkdir("{$root}/apps/gateway/tests/Feature", 0777, true);
-        file_put_contents("{$root}/apps/gateway/tests/Feature/GatewayRuntimeTest.php", "<?php\nit('changes gateway assertions only', fn () => expect(true)->toBeTrue());\n");
+        file_put_contents(
+            "{$root}/apps/gateway/tests/Feature/GatewayRuntimeTest.php",
+            "<?php\nit('changes gateway assertions only', fn () => expect(true)->toBeTrue());\n",
+        );
 
         $after = E2EProvisionFingerprint::fromRoot(
             root: $root,
@@ -93,8 +115,10 @@ it('does not invalidate gateway artifact checkpoints for gateway test-only chang
             baseImageIdentity: 'orbit-base@sha256:base',
         );
 
-        expect($after['fingerprints']['gateway_artifact'])->toBe($before['fingerprints']['gateway_artifact'])
-            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+        expect($after['fingerprints']['gateway_artifact'])
+            ->toBe($before['fingerprints']['gateway_artifact'])
+            ->and($after['role_fingerprints'])
+            ->toBe($before['role_fingerprints']);
     } finally {
         remove_directory($root);
     }
@@ -124,7 +148,10 @@ it('invalidates every role checkpoint when prepared topology builder code change
     try {
         $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
-        file_put_contents("{$root}/apps/e2e/app/E2E/Support/IncusTopologyBuilder.php", "<?php\nreturn 'prepared builder changed';\n");
+        file_put_contents(
+            "{$root}/apps/e2e/app/E2E/Support/IncusTopologyBuilder.php",
+            "<?php\nreturn 'prepared builder changed';\n",
+        );
 
         $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
@@ -164,8 +191,9 @@ it('invalidates CLI and gateway artifacts when the shared SDK changes', function
 
         $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
-        expect($after['fingerprints']['cli_artifact'])->not->toBe($before['fingerprints']['cli_artifact'])
-            ->and($after['fingerprints']['gateway_artifact'])->not->toBe($before['fingerprints']['gateway_artifact']);
+        expect($after['fingerprints']['cli_artifact'])
+            ->not->toBe($before['fingerprints']['cli_artifact'])->and($after['fingerprints']['gateway_artifact'])
+            ->not->toBe($before['fingerprints']['gateway_artifact']);
 
         foreach (['operator', 'gateway', 'dev', 'prod', 'agent'] as $role) {
             expect($after['role_fingerprints'][$role])->not->toBe($before['role_fingerprints'][$role]);
@@ -213,8 +241,9 @@ it('invalidates all role checkpoints when the base image identity or role dag ch
         $dagChanged = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent);
 
         foreach (['operator', 'gateway', 'dev', 'prod', 'agent'] as $role) {
-            expect($baseChanged['role_fingerprints'][$role])->not->toBe($before['role_fingerprints'][$role])
-                ->and($dagChanged['role_fingerprints'][$role])->not->toBe($before['role_fingerprints'][$role]);
+            expect($baseChanged['role_fingerprints'][$role])
+                ->not->toBe($before['role_fingerprints'][$role])->and($dagChanged['role_fingerprints'][$role])
+                ->not->toBe($before['role_fingerprints'][$role]);
         }
     } finally {
         remove_directory($root);
@@ -241,8 +270,11 @@ it('does not invalidate role checkpoints when runtime archive bytes are regenera
             bundleDirectory: $secondBundle,
         );
 
-        expect($after['fingerprints']['runtime_archives'])->not->toBe($before['fingerprints']['runtime_archives'])
-            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+        expect($after['fingerprints']['runtime_archives'])
+            ->not
+            ->toBe($before['fingerprints']['runtime_archives'])
+            ->and($after['role_fingerprints'])
+            ->toBe($before['role_fingerprints']);
     } finally {
         remove_directory($root);
         remove_directory($firstBundle);
@@ -258,14 +290,19 @@ it('does not invalidate role checkpoints when CLI build output changes', functio
 
         mkdir("{$root}/apps/cli/build/phpstan", 0777, true);
         mkdir("{$root}/apps/cli/builds/dist/linux", 0777, true);
-        file_put_contents("{$root}/apps/cli/build/phpstan/resultCache.php", "<?php\nreturn ['generated' => 'changed'];\n");
+        file_put_contents(
+            "{$root}/apps/cli/build/phpstan/resultCache.php",
+            "<?php\nreturn ['generated' => 'changed'];\n",
+        );
         file_put_contents("{$root}/apps/cli/builds/orbit.phar", 'changed phar bytes');
         file_put_contents("{$root}/apps/cli/builds/dist/linux/linux-x64", 'changed native binary bytes');
 
         $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
-        expect($after['fingerprints']['cli_artifact'])->toBe($before['fingerprints']['cli_artifact'])
-            ->and($after['role_fingerprints'])->toBe($before['role_fingerprints']);
+        expect($after['fingerprints']['cli_artifact'])
+            ->toBe($before['fingerprints']['cli_artifact'])
+            ->and($after['role_fingerprints'])
+            ->toBe($before['role_fingerprints']);
     } finally {
         remove_directory($root);
     }
@@ -281,8 +318,10 @@ it('does not fingerprint transient test temp files', function (): void {
 
         $after = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
-        expect($after['fingerprints']['cli_artifact'])->toBe($before['fingerprints']['cli_artifact'])
-            ->and($after['inputs']['source']['cli_artifact']['files'])->not->toHaveKey('apps/cli/tests/.tmp-tool-logs-config.json');
+        expect($after['fingerprints']['cli_artifact'])
+            ->toBe($before['fingerprints']['cli_artifact'])
+            ->and($after['inputs']['source']['cli_artifact']['files'])
+            ->not->toHaveKey('apps/cli/tests/.tmp-tool-logs-config.json');
     } finally {
         remove_directory($root);
     }
@@ -323,7 +362,9 @@ it('requires matching manifest fingerprints and live snapshots before reusing ch
         ->and(E2EProvisionCheckpointManifest::validRoles(
             manifest: $manifest,
             currentFingerprint: $fingerprint,
-            snapshotExists: fn (string $template, string $snapshot): bool => $template !== 'orbit-template-gateway-base',
+            snapshotExists: fn (string $template, string $snapshot): bool => (
+                $template !== 'orbit-template-gateway-base'
+            ),
         ))->toBe(['operator']);
 });
 
@@ -354,8 +395,11 @@ it('keeps checkpoint manifests compact by omitting raw fingerprint input file ma
         complete: false,
     );
 
-    expect($manifest)->not->toHaveKey('inputs')
-        ->and(strlen(json_encode($manifest, JSON_THROW_ON_ERROR)))->toBeLessThan(2000);
+    expect($manifest)
+        ->not
+        ->toHaveKey('inputs')
+        ->and(strlen(json_encode($manifest, JSON_THROW_ON_ERROR)))
+        ->toBeLessThan(2000);
 });
 
 it('retries checkpoint manifest writes after a transient host transport failure', function (): void {
@@ -363,7 +407,8 @@ it('retries checkpoint manifest writes after a transient host transport failure'
     $attempts = 0;
     $paths = [];
 
-    $host->shouldReceive('writeTextFile')
+    $host
+        ->shouldReceive('writeTextFile')
         ->twice()
         ->andReturnUsing(function (string $path, string $contents) use (&$attempts, &$paths): ProcessResult {
             $attempts++;
@@ -380,8 +425,12 @@ it('retries checkpoint manifest writes after a transient host transport failure'
     $store = new E2EProvisionCheckpointStore($host, writeAttempts: 2, writeRetryDelayMilliseconds: 0);
     $store->write(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, ['schema_version' => 1]);
 
-    expect($attempts)->toBe(2)
-        ->and($paths[0])->toContain('.cache/orbit-e2e/provision-checkpoints/base/operator_gateway_app-dev_app-prod_agent_websocket.json');
+    expect($attempts)
+        ->toBe(2)
+        ->and($paths[0])
+        ->toContain(
+            '.cache/orbit-e2e/provision-checkpoints/base/operator_gateway_app-dev_app-prod_agent_websocket.json',
+        );
 });
 
 it('retries only missing downstream roles from a partial prepared checkpoint', function (): void {
@@ -423,21 +472,25 @@ it('retries only missing downstream roles from a partial prepared checkpoint', f
         snapshotExists: fn (string $template, string $snapshot): bool => true,
     );
 
-    expect(array_column($validCheckpoints, 'role'))->toBe(['operator', 'gateway', 'dev', 'agent'])
-        ->and(E2EProvisionCheckpointManifest::missingRoles($kind, $validCheckpoints))->toBe(['prod']);
+    expect(array_column($validCheckpoints, 'role'))
+        ->toBe(['operator', 'gateway', 'dev', 'agent'])
+        ->and(E2EProvisionCheckpointManifest::missingRoles($kind, $validCheckpoints))
+        ->toBe(['prod']);
 });
 
 it('keeps serving assertions out of the provision group', function (): void {
     $contents = file_get_contents(base_path('tests/Feature/Commands/Ephemeral/AppServingTest.php'));
 
-    expect($contents)->toBeString()
-        ->and($contents)->not->toContain('e2e-provision')
-        ->and($contents)->toContain('E2ETopologyKind::OperatorGatewayAppdev')
-        ->and($contents)->toContain('appServingRestoreDoctorFamily($topology, \'tool\')')
-        ->and($contents)->toContain('$keyOption = $key === null')
-        ->and($contents)->toContain('HOME=/home/orbit /usr/local/bin/laravel --version')
-        ->and($contents)->not->toContain('E2ETopologyKind::OperatorGatewayAppdevWebsocket')
-        ->and($contents)->not->toContain('e2e-feature-operator_gateway_app-dev_websocket');
+    expect($contents)
+        ->toBeString()
+        ->and($contents)
+        ->not->toContain('e2e-provision')->and($contents)->toContain('E2ETopologyKind::OperatorGatewayAppdev')->and(
+            $contents,
+        )->toContain('appServingRestoreDoctorFamily($topology, \'tool\')')->and($contents)->toContain(
+            '$keyOption = $key === null',
+        )->and($contents)->toContain('HOME=/home/orbit /usr/local/bin/laravel --version')->and($contents)
+        ->not->toContain('E2ETopologyKind::OperatorGatewayAppdevWebsocket')->and($contents)
+        ->not->toContain('e2e-feature-operator_gateway_app-dev_websocket');
 });
 
 function makeProvisionFingerprintFixture(): string

@@ -64,21 +64,34 @@ final readonly class ProcessOwnerContextResolver
             ? null
             : $this->visibleNodeIds($caller, $permission);
 
-        if ($permission !== null && $caller instanceof Node && ! $this->nodeRoleAssignments->nodeIsGateway($caller) && $visibleNodeIds === []) {
-            throw new GatewayApiException('This node is not authorized to read process intent.', 'authorization_failed', [
-                'reason' => 'missing_permission',
-                'missing_permission' => $permission,
-            ]);
+        if (
+            $permission !== null
+            && $caller instanceof Node
+            && ! $this->nodeRoleAssignments->nodeIsGateway($caller)
+            && $visibleNodeIds === []
+        ) {
+            throw new GatewayApiException(
+                'This node is not authorized to read process intent.',
+                'authorization_failed',
+                [
+                    'reason' => 'missing_permission',
+                    'missing_permission' => $permission,
+                ],
+            );
         }
 
         if ($nodeName !== null) {
             if ($appName !== null || $workspaceName !== null) {
-                throw new GatewayApiException('A node context cannot be combined with app or workspace context.', 'validation_failed', [
-                    'field' => 'context',
-                    'node' => $nodeName,
-                    'app' => $appName,
-                    'workspace' => $workspaceName,
-                ]);
+                throw new GatewayApiException(
+                    'A node context cannot be combined with app or workspace context.',
+                    'validation_failed',
+                    [
+                        'field' => 'context',
+                        'node' => $nodeName,
+                        'app' => $appName,
+                        'workspace' => $workspaceName,
+                    ],
+                );
             }
 
             return $this->resolveNode($nodeName, $visibleNodeIds);
@@ -138,7 +151,8 @@ final readonly class ProcessOwnerContextResolver
      */
     private function resolveApp(string $appName, ?array $visibleNodeIds): ProcessOwnerContext
     {
-        $app = $this->visibleApps($visibleNodeIds)
+        $app = $this
+            ->visibleApps($visibleNodeIds)
             ->where('name', $appName)
             ->first();
 
@@ -155,20 +169,35 @@ final readonly class ProcessOwnerContextResolver
     /**
      * @param  list<int>|null  $visibleNodeIds
      */
-    private function resolveWorkspace(string $workspaceName, ?string $appName, ?array $visibleNodeIds): ProcessOwnerContext
-    {
+    private function resolveWorkspace(
+        string $workspaceName,
+        ?string $appName,
+        ?array $visibleNodeIds,
+    ): ProcessOwnerContext {
         $matches = Workspace::query()
             ->with('app.node')
             ->where('name', $workspaceName)
-            ->when($appName !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $appName)))
-            ->when($visibleNodeIds !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when($appName
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
+                'name',
+                $appName,
+            )))
+            ->when($visibleNodeIds
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                'node_id',
+                $visibleNodeIds,
+            )))
             ->get();
 
         if ($matches->isEmpty()) {
-            throw new GatewayApiException("Workspace '{$workspaceName}' not found or not visible.", 'validation_failed', [
-                'field' => 'workspace',
-                'value' => $workspaceName,
-            ]);
+            throw new GatewayApiException(
+                "Workspace '{$workspaceName}' not found or not visible.",
+                'validation_failed',
+                [
+                    'field' => 'workspace',
+                    'value' => $workspaceName,
+                ],
+            );
         }
 
         if ($appName === null && $matches->count() > 1) {
@@ -187,10 +216,14 @@ final readonly class ProcessOwnerContextResolver
         $app = $workspace->app;
 
         if (! $app instanceof App) {
-            throw new GatewayApiException("Workspace '{$workspaceName}' is not attached to an app.", 'validation_failed', [
-                'field' => 'workspace',
-                'value' => $workspaceName,
-            ]);
+            throw new GatewayApiException(
+                "Workspace '{$workspaceName}' is not attached to an app.",
+                'validation_failed',
+                [
+                    'field' => 'workspace',
+                    'value' => $workspaceName,
+                ],
+            );
         }
 
         $node = $app->node;
@@ -237,7 +270,10 @@ final readonly class ProcessOwnerContextResolver
     {
         return App::query()
             ->with(['node', 'processes'])
-            ->when($visibleNodeIds !== null, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds));
+            ->when($visibleNodeIds !== null, fn (Builder $query): Builder => $query->whereIn(
+                'node_id',
+                $visibleNodeIds,
+            ));
     }
 
     /**

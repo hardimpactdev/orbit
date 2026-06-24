@@ -6,7 +6,12 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Contracts\Process\ProcessResult;
 
-pest()->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+pest()->group(
+    'e2e-feature',
+    'e2e-provider-incus',
+    'e2e-feature-operator_gateway_app-dev',
+    'e2e-feature-operator-gateway-dev',
+);
 
 it('repairs missing and mode-drifted managed tool configuration from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
@@ -24,9 +29,12 @@ it('repairs missing and mode-drifted managed tool configuration from gateway int
         $missingPayload = e2eJsonCommandPayload($missing->output());
         $missingIssue = toolsDoctorFixIssue($missingPayload, 'tool.config_missing');
 
-        expect($missing->successful())->toBeFalse($missing->output().$missing->errorOutput())
-            ->and(e2eJsonCommandError($missingPayload)['code'])->toBe('drift_detected')
-            ->and($missingIssue)->toMatchArray([
+        expect($missing->successful())
+            ->toBeFalse($missing->output().$missing->errorOutput())
+            ->and(e2eJsonCommandError($missingPayload)['code'])
+            ->toBe('drift_detected')
+            ->and($missingIssue)
+            ->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.config_missing',
@@ -46,10 +54,14 @@ it('repairs missing and mode-drifted managed tool configuration from gateway int
         $result = toolsDoctorFixRun($topology, 'tool.config_missing', restore: true);
         $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
 
-        expect($result->successful())->toBeTrue()
-            ->and($data['doctor']['healthy'])->toBeTrue()
-            ->and($data['doctor']['summary']['fixed'])->toBe(1)
-            ->and($data['doctor']['actions'][0])->toMatchArray([
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($data['doctor']['healthy'])
+            ->toBeTrue()
+            ->and($data['doctor']['summary']['fixed'])
+            ->toBe(1)
+            ->and($data['doctor']['actions'][0])
+            ->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.config_missing',
@@ -57,8 +69,10 @@ it('repairs missing and mode-drifted managed tool configuration from gateway int
                 'status' => 'completed',
             ]);
 
-        expect(toolsDoctorFixRemoteHash($topology, $configPath))->toBe($expectedHash)
-            ->and(toolsDoctorFixRemoteMode($topology, $configPath))->toBe('640');
+        expect(toolsDoctorFixRemoteHash($topology, $configPath))
+            ->toBe($expectedHash)
+            ->and(toolsDoctorFixRemoteMode($topology, $configPath))
+            ->toBe('640');
 
         $topology->ssh('dev', 'sudo chmod 0600 '.escapeshellarg($configPath), timeoutSeconds: 60);
 
@@ -66,9 +80,12 @@ it('repairs missing and mode-drifted managed tool configuration from gateway int
         $mismatchPayload = e2eJsonCommandPayload($mismatch->output());
         $mismatchIssue = toolsDoctorFixIssue($mismatchPayload, 'tool.config_mismatch');
 
-        expect($mismatch->successful())->toBeFalse($mismatch->output().$mismatch->errorOutput())
-            ->and(e2eJsonCommandError($mismatchPayload)['code'])->toBe('drift_detected')
-            ->and($mismatchIssue)->toMatchArray([
+        expect($mismatch->successful())
+            ->toBeFalse($mismatch->output().$mismatch->errorOutput())
+            ->and(e2eJsonCommandError($mismatchPayload)['code'])
+            ->toBe('drift_detected')
+            ->and($mismatchIssue)
+            ->toMatchArray([
                 'family' => 'tool',
                 'node' => 'app-dev-1',
                 'key' => 'tool.config_mismatch',
@@ -90,11 +107,16 @@ it('repairs missing and mode-drifted managed tool configuration from gateway int
         $restoreMode = toolsDoctorFixRun($topology, 'tool.config_mismatch', restore: true);
         $restoreModeData = e2eJsonCommandData(e2eJsonCommandPayload($restoreMode->output()));
 
-        expect($restoreMode->successful())->toBeTrue($restoreMode->output().$restoreMode->errorOutput())
-            ->and($restoreModeData['doctor']['healthy'])->toBeTrue()
-            ->and($restoreModeData['doctor']['summary']['fixed'])->toBe(1)
-            ->and(toolsDoctorFixRemoteHash($topology, $configPath))->toBe($expectedHash)
-            ->and(toolsDoctorFixRemoteMode($topology, $configPath))->toBe('640');
+        expect($restoreMode->successful())
+            ->toBeTrue($restoreMode->output().$restoreMode->errorOutput())
+            ->and($restoreModeData['doctor']['healthy'])
+            ->toBeTrue()
+            ->and($restoreModeData['doctor']['summary']['fixed'])
+            ->toBe(1)
+            ->and(toolsDoctorFixRemoteHash($topology, $configPath))
+            ->toBe($expectedHash)
+            ->and(toolsDoctorFixRemoteMode($topology, $configPath))
+            ->toBe('640');
     } finally {
         $topology->ssh('dev', 'sudo rm -f '.escapeshellarg($configPath).' /usr/local/bin/opencode', timeoutSeconds: 60);
         $topology->cleanup();
@@ -124,31 +146,32 @@ function toolsDoctorFixSeedGatewayIntent(E2ETopologyHarness $topology, string $c
     $configModeValue = var_export('0640', true);
 
     $php = <<<PHP
-\$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\\App\\Models\\NodeTool::query()->updateOrCreate(
-    ['node_id' => \$node->id, 'name' => 'opencode-server'],
-    [
-        'expected_state' => 'installed',
-        'expected_version' => null,
-        'config' => [
-            'managed_config' => [
-                'path' => {$configPathValue},
-                'hash' => {$configHashValue},
-                'content' => {$configContentValue},
-                'mode' => {$configModeValue},
+        \\App\\Models\\NodeTool::query()->updateOrCreate(
+            ['node_id' => \$node->id, 'name' => 'opencode-server'],
+            [
+                'expected_state' => 'installed',
+                'expected_version' => null,
+                'config' => [
+                    'managed_config' => [
+                        'path' => {$configPathValue},
+                        'hash' => {$configHashValue},
+                        'content' => {$configContentValue},
+                        'mode' => {$configModeValue},
+                    ],
+                ],
+                'credentials' => null,
             ],
-        ],
-        'credentials' => null,
-    ],
-);
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 120,
     );
 
@@ -182,11 +205,11 @@ function toolsDoctorFixIssue(array $payload, string $code): array
 {
     $error = e2eJsonCommandError($payload);
     $data = $error !== []
-        ? ($error['data'] ?? [])
+        ? $error['data'] ?? []
         : e2eJsonCommandData($payload);
 
     $issues = is_array($data)
-        ? ($data['doctor']['issues'] ?? [])
+        ? $data['doctor']['issues'] ?? []
         : [];
     $issue = collect($issues)->firstWhere('code', $code);
 

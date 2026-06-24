@@ -30,7 +30,8 @@ class WorkspaceLogPayload
             'started_at' => $run->started_at?->toIso8601String(),
             'finished_at' => $run->completed_at?->toIso8601String(),
             'duration_ms' => $this->durationMs($run->started_at, $run->completed_at),
-            'steps' => $run->runSteps
+            'steps' => $run
+                ->runSteps
                 ->map(fn (WorkspaceRunStep $step): array => $this->stepPayload($step))
                 ->values()
                 ->all(),

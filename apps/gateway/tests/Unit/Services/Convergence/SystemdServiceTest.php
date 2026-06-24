@@ -27,7 +27,8 @@ it('plans ok when the remote systemd service already matches intent', function (
                 'exists' => true,
                 'hash' => hash('sha256', $content),
                 'enabled' => true,
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -37,15 +38,24 @@ it('plans ok when the remote systemd service already matches intent', function (
     $plan = $service->plan($probe);
     $result = $service->apply($node, $shell, $plan);
 
-    expect($probe->exists)->toBeTrue()
-        ->and($probe->enabled)->toBeTrue()
-        ->and($probe->hash)->toBe(hash('sha256', $content))
-        ->and($plan->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->changed())->toBeFalse()
-        ->and($shell->scripts[0])->toContain('sudo test -f "$path"')
-        ->and($shell->scripts[0])->toContain('sudo systemctl is-enabled "$service"')
-        ->and($shell->scripts)->toHaveCount(1);
+    expect($probe->exists)
+        ->toBeTrue()
+        ->and($probe->enabled)
+        ->toBeTrue()
+        ->and($probe->hash)
+        ->toBe(hash('sha256', $content))
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->changed())
+        ->toBeFalse()
+        ->and($shell->scripts[0])
+        ->toContain('sudo test -f "$path"')
+        ->and($shell->scripts[0])
+        ->toContain('sudo systemctl is-enabled "$service"')
+        ->and($shell->scripts)
+        ->toHaveCount(1);
 });
 
 it('applies a missing systemd service unit and enables it', function (): void {
@@ -62,7 +72,8 @@ it('applies a missing systemd service unit and enables it', function (): void {
                 'exists' => false,
                 'hash' => null,
                 'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -73,8 +84,10 @@ it('applies a missing systemd service unit and enables it', function (): void {
     $plan = $service->plan($probe);
     $result = $service->apply($node, $shell, $plan);
 
-    expect($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($plan->details)->toMatchArray([
+    expect($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($plan->details)
+        ->toMatchArray([
             'service' => 'opencode-server.service',
             'path' => '/etc/systemd/system/opencode-server.service',
             'expected_hash' => hash('sha256', $content),
@@ -82,15 +95,24 @@ it('applies a missing systemd service unit and enables it', function (): void {
             'observed_hash' => null,
             'observed_enabled' => false,
         ])
-        ->and($result->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->changed())->toBeTrue()
-        ->and($shell->scripts[1])->toContain('sudo install -d -m 0755 /etc/systemd/system')
-        ->and($shell->scripts[1])->toContain("sudo tee '/etc/systemd/system/opencode-server.service' >/dev/null")
-        ->and($shell->scripts[1])->toContain("sudo chmod 0644 '/etc/systemd/system/opencode-server.service'")
-        ->and($shell->scripts[1])->toContain('sudo systemctl daemon-reload')
-        ->and($shell->scripts[1])->toContain("sudo systemctl enable 'opencode-server.service' >/dev/null")
-        ->and($shell->scripts[1])->toContain(base64_encode($content))
-        ->and($shell->scripts[1])->not->toContain($content);
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and($shell->scripts[1])
+        ->toContain('sudo install -d -m 0755 /etc/systemd/system')
+        ->and($shell->scripts[1])
+        ->toContain("sudo tee '/etc/systemd/system/opencode-server.service' >/dev/null")
+        ->and($shell->scripts[1])
+        ->toContain("sudo chmod 0644 '/etc/systemd/system/opencode-server.service'")
+        ->and($shell->scripts[1])
+        ->toContain('sudo systemctl daemon-reload')
+        ->and($shell->scripts[1])
+        ->toContain("sudo systemctl enable 'opencode-server.service' >/dev/null")
+        ->and($shell->scripts[1])
+        ->toContain(base64_encode($content))
+        ->and($shell->scripts[1])
+        ->not->toContain($content);
 });
 
 it('plans a changed systemd service when it is disabled', function (): void {
@@ -107,7 +129,8 @@ it('plans a changed systemd service when it is disabled', function (): void {
                 'exists' => true,
                 'hash' => hash('sha256', $content),
                 'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -115,9 +138,12 @@ it('plans a changed systemd service when it is disabled', function (): void {
 
     $plan = $service->plan($service->probe($node, $shell));
 
-    expect($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($plan->summary)->toBe('Enable systemd service orbit_docs_main_queue.service.')
-        ->and($plan->details)->toMatchArray([
+    expect($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($plan->summary)
+        ->toBe('Enable systemd service orbit_docs_main_queue.service.')
+        ->and($plan->details)
+        ->toMatchArray([
             'service' => 'orbit_docs_main_queue.service',
             'observed_enabled' => false,
         ]);
@@ -136,10 +162,14 @@ it('reports unreachable when probing the systemd service cannot reach the node',
     $probe = $service->probe($node, $shell);
     $plan = $service->plan($probe);
 
-    expect($probe->reachable)->toBeFalse()
-        ->and($probe->error)->toBe('ssh: connection refused')
-        ->and($plan->status)->toBe(ConvergenceStatus::Unreachable)
-        ->and($plan->summary)->toBe('Could not inspect systemd service node-exporter.service.');
+    expect($probe->reachable)
+        ->toBeFalse()
+        ->and($probe->error)
+        ->toBe('ssh: connection refused')
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Unreachable)
+        ->and($plan->summary)
+        ->toBe('Could not inspect systemd service node-exporter.service.');
 });
 
 final class SystemdServiceRecordingShell implements RemoteShell
@@ -153,7 +183,9 @@ final class SystemdServiceRecordingShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

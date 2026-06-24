@@ -197,9 +197,9 @@ final class AppRuntimeMountController implements Loggable
             'runtime' => $app->runtimeKind()->value,
             'runtime_config' => $app->runtimeConfig()->toArray(),
             'php_version' => $app->php_version,
-            'worker_enabled' => (bool) $app->worker_enabled,
+            'worker_enabled' => $app->worker_enabled,
             'worker_config' => is_array($app->worker_config) ? $app->worker_config : null,
-            'adopted' => (bool) $app->adopted,
+            'adopted' => $app->adopted,
         ];
     }
 
@@ -279,10 +279,13 @@ final class AppRuntimeMountController implements Loggable
      */
     public function properties(): array
     {
-        return array_filter([
-            'action' => $this->currentAction,
-            'target' => $this->currentTarget,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'action' => $this->currentAction,
+                'target' => $this->currentTarget,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     /**

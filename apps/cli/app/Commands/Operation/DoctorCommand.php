@@ -134,7 +134,10 @@ final class DoctorCommand extends GatewayCommand
             return $this->streamProgress(
                 $path,
                 $payload,
-                fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+                fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame(
+                    $type,
+                    $payload,
+                ),
             );
         }
 
@@ -203,7 +206,12 @@ final class DoctorCommand extends GatewayCommand
             $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use ($frames, &$renderedDoctorFrame, &$finalType, &$finalPayload): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use (
+                    $frames,
+                    &$renderedDoctorFrame,
+                    &$finalType,
+                    &$finalPayload,
+                ): void {
                     if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
                         $finalType = $type;
                         $finalPayload = $eventPayload;
@@ -350,7 +358,9 @@ final class DoctorCommand extends GatewayCommand
             $this->line("{$name}  {$role}  {$healthy}  {$nodeIssues} issues");
         }
 
-        $this->line($issues === 0 ? 'No issues detected' : ($issues === 1 ? '1 issue detected' : "{$issues} issues detected"));
+        $this->line(
+            $issues === 0 ? 'No issues detected' : ($issues === 1 ? '1 issue detected' : "{$issues} issues detected"),
+        );
     }
 
     private function mode(): string|int
@@ -402,7 +412,11 @@ final class DoctorCommand extends GatewayCommand
         try {
             $selected = $selector->select(
                 probe: $probe,
-                ask: fn (string $question, array $choices, string $default): string => (string) $this->choice($question, $choices, $default),
+                ask: fn (string $question, array $choices, string $default): string => (string) $this->choice(
+                    $question,
+                    $choices,
+                    $default,
+                ),
                 write: function (string $line): void {
                     $this->line($line);
                 },
@@ -480,7 +494,12 @@ final class DoctorCommand extends GatewayCommand
             return $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use (&$streamStarted, $emitFrame, $idleWriter, $writeIdleLine): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use (
+                    &$streamStarted,
+                    $emitFrame,
+                    $idleWriter,
+                    $writeIdleLine,
+                ): void {
                     $streamStarted = true;
                     $idleWriter->stop();
 
@@ -493,7 +512,8 @@ final class DoctorCommand extends GatewayCommand
                             json_encode(
                                 $this->doctorStreamFrame(ProgressEventType::Step, $runningStepPayload),
                                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
-                            ).PHP_EOL,
+                            )
+                                .PHP_EOL,
                             $writeIdleLine,
                             max(1, (int) ceil(self::STREAM_JSON_IDLE_PROGRESS_INTERVAL_MICROSECONDS / 1_000_000)),
                         );
@@ -621,15 +641,13 @@ final class DoctorCommand extends GatewayCommand
     private function doctorStreamError(ProgressEventType $type, array $payload): array
     {
         $data = $this->doctorStreamTerminalData($payload);
-        $code = $this->stringFromPayload($data, 'code')
-            ?? $this->stringFromPayload($payload, 'code')
-            ?? 'gateway_stream_error';
-        $message = $this->stringFromPayload($data, 'message')
-            ?? $this->stringFromPayload($payload, 'message')
-            ?? 'Gateway progress stream failed.';
-        $meta = $this->arrayFromPayload($data, 'meta')
-            ?? $this->arrayFromPayload($payload, 'meta')
-            ?? [];
+        $code =
+            $this->stringFromPayload($data, 'code') ?? $this->stringFromPayload($payload, 'code')
+                ?? 'gateway_stream_error';
+        $message =
+            $this->stringFromPayload($data, 'message') ?? $this->stringFromPayload($payload, 'message')
+                ?? 'Gateway progress stream failed.';
+        $meta = $this->arrayFromPayload($data, 'meta') ?? $this->arrayFromPayload($payload, 'meta') ?? [];
 
         $envelope = JsonEnvelope::failure($code, $message, $meta);
         $error = $envelope['error'];
@@ -750,7 +768,8 @@ final class DoctorCommand extends GatewayCommand
 
         if (
             $this->stringOption('node') === null
-            && ($this->stringOption('app') !== null || $this->stringOption('workspace') !== null)
+            && ($this->stringOption('app') !== null
+            || $this->stringOption('workspace') !== null)
         ) {
             return null;
         }

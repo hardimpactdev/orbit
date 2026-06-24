@@ -48,12 +48,18 @@ it('executes setup steps sequentially on the host by default', function (): void
 
     $result = $runner->run($run, $steps, '/app/path', ['ORBIT_APP' => 'demo'], $node);
 
-    expect($result)->toBeTrue()
-        ->and($shell->runs)->toHaveCount(2)
-        ->and($shell->runs[0]['script'])->toBe('echo first')
-        ->and($shell->runs[0]['options']['cwd'])->toBe('/app/path')
-        ->and($shell->runs[1]['script'])->toBe('echo second')
-        ->and($shell->runs[1]['options']['cwd'])->toBe('/app/path');
+    expect($result)
+        ->toBeTrue()
+        ->and($shell->runs)
+        ->toHaveCount(2)
+        ->and($shell->runs[0]['script'])
+        ->toBe('echo first')
+        ->and($shell->runs[0]['options']['cwd'])
+        ->toBe('/app/path')
+        ->and($shell->runs[1]['script'])
+        ->toBe('echo second')
+        ->and($shell->runs[1]['options']['cwd'])
+        ->toBe('/app/path');
 
     $run->refresh();
     expect($run->status)->toBe('completed');
@@ -159,15 +165,17 @@ it('fails fast on first non-zero exit and records the failed step', function ():
 
     $result = $runner->run($run, $steps, '/app/path', [], $node);
 
-    expect($result)->toBeFalse()
-        ->and($shell->runs)->toHaveCount(1);
+    expect($result)->toBeFalse()->and($shell->runs)->toHaveCount(1);
 
     $run->refresh();
     expect($run->status)->toBe('failed');
 
     $failedStep = $run->runSteps()->first();
-    expect($failedStep)->not->toBeNull()
-        ->and($failedStep->exit_code)->toBe(1);
+    expect($failedStep)
+        ->not
+        ->toBeNull()
+        ->and($failedStep->exit_code)
+        ->toBe(1);
 });
 
 it('reports progress events for each step', function (): void {
@@ -186,12 +194,17 @@ it('reports progress events for each step', function (): void {
     ];
 
     $events = [];
-    $runner->run($run, $steps, '/app/path', [], $node, null, function (string $event, WorkspaceStep $step, int $index, int $count) use (&$events): void {
+    $runner->run($run, $steps, '/app/path', [], $node, null, function (
+        string $event,
+        WorkspaceStep $step,
+        int $index,
+        int $count,
+    ) use (&$events): void {
         $events[] = [$event, $step->command, $index, $count];
     });
 
     expect($events)->toBe([
-        ['running', 'echo first', 1, 1],
+        ['running',   'echo first', 1, 1],
         ['completed', 'echo first', 1, 1],
     ]);
 });
@@ -212,13 +225,18 @@ it('reports failed progress event when a step fails', function (): void {
     ];
 
     $events = [];
-    $runner->run($run, $steps, '/app/path', [], $node, null, function (string $event, WorkspaceStep $step, int $index, int $count) use (&$events): void {
+    $runner->run($run, $steps, '/app/path', [], $node, null, function (
+        string $event,
+        WorkspaceStep $step,
+        int $index,
+        int $count,
+    ) use (&$events): void {
         $events[] = [$event, $step->command, $index, $count];
     });
 
     expect($events)->toBe([
         ['running', 'exit 1', 1, 1],
-        ['failed', 'exit 1', 1, 1],
+        ['failed',  'exit 1', 1, 1],
     ]);
 });
 
@@ -242,7 +260,9 @@ final class WorkspaceSetupStepRunnerFailingShell implements RemoteShell
     /** @var list<array{script: string, options: array<string, mixed>}> */
     public array $runs = [];
 
-    public function __construct(private int $failAfter) {}
+    public function __construct(
+        private int $failAfter,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

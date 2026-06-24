@@ -134,45 +134,45 @@ function withBinaryFakeGatewayVerificationServer(callable $callback): mixed
 
     $routerPath = "{$directory}/router.php";
     file_put_contents($routerPath, <<<'PHP'
-<?php
+        <?php
 
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
-$payload = json_decode(file_get_contents('php://input') ?: '{}', true);
+        $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+        $payload = json_decode(file_get_contents('php://input') ?: '{}', true);
 
-http_response_code(200);
-header('Content-Type: application/json');
+        http_response_code(200);
+        header('Content-Type: application/json');
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST'
-    || $path !== '/api/internal-executor/token/verify'
-    || ! is_array($payload)
-    || ($payload['command'] ?? null) !== 'internal:database-query-local'
-) {
-    http_response_code(404);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST'
+            || $path !== '/api/internal-executor/token/verify'
+            || ! is_array($payload)
+            || ($payload['command'] ?? null) !== 'internal:database-query-local'
+        ) {
+            http_response_code(404);
 
-    echo json_encode([
-        'error' => [
-            'code' => 'unexpected_gateway_request',
-            'message' => 'Unexpected gateway verification request.',
-            'details' => [
-                'method' => $_SERVER['REQUEST_METHOD'] ?? null,
-                'path' => $path,
-                'payload' => $payload,
+            echo json_encode([
+                'error' => [
+                    'code' => 'unexpected_gateway_request',
+                    'message' => 'Unexpected gateway verification request.',
+                    'details' => [
+                        'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+                        'path' => $path,
+                        'payload' => $payload,
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR);
+
+            return;
+        }
+
+        echo json_encode([
+            'success' => [
+                'data' => [
+                    'allowed' => true,
+                ],
+                'meta' => [],
             ],
-        ],
-    ], JSON_THROW_ON_ERROR);
-
-    return;
-}
-
-echo json_encode([
-    'success' => [
-        'data' => [
-            'allowed' => true,
-        ],
-        'meta' => [],
-    ],
-], JSON_THROW_ON_ERROR);
-PHP);
+        ], JSON_THROW_ON_ERROR);
+        PHP);
 
     $server = null;
 
@@ -256,7 +256,8 @@ function waitForBinaryFakeGatewayServer(SymfonyProcess $server, string $gatewayU
     while (microtime(true) < $timeoutAt) {
         if (! $server->isRunning()) {
             throw new RuntimeException(
-                "Fake gateway verification server exited before becoming reachable.\n\n".binaryFakeGatewayServerOutput($server),
+                "Fake gateway verification server exited before becoming reachable.\n\n"
+                    .binaryFakeGatewayServerOutput($server),
             );
         }
 
@@ -270,7 +271,8 @@ function waitForBinaryFakeGatewayServer(SymfonyProcess $server, string $gatewayU
     }
 
     throw new RuntimeException(
-        "Timed out waiting for fake gateway verification server at {$gatewayUrl}.\n\n".binaryFakeGatewayServerOutput($server),
+        "Timed out waiting for fake gateway verification server at {$gatewayUrl}.\n\n"
+            .binaryFakeGatewayServerOutput($server),
     );
 }
 
@@ -286,8 +288,10 @@ it('binary exists and is executable', function (): void {
 
     $path = orbitBinaryPath();
 
-    expect($path)->toBeFile()
-        ->and(is_executable($path))->toBeTrue('Binary at '.$path.' is not executable');
+    expect($path)
+        ->toBeFile()
+        ->and(is_executable($path))
+        ->toBeTrue('Binary at '.$path.' is not executable');
 });
 
 it('keeps the native binary artifact path separate from the source CLI entrypoint', function (): void {
@@ -296,8 +300,7 @@ it('keeps the native binary artifact path separate from the source CLI entrypoin
     try {
         expect(OrbitCliBinaryBundle::bundledBinaryPath($bundleDir))
             ->toContain('orbit-binary')
-            ->not->toContain('apps/cli/orbit')
-            ->and(orbitBinaryPath())
+            ->not->toContain('apps/cli/orbit')->and(orbitBinaryPath())
             ->not->toContain('apps/cli/orbit');
     } finally {
         remove_directory($bundleDir);
@@ -335,19 +338,26 @@ it('stages the linux binary into the bundled binary path', function (): void {
     Process::preventStrayProcesses();
 
     try {
-        (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
+        new OrbitCliBinaryBundle()->buildLinuxBinaryInto($bundleDir);
 
         $bundleBinary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
         $sourceHash = hash_file('sha256', $binarySource);
 
         expect($bundleBinary)
             ->toBeFile()
-            ->not->toContain('apps/cli/orbit')
-            ->and(hash_file('sha256', $bundleBinary))->toBe($sourceHash)
-            ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))->toBe('755');
+            ->not
+            ->toContain('apps/cli/orbit')
+            ->and(hash_file('sha256', $bundleBinary))
+            ->toBe($sourceHash)
+            ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))
+            ->toBe('755');
 
-        Process::assertRan(fn ($process): bool => $process->path === repo_path()
-            && $process->command === 'bin/orbit-build-cli-binary linux x64 "$(bin/orbit-version)"');
+        Process::assertRan(
+            fn ($process): bool => (
+                $process->path === repo_path()
+                && $process->command === 'bin/orbit-build-cli-binary linux x64 "$(bin/orbit-version)"'
+            ),
+        );
     } finally {
         remove_directory($bundleDir);
 
@@ -375,14 +385,16 @@ it('reuses a cached linux binary for matching fingerprints', function (): void {
     Process::preventStrayProcesses();
 
     try {
-        (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir, $fingerprint);
+        new OrbitCliBinaryBundle()->buildLinuxBinaryInto($bundleDir, $fingerprint);
 
         $bundleBinary = OrbitCliBinaryBundle::bundledBinaryPath($bundleDir);
 
         expect($bundleBinary)
             ->toBeFile()
-            ->and(file_get_contents($bundleBinary))->toBe('cached-linux-binary')
-            ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))->toBe('755');
+            ->and(file_get_contents($bundleBinary))
+            ->toBe('cached-linux-binary')
+            ->and(substr(sprintf('%o', fileperms($bundleBinary)), -3))
+            ->toBe('755');
 
         Process::assertNothingRan();
     } finally {
@@ -407,7 +419,8 @@ it('--version prints the expected version', function (): void {
 
         // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
         // second argument; it would be interpreted as a second needle and fail.
-        expect($result['exit_code'])->toBe(0, 'Binary --version exited with '.$result['exit_code'].': '.$result['stderr']);
+        expect($result['exit_code'])
+            ->toBe(0, 'Binary --version exited with '.$result['exit_code'].': '.$result['stderr']);
         expect($result['stdout'])->toContain($version);
     } finally {
         remove_directory($sandboxHome);
@@ -422,11 +435,16 @@ it('list exits 0 and shows command groups', function (): void {
     try {
         $result = runOrbitBinary(['list'], env: ['HOME' => $sandboxHome]);
 
-        expect($result['exit_code'])->toBe(0, 'Binary list exited with '.$result['exit_code'].': '.$result['stderr'])
-            ->and($result['stdout'])->toContain('dns:')
-            ->and($result['stdout'])->toContain('gateway:')
-            ->and($result['stdout'])->toContain('node:')
-            ->and($result['stdout'])->toContain('app:');
+        expect($result['exit_code'])
+            ->toBe(0, 'Binary list exited with '.$result['exit_code'].': '.$result['stderr'])
+            ->and($result['stdout'])
+            ->toContain('dns:')
+            ->and($result['stdout'])
+            ->toContain('gateway:')
+            ->and($result['stdout'])
+            ->toContain('node:')
+            ->and($result['stdout'])
+            ->toContain('app:');
     } finally {
         remove_directory($sandboxHome);
     }
@@ -445,10 +463,11 @@ it('gateway command --help loads without missing-extension errors', function ():
 
         $combined = $result['stdout'].$result['stderr'];
 
-        expect($result['exit_code'])->toBe(0, 'gateway:status --help exited '.$result['exit_code'].': '.$combined)
-            ->and($combined)->not->toContain('extension')
-            ->and($combined)->not->toContain('Class not found')
-            ->and($result['stdout'])->toContain('gateway:status');
+        expect($result['exit_code'])
+            ->toBe(0, 'gateway:status --help exited '.$result['exit_code'].': '.$combined)
+            ->and($combined)
+            ->not->toContain('extension')->and($combined)
+            ->not->toContain('Class not found')->and($result['stdout'])->toContain('gateway:status');
     } finally {
         remove_directory($sandboxHome);
     }
@@ -482,13 +501,17 @@ it('pdo_sqlite: internal:database-query-local executes SELECT 1 on a temp SQLite
             ),
         );
 
-        expect($result['exit_code'])->toBe(0, 'database-query-local exited '.$result['exit_code'].': '.$result['stdout'].$result['stderr']);
+        expect($result['exit_code'])
+            ->toBe(0, 'database-query-local exited '.$result['exit_code'].': '.$result['stdout'].$result['stderr']);
 
         $json = json_decode($result['stdout'], associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($json)->toHaveKey('success')
-            ->and($json['success']['data']['columns'])->toBe(['val'])
-            ->and($json['success']['data']['rows'])->toBe([['val' => 1]]);
+        expect($json)
+            ->toHaveKey('success')
+            ->and($json['success']['data']['columns'])
+            ->toBe(['val'])
+            ->and($json['success']['data']['rows'])
+            ->toBe([['val' => 1]]);
     } finally {
         remove_directory($sandboxHome);
     }
@@ -516,8 +539,9 @@ it('proc_open: dns:resolve-tld produces valid JSON output (proc_open is unrestri
 
         $stdout = trim($result['stdout']);
 
-        expect($stdout)->not->toBeEmpty('Binary produced no output — proc_open may be disabled')
-            ->and(json_decode($stdout, true))->not->toBeNull('Binary output is not valid JSON — proc_open may be disabled or produced a fatal error');
+        expect($stdout)
+            ->not->toBeEmpty('Binary produced no output — proc_open may be disabled')->and(json_decode($stdout, true))
+            ->not->toBeNull('Binary output is not valid JSON — proc_open may be disabled or produced a fatal error');
     } finally {
         // Clean up /etc/resolver/<tld> if the command wrote it (dnsmasq installed + sudo worked).
         if (file_exists('/etc/resolver/'.$tld)) {
@@ -551,7 +575,8 @@ it('LocalResolver reads config from $HOME/.config/orbit/dnsmasq.d not from phar:
             env: ['HOME' => $sandboxHome],
         );
 
-        expect($result['exit_code'])->toBe(0, 'dns:list --json exited '.$result['exit_code'].': '.$result['stdout'].$result['stderr']);
+        expect($result['exit_code'])
+            ->toBe(0, 'dns:list --json exited '.$result['exit_code'].': '.$result['stdout'].$result['stderr']);
 
         $json = json_decode(trim($result['stdout']), associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -559,10 +584,15 @@ it('LocalResolver reads config from $HOME/.config/orbit/dnsmasq.d not from phar:
 
         $dns = $json['success']['data']['dns'] ?? [];
 
-        expect($dns)->not->toBeEmpty('dns:list returned no overrides — resolver is not reading from the sandbox HOME')
-            ->and($dns[0]['tld'])->toBe($tld)
-            ->and($dns[0]['target'])->toBe($target)
-            ->and($dns[0]['resolver_backend'])->toBe('dnsmasq');
+        expect($dns)
+            ->not
+            ->toBeEmpty('dns:list returned no overrides — resolver is not reading from the sandbox HOME')
+            ->and($dns[0]['tld'])
+            ->toBe($tld)
+            ->and($dns[0]['target'])
+            ->toBe($target)
+            ->and($dns[0]['resolver_backend'])
+            ->toBe('dnsmasq');
     } finally {
         remove_directory($sandboxHome);
     }

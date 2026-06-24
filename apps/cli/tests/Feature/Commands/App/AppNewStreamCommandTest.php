@@ -14,8 +14,12 @@ describe('AppNewStream command', function (): void {
 
         fakeGatewayProgressStream(
             gatewayProgressFrame('tree', ['title' => 'Creating App'])
-            .gatewayProgressFrame('step', ['key' => 'source', 'status' => 'running', 'message' => 'Creating source'])
-            .gatewayProgressFrame('complete', $complete),
+                .gatewayProgressFrame('step', [
+                    'key' => 'source',
+                    'status' => 'running',
+                    'message' => 'Creating source',
+                ])
+                .gatewayProgressFrame('complete', $complete),
         );
 
         [$exitCode, $output] = runCommand($this, 'app:new', [
@@ -26,16 +30,21 @@ describe('AppNewStream command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
             && $request->url() === 'https://gateway.test/api/apps'
-            && $request->hasHeader('Accept', 'text/event-stream'));
+            && $request->hasHeader('Accept', 'text/event-stream'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe([
                 'event' => 'complete',
                 'data' => $complete,
             ])
-            ->and($output)->not->toContain('Creating source');
+            ->and($output)
+            ->not->toContain('Creating source');
     });
 
     it('preserves AppNewStream gateway errors before a stream starts', function (): void {
@@ -51,8 +60,11 @@ describe('AppNewStream command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('app:new');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('app:new');
     });
 });

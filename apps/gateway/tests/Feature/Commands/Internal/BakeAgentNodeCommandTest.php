@@ -14,8 +14,7 @@ uses(RefreshDatabase::class);
 
 describe('orbit:internal:bake-agent-node', function (): void {
     beforeEach(function (): void {
-        $this->hostKeyPinner = new class
-        {
+        $this->hostKeyPinner = new class {
             /** @var list<array{host: string, expected: ?string}> */
             public array $calls = [];
 
@@ -52,18 +51,24 @@ describe('orbit:internal:bake-agent-node', function (): void {
             ->where('role', NodeRoleName::Agent->value)
             ->first();
 
-        expect($node->host)->toBe('10.6.0.6')
-            ->and($node->wireguard_address)->toBe('10.6.0.6')
-            ->and($node->host_key_type)->toBe('ssh-ed25519')
-            ->and($node->host_key_public)->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeAgentNodeHostKey')
-            ->and($node->host_key_fingerprint)->toBe('SHA256:bake-agent-node-host-key')
-            ->and($node->host_key_pin_mode)->toBe('tofu')
-            ->and($node->host_key_pinned_at)->not->toBeNull()
-            ->and($this->hostKeyPinner->calls)->toBe([
+        expect($node->host)
+            ->toBe('10.6.0.6')
+            ->and($node->wireguard_address)
+            ->toBe('10.6.0.6')
+            ->and($node->host_key_type)
+            ->toBe('ssh-ed25519')
+            ->and($node->host_key_public)
+            ->toBe('AAAAC3NzaC1lZDI1NTE5AAAAIBakeAgentNodeHostKey')
+            ->and($node->host_key_fingerprint)
+            ->toBe('SHA256:bake-agent-node-host-key')
+            ->and($node->host_key_pin_mode)
+            ->toBe('tofu')
+            ->and($node->host_key_pinned_at)
+            ->not->toBeNull()->and($this->hostKeyPinner->calls)->toBe([
                 ['host' => '10.6.0.6', 'expected' => null],
-            ])
-            ->and($assignment)->not->toBeNull()
-            ->and($assignment?->status)->toBe(NodeRoleStatus::Active)
-            ->and($assignment?->settings)->toBe(['tld' => 'agent']);
+            ])->and($assignment)
+            ->not->toBeNull()->and($assignment?->status)->toBe(NodeRoleStatus::Active)->and($assignment?->settings)->toBe([
+                'tld' => 'agent',
+            ]);
     });
 });

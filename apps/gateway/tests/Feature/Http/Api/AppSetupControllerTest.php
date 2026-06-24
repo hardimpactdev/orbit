@@ -57,10 +57,12 @@ function grantAppSetupAccess(Node $caller, Node $appNode, array $permissions): v
 
 function createAppSetupTarget(): array
 {
-    $node = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-        'user' => 'orbit',
-    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+            'user' => 'orbit',
+        ]);
     $app = App::factory()->create([
         'name' => 'docs',
         'node_id' => $node->id,
@@ -83,18 +85,28 @@ describe('AppSetupController', function (): void {
         $shell = new AppSetupControllerTestShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/apps/docs/setup', [], [], [], [
-            'REMOTE_ADDR' => APP_SETUP_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SETUP_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app', 'docs')
             ->assertJsonPath('success.data.setup_steps.status', 'completed')
             ->assertJsonPath('success.data.setup_steps.count', 1);
 
-        expect($shell->runs)->toHaveCount(1)
-            ->and(AppSetupRun::query()->where('app_id', $app->id)->where('status', 'completed')->exists())->toBeTrue();
+        expect($shell->runs)
+            ->toHaveCount(1)
+            ->and(AppSetupRun::query()->where('app_id', $app->id)->where('status', 'completed')->exists())
+            ->toBeTrue();
     });
 
     it('rejects callers without app write permission', function (): void {
@@ -102,12 +114,20 @@ describe('AppSetupController', function (): void {
         $caller = createAppSetupCallerNode();
         grantAppSetupAccess($caller, $node, ['app:read']);
 
-        $response = $this->call('POST', '/api/apps/docs/setup', [], [], [], [
-            'REMOTE_ADDR' => APP_SETUP_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/docs/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => APP_SETUP_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:write');
     });

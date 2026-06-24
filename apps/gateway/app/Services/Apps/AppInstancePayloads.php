@@ -57,7 +57,7 @@ final readonly class AppInstancePayloads
 
         try {
             if ($runtime === AppRuntimeKind::Php) {
-                $image = $this->phpRuntimeCatalog->imageFor((string) $app->php_version);
+                $image = $this->phpRuntimeCatalog->imageFor($app->php_version);
             }
         } catch (InvalidArgumentException) {
             $image = null;
@@ -69,11 +69,12 @@ final readonly class AppInstancePayloads
             'php_version' => $app->php_version,
             'frankenphp_image' => $image,
             'mode' => $app->worker_enabled ? 'worker' : 'classic',
-            'configured_mounts' => $app->runtimeMounts
+            'configured_mounts' => $app
+                ->runtimeMounts
                 ->map(fn (AppRuntimeMount $mount): array => [
                     'source' => $mount->source,
                     'target' => $mount->target,
-                    'read_only' => (bool) $mount->read_only,
+                    'read_only' => $mount->read_only,
                 ])
                 ->values()
                 ->all(),

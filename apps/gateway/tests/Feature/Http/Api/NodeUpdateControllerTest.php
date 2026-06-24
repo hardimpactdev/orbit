@@ -140,12 +140,17 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'host' => '10.6.0.8',
-            'public_ipv4' => '203.0.113.10',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'host' => '10.6.0.8',
+                'public_ipv4' => '203.0.113.10',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -158,13 +163,11 @@ describe('NodeUpdateController', function (): void {
 
         $node = DB::table('nodes')->where('name', 'app-1')->first();
 
-        expect($node->host)->toBe('10.6.0.8')
-            ->and($node->public_ipv4)->toBe('203.0.113.10');
+        expect($node->host)->toBe('10.6.0.8')->and($node->public_ipv4)->toBe('203.0.113.10');
     });
 
     it('updates gateway endpoint metadata and re-enacts node artifacts', function (): void {
-        $reenactor = new class extends ReenactNodeArtifacts
-        {
+        $reenactor = new class extends ReenactNodeArtifacts {
             public ?string $nodeName = null;
 
             /** @var list<string> */
@@ -186,16 +189,23 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode(['gateway_endpoint' => '188.245.156.201']);
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'gateway_endpoint' => '10.3.0.2',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'gateway_endpoint' => '10.3.0.2',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['gateway_endpoint']);
 
-        expect(DB::table('nodes')->where('name', 'app-1')->value('gateway_endpoint'))->toBe('10.3.0.2')
-            ->and($reenactor->nodeName)->toBe('app-1')
-            ->and($reenactor->changed)->toBe(['gateway_endpoint']);
+        expect(DB::table('nodes')->where('name', 'app-1')->value('gateway_endpoint'))
+            ->toBe('10.3.0.2')
+            ->and($reenactor->nodeName)
+            ->toBe('app-1')
+            ->and($reenactor->changed)
+            ->toBe(['gateway_endpoint']);
     });
 
     it('updates the ssh user for a workload node', function (): void {
@@ -204,9 +214,13 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode(['user' => 'orbit']);
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'user' => 'nckrtl',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'user' => 'nckrtl',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['user']);
@@ -225,9 +239,13 @@ describe('NodeUpdateController', function (): void {
             'user' => 'orbit',
         ]));
 
-        $response = putUpdateNodeJson('/api/nodes/beast', [
-            'user' => 'nckrtl',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/beast',
+            [
+                'user' => 'nckrtl',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['user']);
@@ -241,10 +259,14 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         $targetId = createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'host' => '10.6.0.8',
-            'public_ipv4' => '203.0.113.10',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'host' => '10.6.0.8',
+                'public_ipv4' => '203.0.113.10',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 
@@ -264,9 +286,13 @@ describe('NodeUpdateController', function (): void {
         createUpdateCallerNode('gateway-caller', 'gateway');
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'host' => '10.6.0.8',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'host' => '10.6.0.8',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['host']);
@@ -276,11 +302,16 @@ describe('NodeUpdateController', function (): void {
         createUpdateCallerNode();
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'host' => '10.6.0.8',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'host' => '10.6.0.8',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:update')
@@ -295,17 +326,20 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'host' => '10.6.0.7',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'host' => '10.6.0.7',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', []);
     });
 
     it('returns success warnings when artifact re-enactment fails after intent update', function (): void {
-        app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts
-        {
+        app()->instance(ReenactNodeArtifacts::class, new class extends ReenactNodeArtifacts {
             public function handle(Node $node, array $changed): array
             {
                 throw new RuntimeException('artifact failed');
@@ -317,11 +351,16 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', [
-            'host' => '10.6.0.8',
-        ], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            [
+                'host' => '10.6.0.8',
+            ],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.changed', ['host'])
             ->assertJsonPath('success.meta.warnings.0.code', 'node.artifact_enactment_failed')
             ->assertJsonPath('success.meta.warnings.0.family', 'node')
@@ -335,7 +374,8 @@ describe('NodeUpdateController', function (): void {
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8']);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.')
             ->assertJsonPath('error.meta', []);
@@ -346,7 +386,11 @@ describe('NodeUpdateController', function (): void {
         $targetId = createApiUpdateNode();
         grantUpdateNodeAccess($callerId, $targetId, ['node:update']);
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['host']);
@@ -358,9 +402,14 @@ describe('NodeUpdateController', function (): void {
         createUpdateCallerNode('database-caller', 'database');
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:update')
@@ -376,7 +425,11 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['host']);
@@ -389,9 +442,14 @@ describe('NodeUpdateController', function (): void {
         createUpdateGatewayNode();
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:update')
@@ -409,9 +467,14 @@ describe('NodeUpdateController', function (): void {
         createUpdateGatewayNode();
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:update')
@@ -428,7 +491,8 @@ describe('NodeUpdateController', function (): void {
 
         $response = putUpdateNodeJson('/api/nodes/app-1', [], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'At least one field must be provided to update a node.')
             ->assertJsonPath('error.meta.field', 'fields');
@@ -440,9 +504,14 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['environment' => 'staging'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['environment' => 'staging'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', "Field 'environment' is not supported for node:update.")
             ->assertJsonPath('error.meta.field', 'environment');
@@ -454,11 +523,19 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode(['gateway_endpoint' => '188.245.156.201']);
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['gateway_endpoint' => 'not a host'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['gateway_endpoint' => 'not a host'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
-            ->assertJsonPath('error.message', "Invalid value for --gateway-endpoint: 'not a host'. Gateway endpoint must be a valid IP address or dotted DNS name.")
+            ->assertJsonPath(
+                'error.message',
+                "Invalid value for --gateway-endpoint: 'not a host'. Gateway endpoint must be a valid IP address or dotted DNS name.",
+            )
             ->assertJsonPath('error.meta.field', 'gateway_endpoint')
             ->assertJsonPath('error.meta.value', 'not a host');
 
@@ -476,9 +553,14 @@ describe('NodeUpdateController', function (): void {
             'gateway_endpoint' => null,
         ]));
 
-        $response = putUpdateNodeJson('/api/nodes/operator-target', ['gateway_endpoint' => '10.3.0.2'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/operator-target',
+            ['gateway_endpoint' => '10.3.0.2'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.field_role_incompatible')
             ->assertJsonPath('error.meta.field', 'gateway_endpoint')
             ->assertJsonPath('error.meta.name', 'operator-target')
@@ -490,7 +572,11 @@ describe('NodeUpdateController', function (): void {
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
 
-        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['tld' => 'orbital'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/gateway-1',
+            ['tld' => 'orbital'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.changed', ['tld']);
@@ -503,9 +589,14 @@ describe('NodeUpdateController', function (): void {
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
 
-        $response = putUpdateNodeJson('/api/nodes/gateway-1', ['user' => 'nckrtl'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/gateway-1',
+            ['user' => 'nckrtl'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.field_role_incompatible')
             ->assertJsonPath('error.meta.field', 'user')
             ->assertJsonPath('error.meta.name', 'gateway-1')
@@ -519,9 +610,14 @@ describe('NodeUpdateController', function (): void {
         $gatewayId = createUpdateGatewayNode();
         grantUpdateGatewayAccess($callerId, $gatewayId);
 
-        $response = putUpdateNodeJson('/api/nodes/missing-node', ['host' => '10.6.0.8'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/missing-node',
+            ['host' => '10.6.0.8'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'node.not_found')
             ->assertJsonPath('error.message', "Node 'missing-node' not found.")
             ->assertJsonPath('error.meta.name', 'missing-node');
@@ -561,9 +657,14 @@ describe('NodeUpdateController', function (): void {
         grantUpdateGatewayAccess($callerId, $gatewayId);
         createApiUpdateNode();
 
-        $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'Invalid_TLD!'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
+        $response = putUpdateNodeJson(
+            '/api/nodes/app-1',
+            ['tld' => 'Invalid_TLD!'],
+            ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'tld')
             ->assertJsonPath('error.meta.value', 'Invalid_TLD!');
@@ -611,7 +712,8 @@ describe('NodeUpdateController', function (): void {
 
         $response = putUpdateNodeJson('/api/nodes/app-1', ['tld' => 'test'], ['REMOTE_ADDR' => UPDATE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.tld_in_use')
             ->assertJsonPath('error.meta.field', 'tld')
             ->assertJsonPath('error.meta.value', 'test');

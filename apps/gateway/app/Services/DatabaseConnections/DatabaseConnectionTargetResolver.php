@@ -53,7 +53,8 @@ final class DatabaseConnectionTargetResolver
             return null;
         }
 
-        return $app->instances()
+        return $app
+            ->instances()
             ->where('name', trim($selector))
             ->first();
     }

@@ -97,7 +97,7 @@ final readonly class SpinnerTreeRenderer
 
     public function updateLineSequence(int $index, int $total, string $content): string
     {
-        $up = 2 * ($total - $index) + 1;
+        $up = (2 * ($total - $index)) + 1;
 
         return "\e[{$up}A\e[2K\r{$content}\e[{$up}B\r";
     }

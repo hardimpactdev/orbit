@@ -27,8 +27,11 @@ trait PromptsForRegistryEntities
     /**
      * @throws PromptAborted
      */
-    protected function promptForVisibleApp(string $label = 'Select an app', ?string $node = null, ?string $environment = null): string|GatewayApiException
-    {
+    protected function promptForVisibleApp(
+        string $label = 'Select an app',
+        ?string $node = null,
+        ?string $environment = null,
+    ): string|GatewayApiException {
         $apps = $this->visibleAppPromptPayloads($node, $environment);
 
         if ($apps instanceof GatewayApiException) {
@@ -82,8 +85,11 @@ trait PromptsForRegistryEntities
      *
      * @throws PromptAborted
      */
-    protected function promptForVisibleWorkspace(string $label = 'Select a workspace', ?string $app = null, ?string $node = null): array|GatewayApiException
-    {
+    protected function promptForVisibleWorkspace(
+        string $label = 'Select a workspace',
+        ?string $app = null,
+        ?string $node = null,
+    ): array|GatewayApiException {
         $workspaces = $this->visibleWorkspacePromptPayloads($app, $node);
 
         if ($workspaces instanceof GatewayApiException) {
@@ -104,8 +110,11 @@ trait PromptsForRegistryEntities
      *
      * @throws PromptAborted
      */
-    protected function promptForVisibleSchedule(string $label = 'Select a schedule', ?string $app = null, ?string $node = null): array|GatewayApiException
-    {
+    protected function promptForVisibleSchedule(
+        string $label = 'Select a schedule',
+        ?string $app = null,
+        ?string $node = null,
+    ): array|GatewayApiException {
         $schedules = $this->visibleSchedulePromptPayloads($app, $node);
 
         if ($schedules instanceof GatewayApiException) {
@@ -149,11 +158,17 @@ trait PromptsForRegistryEntities
     /**
      * @return list<array<string, mixed>>|GatewayApiException
      */
-    protected function visibleAppPromptPayloads(?string $node = null, ?string $environment = null): array|GatewayApiException
-    {
+    protected function visibleAppPromptPayloads(
+        ?string $node = null,
+        ?string $environment = null,
+    ): array|GatewayApiException {
         return App::query()
             ->with('node')
-            ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when($node
+            !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where(
+                'name',
+                $node,
+            )))
             ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
             ->orderBy('name')
             ->get()
@@ -165,8 +180,11 @@ trait PromptsForRegistryEntities
     /**
      * @return list<array<string, mixed>>|GatewayApiException
      */
-    protected function visibleNodePromptPayloads(?string $role = null, ?string $environment = null, bool $activeOnly = true): array|GatewayApiException
-    {
+    protected function visibleNodePromptPayloads(
+        ?string $role = null,
+        ?string $environment = null,
+        bool $activeOnly = true,
+    ): array|GatewayApiException {
         $query = Node::query()
             ->with('roleAssignments')
             ->when($activeOnly, fn (Builder $query): Builder => $query->where('status', NodeStatus::Active->value))
@@ -174,8 +192,11 @@ trait PromptsForRegistryEntities
 
         $this->applyNodePromptRoleFilter($query, $role, $environment);
 
-        return $query->get()
-            ->sortBy(fn (Node $node): string => $this->nodePromptRolesLabel($this->nodePromptPayload($node)).' '.$node->name)
+        return $query
+            ->get()
+            ->sortBy(
+                fn (Node $node): string => $this->nodePromptRolesLabel($this->nodePromptPayload($node)).' '.$node->name,
+            )
             ->map(fn (Node $node): array => $this->nodePromptPayload($node))
             ->values()
             ->all();
@@ -184,22 +205,36 @@ trait PromptsForRegistryEntities
     /**
      * @return list<array<string, mixed>>|GatewayApiException
      */
-    protected function visibleWorkspacePromptPayloads(?string $app = null, ?string $node = null): array|GatewayApiException
-    {
+    protected function visibleWorkspacePromptPayloads(
+        ?string $app = null,
+        ?string $node = null,
+    ): array|GatewayApiException {
         return Workspace::query()
             ->with('app.node')
-            ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-            ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when($app
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
+                'name',
+                $app,
+            )))
+            ->when($node
+            !== null, fn (Builder $query): Builder => $query->whereHas('app.node', fn (Builder $query): Builder => $query->where(
+                'name',
+                $node,
+            )))
             ->get()
-            ->sort(fn (Workspace $first, Workspace $second): int => [
-                mb_strtolower((string) $first->app?->node?->name),
-                mb_strtolower((string) $first->app?->name),
-                mb_strtolower($first->name),
-            ] <=> [
-                mb_strtolower((string) $second->app?->node?->name),
-                mb_strtolower((string) $second->app?->name),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (Workspace $first, Workspace $second): int => (
+                    [
+                        mb_strtolower((string) $first->app?->node?->name),
+                        mb_strtolower((string) $first->app?->name),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        mb_strtolower((string) $second->app?->node?->name),
+                        mb_strtolower((string) $second->app?->name),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->map(fn (Workspace $workspace): array => $this->workspacePromptPayload($workspace))
             ->values()
             ->all();
@@ -208,12 +243,20 @@ trait PromptsForRegistryEntities
     /**
      * @return list<array<string, mixed>>|GatewayApiException
      */
-    protected function visibleSchedulePromptPayloads(?string $app = null, ?string $node = null): array|GatewayApiException
-    {
+    protected function visibleSchedulePromptPayloads(
+        ?string $app = null,
+        ?string $node = null,
+    ): array|GatewayApiException {
         return Schedule::query()
             ->with(['app.node', 'node'])
-            ->when($app !== null, fn (Builder $query): Builder => $query->where('scope', 'app')->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
-            ->when($node !== null, fn (Builder $query): Builder => $query->where('scope', 'node')->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when($app !== null, fn (Builder $query): Builder => $query->where(
+                'scope',
+                'app',
+            )->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when($node !== null, fn (Builder $query): Builder => $query->where(
+                'scope',
+                'node',
+            )->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
             ->orderBy('scope')
             ->orderBy('target_name')
             ->orderBy('name')
@@ -334,14 +377,26 @@ trait PromptsForRegistryEntities
         }
 
         if ($role === 'app-host') {
-            return collect($roles)->contains(fn (mixed $assignment): bool => is_array($assignment)
-                && in_array($assignment['role'] ?? null, [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value], true)
-                && ($assignment['status'] ?? null) === 'active');
+            return collect($roles)->contains(
+                fn (mixed $assignment): bool => (
+                    is_array($assignment)
+                    && in_array(
+                        $assignment['role'] ?? null,
+                        [NodeRoleName::AppDevelopment->value, NodeRoleName::AppProduction->value],
+                        true,
+                    )
+                    && ($assignment['status'] ?? null) === 'active'
+                ),
+            );
         }
 
-        return collect($roles)->contains(fn (mixed $assignment): bool => is_array($assignment)
-            && ($assignment['role'] ?? null) === $role
-            && ($assignment['status'] ?? null) === 'active');
+        return collect($roles)->contains(
+            fn (mixed $assignment): bool => (
+                is_array($assignment)
+                && ($assignment['role'] ?? null) === $role
+                && ($assignment['status'] ?? null) === 'active'
+            ),
+        );
     }
 
     /**
@@ -475,7 +530,8 @@ trait PromptsForRegistryEntities
     {
         return [
             'name' => $node->name,
-            'roles' => $node->roleAssignments
+            'roles' => $node
+                ->roleAssignments
                 ->map(fn ($assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
                 ->all(),
             'host' => $node->host,

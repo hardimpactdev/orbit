@@ -21,24 +21,33 @@ uses(RefreshDatabase::class);
  */
 function websocketRouteRegistrarAppWithIngress(): array
 {
-    $ingress = Node::factory()->ingress()->create([
-        'name' => 'edge-1',
-        'wireguard_address' => '10.6.0.10',
-    ]);
-    $router = Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.4',
-    ]);
-    $appNode = Node::factory()->appProd()->create([
-        'name' => 'app-prod-1',
-        'wireguard_address' => '10.6.0.21',
-    ]);
+    $ingress = Node::factory()
+        ->ingress()
+        ->create([
+            'name' => 'edge-1',
+            'wireguard_address' => '10.6.0.10',
+        ]);
+    $router = Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
+    $appNode = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-prod-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
 
-    $appNode->roleAssignments()
+    $appNode
+        ->roleAssignments()
         ->where('role', 'app-prod')
         ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
 
@@ -56,30 +65,43 @@ beforeEach(function (): void {
 });
 
 it('syncs the service route on the active router with the websocket backend', function (): void {
-    $router = Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
-    $firstBackend = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.44',
-    ]);
+    $router = Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $firstBackend = Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
 
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'websocket-inactive',
-        'status' => 'inactive',
-        'wireguard_address' => '10.6.0.46',
-    ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'websocket-inactive',
+            'status' => 'inactive',
+            'wireguard_address' => '10.6.0.46',
+        ]);
 
     $route = app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 
-    expect($route->domain)->toBe('websocket.orbit')
-        ->and($route->node_id)->toBe($router->id)
-        ->and($route->app_id)->toBeNull()
-        ->and($route->workspace_id)->toBeNull()
-        ->and($route->owner_type)->toBe('router')
-        ->and($route->kind)->toBe('proxy')
-        ->and($route->config)->toMatchArray([
+    expect($route->domain)
+        ->toBe('websocket.orbit')
+        ->and($route->node_id)
+        ->toBe($router->id)
+        ->and($route->app_id)
+        ->toBeNull()
+        ->and($route->workspace_id)
+        ->toBeNull()
+        ->and($route->owner_type)
+        ->toBe('router')
+        ->and($route->kind)
+        ->toBe('proxy')
+        ->and($route->config)
+        ->toMatchArray([
             'protocol' => 'websocket',
             'router_upstream' => [
                 'node_id' => $router->id,
@@ -115,41 +137,55 @@ it('syncs the service route on the active router with the websocket backend', fu
                 'key_path' => '/etc/orbit/certs/websocket.orbit.key',
             ],
         ])
-        ->and($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route))
-        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())->toBe(1);
+        ->and($route->source_hash)
+        ->toBe(app(ProxyRouteRenderer::class)->sourceHash($route))
+        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())
+        ->toBe(1);
 });
 
 it('fails clearly when more than one websocket backend is active', function (): void {
-    Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.44',
-    ]);
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'websocket-dedicated-1',
-        'wireguard_address' => '10.6.0.45',
-    ]);
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'websocket-dedicated-1',
+            'wireguard_address' => '10.6.0.45',
+        ]);
 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 })->throws(RuntimeException::class, 'The websocket service route supports one active websocket backend.');
 
 it('updates the service route when websocket backends change', function (): void {
-    Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
-    $staleBackend = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'ws-old',
-        'status' => 'inactive',
-        'wireguard_address' => '10.6.0.40',
-    ]);
-    $activeBackend = Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.41',
-    ]);
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $staleBackend = Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'ws-old',
+            'status' => 'inactive',
+            'wireguard_address' => '10.6.0.40',
+        ]);
+    $activeBackend = Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.41',
+        ]);
 
     ProxyRoute::factory()->create([
         'domain' => 'websocket.orbit',
@@ -161,44 +197,55 @@ it('updates the service route when websocket backends change', function (): void
 
     $route = app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 
-    expect($route->owner_type)->toBe('router')
-        ->and($route->config['router_backend_pool'])->toBe([
+    expect($route->owner_type)
+        ->toBe('router')
+        ->and($route->config['router_backend_pool'])
+        ->toBe([
             [
                 'node_id' => $activeBackend->id,
                 'node' => 'app-dev-1',
                 'url' => 'https://10.6.0.41:8080',
             ],
         ])
-        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())->toBe(1);
+        ->and(ProxyRoute::query()->where('domain', 'websocket.orbit')->count())
+        ->toBe(1);
 });
 
 it('requires an active router node before syncing the service route', function (): void {
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.44',
-    ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.44',
+        ]);
 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 })->throws(RuntimeException::class, 'The websocket service route requires an active router node.');
 
 it('requires at least one active websocket backend before syncing the service route', function (): void {
-    Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 })->throws(RuntimeException::class, 'The websocket service route requires at least one active websocket backend.');
 
 it('requires websocket backends to have a WireGuard address', function (): void {
-    Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
-    Node::factory()->withActiveRole('websocket')->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '',
-    ]);
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    Node::factory()
+        ->withActiveRole('websocket')
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '',
+        ]);
 
     app(WebSocketRouteRegistrar::class)->syncServiceRoute();
 })->throws(RuntimeException::class, 'The websocket backend requires a WireGuard address.');
@@ -218,14 +265,23 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
         ->get();
     $route = $routes->firstWhere('domain', 'ws.example.com');
 
-    expect($routes)->toHaveCount(2)
-        ->and($routes->pluck('domain')->all())->toBe(['events.example.com', 'ws.example.com'])
-        ->and($route)->not->toBeNull()
-        ->and($route->node_id)->toBe($ingress->id)
-        ->and($route->app_id)->toBe($app->id)
-        ->and($route->workspace_id)->toBeNull()
-        ->and($route->kind)->toBe('proxy')
-        ->and($route->config)->toMatchArray([
+    expect($routes)
+        ->toHaveCount(2)
+        ->and($routes->pluck('domain')->all())
+        ->toBe(['events.example.com', 'ws.example.com'])
+        ->and($route)
+        ->not
+        ->toBeNull()
+        ->and($route->node_id)
+        ->toBe($ingress->id)
+        ->and($route->app_id)
+        ->toBe($app->id)
+        ->and($route->workspace_id)
+        ->toBeNull()
+        ->and($route->kind)
+        ->toBe('proxy')
+        ->and($route->config)
+        ->toMatchArray([
             'placement' => 'ingress',
             'ingress_node_id' => $ingress->id,
             'protocol' => 'websocket',
@@ -254,20 +310,23 @@ it('syncs public websocket hosts as ingress routes that target router and websoc
                 'key_path' => '/etc/orbit/certs/ws.example.com.key',
             ],
         ])
-        ->and($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route))
-        ->and($route->config['router_artifact'])->toMatchArray([
+        ->and($route->source_hash)
+        ->toBe(app(ProxyRouteRenderer::class)->sourceHash($route))
+        ->and($route->config['router_artifact'])
+        ->toMatchArray([
             'node_id' => $router->id,
             'node' => 'router-1',
         ]);
 
-    expect($route->config['router_artifact']['source_hash'])->toBe(hash('sha256', app(ProxyRouteRenderer::class)->renderRouterRoute(new ProxyRoute([
-        'node_id' => $router->id,
-        'domain' => 'ws.example.com',
-        'app_id' => $app->id,
-        'owner_type' => 'app-websocket',
-        'kind' => 'proxy',
-        'config' => $route->config,
-    ]))));
+    expect($route->config['router_artifact']['source_hash'])
+        ->toBe(hash('sha256', app(ProxyRouteRenderer::class)->renderRouterRoute(new ProxyRoute([
+            'node_id' => $router->id,
+            'domain' => 'ws.example.com',
+            'app_id' => $app->id,
+            'owner_type' => 'app-websocket',
+            'kind' => 'proxy',
+            'config' => $route->config,
+        ]))));
 });
 
 it('removes stale public websocket routes for the binding app', function (): void {
@@ -288,8 +347,10 @@ it('removes stale public websocket routes for the binding app', function (): voi
 
     app(WebSocketRouteRegistrar::class)->syncPublicHosts($binding);
 
-    expect(ProxyRoute::query()->where('domain', 'ws-old.example.com')->exists())->toBeFalse()
-        ->and(ProxyRoute::query()->where('domain', 'ws-new.example.com')->exists())->toBeTrue();
+    expect(ProxyRoute::query()->where('domain', 'ws-old.example.com')->exists())
+        ->toBeFalse()
+        ->and(ProxyRoute::query()->where('domain', 'ws-new.example.com')->exists())
+        ->toBeTrue();
 });
 
 it('removes public websocket routes when the binding is disabled', function (): void {
@@ -315,14 +376,18 @@ it('removes public websocket routes when the binding is disabled', function (): 
 });
 
 it('requires an ingress route when public websocket hosts are configured', function (): void {
-    Node::factory()->router()->create([
-        'name' => 'router-1',
-        'wireguard_address' => '10.6.0.2',
-    ]);
-    $appNode = Node::factory()->appProd()->create([
-        'name' => 'app-prod-1',
-        'wireguard_address' => '10.6.0.21',
-    ]);
+    Node::factory()
+        ->router()
+        ->create([
+            'name' => 'router-1',
+            'wireguard_address' => '10.6.0.2',
+        ]);
+    $appNode = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-prod-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
     $app = App::factory()->create([
         'node_id' => $appNode->id,
     ]);

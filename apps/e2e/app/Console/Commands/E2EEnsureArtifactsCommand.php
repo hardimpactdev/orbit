@@ -35,7 +35,9 @@ class E2EEnsureArtifactsCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
+            return $this->failValidation(
+                "Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.',
+            );
         }
 
         if (! E2EPreparedTopology::supportsKind($kind)) {
@@ -54,13 +56,17 @@ class E2EEnsureArtifactsCommand extends Command
         $rebuild = (bool) $this->option('rebuild');
 
         if (! $runtime && $roles === null && ! $allRoles) {
-            return $this->failValidation('Set --roles or --all-roles for topology artifacts, or pass --runtime for Docker runtime/support images.');
+            return $this->failValidation(
+                'Set --roles or --all-roles for topology artifacts, or pass --runtime for Docker runtime/support images.',
+            );
         }
 
         $steps = $this->steps($kind, $lanes, $roles, $allRoles, $runtime, $rebuild);
 
         if ($steps === []) {
-            return $this->failValidation('No artifact steps selected. Incus has no separate runtime-only artifact step; pass --roles or select --lanes=docker.');
+            return $this->failValidation(
+                'No artifact steps selected. Incus has no separate runtime-only artifact step; pass --roles or select --lanes=docker.',
+            );
         }
 
         $force = (bool) $this->option('force');
@@ -75,7 +81,9 @@ class E2EEnsureArtifactsCommand extends Command
         ));
 
         if ($blocked !== []) {
-            return $this->failCommand('Targeted Incus role artifact preparation is guarded. Run this command without --force to inspect the exact Incus templates, or use composer e2e:prepare-topology for an explicit topology rebuild.');
+            return $this->failCommand(
+                'Targeted Incus role artifact preparation is guarded. Run this command without --force to inspect the exact Incus templates, or use composer e2e:prepare-topology for an explicit topology rebuild.',
+            );
         }
 
         $results = [];
@@ -131,7 +139,9 @@ class E2EEnsureArtifactsCommand extends Command
         $unsupported = array_values(array_diff($lanes, ['docker', 'incus']));
 
         if ($unsupported !== []) {
-            throw new InvalidArgumentException('Unsupported E2E artifact lane(s): '.implode(', ', $unsupported).'. Supported lanes: docker, incus.');
+            throw new InvalidArgumentException(
+                'Unsupported E2E artifact lane(s): '.implode(', ', $unsupported).'. Supported lanes: docker, incus.',
+            );
         }
 
         return $lanes;
@@ -160,8 +170,14 @@ class E2EEnsureArtifactsCommand extends Command
      * @param  list<string>|null  $roles
      * @return list<array{lane: string, name: string, command: string, run_command?: string, force_guarded?: bool, templates?: list<array{role: string, name: string, snapshot: string}>}>
      */
-    private function steps(E2ETopologyKind $kind, array $lanes, ?array $roles, bool $allRoles, bool $runtime, bool $rebuild): array
-    {
+    private function steps(
+        E2ETopologyKind $kind,
+        array $lanes,
+        ?array $roles,
+        bool $allRoles,
+        bool $runtime,
+        bool $rebuild,
+    ): array {
         $steps = [];
         $rebuildFlag = $rebuild ? ' --rebuild' : '';
 
@@ -204,7 +220,8 @@ class E2EEnsureArtifactsCommand extends Command
         }
 
         if (in_array('incus', $lanes, true) && ($roles !== null || $allRoles)) {
-            $baseArtifactSet = E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet;
+            $baseArtifactSet =
+                E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet;
             $commandKind = $baseArtifactSet
                 ? E2EPreparedTopology::incusSourceKindFor($kind)
                 : $kind;
@@ -279,7 +296,7 @@ class E2EEnsureArtifactsCommand extends Command
         $this->line('Dry run. Pass --force to run supported artifact preparation.');
 
         foreach ($steps as $step) {
-            $suffix = ($step['force_guarded'] ?? false) ? ' (force guarded)' : '';
+            $suffix = $step['force_guarded'] ?? false ? ' (force guarded)' : '';
             $this->line("planned: {$step['lane']} {$step['name']}{$suffix}");
             $this->line("command: {$step['command']}");
 

@@ -44,7 +44,7 @@ final class AddDatabaseUserRequest extends GatewayRequest implements HasBody
         $data = $this->unwrapData($response);
 
         return new DatabaseConnectionResponse(
-            connection: is_array($data['connection'] ?? null) ? $data['connection'] : [],
+            connection: $this->stringKeyedArray($data['connection'] ?? []),
         );
     }
 }

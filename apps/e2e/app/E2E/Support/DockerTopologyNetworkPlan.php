@@ -41,10 +41,15 @@ final readonly class DockerTopologyNetworkPlan
             $worker = (int) $token;
 
             if ($worker < 1 || $worker > self::MaxRunScopedParallelWorkers) {
-                throw new RuntimeException("Unsupported parallel test token [{$token}] for run-scoped Docker E2E subnet allocation.");
+                throw new RuntimeException(
+                    "Unsupported parallel test token [{$token}] for run-scoped Docker E2E subnet allocation.",
+                );
             }
 
-            return new self((($worker - 1) * self::RunScopedSubnetsPerWorker) + ((self::runHash($runId) + $attempt) % self::RunScopedSubnetsPerWorker));
+            return new self(
+                (($worker - 1) * self::RunScopedSubnetsPerWorker)
+                + ((self::runHash($runId) + $attempt) % self::RunScopedSubnetsPerWorker),
+            );
         }
 
         if (! is_string($token) || $token === '') {

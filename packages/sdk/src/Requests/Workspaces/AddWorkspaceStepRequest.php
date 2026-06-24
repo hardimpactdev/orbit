@@ -38,29 +38,32 @@ final class AddWorkspaceStepRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'path' => $this->path,
-            'command' => $this->command,
-            'timeout' => $this->timeout,
-            'before' => $this->before,
-            'after' => $this->after,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'path' => $this->path,
+                'command' => $this->command,
+                'timeout' => $this->timeout,
+                'before' => $this->before,
+                'after' => $this->after,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): WorkspaceStepMutationResponse
     {
         $body = json_decode($response->body(), true, 512, JSON_THROW_ON_ERROR);
-        $success = is_array($body) ? ($body['success'] ?? []) : [];
-        $data = is_array($success) ? ($success['data'] ?? []) : [];
-        $meta = is_array($success) ? ($success['meta'] ?? []) : [];
-        $result = is_array($data) ? ($data['result'] ?? []) : [];
-        $step = is_array($data) ? ($data['step'] ?? []) : [];
+        $success = is_array($body) ? $body['success'] ?? [] : [];
+        $data = is_array($success) ? $success['data'] ?? [] : [];
+        $meta = is_array($success) ? $success['meta'] ?? [] : [];
+        $result = is_array($data) ? $data['result'] ?? [] : [];
+        $step = is_array($data) ? $data['step'] ?? [] : [];
 
         return new WorkspaceStepMutationResponse(
-            result: is_array($result) ? $result : [],
-            step: is_array($step) ? $step : [],
-            meta: is_array($meta) ? $meta : [],
+            result: $this->stringKeyedArray($result),
+            step: $this->stringKeyedArray($step),
+            meta: $this->stringKeyedArray($meta),
         );
     }
 }

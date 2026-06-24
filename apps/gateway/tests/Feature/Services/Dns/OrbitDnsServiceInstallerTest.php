@@ -28,20 +28,26 @@ it('writes a compose file with network_mode container:wg-easy and no ports', fun
         '*' => Process::result(),
     ]);
 
-    (new OrbitDnsServiceInstaller(
+    new OrbitDnsServiceInstaller(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->install();
+    )->install();
 
     $compose = File::get($this->workdir.'/docker-compose.yaml');
 
-    expect($compose)->toContain('network_mode: "container:wg-easy"')
-        ->and($compose)->toContain('4km3/dnsmasq:latest')
-        ->and($compose)->toContain('cap_add:')
-        ->and($compose)->toContain('NET_ADMIN')
-        ->and($compose)->toContain('restart: unless-stopped')
-        ->and($compose)->not->toContain('networks:')
-        ->and($compose)->not->toContain('ports:');
+    expect($compose)
+        ->toContain('network_mode: "container:wg-easy"')
+        ->and($compose)
+        ->toContain('4km3/dnsmasq:latest')
+        ->and($compose)
+        ->toContain('cap_add:')
+        ->and($compose)
+        ->toContain('NET_ADMIN')
+        ->and($compose)
+        ->toContain('restart: unless-stopped')
+        ->and($compose)
+        ->not->toContain('networks:')->and($compose)
+        ->not->toContain('ports:');
 });
 
 it('keeps orbit-dns coupled to the wg-easy container runtime', function (): void {
@@ -50,17 +56,20 @@ it('keeps orbit-dns coupled to the wg-easy container runtime', function (): void
         '*' => Process::result(),
     ]);
 
-    (new OrbitDnsServiceInstaller(
+    new OrbitDnsServiceInstaller(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->install();
+    )->install();
 
     $compose = File::get($this->workdir.'/docker-compose.yaml');
 
-    expect($compose)->toContain('container_name: orbit-dns')
-        ->and($compose)->toContain('network_mode: "container:wg-easy"')
-        ->and($compose)->not->toContain('53:53')
-        ->and($compose)->not->toContain('host:');
+    expect($compose)
+        ->toContain('container_name: orbit-dns')
+        ->and($compose)
+        ->toContain('network_mode: "container:wg-easy"')
+        ->and($compose)
+        ->not->toContain('53:53')->and($compose)
+        ->not->toContain('host:');
 });
 
 it('writes the initial dnsmasq.conf before starting the container', function (): void {
@@ -80,15 +89,14 @@ it('writes the initial dnsmasq.conf before starting the container', function ():
         'wireguard_address' => '10.6.0.3',
     ]);
 
-    (new OrbitDnsServiceInstaller(
+    new OrbitDnsServiceInstaller(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->install();
+    )->install();
 
     $conf = File::get($this->workdir.'/dnsmasq.conf');
 
-    expect($conf)->toContain('address=/gateway/10.6.0.2')
-        ->and($conf)->toContain('address=/app-1.test/10.6.0.3');
+    expect($conf)->toContain('address=/gateway/10.6.0.2')->and($conf)->toContain('address=/app-1.test/10.6.0.3');
 });
 
 it('errors when wg-easy is not running', function (): void {
@@ -96,10 +104,12 @@ it('errors when wg-easy is not running', function (): void {
         'docker ps*' => Process::result(''),
     ]);
 
-    expect(fn (): mixed => (new OrbitDnsServiceInstaller(
-        configBuilder: new DnsmasqConfigBuilder,
-        rootPath: $this->workdir,
-    ))->install())
+    expect(
+        fn (): mixed => new OrbitDnsServiceInstaller(
+            configBuilder: new DnsmasqConfigBuilder,
+            rootPath: $this->workdir,
+        )->install(),
+    )
         ->toThrow(RuntimeException::class, 'wg-easy');
 });
 
@@ -109,11 +119,15 @@ it('invokes docker compose up after writing files', function (): void {
         '*' => Process::result(),
     ]);
 
-    (new OrbitDnsServiceInstaller(
+    new OrbitDnsServiceInstaller(
         configBuilder: new DnsmasqConfigBuilder,
         rootPath: $this->workdir,
-    ))->install();
+    )->install();
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker compose')
-        && str_contains((string) $process->command, 'up -d'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker compose')
+            && str_contains((string) $process->command, 'up -d')
+        ),
+    );
 });

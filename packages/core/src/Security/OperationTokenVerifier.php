@@ -31,9 +31,6 @@ final readonly class OperationTokenVerifier
         $commandMatches = hash_equals($expectedCommand, $token->command);
         $isNotExpired = ($now ?? time()) <= $token->expiresAt;
 
-        return $signatureMatches
-            && $nodeMatches
-            && $commandMatches
-            && $isNotExpired;
+        return $signatureMatches && $nodeMatches && $commandMatches && $isNotExpired;
     }
 }

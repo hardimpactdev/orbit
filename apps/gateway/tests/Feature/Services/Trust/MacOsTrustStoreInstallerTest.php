@@ -81,7 +81,6 @@ describe('MacOsTrustStoreInstaller', function (): void {
             $logs[] = $message;
         });
 
-        expect($logs)->toHaveCount(1)
-            ->and($logs[0])->toContain('sudo security add-trusted-cert');
+        expect($logs)->toHaveCount(1)->and($logs[0])->toContain('sudo security add-trusted-cert');
     });
 });

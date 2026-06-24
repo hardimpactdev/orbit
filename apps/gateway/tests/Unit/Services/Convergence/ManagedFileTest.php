@@ -28,7 +28,8 @@ it('plans ok when the remote managed file already matches intent', function (): 
                 'exists' => true,
                 'hash' => hash('sha256', $content),
                 'mode' => '0640',
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -38,15 +39,24 @@ it('plans ok when the remote managed file already matches intent', function (): 
     $plan = $file->plan($probe);
     $result = $file->apply($node, $shell, $plan);
 
-    expect($probe->exists)->toBeTrue()
-        ->and($probe->hash)->toBe(hash('sha256', $content))
-        ->and($plan->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->changed())->toBeFalse()
-        ->and($shell->scripts[0])->toContain('sudo test -f "$path"')
-        ->and($shell->scripts[0])->toContain('sudo sha256sum "$path"')
-        ->and($shell->scripts[0])->toContain("sudo stat -c '%a' \"\$path\"")
-        ->and($shell->scripts)->toHaveCount(1);
+    expect($probe->exists)
+        ->toBeTrue()
+        ->and($probe->hash)
+        ->toBe(hash('sha256', $content))
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->changed())
+        ->toBeFalse()
+        ->and($shell->scripts[0])
+        ->toContain('sudo test -f "$path"')
+        ->and($shell->scripts[0])
+        ->toContain('sudo sha256sum "$path"')
+        ->and($shell->scripts[0])
+        ->toContain("sudo stat -c '%a' \"\$path\"")
+        ->and($shell->scripts)
+        ->toHaveCount(1);
 });
 
 it('applies a missing managed file through a redacted remote shell script', function (): void {
@@ -65,7 +75,8 @@ it('applies a missing managed file through a redacted remote shell script', func
                 'exists' => false,
                 'hash' => null,
                 'mode' => null,
-            ], JSON_THROW_ON_ERROR)."\n",
+            ], JSON_THROW_ON_ERROR)
+                ."\n",
             stderr: '',
             durationMs: 1,
         ),
@@ -76,15 +87,21 @@ it('applies a missing managed file through a redacted remote shell script', func
     $plan = $file->plan($probe);
     $result = $file->apply($node, $shell, $plan);
 
-    expect($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->changed())->toBeTrue()
-        ->and($result->details['path'])->toBe('/etc/orbit/secrets/app.env')
-        ->and($result->details)->not->toHaveKey('content')
-        ->and($shell->scripts[1])->toContain("sudo install -d -m 0700 '/etc/orbit/secrets'")
-        ->and($shell->scripts[1])->toContain("sudo chmod 0600 '/etc/orbit/secrets/app.env'")
-        ->and($shell->scripts[1])->toContain(base64_encode("TOKEN=secret-value\n"))
-        ->and($shell->scripts[1])->not->toContain('secret-value');
+    expect($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and($result->details['path'])
+        ->toBe('/etc/orbit/secrets/app.env')
+        ->and($result->details)
+        ->not->toHaveKey('content')->and($shell->scripts[1])->toContain(
+            "sudo install -d -m 0700 '/etc/orbit/secrets'",
+        )->and($shell->scripts[1])->toContain("sudo chmod 0600 '/etc/orbit/secrets/app.env'")->and(
+            $shell->scripts[1],
+        )->toContain(base64_encode("TOKEN=secret-value\n"))->and($shell->scripts[1])
+        ->not->toContain('secret-value');
 });
 
 it('reports unreachable when probing the managed file cannot reach the node', function (): void {
@@ -100,10 +117,14 @@ it('reports unreachable when probing the managed file cannot reach the node', fu
     $probe = $file->probe($node, $shell);
     $plan = $file->plan($probe);
 
-    expect($probe->reachable)->toBeFalse()
-        ->and($probe->error)->toBe('ssh: connection refused')
-        ->and($plan->status)->toBe(ConvergenceStatus::Unreachable)
-        ->and($plan->summary)->toBe('Could not inspect managed file /etc/orbit/missing.conf.');
+    expect($probe->reachable)
+        ->toBeFalse()
+        ->and($probe->error)
+        ->toBe('ssh: connection refused')
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Unreachable)
+        ->and($plan->summary)
+        ->toBe('Could not inspect managed file /etc/orbit/missing.conf.');
 });
 
 final class ManagedFileRecordingShell implements RemoteShell
@@ -117,7 +138,9 @@ final class ManagedFileRecordingShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

@@ -9,8 +9,7 @@ use Psr\Http\Message\StreamInterface;
 
 function orbitCorePollingOnlyStream(callable $readCallback, callable $eofCallback): StreamInterface
 {
-    return new class($readCallback, $eofCallback) implements StreamInterface
-    {
+    return new class($readCallback, $eofCallback) implements StreamInterface {
         private readonly Closure $readCallback;
 
         private readonly Closure $eofCallback;
@@ -86,7 +85,7 @@ function orbitCorePollingOnlyStream(callable $readCallback, callable $eofCallbac
         {
             $metadata = [];
 
-            return $key === null ? $metadata : ($metadata[$key] ?? null);
+            return $key === null ? $metadata : $metadata[$key] ?? null;
         }
     };
 }
@@ -101,9 +100,10 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
     stream_set_blocking($readable, true);
     stream_set_blocking($writable, true);
 
-    $stream = new class($readable) implements StreamInterface
-    {
-        public function __construct(private $resource) {}
+    $stream = new class($readable) implements StreamInterface {
+        public function __construct(
+            private $resource,
+        ) {}
 
         public function __toString(): string
         {
@@ -172,7 +172,7 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
         {
             $metadata = ['stream' => $this->resource];
 
-            return $key === null ? $metadata : ($metadata[$key] ?? null);
+            return $key === null ? $metadata : $metadata[$key] ?? null;
         }
     };
 
@@ -193,8 +193,7 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toBe('e')
-            ->and($tickCount)->toBeGreaterThanOrEqual(2);
+        expect($chunk)->toBe('e')->and($tickCount)->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();
         fclose($readable);
@@ -217,8 +216,7 @@ it('reads selected native streams directly instead of delegating to blocking PSR
     $inner = Utils::streamFor($readable);
     $stream = new class($inner, $readable, function () use (&$psrReadCalled): void {
         $psrReadCalled = true;
-    }) implements StreamInterface
-    {
+    }) implements StreamInterface {
         private readonly Closure $recordPsrRead;
 
         public function __construct(
@@ -310,7 +308,7 @@ it('reads selected native streams directly instead of delegating to blocking PSR
             $metadata = (array) $this->inner->getMetadata();
             $metadata['stream'] = $this->resource;
 
-            return $key === null ? $metadata : ($metadata[$key] ?? null);
+            return $key === null ? $metadata : $metadata[$key] ?? null;
         }
     };
 
@@ -322,9 +320,12 @@ it('reads selected native streams directly instead of delegating to blocking PSR
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toBe('e')
-            ->and($psrReadCalled)->toBeFalse()
-            ->and(stream_get_meta_data($readable)['blocked'])->toBeTrue();
+        expect($chunk)
+            ->toBe('e')
+            ->and($psrReadCalled)
+            ->toBeFalse()
+            ->and(stream_get_meta_data($readable)['blocked'])
+            ->toBeTrue();
     } finally {
         $ticker->stop();
 
@@ -349,11 +350,12 @@ it('invokes idle callbacks when selected native streams yield empty chunks', fun
     stream_set_blocking($writable, true);
     fclose($writable);
 
-    $stream = new class($readable) implements StreamInterface
-    {
+    $stream = new class($readable) implements StreamInterface {
         private int $eofChecks = 0;
 
-        public function __construct(private $resource) {}
+        public function __construct(
+            private $resource,
+        ) {}
 
         public function __toString(): string
         {
@@ -422,7 +424,7 @@ it('invokes idle callbacks when selected native streams yield empty chunks', fun
         {
             $metadata = ['stream' => $this->resource];
 
-            return $key === null ? $metadata : ($metadata[$key] ?? null);
+            return $key === null ? $metadata : $metadata[$key] ?? null;
         }
     };
 
@@ -437,8 +439,7 @@ it('invokes idle callbacks when selected native streams yield empty chunks', fun
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toBe('')
-            ->and($tickCount)->toBeGreaterThanOrEqual(2);
+        expect($chunk)->toBe('')->and($tickCount)->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();
 
@@ -477,9 +478,12 @@ it('polls PSR streams when guzzle stream wrappers cannot be selected', function 
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toContain('event: complete')
-            ->and($readAttempts)->toBe(3)
-            ->and($tickCount)->toBeGreaterThanOrEqual(2);
+        expect($chunk)
+            ->toContain('event: complete')
+            ->and($readAttempts)
+            ->toBe(3)
+            ->and($tickCount)
+            ->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();
     }
@@ -494,9 +498,10 @@ it('treats an invalid stream resource as closed without throwing', function (): 
 
     fclose($readable);
 
-    $stream = new class($readable) implements StreamInterface
-    {
-        public function __construct(private $resource) {}
+    $stream = new class($readable) implements StreamInterface {
+        public function __construct(
+            private $resource,
+        ) {}
 
         public function __toString(): string
         {
@@ -563,7 +568,7 @@ it('treats an invalid stream resource as closed without throwing', function (): 
         {
             $metadata = ['stream' => $this->resource];
 
-            return $key === null ? $metadata : ($metadata[$key] ?? null);
+            return $key === null ? $metadata : $metadata[$key] ?? null;
         }
     };
 
@@ -586,8 +591,7 @@ it('treats an invalid stream resource as closed without throwing', function (): 
 });
 
 it('treats empty stream metadata arrays as closed without throwing', function (): void {
-    $stream = new class implements StreamInterface
-    {
+    $stream = new class implements StreamInterface {
         public function __toString(): string
         {
             return '';
@@ -653,7 +657,7 @@ it('treats empty stream metadata arrays as closed without throwing', function ()
         {
             $metadata = ['stream' => []];
 
-            return $key === null ? $metadata : ($metadata[$key] ?? null);
+            return $key === null ? $metadata : $metadata[$key] ?? null;
         }
     };
 
@@ -700,8 +704,7 @@ it('invokes idle callbacks while waiting for guzzle stream data', function (): v
     try {
         $chunk = $reader->read($stream, 64);
 
-        expect($chunk)->toBe('e')
-            ->and($tickCount)->toBeGreaterThanOrEqual(2);
+        expect($chunk)->toBe('e')->and($tickCount)->toBeGreaterThanOrEqual(2);
     } finally {
         $ticker->stop();
         $stream->close();

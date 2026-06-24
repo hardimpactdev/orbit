@@ -7,11 +7,13 @@ use Orbit\Core\Enums\OperationStatus;
 
 describe(ExecutionLane::class, function (): void {
     it('exposes the documented lane cases and values', function (): void {
-        expect(ExecutionLane::cases())->toHaveCount(3)
+        expect(ExecutionLane::cases())
+            ->toHaveCount(3)
             ->and(array_map(
                 static fn (ExecutionLane $lane): string => $lane->name,
                 ExecutionLane::cases(),
-            ))->toBe([
+            ))
+            ->toBe([
                 'Host',
                 'OrbitGateway',
                 'LocalExecutor',
@@ -19,7 +21,8 @@ describe(ExecutionLane::class, function (): void {
             ->and(array_map(
                 static fn (ExecutionLane $lane): string => $lane->value,
                 ExecutionLane::cases(),
-            ))->toBe([
+            ))
+            ->toBe([
                 'host',
                 'orbit-gateway',
                 'local-executor',
@@ -27,22 +30,29 @@ describe(ExecutionLane::class, function (): void {
     });
 
     it('serializes lanes to their wire values', function (): void {
-        expect(json_encode([
-            ExecutionLane::Host,
-            ExecutionLane::OrbitGateway,
-            ExecutionLane::LocalExecutor,
-        ], JSON_THROW_ON_ERROR))->toBe('["host","orbit-gateway","local-executor"]')
-            ->and(ExecutionLane::from('local-executor'))->toBe(ExecutionLane::LocalExecutor);
+        expect(json_encode(
+            [
+                ExecutionLane::Host,
+                ExecutionLane::OrbitGateway,
+                ExecutionLane::LocalExecutor,
+            ],
+            JSON_THROW_ON_ERROR,
+        ))
+            ->toBe('["host","orbit-gateway","local-executor"]')
+            ->and(ExecutionLane::from('local-executor'))
+            ->toBe(ExecutionLane::LocalExecutor);
     });
 });
 
 describe(OperationStatus::class, function (): void {
     it('exposes the documented operation lifecycle cases and values', function (): void {
-        expect(OperationStatus::cases())->toHaveCount(6)
+        expect(OperationStatus::cases())
+            ->toHaveCount(6)
             ->and(array_map(
                 static fn (OperationStatus $status): string => $status->name,
                 OperationStatus::cases(),
-            ))->toBe([
+            ))
+            ->toBe([
                 'Queued',
                 'Running',
                 'Succeeded',
@@ -53,7 +63,8 @@ describe(OperationStatus::class, function (): void {
             ->and(array_map(
                 static fn (OperationStatus $status): string => $status->value,
                 OperationStatus::cases(),
-            ))->toBe([
+            ))
+            ->toBe([
                 'queued',
                 'running',
                 'succeeded',
@@ -71,16 +82,24 @@ describe(OperationStatus::class, function (): void {
             OperationStatus::Failed,
             OperationStatus::Expired,
             OperationStatus::Rejected,
-        ], JSON_THROW_ON_ERROR))->toBe('["queued","running","succeeded","failed","expired","rejected"]')
-            ->and(OperationStatus::from('succeeded'))->toBe(OperationStatus::Succeeded);
+        ], JSON_THROW_ON_ERROR))
+            ->toBe('["queued","running","succeeded","failed","expired","rejected"]')
+            ->and(OperationStatus::from('succeeded'))
+            ->toBe(OperationStatus::Succeeded);
     });
 
     it('reports whether an operation status is terminal', function (): void {
-        expect(OperationStatus::Queued->isTerminal())->toBeFalse()
-            ->and(OperationStatus::Running->isTerminal())->toBeFalse()
-            ->and(OperationStatus::Succeeded->isTerminal())->toBeTrue()
-            ->and(OperationStatus::Failed->isTerminal())->toBeTrue()
-            ->and(OperationStatus::Expired->isTerminal())->toBeTrue()
-            ->and(OperationStatus::Rejected->isTerminal())->toBeTrue();
+        expect(OperationStatus::Queued->isTerminal())
+            ->toBeFalse()
+            ->and(OperationStatus::Running->isTerminal())
+            ->toBeFalse()
+            ->and(OperationStatus::Succeeded->isTerminal())
+            ->toBeTrue()
+            ->and(OperationStatus::Failed->isTerminal())
+            ->toBeTrue()
+            ->and(OperationStatus::Expired->isTerminal())
+            ->toBeTrue()
+            ->and(OperationStatus::Rejected->isTerminal())
+            ->toBeTrue();
     });
 });

@@ -15,10 +15,14 @@ it('copies bootstrap authorized keys to the target orbit user before installing 
 
     app(OrbitHostInstaller::class)->install('192.0.2.10', 'root', 'orbit');
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'root'@'192.0.2.10'")
-        && str_contains((string) $process->command, 'BOOTSTRAP_KEYS="/root/.ssh/authorized_keys"')
-        && str_contains((string) $process->command, 'TARGET_KEYS="/home/$USER/.ssh/authorized_keys"')
-        && str_contains((string) $process->command, 'sudo grep -qxF "$key" "$TARGET_KEYS"'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "'root'@'192.0.2.10'")
+            && str_contains((string) $process->command, 'BOOTSTRAP_KEYS="/root/.ssh/authorized_keys"')
+            && str_contains((string) $process->command, 'TARGET_KEYS="/home/$USER/.ssh/authorized_keys"')
+            && str_contains((string) $process->command, 'sudo grep -qxF "$key" "$TARGET_KEYS"')
+        ),
+    );
 });
 
 it('runs the pre-wireguard node security baseline over pinned ssh during provisioning', function (): void {
@@ -40,24 +44,45 @@ it('runs the pre-wireguard node security baseline over pinned ssh during provisi
 
     $result = $installer->install('203.0.113.20', 'ubuntu', 'orbit');
 
-    expect($result->successful)->toBeTrue()
-        ->and(FirewallRule::query()->where('node_id', $node->id)->where('owner', 'node-security')->count())->toBe(0);
+    expect($result->successful)
+        ->toBeTrue()
+        ->and(FirewallRule::query()->where('node_id', $node->id)->where('owner', 'node-security')->count())
+        ->toBe(0);
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '-o StrictHostKeyChecking=yes')
-        && str_contains((string) $process->command, "'ubuntu'@'203.0.113.20'")
-        && str_contains((string) $process->command, 'sudo useradd -m -s /bin/bash "$USER"'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, '-o StrictHostKeyChecking=yes')
+            && str_contains((string) $process->command, "'ubuntu'@'203.0.113.20'")
+            && str_contains((string) $process->command, 'sudo useradd -m -s /bin/bash "$USER"')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '-o StrictHostKeyChecking=yes')
-        && str_contains((string) $process->command, "'orbit'@'203.0.113.20'")
-        && str_contains((string) $process->command, '/etc/sysctl.d/60-orbit.conf'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, '-o StrictHostKeyChecking=yes')
+            && str_contains((string) $process->command, "'orbit'@'203.0.113.20'")
+            && str_contains((string) $process->command, '/etc/sysctl.d/60-orbit.conf')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'orbit'@'203.0.113.20'")
-        && str_contains((string) $process->command, 'ListenAddress 10.6.0.20'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "'orbit'@'203.0.113.20'")
+            && str_contains((string) $process->command, 'ListenAddress 10.6.0.20')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, "'orbit'@'203.0.113.20'")
-        && str_contains((string) $process->command, 'unattended-upgrades'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, "'orbit'@'203.0.113.20'")
+            && str_contains((string) $process->command, 'unattended-upgrades')
+        ),
+    );
 
-    Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'ufw deny in on "$PUBLIC_IFACE"'));
+    Process::assertNotRan(fn ($process): bool => str_contains(
+        (string) $process->command,
+        'ufw deny in on "$PUBLIC_IFACE"',
+    ));
 });
 
 it('stages node identity through a temporary remote env file without operation token signing material', function (): void {
@@ -84,12 +109,20 @@ it('stages node identity through a temporary remote env file without operation t
 
     expect($result->successful)->toBeTrue();
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'scp')
-        && str_contains((string) $process->command, '.env')
-        && str_contains((string) $process->command, "'orbit'@'203.0.113.30'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'scp')
+            && str_contains((string) $process->command, '.env')
+            && str_contains((string) $process->command, "'orbit'@'203.0.113.30'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'set -a; . ')
-        && str_contains((string) $process->command, '--source-archive='));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'set -a; . ')
+            && str_contains((string) $process->command, '--source-archive=')
+        ),
+    );
 
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'shared-app-key'));
 });
@@ -103,40 +136,72 @@ it('forwards local gateway and dependency image archives to install-orbit when e
 
     expect($result->successful)->toBeTrue();
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker image inspect')
-        && str_contains((string) $process->command, "'orbit-gateway:current'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker image inspect')
+            && str_contains((string) $process->command, "'orbit-gateway:current'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
-        && str_contains((string) $process->command, "'orbit-gateway:current'")
-        && str_contains((string) $process->command, '/var/tmp/orbit-gateway-current-'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker save')
+            && str_contains((string) $process->command, "'orbit-gateway:current'")
+            && str_contains((string) $process->command, '/var/tmp/orbit-gateway-current-')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
-        && str_contains((string) $process->command, "'caddy:2-alpine'")
-        && str_contains((string) $process->command, '/var/tmp/caddy-2-alpine-'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker save')
+            && str_contains((string) $process->command, "'caddy:2-alpine'")
+            && str_contains((string) $process->command, '/var/tmp/caddy-2-alpine-')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
-        && str_contains((string) $process->command, "'4km3/dnsmasq:latest'")
-        && str_contains((string) $process->command, '/var/tmp/dnsmasq-latest-'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker save')
+            && str_contains((string) $process->command, "'4km3/dnsmasq:latest'")
+            && str_contains((string) $process->command, '/var/tmp/dnsmasq-latest-')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
-        && str_contains((string) $process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
-        && str_contains((string) $process->command, '/var/tmp/frankenphp-1-php8.5-bookworm-'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker save')
+            && str_contains((string) $process->command, "'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'")
+            && str_contains((string) $process->command, '/var/tmp/frankenphp-1-php8.5-bookworm-')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'docker save')
-        && str_contains((string) $process->command, "'ghcr.io/wg-easy/wg-easy:15'")
-        && str_contains((string) $process->command, '/var/tmp/wg-easy-15-'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'docker save')
+            && str_contains((string) $process->command, "'ghcr.io/wg-easy/wg-easy:15'")
+            && str_contains((string) $process->command, '/var/tmp/wg-easy-15-')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'scp')
-        && str_contains((string) $process->command, '/var/tmp/orbit-gateway-current-')
-        && str_contains((string) $process->command, "'root'@'192.0.2.20'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'scp')
+            && str_contains((string) $process->command, '/var/tmp/orbit-gateway-current-')
+            && str_contains((string) $process->command, "'root'@'192.0.2.20'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, '--gateway-image=orbit-gateway:current')
-        && str_contains((string) $process->command, '--gateway-image-archive=')
-        && str_contains((string) $process->command, '--caddy-image-archive=')
-        && str_contains((string) $process->command, '--dnsmasq-image-archive=')
-        && str_contains((string) $process->command, '--frankenphp-image-archive=')
-        && str_contains((string) $process->command, '--wg-easy-image-archive=')
-        && ! preg_match('/(^|\s)--gateway(\s|$)/', (string) $process->command));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, '--gateway-image=orbit-gateway:current')
+            && str_contains((string) $process->command, '--gateway-image-archive=')
+            && str_contains((string) $process->command, '--caddy-image-archive=')
+            && str_contains((string) $process->command, '--dnsmasq-image-archive=')
+            && str_contains((string) $process->command, '--frankenphp-image-archive=')
+            && str_contains((string) $process->command, '--wg-easy-image-archive=')
+            && ! preg_match('/(^|\s)--gateway(\s|$)/', (string) $process->command)
+        ),
+    );
 });
 
 it('forwards a configured local cli binary so workload installs do not require gh', function (): void {
@@ -157,14 +222,22 @@ it('forwards a configured local cli binary so workload installs do not require g
 
     expect($result->successful)->toBeTrue();
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'scp')
-        && str_contains((string) $process->command, $binary)
-        && str_contains((string) $process->command, '-orbit-binary')
-        && str_contains((string) $process->command, "'root'@'192.0.2.22'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'scp')
+            && str_contains((string) $process->command, $binary)
+            && str_contains((string) $process->command, '-orbit-binary')
+            && str_contains((string) $process->command, "'root'@'192.0.2.22'")
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => str_contains((string) $process->command, 'set -a; . ')
-        && str_contains((string) $process->command, '-orbit-binary')
-        && str_contains((string) $process->command, 'rm -f'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains((string) $process->command, 'set -a; . ')
+            && str_contains((string) $process->command, '-orbit-binary')
+            && str_contains((string) $process->command, 'rm -f')
+        ),
+    );
 });
 
 it('stages installer transfer artifacts under var tmp instead of the small tmpfs', function (): void {
@@ -190,9 +263,9 @@ it('stages installer transfer artifacts under var tmp instead of the small tmpfs
         ->toContain("--exclude='./apps/gateway/.env.e2e'")
         ->not->toContain("--exclude='.env.*'")
         ->not->toContain("--exclude='./.env.*'")
-        ->not->toContain('apps/gateway/.env.example')
-        ->toContain('/var/tmp/orbit-install-env-')
-        ->toContain('/var/tmp/orbit-install-')
+        ->not->toContain('apps/gateway/.env.example')->toContain('/var/tmp/orbit-install-env-')->toContain(
+            '/var/tmp/orbit-install-',
+        )
         ->not->toContain("-czf '/tmp/orbit-source-")
         ->not->toContain("'/tmp/orbit-install-env-")
         ->not->toContain("'/tmp/orbit-install-");

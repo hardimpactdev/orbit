@@ -200,15 +200,22 @@ class NodeRoleAssignmentService
 
     private function guardNotGatewayCoupledInfrastructureRole(string $role): void
     {
-        if (! in_array($role, [NodeRoleName::Gateway->value, NodeRoleName::Vpn->value, NodeRoleName::Router->value], true)) {
+        if (! in_array(
+            $role,
+            [NodeRoleName::Gateway->value, NodeRoleName::Vpn->value, NodeRoleName::Router->value],
+            true,
+        )) {
             return;
         }
 
         throw new InvalidArgumentException("Role '{$role}' is gateway-coupled and cannot be assigned independently.");
     }
 
-    private function converge(Node $node, NodeRoleAssignment $assignment, ?NodeRoleAssignment $previousAssignment = null): NodeRoleAssignment
-    {
+    private function converge(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        ?NodeRoleAssignment $previousAssignment = null,
+    ): NodeRoleAssignment {
         try {
             $this->syncNodeTldFromRoles($node, $assignment);
             $node->refresh();
@@ -239,8 +246,11 @@ class NodeRoleAssignmentService
         return $freshAssignment;
     }
 
-    private function removePreviousDevelopmentDnsMapping(Node $node, NodeRoleAssignment $assignment, ?NodeRoleAssignment $previousAssignment): void
-    {
+    private function removePreviousDevelopmentDnsMapping(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        ?NodeRoleAssignment $previousAssignment,
+    ): void {
         if (! $previousAssignment instanceof NodeRoleAssignment) {
             return;
         }
@@ -263,7 +273,8 @@ class NodeRoleAssignmentService
     {
         $node->refresh();
 
-        $activeAssignments = $node->roleAssignments()
+        $activeAssignments = $node
+            ->roleAssignments()
             ->where('status', NodeRoleStatus::Active->value)
             ->orderBy('role')
             ->get();
@@ -317,7 +328,9 @@ class NodeRoleAssignmentService
             return;
         }
 
-        throw new InvalidArgumentException("Role '{$definition->name}' conflicts with {$conflict->status->value} role '{$conflict->role}'.");
+        throw new InvalidArgumentException(
+            "Role '{$definition->name}' conflicts with {$conflict->status->value} role '{$conflict->role}'.",
+        );
     }
 
     /**
@@ -335,7 +348,9 @@ class NodeRoleAssignmentService
             return;
         }
 
-        throw new InvalidArgumentException('The websocket role requires redis_node_id to reference an active database node with a Redis process.');
+        throw new InvalidArgumentException(
+            'The websocket role requires redis_node_id to reference an active database node with a Redis process.',
+        );
     }
 
     /**
@@ -359,7 +374,9 @@ class NodeRoleAssignmentService
             return;
         }
 
-        throw new InvalidArgumentException('The analytics role requires postgres_node_id and clickhouse_node_id to reference active database nodes with PostgreSQL and ClickHouse processes.');
+        throw new InvalidArgumentException(
+            'The analytics role requires postgres_node_id and clickhouse_node_id to reference active database nodes with PostgreSQL and ClickHouse processes.',
+        );
     }
 
     /**
@@ -399,7 +416,8 @@ class NodeRoleAssignmentService
 
     private function nodeHasActiveIngressAssignment(Node $node): bool
     {
-        return $node->roleAssignments()
+        return $node
+            ->roleAssignments()
             ->where('role', NodeRoleName::Ingress->value)
             ->where('status', NodeRoleStatus::Active->value)
             ->exists();

@@ -37,14 +37,17 @@ final class UsePhpRuntimeRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'version' => $this->version,
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'node' => $this->node,
-            'inherit' => $this->inherit,
-            'cli' => $this->cli,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'version' => $this->version,
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'node' => $this->node,
+                'inherit' => $this->inherit,
+                'cli' => $this->cli,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): PhpRuntimeUseResponse
@@ -52,8 +55,8 @@ final class UsePhpRuntimeRequest extends GatewayRequest implements HasBody
         $data = $this->unwrapData($response);
 
         return new PhpRuntimeUseResponse(
-            php: is_array($data['php'] ?? null) ? $data['php'] : [],
-            result: is_array($data['result'] ?? null) ? $data['result'] : [],
+            php: $this->stringKeyedArray($data['php'] ?? []),
+            result: $this->stringKeyedArray($data['result'] ?? []),
             meta: $this->unwrapMeta($response),
         );
     }

@@ -25,14 +25,16 @@ function signVerifyExecutorToken(
     $issuedAt ??= time() - 5;
     $expiresAt ??= time() + 120;
 
-    return (new OperationTokenSigner)->sign(
-        secret: 'verify-executor-test-secret',
-        id: $id,
-        node: $node,
-        command: $command,
-        issuedAt: $issuedAt,
-        expiresAt: $expiresAt,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'verify-executor-test-secret',
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
 }
 
 describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): void {
@@ -45,25 +47,32 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('missing_token', 'Operation token is required.'));
     });
 
-    it('rejects an invalid operation token with code invalid_token via the OperationTokenGuard service (action/service delegation)', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'allowed' => false,
-        ]));
+    it(
+        'rejects an invalid operation token with code invalid_token via the OperationTokenGuard service (action/service delegation)',
+        function (): void {
+            fakeGateway(fakeSuccessEnvelope([
+                'allowed' => false,
+            ]));
 
-        [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
-            '--operation-token' => 'not-a-real-token',
-            '--json' => true,
-        ]);
+            [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
+                '--operation-token' => 'not-a-real-token',
+                '--json' => true,
+            ]);
 
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
-    });
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded)
+                ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'));
+        },
+    );
 
     it('posts the expected verification payload to the gateway endpoint', function (): void {
         fakeGateway(fakeSuccessEnvelope([
@@ -79,14 +88,15 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['operation_id'])->toBe('op-verify-payload');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['operation_id'])->toBe('op-verify-payload');
 
         Http::assertSent(function (Request $request) use ($token): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
                 && $request['operation_token'] === $token
-                && $request['command'] === 'internal:executor:verify';
+                && $request['command'] === 'internal:executor:verify'
+            );
         });
     });
 
@@ -107,33 +117,46 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['operation_id'])->toBe('op-verify-fresh-client');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['operation_id'])->toBe('op-verify-fresh-client');
 
-        Http::assertSent(fn (Request $request): bool => $request->url() === 'https://gateway.test/api/internal-executor/token/verify');
-        Http::assertNotSent(fn (Request $request): bool => $request->url() === 'https://stale-gateway.test/api/internal-executor/token/verify');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
+            ),
+        );
+        Http::assertNotSent(
+            fn (Request $request): bool => (
+                $request->url() === 'https://stale-gateway.test/api/internal-executor/token/verify'
+            ),
+        );
     });
 
-    it('returns a typed result with operation_id, node, and command keys after the guard accepts the token (typed result serialization)', function (): void {
-        fakeGateway(fakeSuccessEnvelope([
-            'allowed' => true,
-        ]));
+    it(
+        'returns a typed result with operation_id, node, and command keys after the guard accepts the token (typed result serialization)',
+        function (): void {
+            fakeGateway(fakeSuccessEnvelope([
+                'allowed' => true,
+            ]));
 
-        [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
-            '--operation-token' => signVerifyExecutorToken(id: 'op-verify-42', node: 'verify-executor-test-node'),
-            '--json' => true,
-        ]);
-
-        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
-
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toHaveKey('success')
-            ->and($decoded['success']['data'])->toMatchArray([
-                'operation_id' => 'op-verify-42',
-                'node' => 'verify-executor-test-node',
-                'command' => 'internal:executor:verify',
+            [$exitCode, $output] = runCommand($this, 'internal:executor:verify', [
+                '--operation-token' => signVerifyExecutorToken(id: 'op-verify-42', node: 'verify-executor-test-node'),
+                '--json' => true,
             ]);
-    });
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded)
+                ->toHaveKey('success')
+                ->and($decoded['success']['data'])
+                ->toMatchArray([
+                    'operation_id' => 'op-verify-42',
+                    'node' => 'verify-executor-test-node',
+                    'command' => 'internal:executor:verify',
+                ]);
+        },
+    );
 
     it('maps malformed gateway verification responses to invalid_token without leaking details', function (): void {
         fakeGateway(fakeSuccessEnvelope([
@@ -147,10 +170,13 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
-            ->and($output)->not->toContain('unexpected')
-            ->and($output)->not->toContain('gateway');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('unexpected')->and($output)
+            ->not->toContain('gateway');
     });
 
     it('maps gateway verification transport failures to invalid_token without leaking details', function (): void {
@@ -163,16 +189,21 @@ describe('ORBIT-CLI-ARCH-01 — VerifyExecutorCommand pillars', function (): voi
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
-            ->and($output)->not->toContain('connection refused');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('invalid_token', 'Operation token is invalid.'))
+            ->and($output)
+            ->not->toContain('connection refused');
     });
 
     it('refuses to emit a result that would contain a forbidden secret key (result-boundary scan inherited from base)', function (): void {
         // VerifyExecutorCommand never emits secret-shaped keys; we just confirm the inherited
         // assertResultBoundaryClean()/emitInternalSuccess() rejection path is reachable for any
         // future migration. Use the InternalExecutorCommand base contract test instead.
-        expect(method_exists(VerifyExecutorCommand::class, 'emitInternalSuccess'))->toBeTrue()
-            ->and(method_exists(VerifyExecutorCommand::class, 'verifyOperationToken'))->toBeTrue();
+        expect(method_exists(VerifyExecutorCommand::class, 'emitInternalSuccess'))
+            ->toBeTrue()
+            ->and(method_exists(VerifyExecutorCommand::class, 'verifyOperationToken'))
+            ->toBeTrue();
     });
 });

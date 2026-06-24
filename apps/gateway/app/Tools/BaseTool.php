@@ -96,10 +96,10 @@ abstract class BaseTool implements ToolDefinition
         $packageList = implode(' ', array_map(escapeshellarg(...), $packages));
 
         return <<<BASH
-export DEBIAN_FRONTEND=noninteractive
-sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
-sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq {$packageList}
-BASH;
+            export DEBIAN_FRONTEND=noninteractive
+            sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+            sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq {$packageList}
+            BASH;
     }
 
     /**

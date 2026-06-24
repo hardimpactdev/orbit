@@ -21,15 +21,26 @@ final readonly class AgentIdeAdapterChoicesResponse
      */
     public function supportedInputs(): array
     {
-        return [
-            ...$this->reservedTokens,
-            ...array_values(array_filter(
-                array_map(
-                    static fn (array $adapter): mixed => $adapter['name'] ?? null,
-                    $this->adapters,
-                ),
-                static fn (mixed $name): bool => is_string($name) && $name !== '',
-            )),
-        ];
+        $inputs = [];
+
+        foreach ($this->reservedTokens as $token) {
+            if (is_string($token) && $token !== '') {
+                $inputs[] = $token;
+            }
+        }
+
+        foreach ($this->adapters as $adapter) {
+            if (! is_array($adapter)) {
+                continue;
+            }
+
+            $name = $adapter['name'] ?? null;
+
+            if (is_string($name) && $name !== '') {
+                $inputs[] = $name;
+            }
+        }
+
+        return $inputs;
     }
 }

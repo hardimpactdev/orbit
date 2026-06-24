@@ -37,11 +37,11 @@ final readonly class CaddyGlobalConfig
     private function globalOptions(): string
     {
         return <<<'CADDY'
-{
-    local_certs
-    admin localhost:2019
-}
-CADDY;
+            {
+                local_certs
+                admin localhost:2019
+            }
+            CADDY;
     }
 
     private function ensureGlobalOptions(string $contents): string
@@ -57,7 +57,7 @@ CADDY;
         }
 
         $block = $matches[0];
-        $body = (string) $matches['body'];
+        $body = $matches['body'];
 
         if (! preg_match('/^\s*local_certs\s*$/m', $body)) {
             $block = preg_replace('/\{\s*/', "{\n    local_certs\n", $block, 1) ?? $block;
@@ -124,49 +124,49 @@ CADDY;
     {
         return [
             'security_headers' => <<<'CADDY'
-(security_headers) {
-    header {
-        X-Content-Type-Options "nosniff"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
-        Permissions-Policy "camera=(), microphone=(), geolocation=()"
-        -Server
-    }
-}
-CADDY,
+                (security_headers) {
+                    header {
+                        X-Content-Type-Options "nosniff"
+                        X-XSS-Protection "1; mode=block"
+                        Referrer-Policy "strict-origin-when-cross-origin"
+                        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+                        -Server
+                    }
+                }
+                CADDY,
             'profiling_headers' => <<<'CADDY'
-(profiling_headers) {
-    request_header X-Caddy-Start "{time.now.unix_ms}"
-    header {
-        X-Caddy-End "{time.now.unix_ms}"
-        defer
-    }
-}
-CADDY,
+                (profiling_headers) {
+                    request_header X-Caddy-Start "{time.now.unix_ms}"
+                    header {
+                        X-Caddy-End "{time.now.unix_ms}"
+                        defer
+                    }
+                }
+                CADDY,
             'security_txt' => <<<'CADDY'
-(security_txt) {
-}
-CADDY,
+                (security_txt) {
+                }
+                CADDY,
             'cache_headers' => <<<'CADDY'
-(cache_headers) {
-    @static {
-        path /build/*
-    }
-    header @static Cache-Control "public, max-age=31536000, immutable"
-}
-CADDY,
+                (cache_headers) {
+                    @static {
+                        path /build/*
+                    }
+                    header @static Cache-Control "public, max-age=31536000, immutable"
+                }
+                CADDY,
             'path_blocking_public_root' => <<<'CADDY'
-(path_blocking_public_root) {
-    @blocked path /.env /.env.* /.git/* /artisan
-    respond @blocked 404
-}
-CADDY,
+                (path_blocking_public_root) {
+                    @blocked path /.env /.env.* /.git/* /artisan
+                    respond @blocked 404
+                }
+                CADDY,
             'path_blocking_project_root' => <<<'CADDY'
-(path_blocking_project_root) {
-    @blocked path /.env /.env.* /.git/* /vendor/* /storage/* /config/* /database/* /node_modules/* /artisan
-    respond @blocked 404
-}
-CADDY,
+                (path_blocking_project_root) {
+                    @blocked path /.env /.env.* /.git/* /vendor/* /storage/* /config/* /database/* /node_modules/* /artisan
+                    respond @blocked 404
+                }
+                CADDY,
         ];
     }
 }

@@ -47,7 +47,9 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
                     line: $signature['lineNumber'],
                     severity: FindingSeverity::Error,
                     rule: 'command_docs.signature_argument_order',
-                    message: 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--app`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `'.$expected.'`.',
+                    message: 'Command signature arguments must come before flags. Required entries come before optional entries inside each group. Shared target flags use `--app`, `--workspace`, then `--node`; `--json` stays last. Expected signature: `'
+                    .$expected
+                    .'`.',
                 );
             }
         }
@@ -60,13 +62,20 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
      */
     private function signature(string $contents): ?array
     {
-        if (preg_match('/\n## Signature\s*.*?```(?:bash|text)?\s*\n(?<signature>orbit .+?)\n```/s', $contents, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+        if (
+            preg_match(
+                '/\n## Signature\s*.*?```(?:bash|text)?\s*\n(?<signature>orbit .+?)\n```/s',
+                $contents,
+                $matches,
+                PREG_OFFSET_CAPTURE,
+            ) !== 1
+        ) {
             return null;
         }
 
         return [
             'line' => $matches['signature'][0],
-            'lineNumber' => substr_count(substr($contents, 0, $matches['signature'][1]), "\n") + 1,
+            'lineNumber' => substr_count(substr($contents, 0, (int) $matches['signature'][1]), "\n") + 1,
         ];
     }
 
@@ -165,15 +174,17 @@ final readonly class SignatureArgumentOrderRule implements GroupedRule
 
     private function specificityRank(string $token): int
     {
-        preg_match_all('/--(?<name>[a-z0-9][a-z0-9-]*)/', $token, $matches);
+        preg_match_all('/--(?<name>[a-z0-9][a-z0-9-]*)/', $token, $matches, PREG_SET_ORDER);
 
-        if ($matches['name'] === []) {
+        $names = array_values(array_filter(array_column($matches, 'name'), is_string(...)));
+
+        if ($names === []) {
             return 500;
         }
 
         $ranks = array_map(
             $this->optionRank(...),
-            $matches['name'],
+            $names,
         );
 
         return min($ranks);

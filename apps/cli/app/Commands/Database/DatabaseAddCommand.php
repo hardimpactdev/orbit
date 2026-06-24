@@ -58,8 +58,8 @@ final class DatabaseAddCommand extends DatabaseGatewayCommand
     private function connectionSlug(array $response, string $fallback): string
     {
         $data = $response['success']['data'] ?? null;
-        $connection = is_array($data) ? ($data['connection'] ?? null) : null;
-        $slug = is_array($connection) ? ($connection['slug'] ?? null) : null;
+        $connection = is_array($data) ? $data['connection'] ?? null : null;
+        $slug = is_array($connection) ? $connection['slug'] ?? null : null;
 
         return is_string($slug) && $slug !== '' ? $slug : $fallback;
     }

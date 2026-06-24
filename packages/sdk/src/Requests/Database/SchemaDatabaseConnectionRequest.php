@@ -36,11 +36,14 @@ final class SchemaDatabaseConnectionRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'target' => $this->target,
-            'connection' => $this->connection,
-            'table' => $this->table,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'target' => $this->target,
+                'connection' => $this->connection,
+                'table' => $this->table,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): DatabaseOperationResponse

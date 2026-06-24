@@ -9,7 +9,9 @@ final readonly class UpdateDriverRegistry
     /**
      * @param  list<UpdateDriver>  $drivers
      */
-    public function __construct(private array $drivers) {}
+    public function __construct(
+        private array $drivers,
+    ) {}
 
     /**
      * @return list<UpdateDriver>

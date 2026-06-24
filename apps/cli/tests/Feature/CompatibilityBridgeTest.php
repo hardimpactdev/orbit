@@ -74,7 +74,13 @@ describe('native command option normalization', function (): void {
     });
 
     it('rewrites tool install version options after the command name', function (): void {
-        expect(normalizeNativeCommandArgv(['orbit', 'tool:install', 'mysql', '--version=8.4', '--runtime=docker-swarm']))
+        expect(normalizeNativeCommandArgv([
+            'orbit',
+            'tool:install',
+            'mysql',
+            '--version=8.4',
+            '--runtime=docker-swarm',
+        ]))
             ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4', '--runtime=docker-swarm'])
             ->and(normalizeNativeCommandArgv(['orbit', 'tool:install', 'mysql', '--version', '8.4']))
             ->toBe(['orbit', 'tool:install', 'mysql', '--tool-version=8.4']);
@@ -93,9 +99,48 @@ describe('native command option normalization', function (): void {
     });
 
     it('rewrites process add version options after the command name', function (): void {
-        expect(normalizeNativeCommandArgv(['orbit', 'process:add', 'mysql8', '--node=beast', '--service=mysql', '--runtime=docker', '--version=8.3']))
-            ->toBe(['orbit', 'process:add', 'mysql8', '--node=beast', '--service=mysql', '--runtime=docker', '--service-version=8.3'])
-            ->and(normalizeNativeCommandArgv(['orbit', 'process:add', 'mysql8', '--node', 'beast', '--service', 'mysql', '--runtime', 'docker', '--version', '8.3']))
-            ->toBe(['orbit', 'process:add', 'mysql8', '--node', 'beast', '--service', 'mysql', '--runtime', 'docker', '--service-version=8.3']);
+        expect(normalizeNativeCommandArgv([
+            'orbit',
+            'process:add',
+            'mysql8',
+            '--node=beast',
+            '--service=mysql',
+            '--runtime=docker',
+            '--version=8.3',
+        ]))
+            ->toBe([
+                'orbit',
+                'process:add',
+                'mysql8',
+                '--node=beast',
+                '--service=mysql',
+                '--runtime=docker',
+                '--service-version=8.3',
+            ])
+            ->and(normalizeNativeCommandArgv([
+                'orbit',
+                'process:add',
+                'mysql8',
+                '--node',
+                'beast',
+                '--service',
+                'mysql',
+                '--runtime',
+                'docker',
+                '--version',
+                '8.3',
+            ]))
+            ->toBe([
+                'orbit',
+                'process:add',
+                'mysql8',
+                '--node',
+                'beast',
+                '--service',
+                'mysql',
+                '--runtime',
+                'docker',
+                '--service-version=8.3',
+            ]);
     });
 });

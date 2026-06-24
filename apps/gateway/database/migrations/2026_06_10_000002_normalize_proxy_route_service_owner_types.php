@@ -12,8 +12,7 @@ use Illuminate\Support\Facades\DB;
  * - s3.orbit service route: owner_type 'tool' → 'router'
  * - public S3 host routes (protocol s3, not the service domain): owner_type 'tool' → 's3'
  */
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         // Websocket service route: owner 'websocket' → 'router'

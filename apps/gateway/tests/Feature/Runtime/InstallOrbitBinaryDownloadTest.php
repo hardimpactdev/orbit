@@ -74,8 +74,7 @@ describe('install-orbit prebuilt CLI binary download contract', function (): voi
     });
 
     it('keeps Python and the standalone SQLite CLI out of Orbit helper prerequisites', function (): void {
-        expect($this->installer)
-            ->not->toContain('python3');
+        expect($this->installer)->not->toContain('python3');
 
         expect(preg_match_all('/^\s+sqlite3\s+\\\\$/m', $this->installer))->toBe(0);
     });

@@ -60,34 +60,47 @@ function grantAppRegisterAccess(Node $caller, Node $appNode, array $permissions 
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('AppRegisterController', function (): void {
     it('registers an existing app path for authorized callers', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
@@ -98,35 +111,49 @@ describe('AppRegisterController', function (): void {
             ->assertJsonPath('success.meta.node', 'app-1')
             ->assertJsonPath('success.meta.warnings', []);
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->scripts[0])->toContain("test -d '/home/orbit/apps/docs'");
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeTrue()
+            ->and($remoteShell->scripts[0])
+            ->toContain("test -d '/home/orbit/apps/docs'");
     });
 
     it('stores the opt-in HTTPS runtime proxy transport when registering an app', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs',
-            'runtime_proxy_transport' => 'https'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+                'runtime_proxy_transport' => 'https',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'https');
 
@@ -136,13 +163,15 @@ describe('AppRegisterController', function (): void {
 
     it('clears the opt-in HTTPS runtime proxy transport when HTTP is explicit', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
 
         App::factory()->for($targetNode, 'node')->create([
@@ -157,16 +186,26 @@ describe('AppRegisterController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs',
-            'runtime_proxy_transport' => 'http'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+                'runtime_proxy_transport' => 'http',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'converged')
             ->assertJsonPath('success.data.app.runtime_config.proxy_transport', 'http');
 
@@ -176,44 +215,57 @@ describe('AppRegisterController', function (): void {
 
     it('rejects invalid runtime proxy transport values before registration', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs',
-            'runtime_proxy_transport' => 'ftp'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+                'runtime_proxy_transport' => 'ftp',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime_proxy_transport');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('moves an existing app when node and path are explicit', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $oldNode = createTestAppHostNode([
             'name' => 'old-app',
             'tld' => 'old',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         $targetNode = createTestAppHostNode([
             'name' => 'new-app',
             'tld' => 'test',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
         App::factory()->create([
             'name' => 'docs',
@@ -227,142 +279,201 @@ describe('AppRegisterController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'new-app',
-            'path' => '/srv/docs',
-        ], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'new-app',
+                'path' => '/srv/docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'moved')
             ->assertJsonPath('success.data.app.node', 'new-app')
             ->assertJsonPath('success.data.app.path', '/srv/docs');
 
         $app = App::query()->where('name', 'docs')->firstOrFail();
 
-        expect($app->node_id)->toBe($targetNode->id)
-            ->and($app->path)->toBe('/srv/docs')
-            ->and($app->adopted)->toBeTrue()
-            ->and($remoteShell->nodeNames[0])->toBe('new-app')
-            ->and($remoteShell->scripts[0])->toContain("test -d '/srv/docs'");
+        expect($app->node_id)
+            ->toBe($targetNode->id)
+            ->and($app->path)
+            ->toBe('/srv/docs')
+            ->and($app->adopted)
+            ->toBeTrue()
+            ->and($remoteShell->nodeNames[0])
+            ->toBe('new-app')
+            ->and($remoteShell->scripts[0])
+            ->toContain("test -d '/srv/docs'");
     });
 
     it('rejects registration when the caller lacks app:register on the target app node', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode, ['app:read']);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:register')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects omitted-node registration when the caller cannot access the inferred target app node', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         createAppRegisterCallerNode();
         createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'path' => '/home/orbit/apps/docs'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:register')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects production registration when the target node lacks the app-prod role', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
             'tld' => 'test',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs',
-            'domain' => 'docs.example.com'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+                'domain' => 'docs.example.com',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'app.ineligible_node')
             ->assertJsonPath('error.meta.required_role', 'app-prod');
 
-        expect(App::query()->count())->toBe(0)
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(App::query()->count())->toBe(0)->and($remoteShell->scripts)->toBe([]);
     });
 
     it('allows database-role callers when app:register is granted on the target app node', function (): void {
         createTestGatewayNode([
-            'name' => 'gateway-1']);
+            'name' => 'gateway-1',
+        ]);
 
         $caller = createAppRegisterCallerNode();
         NodeRoleAssignment::factory()->create([
             'node_id' => $caller->id,
             'role' => 'database',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         $targetNode = createTestAppHostNode([
             'name' => 'app-1',
-            'status' => 'active']);
+            'status' => 'active',
+        ]);
         grantAppRegisterAccess($caller, $targetNode);
 
         $remoteShell = new AppRegisterApiSequencedRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '/usr/sbin/php-fpm8.5', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1)]);
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/apps/register', [
-            'name' => 'docs',
-            'node' => 'app-1',
-            'path' => '/home/orbit/apps/docs'], [], [], ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/register',
+            [
+                'name' => 'docs',
+                'node' => 'app-1',
+                'path' => '/home/orbit/apps/docs',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_REGISTER_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'adopted')
             ->assertJsonPath('success.data.app.name', 'docs');
 
-        expect(App::query()->where('name', 'docs')->exists())->toBeTrue()
-            ->and($remoteShell->scripts[0])->toContain("test -d '/home/orbit/apps/docs'");
+        expect(App::query()->where('name', 'docs')->exists())
+            ->toBeTrue()
+            ->and($remoteShell->scripts[0])
+            ->toContain("test -d '/home/orbit/apps/docs'");
     });
 });
 
@@ -390,11 +501,13 @@ final class AppRegisterApiSequencedRemoteShell implements RemoteShell
         $this->scripts[] = $script;
         $this->nodeNames[] = $node->name;
 
-        return array_shift($this->results) ?? new RemoteShellResult(
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            durationMs: 1,
+        return (
+            array_shift($this->results) ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            )
         );
     }
 }

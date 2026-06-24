@@ -41,16 +41,26 @@ final class ProcessDestroyController implements Loggable
         $workspaceName = $this->optionalString($request, 'workspace');
 
         if ($nodeName !== null && ($appName !== null || $workspaceName !== null)) {
-            return $this->error('validation_failed', 'A node context cannot be combined with app or workspace context.', [
-                'field' => 'context',
-                'node' => $nodeName,
-                'app' => $appName,
-                'workspace' => $workspaceName,
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'field' => 'context',
+                    'node' => $nodeName,
+                    'app' => $appName,
+                    'workspace' => $workspaceName,
+                ],
+                422,
+            );
         }
 
         if ($nodeName === null && $appName === null && $workspaceName === null) {
-            return $this->error('validation_failed', 'A node, app, or workspace context is required.', ['field' => 'app'], 422);
+            return $this->error(
+                'validation_failed',
+                'A node, app, or workspace context is required.',
+                ['field' => 'app'],
+                422,
+            );
         }
 
         if ($request->boolean('destructive_consent') !== true) {
@@ -64,7 +74,12 @@ final class ProcessDestroyController implements Loggable
                 workspaceName: $workspaceName,
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:remove');
@@ -76,7 +91,12 @@ final class ProcessDestroyController implements Loggable
         try {
             $result = $removeProcess->handle($context, $name);
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $context->subject();
@@ -99,11 +119,16 @@ final class ProcessDestroyController implements Loggable
             return null;
         }
 
-        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ], 403);
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$node->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+            403,
+        );
     }
 
     private function optionalString(Request $request, string $key): ?string

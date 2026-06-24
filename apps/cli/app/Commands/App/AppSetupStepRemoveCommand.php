@@ -40,7 +40,10 @@ final class AppSetupStepRemoveCommand extends AppGatewayCommand
         }
 
         if (! $this->hasDestructiveConsent()) {
-            return $this->failValidation('force', 'This is a destructive operation. Use --force or confirm the prompt.');
+            return $this->failValidation(
+                'force',
+                'This is a destructive operation. Use --force or confirm the prompt.',
+            );
         }
 
         try {

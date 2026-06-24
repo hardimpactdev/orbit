@@ -209,7 +209,9 @@ final readonly class ReleaseManifest
 
         foreach ($images as $role => $image) {
             if (! is_string($role) || trim($role) === '' || ! is_string($image) || trim($image) === '') {
-                throw new RuntimeException('Release manifest role images must be keyed by role with non-empty image references.');
+                throw new RuntimeException(
+                    'Release manifest role images must be keyed by role with non-empty image references.',
+                );
             }
 
             $validated[trim($role)] = trim($image);

@@ -121,7 +121,8 @@ final readonly class E2ETopologyArtifactNamespace
         $namespace = trim($namespace, '.-');
 
         if ($namespace === '') {
-            throw new \InvalidArgumentException(self::EnvironmentVariable.' must contain at least one alphanumeric character.');
+            throw new \InvalidArgumentException(self::EnvironmentVariable
+            .' must contain at least one alphanumeric character.');
         }
 
         return $namespace;

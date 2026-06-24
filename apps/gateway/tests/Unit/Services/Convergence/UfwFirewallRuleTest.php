@@ -28,13 +28,13 @@ it('plans ok when the remote ufw rule already matches gateway intent', function 
         new RemoteShellResult(
             exitCode: 0,
             stdout: <<<'OUT'
-Status: active
+                Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+                     To                         Action      From
+                     --                         ------      ----
+                [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
 
-OUT,
+                OUT,
             stderr: '',
             durationMs: 1,
         ),
@@ -44,13 +44,20 @@ OUT,
     $plan = $convergence->plan($probe);
     $result = $convergence->apply($node, $shell, $plan);
 
-    expect($probe->reachable)->toBeTrue()
-        ->and($probe->present)->toBeTrue()
-        ->and($plan->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->status)->toBe(ConvergenceStatus::Ok)
-        ->and($result->changed())->toBeFalse()
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->scripts[0])->toContain('sudo ufw status numbered');
+    expect($probe->reachable)
+        ->toBeTrue()
+        ->and($probe->present)
+        ->toBeTrue()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Ok)
+        ->and($result->changed())
+        ->toBeFalse()
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->scripts[0])
+        ->toContain('sudo ufw status numbered');
 });
 
 it('applies a missing ufw rule through apply and reload scripts', function (): void {
@@ -78,14 +85,22 @@ it('applies a missing ufw rule through apply and reload scripts', function (): v
     $plan = $convergence->plan($probe);
     $result = $convergence->apply($node, $shell, $plan);
 
-    expect($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($plan->summary)->toContain('local-vite')
-        ->and($result->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->changed())->toBeTrue()
-        ->and($shell->scripts[1])->toContain('sudo ufw allow in from')
-        ->and($shell->scripts[1])->toContain("'10.6.0.0/24'")
-        ->and($shell->scripts[1])->toContain("'local development'")
-        ->and($shell->scripts[2])->toBe('sudo ufw reload');
+    expect($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($plan->summary)
+        ->toContain('local-vite')
+        ->and($result->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and($shell->scripts[1])
+        ->toContain('sudo ufw allow in from')
+        ->and($shell->scripts[1])
+        ->toContain("'10.6.0.0/24'")
+        ->and($shell->scripts[1])
+        ->toContain("'local development'")
+        ->and($shell->scripts[2])
+        ->toBe('sudo ufw reload');
 });
 
 it('deletes a partial match before re-applying gateway intent', function (): void {
@@ -101,13 +116,13 @@ it('deletes a partial match before re-applying gateway intent', function (): voi
         new RemoteShellResult(
             exitCode: 0,
             stdout: <<<'OUT'
-Status: active
+                Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    Anywhere
+                     To                         Action      From
+                     --                         ------      ----
+                [ 1] 5173/tcp                   ALLOW IN    Anywhere
 
-OUT,
+                OUT,
             stderr: '',
             durationMs: 1,
         ),
@@ -120,13 +135,21 @@ OUT,
     $plan = $convergence->plan($probe);
     $result = $convergence->apply($node, $shell, $plan);
 
-    expect($probe->present)->toBeFalse()
-        ->and($probe->partialMatch)->not->toBeNull()
-        ->and($plan->status)->toBe(ConvergenceStatus::Changed)
-        ->and($result->changed())->toBeTrue()
-        ->and($shell->scripts[1])->toContain('sudo ufw delete allow in from')
-        ->and($shell->scripts[2])->toContain('sudo ufw allow in from')
-        ->and($shell->scripts[3])->toBe('sudo ufw reload');
+    expect($probe->present)
+        ->toBeFalse()
+        ->and($probe->partialMatch)
+        ->not
+        ->toBeNull()
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Changed)
+        ->and($result->changed())
+        ->toBeTrue()
+        ->and($shell->scripts[1])
+        ->toContain('sudo ufw delete allow in from')
+        ->and($shell->scripts[2])
+        ->toContain('sudo ufw allow in from')
+        ->and($shell->scripts[3])
+        ->toBe('sudo ufw reload');
 });
 
 it('reports unreachable when ufw introspection fails', function (): void {
@@ -140,9 +163,12 @@ it('reports unreachable when ufw introspection fails', function (): void {
     $probe = $convergence->probe($node, $shell);
     $plan = $convergence->plan($probe);
 
-    expect($probe->reachable)->toBeFalse()
-        ->and($probe->error)->toBe('ssh: connection refused')
-        ->and($plan->status)->toBe(ConvergenceStatus::Unreachable);
+    expect($probe->reachable)
+        ->toBeFalse()
+        ->and($probe->error)
+        ->toBe('ssh: connection refused')
+        ->and($plan->status)
+        ->toBe(ConvergenceStatus::Unreachable);
 });
 
 final class UfwFirewallRuleRecordingShell implements RemoteShell
@@ -153,7 +179,9 @@ final class UfwFirewallRuleRecordingShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

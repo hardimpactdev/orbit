@@ -32,12 +32,24 @@ final readonly class ScheduleRunController implements Loggable
         }
 
         try {
-            $schedule = $this->payload->find($name, $this->stringQuery($request, 'app'), $this->stringQuery($request, 'node'), $caller, 'schedule:run');
+            $schedule = $this->payload->find(
+                $name,
+                $this->stringQuery($request, 'app'),
+                $this->stringQuery($request, 'node'),
+                $caller,
+                'schedule:run',
+            );
 
             $this->setScheduleActivitySubject($request, $schedule);
             $result = $runSchedule->handle($schedule);
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->status($e), $e->errorData());
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->status($e),
+                $e->errorData(),
+            );
         }
 
         return response()->json(['success' => $result]);

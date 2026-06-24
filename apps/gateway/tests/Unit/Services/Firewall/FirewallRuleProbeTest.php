@@ -63,14 +63,17 @@ describe('FirewallRuleProbe interface', function (): void {
     it('has key and label', function (): void {
         $probe = new FirewallRuleProbe;
 
-        expect($probe->key())->toBe('firewall_rule')
-            ->and($probe->label())->toBe('Firewall rules');
+        expect($probe->key())->toBe('firewall_rule')->and($probe->label())->toBe('Firewall rules');
     });
 
     it('returns an empty snapshot when no target node is available', function (): void {
         $rule = new FirewallRule(['name' => 'local-vite']);
 
-        expect((new FirewallRuleProbe)->introspect($rule)->isEmpty())->toBeTrue();
+        expect(
+            new FirewallRuleProbe()
+                ->introspect($rule)
+                ->isEmpty(),
+        )->toBeTrue();
     });
 });
 
@@ -79,25 +82,28 @@ describe('firewall backend UFW reality', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
-[ 2] 5173/tcp (v6)              ALLOW IN    Anywhere (v6)
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+            [ 2] 5173/tcp (v6)              ALLOW IN    Anywhere (v6)
+            UFW);
 
         $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
 
-        expect($snapshot->get('incoming:allow:10.6.0.0/24:any:5173:tcp:v4:any'))->toMatchArray([
-            'direction' => 'incoming',
-            'action' => 'allow',
-            'source' => '10.6.0.0/24',
-            'port' => '5173',
-            'protocol' => 'tcp',
-        ])
-            ->and($shell->nodes[0]->is($node))->toBeTrue()
-            ->and($shell->scripts[0])->toContain('sudo ufw status numbered');
+        expect($snapshot->get('incoming:allow:10.6.0.0/24:any:5173:tcp:v4:any'))
+            ->toMatchArray([
+                'direction' => 'incoming',
+                'action' => 'allow',
+                'source' => '10.6.0.0/24',
+                'port' => '5173',
+                'protocol' => 'tcp',
+            ])
+            ->and($shell->nodes[0]->is($node))
+            ->toBeTrue()
+            ->and($shell->scripts[0])
+            ->toContain('sudo ufw status numbered');
     });
 
     it('detects missing backend rules after UFW inspection', function (): void {
@@ -109,14 +115,14 @@ UFW);
             'port' => '5173',
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            UFW);
 
         $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
-        $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
 
         expect(firewallProbeIssue($drift, 'firewall_rule.rule_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -130,20 +136,23 @@ UFW);
             'port' => '5173',
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    Anywhere
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    Anywhere
+            UFW);
 
         $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
-        $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
         $issue = firewallProbeIssue($drift, 'firewall_rule.rule_mismatch');
 
-        expect($issue?->kind)->toBe(DriftKind::Divergent)
-            ->and($issue?->detail['expected']['source'] ?? null)->toBe('10.6.0.0/24')
-            ->and($issue?->detail['observed']['source'] ?? null)->toBe('any');
+        expect($issue?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and($issue?->detail['expected']['source'] ?? null)
+            ->toBe('10.6.0.0/24')
+            ->and($issue?->detail['observed']['source'] ?? null)
+            ->toBe('any');
     });
 
     it('passes when backend rule shape matches gateway intent', function (): void {
@@ -155,15 +164,15 @@ UFW);
             'port' => '5173',
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+            UFW);
 
         $snapshot = new FirewallRuleProbe($shell)->introspect($rule);
-        $drift = (new FirewallRuleProbe)->diff($rule, $snapshot);
+        $drift = new FirewallRuleProbe()->diff($rule, $snapshot);
 
         expect($drift)->toBe([]);
     });
@@ -203,21 +212,24 @@ UFW);
             'protected' => true,
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 22/tcp on wg-orbit         ALLOW IN    10.6.0.0/24                # Orbit node security baseline permits SSH only through WireGuard.
-[ 2] 22/tcp on enp11s0          DENY IN     Anywhere                   # Orbit node security baseline denies public SSH after bootstrap.
-[ 3] 22/tcp (v6) on enp11s0     DENY IN     Anywhere (v6)              # Orbit node security baseline denies public SSH after bootstrap.
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 22/tcp on wg-orbit         ALLOW IN    10.6.0.0/24                # Orbit node security baseline permits SSH only through WireGuard.
+            [ 2] 22/tcp on enp11s0          DENY IN     Anywhere                   # Orbit node security baseline denies public SSH after bootstrap.
+            [ 3] 22/tcp (v6) on enp11s0     DENY IN     Anywhere (v6)              # Orbit node security baseline denies public SSH after bootstrap.
+            UFW);
 
         $snapshot = new FirewallRuleProbe($shell)->introspect($publicDeny);
         $probe = new FirewallRuleProbe;
 
-        expect($probe->diff($publicDeny, $snapshot))->toBe([])
-            ->and($probe->diff($wireguardAllow, $snapshot))->toBe([])
-            ->and($probe->diff($publicDenyV6, $snapshot))->toBe([]);
+        expect($probe->diff($publicDeny, $snapshot))
+            ->toBe([])
+            ->and($probe->diff($wireguardAllow, $snapshot))
+            ->toBe([])
+            ->and($probe->diff($publicDenyV6, $snapshot))
+            ->toBe([]);
     });
 
     it('matches inactive UFW staged node security rules from stored rule files', function (): void {
@@ -255,18 +267,21 @@ UFW);
             'protected' => true,
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: inactive
-__orbit_ufw_file:user:-A ufw-user-input -i wg-orbit -p tcp --dport 22 -s 10.6.0.0/24 -j ACCEPT
-__orbit_ufw_file:user:-A ufw-user-input -i eth0 -p tcp --dport 22 -j DROP
-__orbit_ufw_file:user6:-A ufw6-user-input -i eth0 -p tcp --dport 22 -j DROP
-UFW);
+            Status: inactive
+            __orbit_ufw_file:user:-A ufw-user-input -i wg-orbit -p tcp --dport 22 -s 10.6.0.0/24 -j ACCEPT
+            __orbit_ufw_file:user:-A ufw-user-input -i eth0 -p tcp --dport 22 -j DROP
+            __orbit_ufw_file:user6:-A ufw6-user-input -i eth0 -p tcp --dport 22 -j DROP
+            UFW);
 
         $snapshot = new FirewallRuleProbe($shell)->introspect($publicDeny);
         $probe = new FirewallRuleProbe;
 
-        expect($probe->diff($publicDeny, $snapshot))->toBe([])
-            ->and($probe->diff($wireguardAllow, $snapshot))->toBe([])
-            ->and($probe->diff($publicDenyV6, $snapshot))->toBe([]);
+        expect($probe->diff($publicDeny, $snapshot))
+            ->toBe([])
+            ->and($probe->diff($wireguardAllow, $snapshot))
+            ->toBe([])
+            ->and($probe->diff($publicDenyV6, $snapshot))
+            ->toBe([]);
     });
 });
 
@@ -299,7 +314,7 @@ describe('firewall registry probe foundation', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect($drift)->toBe([]);
     });
@@ -308,7 +323,7 @@ describe('firewall registry probe foundation', function (): void {
         $node = createFirewallRuleProbeGatewayAssignmentNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'public-https', 'port' => '443']);
 
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect($drift)->toBe([]);
     });
@@ -330,7 +345,7 @@ describe('firewall registry probe foundation', function (): void {
         ]);
 
         $rule = FirewallRule::findOrFail($id);
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect(firewallProbeIssue($drift, 'firewall_rule.record_incomplete')?->kind)->toBe(DriftKind::Missing);
     });
@@ -339,13 +354,17 @@ describe('firewall registry probe foundation', function (): void {
         $node = $createNode();
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
         'unassigned node' => [fn (): Node => Node::factory()->create(['status' => 'active', 'platform' => 'ubuntu'])],
-        'inactive app node' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive', 'platform' => 'ubuntu'])],
-        'unsupported platform' => [fn (): Node => Node::factory()->appDev()->create(['status' => 'active', 'platform' => 'macos'])],
+        'inactive app node' => [
+            fn (): Node => Node::factory()->appDev()->create(['status' => 'inactive', 'platform' => 'ubuntu']),
+        ],
+        'unsupported platform' => [
+            fn (): Node => Node::factory()->appDev()->create(['status' => 'active', 'platform' => 'macos']),
+        ],
     ]);
 
     it('treats every firewall-eligible role as a valid target node', function (string $role): void {
@@ -358,7 +377,7 @@ describe('firewall registry probe foundation', function (): void {
         ]);
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => "{$role}-rule"]);
 
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid'))->toBeNull();
     })->with(['gateway', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress']);
@@ -373,7 +392,7 @@ describe('firewall registry probe foundation', function (): void {
         ]);
         $rule = FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'app-rule']);
 
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect(firewallProbeIssue($drift, 'firewall_rule.node_invalid'))->toBeNull();
     });
@@ -391,7 +410,7 @@ describe('firewall registry probe foundation', function (): void {
             'protocol' => 'tcp',
         ]);
 
-        $drift = (new FirewallRuleProbe)->diff($rule, new ProbeSnapshot([]));
+        $drift = new FirewallRuleProbe()->diff($rule, new ProbeSnapshot([]));
 
         expect(firewallProbeIssue($drift, 'firewall_rule.baseline_conflict')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -401,44 +420,53 @@ describe('firewall adopt handlers', function (): void {
     it('adopts observed backend rules not in the registry', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+            UFW);
         $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
         $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
-        expect($results)->toHaveCount(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Created)
-            ->and($results[0]->summary)->toContain('Adopted firewall rule')
-            ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(1);
+        expect($results)
+            ->toHaveCount(1)
+            ->and($results[0]->action)
+            ->toBe(AdoptAction::Created)
+            ->and($results[0]->summary)
+            ->toContain('Adopted firewall rule')
+            ->and(FirewallRule::query()->where('node_id', $node->id)->count())
+            ->toBe(1);
 
         $adopted = FirewallRule::query()->where('node_id', $node->id)->first();
 
-        expect($adopted->name)->toBe('incoming-allow-5173-tcp')
-            ->and($adopted->direction)->toBe('incoming')
-            ->and($adopted->action)->toBe('allow')
-            ->and($adopted->source)->toBe('10.6.0.0/24')
-            ->and($adopted->port)->toBe('5173')
-            ->and($adopted->protocol)->toBe('tcp');
+        expect($adopted->name)
+            ->toBe('incoming-allow-5173-tcp')
+            ->and($adopted->direction)
+            ->toBe('incoming')
+            ->and($adopted->action)
+            ->toBe('allow')
+            ->and($adopted->source)
+            ->toBe('10.6.0.0/24')
+            ->and($adopted->port)
+            ->toBe('5173')
+            ->and($adopted->protocol)
+            ->toBe('tcp');
     });
 
     it('skips baseline bootstrap rules during adoption', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 22/tcp                     ALLOW IN    Anywhere
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 22/tcp                     ALLOW IN    Anywhere
+            UFW);
         $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
         $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
-        expect($results)->toBeEmpty()
-            ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(0);
+        expect($results)->toBeEmpty()->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(0);
     });
 
     it('skips rules already present in the registry', function (): void {
@@ -450,17 +478,16 @@ UFW);
             'port' => '5173',
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+            UFW);
         $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
         $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
-        expect($results)->toBeEmpty()
-            ->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(1);
+        expect($results)->toBeEmpty()->and(FirewallRule::query()->where('node_id', $node->id)->count())->toBe(1);
     });
 
     it('reports conflict when name collides with different identity', function (): void {
@@ -472,29 +499,32 @@ UFW);
             'port' => '5173',
         ]);
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24
+            UFW);
         $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
         $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 
-        expect($results)->toHaveCount(1)
-            ->and($results[0]->action)->toBe(AdoptAction::Conflict)
-            ->and($results[0]->summary)->toContain('Name collision');
+        expect($results)
+            ->toHaveCount(1)
+            ->and($results[0]->action)
+            ->toBe(AdoptAction::Conflict)
+            ->and($results[0]->summary)
+            ->toContain('Name collision');
     });
 
     it('derives name from orbit: prefix comment', function (): void {
         $node = createFirewallRuleProbeAppHostNode();
         $shell = new FirewallProbeRecordingRemoteShell(<<<'UFW'
-Status: active
+            Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24             # orbit:local-vite
-UFW);
+                 To                         Action      From
+                 --                         ------      ----
+            [ 1] 5173/tcp                   ALLOW IN    10.6.0.0/24             # orbit:local-vite
+            UFW);
         $snapshot = new FirewallRuleProbe($shell)->introspectNode($node);
         $results = new FirewallRuleProbe($shell)->adopt($node, $snapshot);
 

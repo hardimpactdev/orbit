@@ -43,7 +43,7 @@ class OrbitSchedulerCommand extends Command
                 $result->executedSchedules,
             ));
 
-            if ($this->option('once') === true || ($maxTicks !== null && $completedTicks >= $maxTicks)) {
+            if ($this->option('once') === true || $maxTicks !== null && $completedTicks >= $maxTicks) {
                 return self::SUCCESS;
             }
 

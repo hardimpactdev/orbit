@@ -125,27 +125,27 @@ final readonly class GatewayRuntimeBackendProbe
 
         return sprintf(
             <<<'BASH'
-# orbit-gateway-container-probe:container-inspect
-container=%s
-runtime="available"
-exists="false"
-running="false"
+                # orbit-gateway-container-probe:container-inspect
+                container=%s
+                runtime="available"
+                exists="false"
+                running="false"
 
-if ! command -v docker >/dev/null 2>&1; then
-    runtime="no_docker"
-elif ! docker info >/dev/null 2>&1; then
-    runtime="daemon_unavailable"
-else
-    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
-        exists="true"
-        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
-        if [ "$state" = "true" ]; then
-            running="true"
-        fi
-    fi
-fi
-printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
-BASH,
+                if ! command -v docker >/dev/null 2>&1; then
+                    runtime="no_docker"
+                elif ! docker info >/dev/null 2>&1; then
+                    runtime="daemon_unavailable"
+                else
+                    if docker container inspect --format '{{.State.Running}}' "$container" >/dev/null 2>&1; then
+                        exists="true"
+                        state=$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || echo "false")
+                        if [ "$state" = "true" ]; then
+                            running="true"
+                        fi
+                    fi
+                fi
+                printf '%%s\t%%s\t%%s\n' "$runtime" "$exists" "$running"
+                BASH,
             $runtimeName,
         );
     }

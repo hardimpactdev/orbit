@@ -138,15 +138,17 @@ final readonly class NodePermissionsController implements Loggable
             $payload = ['success' => ['data' => $data]];
 
             if ($normalized->removed !== []) {
-                $payload['success']['meta'] = ['warnings' => [
-                    [
-                        'code' => 'node.redundant_permissions',
-                        'family' => 'node',
-                        'message' => 'Redundant permissions were removed: '.implode(', ', $normalized->removed).'.',
-                        'next_command' => null,
-                        'permissions' => $normalized->removed,
+                $payload['success']['meta'] = [
+                    'warnings' => [
+                        [
+                            'code' => 'node.redundant_permissions',
+                            'family' => 'node',
+                            'message' => 'Redundant permissions were removed: '.implode(', ', $normalized->removed).'.',
+                            'next_command' => null,
+                            'permissions' => $normalized->removed,
+                        ],
                     ],
-                ]];
+                ];
             }
 
             return response()->json($payload);
@@ -245,17 +247,23 @@ final readonly class NodePermissionsController implements Loggable
 
     private function modeCount(NodePermissionsApiRequest $request): int
     {
-        return (int) ($request->preset() !== null)
+        return (
+            (int) ($request->preset() !== null)
             + (int) ($request->permissionsInput() !== null)
             + (int) ($request->addInput() !== null)
-            + (int) ($request->removeInput() !== null);
+            + (int) ($request->removeInput() !== null)
+        );
     }
 
     /**
      * @return list<string>|JsonResponse
      */
-    private function resolveMutationPermissions(?string $preset, ?string $permissionsOpt, ?string $addOpt, ?NodeAccess $grant): array|JsonResponse
-    {
+    private function resolveMutationPermissions(
+        ?string $preset,
+        ?string $permissionsOpt,
+        ?string $addOpt,
+        ?NodeAccess $grant,
+    ): array|JsonResponse {
         if ($preset !== null) {
             if ($preset === '') {
                 return $this->error(
@@ -329,7 +337,7 @@ final readonly class NodePermissionsController implements Loggable
                 );
             }
 
-            $currentPermissions = $grant !== null ? ($grant->permissions ?? ['*']) : [];
+            $currentPermissions = $grant !== null ? $grant->permissions ?? ['*'] : [];
             $merged = array_values(array_unique(array_merge($currentPermissions, $toAdd)));
 
             return $merged;

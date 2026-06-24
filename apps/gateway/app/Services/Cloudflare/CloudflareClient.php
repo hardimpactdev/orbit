@@ -214,12 +214,14 @@ final readonly class CloudflareClient
             }
 
             $parameters = $rule['action_parameters'] ?? [];
-            $browserTtl = is_array($parameters) ? ($parameters['browser_ttl'] ?? []) : [];
+            $browserTtl = is_array($parameters) ? $parameters['browser_ttl'] ?? [] : [];
 
-            if (($rule['action'] ?? null) === 'set_cache_settings'
+            if (
+                ($rule['action'] ?? null) === 'set_cache_settings'
                 && ($parameters['cache'] ?? null) === true
                 && is_array($browserTtl)
-                && ($browserTtl['mode'] ?? null) === 'respect_origin') {
+                && ($browserTtl['mode'] ?? null) === 'respect_origin'
+            ) {
                 return true;
             }
         }
@@ -257,7 +259,10 @@ final readonly class CloudflareClient
             'put' => $http->put($url, $data),
             'patch' => $http->patch($url, $data),
             'delete' => $http->delete($url, $data),
-            default => throw new GatewayApiException('Unsupported Cloudflare request method.', 'cloudflare_unavailable'),
+            default => throw new GatewayApiException(
+                'Unsupported Cloudflare request method.',
+                'cloudflare_unavailable',
+            ),
         };
 
         $body = $response->json();
@@ -269,10 +274,13 @@ final readonly class CloudflareClient
             throw new GatewayApiException(
                 message: $message !== null ? "Cloudflare is unavailable: {$message}" : 'Cloudflare is unavailable.',
                 errorCode: 'cloudflare_unavailable',
-                errorMeta: array_filter([
-                    'provider_status' => $response->status(),
-                    'provider_message' => $message,
-                ], fn (mixed $value): bool => $value !== null && $value !== ''),
+                errorMeta: array_filter(
+                    [
+                        'provider_status' => $response->status(),
+                        'provider_message' => $message,
+                    ],
+                    fn (mixed $value): bool => $value !== null && $value !== '',
+                ),
             );
         }
 

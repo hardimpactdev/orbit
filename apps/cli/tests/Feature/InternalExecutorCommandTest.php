@@ -16,9 +16,12 @@ describe('internal executor verification command', function (): void {
 
         [$exitCode, $output] = runInternalExecutorCommand($this);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('missing_token')
-            ->and($output)->toContain('Operation token is required.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('missing_token')
+            ->and($output)
+            ->toContain('Operation token is required.');
     });
 
     it('returns missing_token failure envelope as JSON when --json is set and token is absent', function (): void {
@@ -28,8 +31,10 @@ describe('internal executor verification command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -42,9 +47,12 @@ describe('internal executor verification command', function (): void {
             '--operation-token' => '',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('missing_token')
-            ->and($output)->toContain('Operation token is required.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('missing_token')
+            ->and($output)
+            ->toContain('Operation token is required.');
     });
 
     it('returns missing_token failure envelope as JSON when --json and --operation-token= are empty', function (): void {
@@ -55,8 +63,10 @@ describe('internal executor verification command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -72,11 +82,15 @@ describe('internal executor verification command', function (): void {
             '--operation-token' => 'not-a-token',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('invalid_token')
-            ->and($output)->toContain('Operation token is invalid.')
-            ->and($output)->not->toContain('segment')
-            ->and($output)->not->toContain('InvalidArgumentException');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('invalid_token')
+            ->and($output)
+            ->toContain('Operation token is invalid.')
+            ->and($output)
+            ->not->toContain('segment')->and($output)
+            ->not->toContain('InvalidArgumentException');
     });
 
     it('returns invalid_token failure envelope as JSON when --json and token is malformed', function (): void {
@@ -90,8 +104,10 @@ describe('internal executor verification command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -107,9 +123,12 @@ describe('internal executor verification command', function (): void {
             '--operation-token' => signedOperationToken(node: 'app-prod'),
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('invalid_token')
-            ->and($output)->toContain('Operation token is invalid.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('invalid_token')
+            ->and($output)
+            ->toContain('Operation token is invalid.');
     });
 
     it('returns invalid_token failure envelope as JSON when the gateway rejects the token', function (): void {
@@ -123,8 +142,10 @@ describe('internal executor verification command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -143,16 +164,22 @@ describe('internal executor verification command', function (): void {
             '--operation-token' => $token,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('operation_id: operation-verify')
-            ->and($output)->toContain('node: app-dev')
-            ->and($output)->toContain('command: internal:workspace-adapter');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('operation_id: operation-verify')
+            ->and($output)
+            ->toContain('node: app-dev')
+            ->and($output)
+            ->toContain('command: internal:workspace-adapter');
 
         Http::assertSent(function (Request $request) use ($token): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && $request->url() === 'https://gateway.test/api/internal-executor/token/verify'
                 && $request['operation_token'] === $token
-                && $request['command'] === 'internal:executor:verify';
+                && $request['command'] === 'internal:executor:verify'
+            );
         });
     });
 
@@ -166,10 +193,14 @@ describe('internal executor verification command', function (): void {
             '--operation-token' => signedOperationToken(id: 'operation-verify-1'),
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('operation_id: operation-verify-1')
-            ->and($output)->toContain('node: app-dev')
-            ->and($output)->toContain('command: internal:executor:verify');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('operation_id: operation-verify-1')
+            ->and($output)
+            ->toContain('node: app-dev')
+            ->and($output)
+            ->toContain('command: internal:executor:verify');
     });
 
     it('outputs a success envelope as JSON for a valid operation token', function (): void {
@@ -183,8 +214,10 @@ describe('internal executor verification command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'operation_id' => 'operation-verify-json',
                     'node' => 'app-dev',
@@ -198,8 +231,10 @@ describe('internal executor verification command', function (): void {
         $process = new Process([PHP_BINARY, 'orbit', 'list'], base_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->not->toContain('internal:executor:verify');
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->not->toContain('internal:executor:verify');
     });
 });
 
@@ -218,14 +253,16 @@ function signedOperationToken(
     $issuedAt ??= time() - 10;
     $expiresAt ??= time() + 120;
 
-    return (new OperationTokenSigner)->sign(
-        secret: 'gateway-secret',
-        id: $id,
-        node: $node,
-        command: $command,
-        issuedAt: $issuedAt,
-        expiresAt: $expiresAt,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'gateway-secret',
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
 }
 
 /**

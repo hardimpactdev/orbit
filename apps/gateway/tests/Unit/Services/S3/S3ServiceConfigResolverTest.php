@@ -72,8 +72,10 @@ it('preserves existing credentials from the seaweedfs tool row', function (): vo
 
     $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
-    expect($config->accessKeyId)->toBe('EXISTINGACCESSKEYID12')
-        ->and($config->secretAccessKey)->toBe('existing-secret-access-key-value-here');
+    expect($config->accessKeyId)
+        ->toBe('EXISTINGACCESSKEYID12')
+        ->and($config->secretAccessKey)
+        ->toBe('existing-secret-access-key-value-here');
 });
 
 it('generates new credentials when the seaweedfs tool row has no credentials', function (): void {
@@ -83,8 +85,10 @@ it('generates new credentials when the seaweedfs tool row has no credentials', f
 
     $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
-    expect($config->accessKeyId)->toBeString()->not->toBeEmpty()
-        ->and($config->secretAccessKey)->toBeString()->not->toBeEmpty();
+    expect($config->accessKeyId)
+        ->toBeString()
+        ->not->toBeEmpty()->and($config->secretAccessKey)->toBeString()
+        ->not->toBeEmpty();
 });
 
 it('generates new credentials when the credentials fields array is empty', function (): void {
@@ -96,8 +100,10 @@ it('generates new credentials when the credentials fields array is empty', funct
 
     $config = s3Resolver()->resolve($node, $assignment, $seaweedfs);
 
-    expect($config->accessKeyId)->toBeString()->not->toBeEmpty()
-        ->and($config->secretAccessKey)->toBeString()->not->toBeEmpty();
+    expect($config->accessKeyId)
+        ->toBeString()
+        ->not->toBeEmpty()->and($config->secretAccessKey)->toBeString()
+        ->not->toBeEmpty();
 });
 
 it('generates new credentials when the access_key_id is missing', function (): void {
@@ -139,8 +145,10 @@ it('generates credentials when no seaweedfs tool row is provided', function (): 
 
     $config = s3Resolver()->resolve($node, $assignment, null);
 
-    expect($config->accessKeyId)->toBeString()->not->toBeEmpty()
-        ->and($config->secretAccessKey)->toBeString()->not->toBeEmpty();
+    expect($config->accessKeyId)
+        ->toBeString()
+        ->not->toBeEmpty()->and($config->secretAccessKey)->toBeString()
+        ->not->toBeEmpty();
 });
 
 // ---------------------------------------------------------------------------

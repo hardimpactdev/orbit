@@ -37,19 +37,24 @@ describe('php:use', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/php/use')
                 && $request->data() === [
                     'version' => '8.5',
                     'app' => 'docs',
                     'inherit' => false,
                     'cli' => false,
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['target'])->toBe('app')
-            ->and($decoded['success']['meta']['warnings'])->toBe([]);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['result']['target'])
+            ->toBe('app')
+            ->and($decoded['success']['meta']['warnings'])
+            ->toBe([]);
     });
 
     it('uses cwd-inferred app context when no explicit app is provided', function (): void {
@@ -102,13 +107,15 @@ describe('php:use', function (): void {
         Http::assertSent(function (Request $request): bool {
             $payload = $request->data();
 
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/php/use')
                 && ! array_key_exists('version', $payload)
                 && $payload['app'] === 'docs'
                 && $payload['workspace'] === 'feature-docs'
                 && $payload['inherit'] === true
-                && $payload['cli'] === false;
+                && $payload['cli'] === false
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -153,13 +160,13 @@ describe('php:use', function (): void {
             'result' => ['target' => 'app', 'app' => 'docs', 'version' => '8.5'],
         ], ['warnings' => []]));
 
-        $this->artisan('php:use', ['--app' => 'docs'])
+        $this
+            ->artisan('php:use', ['--app' => 'docs'])
             ->expectsChoice('PHP version', '8.5', ['8.5', '8.4', '8.3'])
             ->assertSuccessful();
 
         Http::assertSent(function (Request $request): bool {
-            return $request->data()['version'] === '8.5'
-                && $request->data()['app'] === 'docs';
+            return $request->data()['version'] === '8.5' && $request->data()['app'] === 'docs';
         });
     });
 
@@ -171,9 +178,12 @@ describe('php:use', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
                 'field' => 'version',
                 'reason' => 'missing',
             ]);
@@ -193,9 +203,12 @@ describe('php:use', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('workspace');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('workspace');
     });
 
     it('surfaces config store failures when resolving the default node for CLI scope', function (): void {
@@ -214,8 +227,7 @@ describe('php:use', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('config_invalid_json');
+            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('config_invalid_json');
         } finally {
             @unlink($path);
         }

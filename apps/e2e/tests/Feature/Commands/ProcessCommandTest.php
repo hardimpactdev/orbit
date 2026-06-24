@@ -26,34 +26,50 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $add = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:add {$process} ".escapeshellarg('echo worker-ready; sleep 300').' --app='.escapeshellarg($app).' --json',
+            "cd {$checkout} && orbit process:add {$process} "
+            .escapeshellarg('echo worker-ready; sleep 300')
+            .' --app='
+            .escapeshellarg($app)
+            .' --json',
             timeoutSeconds: 180,
         );
         $addPayload = processCommandPayload($add->output());
 
         if (($addPayload['success']['meta']['warnings'] ?? []) !== []) {
-            throw new RuntimeException(processCommandDockerDiagnostics($topology, $runtimeUnit, $appPath, $add->output().$add->errorOutput()));
+            throw new RuntimeException(processCommandDockerDiagnostics(
+                $topology,
+                $runtimeUnit,
+                $appPath,
+                $add->output().$add->errorOutput(),
+            ));
         }
 
-        expect($add->successful())->toBeTrue()
-            ->and($addPayload['success']['data']['process'])->toMatchArray([
+        expect($add->successful())
+            ->toBeTrue()
+            ->and($addPayload['success']['data']['process'])
+            ->toMatchArray([
                 'name' => $process,
                 'app' => $app,
                 'restart_policy' => 'never',
                 'crash_notification' => 'none',
                 'runtime' => 'docker',
             ])
-            ->and($addPayload['success']['data']['runtime_units'][0]['name'])->toBe($runtimeUnit);
+            ->and($addPayload['success']['data']['runtime_units'][0]['name'])
+            ->toBe($runtimeUnit);
 
         $edit = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:edit {$process} --app=".escapeshellarg($app).' --restart-policy=always --json',
+            "cd {$checkout} && orbit process:edit {$process} --app="
+            .escapeshellarg($app)
+            .' --restart-policy=always --json',
             timeoutSeconds: 180,
         );
         $editPayload = processCommandPayload($edit->output());
 
-        expect($edit->successful())->toBeTrue()
-            ->and($editPayload['success']['data']['process']['restart_policy'])->toBe('always');
+        expect($edit->successful())
+            ->toBeTrue()
+            ->and($editPayload['success']['data']['process']['restart_policy'])
+            ->toBe('always');
 
         $start = $topology->ssh(
             'gateway',
@@ -64,17 +80,25 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         $startPayload = processCommandPayload($start->output());
 
         if (! $start->successful()) {
-            throw new RuntimeException(processCommandDockerDiagnostics($topology, $runtimeUnit, $appPath, $start->output().$start->errorOutput()));
+            throw new RuntimeException(processCommandDockerDiagnostics(
+                $topology,
+                $runtimeUnit,
+                $appPath,
+                $start->output().$start->errorOutput(),
+            ));
         }
 
-        expect($start->successful())->toBeTrue()
-            ->and($startPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($start->successful())
+            ->toBeTrue()
+            ->and($startPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $process,
                 'app' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
             ])
-            ->and($startPayload['success']['data']['runtimes'][0]['event']['type'])->toBe('started');
+            ->and($startPayload['success']['data']['runtimes'][0]['event']['type'])
+            ->toBe('started');
 
         sleep(1);
 
@@ -85,9 +109,12 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         );
         $logsPayload = processCommandPayload($logs->output());
 
-        expect($logs->successful())->toBeTrue()
-            ->and($logsPayload['success']['data']['logs']['runtime_unit'])->toBe($runtimeUnit)
-            ->and(array_column($logsPayload['success']['data']['logs']['lines'], 'message'))->toContain('worker-ready');
+        expect($logs->successful())
+            ->toBeTrue()
+            ->and($logsPayload['success']['data']['logs']['runtime_unit'])
+            ->toBe($runtimeUnit)
+            ->and(array_column($logsPayload['success']['data']['logs']['lines'], 'message'))
+            ->toContain('worker-ready');
 
         $restart = $topology->ssh(
             'gateway',
@@ -96,14 +123,17 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         );
         $restartPayload = processCommandPayload($restart->output());
 
-        expect($restart->successful())->toBeTrue()
-            ->and($restartPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($restart->successful())
+            ->toBeTrue()
+            ->and($restartPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $process,
                 'app' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'running',
             ])
-            ->and(array_column($restartPayload['success']['data']['runtimes'][0]['events'], 'type'))->toBe(['stopped', 'started']);
+            ->and(array_column($restartPayload['success']['data']['runtimes'][0]['events'], 'type'))
+            ->toBe(['stopped', 'started']);
 
         $stop = $topology->ssh(
             'gateway',
@@ -112,46 +142,69 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         );
         $stopPayload = processCommandPayload($stop->output());
 
-        expect($stop->successful())->toBeTrue()
-            ->and($stopPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($stop->successful())
+            ->toBeTrue()
+            ->and($stopPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $process,
                 'app' => $app,
                 'runtime_unit' => $runtimeUnit,
                 'state' => 'stopped',
             ])
-            ->and($stopPayload['success']['data']['runtimes'][0]['event']['type'])->toBe('stopped');
+            ->and($stopPayload['success']['data']['runtimes'][0]['event']['type'])
+            ->toBe('stopped');
 
         $workspaceAdd = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:add {$workspaceProcess} ".escapeshellarg('echo workspace-ready; sleep 300').' --app='.escapeshellarg($app).' --workspace='.escapeshellarg($workspace).' --json',
+            "cd {$checkout} && orbit process:add {$workspaceProcess} "
+            .escapeshellarg('echo workspace-ready; sleep 300')
+            .' --app='
+            .escapeshellarg($app)
+            .' --workspace='
+            .escapeshellarg($workspace)
+            .' --json',
             timeoutSeconds: 180,
         );
         $workspaceAddPayload = processCommandPayload($workspaceAdd->output());
 
-        expect($workspaceAdd->successful())->toBeTrue()
-            ->and($workspaceAddPayload['success']['data']['process'])->toMatchArray([
+        expect($workspaceAdd->successful())
+            ->toBeTrue()
+            ->and($workspaceAddPayload['success']['data']['process'])
+            ->toMatchArray([
                 'name' => $workspaceProcess,
                 'node' => 'app-dev-1',
                 'app' => $app,
                 'workspace' => $workspace,
                 'runtime' => 'docker',
             ])
-            ->and($workspaceAddPayload['success']['data']['runtime_units'][0]['name'])->toBe($workspaceRuntimeUnit);
+            ->and($workspaceAddPayload['success']['data']['runtime_units'][0]['name'])
+            ->toBe($workspaceRuntimeUnit);
 
         $workspaceStart = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:start {$workspaceProcess} --app=".escapeshellarg($app).' --workspace='.escapeshellarg($workspace).' --json',
+            "cd {$checkout} && orbit process:start {$workspaceProcess} --app="
+            .escapeshellarg($app)
+            .' --workspace='
+            .escapeshellarg($workspace)
+            .' --json',
             timeoutSeconds: 120,
             allowFailure: true,
         );
         $workspaceStartPayload = processCommandPayload($workspaceStart->output());
 
         if (! $workspaceStart->successful()) {
-            throw new RuntimeException(processCommandDockerDiagnostics($topology, $workspaceRuntimeUnit, $workspacePath, $workspaceStart->output().$workspaceStart->errorOutput()));
+            throw new RuntimeException(processCommandDockerDiagnostics(
+                $topology,
+                $workspaceRuntimeUnit,
+                $workspacePath,
+                $workspaceStart->output().$workspaceStart->errorOutput(),
+            ));
         }
 
-        expect($workspaceStart->successful())->toBeTrue()
-            ->and($workspaceStartPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($workspaceStart->successful())
+            ->toBeTrue()
+            ->and($workspaceStartPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
                 'app' => $app,
@@ -164,30 +217,43 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceLogs = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:logs {$workspaceProcess} --app=".escapeshellarg($app).' --workspace='.escapeshellarg($workspace).' --lines=5 --json',
+            "cd {$checkout} && orbit process:logs {$workspaceProcess} --app="
+            .escapeshellarg($app)
+            .' --workspace='
+            .escapeshellarg($workspace)
+            .' --lines=5 --json',
             timeoutSeconds: 120,
         );
         $workspaceLogsPayload = processCommandPayload($workspaceLogs->output());
 
-        expect($workspaceLogs->successful())->toBeTrue()
-            ->and($workspaceLogsPayload['success']['data']['logs'])->toMatchArray([
+        expect($workspaceLogs->successful())
+            ->toBeTrue()
+            ->and($workspaceLogsPayload['success']['data']['logs'])
+            ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
                 'app' => $app,
                 'workspace' => $workspace,
                 'runtime_unit' => $workspaceRuntimeUnit,
             ])
-            ->and(array_column($workspaceLogsPayload['success']['data']['logs']['lines'], 'message'))->toContain('workspace-ready');
+            ->and(array_column($workspaceLogsPayload['success']['data']['logs']['lines'], 'message'))
+            ->toContain('workspace-ready');
 
         $workspaceStop = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:stop {$workspaceProcess} --app=".escapeshellarg($app).' --workspace='.escapeshellarg($workspace).' --json',
+            "cd {$checkout} && orbit process:stop {$workspaceProcess} --app="
+            .escapeshellarg($app)
+            .' --workspace='
+            .escapeshellarg($workspace)
+            .' --json',
             timeoutSeconds: 120,
         );
         $workspaceStopPayload = processCommandPayload($workspaceStop->output());
 
-        expect($workspaceStop->successful())->toBeTrue()
-            ->and($workspaceStopPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($workspaceStop->successful())
+            ->toBeTrue()
+            ->and($workspaceStopPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $workspaceProcess,
                 'node' => 'app-dev-1',
                 'app' => $app,
@@ -198,19 +264,26 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
 
         $workspaceRemove = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:remove {$workspaceProcess} --app=".escapeshellarg($app).' --workspace='.escapeshellarg($workspace).' --force --json',
+            "cd {$checkout} && orbit process:remove {$workspaceProcess} --app="
+            .escapeshellarg($app)
+            .' --workspace='
+            .escapeshellarg($workspace)
+            .' --force --json',
             timeoutSeconds: 180,
         );
         $workspaceRemovePayload = processCommandPayload($workspaceRemove->output());
 
-        expect($workspaceRemove->successful())->toBeTrue()
-            ->and($workspaceRemovePayload['success']['data']['process'])->toMatchArray([
+        expect($workspaceRemove->successful())
+            ->toBeTrue()
+            ->and($workspaceRemovePayload['success']['data']['process'])
+            ->toMatchArray([
                 'name' => $workspaceProcess,
                 'node' => 'app-dev-1',
                 'app' => $app,
                 'workspace' => $workspace,
             ])
-            ->and($workspaceRemovePayload['success']['data']['removed_runtime_units'])->toContain($workspaceRuntimeUnit);
+            ->and($workspaceRemovePayload['success']['data']['removed_runtime_units'])
+            ->toContain($workspaceRuntimeUnit);
 
         $remove = $topology->ssh(
             'gateway',
@@ -219,12 +292,15 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
         );
         $removePayload = processCommandPayload($remove->output());
 
-        expect($remove->successful())->toBeTrue()
-            ->and($removePayload['success']['data']['process'])->toMatchArray([
+        expect($remove->successful())
+            ->toBeTrue()
+            ->and($removePayload['success']['data']['process'])
+            ->toMatchArray([
                 'name' => $process,
                 'app' => $app,
             ])
-            ->and($removePayload['success']['data']['removed_runtime_units'])->toContain($runtimeUnit);
+            ->and($removePayload['success']['data']['removed_runtime_units'])
+            ->toContain($runtimeUnit);
 
         $registry = processCommandRunGatewayTinker(
             $topology,
@@ -252,18 +328,26 @@ it('manages a node owned systemd process through process commands on an Incus ap
 
         $add = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:add {$runtimeUnit} ".escapeshellarg('printf "systemd-e2e-ready\n"; sleep 300').' --node=app-dev-1 --runtime=systemd --tool=opencode --start --json',
+            "cd {$checkout} && orbit process:add {$runtimeUnit} "
+            .escapeshellarg('printf "systemd-e2e-ready\n"; sleep 300')
+            .' --node=app-dev-1 --runtime=systemd --tool=opencode --start --json',
             timeoutSeconds: 180,
             allowFailure: true,
         );
         $addPayload = processCommandPayload($add->output());
 
         if (! $add->successful()) {
-            throw new RuntimeException(processCommandSystemdDiagnostics($topology, $serviceName, $add->output().$add->errorOutput()));
+            throw new RuntimeException(processCommandSystemdDiagnostics(
+                $topology,
+                $serviceName,
+                $add->output().$add->errorOutput(),
+            ));
         }
 
-        expect($add->successful())->toBeTrue()
-            ->and($addPayload['success']['data']['process'])->toMatchArray([
+        expect($add->successful())
+            ->toBeTrue()
+            ->and($addPayload['success']['data']['process'])
+            ->toMatchArray([
                 'name' => $runtimeUnit,
                 'node' => 'app-dev-1',
                 'app' => null,
@@ -271,11 +355,13 @@ it('manages a node owned systemd process through process commands on an Incus ap
                 'runtime' => 'systemd',
                 'tool' => 'opencode',
             ])
-            ->and($addPayload['success']['data']['runtime_units'][0])->toMatchArray([
+            ->and($addPayload['success']['data']['runtime_units'][0])
+            ->toMatchArray([
                 'name' => $runtimeUnit,
                 'context' => 'node',
             ])
-            ->and($addPayload['success']['meta']['warnings'])->toBe([]);
+            ->and($addPayload['success']['meta']['warnings'])
+            ->toBe([]);
 
         expect(processCommandWaitForSystemdActive($topology, $serviceName))->toBe('active');
 
@@ -288,13 +374,16 @@ it('manages a node owned systemd process through process commands on an Incus ap
         );
         $listPayload = processCommandPayload($list->output());
 
-        expect($list->successful())->toBeTrue()
-            ->and($listPayload['success']['data']['context'])->toBe([
+        expect($list->successful())
+            ->toBeTrue()
+            ->and($listPayload['success']['data']['context'])
+            ->toBe([
                 'node' => 'app-dev-1',
                 'app' => null,
                 'workspace' => null,
             ])
-            ->and(collect($listPayload['success']['data']['processes'])->firstWhere('name', $runtimeUnit))->toMatchArray([
+            ->and(collect($listPayload['success']['data']['processes'])->firstWhere('name', $runtimeUnit))
+            ->toMatchArray([
                 'node' => 'app-dev-1',
                 'app' => null,
                 'workspace' => null,
@@ -310,8 +399,10 @@ it('manages a node owned systemd process through process commands on an Incus ap
         );
         $logsPayload = processCommandPayload($logs->output());
 
-        expect($logs->successful())->toBeTrue()
-            ->and($logsPayload['success']['data']['logs'])->toMatchArray([
+        expect($logs->successful())
+            ->toBeTrue()
+            ->and($logsPayload['success']['data']['logs'])
+            ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
                 'app' => null,
@@ -319,7 +410,8 @@ it('manages a node owned systemd process through process commands on an Incus ap
                 'runtime_unit' => $runtimeUnit,
             ])
             ->and(collect(array_column($logsPayload['success']['data']['logs']['lines'], 'message'))
-                ->contains(fn (string $message): bool => str_contains($message, 'systemd-e2e-ready')))->toBeTrue();
+                ->contains(fn (string $message): bool => str_contains($message, 'systemd-e2e-ready')))
+            ->toBeTrue();
 
         $restart = $topology->ssh(
             'gateway',
@@ -328,8 +420,10 @@ it('manages a node owned systemd process through process commands on an Incus ap
         );
         $restartPayload = processCommandPayload($restart->output());
 
-        expect($restart->successful())->toBeTrue()
-            ->and($restartPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($restart->successful())
+            ->toBeTrue()
+            ->and($restartPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
                 'app' => null,
@@ -345,8 +439,10 @@ it('manages a node owned systemd process through process commands on an Incus ap
         );
         $stopPayload = processCommandPayload($stop->output());
 
-        expect($stop->successful())->toBeTrue()
-            ->and($stopPayload['success']['data']['runtimes'][0])->toMatchArray([
+        expect($stop->successful())
+            ->toBeTrue()
+            ->and($stopPayload['success']['data']['runtimes'][0])
+            ->toMatchArray([
                 'process' => $runtimeUnit,
                 'node' => 'app-dev-1',
                 'app' => null,
@@ -355,7 +451,11 @@ it('manages a node owned systemd process through process commands on an Incus ap
                 'state' => 'stopped',
             ]);
 
-        $inactive = $topology->ssh('dev', 'systemctl is-active '.escapeshellarg($serviceName).' || true', timeoutSeconds: 60);
+        $inactive = $topology->ssh(
+            'dev',
+            'systemctl is-active '.escapeshellarg($serviceName).' || true',
+            timeoutSeconds: 60,
+        );
 
         expect(trim($inactive->output()))->not->toBe('active');
 
@@ -373,17 +473,24 @@ it('manages a node owned systemd process through process commands on an Incus ap
         );
 
         if (! $restore->successful()) {
-            throw new RuntimeException(processCommandSystemdDiagnostics($topology, $serviceName, $restore->output().$restore->errorOutput()));
+            throw new RuntimeException(processCommandSystemdDiagnostics(
+                $topology,
+                $serviceName,
+                $restore->output().$restore->errorOutput(),
+            ));
         }
 
         $restoreData = e2eJsonCommandData(e2eJsonCommandPayload($restore->output()));
 
-        expect($restoreData['doctor']['healthy'])->toBeTrue(json_encode($restoreData, JSON_PRETTY_PRINT))
-            ->and($restoreData['doctor']['summary'])->toMatchArray([
+        expect($restoreData['doctor']['healthy'])
+            ->toBeTrue(json_encode($restoreData, JSON_PRETTY_PRINT))
+            ->and($restoreData['doctor']['summary'])
+            ->toMatchArray([
                 'fixed' => 1,
                 'skipped' => 0,
             ])
-            ->and($restoreData['doctor']['actions'][0])->toMatchArray([
+            ->and($restoreData['doctor']['actions'][0])
+            ->toMatchArray([
                 'family' => 'process',
                 'node' => 'app-dev-1',
                 'key' => 'process.runtime_unit_missing',
@@ -393,7 +500,8 @@ it('manages a node owned systemd process through process commands on an Incus ap
 
         $restored = $topology->ssh(
             'dev',
-            'sudo test -f '.escapeshellarg("/etc/systemd/system/{$serviceName}").' && sudo systemctl is-enabled '.escapeshellarg($serviceName),
+            'sudo test -f '.escapeshellarg("/etc/systemd/system/{$serviceName}").' && sudo systemctl is-enabled '
+                .escapeshellarg($serviceName),
             timeoutSeconds: 60,
         );
 
@@ -406,19 +514,27 @@ it('manages a node owned systemd process through process commands on an Incus ap
         );
         $removePayload = processCommandPayload($remove->output());
 
-        expect($remove->successful())->toBeTrue()
-            ->and($removePayload['success']['data']['process'])->toMatchArray([
+        expect($remove->successful())
+            ->toBeTrue()
+            ->and($removePayload['success']['data']['process'])
+            ->toMatchArray([
                 'name' => $runtimeUnit,
                 'node' => 'app-dev-1',
                 'app' => null,
                 'workspace' => null,
             ])
-            ->and($removePayload['success']['data']['removed_runtime_units'])->toContain($runtimeUnit);
+            ->and($removePayload['success']['data']['removed_runtime_units'])
+            ->toContain($runtimeUnit);
     } finally {
         processCommandCleanupSystemdRuntime($topology, $runtimeUnit);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+})->group(
+    'e2e-feature',
+    'e2e-provider-incus',
+    'e2e-feature-operator_gateway_app-dev',
+    'e2e-feature-operator-gateway-dev',
+);
 
 function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string $path): void
 {
@@ -429,22 +545,22 @@ function processCommandSeedApp(E2ETopologyHarness $topology, string $app, string
     }
 
     $script = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-$node->update(['status' => 'active', 'platform' => 'ubuntu']);
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node->update(['status' => 'active', 'platform' => 'ubuntu']);
 
-\App\Models\App::query()->updateOrCreate(
-    ['name' => '__APP__'],
-    [
-        'node_id' => $node->id,
-        'path' => '__PATH__',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'adopted' => true,
-    ],
-);
+        \App\Models\App::query()->updateOrCreate(
+            ['name' => '__APP__'],
+            [
+                'node_id' => $node->id,
+                'path' => '__PATH__',
+                'document_root' => 'public',
+                'php_version' => '8.5',
+                'adopted' => true,
+            ],
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $script = str_replace(
         ['__APP__', '__PATH__'],
@@ -464,18 +580,18 @@ function processCommandSeedWorkspace(E2ETopologyHarness $topology, string $app, 
     }
 
     $script = <<<'PHP'
-$app = \App\Models\App::query()->where('name', '__APP__')->firstOrFail();
+        $app = \App\Models\App::query()->where('name', '__APP__')->firstOrFail();
 
-\App\Models\Workspace::query()->updateOrCreate(
-    ['app_id' => $app->id, 'name' => '__WORKSPACE__'],
-    [
-        'path' => '__PATH__',
-        'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
-    ],
-);
+        \App\Models\Workspace::query()->updateOrCreate(
+            ['app_id' => $app->id, 'name' => '__WORKSPACE__'],
+            [
+                'path' => '__PATH__',
+                'lifecycle_status' => \App\Enums\WorkspaceLifecycleStatus::Expected,
+            ],
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $script = str_replace(
         ['__APP__', '__WORKSPACE__', '__PATH__'],
@@ -486,18 +602,39 @@ PHP;
     processCommandRunGatewayTinker($topology, $script);
 }
 
-function processCommandCleanup(E2ETopologyHarness $topology, string $app, string $path, string $runtimeUnit, string $workspacePath, string $workspaceRuntimeUnit): void
-{
+function processCommandCleanup(
+    E2ETopologyHarness $topology,
+    string $app,
+    string $path,
+    string $runtimeUnit,
+    string $workspacePath,
+    string $workspaceRuntimeUnit,
+): void {
     $checkout = escapeshellarg($topology->checkout('gateway'));
 
     $topology->ssh(
         'gateway',
-        "cd {$checkout} && orbit process:remove worker --app=".escapeshellarg($app).' --force --json >/dev/null 2>&1 || true',
+        "cd {$checkout} && orbit process:remove worker --app="
+        .escapeshellarg($app)
+        .' --force --json >/dev/null 2>&1 || true',
         timeoutSeconds: 180,
     );
     $topology->ssh(
         'dev',
-        'docker rm -f '.escapeshellarg($runtimeUnit).' '.escapeshellarg($workspaceRuntimeUnit).' >/dev/null 2>&1 || true; sudo systemctl stop '.escapeshellarg("{$runtimeUnit}.service").' >/dev/null 2>&1 || true; sudo systemctl disable '.escapeshellarg("{$runtimeUnit}.service").' >/dev/null 2>&1 || true; sudo rm -f '.escapeshellarg("/etc/systemd/system/{$runtimeUnit}.service").'; sudo systemctl daemon-reload >/dev/null 2>&1 || true; rm -rf '.escapeshellarg($workspacePath).' '.escapeshellarg($path),
+        'docker rm -f '
+            .escapeshellarg($runtimeUnit)
+            .' '
+            .escapeshellarg($workspaceRuntimeUnit)
+            .' >/dev/null 2>&1 || true; sudo systemctl stop '
+            .escapeshellarg("{$runtimeUnit}.service")
+            .' >/dev/null 2>&1 || true; sudo systemctl disable '
+            .escapeshellarg("{$runtimeUnit}.service")
+            .' >/dev/null 2>&1 || true; sudo rm -f '
+            .escapeshellarg("/etc/systemd/system/{$runtimeUnit}.service")
+            .'; sudo systemctl daemon-reload >/dev/null 2>&1 || true; rm -rf '
+            .escapeshellarg($workspacePath)
+            .' '
+            .escapeshellarg($path),
         timeoutSeconds: 120,
         allowFailure: true,
     );
@@ -528,10 +665,10 @@ function processCommandCleanupSystemdRuntime(E2ETopologyHarness $topology, strin
     );
 
     $script = <<<'PHP'
-if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
-    $node->processes()->where('name', '__RUNTIME_UNIT__')->delete();
-}
-PHP;
+        if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
+            $node->processes()->where('name', '__RUNTIME_UNIT__')->delete();
+        }
+        PHP;
 
     processCommandRunGatewayTinker(
         $topology,
@@ -559,16 +696,19 @@ function processCommandRemovePreparedRedis(E2ETopologyHarness $topology): void
     );
 
     $script = <<<'PHP'
-if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
-    $node->processes()->where('name', 'redis')->delete();
-}
-PHP;
+        if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
+            $node->processes()->where('name', 'redis')->delete();
+        }
+        PHP;
 
     processCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
 
-function processCommandSystemdDiagnostics(E2ETopologyHarness $topology, string $serviceName, string $commandOutput): string
-{
+function processCommandSystemdDiagnostics(
+    E2ETopologyHarness $topology,
+    string $serviceName,
+    string $commandOutput,
+): string {
     $service = escapeshellarg($serviceName);
 
     return $topology->ssh(
@@ -596,28 +736,28 @@ function processCommandWaitForSystemdActive(E2ETopologyHarness $topology, string
         'dev',
         sprintf(
             <<<'SH'
-deadline=$((SECONDS+30))
-while [ "$SECONDS" -lt "$deadline" ]; do
-    state="$(systemctl is-active %1$s 2>&1 || true)"
+                deadline=$((SECONDS+30))
+                while [ "$SECONDS" -lt "$deadline" ]; do
+                    state="$(systemctl is-active %1$s 2>&1 || true)"
 
-    if [ "$state" = "active" ]; then
-        printf 'active'
-        exit 0
-    fi
+                    if [ "$state" = "active" ]; then
+                        printf 'active'
+                        exit 0
+                    fi
 
-    sleep 0.5
-done
+                    sleep 0.5
+                done
 
-echo '=== is-active ==='
-systemctl is-active %1$s || true
-echo '=== show ==='
-systemctl show %1$s -p ActiveState -p SubState -p Result -p Type -p ExecMainStatus -p ExecMainCode -p NRestarts --no-pager || true
-echo '=== status ==='
-systemctl status %1$s --no-pager -l || true
-echo '=== journal ==='
-sudo journalctl -u %1$s -n 80 --no-pager || true
-exit 1
-SH,
+                echo '=== is-active ==='
+                systemctl is-active %1$s || true
+                echo '=== show ==='
+                systemctl show %1$s -p ActiveState -p SubState -p Result -p Type -p ExecMainStatus -p ExecMainCode -p NRestarts --no-pager || true
+                echo '=== status ==='
+                systemctl status %1$s --no-pager -l || true
+                echo '=== journal ==='
+                sudo journalctl -u %1$s -n 80 --no-pager || true
+                exit 1
+                SH,
             $service,
         ),
         timeoutSeconds: 45,
@@ -639,21 +779,21 @@ function processCommandWaitForSystemdJournal(E2ETopologyHarness $topology, strin
         'dev',
         sprintf(
             <<<'SH'
-deadline=$((SECONDS+30))
-while [ "$SECONDS" -lt "$deadline" ]; do
-    if sudo journalctl -u %1$s -n 50 --no-pager | grep -Fq %2$s; then
-        exit 0
-    fi
+                deadline=$((SECONDS+30))
+                while [ "$SECONDS" -lt "$deadline" ]; do
+                    if sudo journalctl -u %1$s -n 50 --no-pager | grep -Fq %2$s; then
+                        exit 0
+                    fi
 
-    sleep 0.5
-done
+                    sleep 0.5
+                done
 
-echo '=== status ==='
-systemctl status %1$s --no-pager -l || true
-echo '=== journal ==='
-sudo journalctl -u %1$s -n 120 --no-pager || true
-exit 1
-SH,
+                echo '=== status ==='
+                systemctl status %1$s --no-pager -l || true
+                echo '=== journal ==='
+                sudo journalctl -u %1$s -n 120 --no-pager || true
+                exit 1
+                SH,
             $service,
             $marker,
         ),
@@ -666,12 +806,16 @@ SH,
     }
 }
 
-function processCommandRunGatewayTinker(E2ETopologyHarness $topology, string $script, bool $allowFailure = false): ProcessResult
-{
+function processCommandRunGatewayTinker(
+    E2ETopologyHarness $topology,
+    string $script,
+    bool $allowFailure = false,
+): ProcessResult {
     return e2eRunInRoleRuntime(
         $topology,
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($script),
         timeoutSeconds: 180,
         allowFailure: $allowFailure,
     );
@@ -721,8 +865,12 @@ function processCommandDockerHostPathScript(string $operation, string $path): st
     );
 }
 
-function processCommandDockerDiagnostics(E2ETopologyHarness $topology, string $runtimeUnit, string $path, string $startOutput): string
-{
+function processCommandDockerDiagnostics(
+    E2ETopologyHarness $topology,
+    string $runtimeUnit,
+    string $path,
+    string $startOutput,
+): string {
     $command = implode(' ; ', [
         'echo "=== process:start ==="',
         'printf %s '.escapeshellarg($startOutput),

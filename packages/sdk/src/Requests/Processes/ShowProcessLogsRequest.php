@@ -31,11 +31,14 @@ final class ShowProcessLogsRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'lines' => $this->lines,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'lines' => $this->lines,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ProcessLogsResponse
@@ -44,7 +47,7 @@ final class ShowProcessLogsRequest extends GatewayRequest
         $meta = [];
 
         if (is_array($body) && isset($body['success']['meta']) && is_array($body['success']['meta'])) {
-            $meta = $body['success']['meta'];
+            $meta = $this->stringKeyedArray($body['success']['meta']);
         }
 
         return new ProcessLogsResponse(

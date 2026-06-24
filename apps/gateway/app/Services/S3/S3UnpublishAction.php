@@ -34,8 +34,12 @@ final readonly class S3UnpublishAction
      *     error: array{code: string, message: string, meta: array<string, mixed>, status: int}
      * }
      */
-    public function unpublishWithProgress(Node $caller, string $nodeName, string $host, ProgressEventStreamEmitter $emitter): array
-    {
+    public function unpublishWithProgress(
+        Node $caller,
+        string $nodeName,
+        string $host,
+        ProgressEventStreamEmitter $emitter,
+    ): array {
         // Step 1: Confirm destructive removal (consent was verified before streaming began).
         $emitter->stepEvent('confirm_destructive', 'done', 'Destructive removal confirmed');
 
@@ -95,7 +99,8 @@ final readonly class S3UnpublishAction
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
         if ($existing instanceof ProxyRoute) {
-            $isS3Tool = $existing->owner_type === 's3'
+            $isS3Tool =
+                $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
                 && $existing->config['owner_name'] === 'seaweedfs'
                 && isset($existing->config['protocol'])

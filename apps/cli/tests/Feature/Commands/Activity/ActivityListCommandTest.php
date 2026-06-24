@@ -13,9 +13,12 @@ describe('activity:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toHaveKey('success')
-            ->and($decoded['success'])->toHaveKey('data');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toHaveKey('success')
+            ->and($decoded['success'])
+            ->toHaveKey('data');
     });
 
     it('forwards filters and preserves gateway metadata in JSON mode', function (): void {
@@ -45,17 +48,24 @@ describe('activity:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/activity')
                 && str_contains($url, 'effect=destructive')
-                && str_contains($url, 'limit=50');
+                && str_contains($url, 'limit=50')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['activities'][0]['id'])->toBe(42)
-            ->and($decoded['success']['data']['activities'][0]['effect'])->toBe('destructive')
-            ->and($decoded['success']['data']['activities'][0]['subject'])->toBe(['type' => 'app', 'name' => 'docs'])
-            ->and($decoded['success']['meta']['filters']['effect'])->toBe('destructive');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['activities'][0]['id'])
+            ->toBe(42)
+            ->and($decoded['success']['data']['activities'][0]['effect'])
+            ->toBe('destructive')
+            ->and($decoded['success']['data']['activities'][0]['subject'])
+            ->toBe(['type' => 'app', 'name' => 'docs'])
+            ->and($decoded['success']['meta']['filters']['effect'])
+            ->toBe('destructive');
     });
 
     it('renders human output as a table with uppercase headers and newest-first rows', function (): void {
@@ -88,24 +98,41 @@ describe('activity:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'activity:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('TIME')
-            ->and($output)->toContain('ID')
-            ->and($output)->toContain('EFFECT')
-            ->and($output)->toContain('TYPE')
-            ->and($output)->toContain('SUBJECT')
-            ->and($output)->toContain('ACTOR')
-            ->and($output)->toContain('COMMAND')
-            ->and($output)->toContain('2026-05-02 08:31:12')
-            ->and($output)->toContain('destructive')
-            ->and($output)->toContain('node.removed')
-            ->and($output)->toContain('app-2')
-            ->and($output)->toContain('operator-1')
-            ->and($output)->toContain('node:remove')
-            ->and($output)->toContain('—')
-            ->and(mb_strpos($output, '43'))->toBeLessThan(mb_strpos($output, '41'))
-            ->and($output)->not->toContain('activities: [')
-            ->and($output)->not->toContain('"summary"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('TIME')
+            ->and($output)
+            ->toContain('ID')
+            ->and($output)
+            ->toContain('EFFECT')
+            ->and($output)
+            ->toContain('TYPE')
+            ->and($output)
+            ->toContain('SUBJECT')
+            ->and($output)
+            ->toContain('ACTOR')
+            ->and($output)
+            ->toContain('COMMAND')
+            ->and($output)
+            ->toContain('2026-05-02 08:31:12')
+            ->and($output)
+            ->toContain('destructive')
+            ->and($output)
+            ->toContain('node.removed')
+            ->and($output)
+            ->toContain('app-2')
+            ->and($output)
+            ->toContain('operator-1')
+            ->and($output)
+            ->toContain('node:remove')
+            ->and($output)
+            ->toContain('—')
+            ->and(mb_strpos($output, '43'))
+            ->toBeLessThan(mb_strpos($output, '41'))
+            ->and($output)
+            ->not->toContain('activities: [')->and($output)
+            ->not->toContain('"summary"');
     });
 
     it('renders empty human output without a JSON envelope', function (): void {
@@ -113,12 +140,19 @@ describe('activity:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'activity:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('No activity found.')
-            ->and($output)->not->toContain('"success"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('No activity found.')
+            ->and($output)
+            ->not->toContain('"success"');
     });
 
-    it('rejects invalid filters before opening a gateway request', function (array $arguments, string $field, string $reason): void {
+    it('rejects invalid filters before opening a gateway request', function (
+        array $arguments,
+        string $field,
+        string $reason,
+    ): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'activity:list', [
@@ -130,10 +164,14 @@ describe('activity:list', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('Invalid activity filter.')
-            ->and($decoded['error']['meta'])->toBe([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('Invalid activity filter.')
+            ->and($decoded['error']['meta'])
+            ->toBe([
                 'field' => $field,
                 'reason' => $reason,
             ]);
@@ -150,10 +188,14 @@ describe('activity:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toHaveKey('error')
-            ->and($decoded['error']['code'])->toBe('internal_error')
-            ->and($decoded['error']['message'])->toBe('Server failure.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toHaveKey('error')
+            ->and($decoded['error']['code'])
+            ->toBe('internal_error')
+            ->and($decoded['error']['message'])
+            ->toBe('Server failure.');
     });
 
     it('surfaces gateway_unavailable when the gateway is unreachable', function (): void {
@@ -163,7 +205,6 @@ describe('activity:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 });

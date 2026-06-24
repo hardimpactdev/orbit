@@ -20,9 +20,12 @@ describe('doctor --fix', function (): void {
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('fix');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload['error']['code'])
+            ->toBe('validation_failed')
+            ->and($payload['error']['meta']['field'])
+            ->toBe('fix');
 
         Http::assertNothingSent();
     });
@@ -37,8 +40,7 @@ describe('doctor --fix', function (): void {
         $output = new BufferedOutput;
         $exitCode = $command->run($input, $output);
 
-        expect($exitCode)->toBe(1)
-            ->and($output->fetch())->toContain('doctor --fix requires an interactive terminal');
+        expect($exitCode)->toBe(1)->and($output->fetch())->toContain('doctor --fix requires an interactive terminal');
 
         Http::assertNothingSent();
     });
@@ -54,39 +56,52 @@ describe('doctor --fix', function (): void {
         fakeDoctorFixGatewayStreams(
             runBody: doctorFixDriftStream(doctorFixPayload([$issue])),
             fixBodies: [
-                doctorFixCompleteStream(doctorFixPayload([], [
+                doctorFixCompleteStream(doctorFixPayload(
+                    [],
                     [
-                        'family' => 'node',
-                        'node' => 'app-1',
-                        'key' => 'node.config',
-                        'mode' => 'restore',
-                        'status' => 'completed',
-                        'summary' => 'Node config restored.',
+                        [
+                            'family' => 'node',
+                            'node' => 'app-1',
+                            'key' => 'node.config',
+                            'mode' => 'restore',
+                            'status' => 'completed',
+                            'summary' => 'Node config restored.',
+                        ],
                     ],
-                ], true)),
+                    true,
+                )),
             ],
         );
 
-        $this->artisan('doctor --fix --node=app-1 --family=node')
+        $this
+            ->artisan('doctor --fix --node=app-1 --family=node')
             ->expectsQuestion('Resolve Node config is missing.', 'restore')
             ->expectsOutputToContain('Running Doctor')
             ->expectsOutputToContain('Doctor completed.')
             ->assertExitCode(0);
 
         assertGatewayStreamSentCount(2);
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['node'],
-                'node' => 'app-1',
-            ]);
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/fix'
-            && $request->data() === [
-                'mode' => 'restore',
-                'families' => ['node'],
-                'node' => 'app-1',
-                'issues' => [$issue],
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['node'],
+                    'node' => 'app-1',
+                ]
+            ),
+        );
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->url() === 'https://gateway.test/api/doctor/fix'
+                && $request->data() === [
+                    'mode' => 'restore',
+                    'families' => ['node'],
+                    'node' => 'app-1',
+                    'issues' => [$issue],
+                ]
+            ),
+        );
     });
 
     it('shows details then lets the operator skip without sending a fix request', function (): void {
@@ -107,14 +122,17 @@ describe('doctor --fix', function (): void {
             fixBodies: [],
         );
 
-        $this->artisan('doctor --fix --node=app-1 --family=proxy')
+        $this
+            ->artisan('doctor --fix --node=app-1 --family=proxy')
             ->expectsQuestion('Resolve Proxy route differs.', 'details')
             ->expectsOutputToContain('expected: http://127.0.0.1:8080')
             ->expectsQuestion('Resolve Proxy route differs.', 'skip')
             ->assertExitCode(1);
 
         assertGatewayStreamSentCount(1);
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run');
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run',
+        );
     });
 
     it('treats prompt cancellation as a validation failure without sending a fix request', function (): void {
@@ -135,17 +153,22 @@ describe('doctor --fix', function (): void {
         ])->makePartial();
         $style->shouldReceive('askQuestion')->once()->andThrow(new RuntimeException('cancelled'));
 
-        $exitCode = app(Kernel::class)->call('doctor', [
-            '--fix' => true,
-            '--node' => 'app-1',
-            '--family' => ['node'],
-        ], $style);
+        $exitCode = app(Kernel::class)->call(
+            'doctor',
+            [
+                '--fix' => true,
+                '--node' => 'app-1',
+                '--family' => ['node'],
+            ],
+            $style,
+        );
 
-        expect($exitCode)->toBe(1)
-            ->and($output->fetch())->toContain('validation_failed: Operation cancelled.');
+        expect($exitCode)->toBe(1)->and($output->fetch())->toContain('validation_failed: Operation cancelled.');
 
         assertGatewayStreamSentCount(1);
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run');
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->url() === 'https://gateway.test/api/doctor/run',
+        );
     });
 });
 
@@ -187,8 +210,14 @@ function doctorFixPayload(array $issues, array $actions = [], bool $healthy = fa
         ],
         'summary' => [
             'issues' => count($issues),
-            'fixed' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'restore')),
-            'adopted' => count(array_filter($actions, fn (array $action): bool => ($action['mode'] ?? null) === 'adopt')),
+            'fixed' => count(array_filter(
+                $actions,
+                fn (array $action): bool => ($action['mode'] ?? null) === 'restore',
+            )),
+            'adopted' => count(array_filter(
+                $actions,
+                fn (array $action): bool => ($action['mode'] ?? null) === 'adopt',
+            )),
             'skipped' => 0,
             'conflicts' => 0,
             'failed' => 0,
@@ -204,20 +233,23 @@ function doctorFixPayload(array $issues, array $actions = [], bool $healthy = fa
  */
 function doctorFixDriftStream(array $doctor): string
 {
-    return gatewayProgressFrame('tree', [
-        'title' => 'Running Doctor',
-        'steps' => [['key' => 'node', 'label' => 'Check node']],
-    ]).gatewayProgressFrame('error', [
-        'exit_code' => 1,
-        'message' => 'Doctor detected drift.',
-        'data' => [
-            'code' => 'drift_detected',
+    return (
+        gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'node', 'label' => 'Check node']],
+        ])
+        .gatewayProgressFrame('error', [
+            'exit_code' => 1,
             'message' => 'Doctor detected drift.',
-            'meta' => [],
-            'data' => ['doctor' => $doctor],
-            'footer' => 'Doctor detected drift.',
-        ],
-    ]);
+            'data' => [
+                'code' => 'drift_detected',
+                'message' => 'Doctor detected drift.',
+                'meta' => [],
+                'data' => ['doctor' => $doctor],
+                'footer' => 'Doctor detected drift.',
+            ],
+        ])
+    );
 }
 
 /**
@@ -225,16 +257,19 @@ function doctorFixDriftStream(array $doctor): string
  */
 function doctorFixCompleteStream(array $doctor): string
 {
-    return gatewayProgressFrame('tree', [
-        'title' => 'Running Doctor',
-        'steps' => [['key' => 'node', 'label' => 'restore node']],
-    ]).gatewayProgressFrame('complete', [
-        'exit_code' => 0,
-        'data' => [
-            'footer' => 'Doctor completed.',
-            'doctor' => $doctor,
-        ],
-    ]);
+    return (
+        gatewayProgressFrame('tree', [
+            'title' => 'Running Doctor',
+            'steps' => [['key' => 'node', 'label' => 'restore node']],
+        ])
+        .gatewayProgressFrame('complete', [
+            'exit_code' => 0,
+            'data' => [
+                'footer' => 'Doctor completed.',
+                'doctor' => $doctor,
+            ],
+        ])
+    );
 }
 
 /**

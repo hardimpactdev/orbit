@@ -133,7 +133,9 @@ final readonly class OrbitConfigStore
 
         if ($schemaVersion > self::CURRENT_SCHEMA_VERSION) {
             throw new OrbitConfigStoreException(
-                "Config schema_version {$schemaVersion} is newer than this CLI supports (max ".self::CURRENT_SCHEMA_VERSION.').',
+                "Config schema_version {$schemaVersion} is newer than this CLI supports (max "
+                .self::CURRENT_SCHEMA_VERSION
+                .').',
                 'config_schema_version_too_new',
             );
         }
@@ -156,7 +158,10 @@ final readonly class OrbitConfigStore
 
         if (! is_dir($directory)) {
             if (! @mkdir($directory, self::DIRECTORY_MODE, recursive: true) && ! is_dir($directory)) {
-                throw new OrbitConfigStoreException("Failed to create config directory: {$directory}", 'config_mkdir_failed');
+                throw new OrbitConfigStoreException(
+                    "Failed to create config directory: {$directory}",
+                    'config_mkdir_failed',
+                );
             }
         }
 
@@ -319,9 +324,7 @@ final readonly class OrbitConfigStore
         $config = $this->read();
         $defaults = $config['defaults'] ?? null;
 
-        $wasSet = is_array($defaults)
-            && is_string($defaults['node'] ?? null)
-            && $defaults['node'] !== '';
+        $wasSet = is_array($defaults) && is_string($defaults['node'] ?? null) && $defaults['node'] !== '';
 
         if (! is_array($config['defaults'] ?? null)) {
             $config['defaults'] = ['node' => null, 'profile' => null];

@@ -36,21 +36,25 @@ describe('FirewallRuleFixer', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
 
-        $action = (new FirewallRuleFixer($shell))->fix($rule, new DriftEntry(
+        $action = new FirewallRuleFixer($shell)->fix($rule, new DriftEntry(
             family: 'firewall_rule',
             key: 'firewall_rule.rule_missing',
             kind: DriftKind::Missing,
             summary: 'missing',
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'firewall_rule',
-            'node' => 'app-1',
-            'status' => 'completed',
-        ])
-            ->and($shell->scripts[1])->toContain('sudo ufw allow in from')
-            ->and($shell->scripts[1])->toContain("'10.6.0.0/24'")
-            ->and($shell->scripts[2])->toBe('sudo ufw reload');
+        expect($action)
+            ->toMatchArray([
+                'family' => 'firewall_rule',
+                'node' => 'app-1',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[1])
+            ->toContain('sudo ufw allow in from')
+            ->and($shell->scripts[1])
+            ->toContain("'10.6.0.0/24'")
+            ->and($shell->scripts[2])
+            ->toBe('sudo ufw reload');
     });
 
     it('deletes mismatched observed rules before re-applying intent', function (): void {
@@ -65,13 +69,13 @@ describe('FirewallRuleFixer', function (): void {
             new RemoteShellResult(
                 exitCode: 0,
                 stdout: <<<'OUT'
-Status: active
+                    Status: active
 
-     To                         Action      From
-     --                         ------      ----
-[ 1] 5173/tcp                   ALLOW IN    Anywhere
+                         To                         Action      From
+                         --                         ------      ----
+                    [ 1] 5173/tcp                   ALLOW IN    Anywhere
 
-OUT,
+                    OUT,
                 stderr: '',
                 durationMs: 1,
             ),
@@ -80,7 +84,7 @@ OUT,
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
 
-        (new FirewallRuleFixer($shell))->fix($rule, new DriftEntry(
+        new FirewallRuleFixer($shell)->fix($rule, new DriftEntry(
             family: 'firewall_rule',
             key: 'firewall_rule.rule_mismatch',
             kind: DriftKind::Divergent,
@@ -97,8 +101,10 @@ OUT,
             ],
         ));
 
-        expect($shell->scripts[1])->toContain('sudo ufw delete allow in from')
-            ->and($shell->scripts[2])->toContain('sudo ufw allow in from');
+        expect($shell->scripts[1])
+            ->toContain('sudo ufw delete allow in from')
+            ->and($shell->scripts[2])
+            ->toContain('sudo ufw allow in from');
     });
 });
 
@@ -110,7 +116,9 @@ final class FirewallFixerRecordingRemoteShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $options

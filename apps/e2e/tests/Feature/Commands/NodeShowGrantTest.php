@@ -11,26 +11,26 @@ function nodeShowGrantSeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1', 'app-prod-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1', 'app-prod-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1', 'app-prod-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1', 'app-prod-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->insert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -102,7 +102,12 @@ it('shows real grant metadata from a operator caller through the gateway api', f
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-show-grant');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         nodeShowGrantSeed($topology);
 
@@ -111,28 +116,37 @@ it('shows real grant metadata from a operator caller through the gateway api', f
         $appProdNode = nodeShowGrantNode(nodeShowGrantJson($topology, 'app-prod-1'));
         $appProdHuman = nodeShowGrantHuman($topology, 'app-prod-1');
 
-        expect($appDevNode['name'])->toBe('app-dev-1')
-            ->and($appDevNode['grants'])->toBe([
+        expect($appDevNode['name'])
+            ->toBe('app-dev-1')
+            ->and($appDevNode['grants'])
+            ->toBe([
                 'consuming_nodes' => [
                     ['name' => 'operator-1', 'permissions' => ['*']],
                 ],
                 'serving_nodes' => [],
             ])
-            ->and($operatorNode['name'])->toBe('operator-1')
-            ->and($operatorNode['grants'])->toBe([
+            ->and($operatorNode['name'])
+            ->toBe('operator-1')
+            ->and($operatorNode['grants'])
+            ->toBe([
                 'consuming_nodes' => [],
                 'serving_nodes' => [
                     ['name' => 'app-dev-1', 'permissions' => ['*']],
                 ],
             ])
-            ->and($appProdNode['name'])->toBe('app-prod-1')
-            ->and($appProdNode['grants'])->toBe([
+            ->and($appProdNode['name'])
+            ->toBe('app-prod-1')
+            ->and($appProdNode['grants'])
+            ->toBe([
                 'consuming_nodes' => [],
                 'serving_nodes' => [],
             ])
-            ->and($appProdHuman)->toContain('Consuming')
-            ->and($appProdHuman)->toContain('Serving')
-            ->and($appProdHuman)->toContain('—');
+            ->and($appProdHuman)
+            ->toContain('Consuming')
+            ->and($appProdHuman)
+            ->toContain('Serving')
+            ->and($appProdHuman)
+            ->toContain('—');
     } finally {
         $topology->cleanup();
     }

@@ -81,7 +81,9 @@ class E2EPrepareBaseImageCommand extends Command
         }
 
         if (! in_array('incus', $config->providerNames, true)) {
-            return $this->failCommand('No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.');
+            return $this->failCommand(
+                'No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.',
+            );
         }
 
         $hostPool = IncusHostPool::fromEnvironment($config);

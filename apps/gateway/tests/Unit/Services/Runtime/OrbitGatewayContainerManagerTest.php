@@ -18,14 +18,17 @@ beforeEach(function (): void {
 
 function gatewayContainerForManagerTest(): OrbitGatewayContainer
 {
-    return (new OrbitGatewayContainerRenderer(new OrbitContainerNames))->render(
+    return new OrbitGatewayContainerRenderer(new OrbitContainerNames)->render(
         orbitCheckoutPath: '/home/orbit/orbit',
         gatewayConfigRoot: '/home/orbit/.config/orbit',
     );
 }
 
-function gatewayContainerInspectPayload(OrbitGatewayContainer $container, bool $running = true, ?string $specHash = null): string
-{
+function gatewayContainerInspectPayload(
+    OrbitGatewayContainer $container,
+    bool $running = true,
+    ?string $specHash = null,
+): string {
     return json_encode([
         'State' => [
             'Running' => $running,
@@ -49,7 +52,7 @@ it('creates the runtime network and container when they are absent', function ()
         $builder->runDetached($container) => Process::result(),
     ]);
 
-    (new OrbitGatewayContainerManager($builder))->apply($container);
+    new OrbitGatewayContainerManager($builder)->apply($container);
 
     Process::assertRan($builder->networkCreate($container->network()));
     Process::assertRan($builder->runDetached($container));
@@ -66,7 +69,7 @@ it('does not recreate a running container that already matches the rendered spec
         ),
     ]);
 
-    (new OrbitGatewayContainerManager($builder))->apply($container);
+    new OrbitGatewayContainerManager($builder)->apply($container);
 
     Process::assertNotRan($builder->networkCreate($container->network()));
     Process::assertNotRan($builder->containerRemove($container->name()));
@@ -86,7 +89,7 @@ it('starts an existing matching container when it is stopped', function (): void
         $builder->containerStart($container->name()) => Process::result(),
     ]);
 
-    (new OrbitGatewayContainerManager($builder))->apply($container);
+    new OrbitGatewayContainerManager($builder)->apply($container);
 
     Process::assertRan($builder->containerStart($container->name()));
     Process::assertNotRan($builder->containerRemove($container->name()));
@@ -106,7 +109,7 @@ it('recreates an existing container when the rendered spec drifts', function ():
         $builder->runDetached($container) => Process::result(),
     ]);
 
-    (new OrbitGatewayContainerManager($builder))->apply($container);
+    new OrbitGatewayContainerManager($builder)->apply($container);
 
     Process::assertRan($builder->containerRemove($container->name()));
     Process::assertRan($builder->runDetached($container));

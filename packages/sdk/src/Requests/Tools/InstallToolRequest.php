@@ -36,12 +36,15 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-            'status' => $this->status,
-            'config' => $this->toolConfig === [] ? null : $this->toolConfig,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+                'status' => $this->status,
+                'config' => $this->toolConfig === [] ? null : $this->toolConfig,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolInstallResponse
@@ -50,7 +53,7 @@ final class InstallToolRequest extends GatewayRequest implements HasBody
         $tool = $data['tool'] ?? [];
 
         return new ToolInstallResponse(
-            tool: is_array($tool) ? $tool : [],
+            tool: $this->stringKeyedArray($tool),
         );
     }
 }

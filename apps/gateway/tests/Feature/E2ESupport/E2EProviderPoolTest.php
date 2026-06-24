@@ -65,9 +65,12 @@ it('selects the first available provider', function (): void {
 
     $selection = $pool->select(E2EImage::Base);
 
-    expect($selection->available())->toBeTrue()
-        ->and($selection->provider()->name())->toBe('second')
-        ->and($selection->message)->toBe('second: ready');
+    expect($selection->available())
+        ->toBeTrue()
+        ->and($selection->provider()->name())
+        ->toBe('second')
+        ->and($selection->message)
+        ->toBe('second: ready');
 });
 
 it('reports provider failures when no provider is available', function (): void {
@@ -78,9 +81,12 @@ it('reports provider failures when no provider is available', function (): void 
 
     $selection = $pool->select(E2EImage::Base);
 
-    expect($selection->available())->toBeFalse()
-        ->and($selection->message)->toContain('incus: unavailable')
-        ->and($selection->message)->toContain('second: unavailable');
+    expect($selection->available())
+        ->toBeFalse()
+        ->and($selection->message)
+        ->toContain('incus: unavailable')
+        ->and($selection->message)
+        ->toContain('second: unavailable');
 });
 
 it('discovers the incus base image by logical image label', function (): void {
@@ -91,7 +97,7 @@ it('discovers the incus base image by logical image label', function (): void {
         '*incus image info*orbit-base-ubuntu-26.04-runtime*' => Process::result(),
     ]);
 
-    $availability = (new IncusProvider(E2EConfig::fromEnvironment()))
+    $availability = new IncusProvider(E2EConfig::fromEnvironment())
         ->availability([E2EImage::Base]);
 
     expect($availability->available)->toBeTrue();
@@ -120,9 +126,12 @@ it('leases configured incus host slots before checking availability', function (
 
             $availability = $provider->availability([E2EImage::Base]);
 
-            expect($availability->available)->toBeTrue()
-                ->and($provider->config()->host)->toBe('sidecar1')
-                ->and($seenHost)->toBe('sidecar1');
+            expect($availability->available)
+                ->toBeTrue()
+                ->and($provider->config()->host)
+                ->toBe('sidecar1')
+                ->and($seenHost)
+                ->toBe('sidecar1');
         });
     } finally {
         exec('rm -rf '.escapeshellarg($leaseDirectory));
@@ -186,8 +195,10 @@ it('releases configured incus host slots after availability-only checks', functi
             $availability = $provider->availability([E2EImage::Base]);
             $pool = new E2EResourceLeasePool($leaseDirectory, waitSeconds: 0, staleSeconds: 60);
 
-            expect($availability->available)->toBeTrue()
-                ->and($pool->snapshot('incus', ['sidecar1' => 1]))->toMatchArray([
+            expect($availability->available)
+                ->toBeTrue()
+                ->and($pool->snapshot('incus', ['sidecar1' => 1]))
+                ->toMatchArray([
                     ['host' => 'sidecar1', 'slot' => 1, 'leased' => true],
                 ]);
 
@@ -205,8 +216,7 @@ it('releases configured incus host slots after availability-only checks', functi
 
 function fakeE2EProvider(string $name, bool $available): E2EProvider
 {
-    return new class($name, $available) implements E2EProvider
-    {
+    return new class($name, $available) implements E2EProvider {
         public function __construct(
             private readonly string $name,
             private readonly bool $available,

@@ -55,7 +55,8 @@ final readonly class IngressResolver
 
     public function router(): Node
     {
-        $router = $this->nodeRoleAssignments->activeRouterNodeQuery()
+        $router = $this->nodeRoleAssignments
+            ->activeRouterNodeQuery()
             ->orderBy('id')
             ->first();
 

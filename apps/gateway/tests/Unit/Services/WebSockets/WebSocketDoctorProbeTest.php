@@ -17,20 +17,24 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 it('runs the redis doctor script inside the rendered websocket runtime container without php dash r', function (): void {
-    $redisNode = Node::factory()->database()->create([
-        'name' => 'redis-1',
-        'status' => 'active',
-        'host' => '203.0.113.10',
-        'wireguard_address' => '10.6.0.10',
-    ]);
-    NodeProcess::factory()->forOwner($redisNode)->create([
-        'name' => 'redis',
-        'runtime' => ProcessRuntime::Docker,
-        'command' => 'redis-server --appendonly yes',
-        'runtime_config' => [
-            'service' => 'redis',
-        ],
-    ]);
+    $redisNode = Node::factory()
+        ->database()
+        ->create([
+            'name' => 'redis-1',
+            'status' => 'active',
+            'host' => '203.0.113.10',
+            'wireguard_address' => '10.6.0.10',
+        ]);
+    NodeProcess::factory()
+        ->forOwner($redisNode)
+        ->create([
+            'name' => 'redis',
+            'runtime' => ProcessRuntime::Docker,
+            'command' => 'redis-server --appendonly yes',
+            'runtime_config' => [
+                'service' => 'redis',
+            ],
+        ]);
     $websocketNode = Node::factory()->create([
         'name' => 'realtime-1',
         'status' => 'active',
@@ -62,21 +66,30 @@ it('runs the redis doctor script inside the rendered websocket runtime container
     $redisScript = collect($shell->scripts)
         ->first(fn (string $script): bool => str_contains($script, '# orbit-websocket-doctor:redis-probe'));
 
-    expect($drift)->toBe([])
-        ->and($redisScript)->toBeString();
+    expect($drift)->toBe([])->and($redisScript)->toBeString();
 
     $redisScript = (string) $redisScript;
 
-    expect($redisScript)->toContain('# orbit-websocket-doctor:redis-probe')
-        ->and($redisScript)->toContain('docker exec -i "$container" php')
-        ->and($redisScript)->toContain('container='.escapeshellarg($expectedContainer))
-        ->and($redisScript)->toContain("<?php\n")
-        ->and($redisScript)->toContain("getenv('REDIS_HOST')")
-        ->and($redisScript)->toContain("getenv('REDIS_PORT')")
-        ->and($redisScript)->toContain('fsockopen($host, $port, $errno, $errstr, 2)')
-        ->and($redisScript)->toContain("fwrite(STDERR, \$errstr !== '' ? \$errstr : 'redis unavailable')")
-        ->and($redisScript)->toContain('exit(1)')
-        ->and($redisScript)->not->toContain('php -r');
+    expect($redisScript)
+        ->toContain('# orbit-websocket-doctor:redis-probe')
+        ->and($redisScript)
+        ->toContain('docker exec -i "$container" php')
+        ->and($redisScript)
+        ->toContain('container='.escapeshellarg($expectedContainer))
+        ->and($redisScript)
+        ->toContain("<?php\n")
+        ->and($redisScript)
+        ->toContain("getenv('REDIS_HOST')")
+        ->and($redisScript)
+        ->toContain("getenv('REDIS_PORT')")
+        ->and($redisScript)
+        ->toContain('fsockopen($host, $port, $errno, $errstr, 2)')
+        ->and($redisScript)
+        ->toContain("fwrite(STDERR, \$errstr !== '' ? \$errstr : 'redis unavailable')")
+        ->and($redisScript)
+        ->toContain('exit(1)')
+        ->and($redisScript)
+        ->not->toContain('php -r');
 })->group('websocket', 'doctor');
 
 final class WebSocketDoctorProbeTestRemoteShell implements RemoteShell

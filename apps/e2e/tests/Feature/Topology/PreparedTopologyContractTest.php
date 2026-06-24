@@ -147,11 +147,9 @@ function expectPreparedGatewayTopology(E2ETopologyLease $topology, E2EConfig $co
     $gatewayNode = readPreparedLocalGatewayNode($gateway);
     $operatorOnGateway = E2EGatewayApi::getNode($gateway, 'operator-1');
 
-    expect($gatewayNode['roles'])->toContain('gateway')
-        ->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2');
+    expect($gatewayNode['roles'])->toContain('gateway')->and($gatewayNode['wireguard_address'])->toBe('10.6.0.2');
 
-    expect($operatorOnGateway['roles'])->toBe([])
-        ->and($operatorOnGateway['wireguard_address'])->toBe('10.6.0.3');
+    expect($operatorOnGateway['roles'])->toBe([])->and($operatorOnGateway['wireguard_address'])->toBe('10.6.0.3');
 }
 
 function expectPreparedDevTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -183,7 +181,9 @@ function expectPreparedProdTopology(E2ETopologyLease $topology, E2EConfig $confi
     $key = $topology->sshKeyPair();
 
     if ($prod === null || $gateway === null) {
-        throw new RuntimeException('Prepared operator-gateway-dev-prod topology did not return gateway and prod handles.');
+        throw new RuntimeException(
+            'Prepared operator-gateway-dev-prod topology did not return gateway and prod handles.',
+        );
     }
 
     expectPreparedOrbitCli($prod, 'orbit', $key);
@@ -202,23 +202,30 @@ function expectPreparedAgentTopology(E2ETopologyLease $topology, E2EConfig $conf
     $key = $topology->sshKeyPair();
 
     if ($agent === null || $gateway === null) {
-        throw new RuntimeException('Prepared operator-gateway-agent topology did not return gateway and agent handles.');
+        throw new RuntimeException(
+            'Prepared operator-gateway-agent topology did not return gateway and agent handles.',
+        );
     }
 
-    expect($topology->devApp())->toBeNull()
-        ->and($topology->prodApp())->toBeNull();
+    expect($topology->devApp())->toBeNull()->and($topology->prodApp())->toBeNull();
 
     expectPreparedOrbitCli($agent, 'orbit', $key);
 
     $agentNode = E2EGatewayApi::getNode($gateway, 'agent-1');
     $state = readPreparedAgentState($gateway);
 
-    expect($agentNode['tld'])->toBe('agent')
-        ->and($agentNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
-        ->and($agentNode['user'])->toBe('orbit')
-        ->and($agentNode['wireguard_address'])->toBe('10.6.0.6')
-        ->and($state['roles'])->toContain('agent')
-        ->and($state['node_names'])->toBe(['agent-1', 'gateway', 'operator-1']);
+    expect($agentNode['tld'])
+        ->toBe('agent')
+        ->and($agentNode['gateway_endpoint'])
+        ->toBe(expectedPreparedGatewayEndpoint())
+        ->and($agentNode['user'])
+        ->toBe('orbit')
+        ->and($agentNode['wireguard_address'])
+        ->toBe('10.6.0.6')
+        ->and($state['roles'])
+        ->toContain('agent')
+        ->and($state['node_names'])
+        ->toBe(['agent-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -231,12 +238,17 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
     $key = $topology->sshKeyPair();
 
     if ($prod === null || $ingress === null || $gateway === null) {
-        throw new RuntimeException('Prepared operator-gateway-prod-ingress topology did not return gateway, prod, and ingress handles.');
+        throw new RuntimeException(
+            'Prepared operator-gateway-prod-ingress topology did not return gateway, prod, and ingress handles.',
+        );
     }
 
-    expect($topology->devApp())->toBeNull()
-        ->and($topology->agent())->toBeNull()
-        ->and($ingress->name())->toBe($prod->name());
+    expect($topology->devApp())
+        ->toBeNull()
+        ->and($topology->agent())
+        ->toBeNull()
+        ->and($ingress->name())
+        ->toBe($prod->name());
 
     expectPreparedOrbitCli($prod, 'orbit', $key);
 
@@ -245,11 +257,16 @@ function expectPreparedProdIngressTopology(E2ETopologyLease $topology, E2EConfig
 
     expectPreparedAppNode($prodNode, 'app-prod', null, expectedPreparedGatewayEndpoint());
 
-    expect($prodNode['wireguard_address'])->toBe('10.6.0.5')
-        ->and($state['roles'])->toContain('app-prod')
-        ->and($state['roles'])->toContain('ingress')
-        ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
-        ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
+    expect($prodNode['wireguard_address'])
+        ->toBe('10.6.0.5')
+        ->and($state['roles'])
+        ->toContain('app-prod')
+        ->and($state['roles'])
+        ->toContain('ingress')
+        ->and($state['app_production_ingress_node'])
+        ->toBe('app-prod-1')
+        ->and($state['node_names'])
+        ->toBe(['app-prod-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedDedicatedIngressTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -262,7 +279,9 @@ function expectPreparedDedicatedIngressTopology(E2ETopologyLease $topology, E2EC
     $key = $topology->sshKeyPair();
 
     if ($prod === null || $ingress === null || $gateway === null) {
-        throw new RuntimeException('Prepared operator-gateway-dev-prod-ingress topology did not return gateway, prod, and ingress handles.');
+        throw new RuntimeException(
+            'Prepared operator-gateway-dev-prod-ingress topology did not return gateway, prod, and ingress handles.',
+        );
     }
 
     expect($ingress->name())->not->toBe($prod->name());
@@ -271,12 +290,19 @@ function expectPreparedDedicatedIngressTopology(E2ETopologyLease $topology, E2EC
     $ingressNode = E2EGatewayApi::getNode($gateway, 'edge-1');
     $state = readPreparedProdIngressState($gateway);
 
-    expect($ingressNode['wireguard_address'])->toBe('10.6.0.7')
-        ->and(array_column($ingressNode['roles'], 'role'))->toContain('ingress')
-        ->and($state['roles'])->toContain('app-prod')
-        ->and($state['roles'])->not->toContain('ingress')
-        ->and($state['app_production_ingress_node'])->toBe('edge-1')
-        ->and($state['node_names'])->toBe(['app-dev-1', 'app-prod-1', 'edge-1', 'gateway', 'operator-1']);
+    expect($ingressNode['wireguard_address'])
+        ->toBe('10.6.0.7')
+        ->and(array_column($ingressNode['roles'], 'role'))
+        ->toContain('ingress')
+        ->and($state['roles'])
+        ->toContain('app-prod')
+        ->and($state['roles'])
+        ->not
+        ->toContain('ingress')
+        ->and($state['app_production_ingress_node'])
+        ->toBe('edge-1')
+        ->and($state['node_names'])
+        ->toBe(['app-dev-1', 'app-prod-1', 'edge-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConfig $config): void
@@ -290,7 +316,9 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
     $key = $topology->sshKeyPair();
 
     if ($agent === null || $dev === null || $prod === null || $gateway === null) {
-        throw new RuntimeException('Prepared full websocket topology did not return gateway, dev, prod, and agent handles.');
+        throw new RuntimeException(
+            'Prepared full websocket topology did not return gateway, dev, prod, and agent handles.',
+        );
     }
 
     expectPreparedOrbitCli($dev, 'orbit', $key);
@@ -306,24 +334,40 @@ function expectPreparedFullWebSocketTopology(E2ETopologyLease $topology, E2EConf
     expectPreparedDevDatabaseAndRedis($topology);
     expectPreparedAppNode($prodNode, 'app-prod', null, expectedPreparedGatewayEndpoint());
 
-    expect($agentNode['tld'])->toBe('agent')
-        ->and($agentNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
-        ->and($agentNode['user'])->toBe('orbit')
-        ->and($agentNode['wireguard_address'])->toBe('10.6.0.6')
-        ->and(array_column($agentNode['roles'], 'role'))->toContain('agent');
+    expect($agentNode['tld'])
+        ->toBe('agent')
+        ->and($agentNode['gateway_endpoint'])
+        ->toBe(expectedPreparedGatewayEndpoint())
+        ->and($agentNode['user'])
+        ->toBe('orbit')
+        ->and($agentNode['wireguard_address'])
+        ->toBe('10.6.0.6')
+        ->and(array_column($agentNode['roles'], 'role'))
+        ->toContain('agent');
 
-    expect($websocketNode['gateway_endpoint'])->toBe(expectedPreparedGatewayEndpoint())
-        ->and($websocketNode['user'])->toBe('orbit')
-        ->and($websocketNode['wireguard_address'])->toBe('10.6.0.4')
-        ->and(array_column($websocketNode['roles'], 'role'))->toContain('app-dev')
-        ->and(array_column($websocketNode['roles'], 'role'))->toContain('database')
-        ->and(array_column($websocketNode['roles'], 'role'))->toContain('websocket');
+    expect($websocketNode['gateway_endpoint'])
+        ->toBe(expectedPreparedGatewayEndpoint())
+        ->and($websocketNode['user'])
+        ->toBe('orbit')
+        ->and($websocketNode['wireguard_address'])
+        ->toBe('10.6.0.4')
+        ->and(array_column($websocketNode['roles'], 'role'))
+        ->toContain('app-dev')
+        ->and(array_column($websocketNode['roles'], 'role'))
+        ->toContain('database')
+        ->and(array_column($websocketNode['roles'], 'role'))
+        ->toContain('websocket');
 
-    expect($state['app_dev_roles'])->toContain('app-dev')
-        ->and($state['app_dev_roles'])->toContain('database')
-        ->and($state['app_dev_roles'])->toContain('websocket')
-        ->and($state['websocket_redis_node'])->toBe('app-dev-1')
-        ->and($state['node_names'])->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'gateway', 'operator-1']);
+    expect($state['app_dev_roles'])
+        ->toContain('app-dev')
+        ->and($state['app_dev_roles'])
+        ->toContain('database')
+        ->and($state['app_dev_roles'])
+        ->toContain('websocket')
+        ->and($state['websocket_redis_node'])
+        ->toBe('app-dev-1')
+        ->and($state['node_names'])
+        ->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'gateway', 'operator-1']);
 }
 
 function expectPreparedOrbitCli(E2EInstance $instance, string $user, SshKeyPair $key): void
@@ -362,9 +406,12 @@ function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
 
     $state = readPreparedDevServiceState($gateway);
 
-    expect($state['roles'])->toContain('app-dev')
-        ->and($state['roles'])->toContain('database')
-        ->and($state['redis_process_service'])->toBe('redis');
+    expect($state['roles'])
+        ->toContain('app-dev')
+        ->and($state['roles'])
+        ->toContain('database')
+        ->and($state['redis_process_service'])
+        ->toBe('redis');
 }
 
 /**
@@ -373,28 +420,28 @@ function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
 function readPreparedDevServiceState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-$redisRuntimeConfig = \App\Models\Process::query()
-    ->ownedBy($node)
-    ->where('name', 'redis')
-    ->value('runtime_config');
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $redisRuntimeConfig = \App\Models\Process::query()
+            ->ownedBy($node)
+            ->where('name', 'redis')
+            ->value('runtime_config');
 
-if (is_string($redisRuntimeConfig)) {
-    $redisRuntimeConfig = json_decode($redisRuntimeConfig, associative: true, flags: JSON_THROW_ON_ERROR);
-}
+        if (is_string($redisRuntimeConfig)) {
+            $redisRuntimeConfig = json_decode($redisRuntimeConfig, associative: true, flags: JSON_THROW_ON_ERROR);
+        }
 
-echo json_encode([
-    'roles' => $node->roleAssignments()
-        ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-        ->orderBy('role')
-        ->pluck('role')
-        ->values()
-        ->all(),
-    'redis_process_service' => is_array($redisRuntimeConfig)
-        ? ($redisRuntimeConfig['service'] ?? null)
-        : null,
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'roles' => $node->roleAssignments()
+                ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+                ->orderBy('role')
+                ->pluck('role')
+                ->values()
+                ->all(),
+            'redis_process_service' => is_array($redisRuntimeConfig)
+                ? ($redisRuntimeConfig['service'] ?? null)
+                : null,
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = E2ECommand::gatewayArtisan(
         $gateway,
@@ -414,18 +461,18 @@ PHP;
 function readPreparedAgentState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'agent-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'agent-1')->firstOrFail();
 
-echo json_encode([
-    'roles' => $node->roleAssignments()
-        ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-        ->orderBy('role')
-        ->pluck('role')
-        ->values()
-        ->all(),
-    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'roles' => $node->roleAssignments()
+                ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+                ->orderBy('role')
+                ->pluck('role')
+                ->values()
+                ->all(),
+            'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = E2ECommand::gatewayArtisan(
         $gateway,
@@ -445,27 +492,27 @@ PHP;
 function readPreparedProdIngressState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
-$assignments = $node->roleAssignments()
-    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-    ->orderBy('role')
-    ->get(['role', 'settings']);
+        $node = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
+        $assignments = $node->roleAssignments()
+            ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+            ->orderBy('role')
+            ->get(['role', 'settings']);
 
-$appProduction = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::AppProduction->value);
-$appProductionSettings = $appProduction === null ? [] : ($appProduction->settings ?? []);
-$ingressNodeId = $appProductionSettings['ingress_node_id'] ?? null;
-$ingressNodeName = null;
+        $appProduction = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::AppProduction->value);
+        $appProductionSettings = $appProduction === null ? [] : ($appProduction->settings ?? []);
+        $ingressNodeId = $appProductionSettings['ingress_node_id'] ?? null;
+        $ingressNodeName = null;
 
-if ($ingressNodeId !== null) {
-    $ingressNodeName = \App\Models\Node::query()->whereKey($ingressNodeId)->value('name');
-}
+        if ($ingressNodeId !== null) {
+            $ingressNodeName = \App\Models\Node::query()->whereKey($ingressNodeId)->value('name');
+        }
 
-echo json_encode([
-    'roles' => $assignments->pluck('role')->values()->all(),
-    'app_production_ingress_node' => $ingressNodeName,
-    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'roles' => $assignments->pluck('role')->values()->all(),
+            'app_production_ingress_node' => $ingressNodeName,
+            'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = E2ECommand::gatewayArtisan(
         $gateway,
@@ -485,27 +532,27 @@ PHP;
 function readPreparedFullWebSocketState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-$assignments = $node->roleAssignments()
-    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-    ->orderBy('role')
-    ->get(['role', 'settings']);
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $assignments = $node->roleAssignments()
+            ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+            ->orderBy('role')
+            ->get(['role', 'settings']);
 
-$websocket = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::WebSocket->value);
-$websocketSettings = $websocket === null ? [] : ($websocket->settings ?? []);
-$redisNodeId = $websocketSettings['redis_node_id'] ?? null;
-$redisNodeName = null;
+        $websocket = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::WebSocket->value);
+        $websocketSettings = $websocket === null ? [] : ($websocket->settings ?? []);
+        $redisNodeId = $websocketSettings['redis_node_id'] ?? null;
+        $redisNodeName = null;
 
-if ($redisNodeId !== null) {
-    $redisNodeName = \App\Models\Node::query()->whereKey($redisNodeId)->value('name');
-}
+        if ($redisNodeId !== null) {
+            $redisNodeName = \App\Models\Node::query()->whereKey($redisNodeId)->value('name');
+        }
 
-echo json_encode([
-    'app_dev_roles' => $assignments->pluck('role')->values()->all(),
-    'websocket_redis_node' => $redisNodeName,
-    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'app_dev_roles' => $assignments->pluck('role')->values()->all(),
+            'websocket_redis_node' => $redisNodeName,
+            'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = E2ECommand::gatewayArtisan(
         $gateway,
@@ -539,29 +586,29 @@ function expectPreparedGatewayCertificateKeysReadable(E2EInstance $gateway, SshK
 function readPreparedLocalGatewayNode(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()
-    ->whereHas('roleAssignments', fn ($query) => $query
-        ->where('role', \App\Enums\Nodes\NodeRoleName::Gateway->value)
-        ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value))
-    ->firstOrFail()
-    ->load('roleAssignments');
+        $node = \App\Models\Node::query()
+            ->whereHas('roleAssignments', fn ($query) => $query
+                ->where('role', \App\Enums\Nodes\NodeRoleName::Gateway->value)
+                ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value))
+            ->firstOrFail()
+            ->load('roleAssignments');
 
-echo json_encode($node->only([
-        'name',
-        'tld',
-        'host',
-        'wireguard_address',
-        'gateway_endpoint',
-        'user',
-    ]) + [
-        'roles' => $node->roleAssignments()
-            ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-            ->orderBy('role')
-            ->pluck('role')
-            ->values()
-            ->all(),
-    ], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode($node->only([
+                'name',
+                'tld',
+                'host',
+                'wireguard_address',
+                'gateway_endpoint',
+                'user',
+            ]) + [
+                'roles' => $node->roleAssignments()
+                    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+                    ->orderBy('role')
+                    ->pluck('role')
+                    ->values()
+                    ->all(),
+            ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = E2ECommand::gatewayArtisan(
         $gateway,
@@ -585,7 +632,9 @@ function readPreparedClientGatewayUrl(E2EInstance $operator, string $operatorUse
         $operator,
         $operatorUser,
         $key,
-        'cd '.escapeshellarg("/home/{$operatorUser}/orbit/apps/cli")." && grep -E '^ORBIT_GATEWAY_URL=' .env | tail -n 1 | cut -d= -f2-",
+        'cd '
+        .escapeshellarg("/home/{$operatorUser}/orbit/apps/cli")
+        ." && grep -E '^ORBIT_GATEWAY_URL=' .env | tail -n 1 | cut -d= -f2-",
     );
 
     return trim($result->output());
@@ -620,10 +669,16 @@ function expectedPreparedGatewayEndpoint(): string
 
 function expectPreparedAppNode(array $node, string $role, ?string $tld, string $gatewayEndpoint): void
 {
-    expect(array_column($node['roles'], 'role'))->toContain($role)
-        ->and($node['tld'])->toBe($tld)
-        ->and($node['gateway_endpoint'])->toBe($gatewayEndpoint)
-        ->and($node['user'])->toBe('orbit')
-        ->and(is_string($node['wireguard_address']))->toBeTrue()
-        ->and(str_starts_with((string) $node['wireguard_address'], '10.6.0.'))->toBeTrue();
+    expect(array_column($node['roles'], 'role'))
+        ->toContain($role)
+        ->and($node['tld'])
+        ->toBe($tld)
+        ->and($node['gateway_endpoint'])
+        ->toBe($gatewayEndpoint)
+        ->and($node['user'])
+        ->toBe('orbit')
+        ->and(is_string($node['wireguard_address']))
+        ->toBeTrue()
+        ->and(str_starts_with((string) $node['wireguard_address'], '10.6.0.'))
+        ->toBeTrue();
 }

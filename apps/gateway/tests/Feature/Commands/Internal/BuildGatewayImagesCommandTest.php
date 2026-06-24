@@ -17,23 +17,36 @@ it('builds orbit-gateway and pulls the official Caddy image when neither exists 
         return Process::result();
     });
 
-    $this->artisan('orbit:internal:build-gateway-images')
+    $this
+        ->artisan('orbit:internal:build-gateway-images')
         ->expectsOutputToContain('Built orbit-gateway:current.')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
         ->assertSuccessful();
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'docker/orbit-gateway/Dockerfile')
-        && str_contains($process->command, 'orbit-gateway:current'));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'docker/orbit-gateway/Dockerfile')
+            && str_contains($process->command, 'orbit-gateway:current')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'caddy:2-alpine'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'caddy:2-alpine'")
+        ),
+    );
 
-    Process::assertNotRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build')
-        && str_contains($process->command, 'caddy:2-alpine'));
+    Process::assertNotRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'caddy:2-alpine')
+        ),
+    );
 });
 
 it('skips images that already exist locally so docker run --pull never can start the container', function (): void {
@@ -45,16 +58,19 @@ it('skips images that already exist locally so docker run --pull never can start
         return Process::result();
     });
 
-    $this->artisan('orbit:internal:build-gateway-images')
+    $this
+        ->artisan('orbit:internal:build-gateway-images')
         ->expectsOutputToContain('Skipping orbit-gateway:current')
         ->expectsOutputToContain('Skipping caddy:2-alpine')
         ->assertSuccessful();
 
-    Process::assertNotRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker build'));
+    Process::assertNotRan(
+        fn ($process): bool => is_string($process->command) && str_contains($process->command, 'docker build'),
+    );
 
-    Process::assertNotRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull'));
+    Process::assertNotRan(
+        fn ($process): bool => is_string($process->command) && str_contains($process->command, 'docker pull'),
+    );
 });
 
 it('forces a rebuild and re-pull when --force is passed regardless of cached images', function (): void {
@@ -62,18 +78,27 @@ it('forces a rebuild and re-pull when --force is passed regardless of cached ima
         '*' => Process::result(),
     ]);
 
-    $this->artisan('orbit:internal:build-gateway-images', ['--force' => true])
+    $this
+        ->artisan('orbit:internal:build-gateway-images', ['--force' => true])
         ->expectsOutputToContain('Built orbit-gateway:current.')
         ->expectsOutputToContain('Pulled caddy:2-alpine.')
         ->assertSuccessful();
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-    && str_contains($process->command, 'docker build')
-    && str_contains($process->command, 'orbit-gateway:current'));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker build')
+            && str_contains($process->command, 'orbit-gateway:current')
+        ),
+    );
 
-    Process::assertRan(fn ($process): bool => is_string($process->command)
-        && str_contains($process->command, 'docker pull')
-        && str_contains($process->command, "'caddy:2-alpine'"));
+    Process::assertRan(
+        fn ($process): bool => (
+            is_string($process->command)
+            && str_contains($process->command, 'docker pull')
+            && str_contains($process->command, "'caddy:2-alpine'")
+        ),
+    );
 });
 
 it('reports a clear failure when docker build fails', function (): void {
@@ -85,7 +110,8 @@ it('reports a clear failure when docker build fails', function (): void {
         return Process::result(errorOutput: 'docker build: out of disk space', exitCode: 1);
     });
 
-    $this->artisan('orbit:internal:build-gateway-images')
+    $this
+        ->artisan('orbit:internal:build-gateway-images')
         ->expectsOutputToContain('docker build: out of disk space')
         ->assertFailed();
 });

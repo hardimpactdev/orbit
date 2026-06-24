@@ -20,18 +20,23 @@ describe('LogStream commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && $request->hasHeader('Accept', 'text/plain')
                 && str_contains($url, '/api/processes/vite/log')
                 && str_contains($url, 'app=docs')
                 && str_contains($url, 'workspace=feature-docs')
                 && str_contains($url, 'lines=5')
-                && str_contains($url, 'follow=1');
+                && str_contains($url, 'follow=1')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('vite ready')
-            ->and($output)->toContain('hmr updated');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('vite ready')
+            ->and($output)
+            ->toContain('hmr updated');
     });
 
     it('rejects JSON process follow output before opening a stream', function (): void {
@@ -48,9 +53,12 @@ describe('LogStream commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('json');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('json');
     });
 
     it('reads deploy log output as captured finite history', function (): void {
@@ -79,19 +87,27 @@ describe('LogStream commands', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/log/42')
                 && str_contains($url, 'app=docs')
                 && str_contains($url, 'step=13')
-                && str_contains($url, 'lines=20');
+                && str_contains($url, 'lines=20')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Build assets (failed):')
-            ->and($output)->toContain('stdout:')
-            ->and($output)->toContain('npm install')
-            ->and($output)->toContain('stderr:')
-            ->and($output)->toContain('vite failed');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Build assets (failed):')
+            ->and($output)
+            ->toContain('stdout:')
+            ->and($output)
+            ->toContain('npm install')
+            ->and($output)
+            ->toContain('stderr:')
+            ->and($output)
+            ->toContain('vite failed');
     });
 
     it('keeps schedule logs as a finite captured-log read without progress events', function (): void {
@@ -105,12 +121,18 @@ describe('LogStream commands', function (): void {
             '--app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('stdout')
-            ->and($output)->toContain('ok')
-            ->and($output)->toContain('stderr')
-            ->and($output)->toContain('warning')
-            ->and($output)->not->toContain('event:')
-            ->and($output)->not->toContain('complete');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('stdout')
+            ->and($output)
+            ->toContain('ok')
+            ->and($output)
+            ->toContain('stderr')
+            ->and($output)
+            ->toContain('warning')
+            ->and($output)
+            ->not->toContain('event:')->and($output)
+            ->not->toContain('complete');
     });
 });

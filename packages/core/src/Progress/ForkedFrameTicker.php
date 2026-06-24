@@ -120,7 +120,7 @@ final class ForkedFrameTicker
                     exit(0);
                 }
 
-                usleep($this->intervalUs);
+                usleep(max(0, $this->intervalUs));
 
                 $parentPid = posix_getppid();
 
@@ -184,10 +184,12 @@ final class ForkedFrameTicker
 
     private function canFork(): bool
     {
-        return function_exists('pcntl_fork')
+        return (
+            function_exists('pcntl_fork')
             && function_exists('posix_kill')
             && function_exists('posix_getppid')
             && function_exists('pcntl_async_signals')
-            && function_exists('pcntl_signal');
+            && function_exists('pcntl_signal')
+        );
     }
 }

@@ -87,23 +87,32 @@ it('creates a PHP app proxy route targeting the FrankenPHP runtime container', f
         ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/docs.test.caddy'));
     $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
-    expect($route->domain)->toBe('docs.test')
-        ->and($route->config['runtime_upstream'])->toBe('http://orbit-app-docs:8080')
-        ->and($route->config['runtime_upstream_tls'] ?? null)->toBeNull()
-        ->and($route->config['php_socket'])->toBeNull()
-        ->and($caddySite)->toContain('reverse_proxy http://orbit-app-docs:8080')
-        ->and($caddySite)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-        ->and($caddySite)->not->toContain('tls_server_name docs.test')
-        ->and($caddySite)->not->toContain('php_fastcgi')
-        ->and($caddySite)->not->toContain('file_server');
+    expect($route->domain)
+        ->toBe('docs.test')
+        ->and($route->config['runtime_upstream'])
+        ->toBe('http://orbit-app-docs:8080')
+        ->and($route->config['runtime_upstream_tls'] ?? null)
+        ->toBeNull()
+        ->and($route->config['php_socket'])
+        ->toBeNull()
+        ->and($caddySite)
+        ->toContain('reverse_proxy http://orbit-app-docs:8080')
+        ->and($caddySite)
+        ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($caddySite)
+        ->not->toContain('tls_server_name docs.test')->and($caddySite)
+        ->not->toContain('php_fastcgi')->and($caddySite)
+        ->not->toContain('file_server');
 });
 
 it('creates a static app proxy route with file_server', function (): void {
     $node = Node::factory()->appDev()->create(['tld' => 'test']);
-    $app = App::factory()->for($node, 'node')->static()->create([
-        'name' => 'marketing',
-        'document_root' => 'public',
-    ]);
+    $app = App::factory()
+        ->for($node, 'node')
+        ->static()
+        ->create([
+            'name' => 'marketing',
+            'document_root' => 'public',
+        ]);
 
     $shell = new EnsureAppProxyRouteTestShell;
     $certificates = new EnsureAppProxyRouteTestCertificateInstaller;
@@ -117,11 +126,17 @@ it('creates a static app proxy route with file_server', function (): void {
         ->first(fn (string $script): bool => str_contains($script, '/etc/caddy/sites/marketing.test.caddy'));
     $caddySite = base64_decode((string) str((string) $siteScript)->match("/printf %s\\s+'([^']+)'/")->toString(), true);
 
-    expect($route->domain)->toBe('marketing.test')
-        ->and($route->config['runtime_upstream'])->toBeNull()
-        ->and($route->config['php_socket'])->toBeNull()
-        ->and($caddySite)->toContain('file_server')
-        ->and($caddySite)->toContain("root * {$app->path}/public")
-        ->and($caddySite)->not->toContain('php_fastcgi')
-        ->and($caddySite)->not->toContain('reverse_proxy');
+    expect($route->domain)
+        ->toBe('marketing.test')
+        ->and($route->config['runtime_upstream'])
+        ->toBeNull()
+        ->and($route->config['php_socket'])
+        ->toBeNull()
+        ->and($caddySite)
+        ->toContain('file_server')
+        ->and($caddySite)
+        ->toContain("root * {$app->path}/public")
+        ->and($caddySite)
+        ->not->toContain('php_fastcgi')->and($caddySite)
+        ->not->toContain('reverse_proxy');
 });

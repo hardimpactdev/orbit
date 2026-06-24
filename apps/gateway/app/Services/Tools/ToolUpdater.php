@@ -76,7 +76,7 @@ final readonly class ToolUpdater
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 $tool,
-                $model->node->name,
+                $model->node?->name,
                 'update',
                 $result->exitCode,
                 trim($result->stderr),
@@ -85,7 +85,7 @@ final readonly class ToolUpdater
 
         return [
             'name' => $tool,
-            'node' => $model->node->name,
+            'node' => $model->node?->name,
             'version' => $model->expected_version,
         ];
     }
@@ -190,7 +190,7 @@ final readonly class ToolUpdater
             if (! $result->successful()) {
                 $failed[] = [
                     'tool' => $tool,
-                    'node' => $nt->node->name,
+                    'node' => $nt->node?->name,
                     'error' => trim($result->stderr) ?: 'update script failed',
                 ];
 
@@ -199,7 +199,7 @@ final readonly class ToolUpdater
 
             $updated[] = [
                 'tool' => $tool,
-                'node' => $nt->node->name,
+                'node' => $nt->node?->name,
             ];
         }
 
@@ -214,8 +214,12 @@ final readonly class ToolUpdater
      * @param  array<string, mixed>  $config
      * @param  callable(array<string, mixed>): string  $scriptFactory
      */
-    private function runToolScriptWithGitHubAuth(Node $node, string $tool, array $config, callable $scriptFactory): RemoteShellResult
-    {
+    private function runToolScriptWithGitHubAuth(
+        Node $node,
+        string $tool,
+        array $config,
+        callable $scriptFactory,
+    ): RemoteShellResult {
         $token = $this->githubTokenForTool($tool);
 
         if ($token === null) {

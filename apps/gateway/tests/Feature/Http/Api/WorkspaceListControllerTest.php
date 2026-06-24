@@ -95,9 +95,17 @@ describe('WorkspaceListController', function (): void {
         Workspace::factory()->create(['name' => 'docs-feature', 'app_id' => $docs->id]);
         Workspace::factory()->create(['name' => 'site-feature', 'app_id' => $site->id]);
 
-        $response = $this->call('GET', '/api/workspaces?app=docs&node=dev-1', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces?app=docs&node=dev-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.workspaces')
             ->assertJsonPath('success.data.workspaces.0.name', 'docs-feature');
     });
@@ -115,7 +123,8 @@ describe('WorkspaceListController', function (): void {
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.workspaces')
             ->assertJsonPath('success.data.workspaces.0.name', 'visible-workspace');
     });
@@ -157,20 +166,34 @@ describe('WorkspaceListController', function (): void {
 
         $response = $this->call('GET', '/api/workspaces', [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'This node is not authorized to read the workspace registry.')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'workspace:read');
     });
 
-    it('returns validation errors for unknown filters', function (string $query, string $field, string $value, string $message): void {
+    it('returns validation errors for unknown filters', function (
+        string $query,
+        string $field,
+        string $value,
+        string $message,
+    ): void {
         $caller = createWorkspaceListCallerNode();
         assignWorkspaceListGatewayRole($caller);
 
-        $response = $this->call('GET', "/api/workspaces?{$query}", [], [], [], ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            "/api/workspaces?{$query}",
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', $message)
             ->assertJsonPath('error.meta.field', $field)
@@ -208,7 +231,8 @@ describe('WorkspaceListController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/workspaces');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

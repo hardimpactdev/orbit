@@ -47,16 +47,25 @@ describe('WorkspaceStepStoreController', function (): void {
         grantWorkspaceStepStoreAccess($caller, $node);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
-        $response = $this->call('POST', '/api/workspaces/steps/setup', [], [], [], [
-            'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode([
-            'app' => 'docs',
-            'command' => 'composer install',
-            'timeout' => 600,
-        ], JSON_THROW_ON_ERROR));
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode([
+                'app' => 'docs',
+                'command' => 'composer install',
+                'timeout' => 600,
+            ], JSON_THROW_ON_ERROR),
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.result.action', 'added')
             ->assertJsonPath('success.data.step.app', 'docs')
             ->assertJsonPath('success.data.step.phase', 'setup')
@@ -68,12 +77,21 @@ describe('WorkspaceStepStoreController', function (): void {
         $node = createTestAppHostNode();
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
 
-        $response = $this->call('POST', '/api/workspaces/steps/setup', [], [], [], [
-            'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode(['app' => 'docs', 'command' => 'composer install'], JSON_THROW_ON_ERROR));
+        $response = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode(['app' => 'docs', 'command' => 'composer install'], JSON_THROW_ON_ERROR),
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'workspace:write');
@@ -85,14 +103,30 @@ describe('WorkspaceStepStoreController', function (): void {
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         WorkspaceStep::factory()->create(['app_id' => $app->id, 'phase' => WorkspaceLifecyclePhase::Teardown]);
 
-        $timeout = $this->call('POST', '/api/workspaces/steps/setup', [], [], [], [
-            'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode(['app' => 'docs', 'command' => 'composer install', 'timeout' => 0], JSON_THROW_ON_ERROR));
-        $anchor = $this->call('POST', '/api/workspaces/steps/setup', [], [], [], [
-            'REMOTE_ADDR' => $caller->wireguard_address,
-            'CONTENT_TYPE' => 'application/json',
-        ], json_encode(['app' => 'docs', 'command' => 'composer install', 'before' => 999], JSON_THROW_ON_ERROR));
+        $timeout = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => WORKSPACE_STEP_STORE_CALLER_WG_IP,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode(['app' => 'docs', 'command' => 'composer install', 'timeout' => 0], JSON_THROW_ON_ERROR),
+        );
+        $anchor = $this->call(
+            'POST',
+            '/api/workspaces/steps/setup',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => $caller->wireguard_address,
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            json_encode(['app' => 'docs', 'command' => 'composer install', 'before' => 999], JSON_THROW_ON_ERROR),
+        );
 
         $timeout->assertStatus(400)
             ->assertJsonPath('error.meta.field', 'timeout');

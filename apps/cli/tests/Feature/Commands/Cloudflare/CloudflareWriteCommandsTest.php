@@ -31,18 +31,25 @@ describe('Cloudflare write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/cloudflare/zones/lindaretel.nl/dns'
-            && $request->data() === [
-                'name' => 'docs.lindaretel.nl',
-                'content' => '203.0.113.10',
-                'type' => 'A',
-                'proxied' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/cloudflare/zones/lindaretel.nl/dns'
+                && $request->data() === [
+                    'name' => 'docs.lindaretel.nl',
+                    'content' => '203.0.113.10',
+                    'type' => 'A',
+                    'proxied' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['record']['status'])->toBe('created')
-            ->and($decoded['success']['meta']['action'])->toBe('create');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['record']['status'])
+            ->toBe('created')
+            ->and($decoded['success']['meta']['action'])
+            ->toBe('create');
     });
 
     it('validates cf-dns:add required input before contacting the gateway', function (): void {
@@ -62,12 +69,18 @@ describe('Cloudflare write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($missingNameExitCode)->toBe(1)
-            ->and($missingName['error']['code'])->toBe('validation_failed')
-            ->and($missingName['error']['meta']['field'])->toBe('name')
-            ->and($missingContentExitCode)->toBe(1)
-            ->and($missingContent['error']['code'])->toBe('validation_failed')
-            ->and($missingContent['error']['meta']['field'])->toBe('content');
+        expect($missingNameExitCode)
+            ->toBe(1)
+            ->and($missingName['error']['code'])
+            ->toBe('validation_failed')
+            ->and($missingName['error']['meta']['field'])
+            ->toBe('name')
+            ->and($missingContentExitCode)
+            ->toBe(1)
+            ->and($missingContent['error']['code'])
+            ->toBe('validation_failed')
+            ->and($missingContent['error']['meta']['field'])
+            ->toBe('content');
     });
 
     it('deletes cf-dns:remove targets only with destructive consent', function (): void {
@@ -89,9 +102,12 @@ describe('Cloudflare write commands', function (): void {
 
         $missingConsent = json_decode($missingConsentOutput, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($missingConsentExitCode)->toBe(1)
-            ->and($missingConsent['error']['code'])->toBe('validation_failed')
-            ->and($missingConsent['error']['meta'])->toMatchArray([
+        expect($missingConsentExitCode)
+            ->toBe(1)
+            ->and($missingConsent['error']['code'])
+            ->toBe('validation_failed')
+            ->and($missingConsent['error']['meta'])
+            ->toMatchArray([
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ]);
@@ -115,12 +131,15 @@ describe('Cloudflare write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/cloudflare/zones/lindaretel.nl/dns/record-1'
-            && $request->data() === ['destructive_consent' => true]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/cloudflare/zones/lindaretel.nl/dns/record-1'
+                && $request->data() === ['destructive_consent' => true]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['record']['status'])->toBe('removed');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['record']['status'])->toBe('removed');
     });
 
     it('prompts for the cf-cache:flush zone in interactive mode', function (): void {
@@ -132,14 +151,19 @@ describe('Cloudflare write commands', function (): void {
             ],
         ]));
 
-        $this->artisan('cf-cache:flush')
+        $this
+            ->artisan('cf-cache:flush')
             ->expectsQuestion('Cloudflare zone', 'lindaretel.nl')
             ->expectsOutputToContain('cache')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/cloudflare/cache/flush'
-            && $request->data() === ['zone' => 'lindaretel.nl']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/cloudflare/cache/flush'
+                && $request->data() === ['zone' => 'lindaretel.nl']
+            ),
+        );
     });
 
     it('validates cf-cache:flush zone before contacting the gateway in JSON mode', function (): void {
@@ -151,9 +175,12 @@ describe('Cloudflare write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('zone');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('zone');
     });
 
     it('posts cache rule and ssl writes to their gateway endpoints', function (
@@ -178,12 +205,15 @@ describe('Cloudflare write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === $method
-            && $request->url() === $url
-            && $request->data() === $expectedPayload);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === $method
+                && $request->url() === $url
+                && $request->data() === $expectedPayload
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data'][$dataKey]['status'])->toBe('done');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data'][$dataKey]['status'])->toBe('done');
     })->with([
         'cf-cache-rule:add' => [
             'cf-cache-rule:add',
@@ -219,7 +249,10 @@ describe('Cloudflare write commands', function (): void {
         ],
     ]);
 
-    it('requires force for destructive Cloudflare writes in JSON mode', function (string $command, array $arguments): void {
+    it('requires force for destructive Cloudflare writes in JSON mode', function (
+        string $command,
+        array $arguments,
+    ): void {
         fakeGateway(fakeSuccessEnvelope());
 
         [$exitCode, $output] = runCommand($this, $command, [
@@ -231,9 +264,12 @@ describe('Cloudflare write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ]);
@@ -254,8 +290,11 @@ describe('Cloudflare write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('cloudflare_unavailable')
-            ->and($decoded['error']['meta']['reason'])->toBe('token_missing');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('cloudflare_unavailable')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('token_missing');
     });
 });

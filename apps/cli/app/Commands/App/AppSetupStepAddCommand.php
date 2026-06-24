@@ -65,12 +65,15 @@ final class AppSetupStepAddCommand extends AppGatewayCommand
         }
 
         try {
-            $response = $this->gatewayPost($this->apiAppPath($app, '/setup-steps'), $this->filledQuery([
-                'command' => $command,
-                'timeout' => $timeout,
-                'before' => is_int($before) ? $before : null,
-                'after' => is_int($after) ? $after : null,
-            ]));
+            $response = $this->gatewayPost(
+                $this->apiAppPath($app, '/setup-steps'),
+                $this->filledQuery([
+                    'command' => $command,
+                    'timeout' => $timeout,
+                    'before' => is_int($before) ? $before : null,
+                    'after' => is_int($after) ? $after : null,
+                ]),
+            );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }

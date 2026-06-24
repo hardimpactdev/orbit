@@ -30,10 +30,13 @@ final class ListWorkspaceStepsRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'path' => $this->path,
-        ], fn (mixed $value): bool => is_scalar($value) && (string) $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'path' => $this->path,
+            ],
+            fn (mixed $value): bool => is_scalar($value) && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): WorkspaceStepListResponse
@@ -42,7 +45,7 @@ final class ListWorkspaceStepsRequest extends GatewayRequest
         $steps = $data['steps'] ?? [];
 
         return new WorkspaceStepListResponse(
-            steps: is_array($steps) ? array_values($steps) : [],
+            steps: $this->listOfStringKeyedArrays($steps),
         );
     }
 }

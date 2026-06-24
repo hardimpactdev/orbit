@@ -67,8 +67,11 @@ trait PromptsForGatewayRegistryEntities
     /**
      * @return array{name: string, app: string|null}|int
      */
-    protected function promptForVisibleWorkspace(?string $app = null, ?string $node = null, ?string $name = null): array|int
-    {
+    protected function promptForVisibleWorkspace(
+        ?string $app = null,
+        ?string $node = null,
+        ?string $name = null,
+    ): array|int {
         try {
             $response = $this->gatewayGet('/api/workspaces', $this->filledQuery([
                 'app' => $app,
@@ -259,7 +262,7 @@ trait PromptsForGatewayRegistryEntities
     private function nodePeerAddressLabel(array $node): string
     {
         $addresses = $node['addresses'] ?? null;
-        $wireguardAddress = is_array($addresses) ? ($addresses['wireguard'] ?? null) : null;
+        $wireguardAddress = is_array($addresses) ? $addresses['wireguard'] ?? null : null;
 
         return $this->registryString($wireguardAddress ?? $node['wireguard_address'] ?? null) ?? '-';
     }
@@ -409,7 +412,7 @@ trait PromptsForGatewayRegistryEntities
             $type = $this->registryString($execution['type'] ?? null);
             $value = $this->registryString($execution['value'] ?? null);
 
-            return $type !== null && $value !== null ? "{$type}: {$value}" : ($value ?? $type ?? '-');
+            return $type !== null && $value !== null ? "{$type}: {$value}" : $value ?? $type ?? '-';
         }
 
         return $this->registryString($schedule['execution_value'] ?? null) ?? '-';

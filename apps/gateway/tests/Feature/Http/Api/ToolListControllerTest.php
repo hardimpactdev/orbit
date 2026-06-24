@@ -18,7 +18,8 @@ function createToolListCallerNode(array $overrides = []): Node
     return Node::factory()->create(array_merge([
         'name' => 'caller',
         'host' => TOOL_LIST_CALLER_WG_IP,
-        'wireguard_address' => TOOL_LIST_CALLER_WG_IP], $overrides));
+        'wireguard_address' => TOOL_LIST_CALLER_WG_IP,
+    ], $overrides));
 }
 
 function grantToolListAccess(Node $caller, Node $appNode): void
@@ -27,7 +28,8 @@ function grantToolListAccess(Node $caller, Node $appNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 function assignToolListGatewayRole(Node $node): void
@@ -35,7 +37,8 @@ function assignToolListGatewayRole(Node $node): void
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => 'gateway',
-        'status' => 'active']);
+        'status' => 'active',
+    ]);
 }
 
 describe('ToolListController', function (): void {
@@ -58,7 +61,8 @@ describe('ToolListController', function (): void {
         expect(array_map(fn (array $tool): string => "{$tool['node']}:{$tool['name']}", $tools))->toBe([
             'a-node:caddy',
             'a-node:php',
-            'z-node:composer']);
+            'z-node:composer',
+        ]);
     });
 
     it('filters tools by owning node', function (): void {
@@ -73,7 +77,8 @@ describe('ToolListController', function (): void {
 
         $response = $this->call('GET', '/api/tools?node=app-2', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.tools')
             ->assertJsonPath('success.data.tools.0.name', 'php');
     });
@@ -86,9 +91,17 @@ describe('ToolListController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
         NodeTool::factory()->create(['name' => 'composer', 'node_id' => $node->id]);
 
-        $response = $this->call('GET', '/api/tools?app=docs.example.com', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools?app=docs.example.com',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.tools')
             ->assertJsonPath('success.data.tools.0.node', 'app-1');
     });
@@ -104,7 +117,8 @@ describe('ToolListController', function (): void {
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.tools')
             ->assertJsonPath('success.data.tools.0.name', 'composer');
     });
@@ -129,19 +143,29 @@ describe('ToolListController', function (): void {
     it('lets gateway callers read metrics node exporter rows on ingress workload nodes', function (): void {
         $caller = createToolListCallerNode([]);
         assignToolListGatewayRole($caller);
-        $ingress = Node::factory()->ingress()->create([
-            'name' => 'ingress-1',
-            'status' => 'active',
-        ]);
+        $ingress = Node::factory()
+            ->ingress()
+            ->create([
+                'name' => 'ingress-1',
+                'status' => 'active',
+            ]);
 
         NodeTool::factory()->create([
             'name' => 'node-exporter',
             'node_id' => $ingress->id,
         ]);
 
-        $response = $this->call('GET', '/api/tools?node=ingress-1', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools?node=ingress-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.tools')
             ->assertJsonPath('success.data.tools.0.name', 'node-exporter')
             ->assertJsonPath('success.data.tools.0.node', 'ingress-1');
@@ -170,7 +194,10 @@ describe('ToolListController', function (): void {
             'expected_version' => '2.8',
             'config' => [
                 'endpoints' => [
-                    ['name' => 'composer', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 8080]]]]);
+                    ['name' => 'composer', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 8080],
+                ],
+            ],
+        ]);
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
@@ -183,7 +210,9 @@ describe('ToolListController', function (): void {
                 'version' => '2.8',
                 'managed' => true,
                 'endpoints' => [
-                    ['name' => 'composer', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 8080]]]);
+                    ['name' => 'composer', 'kind' => 'tcp', 'host' => 'orbit.test', 'port' => 8080],
+                ],
+            ]);
     });
 
     it('returns authorization failure when the caller has no tool registry visibility', function (): void {
@@ -193,7 +222,8 @@ describe('ToolListController', function (): void {
 
         $response = $this->call('GET', '/api/tools', [], [], [], ['REMOTE_ADDR' => TOOL_LIST_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'This node is not authorized to read the tool registry.');
     });
@@ -201,7 +231,8 @@ describe('ToolListController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/tools');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

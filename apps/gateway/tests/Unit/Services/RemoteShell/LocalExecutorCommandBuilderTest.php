@@ -35,7 +35,10 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             operationToken: 'token-abc',
         );
 
-        expect($command)->toBe(escapeshellarg('/usr/local/bin/orbit-cli')." internal:wg-easy:state 'state:list-users' --operation-token='token-abc' --json");
+        expect($command)->toBe(
+            escapeshellarg('/usr/local/bin/orbit-cli')
+                ." internal:wg-easy:state 'state:list-users' --operation-token='token-abc' --json",
+        );
     });
 
     it('appends escaped positional arguments after the command name', function (): void {
@@ -99,8 +102,10 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             operationToken: $token,
         );
 
-        expect($command)->toBe('/usr/local/bin/orbit internal:executor:verify --operation-token='.escapeshellarg($token).' --json')
-            ->and($command)->toEndWith(' --json');
+        expect($command)
+            ->toBe('/usr/local/bin/orbit internal:executor:verify --operation-token='.escapeshellarg($token).' --json')
+            ->and($command)
+            ->toEndWith(' --json');
     });
 
     it('builds an audit line with the operation token redacted', function (): void {
@@ -112,13 +117,15 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             operationToken: 'token-abc',
         );
 
-        expect($auditLine)->toBe(implode(' ', [
-            '/usr/local/bin/orbit',
-            'internal:workspace-adapter:lookup',
-            '--state-path='.escapeshellarg('/home/orbit/.polyscope/polyscope.db'),
-            '--operation-token=<redacted>',
-            '--json',
-        ]))->not->toContain('token-abc');
+        expect($auditLine)
+            ->toBe(implode(' ', [
+                '/usr/local/bin/orbit',
+                'internal:workspace-adapter:lookup',
+                '--state-path='.escapeshellarg('/home/orbit/.polyscope/polyscope.db'),
+                '--operation-token=<redacted>',
+                '--json',
+            ]))
+            ->not->toContain('token-abc');
     });
 
     it('rejects bad command names', function (string $commandName): void {
@@ -128,7 +135,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             arguments: [],
             options: [],
             operationToken: 'token-abc',
-        ))->toThrow(LocalExecutorCommandBuilderException::class);
+        ))
+            ->toThrow(LocalExecutorCommandBuilderException::class);
     })->with([
         'empty' => '',
         'blank' => '   ',
@@ -147,12 +155,22 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             arguments: [],
             options: [],
             operationToken: 'token-abc',
-        ))->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
+        ))
+            ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     });
 
     it('exposes the complete closed role-scoped internal command allow list', function (): void {
         expect(LocalExecutorCommandBuilder::allowedCommandRoles())->toBe([
-            'internal:executor:verify' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress'],
+            'internal:executor:verify' => [
+                'gateway',
+                'vpn',
+                'router',
+                'app-dev',
+                'app-prod',
+                'database',
+                'agent',
+                'ingress',
+            ],
             'internal:wg-easy:state' => ['vpn'],
             'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
             'internal:workspace-adapter:lookup' => ['app-dev'],
@@ -179,7 +197,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             arguments: [],
             options: [],
             operationToken: 'token-abc',
-        ))->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
+        ))
+            ->toThrow(LocalExecutorCommandBuilderException::class, 'not allowed');
     })->with([
         'executor verify' => ['internal:executor:verify', ['gateway'], []],
         'wg-easy state' => ['internal:wg-easy:state', ['vpn'], ['app-dev']],
@@ -198,7 +217,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 arguments: [$argument],
                 options: [],
                 operationToken: 'token-abc',
-            ))->toThrow(LocalExecutorCommandBuilderException::class);
+            ))
+                ->toThrow(LocalExecutorCommandBuilderException::class);
         } finally {
             if (is_resource($argument)) {
                 fclose($argument);
@@ -218,7 +238,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
             arguments: [],
             options: $options,
             operationToken: 'token-abc',
-        ))->toThrow(LocalExecutorCommandBuilderException::class);
+        ))
+            ->toThrow(LocalExecutorCommandBuilderException::class);
     })->with([
         'empty' => [['' => 'value']],
         'numeric' => [[0 => 'value']],
@@ -239,7 +260,8 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
                 arguments: [],
                 options: ['state-path' => $value],
                 operationToken: 'token-abc',
-            ))->toThrow(LocalExecutorCommandBuilderException::class);
+            ))
+                ->toThrow(LocalExecutorCommandBuilderException::class);
         } finally {
             if (is_resource($value)) {
                 fclose($value);
@@ -256,41 +278,51 @@ describe(LocalExecutorCommandBuilder::class, function (): void {
         expect(fn (): string => $build(localExecutorCommandBuilder()))
             ->toThrow(LocalExecutorCommandBuilderException::class);
     })->with([
-        'command name' => [fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
-            targetNode: localExecutorTargetNode(['gateway']),
-            commandName: "internal:executor\0verify",
-            arguments: [],
-            options: [],
-            operationToken: 'token-abc',
-        )],
-        'argument' => [fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
-            targetNode: localExecutorTargetNode(['gateway']),
-            commandName: 'internal:executor:verify',
-            arguments: ["safe\0unsafe"],
-            options: [],
-            operationToken: 'token-abc',
-        )],
-        'option key' => [fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
-            targetNode: localExecutorTargetNode(['gateway']),
-            commandName: 'internal:executor:verify',
-            arguments: [],
-            options: ["bad\0key" => 'value'],
-            operationToken: 'token-abc',
-        )],
-        'option value' => [fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
-            targetNode: localExecutorTargetNode(['gateway']),
-            commandName: 'internal:executor:verify',
-            arguments: [],
-            options: ['state-path' => "safe\0unsafe"],
-            operationToken: 'token-abc',
-        )],
-        'operation token' => [fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
-            targetNode: localExecutorTargetNode(['gateway']),
-            commandName: 'internal:executor:verify',
-            arguments: [],
-            options: [],
-            operationToken: "token\0abc",
-        )],
+        'command name' => [
+            fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
+                targetNode: localExecutorTargetNode(['gateway']),
+                commandName: "internal:executor\0verify",
+                arguments: [],
+                options: [],
+                operationToken: 'token-abc',
+            ),
+        ],
+        'argument' => [
+            fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
+                targetNode: localExecutorTargetNode(['gateway']),
+                commandName: 'internal:executor:verify',
+                arguments: ["safe\0unsafe"],
+                options: [],
+                operationToken: 'token-abc',
+            ),
+        ],
+        'option key' => [
+            fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
+                targetNode: localExecutorTargetNode(['gateway']),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                options: ["bad\0key" => 'value'],
+                operationToken: 'token-abc',
+            ),
+        ],
+        'option value' => [
+            fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
+                targetNode: localExecutorTargetNode(['gateway']),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                options: ['state-path' => "safe\0unsafe"],
+                operationToken: 'token-abc',
+            ),
+        ],
+        'operation token' => [
+            fn (LocalExecutorCommandBuilder $builder): string => $builder->build(
+                targetNode: localExecutorTargetNode(['gateway']),
+                commandName: 'internal:executor:verify',
+                arguments: [],
+                options: [],
+                operationToken: "token\0abc",
+            ),
+        ],
         'configured orbit binary' => [function (LocalExecutorCommandBuilder $builder): string {
             config()->set('orbit.local_executor_binary', "/usr/local/bin/orbit\0cli");
 

@@ -14,8 +14,13 @@ final readonly class CreateWorkspaceProgress
         private SetupWorkspace $setupWorkspace,
     ) {}
 
-    public function for(App $app, Node $node, string $name, string $base, ?string $phpVersion): CreateWorkspaceProgressPlan
-    {
+    public function for(
+        App $app,
+        Node $node,
+        string $name,
+        string $base,
+        ?string $phpVersion,
+    ): CreateWorkspaceProgressPlan {
         return new CreateWorkspaceProgressPlan(
             createWorkspace: $this->createWorkspace,
             setupWorkspace: $this->setupWorkspace,

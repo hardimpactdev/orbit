@@ -48,35 +48,46 @@ function workspaceRendererForTest(): WorkspaceRuntimeContainerRenderer
     );
 }
 
-it('renders a FrankenPHP workspace runtime container for a PHP workspace with deterministic name, image, network, and source mount', function (): void {
-    $workspace = makePhpWorkspace();
+it(
+    'renders a FrankenPHP workspace runtime container for a PHP workspace with deterministic name, image, network, and source mount',
+    function (): void {
+        $workspace = makePhpWorkspace();
 
-    $container = workspaceRendererForTest()->render($workspace);
-    $mountTargets = array_column($container->mounts(), 'target');
+        $container = workspaceRendererForTest()->render($workspace);
+        $mountTargets = array_column($container->mounts(), 'target');
 
-    expect($container->name())->toBe('orbit-ws-demo-feature-a')
-        ->and($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
-        ->and($container->network())->toBe('orbit-network')
-        ->and($container->restartPolicy())->toBe('unless-stopped')
-        ->and($container->networkAliases())->toContain('orbit-ws-demo-feature-a')
-        ->and($container->networkAliases())->toContain('ws-demo-feature-a')
-        ->and($container->mounts())->toContain([
-            'source' => '/home/orbit/apps/demo/.worktrees/feature-a',
-            'target' => '/app',
-            'read_only' => false,
-        ])
-        ->and($container->mounts())->toContain([
-            'source' => '/home/orbit/apps/demo/.worktrees/feature-a',
-            'target' => '/home/orbit/apps/demo/.worktrees/feature-a',
-            'read_only' => false,
-        ])
-        ->and($mountTargets)->not->toContain('/data')
-        ->and($mountTargets)->not->toContain('/config')
-        ->and($container->environment())->toMatchArray([
-            'XDG_CONFIG_HOME' => '/tmp/orbit-frankenphp/config',
-            'XDG_DATA_HOME' => '/tmp/orbit-frankenphp/data',
-        ]);
-});
+        expect($container->name())
+            ->toBe('orbit-ws-demo-feature-a')
+            ->and($container->image())
+            ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+            ->and($container->network())
+            ->toBe('orbit-network')
+            ->and($container->restartPolicy())
+            ->toBe('unless-stopped')
+            ->and($container->networkAliases())
+            ->toContain('orbit-ws-demo-feature-a')
+            ->and($container->networkAliases())
+            ->toContain('ws-demo-feature-a')
+            ->and($container->mounts())
+            ->toContain([
+                'source' => '/home/orbit/apps/demo/.worktrees/feature-a',
+                'target' => '/app',
+                'read_only' => false,
+            ])
+            ->and($container->mounts())
+            ->toContain([
+                'source' => '/home/orbit/apps/demo/.worktrees/feature-a',
+                'target' => '/home/orbit/apps/demo/.worktrees/feature-a',
+                'read_only' => false,
+            ])
+            ->and($mountTargets)
+            ->not->toContain('/data')->and($mountTargets)
+            ->not->toContain('/config')->and($container->environment())->toMatchArray([
+                'XDG_CONFIG_HOME' => '/tmp/orbit-frankenphp/config',
+                'XDG_DATA_HOME' => '/tmp/orbit-frankenphp/data',
+            ]);
+    },
+);
 
 it('mounts the owning app-dev node user packages directory at /packages', function (): void {
     $node = createTestAppHostNode(['user' => 'nckrtl']);
@@ -124,15 +135,18 @@ it('inherits configured app runtime mounts from the parent app', function (): vo
 
     $mounts = workspaceRendererForTest()->render($workspace)->mounts();
 
-    expect($mounts)->toContain([
-        'source' => '/home/nckrtl/packages',
-        'target' => '/packages',
-        'read_only' => false,
-    ])->and($mounts)->toContain([
-        'source' => '/home/nckrtl/packages',
-        'target' => '/home/nckrtl/packages',
-        'read_only' => true,
-    ]);
+    expect($mounts)
+        ->toContain([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ])
+        ->and($mounts)
+        ->toContain([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/home/nckrtl/packages',
+            'read_only' => true,
+        ]);
 });
 
 it('does not mount the packages directory for app-prod PHP workspace runtimes', function (): void {
@@ -153,11 +167,13 @@ it('does not mount the packages directory for app-prod PHP workspace runtimes', 
 
     $container = workspaceRendererForTest()->render($workspace);
 
-    expect($container->mounts())->not->toContain([
-        'source' => '/home/orbit/packages',
-        'target' => '/packages',
-        'read_only' => false,
-    ]);
+    expect($container->mounts())
+        ->not
+        ->toContain([
+            'source' => '/home/orbit/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ]);
 });
 
 it('uses the workspace php_version override when set', function (): void {
@@ -181,9 +197,11 @@ it('uses the approved glibc-based FrankenPHP image family rather than alpine/mus
 
     $container = workspaceRendererForTest()->render($workspace);
 
-    expect($container->image())->toEndWith('-bookworm')
-        ->and($container->image())->not->toContain('alpine')
-        ->and($container->image())->not->toContain('musl');
+    expect($container->image())
+        ->toEndWith('-bookworm')
+        ->and($container->image())
+        ->not->toContain('alpine')->and($container->image())
+        ->not->toContain('musl');
 });
 
 it('does not render a workspace runtime container for static (non-PHP) workspaces', function (): void {
@@ -196,8 +214,14 @@ it('does not render a workspace runtime container for static (non-PHP) workspace
 it('changes the spec hash when php_version changes so the manager recreates the container', function (): void {
     $renderer = workspaceRendererForTest();
 
-    $a = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'a'], workspaceOverrides: ['name' => 'feature-a', 'php_version' => '8.5']));
-    $b = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'b'], workspaceOverrides: ['name' => 'feature-b', 'php_version' => '8.4']));
+    $a = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'a'], workspaceOverrides: [
+        'name' => 'feature-a',
+        'php_version' => '8.5',
+    ]));
+    $b = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'b'], workspaceOverrides: [
+        'name' => 'feature-b',
+        'php_version' => '8.4',
+    ]));
 
     expect($a->specHash())->not->toBe($b->specHash());
 });
@@ -313,25 +337,38 @@ it('renders opcache.preload when a preload script is provided', function (): voi
 it('renders FrankenPHP-consumed SERVER_NAME and SERVER_ROOT so the configured root is actually served', function (): void {
     $renderer = workspaceRendererForTest();
 
-    $publicRoot = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'a', 'document_root' => 'public'], workspaceOverrides: ['name' => 'feature-a']));
-    $webRoot = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'b', 'document_root' => 'web'], workspaceOverrides: ['name' => 'feature-b']));
-    $projectRoot = $renderer->render(makePhpWorkspace(appOverrides: ['name' => 'c', 'document_root' => '.'], workspaceOverrides: ['name' => 'feature-c']));
+    $publicRoot = $renderer->render(makePhpWorkspace(appOverrides: [
+        'name' => 'a',
+        'document_root' => 'public',
+    ], workspaceOverrides: ['name' => 'feature-a']));
+    $webRoot = $renderer->render(makePhpWorkspace(appOverrides: [
+        'name' => 'b',
+        'document_root' => 'web',
+    ], workspaceOverrides: ['name' => 'feature-b']));
+    $projectRoot = $renderer->render(makePhpWorkspace(appOverrides: [
+        'name' => 'c',
+        'document_root' => '.',
+    ], workspaceOverrides: ['name' => 'feature-c']));
 
-    expect($publicRoot->environment())->toMatchArray([
-        'SERVER_NAME' => ':80',
-        'SERVER_ROOT' => '/app/public',
-        'ORBIT_APP_DOCUMENT_ROOT' => 'public',
-    ])
-        ->and($webRoot->environment())->toMatchArray([
+    expect($publicRoot->environment())
+        ->toMatchArray([
+            'SERVER_NAME' => ':80',
+            'SERVER_ROOT' => '/app/public',
+            'ORBIT_APP_DOCUMENT_ROOT' => 'public',
+        ])
+        ->and($webRoot->environment())
+        ->toMatchArray([
             'SERVER_NAME' => ':80',
             'SERVER_ROOT' => '/app/web',
         ])
-        ->and($projectRoot->environment())->toMatchArray([
+        ->and($projectRoot->environment())
+        ->toMatchArray([
             'SERVER_NAME' => ':80',
             'SERVER_ROOT' => '/app',
         ])
-        ->and($publicRoot->specHash())->not->toBe($webRoot->specHash())
-        ->and($publicRoot->specHash())->not->toBe($projectRoot->specHash());
+        ->and($publicRoot->specHash())
+        ->not->toBe($webRoot->specHash())->and($publicRoot->specHash())
+        ->not->toBe($projectRoot->specHash());
 });
 
 it('exposes ORBIT_APP, ORBIT_WORKSPACE, and ORBIT_PHP_VERSION env to the container', function (): void {
@@ -364,17 +401,21 @@ it('renders app-dev workspace runtimes with inner HTTPS on 8443, site cert mount
 
     $container = workspaceRendererForTest()->render($workspace);
 
-    expect(workspaceRendererForTest()->upstreamUrl($workspace))->toBe('https://orbit-ws-demo-feature-a:8443')
-        ->and($container->environment())->toMatchArray([
+    expect(workspaceRendererForTest()->upstreamUrl($workspace))
+        ->toBe('https://orbit-ws-demo-feature-a:8443')
+        ->and($container->environment())
+        ->toMatchArray([
             'SERVER_NAME' => 'https://feature-a.demo.test:8443',
             'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key',
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/home/nckrtl/.config/orbit/certs/feature-a.demo.test.crt',
             'target' => '/etc/orbit/runtime-tls/tls.crt',
             'read_only' => true,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/home/nckrtl/.config/orbit/certs/feature-a.demo.test.key',
             'target' => '/etc/orbit/runtime-tls/tls.key',
             'read_only' => true,
@@ -385,15 +426,20 @@ it('exposes the document-root env on the rendered docker run command so the conf
     $workspace = makePhpWorkspace(appOverrides: ['document_root' => 'web']);
     $container = workspaceRendererForTest()->render($workspace);
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toContain("--env 'SERVER_NAME=:80'")
-        ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
-        ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
-        ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
-        ->and($command)->not->toContain('CADDY_SERVER_EXTRA_DIRECTIVES')
-        ->and($command)->not->toContain('target=/data')
-        ->and($command)->not->toContain('target=/config');
+    expect($command)
+        ->toContain("--env 'SERVER_NAME=:80'")
+        ->and($command)
+        ->toContain("--env 'SERVER_ROOT=/app/web'")
+        ->and($command)
+        ->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
+        ->and($command)
+        ->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
+        ->and($command)
+        ->not->toContain('CADDY_SERVER_EXTRA_DIRECTIVES')->and($command)
+        ->not->toContain('target=/data')->and($command)
+        ->not->toContain('target=/config');
 });
 
 it('exposes labels with the spec hash so the manager can detect drift', function (): void {
@@ -401,11 +447,13 @@ it('exposes labels with the spec hash so the manager can detect drift', function
 
     $container = workspaceRendererForTest()->render($workspace);
 
-    expect($container->labels())->toMatchArray([
-        'orbit.managed' => 'true',
-        'orbit.container.kind' => 'workspace-runtime',
-        'orbit.app' => 'demo',
-        'orbit.workspace' => 'feature-a',
-    ])
-        ->and($container->labels()['orbit.workspace.spec_hash'] ?? null)->toBe($container->specHash());
+    expect($container->labels())
+        ->toMatchArray([
+            'orbit.managed' => 'true',
+            'orbit.container.kind' => 'workspace-runtime',
+            'orbit.app' => 'demo',
+            'orbit.workspace' => 'feature-a',
+        ])
+        ->and($container->labels()['orbit.workspace.spec_hash'] ?? null)
+        ->toBe($container->specHash());
 });

@@ -28,14 +28,15 @@ describe('tool:show', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/tools/composer')
                 && str_contains($url, 'node=app-1')
-                && ! str_contains($url, 'live=');
+                && ! str_contains($url, 'live=')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['tool']['name'])->toBe('composer');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['tool']['name'])->toBe('composer');
     });
 
     it('forwards the live query flag when requested', function (): void {
@@ -58,9 +59,11 @@ describe('tool:show', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/tools/composer')
-                && str_contains($url, 'live=1');
+                && str_contains($url, 'live=1')
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -84,13 +87,20 @@ describe('tool:show', function (): void {
             '--node' => 'app-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Tool: composer')
-            ->and($output)->toContain('Node')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('Expected')
-            ->and($output)->toContain('installed')
-            ->and($output)->not->toContain('Observed');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Tool: composer')
+            ->and($output)
+            ->toContain('Node')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('Expected')
+            ->and($output)
+            ->toContain('installed')
+            ->and($output)
+            ->not->toContain('Observed');
     });
 
     it('uses the local default node when no target option is provided', function (): void {
@@ -117,12 +127,10 @@ describe('tool:show', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/tools/composer')
-                && str_contains($url, 'node=default-app');
+            return str_contains($url, '/api/tools/composer') && str_contains($url, 'node=default-app');
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['tool']['node'])->toBe('default-app');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['tool']['node'])->toBe('default-app');
 
         @unlink($store->path());
     });
@@ -136,13 +144,19 @@ describe('tool:show', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('tool');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('tool');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {
-        fakeGateway(fakeErrorEnvelope('tool.not_found', "Tool 'composer' not found on node 'app-1'.", ['tool' => 'composer', 'node' => 'app-1']), 404);
+        fakeGateway(fakeErrorEnvelope('tool.not_found', "Tool 'composer' not found on node 'app-1'.", [
+            'tool' => 'composer',
+            'node' => 'app-1',
+        ]), 404);
 
         [$exitCode, $output] = runCommand($this, 'tool:show', [
             'tool' => 'composer',
@@ -152,8 +166,7 @@ describe('tool:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('tool.not_found');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('tool.not_found');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -167,7 +180,6 @@ describe('tool:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

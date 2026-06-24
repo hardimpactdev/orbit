@@ -35,17 +35,22 @@ final class NodeUpdateCommand extends GatewayCommand
             return $this->renderFailure('validation_failed', 'Node name is required.', ['field' => 'name']);
         }
 
-        $payload = array_filter([
-            'host' => $this->stringOption('host'),
-            'user' => $this->stringOption('user'),
-            'tld' => $this->stringOption('tld'),
-            'gateway_endpoint' => $this->stringOption('gateway-endpoint'),
-            'public_ipv4' => $this->stringOption('public-ipv4'),
-            'public_ipv6' => $this->stringOption('public-ipv6'),
-        ], fn (?string $value): bool => $value !== null);
+        $payload = array_filter(
+            [
+                'host' => $this->stringOption('host'),
+                'user' => $this->stringOption('user'),
+                'tld' => $this->stringOption('tld'),
+                'gateway_endpoint' => $this->stringOption('gateway-endpoint'),
+                'public_ipv4' => $this->stringOption('public-ipv4'),
+                'public_ipv6' => $this->stringOption('public-ipv6'),
+            ],
+            fn (?string $value): bool => $value !== null,
+        );
 
         if ($payload === []) {
-            return $this->renderFailure('validation_failed', 'At least one field must be provided to update a node.', ['field' => 'fields']);
+            return $this->renderFailure('validation_failed', 'At least one field must be provided to update a node.', [
+                'field' => 'fields',
+            ]);
         }
 
         if ($this->wantsJson()) {

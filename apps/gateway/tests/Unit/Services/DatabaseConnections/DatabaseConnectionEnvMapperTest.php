@@ -98,13 +98,15 @@ describe('DatabaseConnectionPayload', function (): void {
     it('rejects a missing driver', function (): void {
         expect(fn () => DatabaseConnectionPayload::fromArray([
             'host' => 'db.internal',
-        ]))->toThrow(InvalidArgumentException::class, 'driver');
+        ]))
+            ->toThrow(InvalidArgumentException::class, 'driver');
     });
 
     it('rejects an unsupported driver', function (): void {
         expect(fn () => DatabaseConnectionPayload::fromArray([
             'driver' => 'sqlserver',
-        ]))->toThrow(InvalidArgumentException::class, 'sqlserver');
+        ]))
+            ->toThrow(InvalidArgumentException::class, 'sqlserver');
     });
 
     it('accepts the supported drivers', function (string $driver): void {

@@ -88,10 +88,17 @@ function s3UnpublishHumanSeaweedfsTool(Node $storage, array $config = []): NodeT
  */
 function s3UnpublishHumanStream(object $test, string $host = 's3.example.com', array $payload = []): string
 {
-    $response = $test->call('DELETE', "/api/s3/public-hosts/{$host}", $payload, [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
-    ]);
+    $response = $test->call(
+        'DELETE',
+        "/api/s3/public-hosts/{$host}",
+        $payload,
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
+        ],
+    );
 
     $response->assertOk();
 
@@ -111,14 +118,22 @@ describe('S3UnpublishHumanRenderer progress tree', function (): void {
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($content)->toContain('event: tree')
-            ->and($content)->toContain('Unpublishing S3 Host')
-            ->and($content)->toContain('Confirm destructive removal')
-            ->and($content)->toContain('Resolve S3 node')
-            ->and($content)->toContain('Check router')
-            ->and($content)->toContain('Remove ingress host')
-            ->and($content)->toContain('Remove SeaweedFS public host config')
-            ->and($content)->toContain('Apply route cleanup');
+        expect($content)
+            ->toContain('event: tree')
+            ->and($content)
+            ->toContain('Unpublishing S3 Host')
+            ->and($content)
+            ->toContain('Confirm destructive removal')
+            ->and($content)
+            ->toContain('Resolve S3 node')
+            ->and($content)
+            ->toContain('Check router')
+            ->and($content)
+            ->toContain('Remove ingress host')
+            ->and($content)
+            ->toContain('Remove SeaweedFS public host config')
+            ->and($content)
+            ->toContain('Apply route cleanup');
     });
 
     it('emits step events for each progress phase', function (): void {
@@ -129,13 +144,20 @@ describe('S3UnpublishHumanRenderer progress tree', function (): void {
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($content)->toContain('event: step')
-            ->and($content)->toContain('confirm_destructive')
-            ->and($content)->toContain('resolve_node')
-            ->and($content)->toContain('check_router')
-            ->and($content)->toContain('remove_ingress')
-            ->and($content)->toContain('remove_seaweedfs_config')
-            ->and($content)->toContain('apply_cleanup');
+        expect($content)
+            ->toContain('event: step')
+            ->and($content)
+            ->toContain('confirm_destructive')
+            ->and($content)
+            ->toContain('resolve_node')
+            ->and($content)
+            ->toContain('check_router')
+            ->and($content)
+            ->toContain('remove_ingress')
+            ->and($content)
+            ->toContain('remove_seaweedfs_config')
+            ->and($content)
+            ->toContain('apply_cleanup');
     });
 });
 
@@ -152,16 +174,24 @@ describe('S3UnpublishHumanRenderer success summary', function (): void {
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($content)->toContain('event: complete')
-            ->and($content)->toContain('"node":"storage-1"')
-            ->and($content)->toContain('"host":"s3.example.com"')
-            ->and($content)->toContain('"action":"unpublished"')
-            ->and($content)->toContain('"already_absent":false');
+        expect($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"node":"storage-1"')
+            ->and($content)
+            ->toContain('"host":"s3.example.com"')
+            ->and($content)
+            ->toContain('"action":"unpublished"')
+            ->and($content)
+            ->toContain('"already_absent":false');
 
         $frame = s3UnpublishHumanParseCompleteFrame($content);
-        expect($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($frame['data']['s3']['public_endpoints'])->toBeArray()
-            ->and($frame['data']['s3']['public_endpoints'])->not->toContain('https://s3.example.com');
+        expect($frame['data']['s3']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->toBeArray()
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->not->toContain('https://s3.example.com');
     });
 });
 
@@ -178,9 +208,12 @@ describe('S3UnpublishHumanRenderer absent output', function (): void {
 
         $content = s3UnpublishHumanStream($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($content)->toContain('event: complete')
-            ->and($content)->toContain('"already_absent":true')
-            ->and($content)->toContain('"action":"unpublished"');
+        expect($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"already_absent":true')
+            ->and($content)
+            ->toContain('"action":"unpublished"');
     });
 });
 
@@ -193,18 +226,28 @@ describe('S3UnpublishHumanRenderer destructive consent messaging', function (): 
         s3UnpublishHumanCallerNode();
         // No s3 role node registered.
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"s3"');
     });
 });
 
@@ -216,18 +259,28 @@ describe('S3UnpublishHumanRenderer prerequisite failure', function (): void {
     it('names the missing s3 node prerequisite in the error frame', function (): void {
         s3UnpublishHumanCallerNode();
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"s3"');
     });
 
     it('names the missing router prerequisite in the error frame', function (): void {
@@ -236,18 +289,28 @@ describe('S3UnpublishHumanRenderer prerequisite failure', function (): void {
         s3UnpublishHumanSeaweedfsTool($storage);
         // No router.
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"router"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"router"');
     });
 });
 
@@ -259,17 +322,23 @@ describe('S3UnpublishHumanRenderer cleanup-failure recovery', function (): void 
     it('emits an error frame for prerequisite failures (apply path)', function (): void {
         s3UnpublishHumanCallerNode();
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'nonexistent-storage',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'nonexistent-storage',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_HUMAN_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed');
+        expect($content)->toContain('event: error')->and($content)->toContain('validation_failed');
     });
 });
 

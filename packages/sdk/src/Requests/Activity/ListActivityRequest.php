@@ -32,13 +32,16 @@ final class ListActivityRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-            'effect' => $this->effect,
-            'correlation' => $this->correlation,
-            'limit' => $this->limit,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+                'effect' => $this->effect,
+                'correlation' => $this->correlation,
+                'limit' => $this->limit,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ActivityListResponse
@@ -47,7 +50,7 @@ final class ListActivityRequest extends GatewayRequest
         $activities = $data['activities'] ?? [];
 
         return new ActivityListResponse(
-            activities: is_array($activities) ? array_values($activities) : [],
+            activities: $this->listOfStringKeyedArrays($activities),
             meta: $this->envelopeMeta($response),
         );
     }
@@ -71,6 +74,6 @@ final class ListActivityRequest extends GatewayRequest
 
         $meta = $success['meta'] ?? [];
 
-        return is_array($meta) ? $meta : [];
+        return $this->stringKeyedArray($meta);
     }
 }

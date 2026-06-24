@@ -27,8 +27,11 @@ final readonly class NodeConverger
     /**
      * @param  list<string>  $families
      */
-    public function converge(Node $node, NodeConvergenceContext $context, array $families = ['tool']): NodeConvergenceResult
-    {
+    public function converge(
+        Node $node,
+        NodeConvergenceContext $context,
+        array $families = ['tool'],
+    ): NodeConvergenceResult {
         $families = $this->normalizeFamilies($families);
         $issues = [];
 
@@ -280,7 +283,11 @@ final readonly class NodeConverger
         foreach ($tools as $tool) {
             $snapshot = $snapshots[$tool->name] ?? $this->toolsProbe->introspect($tool);
 
-            foreach ($this->toolsProbe->diff($tool, $snapshot, allowProvisioning: $context->allowsProvisioningNode()) as $entry) {
+            foreach ($this->toolsProbe->diff(
+                $tool,
+                $snapshot,
+                allowProvisioning: $context->allowsProvisioningNode(),
+            ) as $entry) {
                 if ($onlyKeys !== null && ! in_array($entry->key, $onlyKeys, true)) {
                     continue;
                 }
@@ -354,8 +361,10 @@ final readonly class NodeConverger
     {
         return array_values(array_filter(
             $issues,
-            fn (array $issue): bool => ($issue['family'] ?? null) === 'node'
-                && ($issue['key'] ?? null) === 'node.role_baseline_mismatch',
+            fn (array $issue): bool => (
+                ($issue['family'] ?? null) === 'node'
+                && ($issue['key'] ?? null) === 'node.role_baseline_mismatch'
+            ),
         ));
     }
 
@@ -483,7 +492,8 @@ final readonly class NodeConverger
             return null;
         }
 
-        $hasDevelopmentRole = $node->roleAssignments()
+        $hasDevelopmentRole = $node
+            ->roleAssignments()
             ->where('role', NodeRoleName::AppDevelopment->value)
             ->whereIn('status', [
                 NodeRoleStatus::Pending->value,

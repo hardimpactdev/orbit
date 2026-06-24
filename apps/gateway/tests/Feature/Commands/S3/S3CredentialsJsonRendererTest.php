@@ -80,15 +80,17 @@ function s3CredJsonSeaweedfsTool(Node $storage, array $credentials = [], array $
             'backend_host' => "{$storage->name}.s3.orbit",
             'public_hosts' => [],
         ], $config),
-        'credentials' => $credentials !== [] ? $credentials : [
-            'fields' => [
-                'access_key_id' => 'TESTACCESSKEYID12345',
-                'secret_access_key' => 'test-secret-access-key-value',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        'credentials' => $credentials !== []
+            ? $credentials
+            : [
+                'fields' => [
+                    'access_key_id' => 'TESTACCESSKEYID12345',
+                    'secret_access_key' => 'test-secret-access-key-value',
+                    'region' => 'orbit',
+                    'endpoint' => 'https://s3.orbit',
+                    'bucket_style' => 'path',
+                ],
             ],
-        ],
     ]);
 }
 
@@ -118,18 +120,22 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
         s3CredJsonCallerNode();
         $storage = s3CredJsonStorageNode();
         $router = s3CredJsonRouterNode();
-        s3CredJsonSeaweedfsTool($storage, credentials: [
-            'fields' => [
-                'access_key_id' => 'MYACCESSKEYID12345678',
-                'secret_access_key' => 'my-secret-access-key-value',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        s3CredJsonSeaweedfsTool(
+            $storage,
+            credentials: [
+                'fields' => [
+                    'access_key_id' => 'MYACCESSKEYID12345678',
+                    'secret_access_key' => 'my-secret-access-key-value',
+                    'region' => 'orbit',
+                    'endpoint' => 'https://s3.orbit',
+                    'bucket_style' => 'path',
+                ],
             ],
-        ], config: [
-            'backend_host' => 'storage-1.s3.orbit',
-            'public_hosts' => ['s3.example.com'],
-        ]);
+            config: [
+                'backend_host' => 'storage-1.s3.orbit',
+                'public_hosts' => ['s3.example.com'],
+            ],
+        );
         s3CredJsonServiceRoute($router);
 
         $response = $this->get('/api/s3/credentials?node=storage-1', [
@@ -139,22 +145,35 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
         $response->assertOk();
         $body = $response->json();
 
-        expect($body)->toHaveKey('success')
-            ->and($body['success'])->toHaveKey('data')
-            ->and($body['success'])->toHaveKey('meta')
-            ->and($body['success']['data'])->toHaveKey('credentials')
-            ->and($body['success']['meta']['tool'])->toBe('seaweedfs');
+        expect($body)
+            ->toHaveKey('success')
+            ->and($body['success'])
+            ->toHaveKey('data')
+            ->and($body['success'])
+            ->toHaveKey('meta')
+            ->and($body['success']['data'])
+            ->toHaveKey('credentials')
+            ->and($body['success']['meta']['tool'])
+            ->toBe('seaweedfs');
 
         $credentials = $body['success']['data']['credentials'];
 
-        expect($credentials['node'])->toBe('storage-1')
-            ->and($credentials['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($credentials['public_endpoints'])->toBe(['https://s3.example.com'])
-            ->and($credentials['region'])->toBe('orbit')
-            ->and($credentials['access_key_id'])->toBe('MYACCESSKEYID12345678')
-            ->and($credentials['secret_access_key'])->toBe('my-secret-access-key-value')
-            ->and($credentials['bucket_endpoint_style'])->toBe('path')
-            ->and($credentials['backend_pool'])->toBe(['http://storage-1.s3.orbit:8333']);
+        expect($credentials['node'])
+            ->toBe('storage-1')
+            ->and($credentials['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($credentials['public_endpoints'])
+            ->toBe(['https://s3.example.com'])
+            ->and($credentials['region'])
+            ->toBe('orbit')
+            ->and($credentials['access_key_id'])
+            ->toBe('MYACCESSKEYID12345678')
+            ->and($credentials['secret_access_key'])
+            ->toBe('my-secret-access-key-value')
+            ->and($credentials['bucket_endpoint_style'])
+            ->toBe('path')
+            ->and($credentials['backend_pool'])
+            ->toBe(['http://storage-1.s3.orbit:8333']);
     });
 
     it('places secret_access_key after access_key_id in the credentials object', function (): void {
@@ -172,9 +191,9 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
         $akPos = strpos($json, 'access_key_id');
         $skPos = strpos($json, 'secret_access_key');
 
-        expect($akPos)->not->toBeFalse()
-            ->and($skPos)->not->toBeFalse()
-            ->and($skPos)->toBeGreaterThan($akPos);
+        expect($akPos)
+            ->not->toBeFalse()->and($skPos)
+            ->not->toBeFalse()->and($skPos)->toBeGreaterThan($akPos);
     });
 
     it('includes meta.tool=seaweedfs in the success envelope', function (): void {
@@ -199,16 +218,21 @@ describe('S3CredentialsJsonRenderer success shape', function (): void {
 describe('S3CredentialsJsonRenderer error codes', function (): void {
     it('emits validation_failed with field=node when node is ambiguous', function (): void {
         s3CredJsonCallerNode();
-        Node::factory()->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44', 'status' => 'active'])
-            ->roleAssignments()->create(['role' => 's3', 'status' => 'active']);
-        Node::factory()->create(['name' => 'storage-2', 'wireguard_address' => '10.6.0.45', 'status' => 'active'])
-            ->roleAssignments()->create(['role' => 's3', 'status' => 'active']);
+        Node::factory()
+            ->create(['name' => 'storage-1', 'wireguard_address' => '10.6.0.44', 'status' => 'active'])
+            ->roleAssignments()
+            ->create(['role' => 's3', 'status' => 'active']);
+        Node::factory()
+            ->create(['name' => 'storage-2', 'wireguard_address' => '10.6.0.45', 'status' => 'active'])
+            ->roleAssignments()
+            ->create(['role' => 's3', 'status' => 'active']);
 
         $response = $this->get('/api/s3/credentials', [
             'REMOTE_ADDR' => S3_CRED_JSON_CALLER_WG_IP,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node')
             ->assertJsonPath('error.meta.required_role', 's3');
@@ -222,7 +246,8 @@ describe('S3CredentialsJsonRenderer error codes', function (): void {
             'REMOTE_ADDR' => S3_CRED_JSON_CALLER_WG_IP,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'router')
             ->assertJsonPath('error.meta.required_role', 'router');
@@ -259,7 +284,8 @@ describe('S3CredentialsJsonRenderer error codes', function (): void {
             'REMOTE_ADDR' => S3_CRED_JSON_CALLER_WG_IP,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 's3.credentials_missing')
             ->assertJsonPath('error.message', "SeaweedFS service credentials are missing for 'storage-1'.")
             ->assertJsonPath('error.meta.node', 'storage-1')

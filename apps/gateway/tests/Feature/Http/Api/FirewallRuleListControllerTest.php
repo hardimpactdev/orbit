@@ -17,7 +17,8 @@ function createFirewallRuleListCallerNode(array $overrides = [], ?string $role =
         'name' => 'caller',
         'host' => FIREWALL_RULE_LIST_CALLER_WG_IP,
         'wireguard_address' => FIREWALL_RULE_LIST_CALLER_WG_IP,
-        'platform' => 'ubuntu'], $overrides);
+        'platform' => 'ubuntu',
+    ], $overrides);
 
     return match ($role) {
         'app-dev' => createTestAppHostNode($attributes),
@@ -32,7 +33,8 @@ function grantFirewallRuleListAccess(Node $caller, Node $servingNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $servingNode->id,
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('FirewallRuleListController', function (): void {
@@ -45,9 +47,17 @@ describe('FirewallRuleListController', function (): void {
         FirewallRule::factory()->create(['node_id' => $visibleNode->id, 'name' => 'vite']);
         FirewallRule::factory()->create(['node_id' => $hiddenNode->id, 'name' => 'hidden']);
 
-        $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/firewall-rules',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.rules')
             ->assertJsonPath('success.data.rules.0.name', 'vite')
             ->assertJsonPath('success.meta.node', null)
@@ -63,7 +73,14 @@ describe('FirewallRuleListController', function (): void {
         FirewallRule::factory()->create(['node_id' => $firstNode->id]);
         FirewallRule::factory()->create(['node_id' => $secondNode->id]);
 
-        $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/firewall-rules',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonCount(2, 'success.data.rules');
@@ -73,9 +90,17 @@ describe('FirewallRuleListController', function (): void {
         createFirewallRuleListCallerNode(role: 'gateway');
         Node::factory()->create(['name' => 'control-1', 'platform' => 'ubuntu']);
 
-        $response = $this->call('GET', '/api/firewall-rules?node=control-1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/firewall-rules?node=control-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node');
     });
@@ -83,9 +108,17 @@ describe('FirewallRuleListController', function (): void {
     it('returns authorization failure when caller has no firewall visibility', function (): void {
         createFirewallRuleListCallerNode([]);
 
-        $response = $this->call('GET', '/api/firewall-rules', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/firewall-rules',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'firewall_rule:read');

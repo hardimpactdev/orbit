@@ -34,23 +34,30 @@ describe('firewall write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/firewall-rules'
-            && $request->data() === [
-                'action' => 'allow',
-                'name' => 'local-vite',
-                'node' => 'app-1',
-                'direction' => 'incoming',
-                'source' => '10.6.0.0/24',
-                'destination' => '10.6.0.20',
-                'port' => '5173',
-                'protocol' => 'tcp',
-                'reason' => 'local development server',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/firewall-rules'
+                && $request->data() === [
+                    'action' => 'allow',
+                    'name' => 'local-vite',
+                    'node' => 'app-1',
+                    'direction' => 'incoming',
+                    'source' => '10.6.0.0/24',
+                    'destination' => '10.6.0.20',
+                    'port' => '5173',
+                    'protocol' => 'tcp',
+                    'reason' => 'local development server',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['rule']['action'])->toBe('allow')
-            ->and($decoded['success']['meta']['backend_enacted'])->toBeTrue();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['rule']['action'])
+            ->toBe('allow')
+            ->and($decoded['success']['meta']['backend_enacted'])
+            ->toBeTrue();
     });
 
     it('uses the local default node for firewall:deny when --node is omitted', function (): void {
@@ -78,20 +85,23 @@ describe('firewall write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/firewall-rules'
-            && $request->data() === [
-                'action' => 'deny',
-                'name' => 'block-admin',
-                'node' => 'default-app',
-                'direction' => 'incoming',
-                'source' => 'any',
-                'port' => '9000',
-                'protocol' => 'tcp',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/firewall-rules'
+                && $request->data() === [
+                    'action' => 'deny',
+                    'name' => 'block-admin',
+                    'node' => 'default-app',
+                    'direction' => 'incoming',
+                    'source' => 'any',
+                    'port' => '9000',
+                    'protocol' => 'tcp',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['rule']['node'])->toBe('default-app');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['rule']['node'])->toBe('default-app');
 
         @unlink($store->path());
     });
@@ -116,12 +126,18 @@ describe('firewall write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($missingNameExitCode)->toBe(1)
-            ->and($missingName['error']['code'])->toBe('validation_failed')
-            ->and($missingName['error']['meta']['field'])->toBe('name')
-            ->and($missingPortExitCode)->toBe(1)
-            ->and($missingPort['error']['code'])->toBe('validation_failed')
-            ->and($missingPort['error']['meta']['field'])->toBe('port');
+        expect($missingNameExitCode)
+            ->toBe(1)
+            ->and($missingName['error']['code'])
+            ->toBe('validation_failed')
+            ->and($missingName['error']['meta']['field'])
+            ->toBe('name')
+            ->and($missingPortExitCode)
+            ->toBe(1)
+            ->and($missingPort['error']['code'])
+            ->toBe('validation_failed')
+            ->and($missingPort['error']['meta']['field'])
+            ->toBe('port');
     });
 
     it('requires a firewall node target before contacting the gateway', function (): void {
@@ -140,9 +156,12 @@ describe('firewall write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node_target_required')
-            ->and($decoded['error']['meta']['field'])->toBe('node');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('node_target_required')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node');
 
         @unlink($store->path());
     });
@@ -160,9 +179,12 @@ describe('firewall write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('destructive_consent_required')
-            ->and($decoded['error']['meta']['field'])->toBe('force');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('destructive_consent_required')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force');
     });
 
     it('deletes firewall:remove targets with destructive consent when forced', function (): void {
@@ -186,15 +208,18 @@ describe('firewall write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/firewall-rules/local-vite'
-            && $request->data() === [
-                'node' => 'app-1',
-                'destructive_consent' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/firewall-rules/local-vite'
+                && $request->data() === [
+                    'node' => 'app-1',
+                    'destructive_consent' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['rule']['status'])->toBe('removed_with_drift');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['rule']['status'])->toBe('removed_with_drift');
     });
 
     it('preserves gateway error envelopes for firewall writes', function (): void {
@@ -212,9 +237,12 @@ describe('firewall write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('firewall_rule.baseline_conflict')
-            ->and($decoded['error']['meta']['name'])->toBe('ssh');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('firewall_rule.baseline_conflict')
+            ->and($decoded['error']['meta']['name'])
+            ->toBe('ssh');
     });
 
     it('renders firewall:allow human output as a progress tree with rule prose', function (): void {
@@ -242,15 +270,23 @@ describe('firewall write commands', function (): void {
             '--from' => '10.6.0.0/24',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Allowing Firewall Rule')
-            ->and($output)->toContain('Apply and verify firewall rule')
-            ->and($output)->toContain('local-vite')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('allow')
-            ->and($output)->toContain('5173')
-            ->and($output)->not->toContain('rule:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Allowing Firewall Rule')
+            ->and($output)
+            ->toContain('Apply and verify firewall rule')
+            ->and($output)
+            ->toContain('local-vite')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('allow')
+            ->and($output)
+            ->toContain('5173')
+            ->and($output)
+            ->not->toContain('rule:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders firewall:deny human output as a progress tree with rule prose', function (): void {
@@ -276,13 +312,19 @@ describe('firewall write commands', function (): void {
             '--port' => '9000',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Denying Firewall Rule')
-            ->and($output)->toContain('Apply and verify firewall rule')
-            ->and($output)->toContain('block-admin')
-            ->and($output)->toContain('deny')
-            ->and($output)->not->toContain('rule:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Denying Firewall Rule')
+            ->and($output)
+            ->toContain('Apply and verify firewall rule')
+            ->and($output)
+            ->toContain('block-admin')
+            ->and($output)
+            ->toContain('deny')
+            ->and($output)
+            ->not->toContain('rule:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders firewall:allow backend apply failure recovery output in human mode', function (): void {
@@ -298,9 +340,12 @@ describe('firewall write commands', function (): void {
             '--port' => '5173',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('The firewall rule was saved, but the backend apply failed.')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('The firewall rule was saved, but the backend apply failed.')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders firewall:remove human output as a progress tree with the removed footer', function (): void {
@@ -321,13 +366,19 @@ describe('firewall write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Removing Firewall Rule')
-            ->and($output)->toContain('Apply and verify firewall removal')
-            ->and($output)->toContain('local-vite')
-            ->and($output)->toContain('app-1')
-            ->and($output)->not->toContain('rule:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Removing Firewall Rule')
+            ->and($output)
+            ->toContain('Apply and verify firewall removal')
+            ->and($output)
+            ->toContain('local-vite')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->not->toContain('rule:')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders firewall:remove idempotent absence prose in human mode', function (): void {
@@ -348,10 +399,14 @@ describe('firewall write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Removing Firewall Rule')
-            ->and($output)->toContain('already absent')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Removing Firewall Rule')
+            ->and($output)
+            ->toContain('already absent')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders firewall:remove cleanup failure recovery output in human mode', function (): void {
@@ -367,8 +422,11 @@ describe('firewall write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('The backend firewall rule could not be removed, so gateway configuration was kept.')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('The backend firewall rule could not be removed, so gateway configuration was kept.')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 });

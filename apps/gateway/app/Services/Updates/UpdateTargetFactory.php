@@ -10,7 +10,9 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 
 final readonly class UpdateTargetFactory
 {
-    public function __construct(private NodeRoleAssignments $roleAssignments) {}
+    public function __construct(
+        private NodeRoleAssignments $roleAssignments,
+    ) {}
 
     public function forNode(Node $node): UpdateTarget
     {

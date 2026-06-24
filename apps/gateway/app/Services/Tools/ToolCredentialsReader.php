@@ -14,8 +14,12 @@ final readonly class ToolCredentialsReader
     /**
      * @return array<string, mixed>|ToolRegistryFailure
      */
-    public function read(string $tool, ?string $node = null, ?string $app = null, ?string $instance = null): array|ToolRegistryFailure
-    {
+    public function read(
+        string $tool,
+        ?string $node = null,
+        ?string $app = null,
+        ?string $instance = null,
+    ): array|ToolRegistryFailure {
         if (! $this->catalog->supports($tool)) {
             return ToolRegistryFailure::unsupportedAction($tool, 'credentials');
         }
@@ -40,7 +44,13 @@ final readonly class ToolCredentialsReader
         $fields = is_array($credentials['fields'] ?? null) ? $credentials['fields'] : [];
 
         if ($fields === []) {
-            return ToolRegistryFailure::remoteActionFailed($tool, $model->node->name, 'credentials', 1, 'No credentials stored for this tool.');
+            return ToolRegistryFailure::remoteActionFailed(
+                $tool,
+                $model->node->name,
+                'credentials',
+                1,
+                'No credentials stored for this tool.',
+            );
         }
 
         return [

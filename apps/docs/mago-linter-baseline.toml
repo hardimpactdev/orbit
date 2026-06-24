@@ -1,0 +1,2881 @@
+variant = "loose"
+
+[[issues]]
+file = "app/Http/Controllers/Controller.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "app/Http/Controllers/Controller.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "app/Librarian/CliCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `'-'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/CliCommand.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/CommandDocsRegistry.php"
+code = "inline-variable-return"
+message = "Variable assignment can be inlined into the return statement."
+count = 4
+
+[[issues]]
+file = "app/Librarian/CommandDocsRegistry.php"
+code = "literal-named-argument"
+message = "Literal argument `'.php'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/CommandDocsRegistry.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/CommandDocsRegistry.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/JsonExample.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "app/Librarian/JsonExampleParser.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/JsonExampleParser.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/JsonExampleParser.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/LiveCliSurface.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 2
+
+[[issues]]
+file = "app/Librarian/OrbitCommandDocs.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ActivityLoggingContractRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ActivityLoggingContractRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ActivityLoggingContractRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/AppPhpVersionContractRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BannedTermsRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BannedTermsRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/BannedTermsRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/BehaviorContractStructureRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalBehaviorBoundaryRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalBehaviorBoundaryRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalBehaviorBoundaryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalBehaviorBoundaryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalBehaviorBoundaryRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CanonicalTechnicalContractRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `" \t\n\r\0\x0B.`"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `" \t\n\r\0\x0B`"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'|'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandContractComplexityRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandDirectoryStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandDirectoryStructureRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandDirectoryStructureRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandPageStructureRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandPageStructureRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandPageStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandPageStructureRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandPageStructureRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandSurfaceCoverageRule.php"
+code = "no-insecure-comparison"
+message = "Insecure comparison of sensitive data."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandSurfaceCoverageRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CommandSurfaceCoverageRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommandSurfaceCoverageRule.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CommonFailureNotRestatedRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/CommonFailureNotRestatedRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CompoundCommandPrefixRule.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/CompoundCommandPrefixRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "literal-named-argument"
+message = "Literal argument `' '` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "literal-named-argument"
+message = "Literal argument `':'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ConceptIndexRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DestructiveConsentRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DestructiveConsentRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DestructiveConsentRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 3
+
+[[issues]]
+file = "app/Librarian/Rules/DestructiveConsentRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorIssueCodePrefixRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorIssueCodePrefixRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorIssueCodePrefixRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorRelationshipReferenceRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorRelationshipReferenceRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorRelationshipReferenceRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorRelationshipReferenceRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "halstead"
+message = "Method has a high halstead difficulty and effort"
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/DoctorWarningCoherenceRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DriftIssueSuffixRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'_extra'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/DriftIssueSuffixRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `" \t\n\r\0\x0B`"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 5
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ErrorCodeRegistryRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ExitStatusPolicyRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ExitStatusPolicyRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ExitStatusPolicyRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/FamilyCommandPrefixRule.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/FamilyCommandPrefixRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "literal-named-argument"
+message = "Literal argument `1` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 4
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/HumanRendererProgressTreeRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "literal-named-argument"
+message = "Literal argument `' '` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 4
+
+[[issues]]
+file = "app/Librarian/Rules/InputModeContractRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererEnvelopeRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererEnvelopeRule.php"
+code = "no-else-clause"
+message = "Avoid `elseif` clauses."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererEnvelopeRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererEnvelopeRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/JsonRendererExampleRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonWarningShapeRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonWarningShapeRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonWarningShapeRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "app/Librarian/Rules/JsonWarningShapeRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/JsonWarningShapeRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/MarkdownLinkIntegrityRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/MarkdownLinkIntegrityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/MarkdownLinkIntegrityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'<>'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/MarkdownLinkIntegrityRule.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/MarkdownLinkIntegrityRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NextActionContractRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NextActionContractRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NextActionContractRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NextActionContractRule.php"
+code = "prefer-early-continue"
+message = "Consider using early continue pattern to reduce nesting."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NoLegacyNarrativeRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NoLegacyNarrativeRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NoPerCommandAuthorizationSectionRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NoPerCommandAuthorizationSectionRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NonStateDomainHandoffRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/NonStateDomainHandoffRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/NonStateDomainHandoffRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ProductCodeNamespaceRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ProductCodeNamespaceRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/PublicCommandPageBoundaryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/PublicCommandPageBoundaryRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/PublicCommandPageBoundaryRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/PublicJsonOptionContractRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/PublicJsonOptionContractRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ReadCommandNoLiveProbeRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ReadCommandNoLiveProbeRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'|'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 4
+
+[[issues]]
+file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RoleCompanionCoverageRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RoleCompanionCoverageRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RoleCompanionCoverageRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/RoleCompanionCoverageRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SharedFailureVocabularyRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SharedFailureVocabularyRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "sensitive-parameter"
+message = "Parameters that may contain sensitive information should be marked with the `#[SensitiveParameter]` attribute."
+count = 5
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureArgumentOrderRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "literal-named-argument"
+message = "Literal argument `' '` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "no-insecure-comparison"
+message = "Insecure comparison of sensitive data."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureLiveSurfaceRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/SignatureOptionConsistencyRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `" \t\n\r\0\x0B`"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "too-many-methods"
+message = "Class has too many methods."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TestMappingFormatRule.php"
+code = "cyclomatic-complexity"
+message = "Class has high complexity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TestMappingFormatRule.php"
+code = "kan-defect"
+message = "Class has a high kan defect score."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TestMappingFormatRule.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TestMappingFormatRule.php"
+code = "no-shorthand-ternary"
+message = "Use of the shorthand ternary operator."
+count = 1
+
+[[issues]]
+file = "app/Models/User.php"
+code = "no-literal-password"
+message = "Literal passwords or sensitive data should not be stored in code."
+count = 1
+
+[[issues]]
+file = "app/Models/User.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "app/Providers/AppServiceProvider.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "bootstrap/app.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "bootstrap/app.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "bootstrap/providers.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'Laravel'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'database'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'en'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'en_US'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'file'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'http://localhost'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'production'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/auth.php"
+code = "literal-named-argument"
+message = "Literal argument `'password_reset_tokens'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/auth.php"
+code = "literal-named-argument"
+message = "Literal argument `'users'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/auth.php"
+code = "literal-named-argument"
+message = "Literal argument `'web'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/auth.php"
+code = "literal-named-argument"
+message = "Literal argument `10800` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/auth.php"
+code = "readable-literal"
+message = "Numeric literal could use underscore separators for readability."
+count = 1
+
+[[issues]]
+file = "config/auth.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'127.0.0.1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'cache'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'database'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'default'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'framework/cache/data'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'laravel'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `'us-east-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "literal-named-argument"
+message = "Literal argument `11211` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "readable-literal"
+message = "Numeric literal could use underscore separators for readability."
+count = 1
+
+[[issues]]
+file = "config/cache.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 6
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'0'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'127.0.0.1'` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'1433'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'3306'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'5432'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'6379'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'decorrelated_jitter'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'laravel'` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'localhost'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'phpredis'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'prefer'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'redis'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'root'` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'sqlite'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'utf8'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'utf8mb4'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `'utf8mb4_unicode_ci'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `1000` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `100` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `3` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/database.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/filesystems.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/filesystems.php"
+code = "literal-named-argument"
+message = "Literal argument `'http://localhost'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/filesystems.php"
+code = "literal-named-argument"
+message = "Literal argument `'local'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/filesystems.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/filesystems.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `':boom:'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `'Laravel'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `'critical'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `'debug'` should be passed as a named argument for clarity."
+count = 6
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `'null'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `'single'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `'stack'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `14` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/logging.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `'/usr/sbin/sendmail -bs -i'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `'127.0.0.1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `'Laravel'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `'hello@example.com'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `'http://localhost'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `'log'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "literal-named-argument"
+message = "Literal argument `2525` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/mail.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'database'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'database-uuids'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'default'` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'https://sqs.us-east-1.amazonaws.com/your-account-id'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'jobs'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'localhost'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'sqlite'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `'us-east-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/queue.php"
+code = "literal-named-argument"
+message = "Literal argument `90` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "config/queue.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/services.php"
+code = "literal-named-argument"
+message = "Literal argument `'us-east-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/services.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `'/'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `'database'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `'laravel'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `'lax'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `'sessions'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `120` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "config/session.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/session.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "database/factories/UserFactory.php"
+code = "prefer-static-closure"
+message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "database/migrations/0001_01_01_000000_create_users_table.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 3
+
+[[issues]]
+file = "database/migrations/0001_01_01_000000_create_users_table.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "database/migrations/0001_01_01_000001_create_cache_table.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 2
+
+[[issues]]
+file = "database/migrations/0001_01_01_000001_create_cache_table.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "database/migrations/0001_01_01_000002_create_jobs_table.php"
+code = "prefer-static-closure"
+message = "This closure does not use `$this` and should be declared static."
+count = 3
+
+[[issues]]
+file = "database/migrations/0001_01_01_000002_create_jobs_table.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "database/seeders/DatabaseSeeder.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "routes/console.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "routes/web.php"
+code = "prefer-arrow-function"
+message = "This closure can be simplified to a more concise arrow function."
+count = 1
+
+[[issues]]
+file = "routes/web.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "tests/Feature/ExampleTest.php"
+code = "prefer-dedicated-status-assertion"
+message = "Use the dedicated `assertOk()` assertion instead of `assertStatus(200)`."
+count = 1
+
+[[issues]]
+file = "tests/Feature/ExampleTest.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "function-name"
+message = "Function name `deleteLintScopeFixture` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "function-name"
+message = "Function name `findingsForLintScopeRule` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "function-name"
+message = "Function name `writeLintScopeFamily` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "function-name"
+message = "Function name `writeLintScopeFile` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node Commands\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node\n\n## Purpose\n\nNode command contracts describe node behavior.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Technical Contract: `orbit node:new`\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# `orbit node:new`\n\n[Technical](technical/1_node-new.md)\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.command_directory_structure'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/1_node/1_node-new/node-new.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/1_node/1_node-new/technical/1_node-new.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/1_node/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/1_node/node.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0777` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "tests/Feature/Librarian/LintPathScopeTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `bindLiveSurfaceFake` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `deleteLiveSurfaceFixture` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `liveSurfaceFindings` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `runLiveSurfaceLint` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `writeLiveSurfaceCommandDirectory` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `writeLiveSurfaceFamily` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "function-name"
+message = "Function name `writeLiveSurfaceFile` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# App Commands\n\n10. Reserved. `app:exec` was removed.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node Commands\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node\n\n## Purpose\n\nNode command contracts describe node behavior.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Process Concepts\n\nUse `tool:start` to start tools.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Tool Concepts\n\nThe `tool:started-elsewhere` token is unrelated, as is `mytool:start`.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'analytics-update'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.banned_terms'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.live_surface_coverage'` should be passed as a named argument for clarity."
+count = 5
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.signature_live_surface'` should be passed as a named argument for clarity."
+count = 6
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/1_node/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/1_node/node.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/3_tool/tool-concepts.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/5_app/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'content/domains/7_process/process-concepts.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'domains/1_node/1_node-new'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'domains/1_node/2_node-role-add'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'domains/21_analytics/1_analytics-update'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'domains/7_process/1_process-add'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'node-new'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'node-role-add'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'orbit analytics:update [--node=<node>] [--version=<version>] [--json]'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'orbit node role:add <node> <role> [--tld=<tld>] [--json]'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|redis>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'process-add'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0777` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/LiveSurfaceRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "explicit-octal"
+message = "Use explicit octal numeral notation."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `deleteOrbitLibrarianDocsFixture` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `findingsForRule` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `makeOrbitLibrarianDocsFixture` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `validOrbitCanonicalContract` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `validOrbitNodeDoctorContract` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `writeOrbitCommandDocsFamily` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "function-name"
+message = "Function name `writeOrbitDocsFile` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Ambiguity\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# App Commands\n\nUse `--php` to select the runtime.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Architecture\n\nOutput sample:\n\n```text\nThis machine no longer has Orbit gateway access.\n```\n\nThe legacy control name is retained.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Architecture\n\nThe legacy control name is retained for compatibility.\nThis behavior is no longer the default.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Cleanup Plan\n\nThe legacy adapter is retired; do not reintroduce it.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Concepts\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Domain Docs\n\n## JSON Envelope\n\nShared envelope.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Human Renderer\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# JSON Renderer\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node Commands\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node Concepts\n\n- **Node intent:** Desired node state.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Node\n\n## Purpose\n\nNode command contracts describe how Orbit manages node identity, roles, relationships, and node-local integration.\n\n## Responsibilities\n\nNode docs own the node command family and its node-specific behavior contracts.\n\n## Boundaries\n\nShared command UX and cross-family behavior stay in their owning docs.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# PHP Commands\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Technical Contract\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Tool Doctor\n\n## Tool Issue Codes\n\n| Code | Detected when |\n| --- | --- |\n| `dns.container_missing` | DNS container is missing. |\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# Wrong Slot\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# `orbit app:register`\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"# `orbit node:new`\n\n[Missing](missing.md)\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = '''Literal argument `"<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'enforced_families' => [\n        'node',\n    ],\n    'shared' => [\n        'validation_failed',\n    ],\n    'products' => [\n        'node' => [\n            'not_found',\n        ],\n    ],\n];\n"` should be passed as a named argument for clarity.'''
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = '''Literal argument `"<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'node' => [\n        'singular' => 'node',\n        'doctor_doc' => 'domains/1_node/node-doctor.md',\n    ],\n];\n"` should be passed as a named argument for clarity.'''
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"<?php\n\ndeclare(strict_types=1);\n\nreturn [];\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"Uses `--force` here.\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'# Flat command'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.app_php_version_contract'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.command_contract_complexity'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.common_failure_not_restated'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.drift_issue_suffix'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.human_progress_tree'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.no_legacy_narrative'` should be passed as a named argument for clarity."
+count = 3
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.read_command_no_live_probe'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.reader_address'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.renderer_primitive_reference'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.signature_option_consistency'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'command_docs.test_mapping_format'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'config/librarian-command-docs/error_codes.php'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'config/librarian-command-docs/state_families.php'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'config/librarian-command-docs/warning_codes.php'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/architecture.md'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/concepts.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/10_php/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/ambiguity.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/node-new.md'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/1_node-new.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/2_node-new_on-app-node.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/2_node-new_on-client.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/2_node-new_on-control-node.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/3_node-new_on-gateway-node.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/2_app-register/app-register.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/2_app-register/technical/1_app-register.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/2_app-register/technical/6.1_app-register_output-render_human.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/2_app-register/technical/6.2_app-register_output-render_json.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/2_node-remove.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/node-concepts.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/node-doctor.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/1_node/node.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/3_tool/tool-doctor.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/5_app/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/domains/README.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'docs/superpowers/plans/2026-01-01-cleanup.md'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0777` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `25` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 57
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Librarian/OrbitCommandDocsRulesTest.php"
+code = "use-specific-expectations"
+message = "Use `toBeEmpty()` instead of comparing with empty values for clarity."
+count = 5
+
+[[issues]]
+file = "tests/Pest.php"
+code = "no-redundant-use"
+message = "Unused import: `RefreshDatabase`."
+count = 1
+
+[[issues]]
+file = "tests/Pest.php"
+code = "prefer-arrow-function"
+message = "This closure can be simplified to a more concise arrow function."
+count = 1
+
+[[issues]]
+file = "tests/Pest.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "tests/TestCase.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 1
+
+[[issues]]
+file = "tests/TestCase.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "tests/Unit/ExampleTest.php"
+code = "assertion-style"
+message = "Inconsistent assertions style."
+count = 1
+
+[[issues]]
+file = "tests/Unit/ExampleTest.php"
+code = "strict-types"
+message = "Missing `declare(strict_types=1);` statement at the beginning of the file."
+count = 1
+
+[[issues]]
+file = "tests/bootstrap.php"
+code = "literal-named-argument"
+message = "Literal argument `32` should be passed as a named argument for clarity."
+count = 1

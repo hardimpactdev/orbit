@@ -132,7 +132,8 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
      */
     private function renderResolveTree(ResolvesLocalDns $resolver, string $tld, string $target): int
     {
-        $alreadyResolved = $resolver->supportsMutation()
+        $alreadyResolved =
+            $resolver->supportsMutation()
             && $resolver->isDnsmasqInstalled()
             && $resolver->existingTarget($tld) === $target;
 
@@ -167,7 +168,9 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
                 }
 
                 if ($result['status'] === 'refresh_failed') {
-                    throw new RuntimeException('Local DNS resolver configuration changed, but the resolver could not be refreshed.');
+                    throw new RuntimeException(
+                        'Local DNS resolver configuration changed, but the resolver could not be refreshed.',
+                    );
                 }
             },
             doneFooter: ".{$tld} resolves to {$target}.",
@@ -267,7 +270,8 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
      */
     private function renderResetTree(ResolvesLocalDns $resolver, string $tld): int
     {
-        $alreadyAbsent = $resolver->supportsMutation()
+        $alreadyAbsent =
+            $resolver->supportsMutation()
             && $resolver->isDnsmasqInstalled()
             && $resolver->existingTarget($tld) === null;
 
@@ -302,7 +306,9 @@ final class DnsResolveTldCommand extends LocalOnlyCommand
                 }
 
                 if ($result['status'] === 'refresh_failed') {
-                    throw new RuntimeException('Local DNS resolver configuration changed, but the resolver could not be refreshed.');
+                    throw new RuntimeException(
+                        'Local DNS resolver configuration changed, but the resolver could not be refreshed.',
+                    );
                 }
             },
             doneFooter: ".{$tld} resolver override removed.",

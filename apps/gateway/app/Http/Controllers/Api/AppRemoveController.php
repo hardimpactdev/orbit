@@ -59,9 +59,13 @@ final class AppRemoveController implements Loggable
         return App::query()
             ->with(['node', 'processes'])
             ->get()
-            ->filter(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}")
+            ->filter(
+                fn (App $app): bool => (
+                    $app->name === $selector
+                    || $app->domain === $selector
+                    || $app->url() === "https://{$selector}"
+                ),
+            )
             ->values()
             ->first();
     }

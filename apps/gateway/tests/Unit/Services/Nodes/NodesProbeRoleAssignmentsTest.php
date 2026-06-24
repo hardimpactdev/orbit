@@ -30,7 +30,10 @@ beforeEach(function (): void {
     $developmentDnsMappingEnactor = new DevelopmentDnsMappingEnactor($developmentDnsConfigDir);
 
     $this->app->instance(DevelopmentDnsMappingEnactor::class, $developmentDnsMappingEnactor);
-    $this->app->instance(DevelopmentDnsMappingProbe::class, new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor));
+    $this->app->instance(
+        DevelopmentDnsMappingProbe::class,
+        new DevelopmentDnsMappingProbe($developmentDnsMappingEnactor),
+    );
     $this->app->instance(RemoteShell::class, $remoteShell);
     $this->app->instance(NodesProbe::class, new NodesProbe(remoteShell: $remoteShell));
     $this->probe = app(NodesProbe::class);
@@ -52,7 +55,6 @@ function roleDriftEntries(Node $node): array
 
 it('does not synthesize missing role drift for unassigned nodes', function (): void {
     $node = Node::factory()->create([
-
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -66,7 +68,6 @@ it('does not synthesize missing role drift for unassigned nodes', function (): v
 
 it('does not synthesize missing role drift for unassigned nodes without a host', function (): void {
     $node = Node::factory()->create([
-
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '',
@@ -80,7 +81,6 @@ it('does not synthesize missing role drift for unassigned nodes without a host',
 
 it('reports invalid role assignments with unknown roles', function (): void {
     $node = Node::factory()->create([
-
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -95,14 +95,16 @@ it('reports invalid role assignments with unknown roles', function (): void {
 
     $roleDrift = roleDriftEntries($node);
 
-    expect($roleDrift)->toHaveCount(1)
-        ->and($roleDrift[0]->key)->toBe('node.role_assignment_invalid')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent);
+    expect($roleDrift)
+        ->toHaveCount(1)
+        ->and($roleDrift[0]->key)
+        ->toBe('node.role_assignment_invalid')
+        ->and($roleDrift[0]->kind)
+        ->toBe(DriftKind::Divergent);
 });
 
 it('reports invalid role settings when assignment settings do not hydrate', function (): void {
     $node = Node::factory()->create([
-
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -118,9 +120,12 @@ it('reports invalid role settings when assignment settings do not hydrate', func
 
     $roleDrift = roleDriftEntries($node);
 
-    expect($roleDrift)->toHaveCount(1)
-        ->and($roleDrift[0]->key)->toBe('node.role_settings_invalid')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent);
+    expect($roleDrift)
+        ->toHaveCount(1)
+        ->and($roleDrift[0]->key)
+        ->toBe('node.role_settings_invalid')
+        ->and($roleDrift[0]->kind)
+        ->toBe(DriftKind::Divergent);
 });
 
 it('reports conflicting unresolved role assignments', function (NodeRoleStatus $conflictingStatus): void {
@@ -163,8 +168,7 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
         fn (DriftEntry $entry): bool => $entry->key === 'node.role_conflict',
     ));
 
-    expect($conflictDrift)->toHaveCount(1)
-        ->and($conflictDrift[0]->kind)->toBe(DriftKind::Divergent);
+    expect($conflictDrift)->toHaveCount(1)->and($conflictDrift[0]->kind)->toBe(DriftKind::Divergent);
 })->with([
     'active' => [NodeRoleStatus::Active],
     'pending' => [NodeRoleStatus::Pending],
@@ -173,7 +177,6 @@ it('reports conflicting unresolved role assignments', function (NodeRoleStatus $
 
 it('reports invalid role settings when an active app-dev assignment has no tld', function (): void {
     $node = Node::factory()->create([
-
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -189,14 +192,16 @@ it('reports invalid role settings when an active app-dev assignment has no tld',
 
     $roleDrift = roleDriftEntries($node);
 
-    expect($roleDrift)->toHaveCount(1)
-        ->and($roleDrift[0]->key)->toBe('node.role_settings_invalid')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent);
+    expect($roleDrift)
+        ->toHaveCount(1)
+        ->and($roleDrift[0]->key)
+        ->toBe('node.role_settings_invalid')
+        ->and($roleDrift[0]->kind)
+        ->toBe(DriftKind::Divergent);
 });
 
 it('reports convergence failures for error assignments', function (): void {
     $node = Node::factory()->create([
-
         'status' => 'active',
         'platform' => 'ubuntu_24-04',
         'host' => '10.0.0.1',
@@ -212,11 +217,14 @@ it('reports convergence failures for error assignments', function (): void {
 
     $roleDrift = roleDriftEntries($node);
 
-    expect($roleDrift)->toHaveCount(1)
-        ->and($roleDrift[0]->key)->toBe('node.role_convergence_failed')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Divergent)
-        ->and($roleDrift[0]->detail)->toMatchArray([
-        ]);
+    expect($roleDrift)
+        ->toHaveCount(1)
+        ->and($roleDrift[0]->key)
+        ->toBe('node.role_convergence_failed')
+        ->and($roleDrift[0]->kind)
+        ->toBe(DriftKind::Divergent)
+        ->and($roleDrift[0]->detail)
+        ->toMatchArray([]);
 });
 
 it('reports baseline mismatches for active role-owned artifacts', function (): void {
@@ -238,10 +246,14 @@ it('reports baseline mismatches for active role-owned artifacts', function (): v
 
     $roleDrift = roleDriftEntries($node);
 
-    expect($roleDrift)->toHaveCount(1)
-        ->and($roleDrift[0]->key)->toBe('node.role_baseline_mismatch')
-        ->and($roleDrift[0]->kind)->toBe(DriftKind::Missing)
-        ->and($roleDrift[0]->detail)->toMatchArray([
+    expect($roleDrift)
+        ->toHaveCount(1)
+        ->and($roleDrift[0]->key)
+        ->toBe('node.role_baseline_mismatch')
+        ->and($roleDrift[0]->kind)
+        ->toBe(DriftKind::Missing)
+        ->and($roleDrift[0]->detail)
+        ->toMatchArray([
             'tld' => 'test',
         ]);
 });
@@ -329,8 +341,7 @@ it('retries baseline convergence for error assignments during reconcile', functi
     ]);
 
     $this->app->bind(NodeRoleBaselineConverger::class, function (): NodeRoleBaselineConverger {
-        return new class extends NodeRoleBaselineConverger
-        {
+        return new class extends NodeRoleBaselineConverger {
             public array $convergedRoles = [];
 
             public function __construct() {}
@@ -383,8 +394,7 @@ it('keeps role assignments errored when convergence retry fails during reconcile
     ]);
 
     $this->app->bind(NodeRoleBaselineConverger::class, function (): NodeRoleBaselineConverger {
-        return new class extends NodeRoleBaselineConverger
-        {
+        return new class extends NodeRoleBaselineConverger {
             public function __construct() {}
 
             public function converge(Node $node, NodeRoleAssignment $assignment): void
@@ -407,7 +417,8 @@ it('keeps role assignments errored when convergence retry fails during reconcile
         detail: [
             'role' => 'app-dev',
         ],
-    )))->toThrow(RuntimeException::class, 'baseline still failed');
+    )))
+        ->toThrow(RuntimeException::class, 'baseline still failed');
 
     expect($assignment->fresh())
         ->status->toBe(NodeRoleStatus::Error)
@@ -471,8 +482,7 @@ it('only re-converges the role assignment that owns a baseline mismatch', functi
         'settings' => [],
     ]);
 
-    $converger = new class extends NodeRoleBaselineConverger
-    {
+    $converger = new class extends NodeRoleBaselineConverger {
         public array $convergedRoles = [];
 
         public function __construct() {}

@@ -53,7 +53,7 @@ final readonly class WorkspaceStepListController implements Loggable
 
         $app = $appSlug !== null
             ? $this->resolveAppBySlug($appSlug)
-            : $this->resolveAppByPath((string) $path);
+            : $this->resolveAppByPath($path);
 
         if (! $app instanceof App) {
             return $this->appNotFound($appSlug ?? (string) $path);
@@ -68,7 +68,9 @@ final readonly class WorkspaceStepListController implements Loggable
         $app->loadMissing('node');
 
         if (! $app->node instanceof Node) {
-            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", ['app' => $app->name]);
+            return $this->authorizationFailed("Could not resolve owning node for app '{$app->name}'.", [
+                'app' => $app->name,
+            ]);
         }
 
         $authorization = $this->authorizer->authorize($caller, $app->node, 'workspace:read');
@@ -118,14 +120,15 @@ final readonly class WorkspaceStepListController implements Loggable
                 $workspacePath = rtrim($workspace->path, '/');
 
                 return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
-            })?->app;
+            })
+            ?->app;
     }
 
     private function stringQuery(Request $request, string $key): ?string
     {
         $value = $request->query($key);
 
-        return is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+        return is_scalar($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function validationFailed(string $field, ?string $value, string $message): JsonResponse
@@ -134,11 +137,14 @@ final readonly class WorkspaceStepListController implements Loggable
             'error' => [
                 'code' => 'validation_failed',
                 'message' => $message,
-                'meta' => array_filter([
-                    'field' => $field,
-                    'value' => $value,
-                    'reason' => $field === 'app' ? 'missing_required_input' : null,
-                ], fn (mixed $item): bool => $item !== null),
+                'meta' => array_filter(
+                    [
+                        'field' => $field,
+                        'value' => $value,
+                        'reason' => $field === 'app' ? 'missing_required_input' : null,
+                    ],
+                    fn (mixed $item): bool => $item !== null,
+                ),
             ],
         ], 400);
     }

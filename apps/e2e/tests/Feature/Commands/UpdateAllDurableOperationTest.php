@@ -15,7 +15,13 @@ it('follows a durable update all operation from an operator through gateway even
         $logPath = '/tmp/orbit-update-all-durable-requests.log';
         $pidPath = '/tmp/orbit-update-all-durable-router.pid';
 
-        e2ePutRuntimeFile($topology, 'gateway', $routerPath, updateAllDurableOperationRouter($logPath), timeoutSeconds: 60);
+        e2ePutRuntimeFile(
+            $topology,
+            'gateway',
+            $routerPath,
+            updateAllDurableOperationRouter($logPath),
+            timeoutSeconds: 60,
+        );
         $phpServer = 'p'.'hp -d display_errors=0 -'.'S';
         e2eRunInRoleRuntime(
             $topology,
@@ -32,7 +38,13 @@ it('follows a durable update all operation from an operator through gateway even
             ),
             timeoutSeconds: 60,
         );
-        e2eWaitForRuntimeHttpEndpoint($topology, 'gateway', $port, '/api/update/all/start', '/tmp/orbit-update-all-durable-router.out');
+        e2eWaitForRuntimeHttpEndpoint(
+            $topology,
+            'gateway',
+            $port,
+            '/api/update/all/start',
+            '/tmp/orbit-update-all-durable-router.out',
+        );
 
         $gatewayUrl = e2eUsesDockerDnsAliasTopology()
             ? "http://gateway:{$port}"
@@ -69,33 +81,42 @@ it('follows a durable update all operation from an operator through gateway even
         );
 
         $payload = e2eJsonCommandPayload($result->output());
-        $requestLog = e2eRunInRoleRuntime($topology, 'gateway', 'cat '.escapeshellarg($logPath), timeoutSeconds: 30)->output();
+        $requestLog = e2eRunInRoleRuntime(
+            $topology,
+            'gateway',
+            'cat '.escapeshellarg($logPath),
+            timeoutSeconds: 30,
+        )->output();
         $requests = array_map(
             static fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
             array_values(array_filter(array_map(trim(...), explode("\n", $requestLog)))),
         );
 
-        expect($payload)->toBe([
-            'event' => 'complete',
-            'data' => [
-                'exit_code' => 0,
+        expect($payload)
+            ->toBe([
+                'event' => 'complete',
                 'data' => [
-                    'status' => 'succeeded',
-                    'target_version' => 'e2e-durable',
+                    'exit_code' => 0,
+                    'data' => [
+                        'status' => 'succeeded',
+                        'target_version' => 'e2e-durable',
+                    ],
                 ],
-            ],
-        ])
-            ->and($requests)->toContain([
+            ])
+            ->and($requests)
+            ->toContain([
                 'method' => 'POST',
                 'path' => '/api/update/all/start',
                 'last_event_id' => null,
             ])
-            ->and($requests)->toContain([
+            ->and($requests)
+            ->toContain([
                 'method' => 'GET',
                 'path' => '/api/operations/e2e-update-all/events',
                 'last_event_id' => null,
             ])
-            ->and($requests)->toContain([
+            ->and($requests)
+            ->toContain([
                 'method' => 'GET',
                 'path' => '/api/operations/e2e-update-all/events',
                 'last_event_id' => '1',
@@ -162,7 +183,13 @@ it('uses topology candidate cli artifacts for the local update all fan-out', fun
             ),
             timeoutSeconds: 60,
         );
-        e2eWaitForRuntimeHttpEndpoint($topology, 'gateway', $port, '/api/update/all/start', '/tmp/orbit-update-all-candidate-router.out');
+        e2eWaitForRuntimeHttpEndpoint(
+            $topology,
+            'gateway',
+            $port,
+            '/api/update/all/start',
+            '/tmp/orbit-update-all-candidate-router.out',
+        );
 
         $gatewayUrl = e2eUsesDockerDnsAliasTopology()
             ? "http://gateway:{$port}"
@@ -194,24 +221,37 @@ it('uses topology candidate cli artifacts for the local update all fan-out', fun
             escapeshellarg($installedCandidateBinary).' --version',
             timeoutSeconds: 60,
         )->output();
-        $requestLog = e2eRunInRoleRuntime($topology, 'gateway', 'cat '.escapeshellarg($logPath), timeoutSeconds: 30)->output();
+        $requestLog = e2eRunInRoleRuntime(
+            $topology,
+            'gateway',
+            'cat '.escapeshellarg($logPath),
+            timeoutSeconds: 30,
+        )->output();
         $requests = array_map(
             static fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
             array_values(array_filter(array_map(trim(...), explode("\n", $requestLog)))),
         );
 
-        expect($payload['event'])->toBe('complete')
-            ->and($payload['data']['exit_code'])->toBe(0)
-            ->and($payload['data']['data']['status'])->toBe('succeeded')
-            ->and($payload['data']['data']['target_version'])->toBe($version)
-            ->and($payload['data']['data']['manifest_source'])->toBe('topology-candidate')
-            ->and(trim($installedOutput))->toBe("orbit {$version}")
-            ->and($requests)->toContain([
+        expect($payload['event'])
+            ->toBe('complete')
+            ->and($payload['data']['exit_code'])
+            ->toBe(0)
+            ->and($payload['data']['data']['status'])
+            ->toBe('succeeded')
+            ->and($payload['data']['data']['target_version'])
+            ->toBe($version)
+            ->and($payload['data']['data']['manifest_source'])
+            ->toBe('topology-candidate')
+            ->and(trim($installedOutput))
+            ->toBe("orbit {$version}")
+            ->and($requests)
+            ->toContain([
                 'method' => 'POST',
                 'path' => '/api/update/all/start',
                 'last_event_id' => null,
             ])
-            ->and($requests)->toContain([
+            ->and($requests)
+            ->toContain([
                 'method' => 'GET',
                 'path' => '/api/operations/e2e-update-all-candidate/events',
                 'last_event_id' => null,
@@ -235,65 +275,65 @@ function updateAllDurableOperationRouter(string $logPath): string
     $logPathValue = var_export($logPath, true);
 
     return <<<PHP
-<?php
+        <?php
 
-\$path = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-\$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
-\$lastEventId = \$_SERVER['HTTP_LAST_EVENT_ID'] ?? null;
+        \$path = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+        \$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
+        \$lastEventId = \$_SERVER['HTTP_LAST_EVENT_ID'] ?? null;
 
-file_put_contents({$logPathValue}, json_encode([
-    'method' => \$method,
-    'path' => \$path,
-    'last_event_id' => \$lastEventId,
-], JSON_THROW_ON_ERROR)."\\n", FILE_APPEND);
+        file_put_contents({$logPathValue}, json_encode([
+            'method' => \$method,
+            'path' => \$path,
+            'last_event_id' => \$lastEventId,
+        ], JSON_THROW_ON_ERROR)."\\n", FILE_APPEND);
 
-if (\$method === 'POST' && \$path === '/api/update/all/start') {
-    header('Content-Type: application/json');
-    http_response_code(202);
-    echo json_encode([
-        'success' => [
-            'data' => [
-                'operation_run' => [
-                    'id' => 'e2e-update-all',
-                    'type' => 'update:all',
-                    'status' => 'queued',
+        if (\$method === 'POST' && \$path === '/api/update/all/start') {
+            header('Content-Type: application/json');
+            http_response_code(202);
+            echo json_encode([
+                'success' => [
+                    'data' => [
+                        'operation_run' => [
+                            'id' => 'e2e-update-all',
+                            'type' => 'update:all',
+                            'status' => 'queued',
+                        ],
+                        'update_plan' => [
+                            'target_version' => 'e2e-durable',
+                            'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:e2e@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                            'manifest_source' => 'github-release',
+                            'manifest_version' => 'e2e-durable',
+                        ],
+                        'events_url' => '/api/operations/e2e-update-all/events',
+                    ],
                 ],
-                'update_plan' => [
-                    'target_version' => 'e2e-durable',
-                    'gateway_image' => 'ghcr.io/hardimpactdev/orbit-gateway:e2e@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-                    'manifest_source' => 'github-release',
-                    'manifest_version' => 'e2e-durable',
-                ],
-                'events_url' => '/api/operations/e2e-update-all/events',
-            ],
-        ],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
-    return;
-}
+            return;
+        }
 
-if (\$method === 'GET' && \$path === '/api/operations/e2e-update-all/events') {
-    header('Content-Type: text/event-stream');
-    header('X-Accel-Buffering: no');
+        if (\$method === 'GET' && \$path === '/api/operations/e2e-update-all/events') {
+            header('Content-Type: text/event-stream');
+            header('X-Accel-Buffering: no');
 
-    if (\$lastEventId === '1') {
-        echo "id: 2\\n";
-        echo "event: complete\\n";
-        echo 'data: {"exit_code":0,"data":{"status":"succeeded","target_version":"e2e-durable"}}'."\\n\\n";
+            if (\$lastEventId === '1') {
+                echo "id: 2\\n";
+                echo "event: complete\\n";
+                echo 'data: {"exit_code":0,"data":{"status":"succeeded","target_version":"e2e-durable"}}'."\\n\\n";
 
-        return;
-    }
+                return;
+            }
 
-    echo "id: 1\\n";
-    echo "event: step\\n";
-    echo 'data: {"message":"gateway replacement started"}'."\\n\\n";
+            echo "id: 1\\n";
+            echo "event: step\\n";
+            echo 'data: {"message":"gateway replacement started"}'."\\n\\n";
 
-    return;
-}
+            return;
+        }
 
-http_response_code(404);
-echo 'not found';
-PHP;
+        http_response_code(404);
+        echo 'not found';
+        PHP;
 }
 
 function updateAllDurableCandidateOperationRouter(string $logPath, string $version, string $candidateBinaryPath): string
@@ -303,70 +343,70 @@ function updateAllDurableCandidateOperationRouter(string $logPath, string $versi
     $candidateUrlValue = var_export("file://{$candidateBinaryPath}", true);
 
     return <<<PHP
-<?php
+        <?php
 
-\$path = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-\$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
-\$lastEventId = \$_SERVER['HTTP_LAST_EVENT_ID'] ?? null;
-\$version = {$versionValue};
-\$candidateUrl = {$candidateUrlValue};
+        \$path = parse_url(\$_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+        \$method = \$_SERVER['REQUEST_METHOD'] ?? 'GET';
+        \$lastEventId = \$_SERVER['HTTP_LAST_EVENT_ID'] ?? null;
+        \$version = {$versionValue};
+        \$candidateUrl = {$candidateUrlValue};
 
-file_put_contents({$logPathValue}, json_encode([
-    'method' => \$method,
-    'path' => \$path,
-    'last_event_id' => \$lastEventId,
-], JSON_THROW_ON_ERROR)."\\n", FILE_APPEND);
+        file_put_contents({$logPathValue}, json_encode([
+            'method' => \$method,
+            'path' => \$path,
+            'last_event_id' => \$lastEventId,
+        ], JSON_THROW_ON_ERROR)."\\n", FILE_APPEND);
 
-if (\$method === 'POST' && \$path === '/api/update/all/start') {
-    header('Content-Type: application/json');
-    http_response_code(202);
-    echo json_encode([
-        'success' => [
-            'data' => [
-                'operation_run' => [
-                    'id' => 'e2e-update-all-candidate',
-                    'type' => 'update:all',
-                    'status' => 'queued',
+        if (\$method === 'POST' && \$path === '/api/update/all/start') {
+            header('Content-Type: application/json');
+            http_response_code(202);
+            echo json_encode([
+                'success' => [
+                    'data' => [
+                        'operation_run' => [
+                            'id' => 'e2e-update-all-candidate',
+                            'type' => 'update:all',
+                            'status' => 'queued',
+                        ],
+                        'update_plan' => [
+                            'target_version' => \$version,
+                            'gateway_image' => "ghcr.io/hardimpactdev/orbit-gateway:{\$version}@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                            'manifest_source' => 'topology-candidate',
+                            'manifest_version' => \$version,
+                        ],
+                        'events_url' => '/api/operations/e2e-update-all-candidate/events',
+                    ],
                 ],
-                'update_plan' => [
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+            return;
+        }
+
+        if (\$method === 'GET' && \$path === '/api/operations/e2e-update-all-candidate/events') {
+            header('Content-Type: text/event-stream');
+            header('X-Accel-Buffering: no');
+
+            echo "id: 1\\n";
+            echo "event: complete\\n";
+            echo 'data: '.json_encode([
+                'exit_code' => 0,
+                'data' => [
+                    'status' => 'succeeded',
                     'target_version' => \$version,
-                    'gateway_image' => "ghcr.io/hardimpactdev/orbit-gateway:{\$version}@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                     'manifest_source' => 'topology-candidate',
-                    'manifest_version' => \$version,
+                    'cli_artifacts' => [
+                        'linux-amd64' => [
+                            'url' => \$candidateUrl,
+                            'sha256' => str_repeat('b', 64),
+                        ],
+                    ],
                 ],
-                'events_url' => '/api/operations/e2e-update-all-candidate/events',
-            ],
-        ],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\\n\\n";
 
-    return;
-}
+            return;
+        }
 
-if (\$method === 'GET' && \$path === '/api/operations/e2e-update-all-candidate/events') {
-    header('Content-Type: text/event-stream');
-    header('X-Accel-Buffering: no');
-
-    echo "id: 1\\n";
-    echo "event: complete\\n";
-    echo 'data: '.json_encode([
-        'exit_code' => 0,
-        'data' => [
-            'status' => 'succeeded',
-            'target_version' => \$version,
-            'manifest_source' => 'topology-candidate',
-            'cli_artifacts' => [
-                'linux-amd64' => [
-                    'url' => \$candidateUrl,
-                    'sha256' => str_repeat('b', 64),
-                ],
-            ],
-        ],
-    ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\\n\\n";
-
-    return;
-}
-
-http_response_code(404);
-echo 'not found';
-PHP;
+        http_response_code(404);
+        echo 'not found';
+        PHP;
 }

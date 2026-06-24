@@ -92,13 +92,16 @@ class UpdateAllStartController implements Loggable
 
         return response()->json([
             'success' => [
-                'data' => array_filter([
-                    'operation_run' => $this->operationRunPayload($operationRun),
-                    'update_plan' => $plan instanceof OperationUpdatePlan
-                        ? $this->updatePlanPayload($plan)
-                        : null,
-                    'events_url' => route('api.operations.events', ['operationRun' => $operationRun->id], false),
-                ], fn (mixed $value): bool => $value !== null),
+                'data' => array_filter(
+                    [
+                        'operation_run' => $this->operationRunPayload($operationRun),
+                        'update_plan' => $plan instanceof OperationUpdatePlan
+                            ? $this->updatePlanPayload($plan)
+                            : null,
+                        'events_url' => route('api.operations.events', ['operationRun' => $operationRun->id], false),
+                    ],
+                    fn (mixed $value): bool => $value !== null,
+                ),
             ],
         ], 202);
     }
@@ -144,13 +147,16 @@ class UpdateAllStartController implements Loggable
      */
     public function properties(): array
     {
-        return array_filter([
-            'operation_run_id' => $this->activityOperationRun?->id,
-            'operation_id' => $this->activityOperationRun?->operation_id,
-            'operation_status' => $this->activityOperationRun?->status->value,
-            'target_version' => $this->activityUpdatePlan?->target_version,
-            'gateway_image' => $this->activityUpdatePlan?->gateway_image,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'operation_run_id' => $this->activityOperationRun?->id,
+                'operation_id' => $this->activityOperationRun?->operation_id,
+                'operation_status' => $this->activityOperationRun?->status->value,
+                'target_version' => $this->activityUpdatePlan?->target_version,
+                'gateway_image' => $this->activityUpdatePlan?->gateway_image,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function description(): ?string
@@ -163,15 +169,18 @@ class UpdateAllStartController implements Loggable
      */
     private function startRequestPayload(UpdateAllStartApiRequest $request): array
     {
-        return array_filter([
-            'target_version' => $request->input('target_version'),
-            'manifest_source' => $request->input('manifest_source'),
-            'manifest_version' => $request->input('manifest_version'),
-            'manifest' => $request->input('manifest'),
-            'gateway_image' => $request->input('gateway_image'),
-            'cli_artifacts' => $request->input('cli_artifacts'),
-            'role_images' => $request->input('role_images'),
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'target_version' => $request->input('target_version'),
+                'manifest_source' => $request->input('manifest_source'),
+                'manifest_version' => $request->input('manifest_version'),
+                'manifest' => $request->input('manifest'),
+                'gateway_image' => $request->input('gateway_image'),
+                'cli_artifacts' => $request->input('cli_artifacts'),
+                'role_images' => $request->input('role_images'),
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     private function captureActivitySubject(UpdateAllStartApiRequest $request): void
@@ -191,7 +200,7 @@ class UpdateAllStartController implements Loggable
             'id' => $operationRun->id,
             'operation_id' => $operationRun->operation_id,
             'type' => $operationRun->operation_type,
-            'status' => ($operationRun->status instanceof OperationStatus)
+            'status' => $operationRun->status instanceof OperationStatus
                 ? $operationRun->status->value
                 : (string) $operationRun->status,
         ];

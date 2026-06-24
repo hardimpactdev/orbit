@@ -21,8 +21,10 @@ describe('credential generation', function (): void {
     it('generates a non-empty access key id and secret access key', function (): void {
         $credentials = $this->generator->generate();
 
-        expect($credentials->accessKeyId)->toBeString()->not->toBeEmpty()
-            ->and($credentials->secretAccessKey)->toBeString()->not->toBeEmpty();
+        expect($credentials->accessKeyId)
+            ->toBeString()
+            ->not->toBeEmpty()->and($credentials->secretAccessKey)->toBeString()
+            ->not->toBeEmpty();
     });
 
     it('generates an access key id of exactly 20 characters', function (): void {
@@ -53,8 +55,9 @@ describe('credential generation', function (): void {
         $a = $this->generator->generate();
         $b = $this->generator->generate();
 
-        expect($a->accessKeyId)->not->toBe($b->accessKeyId)
-            ->and($a->secretAccessKey)->not->toBe($b->secretAccessKey);
+        expect($a->accessKeyId)
+            ->not->toBe($b->accessKeyId)->and($a->secretAccessKey)
+            ->not->toBe($b->secretAccessKey);
     });
 });
 
@@ -63,16 +66,18 @@ describe('value object shape', function (): void {
         $credentials = $this->generator->generate();
         $fields = $credentials->toFields();
 
-        expect($fields)->toHaveKeys(['access_key_id', 'secret_access_key'])
-            ->and($fields['access_key_id'])->toBe($credentials->accessKeyId)
-            ->and($fields['secret_access_key'])->toBe($credentials->secretAccessKey);
+        expect($fields)
+            ->toHaveKeys(['access_key_id', 'secret_access_key'])
+            ->and($fields['access_key_id'])
+            ->toBe($credentials->accessKeyId)
+            ->and($fields['secret_access_key'])
+            ->toBe($credentials->secretAccessKey);
     });
 
     it('produces a fields array compatible with the seaweedfs tool row credentials shape', function (): void {
         $credentials = $this->generator->generate();
         $fields = $credentials->toFields();
 
-        expect($fields)->toBeArray()
-            ->and(array_keys($fields))->toBe(['access_key_id', 'secret_access_key']);
+        expect($fields)->toBeArray()->and(array_keys($fields))->toBe(['access_key_id', 'secret_access_key']);
     });
 });

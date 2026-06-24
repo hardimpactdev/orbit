@@ -43,7 +43,7 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
             );
         }
 
-        $context = $this->resolveOpenCodeContext($target, (string) ($session['id'] ?? ''));
+        $context = $this->resolveOpenCodeContext($target, $session['id'] ?? '');
 
         if ($context === null) {
             throw new GatewayApiException(
@@ -130,15 +130,22 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
         $workspace = $workspaceQuery->first();
 
-        if (! $workspace instanceof Workspace || ! is_string($workspace->agent_ide_workspace_id) || $workspace->agent_ide_workspace_id === '') {
+        if (! $workspace instanceof Workspace) {
+            return null;
+        }
+
+        $workspaceId = $workspace->agent_ide_workspace_id;
+        $workspacePath = $workspace->path;
+
+        if (! is_string($workspaceId) || $workspaceId === '' || ! is_string($workspacePath) || $workspacePath === '') {
             return null;
         }
 
         return [
             'app' => $app,
             'workspace' => $workspace,
-            'session_id' => $workspace->agent_ide_workspace_id,
-            'directory' => $workspace->path,
+            'session_id' => $workspaceId,
+            'directory' => $workspacePath,
         ];
     }
 
@@ -149,20 +156,20 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
     {
         $app->loadMissing('node');
 
-        $tool = $app->node === null ? null : NodeTool::query()
-            ->where('node_id', $app->node->id)
-            ->where('name', 'opencode-server')
-            ->first();
+        $tool = $app->node === null
+            ? null
+            : NodeTool::query()
+                ->where('node_id', $app->node->id)
+                ->where('name', 'opencode-server')
+                ->first();
 
-        $credentials = is_array($tool?->credentials) ? $tool->credentials : [];
+        $credentials = is_array($tool?->credentials) ? $tool?->credentials : [];
         $fields = is_array($credentials['fields'] ?? null) ? $credentials['fields'] : [];
         $endpoint = $this->endpointFromTool($tool);
 
         return [
             'url' => $this->normalizeBaseUrl(
-                $this->stringValue($fields['url'] ?? null)
-                    ?? $endpoint
-                    ?? 'http://127.0.0.1:4096',
+                $this->stringValue($fields['url'] ?? null) ?? $endpoint ?? 'http://127.0.0.1:4096',
             ),
             'username' => $this->stringValue($fields['username'] ?? null),
             'password' => $this->stringValue($fields['password'] ?? null),
@@ -171,7 +178,7 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
     private function endpointFromTool(?NodeTool $tool): ?string
     {
-        $config = is_array($tool?->config) ? $tool->config : [];
+        $config = is_array($tool?->config) ? $tool?->config : [];
         $endpoints = is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [];
 
         foreach ($endpoints as $endpoint) {
@@ -221,7 +228,10 @@ final class CoreAgentIdeMessageAdapter implements AgentIdeMessageAdapter
 
     private function normalizeBaseUrl(string $url): string
     {
-        return rtrim(str_starts_with($url, 'http://') || str_starts_with($url, 'https://') ? $url : "http://{$url}", '/');
+        return rtrim(
+            str_starts_with($url, 'http://') || str_starts_with($url, 'https://') ? $url : "http://{$url}",
+            '/',
+        );
     }
 
     private function stringValue(mixed $value): ?string

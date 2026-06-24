@@ -19,8 +19,10 @@ describe('internal database query local command', function (): void {
     it('rejects a missing operation token before reading stdin', function (): void {
         [$exitCode, $output] = runInternalDatabaseQueryLocalCommand(['--json' => true]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -36,8 +38,10 @@ describe('internal database query local command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -46,29 +50,35 @@ describe('internal database query local command', function (): void {
     it('executes readonly sqlite queries from a stdin payload', function (): void {
         $path = createInternalDatabaseQueryLocalSqliteDatabase();
 
-        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand([
-            '--operation-token' => databaseQueryLocalSignedOperationToken(),
-            '--json' => true,
-        ], json_encode([
-            'connection' => [
-                'driver' => 'sqlite',
-                'path' => $path,
-                'credentials' => ['password' => 'never-print-me'],
+        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand(
+            [
+                '--operation-token' => databaseQueryLocalSignedOperationToken(),
+                '--json' => true,
             ],
-            'sql' => 'select id, name from users order by id',
-        ], JSON_THROW_ON_ERROR));
+            json_encode([
+                'connection' => [
+                    'driver' => 'sqlite',
+                    'path' => $path,
+                    'credentials' => ['password' => 'never-print-me'],
+                ],
+                'sql' => 'select id, name from users order by id',
+            ], JSON_THROW_ON_ERROR),
+        );
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data'])->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data'])
+            ->toBe([
                 'columns' => ['id', 'name'],
                 'rows' => [
                     ['id' => 1, 'name' => 'Ada'],
                     ['id' => 2, 'name' => 'Grace'],
                 ],
             ])
-            ->and($payload['success']['meta'])->toMatchArray([
+            ->and($payload['success']['meta'])
+            ->toMatchArray([
                 'mode' => 'read',
                 'limit' => 50,
                 'total_rows' => 2,
@@ -77,59 +87,73 @@ describe('internal database query local command', function (): void {
                 'truncated_by' => [],
                 'max_json_bytes' => 1048576,
             ])
-            ->and($output)->not->toContain('never-print-me');
+            ->and($output)
+            ->not->toContain('never-print-me');
     });
 
     it('rejects writes unless write mode is explicit and leaves the database unchanged', function (): void {
         $path = createInternalDatabaseQueryLocalSqliteDatabase();
 
-        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand([
-            '--operation-token' => databaseQueryLocalSignedOperationToken(),
-            '--json' => true,
-        ], json_encode([
-            'connection' => [
-                'driver' => 'sqlite',
-                'path' => $path,
+        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand(
+            [
+                '--operation-token' => databaseQueryLocalSignedOperationToken(),
+                '--json' => true,
             ],
-            'sql' => 'update users set name = "Changed" where id = 1',
-        ], JSON_THROW_ON_ERROR));
+            json_encode([
+                'connection' => [
+                    'driver' => 'sqlite',
+                    'path' => $path,
+                ],
+                'sql' => 'update users set name = "Changed" where id = 1',
+            ], JSON_THROW_ON_ERROR),
+        );
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $database = new PDO("sqlite:{$path}");
         $name = $database->query('select name from users where id = 1')->fetchColumn();
 
-        expect($exitCode)->toBe(1)
-            ->and($payload)->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and($payload)
+            ->toBe(JsonEnvelope::failure(
                 'database_query.write_not_allowed',
                 'This SQL statement requires explicit write mode.',
                 ['mode' => 'write'],
             ))
-            ->and($name)->toBe('Ada');
+            ->and($name)
+            ->toBe('Ada');
     });
 
     it('executes writes when write mode is explicit', function (): void {
         $path = createInternalDatabaseQueryLocalSqliteDatabase();
 
-        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand([
-            '--operation-token' => databaseQueryLocalSignedOperationToken(),
-            '--json' => true,
-        ], json_encode([
-            'connection' => [
-                'driver' => 'sqlite',
-                'path' => $path,
+        [$exitCode, $output] = runInternalDatabaseQueryLocalCommand(
+            [
+                '--operation-token' => databaseQueryLocalSignedOperationToken(),
+                '--json' => true,
             ],
-            'sql' => 'update users set name = "Changed" where id = 1',
-            'write' => true,
-        ], JSON_THROW_ON_ERROR));
+            json_encode([
+                'connection' => [
+                    'driver' => 'sqlite',
+                    'path' => $path,
+                ],
+                'sql' => 'update users set name = "Changed" where id = 1',
+                'write' => true,
+            ], JSON_THROW_ON_ERROR),
+        );
 
         $payload = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $database = new PDO("sqlite:{$path}");
         $name = $database->query('select name from users where id = 1')->fetchColumn();
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data'])->toBe(['affected_rows' => 1])
-            ->and($payload['success']['meta']['mode'])->toBe('write')
-            ->and($name)->toBe('Changed');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($payload['success']['data'])
+            ->toBe(['affected_rows' => 1])
+            ->and($payload['success']['meta']['mode'])
+            ->toBe('write')
+            ->and($name)
+            ->toBe('Changed');
     });
 
     it('emits validation failures as strict json after token validation', function (): void {
@@ -138,8 +162,10 @@ describe('internal database query local command', function (): void {
             '--json' => true,
         ], 'not-json');
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'Database query payload is invalid.',
             ));
@@ -161,14 +187,16 @@ function databaseQueryLocalSignedOperationToken(
     $issuedAt ??= time() - 10;
     $expiresAt ??= time() + 120;
 
-    return (new OperationTokenSigner)->sign(
-        secret: 'gateway-secret',
-        id: $id,
-        node: $node,
-        command: $command,
-        issuedAt: $issuedAt,
-        expiresAt: $expiresAt,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'gateway-secret',
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
 }
 
 /**

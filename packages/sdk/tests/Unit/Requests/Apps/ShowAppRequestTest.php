@@ -37,7 +37,10 @@ it('returns an AppShowResponse DTO with app and details', function (): void {
 
     $dto = $connector->send(new ShowAppRequest('docs'))->dto();
 
-    expect($dto)->toBeInstanceOf(AppShowResponse::class)
-        ->and($dto->app)->toBe(['name' => 'docs'])
-        ->and($dto->details)->toBe(['workspaces' => []]);
+    expect($dto)
+        ->toBeInstanceOf(AppShowResponse::class)
+        ->and($dto->app)
+        ->toBe(['name' => 'docs'])
+        ->and($dto->details)
+        ->toBe(['workspaces' => []]);
 });

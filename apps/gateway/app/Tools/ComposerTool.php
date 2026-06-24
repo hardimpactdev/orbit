@@ -27,32 +27,32 @@ final class ComposerTool extends BaseTool
     public function installScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit install composer
-set -e
+            #!/usr/bin/env bash
+            # orbit install composer
+            set -e
 
-cd /tmp
+            cd /tmp
 
-# Fetch the official installer signature
-EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"
+            # Fetch the official installer signature
+            EXPECTED_SIG="$(curl -fsSL https://composer.github.io/installer.sig)"
 
-# Download the installer
-curl -fsSL https://getcomposer.org/installer -o composer-setup.php
+            # Download the installer
+            curl -fsSL https://getcomposer.org/installer -o composer-setup.php
 
-# Verify the SHA-384 hash
-ACTUAL_SIG="$(sha384sum composer-setup.php | awk '{print $1}')"
+            # Verify the SHA-384 hash
+            ACTUAL_SIG="$(sha384sum composer-setup.php | awk '{print $1}')"
 
-if [ "$EXPECTED_SIG" != "$ACTUAL_SIG" ]; then
-    echo "ERROR: Composer installer signature verification failed." >&2
-    rm -f composer-setup.php
-    exit 1
-fi
+            if [ "$EXPECTED_SIG" != "$ACTUAL_SIG" ]; then
+                echo "ERROR: Composer installer signature verification failed." >&2
+                rm -f composer-setup.php
+                exit 1
+            fi
 
-# Install Composer to /usr/local/bin
-sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+            # Install Composer to /usr/local/bin
+            sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer
 
-rm -f composer-setup.php
-BASH;
+            rm -f composer-setup.php
+            BASH;
     }
 
     public function updateScript(array $config = []): string

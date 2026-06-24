@@ -60,7 +60,7 @@ final readonly class StreamIdleReader
 
             if ($ready === false) {
                 $this->invokeIdleCallback();
-                usleep($this->idleIntervalMicroseconds);
+                usleep(max(0, $this->idleIntervalMicroseconds));
 
                 continue;
             }
@@ -73,7 +73,7 @@ final readonly class StreamIdleReader
                 }
 
                 $this->invokeIdleCallback();
-                usleep($this->idleIntervalMicroseconds);
+                usleep(max(0, $this->idleIntervalMicroseconds));
 
                 continue;
             }
@@ -90,6 +90,10 @@ final readonly class StreamIdleReader
             return '';
         }
 
+        if (! is_resource($resource)) {
+            return '';
+        }
+
         $restoreBlocking = $this->isBlockingStream($resource);
 
         stream_set_blocking($resource, false);
@@ -101,7 +105,7 @@ final readonly class StreamIdleReader
 
             return $chunk === false ? '' : $chunk;
         } finally {
-            if ($restoreBlocking && is_resource($resource)) {
+            if ($restoreBlocking) {
                 stream_set_blocking($resource, true);
             }
         }
@@ -109,6 +113,10 @@ final readonly class StreamIdleReader
 
     private function isBlockingStream(mixed $resource): bool
     {
+        if (! is_resource($resource)) {
+            return false;
+        }
+
         $metadata = stream_get_meta_data($resource) + ['blocked' => false];
 
         return $metadata['blocked'] === true;
@@ -124,7 +132,7 @@ final readonly class StreamIdleReader
             }
 
             $this->invokeIdleCallback();
-            usleep($this->idleIntervalMicroseconds);
+            usleep(max(0, $this->idleIntervalMicroseconds));
         }
 
         return '';
@@ -153,8 +161,7 @@ final readonly class StreamIdleReader
             'stream_type' => null,
         ];
 
-        return $metadata['wrapper_type'] !== 'user-space'
-            && $metadata['stream_type'] !== 'user-space';
+        return $metadata['wrapper_type'] !== 'user-space' && $metadata['stream_type'] !== 'user-space';
     }
 
     private function resolvePhpStream(StreamInterface $stream): mixed

@@ -8,8 +8,7 @@ describe('DatabaseQueryClassifier', function (): void {
     it('classifies readonly statements as read operations', function (string $sql): void {
         $classification = app(DatabaseQueryClassifier::class)->classify($sql);
 
-        expect($classification->mode)->toBe('read')
-            ->and($classification->requiresWriteMode)->toBeFalse();
+        expect($classification->mode)->toBe('read')->and($classification->requiresWriteMode)->toBeFalse();
     })->with([
         'select' => ['select * from users'],
         'with' => ['with recent as (select * from users) select * from recent'],
@@ -25,8 +24,7 @@ describe('DatabaseQueryClassifier', function (): void {
     it('classifies write statements as requiring write mode', function (string $sql): void {
         $classification = app(DatabaseQueryClassifier::class)->classify($sql);
 
-        expect($classification->mode)->toBe('write')
-            ->and($classification->requiresWriteMode)->toBeTrue();
+        expect($classification->mode)->toBe('write')->and($classification->requiresWriteMode)->toBeTrue();
     })->with([
         'insert' => ['insert into users (name) values ("Nadia")'],
         'update' => ['update users set name = "Nadia"'],

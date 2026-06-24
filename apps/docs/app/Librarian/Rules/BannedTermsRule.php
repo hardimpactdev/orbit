@@ -41,12 +41,21 @@ final readonly class BannedTermsRule implements GroupedRule
             $lines = null;
 
             foreach ($entries as $entry) {
-                if (! is_array($entry) || $this->isAllowed($documentPath, (array) ($entry['allow_paths'] ?? []))) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+
+                $allowPaths = is_array($entry['allow_paths'] ?? null)
+                    ? array_values($entry['allow_paths'])
+                    : [];
+
+                if ($this->isAllowed($documentPath, $allowPaths)) {
                     continue;
                 }
 
                 $lines ??= explode("\n", file_get_contents($file) ?: '');
 
+                /** @var array{terms?: mixed, decision?: mixed, replacement?: mixed} $entry */
                 array_push($findings, ...$this->checkEntry($file, $lines, $entry));
             }
         }
@@ -118,8 +127,10 @@ final readonly class BannedTermsRule implements GroupedRule
     {
         return array_any(
             $allowPaths,
-            static fn (mixed $allowPath): bool => is_string($allowPath)
-                && ($documentPath === $allowPath || str_starts_with($documentPath, rtrim($allowPath, '/').'/')),
+            static fn (mixed $allowPath): bool => (
+                is_string($allowPath)
+                && ($documentPath === $allowPath || str_starts_with($documentPath, rtrim($allowPath, '/').'/'))
+            ),
         );
     }
 }

@@ -45,8 +45,13 @@ final class NodeShowController implements Loggable
                         'name' => $node->name,
                         'status' => $node->status->value,
                         'platform' => $node->platform ?? 'unknown',
-                        'roles' => $node->roleAssignments
-                            ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
+                        'roles' => $node
+                            ->roleAssignments
+                            ->map(
+                                fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel(
+                                    $assignment,
+                                ),
+                            )
                             ->all(),
                         'addresses' => [
                             'wireguard' => $node->wireguard_address,
@@ -136,9 +141,11 @@ final class NodeShowController implements Loggable
         if (is_string($permissions)) {
             $decoded = json_decode($permissions, associative: true);
 
-            return is_array($decoded)
-                ? array_values(array_filter($decoded, is_string(...)))
-                : ['*'];
+            return (
+                is_array($decoded)
+                    ? array_values(array_filter($decoded, is_string(...)))
+                    : ['*']
+            );
         }
 
         return ['*'];

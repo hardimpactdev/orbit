@@ -34,7 +34,9 @@ final class OrbitCliBinaryBundle
 
         if ($cacheBinary !== null && is_file($cacheBinary)) {
             if (! @copy($cacheBinary, $bundleBinary)) {
-                throw new RuntimeException("Could not copy cached linux binary to bundle: {$cacheBinary} -> {$bundleBinary}");
+                throw new RuntimeException(
+                    "Could not copy cached linux binary to bundle: {$cacheBinary} -> {$bundleBinary}",
+                );
             }
 
             chmod($bundleBinary, 0755);
@@ -48,7 +50,7 @@ final class OrbitCliBinaryBundle
 
         if (! $buildResult->successful()) {
             throw new RuntimeException(
-                "Failed to build linux CLI binary: {$buildResult->output()}{$buildResult->errorOutput()}"
+                "Failed to build linux CLI binary: {$buildResult->output()}{$buildResult->errorOutput()}",
             );
         }
 
@@ -63,7 +65,7 @@ final class OrbitCliBinaryBundle
 
         if (! str_contains($fileOutput, 'ELF') || ! str_contains($fileOutput, 'x86-64')) {
             throw new RuntimeException(
-                "Built binary is not a Linux ELF x86-64 executable. `file` output: {$fileOutput}"
+                "Built binary is not a Linux ELF x86-64 executable. `file` output: {$fileOutput}",
             );
         }
 

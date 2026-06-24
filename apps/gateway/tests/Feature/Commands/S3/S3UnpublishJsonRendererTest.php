@@ -90,10 +90,17 @@ function s3UnpublishJsonSeaweedfsTool(Node $storage, array $config = []): NodeTo
  */
 function s3UnpublishJsonStreamFinalFrame(object $test, string $host = 's3.example.com', array $payload = []): array
 {
-    $response = $test->call('DELETE', "/api/s3/public-hosts/{$host}", $payload, [], [], [
-        'HTTP_ACCEPT' => 'text/event-stream',
-        'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
-    ]);
+    $response = $test->call(
+        'DELETE',
+        "/api/s3/public-hosts/{$host}",
+        $payload,
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
+        ],
+    );
 
     $content = $response->streamedContent();
 
@@ -122,14 +129,21 @@ describe('S3UnpublishJsonRenderer success shape', function (): void {
 
         $frame = s3UnpublishJsonStreamFinalFrame($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($frame['data']['s3']['node'])->toBe('storage-1')
-            ->and($frame['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($frame['data']['s3']['public_endpoints'])->toBeArray()
-            ->and($frame['data']['s3']['backend_pool'])->toBeArray();
+        expect($frame['data']['s3']['node'])
+            ->toBe('storage-1')
+            ->and($frame['data']['s3']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($frame['data']['s3']['public_endpoints'])
+            ->toBeArray()
+            ->and($frame['data']['s3']['backend_pool'])
+            ->toBeArray();
 
-        expect($frame['data']['meta']['host'])->toBe('s3.example.com')
-            ->and($frame['data']['meta']['action'])->toBe('unpublished')
-            ->and($frame['data']['meta']['already_absent'])->toBeFalse();
+        expect($frame['data']['meta']['host'])
+            ->toBe('s3.example.com')
+            ->and($frame['data']['meta']['action'])
+            ->toBe('unpublished')
+            ->and($frame['data']['meta']['already_absent'])
+            ->toBeFalse();
     });
 });
 
@@ -146,8 +160,10 @@ describe('S3UnpublishJsonRenderer action metadata', function (): void {
 
         $frame = s3UnpublishJsonStreamFinalFrame($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($frame['data']['meta']['action'])->toBe('unpublished')
-            ->and($frame['data']['meta']['already_absent'])->toBeFalse();
+        expect($frame['data']['meta']['action'])
+            ->toBe('unpublished')
+            ->and($frame['data']['meta']['already_absent'])
+            ->toBeFalse();
     });
 
     it('returns already_absent=true on idempotent removal of an absent host', function (): void {
@@ -158,8 +174,10 @@ describe('S3UnpublishJsonRenderer action metadata', function (): void {
 
         $frame = s3UnpublishJsonStreamFinalFrame($this, 's3.example.com', ['node' => 'storage-1']);
 
-        expect($frame['data']['meta']['already_absent'])->toBeTrue()
-            ->and($frame['data']['meta']['action'])->toBe('unpublished');
+        expect($frame['data']['meta']['already_absent'])
+            ->toBeTrue()
+            ->and($frame['data']['meta']['action'])
+            ->toBe('unpublished');
     });
 });
 
@@ -171,18 +189,28 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
     it('emits validation_failed for missing s3 node', function (): void {
         s3UnpublishJsonCallerNode();
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)
+            ->toContain('event: error')
+            ->and($content)
+            ->toContain('validation_failed')
+            ->and($content)
+            ->toContain('"required_role":"s3"');
     });
 
     it('emits validation_failed for missing router', function (): void {
@@ -191,16 +219,22 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
         s3UnpublishJsonSeaweedfsTool($storage);
         // No router.
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
-        expect($content)->toContain('validation_failed')
-            ->and($content)->toContain('"required_role":"router"');
+        expect($content)->toContain('validation_failed')->and($content)->toContain('"required_role":"router"');
     });
 
     it('emits proxy.owned_route_denied when host is owned by a non-S3 route', function (): void {
@@ -229,23 +263,36 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
             'config' => ['target' => ['type' => 'upstream', 'value' => 'http://app.test']],
         ]);
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
-        expect($content)->toContain('proxy.owned_route_denied')
-            ->and($content)->toContain('"owner_type":"app"');
+        expect($content)->toContain('proxy.owned_route_denied')->and($content)->toContain('"owner_type":"app"');
     });
 
     it('emits authorization_failed for unauthenticated callers', function (): void {
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => '192.168.1.1',
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => '192.168.1.1',
+            ],
+        );
 
         $response->assertStatus(403);
         $response->assertJsonPath('error.code', 'authorization_failed');
@@ -257,16 +304,22 @@ describe('S3UnpublishJsonRenderer error codes', function (): void {
         // wired correctly by using a prerequisite-missing state instead.
         s3UnpublishJsonCallerNode();
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'missing-storage',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'missing-storage',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
-        expect($content)->toContain('event: error')
-            ->and($content)->toContain('validation_failed');
+        expect($content)->toContain('event: error')->and($content)->toContain('validation_failed');
     });
 });
 
@@ -278,17 +331,23 @@ describe('S3UnpublishJsonRenderer prerequisite error metadata', function (): voi
     it('includes field and required_role in the error meta for node validation failure', function (): void {
         s3UnpublishJsonCallerNode();
 
-        $response = $this->call('DELETE', '/api/s3/public-hosts/s3.example.com', [
-            'node' => 'storage-1',
-        ], [], [], [
-            'HTTP_ACCEPT' => 'text/event-stream',
-            'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'DELETE',
+            '/api/s3/public-hosts/s3.example.com',
+            [
+                'node' => 'storage-1',
+            ],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'text/event-stream',
+                'REMOTE_ADDR' => S3_UNPUBLISH_JSON_CALLER_WG_IP,
+            ],
+        );
 
         $content = $response->streamedContent();
 
-        expect($content)->toContain('"field":"node"')
-            ->and($content)->toContain('"required_role":"s3"');
+        expect($content)->toContain('"field":"node"')->and($content)->toContain('"required_role":"s3"');
     });
 
     it('includes field and reason in the destructive consent error meta', function (): void {

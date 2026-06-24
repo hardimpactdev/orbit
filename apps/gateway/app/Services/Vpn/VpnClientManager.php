@@ -38,7 +38,11 @@ final readonly class VpnClientManager
         }
 
         if ($this->activeNodeNameExists($name)) {
-            return $this->validationFailure('VPN client name is reserved for an active Orbit node.', 'name', 'node_name_reserved');
+            return $this->validationFailure(
+                'VPN client name is reserved for an active Orbit node.',
+                'name',
+                'node_name_reserved',
+            );
         }
 
         try {
@@ -94,8 +98,12 @@ final readonly class VpnClientManager
             return $this->backend->changeWebUiPassword($password, $totp);
         } catch (RuntimeException $e) {
             return new VpnFailure(
-                code: str_contains($e->getMessage(), 'authentication') ? 'vpn_backend_auth_failed' : 'vpn_credential_rotation_failed',
-                message: str_contains($e->getMessage(), 'authentication') ? 'VPN backend authentication failed.' : 'VPN credential rotation failed.',
+                code: str_contains($e->getMessage(), 'authentication')
+                    ? 'vpn_backend_auth_failed'
+                    : 'vpn_credential_rotation_failed',
+                message: str_contains($e->getMessage(), 'authentication')
+                    ? 'VPN backend authentication failed.'
+                    : 'VPN credential rotation failed.',
                 meta: str_contains($e->getMessage(), 'authentication') ? [] : ['step' => 'credential_store'],
             );
         }
@@ -139,7 +147,11 @@ final readonly class VpnClientManager
                 }
 
                 if ($client->kind !== 'admin') {
-                    return $this->validationFailure('VPN client cannot be safely classified as mutable.', 'name', 'unknown_peer');
+                    return $this->validationFailure(
+                        'VPN client cannot be safely classified as mutable.',
+                        'name',
+                        'unknown_peer',
+                    );
                 }
 
                 return $client;
@@ -197,10 +209,13 @@ final readonly class VpnClientManager
         return new VpnFailure(
             code: 'validation_failed',
             message: $message,
-            meta: array_filter([
-                'field' => $field,
-                'reason' => $reason,
-            ], fn (?string $value): bool => $value !== null),
+            meta: array_filter(
+                [
+                    'field' => $field,
+                    'reason' => $reason,
+                ],
+                fn (?string $value): bool => $value !== null,
+            ),
         );
     }
 

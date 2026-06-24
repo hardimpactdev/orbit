@@ -85,10 +85,11 @@ function incusReleaseConfig(string $host = 'beast'): E2EConfig
 
 function recordingIncusReleaseHost(E2EConfig $config, ArrayObject $log): IncusHost
 {
-    return new class($config, $log) extends IncusHost
-    {
-        public function __construct(E2EConfig $config, private readonly ArrayObject $log)
-        {
+    return new class($config, $log) extends IncusHost {
+        public function __construct(
+            E2EConfig $config,
+            private readonly ArrayObject $log,
+        ) {
             parent::__construct($config);
         }
 
@@ -113,16 +114,20 @@ function recordingIncusReleaseHost(E2EConfig $config, ArrayObject $log): IncusHo
 function incusReleaseCommandWith(ArrayObject $log): void
 {
     $command = app(E2EDevTopologyReleaseCommand::class);
-    $command->hostFactoryUsing(fn (string $host): IncusHost => recordingIncusReleaseHost(incusReleaseConfig($host), $log));
+    $command->hostFactoryUsing(fn (string $host): IncusHost => recordingIncusReleaseHost(
+        incusReleaseConfig($host),
+        $log,
+    ));
     app()->instance(E2EDevTopologyReleaseCommand::class, $command);
 }
 
 function recordingIncusLiveHost(E2EConfig $config, ArrayObject $log): IncusHost
 {
-    return new class($config, $log) extends IncusHost
-    {
-        public function __construct(E2EConfig $config, private readonly ArrayObject $log)
-        {
+    return new class($config, $log) extends IncusHost {
+        public function __construct(
+            E2EConfig $config,
+            private readonly ArrayObject $log,
+        ) {
             parent::__construct($config);
         }
 
@@ -175,8 +180,7 @@ function recordingIncusLiveHost(E2EConfig $config, ArrayObject $log): IncusHost
 
 function recordingLiveIncusLocalMachine(ArrayObject $log, bool $toolsAvailable = true): LiveIncusLocalMachine
 {
-    return new class($log, $toolsAvailable) extends LiveIncusLocalMachine
-    {
+    return new class($log, $toolsAvailable) extends LiveIncusLocalMachine {
         public function __construct(
             private readonly ArrayObject $log,
             private readonly bool $toolsAvailable,
@@ -228,7 +232,10 @@ function recordingLiveIncusLocalMachine(ArrayObject $log, bool $toolsAvailable =
         #[Override]
         public function addGateway(string $gatewayIp, string $gatewayName): ProcessResult
         {
-            $this->log['local_runs'] = [...($this->log['local_runs'] ?? []), "orbit gateway:add {$gatewayIp} --name={$gatewayName} --json"];
+            $this->log['local_runs'] = [
+                ...($this->log['local_runs'] ?? []),
+                "orbit gateway:add {$gatewayIp} --name={$gatewayName} --json",
+            ];
 
             return Process::result(output: json_encode([
                 'success' => [
@@ -260,9 +267,12 @@ function incusLiveCommandWith(ArrayObject $log, ?LiveIncusLocalMachine $localMac
 /**
  * @param  array<string, string>  $checkouts
  */
-function writeIncusRetainedManifest(string $directory, string $id, array $checkouts = ['operator' => '/home/orbit/orbit-current']): void
-{
-    (new E2EDevTopologyManifestStore($directory))->write([
+function writeIncusRetainedManifest(
+    string $directory,
+    string $id,
+    array $checkouts = ['operator' => '/home/orbit/orbit-current'],
+): void {
+    new E2EDevTopologyManifestStore($directory)->write([
         'id' => $id,
         'kind' => 'operator_gateway_app-dev',
         'provider' => 'incus',
@@ -283,19 +293,24 @@ function writeIncusRetainedManifest(string $directory, string $id, array $checko
 it('starts a retained Incus topology with the friendly command surface', function (): void {
     incusDevTopologyCommandWith(fn (E2ETopologyKind $kind, array $roles): array => fakeIncusPreparedTopology());
 
-    $this->artisan('e2e:incus', [
-        '--start' => true,
-        '--topology' => 'operator_gateway_app-dev',
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--start' => true,
+            '--topology' => 'operator_gateway_app-dev',
+        ])
         ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
         ->expectsOutputToContain('Release: composer e2e:incus -- --stop --id=dev-abc123')
         ->assertSuccessful();
 
-    $manifest = (new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123');
+    $manifest = new E2EDevTopologyManifestStore($this->manifestDirectory)->read('dev-abc123');
 
-    expect($manifest)->not->toBeNull()
-        ->and($manifest['kind'])->toBe('operator_gateway_app-dev')
-        ->and($manifest['provider'])->toBe('incus');
+    expect($manifest)
+        ->not
+        ->toBeNull()
+        ->and($manifest['kind'])
+        ->toBe('operator_gateway_app-dev')
+        ->and($manifest['provider'])
+        ->toBe('incus');
 });
 
 it('renders dry-run json with the friendly start and stop command shapes', function (): void {
@@ -313,10 +328,14 @@ it('renders dry-run json with the friendly start and stop command shapes', funct
     $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
     $devTopology = $payload['success']['dev_topology'];
 
-    expect($devTopology['provider'])->toBe('incus')
-        ->and($devTopology['kind'])->toBe('operator_gateway_app-dev')
-        ->and($devTopology['shell_command'])->toBe('composer e2e:incus -- --start --topology=operator_gateway_app-dev')
-        ->and($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run');
+    expect($devTopology['provider'])
+        ->toBe('incus')
+        ->and($devTopology['kind'])
+        ->toBe('operator_gateway_app-dev')
+        ->and($devTopology['shell_command'])
+        ->toBe('composer e2e:incus -- --start --topology=operator_gateway_app-dev')
+        ->and($devTopology['release_command'])
+        ->toBe('composer e2e:incus -- --stop --id=dry-run');
 });
 
 it('renders dry-run json for a dedicated ingress Incus topology', function (): void {
@@ -334,10 +353,14 @@ it('renders dry-run json for a dedicated ingress Incus topology', function (): v
     $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
     $devTopology = $payload['success']['dev_topology'];
 
-    expect($devTopology['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
-        ->and($devTopology['checkout_roles'])->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'ingress'])
-        ->and($devTopology['shell_command'])->toBe('composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod_ingress')
-        ->and($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dry-run');
+    expect($devTopology['kind'])
+        ->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and($devTopology['checkout_roles'])
+        ->toBe(['operator', 'gateway', 'app-dev', 'app-prod', 'ingress'])
+        ->and($devTopology['shell_command'])
+        ->toBe('composer e2e:incus -- --start --topology=operator_gateway_app-dev_app-prod_ingress')
+        ->and($devTopology['release_command'])
+        ->toBe('composer e2e:incus -- --stop --id=dry-run');
 });
 
 it('creates a live accessible Incus topology and prints local onboarding instructions', function (): void {
@@ -349,50 +372,87 @@ it('creates a live accessible Incus topology and prints local onboarding instruc
     incusLiveCommandWith($log);
 
     $output = new BufferedOutput;
-    $exitCode = app(Kernel::class)->call('e2e:incus', [
-        '--live' => true,
-        '--topology' => 'operator_gateway_app-dev_app-prod_ingress',
-        '--json' => true,
-    ], $output);
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--live' => true,
+            '--topology' => 'operator_gateway_app-dev_app-prod_ingress',
+            '--json' => true,
+        ],
+        $output,
+    );
 
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
     $liveTopology = $payload['success']['live_topology'];
 
     $wireGuardConfigPath = "{$this->manifestDirectory}/oe2eabc123.conf";
-    $manifest = (new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123');
+    $manifest = new E2EDevTopologyManifestStore($this->manifestDirectory)->read('dev-abc123');
 
-    expect($exitCode)->toBe(0)
-        ->and($liveTopology['id'])->toBe('dev-abc123')
-        ->and($liveTopology['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
-        ->and($liveTopology['wireguard_endpoint'])->toBe('192.168.1.150:51820')
-        ->and($liveTopology['wireguard']['endpoint'])->toBe('192.168.1.150:51820')
-        ->and($liveTopology['wireguard']['interface'])->toBe('oe2eabc123')
-        ->and($liveTopology['wireguard']['real_interface'])->toBe('utun42')
-        ->and($liveTopology['wireguard']['config_path'])->toBe($wireGuardConfigPath)
-        ->and($liveTopology['wireguard']['started'])->toBeTrue()
-        ->and($liveTopology['wireguard']['gateway_added'])->toBeTrue()
-        ->and($liveTopology['wireguard']['verified'])->toBeTrue()
-        ->and($liveTopology['operator_node'])->toBe('mac-dev-abc123')
-        ->and($liveTopology['gateway_add_command'])->toBe('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123')
-        ->and($liveTopology['gateway_use_command'])->toBe('orbit gateway:use incus-dev-abc123')
-        ->and($liveTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
-        ->and($liveTopology['commands']['stop'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
-        ->and($liveTopology['commands']['gateway_check'])->toBe('orbit node:list --json')
-        ->and($liveTopology['next_steps'])->toContain('WireGuard tunnel [oe2eabc123] is active.')
-        ->and($liveTopology['next_steps'])->toContain('Local gateway [incus-dev-abc123] is active.')
-        ->and($wireGuardConfigPath)->toBeFile()
-        ->and($manifest['kind'])->toBe('operator_gateway_app-dev_app-prod_ingress')
-        ->and($manifest['live']['wireguard']['interface'])->toBe('oe2eabc123')
-        ->and($manifest['live']['wireguard']['started'])->toBeTrue()
-        ->and($manifest['live']['gateway']['name'])->toBe('incus-dev-abc123')
-        ->and($manifest['live']['gateway']['added'])->toBeTrue()
-        ->and(file_get_contents($wireGuardConfigPath))->toContain('Endpoint = 192.168.1.150:51820')
-        ->and(file_get_contents($wireGuardConfigPath))->not->toContain('Endpoint = 10.6.0.2:51820')
-        ->and($log['runs'][0])->toContain("incus exec 'orbit-e2e-dev-abc123-operator'")
-        ->and($log['runs'][0])->toContain('orbit node:new mac-dev-abc123 --operator --json')
-        ->and($log['local_runs'])->toContain("wg-quick up {$wireGuardConfigPath}")
-        ->and($log['local_runs'])->toContain('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123 --json')
-        ->and($log['local_runs'])->toContain('curl http://10.6.0.2/api/ca/root');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($liveTopology['id'])
+        ->toBe('dev-abc123')
+        ->and($liveTopology['kind'])
+        ->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and($liveTopology['wireguard_endpoint'])
+        ->toBe('192.168.1.150:51820')
+        ->and($liveTopology['wireguard']['endpoint'])
+        ->toBe('192.168.1.150:51820')
+        ->and($liveTopology['wireguard']['interface'])
+        ->toBe('oe2eabc123')
+        ->and($liveTopology['wireguard']['real_interface'])
+        ->toBe('utun42')
+        ->and($liveTopology['wireguard']['config_path'])
+        ->toBe($wireGuardConfigPath)
+        ->and($liveTopology['wireguard']['started'])
+        ->toBeTrue()
+        ->and($liveTopology['wireguard']['gateway_added'])
+        ->toBeTrue()
+        ->and($liveTopology['wireguard']['verified'])
+        ->toBeTrue()
+        ->and($liveTopology['operator_node'])
+        ->toBe('mac-dev-abc123')
+        ->and($liveTopology['gateway_add_command'])
+        ->toBe('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123')
+        ->and($liveTopology['gateway_use_command'])
+        ->toBe('orbit gateway:use incus-dev-abc123')
+        ->and($liveTopology['release_command'])
+        ->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+        ->and($liveTopology['commands']['stop'])
+        ->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+        ->and($liveTopology['commands']['gateway_check'])
+        ->toBe('orbit node:list --json')
+        ->and($liveTopology['next_steps'])
+        ->toContain('WireGuard tunnel [oe2eabc123] is active.')
+        ->and($liveTopology['next_steps'])
+        ->toContain('Local gateway [incus-dev-abc123] is active.')
+        ->and($wireGuardConfigPath)
+        ->toBeFile()
+        ->and($manifest['kind'])
+        ->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and($manifest['live']['wireguard']['interface'])
+        ->toBe('oe2eabc123')
+        ->and($manifest['live']['wireguard']['started'])
+        ->toBeTrue()
+        ->and($manifest['live']['gateway']['name'])
+        ->toBe('incus-dev-abc123')
+        ->and($manifest['live']['gateway']['added'])
+        ->toBeTrue()
+        ->and(file_get_contents($wireGuardConfigPath))
+        ->toContain('Endpoint = 192.168.1.150:51820')
+        ->and(file_get_contents($wireGuardConfigPath))
+        ->not
+        ->toContain('Endpoint = 10.6.0.2:51820')
+        ->and($log['runs'][0])
+        ->toContain("incus exec 'orbit-e2e-dev-abc123-operator'")
+        ->and($log['runs'][0])
+        ->toContain('orbit node:new mac-dev-abc123 --operator --json')
+        ->and($log['local_runs'])
+        ->toContain("wg-quick up {$wireGuardConfigPath}")
+        ->and($log['local_runs'])
+        ->toContain('orbit gateway:add 10.6.0.2 --name=incus-dev-abc123 --json')
+        ->and($log['local_runs'])
+        ->toContain('curl http://10.6.0.2/api/ca/root');
 });
 
 it('reads live WireGuard endpoint from the PHP environment store', function (): void {
@@ -404,17 +464,24 @@ it('reads live WireGuard endpoint from the PHP environment store', function (): 
     incusLiveCommandWith($log);
 
     $output = new BufferedOutput;
-    $exitCode = app(Kernel::class)->call('e2e:incus', [
-        '--live' => true,
-        '--manual' => true,
-        '--json' => true,
-    ], $output);
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--live' => true,
+            '--manual' => true,
+            '--json' => true,
+        ],
+        $output,
+    );
 
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($payload['success']['live_topology']['wireguard_endpoint'])->toBe('192.168.1.151:51820')
-        ->and($payload['success']['live_topology']['wireguard']['endpoint'])->toBe('192.168.1.151:51820');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($payload['success']['live_topology']['wireguard_endpoint'])
+        ->toBe('192.168.1.151:51820')
+        ->and($payload['success']['live_topology']['wireguard']['endpoint'])
+        ->toBe('192.168.1.151:51820');
 });
 
 it('prints the live WireGuard config and follow-up gateway commands in human mode', function (): void {
@@ -425,10 +492,11 @@ it('prints the live WireGuard config and follow-up gateway commands in human mod
     $log = new ArrayObject(['runs' => []]);
     incusLiveCommandWith($log);
 
-    $this->artisan('e2e:incus', [
-        '--live' => true,
-        '--topology' => 'operator_gateway_app-dev',
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--live' => true,
+            '--topology' => 'operator_gateway_app-dev',
+        ])
         ->expectsOutputToContain('Preparing live Incus topology')
         ->expectsOutputToContain('Validate live endpoint')
         ->expectsOutputToContain('Acquire topology')
@@ -457,22 +525,33 @@ it('can create a live topology in manual mode without mutating the local host', 
     incusLiveCommandWith($log);
 
     $output = new BufferedOutput;
-    $exitCode = app(Kernel::class)->call('e2e:incus', [
-        '--live' => true,
-        '--manual' => true,
-        '--json' => true,
-    ], $output);
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--live' => true,
+            '--manual' => true,
+            '--json' => true,
+        ],
+        $output,
+    );
 
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
     $liveTopology = $payload['success']['live_topology'];
 
-    expect($exitCode)->toBe(0)
-        ->and($liveTopology['wireguard']['started'])->toBeFalse()
-        ->and($liveTopology['wireguard']['gateway_added'])->toBeFalse()
-        ->and($liveTopology['wireguard']['verified'])->toBeFalse()
-        ->and($liveTopology['next_steps'])->toContain("Run `wg-quick up {$this->manifestDirectory}/oe2eabc123.conf`.")
-        ->and($liveTopology['next_steps'])->toContain('Run `orbit gateway:add 10.6.0.2 --name=incus-dev-abc123`.')
-        ->and($log['local_runs'])->toBe([]);
+    expect($exitCode)
+        ->toBe(0)
+        ->and($liveTopology['wireguard']['started'])
+        ->toBeFalse()
+        ->and($liveTopology['wireguard']['gateway_added'])
+        ->toBeFalse()
+        ->and($liveTopology['wireguard']['verified'])
+        ->toBeFalse()
+        ->and($liveTopology['next_steps'])
+        ->toContain("Run `wg-quick up {$this->manifestDirectory}/oe2eabc123.conf`.")
+        ->and($liveTopology['next_steps'])
+        ->toContain('Run `orbit gateway:add 10.6.0.2 --name=incus-dev-abc123`.')
+        ->and($log['local_runs'])
+        ->toBe([]);
 });
 
 it('fails live local setup before mutation when wg quick tooling is unavailable', function (): void {
@@ -483,22 +562,23 @@ it('fails live local setup before mutation when wg quick tooling is unavailable'
     $log = new ArrayObject(['runs' => [], 'local_runs' => []]);
     incusLiveCommandWith($log, recordingLiveIncusLocalMachine($log, toolsAvailable: false));
 
-    $this->artisan('e2e:incus', [
-        '--live' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--live' => true,
+            '--json' => true,
+        ])
         ->expectsOutputToContain('local_wireguard_unavailable')
         ->assertExitCode(1);
 
-    expect($log['runs'])->toBe([])
-        ->and($log['local_runs'])->toBe([]);
+    expect($log['runs'])->toBe([])->and($log['local_runs'])->toBe([]);
 });
 
 it('rejects live mode without a configured WireGuard endpoint', function (): void {
-    $this->artisan('e2e:incus', [
-        '--live' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--live' => true,
+            '--json' => true,
+        ])
         ->expectsOutputToContain('Set ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT')
         ->assertExitCode(1);
 });
@@ -506,11 +586,12 @@ it('rejects live mode without a configured WireGuard endpoint', function (): voi
 it('rejects dry-run live mode because no operator identity can be minted', function (): void {
     putenv('ORBIT_E2E_LIVE_WIREGUARD_ENDPOINT=192.168.1.150:51820');
 
-    $this->artisan('e2e:incus', [
-        '--live' => true,
-        '--dry-run' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--live' => true,
+            '--dry-run' => true,
+            '--json' => true,
+        ])
         ->expectsOutputToContain('--live cannot be combined with --dry-run')
         ->assertExitCode(1);
 });
@@ -527,26 +608,40 @@ it('syncs the current checkout to a retained Incus topology by id', function ():
     });
 
     $output = new BufferedOutput;
-    $exitCode = app(Kernel::class)->call('e2e:incus', [
-        '--sync' => true,
-        '--id' => 'dev-abc123',
-        '--json' => true,
-    ], $output);
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
 
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
     $sync = $payload['success']['source_sync'];
     $commandsOutput = implode("\n", $commands);
 
-    expect($exitCode)->toBe(0)
-        ->and($sync['id'])->toBe('dev-abc123')
-        ->and($sync['kind'])->toBe('operator_gateway_app-dev')
-        ->and($sync['provider'])->toBe('incus')
-        ->and($sync['host'])->toBe('beast')
-        ->and($sync['source_path'])->toContain('-incus-')
-        ->and($sync['checkouts']['operator'])->toBe('/home/orbit/orbit-current')
-        ->and($sync['runtime_checkouts']['operator'])->toBe('/home/orbit/orbit-current')
-        ->and($sync['sync_command'])->toBe('composer e2e:incus -- --sync --id=dev-abc123')
-        ->and($sync['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+    expect($exitCode)
+        ->toBe(0)
+        ->and($sync['id'])
+        ->toBe('dev-abc123')
+        ->and($sync['kind'])
+        ->toBe('operator_gateway_app-dev')
+        ->and($sync['provider'])
+        ->toBe('incus')
+        ->and($sync['host'])
+        ->toBe('beast')
+        ->and($sync['source_path'])
+        ->toContain('-incus-')
+        ->and($sync['checkouts']['operator'])
+        ->toBe('/home/orbit/orbit-current')
+        ->and($sync['runtime_checkouts']['operator'])
+        ->toBe('/home/orbit/orbit-current')
+        ->and($sync['sync_command'])
+        ->toBe('composer e2e:incus -- --sync --id=dev-abc123')
+        ->and($sync['release_command'])
+        ->toBe('composer e2e:incus -- --stop --id=dev-abc123')
         ->and($commandsOutput)
         ->toContain('rsync -az --delete')
         ->toContain("'beast:{$sync['source_path']}/'")
@@ -579,18 +674,24 @@ it('syncs source-mounted retained Incus checkouts into overlay runtime paths', f
     });
 
     $output = new BufferedOutput;
-    $exitCode = app(Kernel::class)->call('e2e:incus', [
-        '--sync' => true,
-        '--id' => 'dev-abc123',
-        '--json' => true,
-    ], $output);
+    $exitCode = app(Kernel::class)->call(
+        'e2e:incus',
+        [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+            '--json' => true,
+        ],
+        $output,
+    );
 
     $payload = json_decode(trim($output->fetch()), true, flags: JSON_THROW_ON_ERROR);
     $sync = $payload['success']['source_sync'];
     $commandsOutput = implode("\n", $commands);
 
-    expect($exitCode)->toBe(0)
-        ->and($sync['runtime_checkouts'])->toBe([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($sync['runtime_checkouts'])
+        ->toBe([
             'operator' => '/home/orbit/orbit-run',
             'gateway' => '/home/orbit/orbit-run',
             'dev' => '/home/orbit/orbit-run',
@@ -613,10 +714,11 @@ it('prints a human retained Incus sync summary', function (): void {
 
     Process::fake(fn () => Process::result());
 
-    $this->artisan('e2e:incus', [
-        '--sync' => true,
-        '--id' => 'dev-abc123',
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--sync' => true,
+            '--id' => 'dev-abc123',
+        ])
         ->expectsOutputToContain('Synced retained Incus topology [dev-abc123].')
         ->expectsOutputToContain('Host: beast')
         ->expectsOutputToContain('Source path:')
@@ -627,10 +729,11 @@ it('prints a human retained Incus sync summary', function (): void {
 });
 
 it('requires an id when syncing a retained Incus topology', function (): void {
-    $this->artisan('e2e:incus', [
-        '--sync' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--sync' => true,
+            '--json' => true,
+        ])
         ->expectsOutputToContain('A retained topology id is required for --sync.')
         ->assertExitCode(1);
 });
@@ -647,12 +750,14 @@ it('stops a retained Incus topology by id', function (): void {
         '--json' => true,
     ])->assertSuccessful();
 
-    expect($log['deleted'])->toBe([[
-        'orbit-e2e-dev-abc123-operator',
-        'orbit-e2e-dev-abc123-gateway',
-        'orbit-e2e-dev-abc123-dev',
-    ]])
-        ->and((new E2EDevTopologyManifestStore($this->manifestDirectory))->read('dev-abc123'))->toBeNull();
+    expect($log['deleted'])
+        ->toBe([[
+            'orbit-e2e-dev-abc123-operator',
+            'orbit-e2e-dev-abc123-gateway',
+            'orbit-e2e-dev-abc123-dev',
+        ]])
+        ->and(new E2EDevTopologyManifestStore($this->manifestDirectory)->read('dev-abc123'))
+        ->toBeNull();
 });
 
 it('stops a recorded live wg quick tunnel before releasing the topology', function (): void {
@@ -699,8 +804,7 @@ it('stops a recorded live wg quick tunnel before releasing the topology', functi
         '--json' => true,
     ])->assertSuccessful();
 
-    expect($log['local_runs'])->toContain("wg-quick down {$configPath}")
-        ->and($log['deleted'])->toHaveCount(1);
+    expect($log['local_runs'])->toContain("wg-quick down {$configPath}")->and($log['deleted'])->toHaveCount(1);
 });
 
 it('stops every retained Incus topology with all', function (): void {
@@ -716,29 +820,43 @@ it('stops every retained Incus topology with all', function (): void {
         '--json' => true,
     ])->assertSuccessful();
 
-    expect($log['deleted'])->toHaveCount(2)
-        ->and((new E2EDevTopologyManifestStore($this->manifestDirectory))->list())->toBe([]);
+    expect($log['deleted'])
+        ->toHaveCount(2)
+        ->and(new E2EDevTopologyManifestStore($this->manifestDirectory)->list())
+        ->toBe([]);
 });
 
 it('rejects ambiguous start and stop mode selection', function (): void {
-    $this->artisan('e2e:incus', [
-        '--start' => true,
-        '--stop' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:incus', [
+            '--start' => true,
+            '--stop' => true,
+            '--json' => true,
+        ])
         ->expectsOutputToContain('Choose exactly one Incus topology action: --start, --stop, --live, or --sync.')
         ->assertExitCode(1);
 });
 
 it('routes composer incus scripts through apps e2e only', function (): void {
-    $rootComposer = json_decode((string) file_get_contents(repo_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
-    $e2eComposer = json_decode((string) file_get_contents(repo_path('apps/e2e/composer.json')), true, flags: JSON_THROW_ON_ERROR);
+    $rootComposer = json_decode(
+        (string) file_get_contents(repo_path('composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $e2eComposer = json_decode(
+        (string) file_get_contents(repo_path('apps/e2e/composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     $rootIncus = implode("\n", (array) ($rootComposer['scripts']['e2e:incus'] ?? []));
     $e2eIncus = implode("\n", (array) ($e2eComposer['scripts']['e2e:incus'] ?? []));
 
-    expect($rootIncus)->toContain('composer --working-dir=apps/e2e e2e:incus')
-        ->and($e2eIncus)->toContain('php bin/e2e-incus')
-        ->and($rootIncus.$e2eIncus)->not->toContain('orbit-gateway-artisan')
-        ->and($rootIncus.$e2eIncus)->not->toContain('apps/gateway/artisan');
+    expect($rootIncus)
+        ->toContain('composer --working-dir=apps/e2e e2e:incus')
+        ->and($e2eIncus)
+        ->toContain('php bin/e2e-incus')
+        ->and($rootIncus.$e2eIncus)
+        ->not->toContain('orbit-gateway-artisan')->and($rootIncus.$e2eIncus)
+        ->not->toContain('apps/gateway/artisan');
 });

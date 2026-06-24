@@ -146,26 +146,53 @@ class GatewayServiceUpdater
         return $this->swarm()->serviceReplicas(self::GatewayService) === '1/1';
     }
 
-    private function recoverScheduler(OperationRun $operationRun, ?string $previousSchedulerImage, Throwable $original): void
-    {
-        $this->operationRuns()->appendStep($operationRun->id, 'scheduler.recovery', 'running', 'Restoring orbit-scheduler service');
+    private function recoverScheduler(
+        OperationRun $operationRun,
+        ?string $previousSchedulerImage,
+        Throwable $original,
+    ): void {
+        $this->operationRuns()->appendStep(
+            $operationRun->id,
+            'scheduler.recovery',
+            'running',
+            'Restoring orbit-scheduler service',
+        );
 
         try {
             if ($previousSchedulerImage === null) {
                 throw new RuntimeException('Previous scheduler image could not be inspected.');
             }
 
-            $this->swarm()->updateServiceImage(self::SchedulerService, GatewayImageReference::fromString($previousSchedulerImage), 'stop-first');
+            $this->swarm()->updateServiceImage(
+                self::SchedulerService,
+                GatewayImageReference::fromString($previousSchedulerImage),
+                'stop-first',
+            );
             $this->swarm()->scaleService(self::SchedulerService, 1);
-            $this->operationRuns()->appendStep($operationRun->id, 'scheduler.recovery', 'done', 'orbit-scheduler service restored');
+            $this->operationRuns()->appendStep(
+                $operationRun->id,
+                'scheduler.recovery',
+                'done',
+                'orbit-scheduler service restored',
+            );
         } catch (Throwable $recovery) {
-            $this->operationRuns()->appendStep($operationRun->id, 'scheduler.recovery', 'fail', $recovery->getMessage());
+            $this->operationRuns()->appendStep(
+                $operationRun->id,
+                'scheduler.recovery',
+                'fail',
+                $recovery->getMessage(),
+            );
             $this->recordSchedulerRecoveryFailed($operationRun, $previousSchedulerImage, $original, $recovery);
         }
     }
 
-    private function runStep(OperationRun $operationRun, string $key, string $runningMessage, string $doneMessage, callable $callback): null
-    {
+    private function runStep(
+        OperationRun $operationRun,
+        string $key,
+        string $runningMessage,
+        string $doneMessage,
+        callable $callback,
+    ): null {
         $this->operationRuns()->appendStep($operationRun->id, $key, 'running', $runningMessage);
 
         try {
@@ -202,8 +229,11 @@ class GatewayServiceUpdater
         ]);
     }
 
-    private function recordInstalledGatewayImage(OperationRun $operationRun, OperationUpdatePlan $plan, GatewayImageReference $targetImage): void
-    {
+    private function recordInstalledGatewayImage(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        GatewayImageReference $targetImage,
+    ): void {
         $gatewayNode = $this->targets()->gatewayNode();
 
         if ($gatewayNode === null) {
@@ -237,11 +267,15 @@ class GatewayServiceUpdater
             return $scaleCommand;
         }
 
-        return 'docker service update --detach=true --image '.escapeshellarg($previousSchedulerImage)
-            .' --update-order '.escapeshellarg('stop-first')
+        return (
+            'docker service update --detach=true --image '
+            .escapeshellarg($previousSchedulerImage)
+            .' --update-order '
+            .escapeshellarg('stop-first')
             .' --update-failure-action rollback --update-monitor 60s '
             .escapeshellarg(self::SchedulerService)
-            ." && {$scaleCommand}";
+            ." && {$scaleCommand}"
+        );
     }
 
     private function swarm(): GatewaySwarmManager

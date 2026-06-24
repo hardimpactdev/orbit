@@ -19,7 +19,7 @@ it('keeps CLI enums under App\\Enums and exceptions under App\\Exceptions', func
         expect(class_exists($class))->toBeTrue("Expected {$class} to exist.");
 
         if (class_exists($class)) {
-            expect((new ReflectionClass($class))->isFinal())->toBeTrue("Expected {$class} to be final.");
+            expect(new ReflectionClass($class)->isFinal())->toBeTrue("Expected {$class} to be final.");
         }
     }
 

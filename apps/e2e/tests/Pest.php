@@ -5,27 +5,27 @@ declare(strict_types=1);
 use Tests\TestCase;
 
 /*
-|--------------------------------------------------------------------------
-| Test Case
-|--------------------------------------------------------------------------
-|
-| apps/e2e is a Laravel 13 application that hosts the external Orbit E2E
-| harness. Feature tests boot the application so the topology/provider
-| support layer can use the framework (Process, filesystem, paths, etc.)
-| while still driving Orbit only through external CLI/API/SSH/Docker/Incus
-| boundaries.
-|
-*/
+ |--------------------------------------------------------------------------
+ | Test Case
+ |--------------------------------------------------------------------------
+ |
+ | apps/e2e is a Laravel 13 application that hosts the external Orbit E2E
+ | harness. Feature tests boot the application so the topology/provider
+ | support layer can use the framework (Process, filesystem, paths, etc.)
+ | while still driving Orbit only through external CLI/API/SSH/Docker/Incus
+ | boundaries.
+ |
+ */
 
 uses(TestCase::class)->in('Feature');
 
 require_once __DIR__.'/E2E/Support/Pest.php';
 
 /*
-|--------------------------------------------------------------------------
-| Harness helpers
-|--------------------------------------------------------------------------
-*/
+ |--------------------------------------------------------------------------
+ | Harness helpers
+ |--------------------------------------------------------------------------
+ */
 
 function make_temp_directory(string $prefix): string
 {

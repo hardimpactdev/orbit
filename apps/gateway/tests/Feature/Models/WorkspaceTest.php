@@ -38,11 +38,16 @@ it('stores workspace registry intent and derives canonical fields', function ():
         'lifecycle_status' => WorkspaceLifecycleStatus::SetupPending,
     ]);
 
-    expect($workspace->app->is($app))->toBeTrue()
-        ->and($app->workspaces()->pluck('name')->all())->toBe(['feature-docs'])
-        ->and($workspace->effectivePhpVersion())->toBe('8.5')
-        ->and($workspace->url())->toBe('https://feature-docs.docs.test')
-        ->and($workspace->lifecycle_status)->toBe(WorkspaceLifecycleStatus::SetupPending);
+    expect($workspace->app->is($app))
+        ->toBeTrue()
+        ->and($app->workspaces()->pluck('name')->all())
+        ->toBe(['feature-docs'])
+        ->and($workspace->effectivePhpVersion())
+        ->toBe('8.5')
+        ->and($workspace->url())
+        ->toBe('https://feature-docs.docs.test')
+        ->and($workspace->lifecycle_status)
+        ->toBe(WorkspaceLifecycleStatus::SetupPending);
 });
 
 it('prefers an explicit workspace php version over the parent app version', function (): void {
@@ -77,7 +82,8 @@ it('keeps workspace names unique within a parent app only', function (): void {
     expect(fn () => Workspace::factory()->create([
         'app_id' => $firstApp->id,
         'name' => 'feature-docs',
-    ]))->toThrow(QueryException::class);
+    ]))
+        ->toThrow(QueryException::class);
 });
 
 it('keeps durable run history when step definitions are removed', function (): void {
@@ -102,11 +108,16 @@ it('keeps durable run history when step definitions are removed', function (): v
     $step->delete();
     $runStep->refresh();
 
-    expect($workspace->runs()->first()->is($run))->toBeTrue()
-        ->and($run->runSteps()->first()->is($runStep))->toBeTrue()
-        ->and($run->phase)->toBe(WorkspaceLifecyclePhase::Setup)
-        ->and($runStep->workspace_step_id)->toBeNull()
-        ->and($runStep->step)->toBeNull();
+    expect($workspace->runs()->first()->is($run))
+        ->toBeTrue()
+        ->and($run->runSteps()->first()->is($runStep))
+        ->toBeTrue()
+        ->and($run->phase)
+        ->toBe(WorkspaceLifecyclePhase::Setup)
+        ->and($runStep->workspace_step_id)
+        ->toBeNull()
+        ->and($runStep->step)
+        ->toBeNull();
 });
 
 it('allows proxy routes to point at workspace-owned intent', function (): void {
@@ -123,6 +134,8 @@ it('allows proxy routes to point at workspace-owned intent', function (): void {
         'source_hash' => str_repeat('b', 64),
     ]);
 
-    expect($route->workspace->is($workspace))->toBeTrue()
-        ->and($workspace->proxyRoutes()->first()->is($route))->toBeTrue();
+    expect($route->workspace->is($workspace))
+        ->toBeTrue()
+        ->and($workspace->proxyRoutes()->first()->is($route))
+        ->toBeTrue();
 });

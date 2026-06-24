@@ -26,12 +26,14 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Throwable;
 
-#[Signature('e2e:dev-topology
+#[Signature(
+    'e2e:dev-topology
     {--dry-run : Render the acquisition plan without provisioning a topology}
     {--json : Output as JSON}
     {--kind=operator_gateway_app-dev : Prepared topology kind to acquire}
     {--provider=incus : Topology provider (incus|docker)}
-    {--checkout-roles= : Comma-separated roles to overlay the current checkout onto (defaults to every role in the kind)}')]
+    {--checkout-roles= : Comma-separated roles to overlay the current checkout onto (defaults to every role in the kind)}',
+)]
 #[Description('Acquire a retained prepared topology for manual + performance diagnosis')]
 class E2EDevTopologyCommand extends Command
 {
@@ -172,8 +174,12 @@ class E2EDevTopologyCommand extends Command
      *     created_at: string
      * }
      */
-    private function acquireRetainedTopology(string $provider, E2ETopologyKind $kind, array $displayRoles, bool $streamTimings = false): array
-    {
+    private function acquireRetainedTopology(
+        string $provider,
+        E2ETopologyKind $kind,
+        array $displayRoles,
+        bool $streamTimings = false,
+    ): array {
         $config = E2EConfig::fromEnvironment();
         $overlayRoles = $this->overlayCheckoutRoles($kind, $displayRoles);
 
@@ -200,8 +206,12 @@ class E2EDevTopologyCommand extends Command
      * }  $prepared
      * @return array<string, mixed>
      */
-    private function retainedManifest(E2EConfig $config, string $provider, E2ETopologyKind $kind, array $prepared): array
-    {
+    private function retainedManifest(
+        E2EConfig $config,
+        string $provider,
+        E2ETopologyKind $kind,
+        array $prepared,
+    ): array {
         $manifest = [
             'id' => $prepared['run_id'],
             'kind' => $kind->value,
@@ -259,8 +269,13 @@ class E2EDevTopologyCommand extends Command
      *     timings: list<array{name: string, seconds: float}>
      * }
      */
-    private function acquireAndOverlay(E2EConfig $config, string $providerName, E2ETopologyKind $kind, array $overlayRoles, bool $streamTimings): array
-    {
+    private function acquireAndOverlay(
+        E2EConfig $config,
+        string $providerName,
+        E2ETopologyKind $kind,
+        array $overlayRoles,
+        bool $streamTimings,
+    ): array {
         $runId = 'dev-'.bin2hex(random_bytes(3));
         $timer = new E2EPhaseTimer(
             stream: $streamTimings && ! $this->laravel->runningUnitTests(),
@@ -329,7 +344,10 @@ class E2EDevTopologyCommand extends Command
     private function hostForLease(string $provider, E2EConfig $config, E2ETopologyLease $lease): string
     {
         if ($provider !== 'docker') {
-            $availability = IncusHostPool::fromEnvironment($config)->availabilityFor($lease->kind(), checkCapacity: false);
+            $availability = IncusHostPool::fromEnvironment($config)->availabilityFor(
+                $lease->kind(),
+                checkCapacity: false,
+            );
 
             return $availability['host']?->config->host ?? $config->host;
         }
@@ -441,8 +459,10 @@ class E2EDevTopologyCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function writeRetainedFailureManifest(E2ETopologyKind $kind, E2ETopologyAcquisitionRetainedForDiagnosis $exception): array
-    {
+    private function writeRetainedFailureManifest(
+        E2ETopologyKind $kind,
+        E2ETopologyAcquisitionRetainedForDiagnosis $exception,
+    ): array {
         $manifest = [
             'id' => $exception->runId,
             'kind' => $kind->value,
@@ -545,7 +565,9 @@ class E2EDevTopologyCommand extends Command
 
         $this->line('');
         $this->line("Release: {$releaseCommand}");
-        $this->line('Retained topologies are manual diagnosis tools; they are not standing infrastructure and must be released.');
+        $this->line(
+            'Retained topologies are manual diagnosis tools; they are not standing infrastructure and must be released.',
+        );
 
         return self::SUCCESS;
     }
@@ -577,10 +599,13 @@ class E2EDevTopologyCommand extends Command
      */
     private function sourceMountedCheckout(array $manifest): bool
     {
-        return collect($manifest['checkouts'])->contains(
-            fn (string $checkout): bool => $checkout === E2ECurrentCheckout::sourceMountedGuestPath()
-                || $checkout === E2ECurrentCheckout::sourceMountedRuntimePath($this->userForCheckoutPath($checkout)),
-        );
+        return collect($manifest['checkouts'])
+            ->contains(
+                fn (string $checkout): bool => (
+                    $checkout === E2ECurrentCheckout::sourceMountedGuestPath()
+                    || $checkout === E2ECurrentCheckout::sourceMountedRuntimePath($this->userForCheckoutPath($checkout))
+                ),
+            );
     }
 
     /**
@@ -717,7 +742,9 @@ class E2EDevTopologyCommand extends Command
         ];
 
         if ($json) {
-            $this->line(json_encode(['success' => ['dev_topology' => $payload]], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+            $this->line(json_encode(['success' => [
+                'dev_topology' => $payload,
+            ]], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 
             return self::SUCCESS;
         }
@@ -728,7 +755,9 @@ class E2EDevTopologyCommand extends Command
         $this->line('Checkout roles: '.implode(', ', $displayRoles));
         $this->line("Shell: {$shellCommand}");
         $this->line("Release: {$releaseCommand}");
-        $this->line('Source-checkout E2E remains the normal feature loop; retained topologies are manual diagnosis only.');
+        $this->line(
+            'Source-checkout E2E remains the normal feature loop; retained topologies are manual diagnosis only.',
+        );
 
         return self::SUCCESS;
     }
@@ -895,9 +924,10 @@ class E2EDevTopologyCommand extends Command
                 'error' => [
                     'code' => 'acquisition_failed_retained',
                     'message' => $message,
-                    'retained_topology' => $manifest + [
-                        'release_command' => $releaseCommand,
-                    ],
+                    'retained_topology' => $manifest
+                        + [
+                            'release_command' => $releaseCommand,
+                        ],
                 ],
             ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 

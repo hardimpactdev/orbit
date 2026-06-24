@@ -33,15 +33,24 @@ it('rotates wireguard endpoints when gateway endpoint changes', function (): voi
 
     $warnings = app(ReenactNodeArtifacts::class)->handle($node, ['gateway_endpoint']);
 
-    expect($warnings)->toBe([])
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->nodes)->toBe(['app-1'])
-        ->and($shell->scripts[0])->toContain("endpoint='10.3.0.2:51820'")
-        ->and($shell->scripts[0])->toContain('/etc/wireguard/wg-orbit.conf')
-        ->and($shell->scripts[0])->toContain('/etc/wireguard/wg0.conf')
-        ->and($shell->scripts[0])->toContain('before-gateway-endpoint-')
-        ->and($shell->scripts[0])->toContain('Endpoint = ${endpoint}')
-        ->and($shell->scripts[0])->toContain('wg set "$iface" peer "$peer" endpoint "$endpoint"');
+    expect($warnings)
+        ->toBe([])
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->nodes)
+        ->toBe(['app-1'])
+        ->and($shell->scripts[0])
+        ->toContain("endpoint='10.3.0.2:51820'")
+        ->and($shell->scripts[0])
+        ->toContain('/etc/wireguard/wg-orbit.conf')
+        ->and($shell->scripts[0])
+        ->toContain('/etc/wireguard/wg0.conf')
+        ->and($shell->scripts[0])
+        ->toContain('before-gateway-endpoint-')
+        ->and($shell->scripts[0])
+        ->toContain('Endpoint = ${endpoint}')
+        ->and($shell->scripts[0])
+        ->toContain('wg set "$iface" peer "$peer" endpoint "$endpoint"');
 });
 
 it('returns a warning when wireguard endpoint rotation fails', function (): void {
@@ -93,8 +102,7 @@ it('does not rotate the local gateway node when its advertised endpoint metadata
 
     $warnings = app(ReenactNodeArtifacts::class)->handle($node, ['gateway_endpoint']);
 
-    expect($warnings)->toBe([])
-        ->and($shell->scripts)->toBe([]);
+    expect($warnings)->toBe([])->and($shell->scripts)->toBe([]);
 });
 
 final class ReenactNodeArtifactsRecordingShell implements RemoteShell

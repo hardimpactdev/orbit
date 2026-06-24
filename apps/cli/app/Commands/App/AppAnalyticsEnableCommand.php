@@ -22,7 +22,12 @@ final class AppAnalyticsEnableCommand extends AppGatewayCommand
         parent::configure();
 
         $this->addArgument('app', InputArgument::OPTIONAL, 'App name or hostname');
-        $this->addOption('host', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Public analytics tracking host to bind');
+        $this->addOption(
+            'host',
+            null,
+            InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+            'Public analytics tracking host to bind',
+        );
         $this->addOption('json', null, InputOption::VALUE_NONE, 'Output JSON');
     }
 

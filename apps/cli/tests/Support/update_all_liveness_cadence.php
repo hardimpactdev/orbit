@@ -107,10 +107,12 @@ function validateUpdateAllLivenessCadenceState(array $state): array
 
     $minUs = updateAllLivenessCadenceFloorUs();
 
-    if ($firstTransitionUs >= 0
+    if (
+        $firstTransitionUs >= 0
         && $firstTransitionUs < $minUs
         && $state['transition_count'] >= 2
-        && $state['max_transition_gap_us'] >= $minUs) {
+        && $state['max_transition_gap_us'] >= $minUs
+    ) {
         return [
             'cadence_ok' => true,
             'reason' => null,

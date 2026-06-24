@@ -28,8 +28,8 @@ final class UpdateAllRequest extends GatewayRequest
         $summary = $meta['summary'] ?? [];
 
         return new UpdateAllResponse(
-            updates: is_array($updates) ? $updates : [],
-            summary: is_array($summary) ? $summary : [],
+            updates: $this->listOfStringKeyedArrays($updates),
+            summary: $this->stringKeyedArray($summary),
         );
     }
 }

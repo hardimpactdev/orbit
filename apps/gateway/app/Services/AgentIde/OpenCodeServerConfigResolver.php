@@ -23,21 +23,22 @@ final class OpenCodeServerConfigResolver
                 ->first()
             : null;
 
-        $toolConfig = is_array($tool?->config) ? $tool->config : [];
-        $credentials = is_array($tool?->credentials) ? $tool->credentials : [];
+        $toolConfig = is_array($tool?->config) ? $tool?->config : [];
+        $credentials = is_array($tool?->credentials) ? $tool?->credentials : [];
         $fields = is_array($credentials['fields'] ?? null) ? $credentials['fields'] : [];
-        $nodeConfig = is_array($node?->agent_ide_config) ? $node->agent_ide_config : [];
+        $nodeConfig = is_array($node?->agent_ide_config) ? $node?->agent_ide_config : [];
         $openCodeConfig = is_array($nodeConfig['opencode'] ?? null) ? $nodeConfig['opencode'] : [];
 
         return new OpenCodeServerConfig(
             url: $this->normalizeBaseUrl(
-                $this->stringValue($fields['url'] ?? null)
-                    ?? $this->stringValue($fields['Url'] ?? null)
-                    ?? $this->urlFromCredentialFields($fields, $node)
-                    ?? $this->endpointFromTool($tool, $node)
-                    ?? $this->urlFromToolConfig($toolConfig, $node)
-                    ?? $this->stringValue($openCodeConfig['url'] ?? null)
-                    ?? $this->urlFromNode($node),
+                $this->stringValue($fields['url'] ?? null) ?? $this->stringValue(
+                    $fields['Url'] ?? null,
+                ) ?? $this->urlFromCredentialFields($fields, $node) ?? $this->endpointFromTool(
+                    $tool,
+                    $node,
+                ) ?? $this->urlFromToolConfig($toolConfig, $node) ?? $this->stringValue(
+                    $openCodeConfig['url'] ?? null,
+                ) ?? $this->urlFromNode($node),
             ),
             username: $this->authValue(
                 $fields['username'] ?? null,
@@ -61,8 +62,7 @@ final class OpenCodeServerConfigResolver
      */
     private function urlFromCredentialFields(array $fields, ?Node $node): ?string
     {
-        $host = $this->stringValue($fields['host'] ?? null)
-            ?? $this->stringValue($fields['Host'] ?? null);
+        $host = $this->stringValue($fields['host'] ?? null) ?? $this->stringValue($fields['Host'] ?? null);
         $port = $fields['port'] ?? $fields['Port'] ?? null;
 
         return $this->urlFromHostPort($host, $port, $node);
@@ -70,7 +70,7 @@ final class OpenCodeServerConfigResolver
 
     private function endpointFromTool(?NodeTool $tool, ?Node $node): ?string
     {
-        $config = is_array($tool?->config) ? $tool->config : [];
+        $config = is_array($tool?->config) ? $tool?->config : [];
         $endpoints = is_array($config['endpoints'] ?? null) ? $config['endpoints'] : [];
 
         foreach ($endpoints as $endpoint) {
@@ -86,7 +86,12 @@ final class OpenCodeServerConfigResolver
 
             $host = $this->stringValue($endpoint['host'] ?? null);
             $port = $endpoint['port'] ?? null;
-            $hostPortUrl = $this->urlFromHostPort($host, $port, $node, $this->stringValue($endpoint['scheme'] ?? null) ?? 'http');
+            $hostPortUrl = $this->urlFromHostPort(
+                $host,
+                $port,
+                $node,
+                $this->stringValue($endpoint['scheme'] ?? null) ?? 'http',
+            );
 
             if ($hostPortUrl !== null) {
                 return $hostPortUrl;
@@ -104,7 +109,7 @@ final class OpenCodeServerConfigResolver
         $hostname = $this->stringValue($config['hostname'] ?? null);
         $port = $config['port'] ?? null;
 
-        if ($hostname === null || (! is_int($port) && ! is_string($port))) {
+        if ($hostname === null || ! is_int($port) && ! is_string($port)) {
             return null;
         }
 
@@ -113,7 +118,7 @@ final class OpenCodeServerConfigResolver
 
     private function urlFromHostPort(?string $host, mixed $port, ?Node $node, string $scheme = 'http'): ?string
     {
-        if ($host === null || (! is_int($port) && ! is_string($port))) {
+        if ($host === null || ! is_int($port) && ! is_string($port)) {
             return null;
         }
 
@@ -124,9 +129,7 @@ final class OpenCodeServerConfigResolver
 
     private function urlFromNode(?Node $node): string
     {
-        $host = $this->stringValue($node?->wireguard_address)
-            ?? $this->stringValue($node?->host)
-            ?? '127.0.0.1';
+        $host = $this->stringValue($node?->wireguard_address) ?? $this->stringValue($node?->host) ?? '127.0.0.1';
 
         return "http://{$host}:4096";
     }
@@ -149,10 +152,12 @@ final class OpenCodeServerConfigResolver
 
     private function reachableHost(string $host, ?Node $node): string
     {
-        if (in_array($host, ['0.0.0.0', '127.0.0.1', '::1', 'localhost'], true) && $node instanceof Node && ! $node->hasActiveRole('gateway')) {
-            return $this->stringValue($node->wireguard_address)
-                ?? $this->stringValue($node->host)
-                ?? $host;
+        if (
+            in_array($host, ['0.0.0.0', '127.0.0.1', '::1', 'localhost'], true)
+            && $node instanceof Node
+            && ! $node->hasActiveRole('gateway')
+        ) {
+            return $this->stringValue($node->wireguard_address) ?? $this->stringValue($node->host) ?? $host;
         }
 
         return $host;
@@ -160,7 +165,10 @@ final class OpenCodeServerConfigResolver
 
     private function normalizeBaseUrl(string $url): string
     {
-        return rtrim(str_starts_with($url, 'http://') || str_starts_with($url, 'https://') ? $url : "http://{$url}", '/');
+        return rtrim(
+            str_starts_with($url, 'http://') || str_starts_with($url, 'https://') ? $url : "http://{$url}",
+            '/',
+        );
     }
 
     private function authValue(mixed ...$values): ?string

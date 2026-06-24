@@ -22,9 +22,16 @@ final class OperationTokenSigner
             expiresAt: $expiresAt,
         );
 
-        $signature = rtrim(strtr(base64_encode(
-            hash_hmac('sha256', $payload, $secret, true),
-        ), '+/', '-_'), '=');
+        $signature = rtrim(
+            strtr(
+                base64_encode(
+                    hash_hmac('sha256', $payload, $secret, true),
+                ),
+                '+/',
+                '-_',
+            ),
+            '=',
+        );
 
         return new OperationToken(
             id: $id,
@@ -45,11 +52,13 @@ final class OperationTokenSigner
     ): string {
         // Canonical payload form: each field is encoded as a 32-bit
         // big-endian byte length followed by the exact field bytes.
-        return $this->lengthPrefixed($id)
+        return (
+            $this->lengthPrefixed($id)
             .$this->lengthPrefixed($node)
             .$this->lengthPrefixed($command)
             .$this->lengthPrefixed((string) $issuedAt)
-            .$this->lengthPrefixed((string) $expiresAt);
+            .$this->lengthPrefixed((string) $expiresAt)
+        );
     }
 
     private function lengthPrefixed(string $value): string

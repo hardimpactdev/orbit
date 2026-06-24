@@ -56,7 +56,10 @@ final class DoctorPanelRenderer
         'firewall_rule' => ['label' => 'RULE', 'keys' => ['rule', 'name', 'key']],
         'tool' => ['label' => 'TOOL', 'keys' => ['tool', 'name', 'binary']],
         'schedule' => ['label' => 'SCHEDULE', 'keys' => ['schedule', 'schedule_key', 'name', 'command']],
-        'database_connection' => ['label' => 'CONNECTION', 'keys' => ['connection', 'database_connection', 'slug', 'name', 'env_prefix']],
+        'database_connection' => [
+            'label' => 'CONNECTION',
+            'keys' => ['connection', 'database_connection', 'slug', 'name', 'env_prefix'],
+        ],
     ];
 
     /**
@@ -72,7 +75,10 @@ final class DoctorPanelRenderer
         'firewall_rule' => ['label' => 'Firewall rule', 'keys' => ['rule', 'name', 'key']],
         'tool' => ['label' => 'Tool', 'keys' => ['tool', 'name', 'binary']],
         'schedule' => ['label' => 'Schedule', 'keys' => ['schedule', 'schedule_key', 'name', 'command']],
-        'database_connection' => ['label' => 'Database connection', 'keys' => ['connection', 'database_connection', 'slug', 'name']],
+        'database_connection' => [
+            'label' => 'Database connection',
+            'keys' => ['connection', 'database_connection', 'slug', 'name'],
+        ],
     ];
 
     /**
@@ -139,20 +145,26 @@ final class DoctorPanelRenderer
         foreach ($families as $family) {
             $familyIssues = $issuesByFamily[$family] ?? [];
             $rendersIssueDetails = $mode === 'verify' && $familyIssues !== [];
-            $lines[] = $this->categoryRow($family, $this->statusText(
-                family: $family,
-                familyIssues: $familyIssues,
-                progressStatus: $this->familyProgressStatus($report, $family),
-                mode: $mode,
-                detailsFollow: $rendersIssueDetails,
-            ), $frame);
+            $lines[] = $this->categoryRow(
+                $family,
+                $this->statusText(
+                    family: $family,
+                    familyIssues: $familyIssues,
+                    progressStatus: $this->familyProgressStatus($report, $family),
+                    mode: $mode,
+                    detailsFollow: $rendersIssueDetails,
+                ),
+                $frame,
+            );
 
             if ($familyIssues !== []) {
                 $lines = [
                     ...$lines,
-                    ...($rendersIssueDetails
-                        ? $this->issueDetails($familyIssues)
-                        : $this->issueTable($family, $familyIssues)),
+                    ...(
+                        $rendersIssueDetails
+                            ? $this->issueDetails($familyIssues)
+                            : $this->issueTable($family, $familyIssues)
+                    ),
                 ];
             }
 
@@ -266,7 +278,10 @@ final class DoctorPanelRenderer
     {
         $scope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
         $families = is_array($scope['families'] ?? null) ? $scope['families'] : [];
-        $families = array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== ''));
+        $families = array_values(array_filter(
+            $families,
+            static fn (mixed $family): bool => is_string($family) && $family !== '',
+        ));
 
         if ($families !== []) {
             return array_values(array_unique($families));
@@ -288,7 +303,12 @@ final class DoctorPanelRenderer
     {
         $order = array_keys(self::CATEGORY_LABELS);
 
-        usort($families, static fn (string $a, string $b): int => (array_search($a, $order, true) ?: PHP_INT_MAX) <=> (array_search($b, $order, true) ?: PHP_INT_MAX));
+        usort(
+            $families,
+            static fn (string $a, string $b): int => (
+                (array_search($a, $order, true) ?: PHP_INT_MAX) <=> (array_search($b, $order, true) ?: PHP_INT_MAX)
+            ),
+        );
 
         return $families;
     }
@@ -363,7 +383,8 @@ final class DoctorPanelRenderer
     private function issueSeparatorLine(): string
     {
         $dashWidth = self::INNER_WIDTH - self::ISSUE_DETAIL_INDENT;
-        $content = str_repeat(' ', self::ISSUE_DETAIL_INDENT)
+        $content =
+            str_repeat(' ', self::ISSUE_DETAIL_INDENT)
             .SpinnerTreeRenderer::DIM
             .str_repeat('-', $dashWidth)
             .SpinnerTreeRenderer::RESET;
@@ -966,7 +987,7 @@ final class DoctorPanelRenderer
                     continue;
                 }
 
-                $row[$index] = $lineIndex === 0 ? ($cells[$index] ?? '') : '';
+                $row[$index] = $lineIndex === 0 ? $cells[$index] ?? '' : '';
             }
 
             $lines[] = $this->tableRow($row, $widths);
@@ -1059,7 +1080,7 @@ final class DoctorPanelRenderer
     {
         $entityTotal = 0;
 
-        for ($index = 0; $index < $columnCount - 1; $index++) {
+        for ($index = 0; $index < ($columnCount - 1); $index++) {
             $widths[$index] = min($widths[$index] ?? 0, 28);
             $entityTotal += $widths[$index];
         }
@@ -1129,20 +1150,25 @@ final class DoctorPanelRenderer
         $leftFill = intdiv($remaining, 2);
         $rightFill = $remaining - $leftFill;
 
-        $line = SpinnerTreeRenderer::DIM.$left
+        $line =
+            SpinnerTreeRenderer::DIM
+            .$left
             .str_repeat('─', $leftFill)
-            .SpinnerTreeRenderer::RESET.SpinnerTreeRenderer::ACCENT.$spaced.SpinnerTreeRenderer::RESET
-            .SpinnerTreeRenderer::DIM.str_repeat('─', $rightFill)
-            .$right.SpinnerTreeRenderer::RESET;
+            .SpinnerTreeRenderer::RESET
+            .SpinnerTreeRenderer::ACCENT
+            .$spaced
+            .SpinnerTreeRenderer::RESET
+            .SpinnerTreeRenderer::DIM
+            .str_repeat('─', $rightFill)
+            .$right
+            .SpinnerTreeRenderer::RESET;
 
         return $line;
     }
 
     private function bottomLine(): string
     {
-        return SpinnerTreeRenderer::DIM
-            .'└'.str_repeat('─', self::PANEL_WIDTH - 2).'┘'
-            .SpinnerTreeRenderer::RESET;
+        return SpinnerTreeRenderer::DIM.'└'.str_repeat('─', self::PANEL_WIDTH - 2).'┘'.SpinnerTreeRenderer::RESET;
     }
 
     private function blankLine(): string
@@ -1173,9 +1199,18 @@ final class DoctorPanelRenderer
     {
         $pad = max(0, self::INNER_WIDTH - $visibleWidth);
 
-        return SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET
-            .' '.$content.str_repeat(' ', $pad).' '
-            .SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET;
+        return (
+            SpinnerTreeRenderer::DIM
+            .'│'
+            .SpinnerTreeRenderer::RESET
+            .' '
+            .$content
+            .str_repeat(' ', $pad)
+            .' '
+            .SpinnerTreeRenderer::DIM
+            .'│'
+            .SpinnerTreeRenderer::RESET
+        );
     }
 
     /**
@@ -1197,9 +1232,16 @@ final class DoctorPanelRenderer
     {
         $pad = max(0, self::INNER_WIDTH + 2 - $visibleWidth);
 
-        return SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET
-            .$content.str_repeat(' ', $pad)
-            .SpinnerTreeRenderer::DIM.'│'.SpinnerTreeRenderer::RESET;
+        return (
+            SpinnerTreeRenderer::DIM
+            .'│'
+            .SpinnerTreeRenderer::RESET
+            .$content
+            .str_repeat(' ', $pad)
+            .SpinnerTreeRenderer::DIM
+            .'│'
+            .SpinnerTreeRenderer::RESET
+        );
     }
 
     private function visibleWidth(string $value): int

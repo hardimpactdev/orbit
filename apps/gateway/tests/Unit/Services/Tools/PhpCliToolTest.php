@@ -12,23 +12,24 @@ describe('PhpCliTool', function (): void {
     it('has the correct slug and category', function (): void {
         $tool = new PhpCliTool;
 
-        expect($tool->slug())->toBe('php-cli')
-            ->and($tool->category())->toBe('runtime');
+        expect($tool->slug())->toBe('php-cli')->and($tool->category())->toBe('runtime');
     });
 
     it('declares install, update, and safe-adopt capabilities', function (): void {
         $tool = new PhpCliTool;
 
-        expect($tool->capabilities())->toContain('install')
-            ->and($tool->capabilities())->toContain('update')
-            ->and($tool->capabilities())->toContain('safe-adopt');
+        expect($tool->capabilities())
+            ->toContain('install')
+            ->and($tool->capabilities())
+            ->toContain('update')
+            ->and($tool->capabilities())
+            ->toContain('safe-adopt');
     });
 
     it('installScript downloads from dl.static-php.dev bulk preset', function (): void {
         $tool = new PhpCliTool;
 
-        expect($tool->installScript())->toContain('dl.static-php.dev')
-            ->and($tool->installScript())->toContain('bulk');
+        expect($tool->installScript())->toContain('dl.static-php.dev')->and($tool->installScript())->toContain('bulk');
     });
 
     it('retries transient static PHP download failures', function (): void {
@@ -36,16 +37,20 @@ describe('PhpCliTool', function (): void {
 
         expect($tool->installScript())
             ->toContain('curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors')
-            ->and($tool->updateScript())->toContain('curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors');
+            ->and($tool->updateScript())
+            ->toContain('curl -fsSL --retry 5 --retry-delay 2 --retry-all-errors');
     });
 
     it('installScript includes pinned patch versions for all supported minors', function (): void {
         $tool = new PhpCliTool;
         $script = $tool->installScript();
 
-        expect($script)->toContain('8.5.6')
-            ->and($script)->toContain('8.4.21')
-            ->and($script)->toContain('8.3.31');
+        expect($script)
+            ->toContain('8.5.6')
+            ->and($script)
+            ->toContain('8.4.21')
+            ->and($script)
+            ->toContain('8.3.31');
     });
 
     it('installScript installs binaries under /opt/orbit/php', function (): void {
@@ -82,8 +87,9 @@ describe('PhpCliTool', function (): void {
         $tool = new PhpCliTool;
         $script = $tool->installScript();
 
-        expect($script)->not->toContain('ppa:ondrej')
-            ->and($script)->not->toContain('add-apt-repository');
+        expect($script)
+            ->not->toContain('ppa:ondrej')->and($script)
+            ->not->toContain('add-apt-repository');
     });
 
     it('updateScript also downloads from dl.static-php.dev', function (): void {
@@ -102,9 +108,12 @@ describe('PhpCliTool', function (): void {
         $tool = new PhpCliTool;
         $metadata = $tool->probeMetadata();
 
-        expect($metadata['binary'])->toBe('/opt/orbit/php/8.5/bin/php')
-            ->and($metadata['version_command'])->toBe('/opt/orbit/php/8.5/bin/php --version')
-            ->and($metadata['version_command'])->not->toContain('php -r');
+        expect($metadata['binary'])
+            ->toBe('/opt/orbit/php/8.5/bin/php')
+            ->and($metadata['version_command'])
+            ->toBe('/opt/orbit/php/8.5/bin/php --version')
+            ->and($metadata['version_command'])
+            ->not->toContain('php -r');
     });
 
     it('is resolvable by slug from the tool catalog', function (): void {

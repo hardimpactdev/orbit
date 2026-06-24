@@ -30,17 +30,23 @@ describe('schedule:logs', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/schedules/laravel-scheduler/logs')
                 && str_contains($url, 'app=docs')
                 && str_contains($url, 'run=18')
-                && str_contains($url, 'lines=10');
+                && str_contains($url, 'lines=10')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['run']['id'])->toBe(18)
-            ->and($decoded['success']['data']['output']['stdout'])->toBe("ok\n")
-            ->and($decoded['success']['meta']['lines'])->toBe(10);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['run']['id'])
+            ->toBe(18)
+            ->and($decoded['success']['data']['output']['stdout'])
+            ->toBe("ok\n")
+            ->and($decoded['success']['meta']['lines'])
+            ->toBe(10);
     });
 
     it('renders captured stdout and stderr for human output', function (): void {
@@ -54,11 +60,16 @@ describe('schedule:logs', function (): void {
             '--app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('stdout')
-            ->and($output)->toContain('ok')
-            ->and($output)->toContain('stderr')
-            ->and($output)->toContain('warning');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('stdout')
+            ->and($output)
+            ->toContain('ok')
+            ->and($output)
+            ->toContain('stderr')
+            ->and($output)
+            ->toContain('warning');
     });
 
     it('prompts for a visible schedule when interactive name input is omitted', function (): void {
@@ -107,8 +118,7 @@ describe('schedule:logs', function (): void {
 
         Http::assertSentCount(2);
 
-        expect($exitCode)->toBe(0)
-            ->and($tester->getDisplay())->toContain('ok');
+        expect($exitCode)->toBe(0)->and($tester->getDisplay())->toContain('ok');
     });
 
     it('fails validation before opening the gateway request when name is missing', function (): void {
@@ -120,9 +130,12 @@ describe('schedule:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('name');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('name');
     });
 
     it('fails validation before opening the gateway request when app and node filters are combined', function (): void {
@@ -139,9 +152,12 @@ describe('schedule:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['fields'])->toBe(['app', 'node']);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['fields'])
+            ->toBe(['app', 'node']);
     });
 
     it('fails validation before opening the gateway request when run is invalid', function (): void {
@@ -157,9 +173,12 @@ describe('schedule:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('run');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('run');
     });
 
     it('fails validation before opening the gateway request when lines is invalid', function (): void {
@@ -175,9 +194,12 @@ describe('schedule:logs', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('lines');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('lines');
     });
 
     it('passes through gateway schedule run not found errors', function (): void {
@@ -194,9 +216,12 @@ describe('schedule:logs', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('schedule.run_not_found')
-            ->and($decoded['error']['meta']['run'])->toBe(19);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('schedule.run_not_found')
+            ->and($decoded['error']['meta']['run'])
+            ->toBe(19);
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -209,7 +234,6 @@ describe('schedule:logs', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

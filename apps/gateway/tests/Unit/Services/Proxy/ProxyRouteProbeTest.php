@@ -53,14 +53,17 @@ describe('ProxyRouteProbe interface', function (): void {
     it('has key and label', function (): void {
         $probe = new ProxyRouteProbe;
 
-        expect($probe->key())->toBe('proxy')
-            ->and($probe->label())->toBe('Proxy');
+        expect($probe->key())->toBe('proxy')->and($probe->label())->toBe('Proxy');
     });
 
     it('returns an empty foundation snapshot before live backend probing is added', function (): void {
         $route = new ProxyRoute(['domain' => 'docs.test']);
 
-        expect((new ProxyRouteProbe)->introspect($route)->isEmpty())->toBeTrue();
+        expect(
+            new ProxyRouteProbe()
+                ->introspect($route)
+                ->isEmpty(),
+        )->toBeTrue();
     });
 });
 
@@ -72,10 +75,13 @@ describe('proxy registry probe foundation', function (): void {
             'domain' => 'vite.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect($drift)->toBe([]);
     });
@@ -87,10 +93,13 @@ describe('proxy registry probe foundation', function (): void {
             'domain' => 'vite.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect($drift)->toBe([]);
     });
@@ -114,7 +123,7 @@ describe('proxy registry probe foundation', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect($drift)->toBe([]);
     });
@@ -142,9 +151,9 @@ describe('proxy registry probe foundation', function (): void {
                 ],
             ],
         ]);
-        $route->forceFill(['source_hash' => (new ProxyRouteRenderer)->sourceHash($route)])->save();
+        $route->forceFill(['source_hash' => new ProxyRouteRenderer()->sourceHash($route)])->save();
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'websocket.orbit' => [
                 'route_exists' => true,
                 'route_hash' => $route->source_hash,
@@ -181,7 +190,7 @@ describe('proxy registry probe foundation', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect($drift)->toBe([]);
     });
@@ -232,7 +241,7 @@ describe('proxy registry probe foundation', function (): void {
         ]);
         $route->forceFill(['source_hash' => $renderer->sourceHash($route)])->save();
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'ws.docs.test' => [
                 'public' => [
                     'route_exists' => true,
@@ -267,7 +276,7 @@ describe('proxy registry probe foundation', function (): void {
         ]);
 
         $route = ProxyRoute::findOrFail($id);
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.record_incomplete')?->kind)->toBe(DriftKind::Missing);
     });
@@ -282,7 +291,7 @@ describe('proxy registry probe foundation', function (): void {
             'kind' => 'app',
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -299,7 +308,7 @@ describe('proxy registry probe foundation', function (): void {
             'kind' => 'workspace',
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.owner_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -314,7 +323,7 @@ describe('proxy registry probe foundation', function (): void {
             'config' => ['upstream' => 'http://127.0.0.1:5173'],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     })->with([
@@ -335,7 +344,7 @@ describe('proxy registry probe foundation', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->toBeNull();
     });
@@ -351,10 +360,12 @@ describe('proxy registry probe foundation', function (): void {
             'config' => ['upstream' => 'http://127.0.0.1:5173'],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
-        expect(proxyProbeIssue($drift, 'proxy.domain_conflict')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.domain_conflict')?->detail)->toMatchArray([
+        expect(proxyProbeIssue($drift, 'proxy.domain_conflict')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.domain_conflict')?->detail)
+            ->toMatchArray([
                 'owner_type' => 'app',
                 'owner_name' => 'docs',
             ]);
@@ -381,8 +392,10 @@ describe('proxy registry probe foundation', function (): void {
             'kind' => 'workspace',
         ]);
 
-        expect((new ProxyRouteProbe)->diff($appRoute, new ProbeSnapshot([])))->toBe([])
-            ->and((new ProxyRouteProbe)->diff($workspaceRoute, new ProbeSnapshot([])))->toBe([]);
+        expect(new ProxyRouteProbe()->diff($appRoute, new ProbeSnapshot([])))
+            ->toBe([])
+            ->and(new ProxyRouteProbe()->diff($workspaceRoute, new ProbeSnapshot([])))
+            ->toBe([]);
     });
 });
 
@@ -395,22 +408,28 @@ describe('proxy backend and TLS reality', function (): void {
             'source_hash' => str_repeat('a', 64),
         ]);
         $shell = new ProxyProbeRecordingRemoteShell(
-            "1\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
+            "1\t"
+            .str_repeat('a', 64)
+            ."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n",
         );
 
-        $snapshot = (new ProxyRouteProbe($shell))->introspect($route);
+        $snapshot = new ProxyRouteProbe($shell)->introspect($route);
 
-        expect($snapshot->get('vite.docs.test'))->toMatchArray([
-            'route_exists' => true,
-            'route_hash' => str_repeat('a', 64),
-            'cert_path' => '/etc/orbit/certs/vite.docs.test.crt',
-            'key_path' => '/etc/orbit/certs/vite.docs.test.key',
-            'cert_exists' => true,
-            'key_exists' => true,
-        ])
-            ->and($shell->nodes[0]->is($node))->toBeTrue()
-            ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])->toBe('vite.docs.test')
-            ->and($shell->options[0]['metadata']['ORBIT_PROXY_SUFFIX'])->toBe('');
+        expect($snapshot->get('vite.docs.test'))
+            ->toMatchArray([
+                'route_exists' => true,
+                'route_hash' => str_repeat('a', 64),
+                'cert_path' => '/etc/orbit/certs/vite.docs.test.crt',
+                'key_path' => '/etc/orbit/certs/vite.docs.test.key',
+                'cert_exists' => true,
+                'key_exists' => true,
+            ])
+            ->and($shell->nodes[0]->is($node))
+            ->toBeTrue()
+            ->and($shell->options[0]['metadata']['ORBIT_PROXY_DOMAIN'])
+            ->toBe('vite.docs.test')
+            ->and($shell->options[0]['metadata']['ORBIT_PROXY_SUFFIX'])
+            ->toBe('');
     });
 
     it('detects missing ingress route artifacts separately from backend artifacts', function (): void {
@@ -430,8 +449,16 @@ describe('proxy backend and TLS reality', function (): void {
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
-                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
-                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'source_hash' => str_repeat('c', 64),
+                ],
+                'router_backend_pool' => [[
+                    'node_id' => $backend->id,
+                    'node' => 'web-1',
+                    'url' => 'http://10.6.0.21:80',
+                ]],
                 'backend_artifacts' => [[
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
@@ -452,10 +479,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.public_route_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(proxyProbeIssue($drift, 'proxy.backend_route_missing'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.public_route_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_missing'))
+            ->toBeNull();
     });
 
     it('does not report managed private backend artifacts as extra node routes', function (): void {
@@ -480,7 +509,7 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffNode($backend, new ProbeSnapshot([
+        $drift = new ProxyRouteProbe()->diffNode($backend, new ProbeSnapshot([
             'docs.test.backend' => ['route_exists' => true, 'route_hash' => str_repeat('b', 64)],
         ]));
 
@@ -504,8 +533,16 @@ describe('proxy backend and TLS reality', function (): void {
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
-                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
-                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'source_hash' => str_repeat('c', 64),
+                ],
+                'router_backend_pool' => [[
+                    'node_id' => $backend->id,
+                    'node' => 'web-1',
+                    'url' => 'http://10.6.0.21:80',
+                ]],
                 'backend_artifacts' => [[
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
@@ -526,10 +563,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.router_route_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.router_route_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch'))
+            ->toBeNull();
     });
 
     it('detects mismatched backend artifacts for ingress routes', function (): void {
@@ -549,8 +588,16 @@ describe('proxy backend and TLS reality', function (): void {
             'source_hash' => str_repeat('a', 64),
             'config' => [
                 'placement' => 'ingress',
-                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
-                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'source_hash' => str_repeat('c', 64),
+                ],
+                'router_backend_pool' => [[
+                    'node_id' => $backend->id,
+                    'node' => 'web-1',
+                    'url' => 'http://10.6.0.21:80',
+                ]],
                 'backend_artifacts' => [[
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
@@ -571,10 +618,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail)->toMatchArray([
+        expect(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail)
+            ->toMatchArray([
                 'backend_node_id' => $backend->id,
                 'expected_hash' => str_repeat('b', 64),
                 'observed_hash' => str_repeat('c', 64),
@@ -597,8 +646,16 @@ describe('proxy backend and TLS reality', function (): void {
             'app_id' => App::factory()->create(['node_id' => $backend->id])->id,
             'config' => [
                 'placement' => 'ingress',
-                'router_artifact' => ['node_id' => $router->id, 'node' => 'gateway-1', 'source_hash' => str_repeat('c', 64)],
-                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
+                'router_artifact' => [
+                    'node_id' => $router->id,
+                    'node' => 'gateway-1',
+                    'source_hash' => str_repeat('c', 64),
+                ],
+                'router_backend_pool' => [[
+                    'node_id' => $backend->id,
+                    'node' => 'web-1',
+                    'url' => 'http://10.6.0.21:80',
+                ]],
                 'backend_artifacts' => [[
                     'node_id' => $backend->id,
                     'bind' => '10.6.0.21',
@@ -609,7 +666,7 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.backend_node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -627,7 +684,7 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
         expect(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -647,10 +704,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail)->toMatchArray([
+        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail)
+            ->toMatchArray([
                 'expected_hash' => str_repeat('a', 64),
                 'observed_hash' => str_repeat('b', 64),
             ]);
@@ -679,10 +738,10 @@ describe('proxy backend and TLS reality', function (): void {
                     ],
                 ],
             ]);
-        $expectedHash = (new ProxyRouteRenderer)->sourceHash($route);
+        $expectedHash = new ProxyRouteRenderer()->sourceHash($route);
         $route->forceFill(['source_hash' => $expectedHash])->save();
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             'docs.test' => [
                 'route_exists' => true,
                 'route_hash' => $expectedHash,
@@ -695,8 +754,10 @@ describe('proxy backend and TLS reality', function (): void {
 
         $issue = proxyProbeIssue($drift, 'proxy.route_mismatch');
 
-        expect((new ProxyRouteRenderer)->render($route))->toContain('reverse_proxy http://orbit-app-docs:8080')
-            ->and($issue)->toBeNull();
+        expect(new ProxyRouteRenderer()->render($route))
+            ->toContain('reverse_proxy http://orbit-app-docs:8080')
+            ->and($issue)
+            ->toBeNull();
     });
 
     it('detects missing Orbit-managed TLS material', function (): void {
@@ -716,7 +777,7 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
         expect(proxyProbeIssue($drift, 'proxy.tls_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -753,10 +814,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))
+            ->toBeNull();
     });
 
     it('does not require Orbit-managed TLS files for routes marked as ACME managed', function (): void {
@@ -779,10 +842,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))
+            ->toBeNull();
     });
 
     it('detects mismatched Orbit-managed TLS paths', function (): void {
@@ -804,7 +869,7 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
         expect(proxyProbeIssue($drift, 'proxy.tls_mismatch')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -830,10 +895,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))
+            ->toBeNull();
     });
 
     it('skips TLS drift for internal TLS app and workspace routes', function (string $ownerType, string $kind): void {
@@ -866,10 +933,12 @@ describe('proxy backend and TLS reality', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.tls_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.tls_mismatch'))
+            ->toBeNull();
     })->with([
         'app route' => ['app', 'app'],
         'workspace route' => ['workspace', 'workspace'],
@@ -880,14 +949,20 @@ describe('proxy node-level introspection', function (): void {
     it('introspects all caddy sites on a node', function (): void {
         $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell(
-            "vite.docs.test\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
-            ."api.docs.test\t".str_repeat('b', 64)."\t/etc/orbit/certs/api.docs.test.crt\t/etc/orbit/certs/api.docs.test.key\t1\t1\n",
+            "vite.docs.test\t"
+            .str_repeat('a', 64)
+            ."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
+            ."api.docs.test\t"
+            .str_repeat('b', 64)
+            ."\t/etc/orbit/certs/api.docs.test.crt\t/etc/orbit/certs/api.docs.test.key\t1\t1\n",
         );
 
-        $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
+        $snapshot = new ProxyRouteProbe($shell)->introspectNode($node);
 
-        expect($snapshot->keys())->toHaveCount(2)
-            ->and($snapshot->get('vite.docs.test'))->toMatchArray([
+        expect($snapshot->keys())
+            ->toHaveCount(2)
+            ->and($snapshot->get('vite.docs.test'))
+            ->toMatchArray([
                 'route_exists' => true,
                 'route_hash' => str_repeat('a', 64),
                 'cert_path' => '/etc/orbit/certs/vite.docs.test.crt',
@@ -895,7 +970,8 @@ describe('proxy node-level introspection', function (): void {
                 'cert_exists' => true,
                 'key_exists' => true,
             ])
-            ->and($snapshot->get('api.docs.test'))->toMatchArray([
+            ->and($snapshot->get('api.docs.test'))
+            ->toMatchArray([
                 'route_exists' => true,
                 'route_hash' => str_repeat('b', 64),
                 'cert_path' => '/etc/orbit/certs/api.docs.test.crt',
@@ -909,7 +985,7 @@ describe('proxy node-level introspection', function (): void {
         $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell('');
 
-        $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
+        $snapshot = new ProxyRouteProbe($shell)->introspectNode($node);
 
         expect($snapshot->isEmpty())->toBeTrue();
     });
@@ -917,15 +993,19 @@ describe('proxy node-level introspection', function (): void {
     it('ignores malformed lines in node scan output', function (): void {
         $node = createTestAppHostNode();
         $shell = new ProxyProbeRecordingRemoteShell(
-            "vite.docs.test\t".str_repeat('a', 64)."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
+            "vite.docs.test\t"
+            .str_repeat('a', 64)
+            ."\t/etc/orbit/certs/vite.docs.test.crt\t/etc/orbit/certs/vite.docs.test.key\t1\t1\n"
             ."malformed-line-without-tabs\n"
             ."\n",
         );
 
-        $snapshot = (new ProxyRouteProbe($shell))->introspectNode($node);
+        $snapshot = new ProxyRouteProbe($shell)->introspectNode($node);
 
-        expect($snapshot->keys())->toHaveCount(1)
-            ->and($snapshot->get('vite.docs.test'))->not->toBeNull();
+        expect($snapshot->keys())
+            ->toHaveCount(1)
+            ->and($snapshot->get('vite.docs.test'))
+            ->not->toBeNull();
     });
 });
 
@@ -938,7 +1018,7 @@ describe('proxy node-level diff', function (): void {
             'source_hash' => str_repeat('a', 64),
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffNode($node, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diffNode($node, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -956,7 +1036,7 @@ describe('proxy node-level diff', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffNode($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffNode($node, $snapshot);
 
         expect(proxyProbeIssue($drift, 'extra.test')?->kind)->toBe(DriftKind::Extra);
     });
@@ -979,11 +1059,14 @@ describe('proxy node-level diff', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffNode($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffNode($node, $snapshot);
 
-        expect(count($drift))->toBe(2)
-            ->and(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(proxyProbeIssue($drift, 'node-only.test')?->kind)->toBe(DriftKind::Extra);
+        expect(count($drift))
+            ->toBe(2)
+            ->and(proxyProbeIssue($drift, 'proxy.route_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'node-only.test')?->kind)
+            ->toBe(DriftKind::Extra);
     });
 });
 
@@ -996,10 +1079,12 @@ describe('proxy adoption snapshot', function (): void {
             "vite.docs.test\t".str_repeat('a', 64)."\t{$bodyB64}\n",
         );
 
-        $snapshot = (new ProxyRouteProbe($shell))->snapshotForAdopt($node);
+        $snapshot = new ProxyRouteProbe($shell)->snapshotForAdopt($node);
 
-        expect($snapshot->keys())->toHaveCount(1)
-            ->and($snapshot->get('vite.docs.test'))->toMatchArray([
+        expect($snapshot->keys())
+            ->toHaveCount(1)
+            ->and($snapshot->get('vite.docs.test'))
+            ->toMatchArray([
                 'hash' => str_repeat('a', 64),
                 'body' => $body,
             ]);
@@ -1011,18 +1096,23 @@ describe('orbit-caddy container readiness', function (): void {
         $node = createTestAppHostNode();
         $shell = new ProxyProbeCaddyContainerShell('available', 'true', 'true');
 
-        $snapshot = (new ProxyRouteProbe($shell))->introspectCaddyContainer($node);
+        $snapshot = new ProxyRouteProbe($shell)->introspectCaddyContainer($node);
 
-        expect($snapshot->get('orbit-caddy'))->toMatchArray([
-            'runtime_status' => 'available',
-            'container_exists' => true,
-            'container_running' => true,
-        ])
-            ->and($shell->scripts[0])->toContain('docker container inspect')
-            ->and($shell->scripts[0])->toContain('orbit-caddy')
-            ->and($shell->scripts[0])->toContain('orbit-proxy-doctor:caddy-container-probe')
-            ->and($shell->scripts[0])->not->toContain('systemctl')
-            ->and($shell->scripts[0])->not->toContain('caddy.service');
+        expect($snapshot->get('orbit-caddy'))
+            ->toMatchArray([
+                'runtime_status' => 'available',
+                'container_exists' => true,
+                'container_running' => true,
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('docker container inspect')
+            ->and($shell->scripts[0])
+            ->toContain('orbit-caddy')
+            ->and($shell->scripts[0])
+            ->toContain('orbit-proxy-doctor:caddy-container-probe')
+            ->and($shell->scripts[0])
+            ->not->toContain('systemctl')->and($shell->scripts[0])
+            ->not->toContain('caddy.service');
     });
 
     it('reports proxy.caddy_container_missing when the container is absent on the serving node', function (): void {
@@ -1035,10 +1125,12 @@ describe('orbit-caddy container readiness', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.caddy_container_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing')?->detail)->toMatchArray([
+        expect(proxyProbeIssue($drift, 'proxy.caddy_container_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing')?->detail)
+            ->toMatchArray([
                 'container' => 'orbit-caddy',
                 'node' => $node->name,
             ]);
@@ -1054,11 +1146,14 @@ describe('orbit-caddy container readiness', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.caddy_container_down')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_down')?->detail)->toMatchArray([
+        expect(proxyProbeIssue($drift, 'proxy.caddy_container_down')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_down')?->detail)
+            ->toMatchArray([
                 'container' => 'orbit-caddy',
                 'node' => $node->name,
             ]);
@@ -1074,7 +1169,7 @@ describe('orbit-caddy container readiness', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
 
         expect($drift)->toBe([]);
     });
@@ -1089,16 +1184,20 @@ describe('orbit-caddy container readiness', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->detail)->toMatchArray([
+        expect(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->detail)
+            ->toMatchArray([
                 'container' => 'orbit-caddy',
                 'node' => $node->name,
                 'runtime_status' => 'no_docker',
             ])
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_down'))->toBeNull();
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_down'))
+            ->toBeNull();
     });
 
     it('reports proxy.docker_runtime_unavailable (not container_missing) when the docker daemon is unreachable on the node', function (): void {
@@ -1111,11 +1210,14 @@ describe('orbit-caddy container readiness', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diffCaddyContainer($node, $snapshot);
+        $drift = new ProxyRouteProbe()->diffCaddyContainer($node, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->detail['runtime_status'])->toBe('daemon_unavailable')
-            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.docker_runtime_unavailable')?->detail['runtime_status'])
+            ->toBe('daemon_unavailable')
+            ->and(proxyProbeIssue($drift, 'proxy.caddy_container_missing'))
+            ->toBeNull();
     });
 });
 
@@ -1150,10 +1252,12 @@ describe('s3 upload-safe proxy route probe', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.route_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.route_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch'))
+            ->toBeNull();
     });
 
     it('detects drift when the s3 service route on disk lacks upload-safe streaming directives', function (): void {
@@ -1188,11 +1292,14 @@ describe('s3 upload-safe proxy route probe', function (): void {
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
+        $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['expected_hash'] ?? null)->toBe($uploadSafeHash)
-            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['observed_hash'] ?? null)->toBe($oldHashWithoutStreaming);
+        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['expected_hash'] ?? null)
+            ->toBe($uploadSafeHash)
+            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['observed_hash'] ?? null)
+            ->toBe($oldHashWithoutStreaming);
     });
 
     it('passes observed s3 ingress route artifact rendered with upload-safe streaming settings', function (): void {
@@ -1223,7 +1330,7 @@ describe('s3 upload-safe proxy route probe', function (): void {
         $uploadSafeHash = $renderer->sourceHash($route);
         $route->forceFill(['source_hash' => $uploadSafeHash])->save();
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([
             's3.example.com' => [
                 'public' => [
                     'route_exists' => true,
@@ -1238,122 +1345,148 @@ describe('s3 upload-safe proxy route probe', function (): void {
             ],
         ]));
 
-        expect(proxyProbeIssue($drift, 'proxy.public_route_missing'))->toBeNull()
-            ->and(proxyProbeIssue($drift, 'proxy.public_route_mismatch'))->toBeNull();
+        expect(proxyProbeIssue($drift, 'proxy.public_route_missing'))
+            ->toBeNull()
+            ->and(proxyProbeIssue($drift, 'proxy.public_route_mismatch'))
+            ->toBeNull();
     });
 });
 
 describe('legacy php_fastcgi route convergence after Docker-first runtime backfill', function (): void {
-    it('reports proxy.route_mismatch when an observed legacy php_fastcgi Caddyfile hash differs from the post-backfill Docker-first reverse_proxy source_hash', function (): void {
-        // Simulates the post-migration state: the backfill recomputed
-        // source_hash to match Docker-first reverse_proxy content. The node
-        // still serves the OLD legacy php_fastcgi Caddyfile, so its observed
-        // hash should NOT match — proving doctor will detect drift and
-        // restore can converge to the Docker-first artifact.
-        $node = createTestAppHostNode();
-        $app = App::factory()->for($node, 'node')->create([
-            'name' => 'legacy-docs',
-            'document_root' => 'public',
-        ]);
+    it(
+        'reports proxy.route_mismatch when an observed legacy php_fastcgi Caddyfile hash differs from the post-backfill Docker-first reverse_proxy source_hash',
+        function (): void {
+            // Simulates the post-migration state: the backfill recomputed
+            // source_hash to match Docker-first reverse_proxy content. The node
+            // still serves the OLD legacy php_fastcgi Caddyfile, so its observed
+            // hash should NOT match — proving doctor will detect drift and
+            // restore can converge to the Docker-first artifact.
+            $node = createTestAppHostNode();
+            $app = App::factory()->for($node, 'node')->create([
+                'name' => 'legacy-docs',
+                'document_root' => 'public',
+            ]);
 
-        $route = ProxyRoute::factory()
-            ->for($node, 'node')
-            ->for($app, 'app')
-            ->create([
+            $route = ProxyRoute::factory()
+                ->for($node, 'node')
+                ->for($app, 'app')
+                ->create([
+                    'domain' => 'legacy-docs.test',
+                    'owner_type' => 'app',
+                    'kind' => 'app',
+                    'config' => [
+                        'document_root' => '/home/orbit/apps/legacy-docs/public',
+                        'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
+                        'php_socket' => null,
+                        'tls' => [
+                            'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
+                            'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+                        ],
+                    ],
+                ]);
+
+            $dockerFirstHash = hash('sha256', new ProxyRouteRenderer()->render($route));
+            $route->forceFill(['source_hash' => $dockerFirstHash])->save();
+
+            // The node returns a hash that represents the LEGACY php_fastcgi
+            // Caddyfile still on disk — different from the Docker-first hash.
+            $observedLegacyHash = str_repeat('f', 64);
+            $shell = new ProxyProbeRecordingRemoteShell(
+                "1\t{$observedLegacyHash}\t/etc/orbit/certs/legacy-docs.test.crt\t/etc/orbit/certs/legacy-docs.test.key\t1\t1\n",
+            );
+
+            $snapshot = new ProxyRouteProbe($shell)->introspect($route);
+            $drift = new ProxyRouteProbe()->diff($route, $snapshot);
+
+            expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)
+                ->toBe(DriftKind::Divergent)
+                ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['expected_hash'] ?? null)
+                ->toBe($dockerFirstHash)
+                ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['observed_hash'] ?? null)
+                ->toBe($observedLegacyHash);
+        },
+    );
+
+    it(
+        'reports proxy.backend_route_mismatch when an observed legacy private-backend php_fastcgi Caddyfile hash differs from the post-backfill Docker-first backend_artifact source_hash',
+        function (): void {
+            $edge = Node::factory()->create([
+                'name' => 'edge-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.4',
+            ]);
+            $backend = Node::factory()->create([
+                'name' => 'web-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.21',
+            ]);
+            assignProxyProbeRole($edge, 'ingress');
+            assignProxyProbeRole($backend, 'app-prod');
+            $app = App::factory()->create([
+                'name' => 'legacy-docs',
+                'document_root' => 'public',
+                'node_id' => $backend->id,
+            ]);
+
+            // Build a route with Docker-first backend_artifact source_hash (the
+            // value the backfill would have written for an ingress topology).
+            $artifact = [
+                'node_id' => $backend->id,
+                'bind' => '10.6.0.21',
+                'document_root' => '/home/orbit/apps/legacy-docs/public',
+                'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
+                'php_socket' => null,
+            ];
+            $route = ProxyRoute::factory()->create([
+                'node_id' => $edge->id,
                 'domain' => 'legacy-docs.test',
                 'owner_type' => 'app',
                 'kind' => 'app',
+                'app_id' => $app->id,
+                'source_hash' => str_repeat('a', 64),
                 'config' => [
-                    'document_root' => '/home/orbit/apps/legacy-docs/public',
-                    'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
-                    'php_socket' => null,
-                    'tls' => [
-                        'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
-                        'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+                    'placement' => 'ingress',
+                    'router_artifact' => ['node_id' => $backend->id, 'source_hash' => str_repeat('c', 64)],
+                    'router_backend_pool' => [[
+                        'node_id' => $backend->id,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:80',
+                    ]],
+                    'backend_artifacts' => [array_merge($artifact, [
+                        'source_hash' => 'placeholder',
+                    ])],
+                ],
+            ]);
+            $route->loadMissing('app');
+
+            $dockerFirstBackendHash = hash('sha256', new ProxyRouteRenderer()->renderPrivateBackend($route, $artifact));
+            $config = $route->config;
+            $config['backend_artifacts'][0]['source_hash'] = $dockerFirstBackendHash;
+            $route->forceFill(['config' => $config])->save();
+
+            // Observed legacy backend hash on the backend node differs from the
+            // post-backfill expected hash.
+            $observedLegacyBackendHash = str_repeat('9', 64);
+            $snapshot = new ProbeSnapshot([
+                'legacy-docs.test' => [
+                    'public' => ['route_exists' => true, 'route_hash' => str_repeat('a', 64)],
+                    'router' => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
+                    'backends' => [
+                        $backend->id => ['route_exists' => true, 'route_hash' => $observedLegacyBackendHash],
                     ],
                 ],
             ]);
 
-        $dockerFirstHash = hash('sha256', (new ProxyRouteRenderer)->render($route));
-        $route->forceFill(['source_hash' => $dockerFirstHash])->save();
+            $drift = new ProxyRouteProbe()->diff($route, $snapshot);
 
-        // The node returns a hash that represents the LEGACY php_fastcgi
-        // Caddyfile still on disk — different from the Docker-first hash.
-        $observedLegacyHash = str_repeat('f', 64);
-        $shell = new ProxyProbeRecordingRemoteShell(
-            "1\t{$observedLegacyHash}\t/etc/orbit/certs/legacy-docs.test.crt\t/etc/orbit/certs/legacy-docs.test.key\t1\t1\n",
-        );
-
-        $snapshot = (new ProxyRouteProbe($shell))->introspect($route);
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
-
-        expect(proxyProbeIssue($drift, 'proxy.route_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['expected_hash'] ?? null)->toBe($dockerFirstHash)
-            ->and(proxyProbeIssue($drift, 'proxy.route_mismatch')?->detail['observed_hash'] ?? null)->toBe($observedLegacyHash);
-    });
-
-    it('reports proxy.backend_route_mismatch when an observed legacy private-backend php_fastcgi Caddyfile hash differs from the post-backfill Docker-first backend_artifact source_hash', function (): void {
-        $edge = Node::factory()->create(['name' => 'edge-1', 'status' => 'active', 'wireguard_address' => '10.6.0.4']);
-        $backend = Node::factory()->create(['name' => 'web-1', 'status' => 'active', 'wireguard_address' => '10.6.0.21']);
-        assignProxyProbeRole($edge, 'ingress');
-        assignProxyProbeRole($backend, 'app-prod');
-        $app = App::factory()->create([
-            'name' => 'legacy-docs',
-            'document_root' => 'public',
-            'node_id' => $backend->id,
-        ]);
-
-        // Build a route with Docker-first backend_artifact source_hash (the
-        // value the backfill would have written for an ingress topology).
-        $artifact = [
-            'node_id' => $backend->id,
-            'bind' => '10.6.0.21',
-            'document_root' => '/home/orbit/apps/legacy-docs/public',
-            'runtime_upstream' => 'http://orbit-app-legacy-docs:8080',
-            'php_socket' => null,
-        ];
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $edge->id,
-            'domain' => 'legacy-docs.test',
-            'owner_type' => 'app',
-            'kind' => 'app',
-            'app_id' => $app->id,
-            'source_hash' => str_repeat('a', 64),
-            'config' => [
-                'placement' => 'ingress',
-                'router_artifact' => ['node_id' => $backend->id, 'source_hash' => str_repeat('c', 64)],
-                'router_backend_pool' => [['node_id' => $backend->id, 'node' => 'web-1', 'url' => 'http://10.6.0.21:80']],
-                'backend_artifacts' => [array_merge($artifact, [
-                    'source_hash' => 'placeholder',
-                ])],
-            ],
-        ]);
-        $route->loadMissing('app');
-
-        $dockerFirstBackendHash = hash('sha256', (new ProxyRouteRenderer)->renderPrivateBackend($route, $artifact));
-        $config = $route->config;
-        $config['backend_artifacts'][0]['source_hash'] = $dockerFirstBackendHash;
-        $route->forceFill(['config' => $config])->save();
-
-        // Observed legacy backend hash on the backend node differs from the
-        // post-backfill expected hash.
-        $observedLegacyBackendHash = str_repeat('9', 64);
-        $snapshot = new ProbeSnapshot([
-            'legacy-docs.test' => [
-                'public' => ['route_exists' => true, 'route_hash' => str_repeat('a', 64)],
-                'router' => ['route_exists' => true, 'route_hash' => str_repeat('c', 64)],
-                'backends' => [
-                    $backend->id => ['route_exists' => true, 'route_hash' => $observedLegacyBackendHash],
-                ],
-            ],
-        ]);
-
-        $drift = (new ProxyRouteProbe)->diff($route, $snapshot);
-
-        expect(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail['expected_hash'] ?? null)->toBe($dockerFirstBackendHash)
-            ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail['observed_hash'] ?? null)->toBe($observedLegacyBackendHash);
-    });
+            expect(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->kind)
+                ->toBe(DriftKind::Divergent)
+                ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail['expected_hash'] ?? null)
+                ->toBe($dockerFirstBackendHash)
+                ->and(proxyProbeIssue($drift, 'proxy.backend_route_mismatch')?->detail['observed_hash'] ?? null)
+                ->toBe($observedLegacyBackendHash);
+        },
+    );
 });
 
 final class ProxyProbeRecordingRemoteShell implements RemoteShell
@@ -1408,7 +1541,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->toBeNull();
     });
@@ -1417,7 +1550,11 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
         $node = Node::factory()->create(['name' => 'ingress-only', 'status' => 'active']);
         assignProxyProbeRole($node, 'ingress');
 
-        $routerNode = Node::factory()->create(['name' => 'router-only', 'wireguard_address' => '10.6.0.1', 'status' => 'active']);
+        $routerNode = Node::factory()->create([
+            'name' => 'router-only',
+            'wireguard_address' => '10.6.0.1',
+            'status' => 'active',
+        ]);
         assignProxyProbeRole($routerNode, 'router');
 
         $route = ProxyRoute::factory()->create([
@@ -1442,7 +1579,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->toBeNull();
     });
@@ -1466,7 +1603,7 @@ describe('s3 service route node eligibility in ProxyRouteProbe', function (): vo
             ],
         ]);
 
-        $drift = (new ProxyRouteProbe)->diff($route, new ProbeSnapshot([]));
+        $drift = new ProxyRouteProbe()->diff($route, new ProbeSnapshot([]));
 
         expect(proxyProbeIssue($drift, 'proxy.node_invalid'))->not->toBeNull();
     });

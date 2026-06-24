@@ -69,11 +69,16 @@ final readonly class ProcessOwnerContext
             return;
         }
 
-        throw new GatewayApiException($runtime->appWorkspaceCommandViolationMessage() ?? 'The selected runtime is not valid for this process owner.', 'validation_failed', [
-            'field' => 'runtime',
-            'value' => $runtime->value,
-            'reason' => $runtime->appWorkspaceCommandViolationReason(),
-        ]);
+        throw new GatewayApiException(
+            $runtime->appWorkspaceCommandViolationMessage()
+            ?? 'The selected runtime is not valid for this process owner.',
+            'validation_failed',
+            [
+                'field' => 'runtime',
+                'value' => $runtime->value,
+                'reason' => $runtime->appWorkspaceCommandViolationReason(),
+            ],
+        );
     }
 
     /**
@@ -97,30 +102,35 @@ final readonly class ProcessOwnerContext
     {
         if ($this->workspace instanceof Workspace && $this->app instanceof App) {
             /** @var Collection<int, Process> $appProcesses */
-            $appProcesses = $this->app->processes()
+            $appProcesses = $this->app
+                ->processes()
                 ->when($name !== null, fn ($query) => $query->where('name', $name))
                 ->get();
 
             /** @var Collection<int, Process> $workspaceProcesses */
-            $workspaceProcesses = $this->workspace->processes()
+            $workspaceProcesses = $this->workspace
+                ->processes()
                 ->when($name !== null, fn ($query) => $query->where('name', $name))
                 ->get();
 
             /** @var Collection<int, Process> $processes */
-            $processes = new Collection($appProcesses
-                ->concat($workspaceProcesses)
-                ->sortBy([
-                    ['sort_order', 'asc'],
-                    ['id', 'asc'],
-                ])
-                ->values()
-                ->all());
+            $processes = new Collection(
+                $appProcesses
+                    ->concat($workspaceProcesses)
+                    ->sortBy([
+                        ['sort_order', 'asc'],
+                        ['id', 'asc'],
+                    ])
+                    ->values()
+                    ->all(),
+            );
 
             return $processes;
         }
 
         /** @var Collection<int, Process> $processes */
-        $processes = $this->ownerProcesses()
+        $processes = $this
+            ->ownerProcesses()
             ->when($name !== null, fn ($query) => $query->where('name', $name))
             ->orderBy('sort_order')
             ->orderBy('id')
@@ -181,12 +191,15 @@ final readonly class ProcessOwnerContext
      */
     public function errorMeta(?string $name = null): array
     {
-        return array_filter([
-            'node' => $this->node->name,
-            'app' => $this->app?->name,
-            'workspace' => $this->workspace?->name,
-            'name' => $name,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'node' => $this->node->name,
+                'app' => $this->app?->name,
+                'workspace' => $this->workspace?->name,
+                'name' => $name,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function label(): string

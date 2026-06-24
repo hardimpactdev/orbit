@@ -21,7 +21,11 @@ trait HandlesPromptCancellation
      */
     protected function promptText(string $label, bool|string $required = false, mixed $validate = null): string
     {
-        return $this->withPromptCancellation(fn (): string => text(label: $label, required: $required, validate: $validate));
+        return $this->withPromptCancellation(fn (): string => text(
+            label: $label,
+            required: $required,
+            validate: $validate,
+        ));
     }
 
     /**
@@ -31,7 +35,12 @@ trait HandlesPromptCancellation
      */
     protected function promptSearch(string $label, Closure $options, string $placeholder = ''): string
     {
-        return $this->withPromptCancellation(fn (): string => search(label: $label, options: $options, placeholder: $placeholder, required: true));
+        return $this->withPromptCancellation(fn (): string => search(
+            label: $label,
+            options: $options,
+            placeholder: $placeholder,
+            required: true,
+        ));
     }
 
     /**
@@ -41,7 +50,11 @@ trait HandlesPromptCancellation
      */
     protected function promptSelect(string $label, array $options, string|int|null $default = null): string|int
     {
-        return $this->withPromptCancellation(fn (): string|int => select(label: $label, options: $options, default: $default));
+        return $this->withPromptCancellation(fn (): string|int => select(
+            label: $label,
+            options: $options,
+            default: $default,
+        ));
     }
 
     /**
@@ -50,8 +63,12 @@ trait HandlesPromptCancellation
      *
      * @throws PromptAborted
      */
-    protected function promptDataTable(string $label, array $headers, array $rows, string $hint = 'Press / to search'): string|int
-    {
+    protected function promptDataTable(
+        string $label,
+        array $headers,
+        array $rows,
+        string $hint = 'Press / to search',
+    ): string|int {
         return $this->withPromptCancellation(function () use ($headers, $rows, $label, $hint): string|int {
             $selected = datatable(
                 headers: $headers,

@@ -85,6 +85,9 @@ final class RemoteShellMetadata
             return true;
         }
 
-        return array_any(self::Prefixes, fn (string $prefix): bool => str_starts_with($key, $prefix) && preg_match('/\A[A-Z0-9_]+\z/', $key) === 1);
+        return array_any(
+            self::Prefixes,
+            fn (string $prefix): bool => str_starts_with($key, $prefix) && preg_match('/\A[A-Z0-9_]+\z/', $key) === 1,
+        );
     }
 }

@@ -32,7 +32,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.lifecycle_state_mismatch',
             kind: DriftKind::Divergent,
@@ -45,8 +45,7 @@ describe('ToolsFixer', function (): void {
         ));
 
         // tool.lifecycle_state_mismatch is not a tool issue code; fixer must return null
-        expect($action)->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
     it('skips issue codes without catalog-declared repair commands', function (): void {
@@ -57,7 +56,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
@@ -65,8 +64,7 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'caddy'],
         ));
 
-        expect($action)->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
     it('rewrites managed config when the row contains complete content intent', function (): void {
@@ -85,7 +83,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
@@ -96,13 +94,17 @@ describe('ToolsFixer', function (): void {
             ],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => 'tool.config_mismatch',
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("sudo install -d -m 0755 '/etc/orbit'")
-            ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/etc/orbit/dns.conf' >/dev/null");
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.config_mismatch',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain("sudo install -d -m 0755 '/etc/orbit'")
+            ->and($shell->scripts[0])
+            ->toContain("base64 -d | sudo tee '/etc/orbit/dns.conf' >/dev/null");
     });
 
     it('honors managed config mode intent when rewriting managed config', function (): void {
@@ -123,7 +125,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_mismatch',
             kind: DriftKind::Divergent,
@@ -134,9 +136,13 @@ describe('ToolsFixer', function (): void {
             ],
         ));
 
-        expect($action)->not->toBeNull()
-            ->and($shell->scripts[0])->toContain("sudo install -d -m 0750 '/etc/orbit'")
-            ->and($shell->scripts[0])->toContain("sudo chmod 0640 '/etc/orbit/dns.conf'");
+        expect($action)
+            ->not
+            ->toBeNull()
+            ->and($shell->scripts[0])
+            ->toContain("sudo install -d -m 0750 '/etc/orbit'")
+            ->and($shell->scripts[0])
+            ->toContain("sudo chmod 0640 '/etc/orbit/dns.conf'");
     });
 
     it('does not repair managed config when content does not match declared hash', function (): void {
@@ -154,7 +160,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.config_missing',
             kind: DriftKind::Missing,
@@ -162,8 +168,7 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'dns'],
         ));
 
-        expect($action)->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
     it('rewrites managed secret material when the row contains complete secret intent', function (): void {
@@ -182,7 +187,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.credentials_missing',
             kind: DriftKind::Missing,
@@ -193,14 +198,19 @@ describe('ToolsFixer', function (): void {
             ],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => 'tool.credentials_missing',
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("sudo install -d -m 0700 '/home/orbit/.config/opencode-server'")
-            ->and($shell->scripts[0])->toContain("base64 -d | sudo tee '/home/orbit/.config/opencode-server/password' >/dev/null")
-            ->and($shell->scripts[0])->toContain("sudo chmod 0600 '/home/orbit/.config/opencode-server/password'");
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.credentials_missing',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain("sudo install -d -m 0700 '/home/orbit/.config/opencode-server'")
+            ->and($shell->scripts[0])
+            ->toContain("base64 -d | sudo tee '/home/orbit/.config/opencode-server/password' >/dev/null")
+            ->and($shell->scripts[0])
+            ->toContain("sudo chmod 0600 '/home/orbit/.config/opencode-server/password'");
     });
 
     it('does not repair managed secret material when content does not match declared hash', function (): void {
@@ -218,7 +228,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.credentials_mismatch',
             kind: DriftKind::Divergent,
@@ -226,8 +236,7 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'opencode-server'],
         ));
 
-        expect($action)->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
     it('installs missing host tools through catalog install script', function (): void {
@@ -239,7 +248,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -247,14 +256,18 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'composer'],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => 'tool.capability_missing',
-            'mode' => 'fix',
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain('composer-setup.php')
-            ->and($shell->scripts[0])->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('composer-setup.php')
+            ->and($shell->scripts[0])
+            ->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     });
 
     it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {
@@ -266,7 +279,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -274,20 +287,30 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'gh'],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => 'tool.capability_missing',
-            'mode' => 'fix',
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain('# orbit install gh')
-            ->and($shell->scripts[0])->toContain('gh_package_candidate_available')
-            ->and($shell->scripts[0])->toContain('refresh_github_cli_metadata')
-            ->and($shell->scripts[0])->toContain('github_cli_metadata_needs_refresh=1')
-            ->and($shell->scripts[0])->toContain('Dir::Etc::sourcelist="sources.list.d/github-cli.list"')
-            ->and($shell->scripts[0])->toContain('APT::Get::List-Cleanup="0"')
-            ->and($shell->scripts[0])->toContain('if ! sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq gh; then')
-            ->and($shell->scripts[0])->toContain('download_github_cli_keyring');
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('# orbit install gh')
+            ->and($shell->scripts[0])
+            ->toContain('gh_package_candidate_available')
+            ->and($shell->scripts[0])
+            ->toContain('refresh_github_cli_metadata')
+            ->and($shell->scripts[0])
+            ->toContain('github_cli_metadata_needs_refresh=1')
+            ->and($shell->scripts[0])
+            ->toContain('Dir::Etc::sourcelist="sources.list.d/github-cli.list"')
+            ->and($shell->scripts[0])
+            ->toContain('APT::Get::List-Cleanup="0"')
+            ->and($shell->scripts[0])
+            ->toContain('if ! sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq gh; then')
+            ->and($shell->scripts[0])
+            ->toContain('download_github_cli_keyring');
     });
 
     it('passes the node managed user into host tool install scripts', function (): void {
@@ -299,7 +322,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -307,15 +330,20 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'laravel-installer'],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => 'tool.capability_missing',
-            'mode' => 'fix',
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain("MANAGED_USER='nckrtl'")
-            ->and($shell->scripts[0])->toContain('sudo -u "${MANAGED_USER}"')
-            ->and($shell->scripts[0])->not->toContain("MANAGED_USER='orbit'");
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => 'tool.capability_missing',
+                'mode' => 'fix',
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain("MANAGED_USER='nckrtl'")
+            ->and($shell->scripts[0])
+            ->toContain('sudo -u "${MANAGED_USER}"')
+            ->and($shell->scripts[0])
+            ->not->toContain("MANAGED_USER='orbit'");
     });
 
     it('returns null for capability missing when no install script exists', function (): void {
@@ -327,7 +355,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: 'tool.capability_missing',
             kind: DriftKind::Missing,
@@ -335,8 +363,7 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'viteplus'],
         ));
 
-        expect($action)->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect($action)->toBeNull()->and($shell->scripts)->toBe([]);
     });
 
     it('does not repair stale service process names as tool rows', function (string $toolName, string $key): void {
@@ -348,7 +375,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: $key,
             kind: DriftKind::Missing,
@@ -356,9 +383,12 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => $toolName],
         ));
 
-        expect(app(ToolCatalog::class)->supports($toolName))->toBeFalse()
-            ->and($action)->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect(app(ToolCatalog::class)->supports($toolName))
+            ->toBeFalse()
+            ->and($action)
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
     })->with([
         'redis capability' => ['redis', 'tool.capability_missing'],
         'redis container' => ['redis', 'tool.container_missing'],
@@ -376,7 +406,7 @@ describe('ToolsFixer', function (): void {
         ]);
         $shell = new ToolsFixerRemoteShell;
 
-        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+        $action = new ToolsFixer($shell)->fix($tool, new DriftEntry(
             family: 'tool',
             key: $key,
             kind: $key === 'tool.container_missing' ? DriftKind::Missing : DriftKind::Divergent,
@@ -384,14 +414,19 @@ describe('ToolsFixer', function (): void {
             detail: ['tool' => 'caddy'],
         ));
 
-        expect($action)->toMatchArray([
-            'family' => 'tool',
-            'node' => 'app-1',
-            'key' => $key,
-            'status' => 'completed',
-        ])->and($shell->scripts[0])->toContain('docker container inspect')
-            ->and($shell->scripts[0])->toContain('10.6.0.50:80:80')
-            ->and($shell->scripts[0])->toContain('orbit.caddy.spec_hash');
+        expect($action)
+            ->toMatchArray([
+                'family' => 'tool',
+                'node' => 'app-1',
+                'key' => $key,
+                'status' => 'completed',
+            ])
+            ->and($shell->scripts[0])
+            ->toContain('docker container inspect')
+            ->and($shell->scripts[0])
+            ->toContain('10.6.0.50:80:80')
+            ->and($shell->scripts[0])
+            ->toContain('orbit.caddy.spec_hash');
     })->with([
         'missing container' => ['tool.container_missing'],
         'stopped container' => ['tool.container_not_running'],
@@ -419,8 +454,11 @@ describe('agent tool fixes', function (): void {
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_route_missing'));
 
-        expect($result)->not->toBeNull()
-            ->and($result['status'])->toBe('completed');
+        expect($result)
+            ->not
+            ->toBeNull()
+            ->and($result['status'])
+            ->toBe('completed');
     });
 
     it('returns null when proxy route is owned by a different tool', function (): void {
@@ -475,13 +513,13 @@ describe('agent tool fixes', function (): void {
 
         $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->first();
 
-        expect($result)->not->toBeNull()
-            ->and($result['status'])->toBe('completed')
-            ->and($route)->not->toBeNull()
-            ->and($route->kind)->toBe('proxy')
-            ->and($route->owner_type)->toBe('tool')
-            ->and($route->config)->toBe(toolsFixerAgentRouteConfig('openclaw'))
-            ->and($route->source_hash)->toBe(toolsFixerAgentRouteSourceHash($node, 'openclaw'));
+        expect($result)
+            ->not->toBeNull()->and($result['status'])->toBe('completed')->and($route)
+            ->not->toBeNull()->and($route->kind)->toBe('proxy')->and($route->owner_type)->toBe(
+                'tool',
+            )->and($route->config)->toBe(toolsFixerAgentRouteConfig(
+                'openclaw',
+            ))->and($route->source_hash)->toBe(toolsFixerAgentRouteSourceHash($node, 'openclaw'));
     });
 
     it('rewrites malformed same-owner proxy routes to the canonical route shape', function (): void {
@@ -504,11 +542,17 @@ describe('agent tool fixes', function (): void {
 
         $route = ProxyRoute::query()->where('domain', 'openclaw.agent')->first();
 
-        expect($result)->not->toBeNull()
-            ->and($result['status'])->toBe('completed')
-            ->and($route->kind)->toBe('proxy')
-            ->and($route->config)->toBe(toolsFixerAgentRouteConfig('openclaw'))
-            ->and($route->source_hash)->toBe(toolsFixerAgentRouteSourceHash($node, 'openclaw'));
+        expect($result)
+            ->not
+            ->toBeNull()
+            ->and($result['status'])
+            ->toBe('completed')
+            ->and($route->kind)
+            ->toBe('proxy')
+            ->and($route->config)
+            ->toBe(toolsFixerAgentRouteConfig('openclaw'))
+            ->and($route->source_hash)
+            ->toBe(toolsFixerAgentRouteSourceHash($node, 'openclaw'));
     });
 
     it('updates credentials when shell returns valid JSON array', function (): void {
@@ -531,9 +575,13 @@ describe('agent tool fixes', function (): void {
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_credentials_missing'));
 
-        expect($result)->not->toBeNull()
-            ->and($result['status'])->toBe('completed')
-            ->and($tool->fresh()->credentials)->toBe(['fields' => ['user', 'pass']]);
+        expect($result)
+            ->not
+            ->toBeNull()
+            ->and($result['status'])
+            ->toBe('completed')
+            ->and($tool->fresh()->credentials)
+            ->toBe(['fields' => ['user', 'pass']]);
     });
 
     it('returns null when credential shell output is not a valid non-empty array', function (): void {
@@ -556,19 +604,19 @@ describe('agent tool fixes', function (): void {
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_credentials_missing'));
 
-        expect($result)->toBeNull()
-            ->and($tool->fresh()->credentials)->toBeNull();
+        expect($result)->toBeNull()->and($tool->fresh()->credentials)->toBeNull();
     });
 
     it('runs useradd and passwd commands and returns completed', function (): void {
         [, $tool] = createAgentToolForFixer();
         $shell = new ToolsFixerRemoteShell([
-            'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent' => new RemoteShellResult(
-                exitCode: 0,
-                stdout: '',
-                stderr: '',
-                durationMs: 1,
-            ),
+            'id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent' =>
+                new RemoteShellResult(
+                    exitCode: 0,
+                    stdout: '',
+                    stderr: '',
+                    durationMs: 1,
+                ),
             'sudo passwd -l agent >/dev/null 2>&1 || true' => new RemoteShellResult(
                 exitCode: 0,
                 stdout: '',
@@ -584,9 +632,13 @@ describe('agent tool fixes', function (): void {
 
         $result = $fixer->fix($tool, agentToolDriftEntry('tool.agent_user_missing'));
 
-        expect($result)->not->toBeNull()
-            ->and($result['status'])->toBe('completed')
-            ->and($shell->calls)->toHaveCount(2);
+        expect($result)
+            ->not
+            ->toBeNull()
+            ->and($result['status'])
+            ->toBe('completed')
+            ->and($shell->calls)
+            ->toHaveCount(2);
     });
 });
 
@@ -684,7 +736,12 @@ final class ToolsFixerRemoteShell implements RemoteShell
      */
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        $result = $this->responses[$script] ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        $result = $this->responses[$script] ?? new RemoteShellResult(
+            exitCode: 0,
+            stdout: '',
+            stderr: '',
+            durationMs: 1,
+        );
 
         $this->scripts[] = $script;
         $this->calls[] = ['command' => $script, 'result' => $result];

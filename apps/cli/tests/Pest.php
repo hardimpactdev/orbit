@@ -45,8 +45,11 @@ function fakeSuccessEnvelope(array $data = [], array $meta = []): array
  * @param  array<string, mixed>  $meta
  * @return array<string, mixed>
  */
-function fakeErrorEnvelope(string $code = 'internal_error', string $message = 'Something went wrong.', array $meta = []): array
-{
+function fakeErrorEnvelope(
+    string $code = 'internal_error',
+    string $message = 'Something went wrong.',
+    array $meta = [],
+): array {
     return JsonEnvelope::failure($code, $message, $meta);
 }
 
@@ -75,8 +78,7 @@ function fakeGateway(array $body, int $status = 200): void
  */
 function gatewayProgressFrame(string $event, array $data): string
 {
-    return "event: {$event}\n"
-        .'data: '.json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n\n";
+    return "event: {$event}\n".'data: '.json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n\n";
 }
 
 function fakeGatewayProgressStream(string|StreamInterface $body, int $status = 200): void
@@ -122,9 +124,10 @@ function fakeGatewayProgressStreamSequence(array $bodies, int $status = 200): Fa
     app()->instance(FakeGatewayStreamHttpClient::class, $httpClient);
     GatewayMockClient::destroyGlobal();
     GatewayMockClient::global([
-        GenericGatewayStreamRequest::class => fn (GatewayPendingRequest $pendingRequest): GatewayMockResponse => new FakeGatewayStreamMockResponse(
-            $httpClient->recordPendingRequest($pendingRequest),
-        ),
+        GenericGatewayStreamRequest::class =>
+            fn (GatewayPendingRequest $pendingRequest): GatewayMockResponse => new FakeGatewayStreamMockResponse(
+                $httpClient->recordPendingRequest($pendingRequest),
+            ),
     ]);
 
     app()->instance(GatewayStreamClient::class, new GatewayStreamClient(
@@ -295,8 +298,10 @@ final class FakeGatewayStreamMockResponse extends GatewayMockResponse
         parent::__construct('', $response->getStatusCode());
     }
 
-    public function createPsrResponse(ResponseFactoryInterface $responseFactory, StreamFactoryInterface $streamFactory): ResponseInterface
-    {
+    public function createPsrResponse(
+        ResponseFactoryInterface $responseFactory,
+        StreamFactoryInterface $streamFactory,
+    ): ResponseInterface {
         return $this->response;
     }
 }
@@ -426,7 +431,10 @@ function fakeNoGatewayConfig(string $configPath): void
 
 function assertProgressTreeSpacerContract(string $text): bool
 {
-    $lines = array_values(array_filter(explode("\n", rtrim($text, "\n")), static fn (string $line): bool => trim($line) !== ''));
+    $lines = array_values(array_filter(
+        explode("\n", rtrim($text, "\n")),
+        static fn (string $line): bool => trim($line) !== '',
+    ));
 
     if ($lines === [] || ! str_contains($lines[0], 'Updating Orbit nodes')) {
         return false;

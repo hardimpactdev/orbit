@@ -10,7 +10,9 @@ use Spatie\Activitylog\Facades\LogBatch;
 
 final readonly class ActivityLogger
 {
-    public function __construct(private ActivityLogCorrelation $correlation) {}
+    public function __construct(
+        private ActivityLogCorrelation $correlation,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $extraProperties

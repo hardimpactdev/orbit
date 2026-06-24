@@ -1,0 +1,133 @@
+variant = "loose"
+
+[[issues]]
+file = "bootstrap/app.php"
+code = "no-empty-comment"
+message = "Empty comments are not allowed."
+count = 2
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'Orbit WebSocket Runtime'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'array'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'en'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'en_US'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'file'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'http://localhost'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `'production'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/app.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `''` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `'/etc/orbit/websocket/apps.php'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `'0'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `'0.0.0.0'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `'127.0.0.1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `'6379'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `'reverb'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `10_000` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `15` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `60` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `8080` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "config/reverb.php"
+code = "literal-named-argument"
+message = "Literal argument `false` should be passed as a named argument for clarity."
+count = 1

@@ -29,10 +29,13 @@ final class ListWorkspacesRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): WorkspaceListResponse
@@ -41,7 +44,7 @@ final class ListWorkspacesRequest extends GatewayRequest
         $workspaces = $data['workspaces'] ?? [];
 
         return new WorkspaceListResponse(
-            workspaces: is_array($workspaces) ? array_values($workspaces) : [],
+            workspaces: $this->listOfStringKeyedArrays($workspaces),
         );
     }
 }

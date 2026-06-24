@@ -47,14 +47,20 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         );
 
         if ($selection['host'] !== null) {
-            return ProviderAvailability::available("docker prepared topology {$kind->value} is available on {$selection['host']->host}");
+            return ProviderAvailability::available(
+                "docker prepared topology {$kind->value} is available on {$selection['host']->host}",
+            );
         }
 
         return ProviderAvailability::unavailable(implode('; ', $selection['failures']));
     }
 
-    public function acquire(E2ETopologyKind $kind, string $runId, E2EPhaseTimer $timer, E2ETopologyAcquisitionOptions $options): E2ETopologyLease
-    {
+    public function acquire(
+        E2ETopologyKind $kind,
+        string $runId,
+        E2EPhaseTimer $timer,
+        E2ETopologyAcquisitionOptions $options,
+    ): E2ETopologyLease {
         $resourceLease = $this->acquireResourceLease();
         $selection = $this->selectHost($kind, $resourceLease !== null ? [$resourceLease->host()] : null);
         $host = $selection['host'];
@@ -72,20 +78,63 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         $instances = [];
 
         try {
-            $sourcePath = $this->sourceMountedCheckoutHostPath($host, $options->sourceMountedCheckout, $timer, 'docker.source-sync');
-            $networkPlan = $timer->measure('docker.network', fn (): DockerTopologyNetworkPlan => $this->createNetwork($host, $network, $runId));
+            $sourcePath = $this->sourceMountedCheckoutHostPath(
+                $host,
+                $options->sourceMountedCheckout,
+                $timer,
+                'docker.source-sync',
+            );
+            $networkPlan = $timer->measure('docker.network', fn (): DockerTopologyNetworkPlan => $this->createNetwork(
+                $host,
+                $network,
+                $runId,
+            ));
 
-            $instances = $this->startContainers($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $sourcePath, $options->sourceMountedCheckout, $timer, 'docker.start');
+            $instances = $this->startContainers(
+                $host,
+                $kind,
+                $runId,
+                $network,
+                $roles,
+                $networkPlan,
+                $topologyMode,
+                $imageNames,
+                $sourcePath,
+                $options->sourceMountedCheckout,
+                $timer,
+                'docker.start',
+            );
 
             $timer->measure('docker.seedGatewayNameShim', fn () => $this->seedGatewayContainerNameShim($instances));
-            $timer->measure('docker.seedClientCliGateways', fn () => $this->seedClientCliGateways($instances, $networkPlan, $topologyMode));
+            $timer->measure('docker.seedClientCliGateways', fn () => $this->seedClientCliGateways(
+                $instances,
+                $networkPlan,
+                $topologyMode,
+            ));
             $timer->measure('docker.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($instances));
-            $timer->measure('docker.prepareGatewayState', fn () => $this->prepareGatewayState($instances, $networkPlan, $topologyMode));
+            $timer->measure('docker.prepareGatewayState', fn () => $this->prepareGatewayState(
+                $instances,
+                $networkPlan,
+                $topologyMode,
+            ));
             $timer->measure('docker.startGatewayScheduler', fn () => $this->startGatewayScheduler($host, $instances));
-            $timer->measure('docker.seedOperatorIdentity', fn () => $this->seedOperatorIdentity($instances, $networkPlan, $topologyMode));
-            $timer->measure('docker.seedGatewayRegistry', fn () => $this->seedGatewayRegistry($kind, $instances, $networkPlan, $topologyMode));
+            $timer->measure('docker.seedOperatorIdentity', fn () => $this->seedOperatorIdentity(
+                $instances,
+                $networkPlan,
+                $topologyMode,
+            ));
+            $timer->measure('docker.seedGatewayRegistry', fn () => $this->seedGatewayRegistry(
+                $kind,
+                $instances,
+                $networkPlan,
+                $topologyMode,
+            ));
             $timer->measure('docker.prune', fn () => $this->prunePreparedGatewayRegistry($instances));
-            $timer->measure('docker.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $instances, $networkPlan));
+            $timer->measure('docker.primeGatewayApi', fn () => $this->primeGatewayApi(
+                $runId,
+                $instances,
+                $networkPlan,
+            ));
         } catch (\Throwable $exception) {
             if ($options->retainOnFailure) {
                 $retainedResourceLease = null;
@@ -120,19 +169,73 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             throw $exception;
         }
 
-        $rebuild = function (E2EPhaseTimer $cycleTimer) use ($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $options): array {
-            $sourcePath = $this->sourceMountedCheckoutHostPath($host, $options->sourceMountedCheckout, $cycleTimer, 'reset.source-sync');
-            $newInstances = $this->startContainers($host, $kind, $runId, $network, $roles, $networkPlan, $topologyMode, $imageNames, $sourcePath, $options->sourceMountedCheckout, $cycleTimer, 'reset.start');
+        $rebuild = function (E2EPhaseTimer $cycleTimer) use (
+            $host,
+            $kind,
+            $runId,
+            $network,
+            $roles,
+            $networkPlan,
+            $topologyMode,
+            $imageNames,
+            $options,
+        ): array {
+            $sourcePath = $this->sourceMountedCheckoutHostPath(
+                $host,
+                $options->sourceMountedCheckout,
+                $cycleTimer,
+                'reset.source-sync',
+            );
+            $newInstances = $this->startContainers(
+                $host,
+                $kind,
+                $runId,
+                $network,
+                $roles,
+                $networkPlan,
+                $topologyMode,
+                $imageNames,
+                $sourcePath,
+                $options->sourceMountedCheckout,
+                $cycleTimer,
+                'reset.start',
+            );
 
-            $cycleTimer->measure('reset.seedGatewayNameShim', fn () => $this->seedGatewayContainerNameShim($newInstances));
-            $cycleTimer->measure('reset.seedClientCliGateways', fn () => $this->seedClientCliGateways($newInstances, $networkPlan, $topologyMode));
+            $cycleTimer->measure('reset.seedGatewayNameShim', fn () => $this->seedGatewayContainerNameShim(
+                $newInstances,
+            ));
+            $cycleTimer->measure('reset.seedClientCliGateways', fn () => $this->seedClientCliGateways(
+                $newInstances,
+                $networkPlan,
+                $topologyMode,
+            ));
             $cycleTimer->measure('reset.seedSshAccess', fn () => $this->seedRemoteShellSshAccess($newInstances));
-            $cycleTimer->measure('reset.prepareGatewayState', fn () => $this->prepareGatewayState($newInstances, $networkPlan, $topologyMode));
-            $cycleTimer->measure('reset.startGatewayScheduler', fn () => $this->startGatewayScheduler($host, $newInstances));
-            $cycleTimer->measure('reset.seedOperatorIdentity', fn () => $this->seedOperatorIdentity($newInstances, $networkPlan, $topologyMode));
-            $cycleTimer->measure('reset.seedGatewayRegistry', fn () => $this->seedGatewayRegistry($kind, $newInstances, $networkPlan, $topologyMode));
+            $cycleTimer->measure('reset.prepareGatewayState', fn () => $this->prepareGatewayState(
+                $newInstances,
+                $networkPlan,
+                $topologyMode,
+            ));
+            $cycleTimer->measure('reset.startGatewayScheduler', fn () => $this->startGatewayScheduler(
+                $host,
+                $newInstances,
+            ));
+            $cycleTimer->measure('reset.seedOperatorIdentity', fn () => $this->seedOperatorIdentity(
+                $newInstances,
+                $networkPlan,
+                $topologyMode,
+            ));
+            $cycleTimer->measure('reset.seedGatewayRegistry', fn () => $this->seedGatewayRegistry(
+                $kind,
+                $newInstances,
+                $networkPlan,
+                $topologyMode,
+            ));
             $cycleTimer->measure('reset.prune', fn () => $this->prunePreparedGatewayRegistry($newInstances));
-            $cycleTimer->measure('reset.primeGatewayApi', fn () => $this->primeGatewayApi($runId, $newInstances, $networkPlan));
+            $cycleTimer->measure('reset.primeGatewayApi', fn () => $this->primeGatewayApi(
+                $runId,
+                $newInstances,
+                $networkPlan,
+            ));
 
             return [
                 'instances' => $this->leaseInstancesFor($kind, $newInstances),
@@ -140,7 +243,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             ];
         };
 
-        $bulkCleanup = fn (E2EPhaseTimer $cleanupTimer) => $this->cleanupContainersForRoles($host, $roles, $runId, $cleanupTimer);
+        $bulkCleanup = fn (E2EPhaseTimer $cleanupTimer) => $this->cleanupContainersForRoles(
+            $host,
+            $roles,
+            $runId,
+            $cleanupTimer,
+        );
         $teardown = fn (E2EPhaseTimer $cleanupTimer) => $this->cleanupNetwork($host, $network, $cleanupTimer);
         $leaseInstances = $this->leaseInstancesFor($kind, $instances);
 
@@ -209,7 +317,13 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             E2ETopologyKind::OperatorGatewayAppprodIngress => ['operator', 'gateway', 'prod', 'ingress'],
             E2ETopologyKind::OperatorGatewayAppdevWebsocket => ['operator', 'gateway', 'dev'],
             E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket => ['operator', 'gateway', 'dev', 'prod'],
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => ['operator', 'gateway', 'dev', 'prod', 'agent'],
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket => [
+                'operator',
+                'gateway',
+                'dev',
+                'prod',
+                'agent',
+            ],
         };
     }
 
@@ -220,11 +334,15 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private static function websocketTopologyKind(E2ETopologyKind $kind): bool
     {
-        return in_array($kind, [
-            E2ETopologyKind::OperatorGatewayAppdevWebsocket,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
-            E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
-        ], true);
+        return in_array(
+            $kind,
+            [
+                E2ETopologyKind::OperatorGatewayAppdevWebsocket,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket,
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            ],
+            true,
+        );
     }
 
     public static function maxContainerCountForAnyTopology(): int
@@ -244,7 +362,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     public static function defaultPhpRuntimeImage(): string
     {
-        return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+        return new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
     }
 
     public static function sourceGatewayArtisanImage(): string
@@ -262,7 +380,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     public static function phpRuntimeImages(): array
     {
-        return (new PhpRuntimeCatalog)->supportedImages();
+        return new PhpRuntimeCatalog()->supportedImages();
     }
 
     /**
@@ -289,7 +407,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 continue;
             }
 
-            if (! $host->run('docker info >/dev/null', timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
+            if (! $host->run(
+                'docker info >/dev/null',
+                timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+            )->successful()) {
                 $failures[] = "{$hostName}: docker daemon is not reachable";
 
                 continue;
@@ -347,7 +468,7 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $runningContainers = $this->runningE2EContainerCount($host);
 
-            if ($runningContainers + $requestedContainers > $containerCap) {
+            if (($runningContainers + $requestedContainers) > $containerCap) {
                 $failures[] = "{$hostName}: docker capacity exceeded";
 
                 continue;
@@ -395,7 +516,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             $imageCandidates = $this->imageNameCandidatesFor($kind, $role);
 
             foreach ($imageCandidates as $image) {
-                if ($host->run(sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)), timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds())->successful()) {
+                if ($host->run(
+                    sprintf('docker image inspect %s >/dev/null', escapeshellarg($image)),
+                    timeoutSeconds: $this->dockerMetadataProbeTimeoutSeconds(),
+                )->successful()) {
                     $imageNames[$role] = $image;
 
                     continue 2;
@@ -477,7 +601,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
             $networkPlan = DockerTopologyNetworkPlan::fromEnvironment($runId, $attempt);
             $result = $host->run(
-                sprintf('docker network create --subnet %s %s', escapeshellarg($networkPlan->subnet()), escapeshellarg($network)),
+                sprintf(
+                    'docker network create --subnet %s %s',
+                    escapeshellarg($networkPlan->subnet()),
+                    escapeshellarg($network),
+                ),
                 60,
             );
 
@@ -500,8 +628,20 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      * @param  array<string, string>  $imageNames
      * @return array<string, DockerInstance>
      */
-    private function startContainers(DockerHost $host, E2ETopologyKind $kind, string $runId, string $network, array $roles, DockerTopologyNetworkPlan $networkPlan, string $topologyMode, array $imageNames, ?string $sourcePath, bool $sourceMountedCheckout, E2EPhaseTimer $timer, string $timerPrefix): array
-    {
+    private function startContainers(
+        DockerHost $host,
+        E2ETopologyKind $kind,
+        string $runId,
+        string $network,
+        array $roles,
+        DockerTopologyNetworkPlan $networkPlan,
+        string $topologyMode,
+        array $imageNames,
+        ?string $sourcePath,
+        bool $sourceMountedCheckout,
+        E2EPhaseTimer $timer,
+        string $timerPrefix,
+    ): array {
         $tasks = [];
         $sourceMountedCheckoutPath = $sourceMountedCheckout ? self::OrbitPath : null;
 
@@ -515,17 +655,29 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 'container_names' => $this->managedContainerNames($name, $role),
                 'volume_names' => $this->managedVolumeNames($name),
                 'node_command' => implode(' && ', array_filter([
-                    $this->startContainerCommand($host, $name, $network, $role, $ip, $image, $topologyMode, $sourcePath),
+                    $this->startContainerCommand(
+                        $host,
+                        $name,
+                        $network,
+                        $role,
+                        $ip,
+                        $image,
+                        $topologyMode,
+                        $sourcePath,
+                    ),
                     $this->canonicalWireGuardAddressCommand($name, $role, $topologyMode),
                 ])),
                 'gateway_command' => $this->startsGatewaySibling($role)
                     ? $this->startGatewayContainerCommand($name, $network, $role, $sourcePath)
                     : null,
             ];
-            $tasks[$role]['command'] = implode(' && ', array_filter([
-                $tasks[$role]['node_command'],
-                $tasks[$role]['gateway_command'],
-            ]));
+            $tasks[$role]['command'] = implode(
+                ' && ',
+                array_filter([
+                    $tasks[$role]['node_command'],
+                    $tasks[$role]['gateway_command'],
+                ]),
+            );
         }
 
         try {
@@ -539,7 +691,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                             $host->mustRun($task['node_command'], "Could not start container {$task['name']}");
 
                             if (is_string($task['gateway_command'])) {
-                                $host->mustRun($task['gateway_command'], "Could not start gateway container {$this->gatewayContainerName($task['name'])}");
+                                $host->mustRun(
+                                    $task['gateway_command'],
+                                    "Could not start gateway container {$this->gatewayContainerName($task['name'])}",
+                                );
                             }
                         },
                     );
@@ -552,7 +707,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             $results = $timer->measure($timerPrefix, fn () => Process::pool(function ($pool) use ($host, $tasks): void {
                 foreach ($tasks as $role => $task) {
-                    $pool->as($role)
+                    $pool
+                        ->as($role)
                         ->timeout($this->config->timeoutSeconds)
                         ->env($host->environment())
                         ->command($task['command']);
@@ -565,7 +721,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                 $result = $results[$role];
 
                 if (! $result->successful()) {
-                    throw new \RuntimeException("Could not start container {$task['name']}: ".trim($result->errorOutput().' '.$result->output()));
+                    throw new \RuntimeException(
+                        "Could not start container {$task['name']}: "
+                            .trim($result->errorOutput().' '.$result->output()),
+                    );
                 }
 
                 $instances[$role] = new DockerInstance($host, $task['name'], $network, $sourceMountedCheckoutPath);
@@ -587,8 +746,16 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
     }
 
-    private function startContainerCommand(DockerHost $host, string $name, string $network, string $role, string $ip, string $image, string $topologyMode, ?string $sourcePath): string
-    {
+    private function startContainerCommand(
+        DockerHost $host,
+        string $name,
+        string $network,
+        string $role,
+        string $ip,
+        string $image,
+        string $topologyMode,
+        ?string $sourcePath,
+    ): string {
         $networkAlias = $topologyMode === 'dns-alias'
             ? ' --network-alias '.escapeshellarg($role)
             : '';
@@ -641,8 +808,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         );
     }
 
-    private function startGatewayContainerCommand(string $nodeContainer, string $network, string $role, ?string $sourcePath): string
-    {
+    private function startGatewayContainerCommand(
+        string $nodeContainer,
+        string $network,
+        string $role,
+        ?string $sourcePath,
+    ): string {
         $orbitPath = $this->orbitPathForRole($role);
         $sourceMount = $sourcePath !== null
             ? ' --mount '.escapeshellarg($this->sourceBindMount($sourcePath))
@@ -676,202 +847,206 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
             E2ECommand::exec(
                 $instance,
-                str_replace([
-                    '__GATEWAY_CONTAINER__',
-                    '__NODE_CONTAINER__',
-                    '__GATEWAY_IMAGE__',
-                    '__ORBIT_PATH__',
-                ], [
-                    $gatewayContainer,
-                    $nodeContainer,
-                    self::gatewaySiblingImage(),
-                    self::OrbitPath,
-                ], <<<'SH_WRAP'
-            if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_GATEWAY_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
-                if grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
-                    :
-                elif [ ! -x /usr/bin/docker.real ]; then
-                    mv /usr/bin/docker /usr/bin/docker.real
-                fi
-            fi
-            cat > /usr/local/bin/docker <<'BASH'
-            #!/usr/bin/env bash
-            # ORBIT_E2E_GATEWAY_DOCKER_SHIM
-            set -eu
-
-            real_docker="/usr/bin/docker.real"
-            gateway_container="${ORBIT_GATEWAY_CONTAINER:-__GATEWAY_CONTAINER__}"
-            node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
-            gateway_image="${ORBIT_GATEWAY_IMAGE:-__GATEWAY_IMAGE__}"
-            source_path="${ORBIT_SOURCE_PATH:-__ORBIT_PATH__}"
-
-            volume_mountpoint() {
-                "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
-            }
-
-            rewrite_path() {
-                local path="$1"
-                local home_orbit
-                local etc_caddy
-                local etc_orbit
-                local opt_orbit
-                local var_lib_orbit
-                local run_php
-
-                home_orbit="$(volume_mountpoint "${node_container}-home-orbit")"
-                etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
-                etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
-                opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
-                var_lib_orbit="$(volume_mountpoint "${node_container}-var-lib-orbit")"
-                run_php="$(volume_mountpoint "${node_container}-run-php")"
-
-                case "${path}" in
-                    /home)
-                        if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
-                        ;;
-                    /home/orbit)
-                        if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
-                        ;;
-                    /home/orbit/*)
-                        if [ -n "${home_orbit}" ]; then printf '%s%s' "${home_orbit}" "${path#/home/orbit}"; else printf '%s' "${path}"; fi
-                        ;;
-                    /etc/caddy)
-                        printf '%s' "${etc_caddy}"
-                        ;;
-                    /etc/caddy/*)
-                        printf '%s%s' "${etc_caddy}" "${path#/etc/caddy}"
-                        ;;
-                    /etc/orbit)
-                        printf '%s' "${etc_orbit}"
-                        ;;
-                    /etc/orbit/*)
-                        printf '%s%s' "${etc_orbit}" "${path#/etc/orbit}"
-                        ;;
-                    /opt/orbit)
-                        printf '%s' "${opt_orbit}"
-                        ;;
-                    /opt/orbit/*)
-                        printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
-                        ;;
-                    /var/lib/orbit)
-                        printf '%s' "${var_lib_orbit}"
-                        ;;
-                    /var/lib/orbit/*)
-                        printf '%s%s' "${var_lib_orbit}" "${path#/var/lib/orbit}"
-                        ;;
-                    /run/php)
-                        printf '%s' "${run_php}"
-                        ;;
-                    /run/php/*)
-                        printf '%s%s' "${run_php}" "${path#/run/php}"
-                        ;;
-                    *)
-                        printf '%s' "${path}"
-                        ;;
-                esac
-            }
-
-            rewrite_mount() {
-                local argument="$1"
-                local prefix
-                local remainder
-                local source
-                local rest
-
-                case "${argument}" in
-                    type=bind,source=*)
-                        prefix="type=bind,source="
-                        ;;
-                    type=bind,src=*)
-                        prefix="type=bind,src="
-                        ;;
-                    *)
-                        printf '%s' "${argument}"
-                        return
-                        ;;
-                esac
-
-                remainder="${argument#"${prefix}"}"
-                source="${remainder%%,*}"
-                rest="${remainder#"${source}"}"
-                rewritten_source="$(rewrite_path "${source}")"
-
-                if [ "${source}" = "/home" ] && [ "${rewritten_source}" != "${source}" ]; then
-                    rest="${rest//,target=\/home/,target=\/home\/orbit}"
-                    rest="${rest//,dst=\/home/,dst=\/home\/orbit}"
-                fi
-
-                printf '%s%s%s' "${prefix}" "${rewritten_source}" "${rest}"
-            }
-
-            rewrite_volume() {
-                local argument="$1"
-                local source
-                local rest
-                local rewritten_source
-
-                case "${argument}" in
-                    /*:*)
-                        source="${argument%%:*}"
-                        rest="${argument#"${source}"}"
-                        rewritten_source="$(rewrite_path "${source}")"
-
-                        if [ "${source}" = "/home" ] && [ "${rewritten_source}" != "${source}" ]; then
-                            rest="${rest/:\/home/:\/home\/orbit}"
+                str_replace(
+                    [
+                        '__GATEWAY_CONTAINER__',
+                        '__NODE_CONTAINER__',
+                        '__GATEWAY_IMAGE__',
+                        '__ORBIT_PATH__',
+                    ],
+                    [
+                        $gatewayContainer,
+                        $nodeContainer,
+                        self::gatewaySiblingImage(),
+                        self::OrbitPath,
+                    ],
+                    <<<'SH_WRAP'
+                        if [ -x /usr/bin/docker ] && ! grep -q ORBIT_E2E_GATEWAY_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+                            if grep -q ORBIT_E2E_RUNTIME_DOCKER_SHIM /usr/bin/docker 2>/dev/null; then
+                                :
+                            elif [ ! -x /usr/bin/docker.real ]; then
+                                mv /usr/bin/docker /usr/bin/docker.real
+                            fi
                         fi
+                        cat > /usr/local/bin/docker <<'BASH'
+                        #!/usr/bin/env bash
+                        # ORBIT_E2E_GATEWAY_DOCKER_SHIM
+                        set -eu
 
-                        printf '%s%s' "${rewritten_source}" "${rest}"
-                        ;;
-                    *)
-                        printf '%s' "${argument}"
-                        ;;
-                esac
-            }
+                        real_docker="/usr/bin/docker.real"
+                        gateway_container="${ORBIT_GATEWAY_CONTAINER:-__GATEWAY_CONTAINER__}"
+                        node_container="${ORBIT_NODE_CONTAINER:-__NODE_CONTAINER__}"
+                        gateway_image="${ORBIT_GATEWAY_IMAGE:-__GATEWAY_IMAGE__}"
+                        source_path="${ORBIT_SOURCE_PATH:-__ORBIT_PATH__}"
 
-            args=()
-            rewrite_next_volume=false
+                        volume_mountpoint() {
+                            "${real_docker}" volume inspect "$1" --format '{{ .Mountpoint }}' 2>/dev/null || true
+                        }
 
-            for argument in "$@"; do
-                if [ "${rewrite_next_volume}" = true ]; then
-                    args+=("$(rewrite_volume "${argument}")")
-                    rewrite_next_volume=false
-                    continue
-                fi
+                        rewrite_path() {
+                            local path="$1"
+                            local home_orbit
+                            local etc_caddy
+                            local etc_orbit
+                            local opt_orbit
+                            local var_lib_orbit
+                            local run_php
 
-                case "${argument}" in
-                    orbit-gateway)
-                        args+=("${gateway_container}")
-                        ;;
-                    orbit-gateway:current)
-                        args+=("${gateway_image}")
-                        ;;
-                    /opt/orbit)
-                        args+=("${source_path}")
-                        ;;
-                    /opt/orbit/*)
-                        args+=("${source_path}${argument#/opt/orbit}")
-                        ;;
-                    type=bind,source=*|type=bind,src=*)
-                        args+=("$(rewrite_mount "${argument}")")
-                        ;;
-                    -v|--volume)
-                        args+=("${argument}")
-                        rewrite_next_volume=true
-                        ;;
-                    --volume=*)
-                        args+=("--volume=$(rewrite_volume "${argument#--volume=}")")
-                        ;;
-                    *)
-                        args+=("${argument}")
-                        ;;
-                esac
-            done
+                            home_orbit="$(volume_mountpoint "${node_container}-home-orbit")"
+                            etc_caddy="$(volume_mountpoint "${node_container}-etc-caddy")"
+                            etc_orbit="$(volume_mountpoint "${node_container}-etc-orbit")"
+                            opt_orbit="$(volume_mountpoint "${node_container}-opt-orbit")"
+                            var_lib_orbit="$(volume_mountpoint "${node_container}-var-lib-orbit")"
+                            run_php="$(volume_mountpoint "${node_container}-run-php")"
 
-            exec "${real_docker}" "${args[@]}"
-            BASH
-            chmod 0755 /usr/local/bin/docker
-            cp /usr/local/bin/docker /usr/bin/docker
-            SH_WRAP),
+                            case "${path}" in
+                                /home)
+                                    if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
+                                    ;;
+                                /home/orbit)
+                                    if [ -n "${home_orbit}" ]; then printf '%s' "${home_orbit}"; else printf '%s' "${path}"; fi
+                                    ;;
+                                /home/orbit/*)
+                                    if [ -n "${home_orbit}" ]; then printf '%s%s' "${home_orbit}" "${path#/home/orbit}"; else printf '%s' "${path}"; fi
+                                    ;;
+                                /etc/caddy)
+                                    printf '%s' "${etc_caddy}"
+                                    ;;
+                                /etc/caddy/*)
+                                    printf '%s%s' "${etc_caddy}" "${path#/etc/caddy}"
+                                    ;;
+                                /etc/orbit)
+                                    printf '%s' "${etc_orbit}"
+                                    ;;
+                                /etc/orbit/*)
+                                    printf '%s%s' "${etc_orbit}" "${path#/etc/orbit}"
+                                    ;;
+                                /opt/orbit)
+                                    printf '%s' "${opt_orbit}"
+                                    ;;
+                                /opt/orbit/*)
+                                    printf '%s%s' "${opt_orbit}" "${path#/opt/orbit}"
+                                    ;;
+                                /var/lib/orbit)
+                                    printf '%s' "${var_lib_orbit}"
+                                    ;;
+                                /var/lib/orbit/*)
+                                    printf '%s%s' "${var_lib_orbit}" "${path#/var/lib/orbit}"
+                                    ;;
+                                /run/php)
+                                    printf '%s' "${run_php}"
+                                    ;;
+                                /run/php/*)
+                                    printf '%s%s' "${run_php}" "${path#/run/php}"
+                                    ;;
+                                *)
+                                    printf '%s' "${path}"
+                                    ;;
+                            esac
+                        }
+
+                        rewrite_mount() {
+                            local argument="$1"
+                            local prefix
+                            local remainder
+                            local source
+                            local rest
+
+                            case "${argument}" in
+                                type=bind,source=*)
+                                    prefix="type=bind,source="
+                                    ;;
+                                type=bind,src=*)
+                                    prefix="type=bind,src="
+                                    ;;
+                                *)
+                                    printf '%s' "${argument}"
+                                    return
+                                    ;;
+                            esac
+
+                            remainder="${argument#"${prefix}"}"
+                            source="${remainder%%,*}"
+                            rest="${remainder#"${source}"}"
+                            rewritten_source="$(rewrite_path "${source}")"
+
+                            if [ "${source}" = "/home" ] && [ "${rewritten_source}" != "${source}" ]; then
+                                rest="${rest//,target=\/home/,target=\/home\/orbit}"
+                                rest="${rest//,dst=\/home/,dst=\/home\/orbit}"
+                            fi
+
+                            printf '%s%s%s' "${prefix}" "${rewritten_source}" "${rest}"
+                        }
+
+                        rewrite_volume() {
+                            local argument="$1"
+                            local source
+                            local rest
+                            local rewritten_source
+
+                            case "${argument}" in
+                                /*:*)
+                                    source="${argument%%:*}"
+                                    rest="${argument#"${source}"}"
+                                    rewritten_source="$(rewrite_path "${source}")"
+
+                                    if [ "${source}" = "/home" ] && [ "${rewritten_source}" != "${source}" ]; then
+                                        rest="${rest/:\/home/:\/home\/orbit}"
+                                    fi
+
+                                    printf '%s%s' "${rewritten_source}" "${rest}"
+                                    ;;
+                                *)
+                                    printf '%s' "${argument}"
+                                    ;;
+                            esac
+                        }
+
+                        args=()
+                        rewrite_next_volume=false
+
+                        for argument in "$@"; do
+                            if [ "${rewrite_next_volume}" = true ]; then
+                                args+=("$(rewrite_volume "${argument}")")
+                                rewrite_next_volume=false
+                                continue
+                            fi
+
+                            case "${argument}" in
+                                orbit-gateway)
+                                    args+=("${gateway_container}")
+                                    ;;
+                                orbit-gateway:current)
+                                    args+=("${gateway_image}")
+                                    ;;
+                                /opt/orbit)
+                                    args+=("${source_path}")
+                                    ;;
+                                /opt/orbit/*)
+                                    args+=("${source_path}${argument#/opt/orbit}")
+                                    ;;
+                                type=bind,source=*|type=bind,src=*)
+                                    args+=("$(rewrite_mount "${argument}")")
+                                    ;;
+                                -v|--volume)
+                                    args+=("${argument}")
+                                    rewrite_next_volume=true
+                                    ;;
+                                --volume=*)
+                                    args+=("--volume=$(rewrite_volume "${argument#--volume=}")")
+                                    ;;
+                                *)
+                                    args+=("${argument}")
+                                    ;;
+                            esac
+                        done
+
+                        exec "${real_docker}" "${args[@]}"
+                        BASH
+                        chmod 0755 /usr/local/bin/docker
+                        cp /usr/local/bin/docker /usr/bin/docker
+                        SH_WRAP,
+                ),
                 "Could not install Docker gateway container name shim in Docker container {$instance->name()}",
                 timeoutSeconds: 60,
             );
@@ -889,7 +1064,14 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
             return;
         }
 
-        $targets = array_intersect_key($instances, array_flip(['gateway', 'dev', 'prod', 'agent', 'ingress', 'websocket']));
+        $targets = array_intersect_key($instances, array_flip([
+            'gateway',
+            'dev',
+            'prod',
+            'agent',
+            'ingress',
+            'websocket',
+        ]));
 
         if ($targets === []) {
             return;
@@ -974,23 +1156,26 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private function cliJsonConfigBody(string $gatewayUrl): string
     {
-        return json_encode([
-            'schema_version' => 1,
-            'active_gateway' => 'default',
-            'gateways' => [
-                'default' => [
-                    'url' => $gatewayUrl,
-                    'wireguard_ip' => null,
-                    'ca_pem_path' => null,
-                    'ca_sha256' => null,
-                    'ca_fingerprint' => null,
-                    'timeout' => 30,
-                    'self_mode' => 'wireguard_https',
+        return json_encode(
+            [
+                'schema_version' => 1,
+                'active_gateway' => 'default',
+                'gateways' => [
+                    'default' => [
+                        'url' => $gatewayUrl,
+                        'wireguard_ip' => null,
+                        'ca_pem_path' => null,
+                        'ca_sha256' => null,
+                        'ca_fingerprint' => null,
+                        'timeout' => 30,
+                        'self_mode' => 'wireguard_https',
+                    ],
                 ],
+                'defaults' => ['node' => null, 'profile' => null],
+                'meta' => ['imported_from' => 'docker-e2e-topology-runtime', 'imported_at' => date(DATE_ATOM)],
             ],
-            'defaults' => ['node' => null, 'profile' => null],
-            'meta' => ['imported_from' => 'docker-e2e-topology-runtime', 'imported_at' => date(DATE_ATOM)],
-        ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES,
+        );
     }
 
     /**
@@ -1058,8 +1243,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     /**
      * @param  array<string, DockerInstance>  $instances
      */
-    private function seedGatewayRegistry(E2ETopologyKind $kind, array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): void
-    {
+    private function seedGatewayRegistry(
+        E2ETopologyKind $kind,
+        array $instances,
+        DockerTopologyNetworkPlan $networkPlan,
+        string $mode,
+    ): void {
         $gateway = $instances['gateway'] ?? null;
 
         if ($gateway === null) {
@@ -1095,8 +1284,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      *     after_successful_tasks: array<string, string>,
      * }
      */
-    private function gatewayRegistrySeedTasks(E2ETopologyKind $kind, array $instances, DockerTopologyNetworkPlan $networkPlan, string $mode): array
-    {
+    private function gatewayRegistrySeedTasks(
+        E2ETopologyKind $kind,
+        array $instances,
+        DockerTopologyNetworkPlan $networkPlan,
+        string $mode,
+    ): array {
         $tasks = [];
         $afterSuccessfulTasks = [];
         $gatewayEndpoint = $this->gatewayEndpoint($networkPlan, $mode);
@@ -1111,7 +1304,8 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
                     $this->wireGuardAddressForRole('dev', $networkPlan, $mode),
                     $gatewayEndpoint,
                 ),
-                'php apps/gateway/artisan tinker --execute='.escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
+                'php apps/gateway/artisan tinker --execute='
+                    .escapeshellarg(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp()),
             ]);
         }
 
@@ -1279,8 +1473,13 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     /**
      * @param  list<string>  $roles
      */
-    private function cleanupResources(DockerHost $host, string $network, array $roles, string $runId, ?E2EPhaseTimer $timer = null): void
-    {
+    private function cleanupResources(
+        DockerHost $host,
+        string $network,
+        array $roles,
+        string $runId,
+        ?E2EPhaseTimer $timer = null,
+    ): void {
         $this->cleanupContainers($host, $this->containerNamesForRoles($roles, $runId), $timer);
         $this->cleanupVolumes($host, $this->volumeNamesForRoles($roles, $runId), $timer);
         $this->cleanupNetwork($host, $network, $timer);
@@ -1289,8 +1488,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
     /**
      * @param  list<string>  $roles
      */
-    private function cleanupContainersForRoles(DockerHost $host, array $roles, string $runId, ?E2EPhaseTimer $timer = null): void
-    {
+    private function cleanupContainersForRoles(
+        DockerHost $host,
+        array $roles,
+        string $runId,
+        ?E2EPhaseTimer $timer = null,
+    ): void {
         $this->cleanupContainers($host, $this->containerNamesForRoles($roles, $runId), $timer);
         $this->cleanupVolumes($host, $this->volumeNamesForRoles($roles, $runId), $timer);
     }
@@ -1316,7 +1519,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
 
     private function cleanupNetwork(DockerHost $host, string $network, ?E2EPhaseTimer $timer = null): void
     {
-        $deleteNetwork = fn () => $host->run(sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)), timeoutSeconds: 30);
+        $deleteNetwork = fn () => $host->run(
+            sprintf('docker network rm %s >/dev/null 2>&1 || true', escapeshellarg($network)),
+            timeoutSeconds: 30,
+        );
 
         if ($timer !== null) {
             $timer->measure('cleanup.network', $deleteNetwork);
@@ -1459,8 +1665,12 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
         return "type=volume,src={$this->homeVolumeName($nodeContainer, $user)},dst=/home/{$user}";
     }
 
-    private function sourceMountedCheckoutHostPath(DockerHost $host, bool $sourceMountedCheckout, E2EPhaseTimer $timer, string $phase): ?string
-    {
+    private function sourceMountedCheckoutHostPath(
+        DockerHost $host,
+        bool $sourceMountedCheckout,
+        E2EPhaseTimer $timer,
+        string $phase,
+    ): ?string {
         if (! $sourceMountedCheckout) {
             return null;
         }
@@ -1503,8 +1713,10 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private static function containerCountForRoles(array $roles): int
     {
-        return (count($roles) * self::ContainersPerRole)
-            + (self::rolesNeedGatewaySibling($roles) ? self::GatewaySiblingContainers : 0);
+        return (
+            (count($roles) * self::ContainersPerRole)
+            + (self::rolesNeedGatewaySibling($roles) ? self::GatewaySiblingContainers : 0)
+        );
     }
 
     /**
@@ -1539,7 +1751,11 @@ final readonly class DockerTopologyProvider implements E2ETopologyProvider
      */
     private function leaseInstancesFor(E2ETopologyKind $kind, array $instances): array
     {
-        if (E2EPreparedTopology::prodHostsIngressRole($kind) && isset($instances['prod']) && ! isset($instances['ingress'])) {
+        if (
+            E2EPreparedTopology::prodHostsIngressRole($kind)
+            && isset($instances['prod'])
+            && ! isset($instances['ingress'])
+        ) {
             $instances['ingress'] = $instances['prod'];
         }
 

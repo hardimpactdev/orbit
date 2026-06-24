@@ -21,8 +21,12 @@ final class GatewayConnector extends Connector
         private readonly mixed $correlationIdResolver = null,
     ) {}
 
-    public static function forScheduler(?string $baseUrl = null, string|bool|null $caPemPath = null, int $timeout = 900, ?callable $correlationIdResolver = null): self
-    {
+    public static function forScheduler(
+        ?string $baseUrl = null,
+        string|bool|null $caPemPath = null,
+        int $timeout = 900,
+        ?callable $correlationIdResolver = null,
+    ): self {
         return new self('scheduler', $baseUrl, $caPemPath, $timeout, $correlationIdResolver);
     }
 

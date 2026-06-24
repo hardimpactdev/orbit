@@ -34,7 +34,8 @@ describe('UpdateDriverRegistry', function (): void {
 
         expect($drivers)
             ->toHaveCount(1)
-            ->and($drivers[0]->key())->toBe('fake-updates');
+            ->and($drivers[0]->key())
+            ->toBe('fake-updates');
     });
 
     it('selects no drivers for an unsupported macOS node target', function (): void {
@@ -67,7 +68,8 @@ describe('UpdateDriverRegistry', function (): void {
 
         expect($registry->driversFor($target))
             ->toBe([])
-            ->and($snapshot->issues)->toBe([]);
+            ->and($snapshot->issues)
+            ->toBe([]);
     });
 
     it('builds a managed target for active Ubuntu server-role nodes', function (): void {
@@ -84,10 +86,14 @@ describe('UpdateDriverRegistry', function (): void {
 
         $target = app(UpdateTargetFactory::class)->forNode($node->refresh());
 
-        expect($target->family)->toBe('node')
-            ->and($target->node->is($node))->toBeTrue()
-            ->and($target->platform)->toBe('ubuntu_24-04')
-            ->and($target->scope)->toBe('managed-server-node');
+        expect($target->family)
+            ->toBe('node')
+            ->and($target->node->is($node))
+            ->toBeTrue()
+            ->and($target->platform)
+            ->toBe('ubuntu_24-04')
+            ->and($target->scope)
+            ->toBe('managed-server-node');
     });
 
     it('builds an unsupported target for macOS control nodes', function (): void {
@@ -98,10 +104,14 @@ describe('UpdateDriverRegistry', function (): void {
 
         $target = app(UpdateTargetFactory::class)->forNode($node);
 
-        expect($target->family)->toBe('node')
-            ->and($target->node->is($node))->toBeTrue()
-            ->and($target->platform)->toBe('macos_15')
-            ->and($target->scope)->toBe('unsupported-node');
+        expect($target->family)
+            ->toBe('node')
+            ->and($target->node->is($node))
+            ->toBeTrue()
+            ->and($target->platform)
+            ->toBe('macos_15')
+            ->and($target->scope)
+            ->toBe('unsupported-node');
     });
 });
 
@@ -119,9 +129,11 @@ final class RegistryFakeUpdateDriver implements UpdateDriver
 
     public function supports(UpdateTarget $target): bool
     {
-        return $target->family === 'node'
+        return (
+            $target->family === 'node'
             && $target->platform === 'ubuntu_24-04'
-            && $target->scope === 'managed-server-node';
+            && $target->scope === 'managed-server-node'
+        );
     }
 
     public function probe(UpdateTarget $target): UpdatePostureSnapshot

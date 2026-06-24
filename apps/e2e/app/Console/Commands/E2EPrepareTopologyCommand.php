@@ -62,13 +62,17 @@ class E2EPrepareTopologyCommand extends Command
         $kind = E2ETopologyKind::tryFromInput($kindValue);
 
         if ($kind === null) {
-            return $this->failValidation("Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.');
+            return $this->failValidation(
+                "Invalid topology kind [{$kindValue}]. Supported: ".E2EPreparedTopology::supportedKindsForHelp().'.',
+            );
         }
 
         $config = E2EConfig::fromEnvironment();
 
         if (! in_array('incus', $config->providerNames, true)) {
-            return $this->failCommand('No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.');
+            return $this->failCommand(
+                'No Incus provider configured. Set ORBIT_E2E_PROVIDER or ORBIT_E2E_PROVIDERS to include incus.',
+            );
         }
 
         if (! E2EPreparedTopology::supportsKind($kind)) {
@@ -137,11 +141,20 @@ class E2EPrepareTopologyCommand extends Command
         }
 
         if (! $useBuildArtifacts && $artifactRoles !== null) {
-            return $this->failValidation('Selected Incus role rebakes use build artifacts. Pass --use-build-artifacts with --roles or --all-roles.');
+            return $this->failValidation(
+                'Selected Incus role rebakes use build artifacts. Pass --use-build-artifacts with --roles or --all-roles.',
+            );
         }
 
-        if (! $useBuildArtifacts && ($this->option('branch') !== null || $this->option('source-archive') !== null || $this->option('composer-cache') !== null)) {
-            return $this->failValidation('--branch, --source-archive, and --composer-cache only apply with --use-build-artifacts.');
+        if (
+            ! $useBuildArtifacts
+            && ($this->option('branch') !== null
+            || $this->option('source-archive') !== null
+            || $this->option('composer-cache') !== null)
+        ) {
+            return $this->failValidation(
+                '--branch, --source-archive, and --composer-cache only apply with --use-build-artifacts.',
+            );
         }
 
         $hostPool = IncusHostPool::fromEnvironment($config);
@@ -168,8 +181,14 @@ class E2EPrepareTopologyCommand extends Command
 
                 $builder->useBundle($remoteBundle);
             } else {
-                $gatewayArtifactBundleDir = $timer->measure('gateway-artifacts.local', fn (): string => $this->buildLocalGatewayArtifactBundle($timer));
-                $remoteGatewayArtifactBundle = $timer->measure('gateway-artifacts.push', fn (): string => $this->pushLocalGatewayArtifactBundle($host, $gatewayArtifactBundleDir, $timer));
+                $gatewayArtifactBundleDir = $timer->measure('gateway-artifacts.local', fn (): string => $this->buildLocalGatewayArtifactBundle(
+                    $timer,
+                ));
+                $remoteGatewayArtifactBundle = $timer->measure('gateway-artifacts.push', fn (): string => $this->pushLocalGatewayArtifactBundle(
+                    $host,
+                    $gatewayArtifactBundleDir,
+                    $timer,
+                ));
 
                 $builder->useGatewayArtifactBundle($remoteGatewayArtifactBundle);
             }
@@ -181,9 +200,16 @@ class E2EPrepareTopologyCommand extends Command
                 );
                 $incusRoles = array_values(array_unique($incusRoles));
 
-                $manifest = $timer->measure('builder.build', fn (): array => $builder->buildSelectedRoles($buildKind, $incusRoles, replaceExisting: true));
+                $manifest = $timer->measure('builder.build', fn (): array => $builder->buildSelectedRoles(
+                    $buildKind,
+                    $incusRoles,
+                    replaceExisting: true,
+                ));
             } else {
-                $manifest = $timer->measure('builder.build', fn (): array => $builder->build($buildKind, replaceExisting: true));
+                $manifest = $timer->measure('builder.build', fn (): array => $builder->build(
+                    $buildKind,
+                    replaceExisting: true,
+                ));
             }
         } catch (RuntimeException $exception) {
             return $this->failCommand($exception->getMessage());
@@ -193,15 +219,22 @@ class E2EPrepareTopologyCommand extends Command
             }
 
             if ($remoteGatewayArtifactBundle !== null) {
-                $timer->measure('gateway-artifacts.cleanup.remote', fn () => $this->cleanupRemoteCliBinaryBundle($host, $remoteGatewayArtifactBundle));
+                $timer->measure('gateway-artifacts.cleanup.remote', fn () => $this->cleanupRemoteCliBinaryBundle(
+                    $host,
+                    $remoteGatewayArtifactBundle,
+                ));
             }
 
             if ($bundleDir !== null && is_dir($bundleDir)) {
-                $timer->measure('bundle.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $bundleDir)));
+                $timer->measure('bundle.cleanup.local', fn () => Process::run(
+                    'rm -rf '.escapeshellarg((string) $bundleDir),
+                ));
             }
 
             if ($gatewayArtifactBundleDir !== null && is_dir($gatewayArtifactBundleDir)) {
-                $timer->measure('gateway-artifacts.cleanup.local', fn () => Process::run('rm -rf '.escapeshellarg((string) $gatewayArtifactBundleDir)));
+                $timer->measure('gateway-artifacts.cleanup.local', fn () => Process::run(
+                    'rm -rf '.escapeshellarg((string) $gatewayArtifactBundleDir),
+                ));
             }
 
             $timer->flush('prepare-topology');
@@ -279,7 +312,7 @@ class E2EPrepareTopologyCommand extends Command
         // a heavy real app:build + phpacker step; skip it under unit tests,
         // which fake Process and only assert command/host selection behavior.
         if (! app()->runningUnitTests()) {
-            (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir, E2EArtifactBuildFingerprint::cliBinary());
+            new OrbitCliBinaryBundle()->buildLinuxBinaryInto($bundleDir, E2EArtifactBuildFingerprint::cliBinary());
         }
 
         return $bundleDir;
@@ -298,7 +331,7 @@ class E2EPrepareTopologyCommand extends Command
 
             $timer->measure(
                 'gateway-artifacts.local.cli-binary',
-                fn () => (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir, $fingerprint),
+                fn () => new OrbitCliBinaryBundle()->buildLinuxBinaryInto($bundleDir, $fingerprint),
             );
         }
 
@@ -319,7 +352,9 @@ class E2EPrepareTopologyCommand extends Command
         );
 
         if (! $stage->successful()) {
-            throw new RuntimeException("Could not create remote gateway artifact bundle directory on {$host->config->host}: {$stage->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create remote gateway artifact bundle directory on {$host->config->host}: {$stage->errorOutput()}",
+            );
         }
 
         $remoteDir = trim((string) $stage->output());
@@ -333,18 +368,32 @@ class E2EPrepareTopologyCommand extends Command
         }
 
         try {
-            $copy = $timer->measure('gateway-artifacts.push.binary', fn (): ProcessResult => Process::timeout(120)->run(sprintf(
+            $copy = $timer->measure('gateway-artifacts.push.binary', fn (): ProcessResult => Process::timeout(
+                120,
+            )->run(sprintf(
                 'scp -q %s %s',
                 escapeshellarg($binary),
                 escapeshellarg("{$host->config->host}:{$remoteDir}/orbit-binary"),
             )));
 
             if (! $copy->successful()) {
-                throw new RuntimeException("Could not push gateway artifact bundle to {$host->config->host}:{$remoteDir}: {$copy->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not push gateway artifact bundle to {$host->config->host}:{$remoteDir}: {$copy->errorOutput()}",
+                );
             }
 
-            $this->buildRemoteGatewayImageArtifact($host, $remoteDir, E2EArtifactBuildFingerprint::gatewayImage(), $timer);
-            $this->buildRemoteWebSocketImageArtifact($host, $remoteDir, E2EArtifactBuildFingerprint::webSocketImage(), $timer);
+            $this->buildRemoteGatewayImageArtifact(
+                $host,
+                $remoteDir,
+                E2EArtifactBuildFingerprint::gatewayImage(),
+                $timer,
+            );
+            $this->buildRemoteWebSocketImageArtifact(
+                $host,
+                $remoteDir,
+                E2EArtifactBuildFingerprint::webSocketImage(),
+                $timer,
+            );
         } catch (RuntimeException $exception) {
             $host->run('rm -rf '.escapeshellarg($remoteDir).' || true', timeoutSeconds: 30);
 
@@ -354,8 +403,12 @@ class E2EPrepareTopologyCommand extends Command
         return $remoteDir;
     }
 
-    private function buildRemoteGatewayImageArtifact(IncusHost $host, string $remoteDir, string $fingerprint, E2EPhaseTimer $timer): void
-    {
+    private function buildRemoteGatewayImageArtifact(
+        IncusHost $host,
+        string $remoteDir,
+        string $fingerprint,
+        E2EPhaseTimer $timer,
+    ): void {
         if (app()->runningUnitTests()) {
             return;
         }
@@ -379,7 +432,9 @@ class E2EPrepareTopologyCommand extends Command
             );
 
             if (! $cacheCopy->successful()) {
-                throw new RuntimeException("Could not copy cached gateway image archive on {$host->config->host}: {$cacheCopy->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not copy cached gateway image archive on {$host->config->host}: {$cacheCopy->errorOutput()}",
+                );
             }
 
             return;
@@ -393,25 +448,35 @@ class E2EPrepareTopologyCommand extends Command
         );
 
         if (! $mkdir->successful()) {
-            throw new RuntimeException("Could not create remote gateway image build context on {$host->config->host}: {$mkdir->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create remote gateway image build context on {$host->config->host}: {$mkdir->errorOutput()}",
+            );
         }
 
         foreach (['apps/gateway', 'packages/core', 'packages/sdk', 'docker/orbit-gateway'] as $path) {
             $label = str_replace('/', '-', $path);
             $mkdirParent = $timer->measure(
                 "gateway-artifacts.push.context-parent.{$label}",
-                fn (): ProcessResult => $host->run('mkdir -p '.escapeshellarg("{$remoteBuildContext}/".dirname($path)), timeoutSeconds: 30),
+                fn (): ProcessResult => $host->run(
+                    'mkdir -p '.escapeshellarg("{$remoteBuildContext}/".dirname($path)),
+                    timeoutSeconds: 30,
+                ),
             );
 
             if (! $mkdirParent->successful()) {
-                throw new RuntimeException("Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}",
+                );
             }
 
-            $copy = $timer->measure("gateway-artifacts.push.context-rsync.{$label}", fn (): ProcessResult => Process::timeout(300)->run(sprintf(
-                'rsync -a --delete --include=.env.example --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
-                escapeshellarg(repo_path($path).'/'),
-                escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
-            )));
+            $copy = $timer->measure(
+                "gateway-artifacts.push.context-rsync.{$label}",
+                fn (): ProcessResult => Process::timeout(300)->run(sprintf(
+                    'rsync -a --delete --include=.env.example --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
+                    escapeshellarg(repo_path($path).'/'),
+                    escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
+                )),
+            );
 
             if (! $copy->successful()) {
                 throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");
@@ -425,19 +490,27 @@ class E2EPrepareTopologyCommand extends Command
             if ($parent !== '.') {
                 $mkdirParent = $timer->measure(
                     "gateway-artifacts.push.context-parent.{$label}",
-                    fn (): ProcessResult => $host->run('mkdir -p '.escapeshellarg("{$remoteBuildContext}/{$parent}"), timeoutSeconds: 30),
+                    fn (): ProcessResult => $host->run(
+                        'mkdir -p '.escapeshellarg("{$remoteBuildContext}/{$parent}"),
+                        timeoutSeconds: 30,
+                    ),
                 );
 
                 if (! $mkdirParent->successful()) {
-                    throw new RuntimeException("Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}");
+                    throw new RuntimeException(
+                        "Could not create remote gateway image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}",
+                    );
                 }
             }
 
-            $copy = $timer->measure("gateway-artifacts.push.context-copy.{$label}", fn (): ProcessResult => Process::timeout(120)->run(sprintf(
-                'scp -q %s %s',
-                escapeshellarg(repo_path($path)),
-                escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}"),
-            )));
+            $copy = $timer->measure(
+                "gateway-artifacts.push.context-copy.{$label}",
+                fn (): ProcessResult => Process::timeout(120)->run(sprintf(
+                    'scp -q %s %s',
+                    escapeshellarg(repo_path($path)),
+                    escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}"),
+                )),
+            );
 
             if (! $copy->successful()) {
                 throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");
@@ -447,29 +520,33 @@ class E2EPrepareTopologyCommand extends Command
         $gatewayImage = DockerTopologyProvider::gatewayImage();
         $build = $timer->measure('gateway-artifacts.push.image-build', fn (): ProcessResult => $host->run(sprintf(
             <<<'BASH'
-cd %1$s
-docker build -f docker/orbit-gateway/Dockerfile -t %2$s .
-BASH,
+                cd %1$s
+                docker build -f docker/orbit-gateway/Dockerfile -t %2$s .
+                BASH,
             escapeshellarg($remoteBuildContext),
             escapeshellarg($gatewayImage),
         ), timeoutSeconds: 1800));
 
         if (! $build->successful()) {
-            throw new RuntimeException("Could not build {$gatewayImage} on {$host->config->host}: {$build->output()}{$build->errorOutput()}");
+            throw new RuntimeException(
+                "Could not build {$gatewayImage} on {$host->config->host}: {$build->output()}{$build->errorOutput()}",
+            );
         }
 
         $save = $timer->measure('gateway-artifacts.push.image-save', fn (): ProcessResult => $host->run(sprintf(
             <<<'BASH'
-docker save %2$s -o %3$s
-chmod 0644 %3$s
-BASH,
+                docker save %2$s -o %3$s
+                chmod 0644 %3$s
+                BASH,
             escapeshellarg($remoteBuildContext),
             escapeshellarg($gatewayImage),
             escapeshellarg($archive),
         ), timeoutSeconds: 1800));
 
         if (! $save->successful()) {
-            throw new RuntimeException("Could not save {$gatewayImage} on {$host->config->host}: {$save->output()}{$save->errorOutput()}");
+            throw new RuntimeException(
+                "Could not save {$gatewayImage} on {$host->config->host}: {$save->output()}{$save->errorOutput()}",
+            );
         }
 
         $cacheWrite = $timer->measure(
@@ -484,7 +561,9 @@ BASH,
         );
 
         if (! $cacheWrite->successful()) {
-            throw new RuntimeException("Could not cache {$gatewayImage} on {$host->config->host}: {$cacheWrite->errorOutput()}");
+            throw new RuntimeException(
+                "Could not cache {$gatewayImage} on {$host->config->host}: {$cacheWrite->errorOutput()}",
+            );
         }
 
         $cleanup = $timer->measure(
@@ -493,18 +572,25 @@ BASH,
         );
 
         if (! $cleanup->successful()) {
-            throw new RuntimeException("Could not clean remote gateway image build context on {$host->config->host}: {$cleanup->errorOutput()}");
+            throw new RuntimeException(
+                "Could not clean remote gateway image build context on {$host->config->host}: {$cleanup->errorOutput()}",
+            );
         }
     }
 
-    private function buildRemoteWebSocketImageArtifact(IncusHost $host, string $remoteDir, string $fingerprint, E2EPhaseTimer $timer): void
-    {
+    private function buildRemoteWebSocketImageArtifact(
+        IncusHost $host,
+        string $remoteDir,
+        string $fingerprint,
+        E2EPhaseTimer $timer,
+    ): void {
         if (app()->runningUnitTests()) {
             return;
         }
 
         $archive = "{$remoteDir}/".E2EArtifactProdManifest::WebSocketImageArchive;
-        $cacheArchive = ".cache/orbit-e2e/websocket-images/{$fingerprint}/".E2EArtifactProdManifest::WebSocketImageArchive;
+        $cacheArchive =
+            ".cache/orbit-e2e/websocket-images/{$fingerprint}/".E2EArtifactProdManifest::WebSocketImageArchive;
         $cacheCheck = $timer->measure(
             'gateway-artifacts.push.websocket-cache-check',
             fn (): ProcessResult => $host->run('test -f '.escapeshellarg($cacheArchive), timeoutSeconds: 30),
@@ -522,7 +608,9 @@ BASH,
             );
 
             if (! $cacheCopy->successful()) {
-                throw new RuntimeException("Could not copy cached websocket image archive on {$host->config->host}: {$cacheCopy->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not copy cached websocket image archive on {$host->config->host}: {$cacheCopy->errorOutput()}",
+                );
             }
 
             return;
@@ -536,25 +624,35 @@ BASH,
         );
 
         if (! $mkdir->successful()) {
-            throw new RuntimeException("Could not create remote websocket image build context on {$host->config->host}: {$mkdir->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create remote websocket image build context on {$host->config->host}: {$mkdir->errorOutput()}",
+            );
         }
 
         foreach (['apps/reverb', 'docker/orbit-reverb'] as $path) {
             $label = str_replace('/', '-', $path);
             $mkdirParent = $timer->measure(
                 "gateway-artifacts.push.websocket-context-parent.{$label}",
-                fn (): ProcessResult => $host->run('mkdir -p '.escapeshellarg("{$remoteBuildContext}/".dirname($path)), timeoutSeconds: 30),
+                fn (): ProcessResult => $host->run(
+                    'mkdir -p '.escapeshellarg("{$remoteBuildContext}/".dirname($path)),
+                    timeoutSeconds: 30,
+                ),
             );
 
             if (! $mkdirParent->successful()) {
-                throw new RuntimeException("Could not create remote websocket image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not create remote websocket image build context parent for {$path} on {$host->config->host}: {$mkdirParent->errorOutput()}",
+                );
             }
 
-            $copy = $timer->measure("gateway-artifacts.push.websocket-context-rsync.{$label}", fn (): ProcessResult => Process::timeout(300)->run(sprintf(
-                'rsync -a --delete --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
-                escapeshellarg(repo_path($path).'/'),
-                escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
-            )));
+            $copy = $timer->measure(
+                "gateway-artifacts.push.websocket-context-rsync.{$label}",
+                fn (): ProcessResult => Process::timeout(300)->run(sprintf(
+                    'rsync -a --delete --exclude=.env --exclude=.env.* --exclude=vendor --exclude=node_modules %s %s',
+                    escapeshellarg(repo_path($path).'/'),
+                    escapeshellarg("{$host->config->host}:{$remoteBuildContext}/{$path}/"),
+                )),
+            );
 
             if (! $copy->successful()) {
                 throw new RuntimeException("Could not stage {$path} on {$host->config->host}: {$copy->errorOutput()}");
@@ -564,28 +662,32 @@ BASH,
         $webSocketImage = DockerTopologyProvider::webSocketRuntimeImage();
         $build = $timer->measure('gateway-artifacts.push.websocket-build', fn (): ProcessResult => $host->run(sprintf(
             <<<'BASH'
-cd %1$s
-docker build -f docker/orbit-reverb/Dockerfile -t %2$s .
-BASH,
+                cd %1$s
+                docker build -f docker/orbit-reverb/Dockerfile -t %2$s .
+                BASH,
             escapeshellarg($remoteBuildContext),
             escapeshellarg($webSocketImage),
         ), timeoutSeconds: 1800));
 
         if (! $build->successful()) {
-            throw new RuntimeException("Could not build {$webSocketImage} on {$host->config->host}: {$build->output()}{$build->errorOutput()}");
+            throw new RuntimeException(
+                "Could not build {$webSocketImage} on {$host->config->host}: {$build->output()}{$build->errorOutput()}",
+            );
         }
 
         $save = $timer->measure('gateway-artifacts.push.websocket-save', fn (): ProcessResult => $host->run(sprintf(
             <<<'BASH'
-docker save %1$s -o %2$s
-chmod 0644 %2$s
-BASH,
+                docker save %1$s -o %2$s
+                chmod 0644 %2$s
+                BASH,
             escapeshellarg($webSocketImage),
             escapeshellarg($archive),
         ), timeoutSeconds: 1800));
 
         if (! $save->successful()) {
-            throw new RuntimeException("Could not save {$webSocketImage} on {$host->config->host}: {$save->output()}{$save->errorOutput()}");
+            throw new RuntimeException(
+                "Could not save {$webSocketImage} on {$host->config->host}: {$save->output()}{$save->errorOutput()}",
+            );
         }
 
         $cacheWrite = $timer->measure(
@@ -600,7 +702,9 @@ BASH,
         );
 
         if (! $cacheWrite->successful()) {
-            throw new RuntimeException("Could not cache {$webSocketImage} on {$host->config->host}: {$cacheWrite->errorOutput()}");
+            throw new RuntimeException(
+                "Could not cache {$webSocketImage} on {$host->config->host}: {$cacheWrite->errorOutput()}",
+            );
         }
 
         $cleanup = $timer->measure(
@@ -609,7 +713,9 @@ BASH,
         );
 
         if (! $cleanup->successful()) {
-            throw new RuntimeException("Could not clean remote websocket image build context on {$host->config->host}: {$cleanup->errorOutput()}");
+            throw new RuntimeException(
+                "Could not clean remote websocket image build context on {$host->config->host}: {$cleanup->errorOutput()}",
+            );
         }
     }
 
@@ -723,7 +829,7 @@ BASH,
             return $explicit;
         }
 
-        $home = (string) (getenv('HOME') ?: '');
+        $home = getenv('HOME') ?: '';
         $defaultPath = $home !== '' ? "{$home}/.cache/orbit-e2e/composer" : null;
 
         if ($defaultPath !== null && is_dir($defaultPath)) {
@@ -758,12 +864,19 @@ BASH,
             throw new InvalidArgumentException('Choose either --roles or --all-roles, not both.');
         }
 
-        if ($roles !== null && E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet) {
-            throw new InvalidArgumentException('Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes; omit --roles to rebuild the shared base artifact set.');
+        if (
+            $roles !== null
+            && E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet
+        ) {
+            throw new InvalidArgumentException(
+                'Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes; omit --roles to rebuild the shared base artifact set.',
+            );
         }
 
         if (E2ETopologyArtifactNamespace::hasCustomArtifactSet() && $roles === null && ! $allRoles) {
-            throw new InvalidArgumentException('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.');
+            throw new InvalidArgumentException(
+                'Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set.',
+            );
         }
 
         if ($roles === null) {
@@ -787,8 +900,13 @@ BASH,
 
         return array_values(array_filter(
             $roles,
-            fn (string $role): bool => in_array(E2EPreparedTopology::artifactRoleForIncusRole($role), $artifactRoles, true)
-                || array_any($artifactRoles, fn ($artifactRole) => E2EPreparedTopology::incusRoleForArtifactRole($artifactRole) === $role),
+            fn (string $role): bool => (
+                in_array(E2EPreparedTopology::artifactRoleForIncusRole($role), $artifactRoles, true)
+                || array_any(
+                    $artifactRoles,
+                    fn ($artifactRole) => E2EPreparedTopology::incusRoleForArtifactRole($artifactRole) === $role,
+                )
+            ),
         ));
     }
 

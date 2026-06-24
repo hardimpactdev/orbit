@@ -28,9 +28,9 @@ final readonly class E2EReachability
     ): void {
         $command = sprintf(
             <<<'SH'
-%s
-dig +time=%d +short %s @%s
-SH,
+                %s
+                dig +time=%d +short %s @%s
+                SH,
             self::ensureDigCommand(),
             $timeoutSeconds,
             escapeshellarg($hostname),
@@ -135,9 +135,9 @@ SH,
 
         return trim(sprintf(
             <<<'SH'
-%s
-curl -k %s --max-time %d%s %s
-SH,
+                %s
+                curl -k %s --max-time %d%s %s
+                SH,
             $resolvePrefix,
             $options,
             $timeoutSeconds,
@@ -170,13 +170,13 @@ SH,
 
         $prefix = sprintf(
             <<<'SH'
-%s
-resolved_ip="$(dig +time=%d +short %s @%s | awk 'NF { print; exit }')"
-if [ -z "$resolved_ip" ]; then
-    printf 'Could not resolve %%s via %%s\n' %s %s >&2
-    exit 6
-fi
-SH,
+                %s
+                resolved_ip="$(dig +time=%d +short %s @%s | awk 'NF { print; exit }')"
+                if [ -z "$resolved_ip" ]; then
+                    printf 'Could not resolve %%s via %%s\n' %s %s >&2
+                    exit 6
+                fi
+                SH,
             self::ensureDigCommand(),
             $timeoutSeconds,
             escapeshellarg($host),
@@ -191,7 +191,7 @@ SH,
     private static function ensureDigCommand(): string
     {
         return <<<'SH'
-command -v dig >/dev/null 2>&1 || { echo 'dig is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
-SH;
+            command -v dig >/dev/null 2>&1 || { echo 'dig is missing from the prepared Incus artifact. Rebuild the base image and prepared topology.' >&2; exit 1; }
+            SH;
     }
 }

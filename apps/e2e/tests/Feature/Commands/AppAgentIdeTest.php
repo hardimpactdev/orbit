@@ -11,26 +11,26 @@ function appAgentIdeGrantAccess(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-], [
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+        ], [
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-echo 'granted';
-PHP;
+        echo 'granted';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -50,7 +50,12 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-agent-ide');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         appAgentIdeGrantAccess($topology);
 
@@ -87,13 +92,16 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
 
         $setPayload = json_decode(trim($set->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($setPayload['success']['data']['app']['name'])->toBe($name)
-            ->and($setPayload['success']['data']['agent_ide'])->toBe([
+        expect($setPayload['success']['data']['app']['name'])
+            ->toBe($name)
+            ->and($setPayload['success']['data']['agent_ide'])
+            ->toBe([
                 'adapter' => 'opencode',
                 'source' => 'app',
                 'effective_adapter' => 'opencode',
             ])
-            ->and($setPayload['success']['data']['cleanup']['workspaces_removed'])->toBe([]);
+            ->and($setPayload['success']['data']['cleanup']['workspaces_removed'])
+            ->toBe([]);
 
         $clear = $topology->ssh(
             'operator',
@@ -115,7 +123,8 @@ it('sets app agent IDE intent from a operator caller through the gateway api', f
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg("echo json_encode([
                 'agent_ide_config' => \\App\\Models\\App::query()->where('name', '{$name}')->value('agent_ide_config'),
             ], JSON_THROW_ON_ERROR);"),
             timeoutSeconds: 120,

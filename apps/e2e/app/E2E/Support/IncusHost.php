@@ -94,7 +94,9 @@ class IncusHost
         $mktemp = $this->run('mktemp -d /tmp/orbit-e2e-stage-XXXXXX', timeoutSeconds: 30);
 
         if (! $mktemp->successful()) {
-            throw new RuntimeException("Could not create remote bundle dir on {$this->config->host}: {$mktemp->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create remote bundle dir on {$this->config->host}: {$mktemp->errorOutput()}",
+            );
         }
 
         $stageDir = trim($mktemp->output());
@@ -108,7 +110,9 @@ class IncusHost
         $mkdir = $this->run('mkdir -p '.escapeshellarg($bundleDir), timeoutSeconds: 30);
 
         if (! $mkdir->successful()) {
-            throw new RuntimeException("Could not create bundle subdir on {$this->config->host}: {$mkdir->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create bundle subdir on {$this->config->host}: {$mkdir->errorOutput()}",
+            );
         }
 
         if ($this->isLocalHost($this->config->host)) {
@@ -124,10 +128,25 @@ class IncusHost
 
             $this->stageGatewayImageArchive($bundleDir);
             $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
-            $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
-            $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
+            $this->stageDockerImageArchive(
+                '4km3/dnsmasq:latest',
+                'dnsmasq-latest.tar',
+                $bundleDir,
+                pullIfMissing: true,
+            );
+            $this->stageDockerImageArchive(
+                $this->defaultFrankenPhpImage(),
+                self::DefaultFrankenPhpImageArchive,
+                $bundleDir,
+                pullIfMissing: true,
+            );
             $this->stageWebSocketImageArchive($bundleDir);
-            $this->stageDockerImageArchive(WgEasyServiceInstaller::Image, self::DefaultWgEasyImageArchive, $bundleDir, pullIfMissing: true);
+            $this->stageDockerImageArchive(
+                WgEasyServiceInstaller::Image,
+                self::DefaultWgEasyImageArchive,
+                $bundleDir,
+                pullIfMissing: true,
+            );
 
             return $bundleDir;
         }
@@ -140,22 +159,34 @@ class IncusHost
         ));
 
         if (! $scp->successful()) {
-            throw new RuntimeException("Could not scp bundle to {$this->config->host}:{$bundleDir}: {$scp->errorOutput()}");
+            throw new RuntimeException(
+                "Could not scp bundle to {$this->config->host}:{$bundleDir}: {$scp->errorOutput()}",
+            );
         }
 
         $this->stageGatewayImageArchive($bundleDir);
         $this->stageDockerImageArchive('caddy:2-alpine', 'caddy-2-alpine.tar', $bundleDir, pullIfMissing: true);
         $this->stageDockerImageArchive('4km3/dnsmasq:latest', 'dnsmasq-latest.tar', $bundleDir, pullIfMissing: true);
-        $this->stageDockerImageArchive($this->defaultFrankenPhpImage(), self::DefaultFrankenPhpImageArchive, $bundleDir, pullIfMissing: true);
+        $this->stageDockerImageArchive(
+            $this->defaultFrankenPhpImage(),
+            self::DefaultFrankenPhpImageArchive,
+            $bundleDir,
+            pullIfMissing: true,
+        );
         $this->stageWebSocketImageArchive($bundleDir);
-        $this->stageDockerImageArchive(WgEasyServiceInstaller::Image, self::DefaultWgEasyImageArchive, $bundleDir, pullIfMissing: true);
+        $this->stageDockerImageArchive(
+            WgEasyServiceInstaller::Image,
+            self::DefaultWgEasyImageArchive,
+            $bundleDir,
+            pullIfMissing: true,
+        );
 
         return $bundleDir;
     }
 
     private function defaultFrankenPhpImage(): string
     {
-        return (new PhpRuntimeCatalog)->imageFor(PhpRuntimeCatalog::DEFAULT);
+        return new PhpRuntimeCatalog()->imageFor(PhpRuntimeCatalog::DEFAULT);
     }
 
     private function defaultGatewayImage(): string
@@ -181,7 +212,11 @@ class IncusHost
     private function stageWebSocketImageArchive(string $bundleDir): void
     {
         $this->ensureWebSocketRuntimeImage();
-        $this->stageDockerImageArchive($this->defaultWebSocketImage(), self::DefaultOrbitWebSocketImageArchive, $bundleDir);
+        $this->stageDockerImageArchive(
+            $this->defaultWebSocketImage(),
+            self::DefaultOrbitWebSocketImageArchive,
+            $bundleDir,
+        );
     }
 
     private function ensureWebSocketRuntimeImage(): void
@@ -190,43 +225,50 @@ class IncusHost
 
         $result = $this->run(sprintf(
             <<<'BASH'
-if ! docker image inspect %1$s >/dev/null 2>&1; then
-    cat >/tmp/orbit-e2e-websocket-runtime.Dockerfile <<'DOCKERFILE'
-FROM ubuntu:26.04
-ENV DEBIAN_FRONTEND=noninteractive
-RUN printf '%s\n' 'Acquire::ForceIPv4 "true";' 'Acquire::http::Timeout "10";' 'Acquire::https::Timeout "10";' 'Acquire::Retries "3";' >/etc/apt/apt.conf.d/99orbit-e2e-network \
-    && apt-get update -qq \
-    && apt-get install -y -qq --no-install-recommends \
-        ca-certificates \
-        php8.5-bcmath \
-        php8.5-cli \
-        php8.5-common \
-        php8.5-curl \
-        php8.5-intl \
-        php8.5-mbstring \
-        php8.5-redis \
-        php8.5-sqlite3 \
-        php8.5-xml \
-        php8.5-zip \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-WORKDIR /app
-CMD ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
-DOCKERFILE
-    docker build --pull=false -t %1$s -f /tmp/orbit-e2e-websocket-runtime.Dockerfile /tmp
-fi
-docker image inspect %1$s >/dev/null
-BASH,
+                if ! docker image inspect %1$s >/dev/null 2>&1; then
+                    cat >/tmp/orbit-e2e-websocket-runtime.Dockerfile <<'DOCKERFILE'
+                FROM ubuntu:26.04
+                ENV DEBIAN_FRONTEND=noninteractive
+                RUN printf '%s\n' 'Acquire::ForceIPv4 "true";' 'Acquire::http::Timeout "10";' 'Acquire::https::Timeout "10";' 'Acquire::Retries "3";' >/etc/apt/apt.conf.d/99orbit-e2e-network \
+                    && apt-get update -qq \
+                    && apt-get install -y -qq --no-install-recommends \
+                        ca-certificates \
+                        php8.5-bcmath \
+                        php8.5-cli \
+                        php8.5-common \
+                        php8.5-curl \
+                        php8.5-intl \
+                        php8.5-mbstring \
+                        php8.5-redis \
+                        php8.5-sqlite3 \
+                        php8.5-xml \
+                        php8.5-zip \
+                    && apt-get clean \
+                    && rm -rf /var/lib/apt/lists/*
+                WORKDIR /app
+                CMD ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+                DOCKERFILE
+                    docker build --pull=false -t %1$s -f /tmp/orbit-e2e-websocket-runtime.Dockerfile /tmp
+                fi
+                docker image inspect %1$s >/dev/null
+                BASH,
             $image,
         ), timeoutSeconds: 900);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not prepare {$this->defaultWebSocketImage()} on {$this->config->host}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not prepare {$this->defaultWebSocketImage()} on {$this->config->host}: {$result->errorOutput()}",
+            );
         }
     }
 
-    private function stageDockerImageArchive(string $image, string $fileName, string $bundleDir, bool $pullIfMissing = false, ?string $fallbackImage = null): void
-    {
+    private function stageDockerImageArchive(
+        string $image,
+        string $fileName,
+        string $bundleDir,
+        bool $pullIfMissing = false,
+        ?string $fallbackImage = null,
+    ): void {
         $archive = "{$bundleDir}/{$fileName}";
         $quotedImage = escapeshellarg($image);
         $fallbackCommand = '';
@@ -251,7 +293,9 @@ BASH,
         ), timeoutSeconds: 600);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not stage {$image} archive on {$this->config->host}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not stage {$image} archive on {$this->config->host}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -267,7 +311,9 @@ BASH,
         ?int $timeoutSeconds = null,
     ): ProcessResult {
         if (! in_array($nodeKind, ['operator', 'gateway', 'app'], true)) {
-            throw new RuntimeException("Incus topology provisioning node kind must be operator, gateway, or app; got [{$nodeKind}].");
+            throw new RuntimeException(
+                "Incus topology provisioning node kind must be operator, gateway, or app; got [{$nodeKind}].",
+            );
         }
 
         $guestBundleDirectory = self::GuestBundleDirectory;
@@ -280,7 +326,9 @@ BASH,
         ), timeoutSeconds: 30);
 
         if (! $clearExistingBundle->successful()) {
-            throw new RuntimeException("Could not clear bundle target on [{$instanceName}]: {$clearExistingBundle->errorOutput()}");
+            throw new RuntimeException(
+                "Could not clear bundle target on [{$instanceName}]: {$clearExistingBundle->errorOutput()}",
+            );
         }
 
         $push = $this->run(sprintf(
@@ -306,14 +354,16 @@ BASH,
             ? " --composer-cache={$guestBundleDirectory}/composer-cache"
             : '';
 
-        $hasGatewayImageArchive = $nodeKind === 'gateway'
+        $hasGatewayImageArchive =
+            $nodeKind === 'gateway'
             && $this->run(
                 'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultOrbitGatewayImageArchive),
                 timeoutSeconds: 5,
             )->successful();
 
         $gatewayImageArchiveArg = $hasGatewayImageArchive
-            ? " --gateway-image={$this->defaultGatewayImage()} --gateway-image-archive={$guestBundleDirectory}/".self::DefaultOrbitGatewayImageArchive
+            ? " --gateway-image={$this->defaultGatewayImage()} --gateway-image-archive={$guestBundleDirectory}/"
+            .self::DefaultOrbitGatewayImageArchive
             : '';
 
         $hasCaddyImageArchive = $this->run(
@@ -343,7 +393,8 @@ BASH,
             ? " --frankenphp-image-archive={$guestBundleDirectory}/".self::DefaultFrankenPhpImageArchive
             : '';
 
-        $hasWgEasyImageArchive = $nodeKind === 'gateway'
+        $hasWgEasyImageArchive =
+            $nodeKind === 'gateway'
             && $this->run(
                 'test -f '.escapeshellarg("{$remoteBundleDir}/".self::DefaultWgEasyImageArchive),
                 timeoutSeconds: 5,
@@ -381,8 +432,7 @@ BASH,
         );
 
         $script = sprintf(
-            'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '
-            .'%2$s',
+            'chmod +x %1$s/e2e-provision-node %1$s/install-orbit %1$s/_e2e-deps.sh && '.'%2$s',
             $guestBundleDirectory,
             $provisionCommand,
         );
@@ -405,7 +455,9 @@ BASH,
             );
 
         if (! $result->successful()) {
-            throw new RuntimeException("Provisioner failed on [{$instanceName}] (node_kind={$nodeKind}): {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Provisioner failed on [{$instanceName}] (node_kind={$nodeKind}): {$result->errorOutput()}",
+            );
         }
 
         $removeProvisioningBundle = $this->run(sprintf(
@@ -415,7 +467,9 @@ BASH,
         ), timeoutSeconds: 30);
 
         if (! $removeProvisioningBundle->successful()) {
-            throw new RuntimeException("Could not remove bundle target on [{$instanceName}]: {$removeProvisioningBundle->errorOutput()}");
+            throw new RuntimeException(
+                "Could not remove bundle target on [{$instanceName}]: {$removeProvisioningBundle->errorOutput()}",
+            );
         }
 
         return $result;
@@ -439,13 +493,15 @@ BASH,
 
     public function sourcePath(): string
     {
-        return $this->validatedSourcePath((new SourceMountedCheckoutSyncer)->sourcePath($this->config->host, 'incus'));
+        return $this->validatedSourcePath(new SourceMountedCheckoutSyncer()->sourcePath($this->config->host, 'incus'));
     }
 
     private function isLocalHost(string $host): bool
     {
-        return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
-            || strtolower($host) === strtolower((string) gethostname());
+        return (
+            in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
+            || strtolower($host) === strtolower((string) gethostname())
+        );
     }
 
     private function validatedSourcePath(string $path): string
@@ -458,7 +514,7 @@ BASH,
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                "Configured Incus source path [{$path}] is not visible on host [{$this->config->host}] or does not contain apps/cli/orbit."
+                "Configured Incus source path [{$path}] is not visible on host [{$this->config->host}] or does not contain apps/cli/orbit.",
             );
         }
 
@@ -511,7 +567,9 @@ BASH,
         $result = $this->run('incus list --format json');
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not list Incus instances on {$this->config->host}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not list Incus instances on {$this->config->host}: {$result->errorOutput()}",
+            );
         }
 
         $instances = json_decode($result->output(), associative: true);
@@ -531,10 +589,7 @@ BASH,
             $name = $instance['name'] ?? null;
             $status = $instance['status'] ?? null;
 
-            if (is_string($name) && is_string($status)
-                && str_starts_with($name, $prefix)
-                && $status === 'Running'
-            ) {
+            if (is_string($name) && is_string($status) && str_starts_with($name, $prefix) && $status === 'Running') {
                 $count++;
             }
         }
@@ -583,8 +638,13 @@ BASH,
         ));
     }
 
-    public function launchInstance(string $image, string $name, string $type = '--vm', string $config = '', ?int $timeoutSeconds = null): ProcessResult
-    {
+    public function launchInstance(
+        string $image,
+        string $name,
+        string $type = '--vm',
+        string $config = '',
+        ?int $timeoutSeconds = null,
+    ): ProcessResult {
         $parts = [
             'incus launch',
             escapeshellarg($image),
@@ -669,10 +729,13 @@ BASH,
             $waitLines[] = "wait \${$pid} || true";
         }
 
-        return $this->run(implode("\n", [
-            ...$lines,
-            ...$waitLines,
-        ]), timeoutSeconds: 180);
+        return $this->run(
+            implode("\n", [
+                ...$lines,
+                ...$waitLines,
+            ]),
+            timeoutSeconds: 180,
+        );
     }
 
     /**
@@ -691,10 +754,13 @@ BASH,
             $waitLines[] = "wait \${$pid}";
         }
 
-        return $this->run(implode("\n", [
-            ...$lines,
-            ...$waitLines,
-        ]), timeoutSeconds: 180);
+        return $this->run(
+            implode("\n", [
+                ...$lines,
+                ...$waitLines,
+            ]),
+            timeoutSeconds: 180,
+        );
     }
 
     /**
@@ -746,10 +812,13 @@ BASH,
             $waitLines[] = "wait \${$pid}";
         }
 
-        return $this->run(implode("\n", [
-            ...$lines,
-            ...$waitLines,
-        ]), timeoutSeconds: 300);
+        return $this->run(
+            implode("\n", [
+                ...$lines,
+                ...$waitLines,
+            ]),
+            timeoutSeconds: 300,
+        );
     }
 
     public function snapshotStatefulInstance(string $name, string $snapshot): ProcessResult
@@ -835,10 +904,13 @@ BASH,
             $waitLines[] = "wait \${$pid} || true";
         }
 
-        return $this->run(implode("\n", [
-            ...$lines,
-            ...$waitLines,
-        ]), timeoutSeconds: 180);
+        return $this->run(
+            implode("\n", [
+                ...$lines,
+                ...$waitLines,
+            ]),
+            timeoutSeconds: 180,
+        );
     }
 
     public function storagePoolArgument(): string

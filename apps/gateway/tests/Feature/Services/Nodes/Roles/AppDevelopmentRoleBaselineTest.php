@@ -65,8 +65,11 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->where('name', 'php-cli')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed');
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed');
     });
 
     it('converges composer with expected_state installed', function (): void {
@@ -84,8 +87,11 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->where('name', 'composer')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed');
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed');
     });
 
     it('converges gh with expected_state installed', function (): void {
@@ -103,8 +109,11 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->where('name', 'gh')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed');
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed');
     });
 
     it('converges laravel-installer with expected_state installed', function (): void {
@@ -122,8 +131,11 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
             ->where('name', 'laravel-installer')
             ->first();
 
-        expect($tool)->not->toBeNull()
-            ->and($tool->expected_state)->toBe('installed');
+        expect($tool)
+            ->not
+            ->toBeNull()
+            ->and($tool->expected_state)
+            ->toBe('installed');
     });
 
     it('does not converge supervisor as a supported tool', function (): void {
@@ -154,10 +166,12 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect(NodeTool::query()
-            ->where('node_id', $node->id)
-            ->where('name', 'php')
-            ->exists())->toBeFalse();
+        expect(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'php')
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('publishes app-dev caddy HTTP listeners on the node public IPv4 when present', function (): void {
@@ -198,10 +212,22 @@ describe('AppDevelopmentRoleBaseline host toolchain', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])->count())->toBe(4);
+        expect(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])
+                ->count(),
+        )
+            ->toBe(4);
 
         $baseline->remove($node, $assignment, purgeData: false);
 
-        expect(NodeTool::query()->where('node_id', $node->id)->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])->count())->toBe(0);
+        expect(
+            NodeTool::query()
+                ->where('node_id', $node->id)
+                ->whereIn('name', ['php-cli', 'composer', 'laravel-installer', 'gh'])
+                ->count(),
+        )
+            ->toBe(0);
     });
 });

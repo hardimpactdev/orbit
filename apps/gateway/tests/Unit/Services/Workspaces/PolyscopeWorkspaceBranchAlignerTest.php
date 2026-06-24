@@ -42,41 +42,53 @@ it('aligns a Polyscope workspace branch through the app node', function (): void
         ),
     );
 
-    (new PolyscopeWorkspaceBranchAligner(
+    new PolyscopeWorkspaceBranchAligner(
         remoteShell: $hostShell,
         localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
-    ))->align(
+    )->align(
         node: $node,
         workspaceId: 'wt-1',
         path: '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
         name: 'cta',
     );
 
-    expect($hostShell->runs)->toHaveCount(1)
-        ->and($hostShell->runs[0]['node'])->toBe('beast')
-        ->and($hostShell->runs[0]['options']['metadata'])->toMatchArray([
+    expect($hostShell->runs)
+        ->toHaveCount(1)
+        ->and($hostShell->runs[0]['node'])
+        ->toBe('beast')
+        ->and($hostShell->runs[0]['options']['metadata'])
+        ->toMatchArray([
             'ORBIT_POLYSCOPE_WORKSPACE_PATH' => '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
             'ORBIT_WORKSPACE_NAME' => 'cta',
         ])
-        ->and($hostShell->runs[0]['script'])->toContain('git', 'branch', '-m')
-        ->and($hostShell->runs[0]['script'])->not->toContain('python3')
-        ->and($hostShell->runs[0]['script'])->not->toContain('python -c')
-        ->and($hostShell->runs[0]['script'])->not->toContain('sqlite3')
-        ->and($hostShell->runs[0]['script'])->not->toContain('update worktrees');
+        ->and($hostShell->runs[0]['script'])
+        ->toContain('git', 'branch', '-m')
+        ->and($hostShell->runs[0]['script'])
+        ->not->toContain('python3')->and($hostShell->runs[0]['script'])
+        ->not->toContain('python -c')->and($hostShell->runs[0]['script'])
+        ->not->toContain('sqlite3')->and($hostShell->runs[0]['script'])
+        ->not->toContain('update worktrees');
 
     expect($localTransport->calls)->toHaveCount(1);
 
     $localScript = $localTransport->calls[0]['script'];
 
-    expect($localScript)->toContain('internal:workspace-adapter:update')
-        ->and($localScript)->toContain("--adapter='polyscope'")
-        ->and($localScript)->toContain("--update='workspace-branch'")
-        ->and($localScript)->toContain("--workspace-id='wt-1'")
-        ->and($localScript)->toContain("--branch='cta'")
-        ->and($localScript)->toContain('--operation-token=')
-        ->and($localScript)->not->toContain('python3')
-        ->and($localScript)->not->toContain('python -c')
-        ->and($localScript)->not->toContain('sqlite3');
+    expect($localScript)
+        ->toContain('internal:workspace-adapter:update')
+        ->and($localScript)
+        ->toContain("--adapter='polyscope'")
+        ->and($localScript)
+        ->toContain("--update='workspace-branch'")
+        ->and($localScript)
+        ->toContain("--workspace-id='wt-1'")
+        ->and($localScript)
+        ->toContain("--branch='cta'")
+        ->and($localScript)
+        ->toContain('--operation-token=')
+        ->and($localScript)
+        ->not->toContain('python3')->and($localScript)
+        ->not->toContain('python -c')->and($localScript)
+        ->not->toContain('sqlite3');
 });
 
 it('does not leak host branch rename output when a Polyscope branch cannot be aligned', function (): void {
@@ -90,10 +102,10 @@ it('does not leak host branch rename output when a Polyscope branch cannot be al
     );
 
     try {
-        (new PolyscopeWorkspaceBranchAligner(
+        new PolyscopeWorkspaceBranchAligner(
             remoteShell: $hostShell,
             localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
-        ))->align(
+        )->align(
             node: $node,
             workspaceId: 'wt-1',
             path: '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
@@ -102,9 +114,13 @@ it('does not leak host branch rename output when a Polyscope branch cannot be al
 
         $this->fail('Expected Polyscope branch alignment to fail.');
     } catch (WorkspaceCreateFailed $exception) {
-        expect($exception->getMessage())->toBe('Polyscope workspace was created but could not be renamed.')
-            ->and(polyscopeBranchAlignerExceptionBlob($exception))->not->toContain($secret)
-            ->and($exception->meta)->toMatchArray([
+        expect($exception->getMessage())
+            ->toBe('Polyscope workspace was created but could not be renamed.')
+            ->and(polyscopeBranchAlignerExceptionBlob($exception))
+            ->not
+            ->toContain($secret)
+            ->and($exception->meta)
+            ->toMatchArray([
                 'adapter' => 'polyscope',
                 'reason' => 'branch_rename_failed',
             ]);
@@ -133,10 +149,10 @@ it('does not leak local executor output when Polyscope adapter metadata cannot b
     );
 
     try {
-        (new PolyscopeWorkspaceBranchAligner(
+        new PolyscopeWorkspaceBranchAligner(
             remoteShell: $hostShell,
             localExecutor: polyscopeBranchAlignerLocalExecutor($localTransport),
-        ))->align(
+        )->align(
             node: $node,
             workspaceId: 'wt-1',
             path: '/home/nckrtl/.polyscope/clones/6dad0913/young-bat',
@@ -145,9 +161,13 @@ it('does not leak local executor output when Polyscope adapter metadata cannot b
 
         $this->fail('Expected Polyscope branch alignment to fail.');
     } catch (WorkspaceCreateFailed $exception) {
-        expect($exception->getMessage())->toBe('Polyscope workspace was created but could not be renamed.')
-            ->and(polyscopeBranchAlignerExceptionBlob($exception))->not->toContain($secret)
-            ->and($exception->meta)->toMatchArray([
+        expect($exception->getMessage())
+            ->toBe('Polyscope workspace was created but could not be renamed.')
+            ->and(polyscopeBranchAlignerExceptionBlob($exception))
+            ->not
+            ->toContain($secret)
+            ->and($exception->meta)
+            ->toMatchArray([
                 'adapter' => 'polyscope',
                 'reason' => 'workspace_adapter_update_failed',
                 'adapter_error_code' => 'update_failed',

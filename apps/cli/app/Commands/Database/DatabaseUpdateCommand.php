@@ -28,7 +28,11 @@ final class DatabaseUpdateCommand extends DatabaseGatewayCommand
 
     public function handle(): int
     {
-        $connection = $this->requiredArgument('connection', 'connection', 'The database connection argument is required.');
+        $connection = $this->requiredArgument(
+            'connection',
+            'connection',
+            'The database connection argument is required.',
+        );
 
         if (is_int($connection)) {
             return $connection;
@@ -63,8 +67,8 @@ final class DatabaseUpdateCommand extends DatabaseGatewayCommand
     private function connectionSlug(array $response, string $fallback): string
     {
         $data = $response['success']['data'] ?? null;
-        $connection = is_array($data) ? ($data['connection'] ?? null) : null;
-        $slug = is_array($connection) ? ($connection['slug'] ?? null) : null;
+        $connection = is_array($data) ? $data['connection'] ?? null : null;
+        $slug = is_array($connection) ? $connection['slug'] ?? null : null;
 
         return is_string($slug) && $slug !== '' ? $slug : $fallback;
     }

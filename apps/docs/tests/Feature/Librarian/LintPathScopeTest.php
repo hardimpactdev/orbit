@@ -33,9 +33,12 @@ it('reports app rule findings under a content-named docs root through --path=dom
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['result'])->toBe('failed')
-        ->and(findingsForLintScopeRule($payload, 'command_docs.command_directory_structure'))->not->toBeEmpty();
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['result'])
+        ->toBe('failed')
+        ->and(findingsForLintScopeRule($payload, 'command_docs.command_directory_structure'))
+        ->not->toBeEmpty();
 });
 
 it('keeps findings outside the scoped path excluded', function (): void {
@@ -47,8 +50,10 @@ it('keeps findings outside the scoped path excluded', function (): void {
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and(findingsForLintScopeRule($payload, 'command_docs.command_directory_structure'))->toBeEmpty();
+    expect($exitCode)
+        ->toBe(0)
+        ->and(findingsForLintScopeRule($payload, 'command_docs.command_directory_structure'))
+        ->toBeEmpty();
 });
 
 it('reports relative finding paths in the canonical docs namespace regardless of the docs directory name', function (): void {
@@ -58,20 +63,33 @@ it('reports relative finding paths in the canonical docs namespace regardless of
 
     expect($docs->relativePath("{$this->fixtureRoot}/content/domains/1_node/node.md"))
         ->toBe('docs/domains/1_node/node.md')
-        ->and($docs->relativePath("{$this->fixtureRoot}/content"))->toBe('docs');
+        ->and($docs->relativePath("{$this->fixtureRoot}/content"))
+        ->toBe('docs');
 });
 
 function writeLintScopeFamily(string $root, bool $withTechnicalContract): void
 {
     writeLintScopeFile($root, 'content/domains/1_node/README.md', "# Node Commands\n");
-    writeLintScopeFile($root, 'content/domains/1_node/node.md', "# Node\n\n## Purpose\n\nNode command contracts describe node behavior.\n");
-    writeLintScopeFile($root, 'content/domains/1_node/1_node-new/node-new.md', "# `orbit node:new`\n\n[Technical](technical/1_node-new.md)\n");
+    writeLintScopeFile(
+        $root,
+        'content/domains/1_node/node.md',
+        "# Node\n\n## Purpose\n\nNode command contracts describe node behavior.\n",
+    );
+    writeLintScopeFile(
+        $root,
+        'content/domains/1_node/1_node-new/node-new.md',
+        "# `orbit node:new`\n\n[Technical](technical/1_node-new.md)\n",
+    );
 
     if (! $withTechnicalContract) {
         return;
     }
 
-    writeLintScopeFile($root, 'content/domains/1_node/1_node-new/technical/1_node-new.md', "# Technical Contract: `orbit node:new`\n");
+    writeLintScopeFile(
+        $root,
+        'content/domains/1_node/1_node-new/technical/1_node-new.md',
+        "# Technical Contract: `orbit node:new`\n",
+    );
 }
 
 function writeLintScopeFile(string $root, string $path, string $contents): void

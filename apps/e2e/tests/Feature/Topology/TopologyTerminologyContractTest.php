@@ -17,32 +17,53 @@ use Illuminate\Contracts\Process\ProcessResult;
 pest()->group('e2e-topology-contract', 'e2e-topology-contract-operator_gateway_app-dev');
 
 it('uses operator topology names and accepted input aliases', function (): void {
-    expect(E2ETopologyKind::Operator->value)->toBe('operator')
-        ->and(E2ETopologyKind::OperatorGateway->value)->toBe('operator_gateway')
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)->toBe('operator_gateway_app-dev')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)->toBe('operator_gateway_app-dev_app-prod')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress->value)->toBe('operator_gateway_app-dev_app-prod_ingress')
-        ->and(E2ETopologyKind::OperatorGatewayAgent->value)->toBe('operator_gateway_agent')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevWebsocket->value)->toBe('operator_gateway_app-dev_websocket')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket->value)->toBe('operator_gateway_app-dev_app-prod_websocket')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value)->toBe('operator_gateway_app-dev_app-prod_agent_websocket')
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev'))->toBe(E2ETopologyKind::OperatorGatewayAppdev)
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod-ingress'))->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress)
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))->toBe(E2ETopologyKind::OperatorGatewayAgent)
-        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-websocket'))->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev_app-prod_ingress')
-        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->featureGroup())->toBe('e2e-feature-operator_gateway_app-dev_app-prod_agent_websocket')
-        ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())->toContain('e2e-feature-operator-gateway-dev');
+    expect(E2ETopologyKind::Operator->value)
+        ->toBe('operator')
+        ->and(E2ETopologyKind::OperatorGateway->value)
+        ->toBe('operator_gateway')
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->value)
+        ->toBe('operator_gateway_app-dev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprod->value)
+        ->toBe('operator_gateway_app-dev_app-prod')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress->value)
+        ->toBe('operator_gateway_app-dev_app-prod_ingress')
+        ->and(E2ETopologyKind::OperatorGatewayAgent->value)
+        ->toBe('operator_gateway_agent')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevWebsocket->value)
+        ->toBe('operator_gateway_app-dev_websocket')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket->value)
+        ->toBe('operator_gateway_app-dev_app-prod_websocket')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->value)
+        ->toBe('operator_gateway_app-dev_app-prod_agent_websocket')
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev'))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdev)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod'))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprod)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-prod-ingress'))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-agent'))
+        ->toBe(E2ETopologyKind::OperatorGatewayAgent)
+        ->and(E2ETopologyKind::tryFromInput('operator-gateway-dev-websocket'))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevWebsocket)
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->featureGroup())
+        ->toBe('e2e-feature-operator_gateway_app-dev')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress->featureGroup())
+        ->toBe('e2e-feature-operator_gateway_app-dev_app-prod_ingress')
+        ->and(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket->featureGroup())
+        ->toBe('e2e-feature-operator_gateway_app-dev_app-prod_agent_websocket')
+        ->and(E2ETopologyKind::OperatorGatewayAppdev->deprecatedFeatureGroups())
+        ->toContain('e2e-feature-operator-gateway-dev');
 });
 
 it('keeps explicit dev-prod-ingress topologies on a dedicated ingress role', function (): void {
     $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodIngress;
 
-    expect(IncusTopologyTemplate::rolesFor($kind))->toBe(['operator', 'gateway', 'dev', 'prod', 'ingress'])
-        ->and(DockerTopologyBuilder::rolesFor($kind))->toBe(['operator', 'gateway', 'dev', 'prod', 'ingress'])
-        ->and(E2EPreparedTopology::prodHostsIngressRole($kind))->toBeFalse()
+    expect(IncusTopologyTemplate::rolesFor($kind))
+        ->toBe(['operator', 'gateway', 'dev', 'prod', 'ingress'])
+        ->and(DockerTopologyBuilder::rolesFor($kind))
+        ->toBe(['operator', 'gateway', 'dev', 'prod', 'ingress'])
+        ->and(E2EPreparedTopology::prodHostsIngressRole($kind))
+        ->toBeFalse()
         ->and(E2EPreparedTopology::gatewayNodeNamesForRoles(IncusTopologyTemplate::rolesFor($kind)))
         ->toBe(['gateway', 'operator-1', 'app-dev-1', 'app-prod-1', 'edge-1']);
 });
@@ -57,9 +78,12 @@ it('uses operator on the topology harness and lease', function (): void {
         'gateway' => '/home/orbit/orbit-current',
     ]);
 
-    expect($lease->operator())->toBe($operator)
-        ->and($harness->instance('operator'))->toBe($operator)
-        ->and($harness->checkout('operator'))->toBe('/home/orbit/orbit-current');
+    expect($lease->operator())
+        ->toBe($operator)
+        ->and($harness->instance('operator'))
+        ->toBe($operator)
+        ->and($harness->checkout('operator'))
+        ->toBe('/home/orbit/orbit-current');
 
     $harness->setCheckouts(['operator' => '/home/orbit/orbit-next']);
 
@@ -92,8 +116,7 @@ function fakeTopologyLease(E2EInstance $operator, ?E2EInstance $gateway = null):
 
 function fakeTopologyInstance(string $name): E2EInstance
 {
-    return new class($name) implements E2EInstance
-    {
+    return new class($name) implements E2EInstance {
         public function __construct(
             private string $name,
         ) {}
@@ -108,8 +131,12 @@ function fakeTopologyInstance(string $name): E2EInstance
             throw new RuntimeException('Not used in topology terminology tests.');
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             throw new RuntimeException('Not used in topology terminology tests.');
         }
 

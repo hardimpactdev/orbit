@@ -124,7 +124,10 @@ final readonly class ErrorCodeRegistryRule implements GroupedRule
      */
     private function errorCodeTable(string $contents): ?array
     {
-        if (preg_match('/^\|\s*`error\.code`\s*\|\s*(?<codes>.*?)\s*\|/m', $contents, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+        if (
+            preg_match('/^\|\s*`error\.code`\s*\|\s*(?<codes>.*?)\s*\|/m', $contents, $matches, PREG_OFFSET_CAPTURE)
+            !== 1
+        ) {
             return null;
         }
 
@@ -135,7 +138,7 @@ final readonly class ErrorCodeRegistryRule implements GroupedRule
 
         return [
             'codes' => $codes,
-            'line' => $this->lineForOffset($contents, $matches[0][1]),
+            'line' => $this->lineForOffset($contents, (int) $matches[0][1]),
         ];
     }
 

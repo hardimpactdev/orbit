@@ -262,8 +262,7 @@ final readonly class S3DoctorProbe
         $accessKeyId = $fields['access_key_id'] ?? null;
         $secretAccessKey = $fields['secret_access_key'] ?? null;
 
-        return is_string($accessKeyId) && $accessKeyId !== ''
-            && is_string($secretAccessKey) && $secretAccessKey !== '';
+        return is_string($accessKeyId) && $accessKeyId !== '' && is_string($secretAccessKey) && $secretAccessKey !== '';
     }
 
     /**
@@ -280,24 +279,28 @@ final readonly class S3DoctorProbe
     {
         $container = S3RuntimeContainer::ContainerName;
 
-        return $this->runProbe($node, sprintf(
-            <<<'SH'
-# orbit-s3-doctor:runtime-probe
-set -eu
-container=%s
+        return $this->runProbe(
+            $node,
+            sprintf(
+                <<<'SH'
+                    # orbit-s3-doctor:runtime-probe
+                    set -eu
+                    container=%s
 
-if ! docker container inspect "$container" >/dev/null 2>&1; then
-    printf 'exists=0\nrunning=false\npublished_address=\n'
-    exit 0
-fi
+                    if ! docker container inspect "$container" >/dev/null 2>&1; then
+                        printf 'exists=0\nrunning=false\npublished_address=\n'
+                        exit 0
+                    fi
 
-running="$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')"
-published_address="$(docker container inspect --format '{{range $p, $bindings := .NetworkSettings.Ports}}{{if eq $p "8333/tcp"}}{{range $bindings}}{{printf "%%s:%%s\n" .HostIp .HostPort}}{{end}}{{end}}{{end}}' "$container" 2>/dev/null | head -n 1)"
+                    running="$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')"
+                    published_address="$(docker container inspect --format '{{range $p, $bindings := .NetworkSettings.Ports}}{{if eq $p "8333/tcp"}}{{range $bindings}}{{printf "%%s:%%s\n" .HostIp .HostPort}}{{end}}{{end}}{{end}}' "$container" 2>/dev/null | head -n 1)"
 
-printf 'exists=1\nrunning=%%s\npublished_address=%%s\n' "$running" "$published_address"
-SH,
-            escapeshellarg($container),
-        ), 's3-runtime-doctor-probe');
+                    printf 'exists=1\nrunning=%%s\npublished_address=%%s\n' "$running" "$published_address"
+                    SH,
+                escapeshellarg($container),
+            ),
+            's3-runtime-doctor-probe',
+        );
     }
 
     private function runProbe(Node $node, string $script, string $operation): RemoteShellResult

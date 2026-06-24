@@ -51,7 +51,12 @@ final class Application extends BaseApplication
             $definition->setArguments(array_merge(
                 $definition->getArguments(),
                 [
-                    'command' => new InputArgument('command', InputArgument::OPTIONAL, $definition->getArgument('command')->getDescription(), $name),
+                    'command' => new InputArgument(
+                        'command',
+                        InputArgument::OPTIONAL,
+                        $definition->getArgument('command')->getDescription(),
+                        $name,
+                    ),
                 ],
             ));
         }

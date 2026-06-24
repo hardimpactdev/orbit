@@ -19,14 +19,18 @@ it('runs migrations inside orbit-gateway', function (): void {
 
     app(OrbitUpdater::class)->runMigrations();
 
-    Process::assertRan(fn ($process): bool => is_array($process->command)
-        && $process->command[0] === 'docker'
-        && $process->command[1] === 'exec'
-        && $process->command[2] === 'orbit-gateway'
-        && $process->command[3] === 'php'
-        && $process->command[4] === 'apps/gateway/artisan'
-        && $process->command[5] === 'migrate'
-        && $process->command[6] === '--force');
+    Process::assertRan(
+        fn ($process): bool => (
+            is_array($process->command)
+            && $process->command[0] === 'docker'
+            && $process->command[1] === 'exec'
+            && $process->command[2] === 'orbit-gateway'
+            && $process->command[3] === 'php'
+            && $process->command[4] === 'apps/gateway/artisan'
+            && $process->command[5] === 'migrate'
+            && $process->command[6] === '--force'
+        ),
+    );
 });
 
 it('installs dependencies inside orbit-gateway', function (): void {
@@ -37,14 +41,18 @@ it('installs dependencies inside orbit-gateway', function (): void {
 
     app(OrbitUpdater::class)->installDependencies();
 
-    Process::assertRan(fn ($process): bool => is_array($process->command)
-        && $process->command[0] === 'docker'
-        && $process->command[1] === 'exec'
-        && $process->command[2] === 'orbit-gateway'
-        && $process->command[3] === 'composer'
-        && $process->command[4] === '--working-dir=apps/gateway'
-        && $process->command[5] === 'install'
-        && $process->command[6] === '--no-interaction');
+    Process::assertRan(
+        fn ($process): bool => (
+            is_array($process->command)
+            && $process->command[0] === 'docker'
+            && $process->command[1] === 'exec'
+            && $process->command[2] === 'orbit-gateway'
+            && $process->command[3] === 'composer'
+            && $process->command[4] === '--working-dir=apps/gateway'
+            && $process->command[5] === 'install'
+            && $process->command[6] === '--no-interaction'
+        ),
+    );
 });
 
 it('updates remote nodes through orbit-gateway container', function (): void {

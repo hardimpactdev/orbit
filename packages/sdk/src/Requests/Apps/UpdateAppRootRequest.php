@@ -54,6 +54,7 @@ final class UpdateAppRootRequest extends GatewayRequest implements HasBody
 
             $artifactsReenacted = $meta['artifacts_reenacted'] ?? false;
             $artifactsReenacted = is_bool($artifactsReenacted) ? $artifactsReenacted : false;
+            $warnings = $this->listOfStringKeyedArrays($warnings);
         }
 
         return new AppRootUpdateResponse(

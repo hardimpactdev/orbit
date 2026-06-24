@@ -48,7 +48,7 @@ it('converges a gateway-owned development dns mapping from active app node inten
 it('stores default mappings under the persistent Orbit config root', function (): void {
     config()->set('orbit.paths.config_root', '/home/orbit/.config/orbit');
 
-    expect((new DevelopmentDnsMappingEnactor)->configDir())
+    expect(new DevelopmentDnsMappingEnactor()->configDir())
         ->toBe('/home/orbit/.config/orbit/node-development-dns.d');
 });
 
@@ -133,8 +133,11 @@ function developmentDnsMappingNode(array $overrides = []): Node
 /**
  * @param  array<string, mixed>  $settings
  */
-function assignDevelopmentDnsMappingRole(Node $node, string $role = 'app-dev', array $settings = ['tld' => 'test']): void
-{
+function assignDevelopmentDnsMappingRole(
+    Node $node,
+    string $role = 'app-dev',
+    array $settings = ['tld' => 'test'],
+): void {
     NodeRoleAssignment::factory()->create([
         'node_id' => $node->id,
         'role' => $role,

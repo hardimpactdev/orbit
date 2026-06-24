@@ -23,23 +23,28 @@ it('removes the stale local operator identity from the operator cli config over 
 
     $operator = m::mock(E2EInstance::class);
     $operator->shouldReceive('name')->andReturn('operator');
-    $operator->shouldReceive('ssh')
+    $operator
+        ->shouldReceive('ssh')
         ->once()
         ->with(
             'orbit',
             $key,
-            m::on(fn (string $command): bool => str_contains($command, 'php -r ')
-                && str_contains($command, '/home/orbit/.config/orbit/config.json')
-                && str_contains($command, 'json_decode')
-                && str_contains($command, 'json_encode')
-                && ! str_contains($command, 'php artisan tinker')
-                && ! str_contains($command, 'php artisan')
-                && ! str_contains($command, 'apps/gateway/artisan')
-                && str_contains($command, 'operator-1')
-                && str_contains($command, 'defaults')
-                && str_contains($command, 'node')
-                && ! str_contains($command, 'gateway.sqlite')
-                && ! str_contains($command, 'new PDO')),
+            m::on(
+                fn (string $command): bool => (
+                    str_contains($command, 'php -r ')
+                    && str_contains($command, '/home/orbit/.config/orbit/config.json')
+                    && str_contains($command, 'json_decode')
+                    && str_contains($command, 'json_encode')
+                    && ! str_contains($command, 'php artisan tinker')
+                    && ! str_contains($command, 'php artisan')
+                    && ! str_contains($command, 'apps/gateway/artisan')
+                    && str_contains($command, 'operator-1')
+                    && str_contains($command, 'defaults')
+                    && str_contains($command, 'node')
+                    && ! str_contains($command, 'gateway.sqlite')
+                    && ! str_contains($command, 'new PDO')
+                ),
+            ),
             60,
         )
         ->andReturn($result);

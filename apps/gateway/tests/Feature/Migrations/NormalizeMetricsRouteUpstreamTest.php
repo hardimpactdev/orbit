@@ -44,15 +44,18 @@ it('normalizes legacy metrics route upstream intent for Caddy host access', func
 
     $route = ProxyRoute::query()->findOrFail($routeId);
 
-    expect($route->config)->toMatchArray([
-        'owner_name' => 'grafana',
-        'protocol' => 'http',
-        'target' => [
-            'type' => 'upstream',
-            'value' => 'http://host.docker.internal:3000',
-        ],
-        'upstreams' => [
-            ['scheme' => 'http', 'host' => 'host.docker.internal', 'port' => 3000],
-        ],
-    ])->and($route->source_hash)->toBe(app(ProxyRouteRenderer::class)->sourceHash($route));
+    expect($route->config)
+        ->toMatchArray([
+            'owner_name' => 'grafana',
+            'protocol' => 'http',
+            'target' => [
+                'type' => 'upstream',
+                'value' => 'http://host.docker.internal:3000',
+            ],
+            'upstreams' => [
+                ['scheme' => 'http', 'host' => 'host.docker.internal', 'port' => 3000],
+            ],
+        ])
+        ->and($route->source_hash)
+        ->toBe(app(ProxyRouteRenderer::class)->sourceHash($route));
 });

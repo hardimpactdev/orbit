@@ -50,15 +50,16 @@ describe('BootstrapGatewayCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe(JsonEnvelope::success(['bootstrapped' => true]));
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::success(['bootstrapped' => true]));
     });
 
     it('renderSuccess produces key:value lines in human mode', function (): void {
         [$exitCode, $output] = runBootstrapGatewayCommand($this, 'success');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('bootstrapped: true');
+        expect($exitCode)->toBe(0)->and($output)->toBe('bootstrapped: true');
     });
 
     it('renderFailure produces a canonical error envelope in JSON mode', function (): void {
@@ -66,14 +67,15 @@ describe('BootstrapGatewayCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toBe(JsonEnvelope::failure('bootstrap_error', 'Bootstrap failed.', ['step' => 'init']));
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toBe(JsonEnvelope::failure('bootstrap_error', 'Bootstrap failed.', ['step' => 'init']));
     });
 
     it('renderFailure produces a code:message line in human mode', function (): void {
         [$exitCode, $output] = runBootstrapGatewayCommand($this, 'failure');
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toBe('bootstrap_error: Bootstrap failed.');
+        expect($exitCode)->toBe(1)->and($output)->toBe('bootstrap_error: Bootstrap failed.');
     });
 });

@@ -52,12 +52,19 @@ describe('vpn commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/vpn/clients?totp=123456');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/vpn/clients?totp=123456'
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['clients'][0]['name'])->toBe('laptop')
-            ->and($decoded['success']['meta']['count'])->toBe(1);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['clients'][0]['name'])
+            ->toBe('laptop')
+            ->and($decoded['success']['meta']['count'])
+            ->toBe(1);
     });
 
     it('renders human vpn client output as a table with uppercase headers and classified fields', function (): void {
@@ -84,22 +91,38 @@ describe('vpn commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'vpn-client:list', ['--totp' => '123456']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('ADDRESS')
-            ->and($output)->toContain('ENABLED')
-            ->and($output)->toContain('KIND')
-            ->and($output)->toContain('LATEST HANDSHAKE')
-            ->and($output)->toContain('laptop')
-            ->and($output)->toContain('10.6.0.7')
-            ->and($output)->toContain('yes')
-            ->and($output)->toContain('admin')
-            ->and($output)->toContain('2026-06-17T09:00:00+00:00')
-            ->and($output)->toContain('app-1')
-            ->and($output)->toContain('no')
-            ->and($output)->toContain('node')
-            ->and($output)->toContain('never')
-            ->and($output)->not->toContain('clients: [');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('ADDRESS')
+            ->and($output)
+            ->toContain('ENABLED')
+            ->and($output)
+            ->toContain('KIND')
+            ->and($output)
+            ->toContain('LATEST HANDSHAKE')
+            ->and($output)
+            ->toContain('laptop')
+            ->and($output)
+            ->toContain('10.6.0.7')
+            ->and($output)
+            ->toContain('yes')
+            ->and($output)
+            ->toContain('admin')
+            ->and($output)
+            ->toContain('2026-06-17T09:00:00+00:00')
+            ->and($output)
+            ->toContain('app-1')
+            ->and($output)
+            ->toContain('no')
+            ->and($output)
+            ->toContain('node')
+            ->and($output)
+            ->toContain('never')
+            ->and($output)
+            ->not->toContain('clients: [');
     });
 
     it('renders the documented empty state when no vpn clients are configured', function (): void {
@@ -107,8 +130,7 @@ describe('vpn commands', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'vpn-client:list', ['--totp' => '123456']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No VPN clients configured.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No VPN clients configured.');
     });
 
     it('creates vpn clients through the gateway', function (): void {
@@ -134,17 +156,24 @@ describe('vpn commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/clients'
-            && $request->data() === [
-                'name' => 'laptop',
-                'config' => true,
-                'totp' => '123456',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/clients'
+                && $request->data() === [
+                    'name' => 'laptop',
+                    'config' => true,
+                    'totp' => '123456',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['client']['config'])->toContain('[Interface]')
-            ->and($decoded['success']['meta']['config_included'])->toBeTrue();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['client']['config'])
+            ->toContain('[Interface]')
+            ->and($decoded['success']['meta']['config_included'])
+            ->toBeTrue();
     });
 
     it('prompts for a missing vpn client name in interactive mode', function (): void {
@@ -158,17 +187,22 @@ describe('vpn commands', function (): void {
             ],
         ]));
 
-        $this->artisan('vpn-client:new')
+        $this
+            ->artisan('vpn-client:new')
             ->expectsQuestion('VPN client name', 'laptop')
             ->expectsOutputToContain('client')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/clients'
-            && $request->data() === [
-                'name' => 'laptop',
-                'config' => false,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/clients'
+                && $request->data() === [
+                    'name' => 'laptop',
+                    'config' => false,
+                ]
+            ),
+        );
     });
 
     it('validates vpn client names before contacting the gateway in json mode', function (): void {
@@ -180,15 +214,23 @@ describe('vpn commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
                 'field' => 'name',
                 'reason' => 'missing',
             ]);
     });
 
-    it('toggles vpn clients through the gateway', function (string $command, string $endpoint, bool $enabled, string $actionKey): void {
+    it('toggles vpn clients through the gateway', function (
+        string $command,
+        string $endpoint,
+        bool $enabled,
+        string $actionKey,
+    ): void {
         fakeGateway(fakeSuccessEnvelope([
             'client' => [
                 'name' => 'laptop',
@@ -206,12 +248,15 @@ describe('vpn commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/vpn/clients/laptop/{$endpoint}"
-            && $request->data() === ['totp' => '123456']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === "https://gateway.test/api/vpn/clients/laptop/{$endpoint}"
+                && $request->data() === ['totp' => '123456']
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['client']['enabled'])->toBe($enabled);
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['client']['enabled'])->toBe($enabled);
     })->with([
         'enable' => ['vpn-client:enable', 'enable', true, 'enabled'],
         'disable' => ['vpn-client:disable', 'disable', false, 'disabled'],
@@ -227,14 +272,19 @@ describe('vpn commands', function (): void {
             ],
         ]));
 
-        $this->artisan('vpn-client:enable')
+        $this
+            ->artisan('vpn-client:enable')
             ->expectsQuestion('VPN client name', 'laptop')
             ->expectsOutputToContain('client')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/clients/laptop/enable'
-            && $request->data() === []);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/clients/laptop/enable'
+                && $request->data() === []
+            ),
+        );
     });
 
     it('removes vpn clients only with force', function (): void {
@@ -252,9 +302,12 @@ describe('vpn commands', function (): void {
 
         $missingForce = json_decode($missingForceOutput, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($missingForceExitCode)->toBe(1)
-            ->and($missingForce['error']['code'])->toBe('validation_failed')
-            ->and($missingForce['error']['meta'])->toMatchArray([
+        expect($missingForceExitCode)
+            ->toBe(1)
+            ->and($missingForce['error']['code'])
+            ->toBe('validation_failed')
+            ->and($missingForce['error']['meta'])
+            ->toMatchArray([
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ]);
@@ -275,15 +328,18 @@ describe('vpn commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
-            && $request->data() === [
-                'force' => true,
-                'totp' => '123456',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
+                && $request->data() === [
+                    'force' => true,
+                    'totp' => '123456',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['client']['action'])->toBe('removed');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['client']['action'])->toBe('removed');
     });
 
     it('prompts for vpn client name before removing in interactive mode', function (): void {
@@ -294,14 +350,19 @@ describe('vpn commands', function (): void {
             ],
         ]));
 
-        $this->artisan('vpn-client:remove', ['--force' => true])
+        $this
+            ->artisan('vpn-client:remove', ['--force' => true])
             ->expectsQuestion('VPN client name', 'laptop')
             ->expectsOutputToContain('removed')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
-            && $request->data() === ['force' => true]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
+                && $request->data() === ['force' => true]
+            ),
+        );
     });
 
     it('rotates the vpn web ui password through the gateway without printing the secret', function (): void {
@@ -321,17 +382,24 @@ describe('vpn commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
-            && $request->data() === [
-                'password' => 'new-secret-password',
-                'force' => true,
-                'totp' => '123456',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
+                && $request->data() === [
+                    'password' => 'new-secret-password',
+                    'force' => true,
+                    'totp' => '123456',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['vpn']['password_changed'])->toBeTrue()
-            ->and($output)->not->toContain('new-secret-password');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['vpn']['password_changed'])
+            ->toBeTrue()
+            ->and($output)
+            ->not->toContain('new-secret-password');
     });
 
     it('prompts for vpn web ui password and destructive confirmation in interactive mode', function (): void {
@@ -342,7 +410,8 @@ describe('vpn commands', function (): void {
             ],
         ]));
 
-        $this->artisan('vpn-web-ui:change-password')
+        $this
+            ->artisan('vpn-web-ui:change-password')
             ->expectsQuestion('New VPN web UI password', 'new-secret-password')
             ->expectsConfirmation('Use --force to rotate the VPN web UI password.', 'yes')
             ->expectsOutputToContain('VPN web UI password rotated')
@@ -350,12 +419,16 @@ describe('vpn commands', function (): void {
             ->doesntExpectOutputToContain('password_changed')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
-            && $request->data() === [
-                'password' => 'new-secret-password',
-                'force' => true,
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
+                && $request->data() === [
+                    'password' => 'new-secret-password',
+                    'force' => true,
+                ]
+            ),
+        );
     });
 
     it('validates vpn web ui password input before contacting the gateway', function (): void {
@@ -381,26 +454,37 @@ describe('vpn commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($missingPasswordExitCode)->toBe(1)
-            ->and($missingPassword['error']['meta']['field'])->toBe('password')
-            ->and($shortPasswordExitCode)->toBe(1)
-            ->and($shortPassword['error']['meta']['field'])->toBe('password')
-            ->and($missingForceExitCode)->toBe(1)
-            ->and($missingForce['error']['meta'])->toMatchArray([
+        expect($missingPasswordExitCode)
+            ->toBe(1)
+            ->and($missingPassword['error']['meta']['field'])
+            ->toBe('password')
+            ->and($shortPasswordExitCode)
+            ->toBe(1)
+            ->and($shortPassword['error']['meta']['field'])
+            ->toBe('password')
+            ->and($missingForceExitCode)
+            ->toBe(1)
+            ->and($missingForce['error']['meta'])
+            ->toMatchArray([
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ]);
     });
 
     it('preserves gateway error envelopes for vpn commands', function (): void {
-        fakeGateway(fakeErrorEnvelope('vpn_runtime_unavailable', 'No active VPN role node is available for VPN administration.'), 400);
+        fakeGateway(
+            fakeErrorEnvelope(
+                'vpn_runtime_unavailable',
+                'No active VPN role node is available for VPN administration.',
+            ),
+            400,
+        );
 
         [$exitCode, $output] = runCommand($this, 'vpn-client:list', ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('vpn_runtime_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('vpn_runtime_unavailable');
     });
 });
 
@@ -421,22 +505,32 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Creating VPN client')
-            ->and($output)->toContain('Create VPN client')
-            ->and($output)->toContain('VPN client `laptop` created')
-            ->and($output)->toContain('Address: 10.6.0.7')
-            ->and($output)->not->toContain('Render client config')
-            ->and($output)->not->toContain('client:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Creating VPN client')
+            ->and($output)
+            ->toContain('Create VPN client')
+            ->and($output)
+            ->toContain('VPN client `laptop` created')
+            ->and($output)
+            ->toContain('Address: 10.6.0.7')
+            ->and($output)
+            ->not->toContain('Render client config')->and($output)
+            ->not->toContain('client:')->and($output)
+            ->not->toContain('{');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/clients'
-            && $request->data() === [
-                'name' => 'laptop',
-                'config' => false,
-                'totp' => '123456',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/clients'
+                && $request->data() === [
+                    'name' => 'laptop',
+                    'config' => false,
+                    'totp' => '123456',
+                ]
+            ),
+        );
     });
 
     it('renders the optional config block and the render config step when --config is present', function (): void {
@@ -457,26 +551,42 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Creating VPN client')
-            ->and($output)->toContain('Render client config')
-            ->and($output)->toContain('VPN client `laptop` created')
-            ->and($output)->toContain('Address: 10.6.0.7')
-            ->and($output)->toContain('[Interface]')
-            ->and($output)->not->toContain('config:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Creating VPN client')
+            ->and($output)
+            ->toContain('Render client config')
+            ->and($output)
+            ->toContain('VPN client `laptop` created')
+            ->and($output)
+            ->toContain('Address: 10.6.0.7')
+            ->and($output)
+            ->toContain('[Interface]')
+            ->and($output)
+            ->not->toContain('config:');
     });
 
     it('renders vpn-client:new gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('vpn_runtime_unavailable', 'No active VPN role node is available for VPN administration.'), 400);
+        fakeGateway(
+            fakeErrorEnvelope(
+                'vpn_runtime_unavailable',
+                'No active VPN role node is available for VPN administration.',
+            ),
+            400,
+        );
 
         [$exitCode, $output] = runCommand($this, 'vpn-client:new', [
             'name' => 'laptop',
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('No active VPN role node is available')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('No active VPN role node is available')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders vpn-client:new validation failures as prose without a tree', function (): void {
@@ -486,13 +596,20 @@ describe('vpn human renderers', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('VPN client name is required.')
-            ->and($output)->not->toContain('Creating VPN client')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('VPN client name is required.')
+            ->and($output)
+            ->not->toContain('Creating VPN client')->and($output)
+            ->not->toContain('"error"');
     });
 
-    it('renders vpn-client:enable human output as a progress tree with enabled prose', function (string $command, string $endpoint, string $action): void {
+    it('renders vpn-client:enable human output as a progress tree with enabled prose', function (
+        string $command,
+        string $endpoint,
+        string $action,
+    ): void {
         fakeGateway(fakeSuccessEnvelope([
             'client' => [
                 'name' => 'laptop',
@@ -510,22 +627,34 @@ describe('vpn human renderers', function (): void {
         $title = $action === 'enabled' ? 'Enabling VPN client' : 'Disabling VPN client';
         $step = $action === 'enabled' ? 'Enable VPN client' : 'Disable VPN client';
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain($title)
-            ->and($output)->toContain($step)
-            ->and($output)->toContain("VPN client `laptop` {$action}")
-            ->and($output)->not->toContain('enabled:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain($title)
+            ->and($output)
+            ->toContain($step)
+            ->and($output)
+            ->toContain("VPN client `laptop` {$action}")
+            ->and($output)
+            ->not->toContain('enabled:')->and($output)
+            ->not->toContain('{');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === "https://gateway.test/api/vpn/clients/laptop/{$endpoint}"
-            && $request->data() === ['totp' => '123456']);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === "https://gateway.test/api/vpn/clients/laptop/{$endpoint}"
+                && $request->data() === ['totp' => '123456']
+            ),
+        );
     })->with([
         'enable' => ['vpn-client:enable', 'enable', 'enabled'],
         'disable' => ['vpn-client:disable', 'disable', 'disabled'],
     ]);
 
-    it('renders the already-toggled prose when the client is in the desired state', function (string $command, string $action): void {
+    it('renders the already-toggled prose when the client is in the desired state', function (
+        string $command,
+        string $action,
+    ): void {
         fakeGateway(fakeSuccessEnvelope([
             'client' => [
                 'name' => 'laptop',
@@ -540,9 +669,12 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("VPN client `laptop` already {$action}")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("VPN client `laptop` already {$action}")
+            ->and($output)
+            ->not->toContain('{');
     })->with([
         'enable' => ['vpn-client:enable', 'enabled'],
         'disable' => ['vpn-client:disable', 'disabled'],
@@ -556,9 +688,12 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('active Orbit node peer')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('active Orbit node peer')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders vpn-client:remove human output as a progress tree with removed prose', function (): void {
@@ -575,19 +710,28 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Removing VPN client')
-            ->and($output)->toContain('Remove VPN client')
-            ->and($output)->toContain('VPN client `laptop` removed')
-            ->and($output)->not->toContain('action:')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Removing VPN client')
+            ->and($output)
+            ->toContain('Remove VPN client')
+            ->and($output)
+            ->toContain('VPN client `laptop` removed')
+            ->and($output)
+            ->not->toContain('action:')->and($output)
+            ->not->toContain('{');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
-            && $request->data() === [
-                'force' => true,
-                'totp' => '123456',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/vpn/clients/laptop'
+                && $request->data() === [
+                    'force' => true,
+                    'totp' => '123456',
+                ]
+            ),
+        );
     });
 
     it('renders missing --force consent as prose without a tree for vpn-client:remove', function (): void {
@@ -599,14 +743,23 @@ describe('vpn human renderers', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Use --force to remove this VPN client.')
-            ->and($output)->not->toContain('Removing VPN client')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Use --force to remove this VPN client.')
+            ->and($output)
+            ->not->toContain('Removing VPN client')->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders vpn-client:remove gateway failures as prose in human mode', function (): void {
-        fakeGateway(fakeErrorEnvelope('vpn_active_node_peer', 'VPN client `app-1` is an active Orbit node peer. Use `orbit node:remove app-1`.'), 422);
+        fakeGateway(
+            fakeErrorEnvelope(
+                'vpn_active_node_peer',
+                'VPN client `app-1` is an active Orbit node peer. Use `orbit node:remove app-1`.',
+            ),
+            422,
+        );
 
         [$exitCode, $output] = runCommand($this, 'vpn-client:remove', [
             'name' => 'app-1',
@@ -614,9 +767,12 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('active Orbit node peer')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('active Orbit node peer')
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('renders vpn-web-ui:change-password human output as a progress tree without leaking the secret', function (): void {
@@ -633,21 +789,30 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Rotating VPN web UI password')
-            ->and($output)->toContain('Apply and verify credential rotation')
-            ->and($output)->toContain('VPN web UI password rotated')
-            ->and($output)->not->toContain('new-secret-password')
-            ->and($output)->not->toContain('password_changed')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Rotating VPN web UI password')
+            ->and($output)
+            ->toContain('Apply and verify credential rotation')
+            ->and($output)
+            ->toContain('VPN web UI password rotated')
+            ->and($output)
+            ->not->toContain('new-secret-password')->and($output)
+            ->not->toContain('password_changed')->and($output)
+            ->not->toContain('{');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
-            && $request->data() === [
-                'password' => 'new-secret-password',
-                'force' => true,
-                'totp' => '123456',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/vpn/web-ui/password'
+                && $request->data() === [
+                    'password' => 'new-secret-password',
+                    'force' => true,
+                    'totp' => '123456',
+                ]
+            ),
+        );
     });
 
     it('renders vpn-web-ui:change-password validation failures as prose without a tree', function (): void {
@@ -663,13 +828,16 @@ describe('vpn human renderers', function (): void {
 
         Http::assertNothingSent();
 
-        expect($shortExitCode)->toBe(1)
-            ->and($shortOutput)->toContain('Password must be at least 12 characters.')
-            ->and($shortOutput)->not->toContain('Rotating VPN web UI password')
-            ->and($forceExitCode)->toBe(1)
-            ->and($forceOutput)->toContain('Use --force to rotate the VPN web UI password.')
-            ->and($forceOutput)->not->toContain('Rotating VPN web UI password')
-            ->and($forceOutput)->not->toContain('new-secret-password');
+        expect($shortExitCode)
+            ->toBe(1)
+            ->and($shortOutput)
+            ->toContain('Password must be at least 12 characters.')
+            ->and($shortOutput)
+            ->not->toContain('Rotating VPN web UI password')->and($forceExitCode)->toBe(1)->and(
+                $forceOutput,
+            )->toContain('Use --force to rotate the VPN web UI password.')->and($forceOutput)
+            ->not->toContain('Rotating VPN web UI password')->and($forceOutput)
+            ->not->toContain('new-secret-password');
     });
 
     it('renders vpn-web-ui:change-password gateway failures as prose without leaking the secret', function (): void {
@@ -681,9 +849,12 @@ describe('vpn human renderers', function (): void {
             '--totp' => '123456',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('VPN credential rotation failed.')
-            ->and($output)->not->toContain('new-secret-password')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('VPN credential rotation failed.')
+            ->and($output)
+            ->not->toContain('new-secret-password')->and($output)
+            ->not->toContain('"error"');
     });
 });

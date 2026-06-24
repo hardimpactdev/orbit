@@ -89,9 +89,13 @@ final class ProfileCommand extends GatewayCommand
         }
 
         if ($selected === null) {
-            return $this->renderProfileFailure('target_not_found', 'No linked app found for the requested profile target.', [
-                'target' => $input->target,
-            ]);
+            return $this->renderProfileFailure(
+                'target_not_found',
+                'No linked app found for the requested profile target.',
+                [
+                    'target' => $input->target,
+                ],
+            );
         }
 
         return $this->runProfile($input->withTarget($selected), $selector, $renderer, $profiler);
@@ -128,7 +132,9 @@ final class ProfileCommand extends GatewayCommand
                 [
                     'request' => $request,
                     'timings' => is_array($probe['timings'] ?? null) ? $probe['timings'] : [],
-                    'profile_error' => is_array($probe['error'] ?? null) ? $probe['error'] : ['message' => 'Profile request failed.'],
+                    'profile_error' => is_array($probe['error'] ?? null)
+                        ? $probe['error']
+                        : ['message' => 'Profile request failed.'],
                 ],
             );
         }
@@ -171,8 +177,10 @@ final class ProfileCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
-    private function resolveInput(ProfileInputResolver $resolver, ProfileAppSelector $selector): ProfileInput|ProfileInputFailure
-    {
+    private function resolveInput(
+        ProfileInputResolver $resolver,
+        ProfileAppSelector $selector,
+    ): ProfileInput|ProfileInputFailure {
         $input = $resolver->resolve(
             target: $this->stringArgument('target'),
             app: $this->stringOption('app'),
@@ -318,7 +326,12 @@ final class ProfileCommand extends GatewayCommand
                 $message = 'No linked app found for the requested profile target.';
             }
 
-            return $this->renderProfileFailure($code, $message, $exception->gatewayErrorMeta(), $exception->gatewayErrorData());
+            return $this->renderProfileFailure(
+                $code,
+                $message,
+                $exception->gatewayErrorMeta(),
+                $exception->gatewayErrorData(),
+            );
         }
 
         return $this->renderProfileFailure($exception->cliFailureCode(), $exception->getMessage());
@@ -335,7 +348,9 @@ final class ProfileCommand extends GatewayCommand
         }
 
         $this->line(match ($code) {
-            'gateway_unavailable', 'gateway_unreachable_wireguard' => 'Gateway connection is required to resolve this profile target.',
+            'gateway_unavailable',
+            'gateway_unreachable_wireguard',
+                => 'Gateway connection is required to resolve this profile target.',
             'target_not_found' => 'No linked app found for the requested profile target.',
             'profile_request_failed' => 'Failed to complete profile request.',
             default => $message,

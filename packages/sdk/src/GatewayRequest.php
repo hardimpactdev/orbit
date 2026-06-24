@@ -38,8 +38,8 @@ abstract class GatewayRequest extends SaloonRequest
                 ? $error['message']
                 : "Gateway request failed with HTTP status {$response->status()}";
             $code = is_string($error['code'] ?? null) ? $error['code'] : null;
-            $meta = is_array($error['meta'] ?? null) ? $error['meta'] : [];
-            $data = is_array($error['data'] ?? null) ? $error['data'] : [];
+            $meta = $this->stringKeyedArray($error['meta'] ?? []);
+            $data = $this->stringKeyedArray($error['data'] ?? []);
 
             return new GatewayApiException($message, $code, $meta, $senderException, $data);
         }
@@ -75,17 +75,17 @@ abstract class GatewayRequest extends SaloonRequest
             if (is_array($success)) {
                 $data = $success['data'] ?? [];
 
-                return is_array($data) ? $data : [];
+                return $this->stringKeyedArray($data);
             }
 
             if ($success === true) {
                 $data = $body['data'] ?? [];
 
-                return is_array($data) ? $data : [];
+                return $this->stringKeyedArray($data);
             }
         }
 
-        return $body;
+        return $this->stringKeyedArray($body);
     }
 
     /**
@@ -109,7 +109,77 @@ abstract class GatewayRequest extends SaloonRequest
 
         $meta = $success['meta'] ?? [];
 
-        return is_array($meta) ? $meta : [];
+        return $this->stringKeyedArray($meta);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function stringKeyedArray(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $key => $item) {
+            if (is_string($key)) {
+                $result[$key] = $item;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function listOfStringKeyedArrays(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $item) {
+            if (is_array($item)) {
+                $result[] = $this->stringKeyedArray($item);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<array<string, string>>
+     */
+    protected function listOfStringArrays(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $row = [];
+
+            foreach ($item as $key => $field) {
+                if (is_string($key) && is_string($field)) {
+                    $row[$key] = $field;
+                }
+            }
+
+            $result[] = $row;
+        }
+
+        return $result;
     }
 
     /**

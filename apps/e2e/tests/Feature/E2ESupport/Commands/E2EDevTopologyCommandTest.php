@@ -91,13 +91,20 @@ it('renders a stable dry-run json contract without acquiring providers', functio
 
     $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
 
-    expect($payload['success']['dev_topology']['id'])->toBe('dry-run')
-        ->and($payload['success']['dev_topology']['dry_run'])->toBeTrue()
-        ->and($payload['success']['dev_topology']['provider'])->toBe('docker')
-        ->and($payload['success']['dev_topology']['kind'])->toBe('operator_gateway_app-dev')
-        ->and($payload['success']['dev_topology']['checkout_roles'])->toBe(['operator', 'gateway', 'app-dev'])
-        ->and($payload['success']['dev_topology']['release_command'])->toBe('composer e2e:dev-topology:release -- dry-run')
-        ->and($payload['success']['dev_topology']['shell_command'])->toContain('composer e2e:dev-topology -- --kind=operator_gateway_app-dev --provider=docker');
+    expect($payload['success']['dev_topology']['id'])
+        ->toBe('dry-run')
+        ->and($payload['success']['dev_topology']['dry_run'])
+        ->toBeTrue()
+        ->and($payload['success']['dev_topology']['provider'])
+        ->toBe('docker')
+        ->and($payload['success']['dev_topology']['kind'])
+        ->toBe('operator_gateway_app-dev')
+        ->and($payload['success']['dev_topology']['checkout_roles'])
+        ->toBe(['operator', 'gateway', 'app-dev'])
+        ->and($payload['success']['dev_topology']['release_command'])
+        ->toBe('composer e2e:dev-topology:release -- dry-run')
+        ->and($payload['success']['dev_topology']['shell_command'])
+        ->toContain('composer e2e:dev-topology -- --kind=operator_gateway_app-dev --provider=docker');
 });
 
 it('renders human dry-run output with the release command shape', function (): void {
@@ -109,11 +116,16 @@ it('renders human dry-run output with the release command shape', function (): v
         '--provider=docker',
     ]);
 
-    expect($result['exit_code'])->toBe(0, $result['stderr'])
-        ->and($result['stdout'])->toContain('Retained topology dry run')
-        ->and($result['stdout'])->toContain('Source-checkout E2E remains the normal feature loop')
-        ->and($result['stdout'])->toContain('composer e2e:dev-topology:release -- dry-run')
-        ->and($result['stdout'])->not->toContain('binary acceptance replaces');
+    expect($result['exit_code'])
+        ->toBe(0, $result['stderr'])
+        ->and($result['stdout'])
+        ->toContain('Retained topology dry run')
+        ->and($result['stdout'])
+        ->toContain('Source-checkout E2E remains the normal feature loop')
+        ->and($result['stdout'])
+        ->toContain('composer e2e:dev-topology:release -- dry-run')
+        ->and($result['stdout'])
+        ->not->toContain('binary acceptance replaces');
 });
 
 it('honors explicit checkout-roles in the dry-run plan', function (): void {
@@ -131,8 +143,10 @@ it('honors explicit checkout-roles in the dry-run plan', function (): void {
 
     $payload = json_decode($result['stdout'], true, flags: JSON_THROW_ON_ERROR);
 
-    expect($payload['success']['dev_topology']['checkout_roles'])->toBe(['operator', 'gateway'])
-        ->and($payload['success']['dev_topology']['shell_command'])->toContain('--checkout-roles=operator,gateway');
+    expect($payload['success']['dev_topology']['checkout_roles'])
+        ->toBe(['operator', 'gateway'])
+        ->and($payload['success']['dev_topology']['shell_command'])
+        ->toContain('--checkout-roles=operator,gateway');
 });
 
 it('rejects unsupported topology kinds with a stable json error', function (): void {
@@ -166,10 +180,11 @@ it('persists a retained docker topology manifest and prints a provider release c
         ],
     ));
 
-    $this->artisan('e2e:dev-topology', [
-        '--provider' => 'docker',
-        '--kind' => 'operator_gateway_app-dev',
-    ])
+    $this
+        ->artisan('e2e:dev-topology', [
+            '--provider' => 'docker',
+            '--kind' => 'operator_gateway_app-dev',
+        ])
         ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
         ->expectsOutputToContain('Provider: docker (host local)')
         ->expectsOutputToContain('Release: composer e2e:dev-topology:release -- dev-abc123')
@@ -178,30 +193,51 @@ it('persists a retained docker topology manifest and prints a provider release c
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
     $manifest = $store->read('dev-abc123');
 
-    expect($manifest)->not->toBeNull()
-        ->and($manifest['provider'])->toBe('docker')
-        ->and($manifest['network'])->toBe('orbit-e2e-dev-abc123')
-        ->and($manifest['release_command'])->toBe('composer e2e:dev-topology:release -- dev-abc123')
-        ->and($manifest['managed_containers'])->toContain('orbit-e2e-dev-abc123-gateway-orbit-gateway')
-        ->and($manifest['managed_containers'])->toContain('orbit-e2e-dev-abc123-dev-orbit-caddy')
-        ->and($manifest['volumes'])->toContain('orbit-e2e-dev-abc123-dev-etc-caddy');
+    expect($manifest)
+        ->not
+        ->toBeNull()
+        ->and($manifest['provider'])
+        ->toBe('docker')
+        ->and($manifest['network'])
+        ->toBe('orbit-e2e-dev-abc123')
+        ->and($manifest['release_command'])
+        ->toBe('composer e2e:dev-topology:release -- dev-abc123')
+        ->and($manifest['managed_containers'])
+        ->toContain('orbit-e2e-dev-abc123-gateway-orbit-gateway')
+        ->and($manifest['managed_containers'])
+        ->toContain('orbit-e2e-dev-abc123-dev-orbit-caddy')
+        ->and($manifest['volumes'])
+        ->toContain('orbit-e2e-dev-abc123-dev-etc-caddy');
 });
 
 it('routes composer dev topology scripts through apps e2e only', function (): void {
-    $rootComposer = json_decode((string) file_get_contents(repo_path('composer.json')), true, flags: JSON_THROW_ON_ERROR);
-    $e2eComposer = json_decode((string) file_get_contents(repo_path('apps/e2e/composer.json')), true, flags: JSON_THROW_ON_ERROR);
+    $rootComposer = json_decode(
+        (string) file_get_contents(repo_path('composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $e2eComposer = json_decode(
+        (string) file_get_contents(repo_path('apps/e2e/composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
     $rootAcquire = implode("\n", (array) ($rootComposer['scripts']['e2e:dev-topology'] ?? []));
     $rootRelease = implode("\n", (array) ($rootComposer['scripts']['e2e:dev-topology:release'] ?? []));
     $e2eAcquire = implode("\n", (array) ($e2eComposer['scripts']['e2e:dev-topology'] ?? []));
     $e2eRelease = implode("\n", (array) ($e2eComposer['scripts']['e2e:dev-topology:release'] ?? []));
 
-    expect($rootAcquire)->toContain('composer --working-dir=apps/e2e e2e:dev-topology')
-        ->and($rootRelease)->toContain('composer --working-dir=apps/e2e e2e:dev-topology:release')
-        ->and($e2eAcquire)->toContain('php bin/e2e-dev-topology')
-        ->and($e2eRelease)->toContain('php bin/e2e-dev-topology-release')
-        ->and($rootAcquire.$rootRelease.$e2eAcquire.$e2eRelease)->not->toContain('orbit-gateway-artisan')
-        ->and($rootAcquire.$rootRelease.$e2eAcquire.$e2eRelease)->not->toContain('apps/gateway/artisan');
+    expect($rootAcquire)
+        ->toContain('composer --working-dir=apps/e2e e2e:dev-topology')
+        ->and($rootRelease)
+        ->toContain('composer --working-dir=apps/e2e e2e:dev-topology:release')
+        ->and($e2eAcquire)
+        ->toContain('php bin/e2e-dev-topology')
+        ->and($e2eRelease)
+        ->toContain('php bin/e2e-dev-topology-release')
+        ->and($rootAcquire.$rootRelease.$e2eAcquire.$e2eRelease)
+        ->not->toContain('orbit-gateway-artisan')->and($rootAcquire.$rootRelease.$e2eAcquire.$e2eRelease)
+        ->not->toContain('apps/gateway/artisan');
 });
 
 it('persists a retained topology manifest and prints the release command', function (): void {
@@ -213,10 +249,11 @@ it('persists a retained topology manifest and prints the release command', funct
         ],
     ));
 
-    $this->artisan('e2e:dev-topology', [
-        '--provider' => 'incus',
-        '--kind' => 'operator_gateway_app-dev',
-    ])
+    $this
+        ->artisan('e2e:dev-topology', [
+            '--provider' => 'incus',
+            '--kind' => 'operator_gateway_app-dev',
+        ])
         ->expectsOutputToContain('Retained topology [dev-abc123] acquired.')
         ->expectsOutputToContain('Timings:')
         ->expectsOutputToContain('availability: 0.111s')
@@ -228,26 +265,39 @@ it('persists a retained topology manifest and prints the release command', funct
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
     $manifest = $store->read('dev-abc123');
 
-    expect($manifest)->not->toBeNull()
-        ->and($manifest['id'])->toBe('dev-abc123')
-        ->and($manifest['kind'])->toBe('operator_gateway_app-dev')
-        ->and($manifest['provider'])->toBe('incus')
-        ->and($manifest['host'])->toBe('beast')
-        ->and($manifest['run_id'])->toBe('dev-abc123')
-        ->and($manifest['gateway_ip'])->toBe('10.6.0.2')
-        ->and($manifest['ssh_key_path'])->toBe('/tmp/orbit-e2e-topology-dev-abc123/id_ed25519')
-        ->and($manifest['instances'])->toMatchArray([
+    expect($manifest)
+        ->not
+        ->toBeNull()
+        ->and($manifest['id'])
+        ->toBe('dev-abc123')
+        ->and($manifest['kind'])
+        ->toBe('operator_gateway_app-dev')
+        ->and($manifest['provider'])
+        ->toBe('incus')
+        ->and($manifest['host'])
+        ->toBe('beast')
+        ->and($manifest['run_id'])
+        ->toBe('dev-abc123')
+        ->and($manifest['gateway_ip'])
+        ->toBe('10.6.0.2')
+        ->and($manifest['ssh_key_path'])
+        ->toBe('/tmp/orbit-e2e-topology-dev-abc123/id_ed25519')
+        ->and($manifest['instances'])
+        ->toMatchArray([
             'operator' => 'orbit-e2e-dev-abc123-operator',
             'gateway' => 'orbit-e2e-dev-abc123-gateway',
             'dev' => 'orbit-e2e-dev-abc123-dev',
         ])
-        ->and($manifest['checkouts'])->toHaveKey('operator')
-        ->and($manifest['timings'])->toBe([
+        ->and($manifest['checkouts'])
+        ->toHaveKey('operator')
+        ->and($manifest['timings'])
+        ->toBe([
             ['name' => 'availability', 'seconds' => 0.111],
             ['name' => 'incus.source-sync', 'seconds' => 1.234],
             ['name' => 'checkout.overlay', 'seconds' => 2.345],
         ])
-        ->and($manifest['created_at'])->toBeString();
+        ->and($manifest['created_at'])
+        ->toBeString();
 });
 
 it('reports source-mounted retained Incus checkouts in output and manifests', function (): void {
@@ -259,10 +309,11 @@ it('reports source-mounted retained Incus checkouts in output and manifests', fu
         ],
     ));
 
-    $this->artisan('e2e:dev-topology', [
-        '--provider' => 'incus',
-        '--kind' => 'operator_gateway_app-dev',
-    ])
+    $this
+        ->artisan('e2e:dev-topology', [
+            '--provider' => 'incus',
+            '--kind' => 'operator_gateway_app-dev',
+        ])
         ->expectsOutputToContain('Source-mounted checkout')
         ->expectsOutputToContain('/home/orbit/orbit/apps/cli/orbit')
         ->assertSuccessful();
@@ -270,8 +321,11 @@ it('reports source-mounted retained Incus checkouts in output and manifests', fu
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
     $manifest = $store->read('dev-abc123');
 
-    expect($manifest)->not->toBeNull()
-        ->and($manifest['checkouts'])->toBe([
+    expect($manifest)
+        ->not
+        ->toBeNull()
+        ->and($manifest['checkouts'])
+        ->toBe([
             'operator' => '/home/orbit/orbit',
             'gateway' => '/home/orbit/orbit',
             'dev' => '/home/orbit/orbit',
@@ -305,8 +359,11 @@ it('reports source-mounted retained Incus runtime overlays in output and handles
     $store = new E2EDevTopologyManifestStore($this->manifestDirectory);
     $manifest = $store->read('dev-abc123');
 
-    expect($manifest)->not->toBeNull()
-        ->and($manifest['checkouts'])->toBe([
+    expect($manifest)
+        ->not
+        ->toBeNull()
+        ->and($manifest['checkouts'])
+        ->toBe([
             'operator' => '/home/orbit/orbit-run',
             'gateway' => '/home/orbit/orbit-run',
             'dev' => '/home/orbit/orbit-run',
@@ -348,8 +405,10 @@ it('maps retained manifests to every topology instance even when checkout roles 
     $instances = (fn (E2ETopologyLease $lease, array $roles): array => $this->instanceNamesByRole($lease, $roles))
         ->call($command, $lease, $roles);
 
-    expect($roles)->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-        ->and($instances)->toBe([
+    expect($roles)
+        ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
+        ->and($instances)
+        ->toBe([
             'operator' => 'orbit-e2e-dev-abc123-operator',
             'gateway' => 'orbit-e2e-dev-abc123-gateway',
             'dev' => 'orbit-e2e-dev-abc123-dev',
@@ -378,32 +437,41 @@ it('renders ssh and performance handles for app roles in json output', function 
     $payload = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
     $devTopology = $payload['success']['dev_topology'];
 
-    expect($devTopology['release_command'])->toBe('composer e2e:incus -- --stop --id=dev-abc123')
-        ->and($devTopology['handles'])->toBeArray()
-        ->and($devTopology['timings'])->toBe([
+    expect($devTopology['release_command'])
+        ->toBe('composer e2e:incus -- --stop --id=dev-abc123')
+        ->and($devTopology['handles'])
+        ->toBeArray()
+        ->and($devTopology['timings'])
+        ->toBe([
             ['name' => 'availability', 'seconds' => 0.111],
             ['name' => 'checkout.overlay', 'seconds' => 2.345],
         ]);
 
     $byRole = collect($devTopology['handles'])->keyBy('role');
 
-    expect($byRole['operator']['ssh_example'])->toContain('incus exec orbit-e2e-dev-abc123-operator')
-        ->and($byRole['operator']['ssh_example'])->toContain('orbit node:list --json')
+    expect($byRole['operator']['ssh_example'])
+        ->toContain('incus exec orbit-e2e-dev-abc123-operator')
+        ->and($byRole['operator']['ssh_example'])
+        ->toContain('orbit node:list --json')
         // The gateway carries an immediate control-plane latency probe (CA
         // bootstrap over http, no auth) for "how fast is the setup responding".
-        ->and($byRole['gateway']['perf_example'])->toContain('time_total')
-        ->and($byRole['gateway']['perf_example'])->toContain('/api/ca/root')
+        ->and($byRole['gateway']['perf_example'])
+        ->toContain('time_total')
+        ->and($byRole['gateway']['perf_example'])
+        ->toContain('/api/ca/root')
         // app-dev is a FrankenPHP workload: surface its WireGuard endpoint and
         // honest guidance that an app must be deployed before it serves traffic.
-        ->and($byRole['dev']['endpoint'])->toContain('10.6.0.4')
-        ->and($byRole['dev']['note'])->toContain('orbit app:new')
-        ->and($byRole['dev']['note'])->toContain('time_total');
+        ->and($byRole['dev']['endpoint'])
+        ->toContain('10.6.0.4')
+        ->and($byRole['dev']['note'])
+        ->toContain('orbit app:new')
+        ->and($byRole['dev']['note'])
+        ->toContain('time_total');
 });
 
 function devTopologyFakeInstance(string $name): E2EInstance
 {
-    return new class($name) implements E2EInstance
-    {
+    return new class($name) implements E2EInstance {
         public function __construct(
             private string $name,
         ) {}
@@ -418,8 +486,12 @@ function devTopologyFakeInstance(string $name): E2EInstance
             throw new RuntimeException('Not used by retained topology command tests.');
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             throw new RuntimeException('Not used by retained topology command tests.');
         }
 
@@ -452,8 +524,12 @@ it('renders ssh and performance handles in human output', function (): void {
 
     $output = Artisan::output();
 
-    expect($output)->toContain('[operator] orbit-e2e-dev-abc123-operator')
-        ->and($output)->toContain('[dev] orbit-e2e-dev-abc123-dev')
-        ->and($output)->toContain('Gateway API: http://10.6.0.2')
-        ->and($output)->toContain('Release: composer e2e:incus -- --stop --id=dev-abc123');
+    expect($output)
+        ->toContain('[operator] orbit-e2e-dev-abc123-operator')
+        ->and($output)
+        ->toContain('[dev] orbit-e2e-dev-abc123-dev')
+        ->and($output)
+        ->toContain('Gateway API: http://10.6.0.2')
+        ->and($output)
+        ->toContain('Release: composer e2e:incus -- --stop --id=dev-abc123');
 });

@@ -253,10 +253,19 @@ final readonly class SetupWorkspace
         $renderedSteps = $this->renderSteps($steps->all(), $workspace->name);
         $containerName = $this->workspaceContainerName($workspace);
 
-        $success = $this->stepRunner->run($run, $renderedSteps, $workspace->path, $env, $node, $containerName, $onStepProgress);
+        $success = $this->stepRunner->run(
+            $run,
+            $renderedSteps,
+            $workspace->path,
+            $env,
+            $node,
+            $containerName,
+            $onStepProgress,
+        );
 
         if (! $success) {
-            $failedStep = $run->runSteps()
+            $failedStep = $run
+                ->runSteps()
                 ->orderByDesc('id')
                 ->first();
 
@@ -289,7 +298,8 @@ final readonly class SetupWorkspace
      */
     public function startProcesses(App $app, Workspace $workspace, Node $node): array
     {
-        $appProcesses = $app->processes()
+        $appProcesses = $app
+            ->processes()
             ->orderBy('sort_order')
             ->get();
 

@@ -15,7 +15,12 @@ it('sets node agent IDE intent from a operator caller through the gateway api', 
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'node-agent-ide');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         $setResult = $topology->ssh(
             'operator',
@@ -28,8 +33,10 @@ it('sets node agent IDE intent from a operator caller through the gateway api', 
 
         $setPayload = json_decode(trim($setResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($setPayload['success']['data']['name'])->toBe('app-dev-1')
-            ->and($setPayload['success']['data']['agent_ide'])->toBe([
+        expect($setPayload['success']['data']['name'])
+            ->toBe('app-dev-1')
+            ->and($setPayload['success']['data']['agent_ide'])
+            ->toBe([
                 'adapter' => 'opencode',
                 'source' => 'node',
             ]);

@@ -180,7 +180,8 @@ final readonly class S3RouteRegistrar
 
     private function routerNode(): Node
     {
-        $router = $this->nodeRoleAssignments->activeRouterNodeQuery()
+        $router = $this->nodeRoleAssignments
+            ->activeRouterNodeQuery()
             ->orderBy('id')
             ->first();
 
@@ -193,7 +194,8 @@ final readonly class S3RouteRegistrar
 
     private function ingressNode(): Node
     {
-        $ingress = $this->nodeRoleAssignments->activeIngressNodeQuery()
+        $ingress = $this->nodeRoleAssignments
+            ->activeIngressNodeQuery()
             ->orderBy('id')
             ->first();
 
@@ -315,7 +317,9 @@ final readonly class S3RouteRegistrar
         $routerAddress = is_string($router->wireguard_address) ? trim($router->wireguard_address) : '';
 
         if ($routerAddress === '') {
-            throw new RuntimeException("Router node '{$router->name}' requires a WireGuard address for S3 public host ingress.");
+            throw new RuntimeException(
+                "Router node '{$router->name}' requires a WireGuard address for S3 public host ingress.",
+            );
         }
 
         return [

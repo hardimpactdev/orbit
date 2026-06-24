@@ -174,8 +174,10 @@ final class UpdateAllCommand extends GatewayCommand
 
         // Local already on the target: skip its download and output the gateway
         // terminal frame directly (mirrors the human-mode local skip).
-        if (! $this->terminalUsesTopologyCandidateManifest($terminal['payload'])
-            && $this->localIsCurrent($this->terminalTargetVersion($terminal['payload']))) {
+        if (
+            ! $this->terminalUsesTopologyCandidateManifest($terminal['payload'])
+            && $this->localIsCurrent($this->terminalTargetVersion($terminal['payload']))
+        ) {
             return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
         }
 
@@ -284,8 +286,8 @@ final class UpdateAllCommand extends GatewayCommand
     private function eventsUrl(array $response): ?string
     {
         $success = $response['success'] ?? null;
-        $data = is_array($success) ? ($success['data'] ?? null) : null;
-        $eventsUrl = is_array($data) ? ($data['events_url'] ?? null) : null;
+        $data = is_array($success) ? $success['data'] ?? null : null;
+        $eventsUrl = is_array($data) ? $data['events_url'] ?? null : null;
 
         if (! is_string($eventsUrl)) {
             return null;
@@ -352,7 +354,7 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderReleaseManifestUnavailable($url, 'response was not a JSON object');
         }
 
-        return $manifest;
+        return $this->stringKeyedArray($manifest);
     }
 
     private function releaseManifestTimeoutSeconds(): int
@@ -385,7 +387,9 @@ final class UpdateAllCommand extends GatewayCommand
     {
         $data = $this->frameData($payload);
         $code = $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error';
-        $message = $this->frameString($data, 'message') ?? $this->frameString($payload, 'message') ?? 'Gateway progress stream failed.';
+        $message =
+            $this->frameString($data, 'message') ?? $this->frameString($payload, 'message')
+                ?? 'Gateway progress stream failed.';
         $meta = $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [];
 
         return $this->renderFailure($code, $message, $meta);
@@ -396,8 +400,12 @@ final class UpdateAllCommand extends GatewayCommand
      */
     private function terminalTargetVersion(array $payload): ?string
     {
-        return $this->frameString($this->frameData($payload), 'target_version')
-            ?? $this->frameString($payload, 'target_version');
+        return (
+            $this->frameString($this->frameData($payload), 'target_version') ?? $this->frameString(
+                $payload,
+                'target_version',
+            )
+        );
     }
 
     /**
@@ -416,9 +424,10 @@ final class UpdateAllCommand extends GatewayCommand
      */
     private function terminalUsesTopologyCandidateManifest(array $payload): bool
     {
-        return $this->frameString($this->frameData($payload), 'manifest_source')
-            === self::TopologyCandidateManifestSource
-            || $this->frameString($payload, 'manifest_source') === self::TopologyCandidateManifestSource;
+        return (
+            $this->frameString($this->frameData($payload), 'manifest_source') === self::TopologyCandidateManifestSource
+            || $this->frameString($payload, 'manifest_source') === self::TopologyCandidateManifestSource
+        );
     }
 
     /**
@@ -439,7 +448,7 @@ final class UpdateAllCommand extends GatewayCommand
         $data = $this->frameData($payload);
         $artifacts = $this->frameArray($data, 'cli_artifacts') ?? $this->frameArray($payload, 'cli_artifacts') ?? [];
         $artifact = $artifacts[$platform] ?? null;
-        $url = is_array($artifact) ? ($artifact['url'] ?? null) : null;
+        $url = is_array($artifact) ? $artifact['url'] ?? null : null;
 
         if (! is_string($url)) {
             return null;
@@ -499,9 +508,10 @@ final class UpdateAllCommand extends GatewayCommand
     {
         $data = $this->frameData($payload);
 
-        return $this->frameString($data, 'message')
-            ?? $this->frameString($payload, 'message')
-            ?? 'Gateway progress stream failed.';
+        return (
+            $this->frameString($data, 'message') ?? $this->frameString($payload, 'message')
+            ?? 'Gateway progress stream failed.'
+        );
     }
 
     /**
@@ -563,5 +573,20 @@ final class UpdateAllCommand extends GatewayCommand
         $value = $payload[$key] ?? null;
 
         return is_array($value) ? $value : null;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $value
+     * @return array<string, mixed>
+     */
+    private function stringKeyedArray(array $value): array
+    {
+        $result = [];
+
+        foreach ($value as $key => $entry) {
+            $result[(string) $key] = $entry;
+        }
+
+        return $result;
     }
 }

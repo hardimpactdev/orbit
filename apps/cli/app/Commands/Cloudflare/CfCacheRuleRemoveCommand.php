@@ -29,7 +29,9 @@ final class CfCacheRuleRemoveCommand extends CloudflareGatewayCommand
             return $app;
         }
 
-        $consent = $this->confirmDestructive('Removing a Cloudflare cache rule requires --force in non-interactive mode.');
+        $consent = $this->confirmDestructive(
+            'Removing a Cloudflare cache rule requires --force in non-interactive mode.',
+        );
 
         if (is_int($consent)) {
             return $consent;

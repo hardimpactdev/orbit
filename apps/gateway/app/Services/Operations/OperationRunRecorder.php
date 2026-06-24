@@ -74,7 +74,7 @@ final readonly class OperationRunRecorder
 
         $run->forceFill([
             'status' => OperationStatus::Running,
-            'started_at' => $run->started_at ?? ($startedAt ?? Carbon::now()),
+            'started_at' => $run->started_at ?? $startedAt ?? Carbon::now(),
         ])->save();
 
         return $run->refresh();
@@ -155,8 +155,12 @@ final readonly class OperationRunRecorder
      * @param  array<string, mixed>  $payload
      * @param  array<string, mixed>  $metadata
      */
-    public function appendEvent(string $operationRunId, string $eventType, array $payload, array $metadata = []): OperationEvent
-    {
+    public function appendEvent(
+        string $operationRunId,
+        string $eventType,
+        array $payload,
+        array $metadata = [],
+    ): OperationEvent {
         return $this->events->append($operationRunId, $eventType, $payload, $metadata);
     }
 
@@ -164,8 +168,12 @@ final readonly class OperationRunRecorder
      * @param  list<array{key: string, label: string, doneLabel?: string}>  $steps
      * @param  array<string, mixed>  $metadata
      */
-    public function appendTree(string $operationRunId, string $title, array $steps, array $metadata = []): OperationEvent
-    {
+    public function appendTree(
+        string $operationRunId,
+        string $title,
+        array $steps,
+        array $metadata = [],
+    ): OperationEvent {
         return $this->events->tree($operationRunId, $title, $steps, $metadata);
     }
 
@@ -203,8 +211,12 @@ final readonly class OperationRunRecorder
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $metadata
      */
-    public function appendComplete(string $operationRunId, int $exitCode, array $data = [], array $metadata = []): OperationEvent
-    {
+    public function appendComplete(
+        string $operationRunId,
+        int $exitCode,
+        array $data = [],
+        array $metadata = [],
+    ): OperationEvent {
         return $this->events->complete($operationRunId, $exitCode, $data, $metadata);
     }
 
@@ -212,8 +224,13 @@ final readonly class OperationRunRecorder
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $metadata
      */
-    public function appendError(string $operationRunId, string $message, int $exitCode = 1, array $data = [], array $metadata = []): OperationEvent
-    {
+    public function appendError(
+        string $operationRunId,
+        string $message,
+        int $exitCode = 1,
+        array $data = [],
+        array $metadata = [],
+    ): OperationEvent {
         return $this->events->error($operationRunId, $message, $exitCode, $data, $metadata);
     }
 
@@ -240,13 +257,16 @@ final readonly class OperationRunRecorder
     ): OperationRun {
         $run = $this->findOrFail($id);
 
-        $attributes = array_filter([
-            'status' => $status,
-            'finished_at' => Carbon::now(),
-            'exit_code' => $exitCode,
-            'stdout_summary' => $stdoutSummary,
-            'stderr_summary' => $stderrSummary,
-        ], fn (mixed $value): bool => $value !== null);
+        $attributes = array_filter(
+            [
+                'status' => $status,
+                'finished_at' => Carbon::now(),
+                'exit_code' => $exitCode,
+                'stdout_summary' => $stdoutSummary,
+                'stderr_summary' => $stderrSummary,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
 
         $attributes['result'] = $result;
         $attributes['error'] = $error;

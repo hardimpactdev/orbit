@@ -35,21 +35,24 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'name' => $this->name,
-            'app' => $this->app,
-            'base' => $this->base,
-            'php_version' => $this->phpVersion,
-        ], static fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'name' => $this->name,
+                'app' => $this->app,
+                'base' => $this->base,
+                'php_version' => $this->phpVersion,
+            ],
+            static fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): CreateWorkspaceResponse
     {
         $data = $this->unwrapData($response);
         $meta = $this->unwrapMeta($response);
-        $workspace = is_array($data['workspace'] ?? null) ? $data['workspace'] : [];
+        $workspace = $this->stringKeyedArray($data['workspace'] ?? []);
         $agentIde = is_array($workspace['agent_ide'] ?? null)
-            ? $workspace['agent_ide']
+            ? $this->stringKeyedArray($workspace['agent_ide'])
             : ['adapter' => null, 'workspace_id' => null];
 
         return new CreateWorkspaceResponse(
@@ -62,11 +65,13 @@ final class CreateWorkspaceRequest extends GatewayRequest implements HasBody
             phpInherited: is_bool($workspace['php_inherited'] ?? null) ? $workspace['php_inherited'] : false,
             agentIde: $agentIde,
             adopted: is_bool($workspace['adopted'] ?? null) ? $workspace['adopted'] : false,
-            lifecycleStatus: is_string($workspace['lifecycle_status'] ?? null) ? $workspace['lifecycle_status'] : 'setup-pending',
-            base: is_string($meta['base'] ?? null) ? $meta['base'] : ($this->base ?? 'main'),
+            lifecycleStatus: is_string($workspace['lifecycle_status'] ?? null)
+                ? $workspace['lifecycle_status']
+                : 'setup-pending',
+            base: is_string($meta['base'] ?? null) ? $meta['base'] : $this->base ?? 'main',
             action: is_string($data['result']['action'] ?? null) ? $data['result']['action'] : 'created',
-            httpProbe: is_array($meta['http_probe'] ?? null) ? $meta['http_probe'] : [],
-            warnings: is_array($meta['warnings'] ?? null) ? array_values($meta['warnings']) : [],
+            httpProbe: $this->stringKeyedArray($meta['http_probe'] ?? []),
+            warnings: $this->listOfStringArrays($meta['warnings'] ?? []),
         );
     }
 }

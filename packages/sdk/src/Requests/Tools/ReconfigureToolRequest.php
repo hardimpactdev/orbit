@@ -36,12 +36,15 @@ final class ReconfigureToolRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-            'config' => $this->toolConfig === [] ? null : $this->toolConfig,
-            'password' => $this->password,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+                'config' => $this->toolConfig === [] ? null : $this->toolConfig,
+                'password' => $this->password,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolReconfigureResponse
@@ -50,7 +53,7 @@ final class ReconfigureToolRequest extends GatewayRequest implements HasBody
         $tool = $data['tool'] ?? [];
 
         return new ToolReconfigureResponse(
-            tool: is_array($tool) ? $tool : [],
+            tool: $this->stringKeyedArray($tool),
         );
     }
 }

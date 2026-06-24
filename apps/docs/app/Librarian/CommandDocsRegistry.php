@@ -11,7 +11,10 @@ final readonly class CommandDocsRegistry
      */
     public function stateFamilies(): array
     {
-        return $this->load('state_families.php');
+        /** @var array<string, array{singular: string, doctor_doc: ?string}> $registry */
+        $registry = $this->load('state_families.php');
+
+        return $registry;
     }
 
     /**
@@ -19,7 +22,10 @@ final readonly class CommandDocsRegistry
      */
     public function warningCodes(): array
     {
-        return $this->load('warning_codes.php');
+        /** @var array<string, array{family?: ?string, kind?: string, allowed_next_commands?: list<string>}> $registry */
+        $registry = $this->load('warning_codes.php');
+
+        return $registry;
     }
 
     /**
@@ -27,7 +33,10 @@ final readonly class CommandDocsRegistry
      */
     public function errorCodes(): array
     {
-        return $this->load('error_codes.php');
+        /** @var array{enforced_families?: list<string>, shared?: list<string>, products?: array<string, list<string>>} $registry */
+        $registry = $this->load('error_codes.php');
+
+        return $registry;
     }
 
     /**
@@ -50,6 +59,7 @@ final readonly class CommandDocsRegistry
                 continue;
             }
 
+            /** @var array{required?: array<string, string>, optional?: array<string, string>} $schema */
             $schemas[basename($file, '.php')] = $schema;
         }
 
@@ -63,7 +73,10 @@ final readonly class CommandDocsRegistry
      */
     public function sharedOptions(): array
     {
-        return $this->load('shared_options.php');
+        /** @var array{contexts?: array<string, array{markers?: list<string>}>, options?: array<string, array{allowed_contexts?: list<string>, allowed_command_families?: list<string>, public_wording?: string}>} $registry */
+        $registry = $this->load('shared_options.php');
+
+        return $registry;
     }
 
     /**
@@ -83,7 +96,15 @@ final readonly class CommandDocsRegistry
             return [];
         }
 
-        return $registry;
+        $result = [];
+
+        foreach ($registry as $key => $value) {
+            if (is_string($key)) {
+                $result[$key] = $value;
+            }
+        }
+
+        return $result;
     }
 
     private function registryRoot(): string

@@ -13,28 +13,28 @@ function appPruneGrantAccess(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-], [
-    'permissions' => json_encode(['app:new', 'app:agent', 'app:prune'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+        ], [
+            'permissions' => json_encode(['app:new', 'app:agent', 'app:prune'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-echo 'granted';
-PHP;
+        echo 'granted';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -101,11 +101,16 @@ it('dry-run --json returns planned stale workspace set without mutation', functi
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload)->toHaveKey('success')
-            ->and($payload['success']['data'])->toHaveKey('app')
-            ->and($payload['success']['data'])->toHaveKey('stale_workspaces')
-            ->and($payload['success']['data']['dry_run'])->toBeTrue();
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload)
+            ->toHaveKey('success')
+            ->and($payload['success']['data'])
+            ->toHaveKey('app')
+            ->and($payload['success']['data'])
+            ->toHaveKey('stale_workspaces')
+            ->and($payload['success']['data']['dry_run'])
+            ->toBeTrue();
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();
@@ -168,17 +173,26 @@ it('--force --json prunes stale workspaces and reports pruned list', function ()
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload)->toHaveKey('success')
-            ->and($payload['success']['data'])->toHaveKey('app')
-            ->and($payload['success']['data'])->toHaveKey('stale_workspaces')
-            ->and($payload['success']['data']['dry_run'])->toBeFalse();
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload)
+            ->toHaveKey('success')
+            ->and($payload['success']['data'])
+            ->toHaveKey('app')
+            ->and($payload['success']['data'])
+            ->toHaveKey('stale_workspaces')
+            ->and($payload['success']['data']['dry_run'])
+            ->toBeFalse();
 
         foreach ($payload['success']['data']['stale_workspaces'] as $workspace) {
-            expect($workspace)->toHaveKey('name')
-                ->and($workspace)->toHaveKey('status')
-                ->and($workspace)->toHaveKey('database')
-                ->and($workspace['database'])->toBe('skipped');
+            expect($workspace)
+                ->toHaveKey('name')
+                ->and($workspace)
+                ->toHaveKey('status')
+                ->and($workspace)
+                ->toHaveKey('database')
+                ->and($workspace['database'])
+                ->toBe('skipped');
         }
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);

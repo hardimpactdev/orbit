@@ -12,6 +12,7 @@
         "laravel/tinker": "^3.0"
     },
     "require-dev": {
+        "carthage-software/mago": "^1.40.1",
         "fakerphp/faker": "^1.23",
         "larastan/larastan": "^3.0",
         "laravel/pail": "^1.2.5",
@@ -37,8 +38,8 @@
         }
     },
     "scripts": {
-        "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
-        "format": "vendor/bin/pint",
+        "analyse": "vendor/bin/mago analyze app config database --reporting-format=medium",
+        "format": "vendor/bin/mago format",
         "rector": "vendor/bin/rector process",
         "setup": [
             "composer install",
@@ -76,7 +77,11 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
-        ]
+        ],
+        "mago:analyze": "vendor/bin/mago analyze app config database --reporting-format=medium",
+        "mago:lint": "vendor/bin/mago lint --reporting-format=medium",
+        "mago:format": "vendor/bin/mago format",
+        "mago:format:check": "vendor/bin/mago format --check"
     },
     "extra": {
         "laravel": {

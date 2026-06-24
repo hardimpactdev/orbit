@@ -29,10 +29,13 @@ final class ListProxyRoutesRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'filter' => $this->filter,
-            'node' => $this->node,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'filter' => $this->filter,
+                'node' => $this->node,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ProxyRouteListResponse
@@ -42,7 +45,7 @@ final class ListProxyRoutesRequest extends GatewayRequest
         $routes = $data['routes'] ?? [];
 
         return new ProxyRouteListResponse(
-            routes: is_array($routes) ? array_values($routes) : [],
+            routes: $this->listOfStringKeyedArrays($routes),
             meta: $meta,
         );
     }

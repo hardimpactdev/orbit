@@ -12,16 +12,18 @@ describe('LaravelInstallerTool', function (): void {
     it('has slug laravel-installer and category runtime', function (): void {
         $tool = new LaravelInstallerTool;
 
-        expect($tool->slug())->toBe('laravel-installer')
-            ->and($tool->category())->toBe('runtime');
+        expect($tool->slug())->toBe('laravel-installer')->and($tool->category())->toBe('runtime');
     });
 
     it('declares install, update, and remove capabilities', function (): void {
         $tool = new LaravelInstallerTool;
 
-        expect($tool->capabilities())->toContain('install')
-            ->and($tool->capabilities())->toContain('update')
-            ->and($tool->capabilities())->toContain('remove');
+        expect($tool->capabilities())
+            ->toContain('install')
+            ->and($tool->capabilities())
+            ->toContain('update')
+            ->and($tool->capabilities())
+            ->toContain('remove');
     });
 
     it('installScript runs composer global require laravel/installer', function (): void {

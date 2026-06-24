@@ -206,8 +206,21 @@ final class NodePermissionRegistry
             'app:read' => ['app:list', 'app:show', 'app-setup-step:list'],
             'app:write' => ['app:codex', 'app:setup', 'app-setup-step:add', 'app-setup-step:remove'],
             'database:query:write' => ['database:query'],
-            'database:read' => ['database:list', 'database:show', 'database:tables', 'database:schema', 'database:describe'],
-            'database:write' => ['database:add', 'database:add-user', 'database:update', 'database:remove', 'database:attach', 'database:detach'],
+            'database:read' => [
+                'database:list',
+                'database:show',
+                'database:tables',
+                'database:schema',
+                'database:describe',
+            ],
+            'database:write' => [
+                'database:add',
+                'database:add-user',
+                'database:update',
+                'database:remove',
+                'database:attach',
+                'database:detach',
+            ],
             'deploy:read' => ['deploy:history', 'deploy:log'],
             'node:read' => ['node:list', 'node:show'],
             'php:read' => ['php:list'],
@@ -262,7 +275,11 @@ final class NodePermissionRegistry
 
             return array_values(array_filter(
                 $this->all(),
-                static fn (string $p): bool => $p !== '*' && ! str_ends_with($p, ':*') && str_starts_with($p, $namespace.':'),
+                static fn (string $p): bool => (
+                    $p !== '*'
+                    && ! str_ends_with($p, ':*')
+                    && str_starts_with($p, $namespace.':')
+                ),
             ));
         }
 
@@ -274,7 +291,10 @@ final class NodePermissionRegistry
      */
     public function allows(array $permissions, string $required): bool
     {
-        return array_any($permissions, fn ($permission) => $permission === $required || $this->isCoveredBy($required, $permission));
+        return array_any(
+            $permissions,
+            fn ($permission) => $permission === $required || $this->isCoveredBy($required, $permission),
+        );
     }
 
     /**
@@ -310,8 +330,7 @@ final class NodePermissionRegistry
         if (str_ends_with($coveringPermission, ':*')) {
             $namespace = substr($coveringPermission, 0, -2);
 
-            return $permission !== $coveringPermission
-                && str_starts_with($permission, $namespace.':');
+            return $permission !== $coveringPermission && str_starts_with($permission, $namespace.':');
         }
 
         $implied = $this->impliedBy($coveringPermission);

@@ -22,7 +22,9 @@ class NodeRemoveDnsEnactorFake extends DevelopmentDnsMappingEnactor
     /**
      * @param  array<string, mixed>  $result
      */
-    public function __construct(private readonly array $result) {}
+    public function __construct(
+        private readonly array $result,
+    ) {}
 
     /**
      * @return array{
@@ -116,7 +118,6 @@ function fakeNodeRemoveDnsResult(array $result): NodeRemoveDnsEnactorFake
 
 function setupNodeRemoveDnsGatewayApiCaller(): void
 {
-
     $callerId = (int) DB::table('nodes')->insertGetId(nodeRemoveDnsRow([
         'name' => 'control-api',
         'host' => '10.6.0.99',
@@ -211,7 +212,6 @@ describe('NodeRemoveController development DNS warnings', function (): void {
             'destructive_consent_source' => 'force',
         ]);
 
-        $response->assertOk()
-            ->assertJsonMissingPath('success.meta.warnings');
+        $response->assertOk()->assertJsonMissingPath('success.meta.warnings');
     });
 });

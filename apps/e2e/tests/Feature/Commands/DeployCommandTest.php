@@ -8,31 +8,32 @@ use App\E2E\Support\E2ETopologyKind;
 function deployCommandSeedProductionApp(E2ETopologyHarness $topology, string $path): void
 {
     $script = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\App\Models\App::query()->updateOrCreate(
-    ['name' => 'docs'],
-    [
-        'node_id' => $node->id,
-        'domain' => null,
-        'path' => '__PATH__',
-        'document_root' => 'public',
-        'repository' => null,
-        'environment' => 'production',
-        'php_version' => '8.5',
-        'runtime' => \App\Enums\Apps\AppRuntimeKind::Static->value,
-        'adopted' => true,
-    ],
-);
+        \App\Models\App::query()->updateOrCreate(
+            ['name' => 'docs'],
+            [
+                'node_id' => $node->id,
+                'domain' => null,
+                'path' => '__PATH__',
+                'document_root' => 'public',
+                'repository' => null,
+                'environment' => 'production',
+                'php_version' => '8.5',
+                'runtime' => \App\Enums\Apps\AppRuntimeKind::Static->value,
+                'adopted' => true,
+            ],
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $script = str_replace('__PATH__', $path, $script);
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($script),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($script),
         timeoutSeconds: 120,
     );
 }
@@ -109,18 +110,25 @@ it('manages and runs a production app deployment pipeline', function (): void {
         );
         $removePayload = json_decode(trim($remove->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($addPayload['success']['data']['step'])->toMatchArray([
-            'app' => 'docs',
-            'title' => 'Write marker',
-            'order' => 1,
-            'timeout_seconds' => 120,
-        ])
-            ->and($listPayload['success']['data']['steps'])->toHaveCount(1)
-            ->and($runData['run']['status'])->toBe('completed')
-            ->and($runData['output']['stdout'])->toBe('deployed')
-            ->and($historyPayload['success']['data']['runs'][0]['id'])->toBe($runId)
-            ->and($logPayload['success']['data']['steps'][0]['output']['stdout'])->toBe('deployed')
-            ->and($removePayload['success']['meta']['history_preserved'])->toBeTrue();
+        expect($addPayload['success']['data']['step'])
+            ->toMatchArray([
+                'app' => 'docs',
+                'title' => 'Write marker',
+                'order' => 1,
+                'timeout_seconds' => 120,
+            ])
+            ->and($listPayload['success']['data']['steps'])
+            ->toHaveCount(1)
+            ->and($runData['run']['status'])
+            ->toBe('completed')
+            ->and($runData['output']['stdout'])
+            ->toBe('deployed')
+            ->and($historyPayload['success']['data']['runs'][0]['id'])
+            ->toBe($runId)
+            ->and($logPayload['success']['data']['steps'][0]['output']['stdout'])
+            ->toBe('deployed')
+            ->and($removePayload['success']['meta']['history_preserved'])
+            ->toBeTrue();
     } finally {
         $topology->ssh('dev', 'sudo rm -rf '.escapeshellarg($path), timeoutSeconds: 60);
         $topology->cleanup();

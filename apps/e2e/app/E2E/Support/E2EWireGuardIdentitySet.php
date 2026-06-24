@@ -47,7 +47,9 @@ final class E2EWireGuardIdentitySet
      */
     public static function forRole(string $role): array
     {
-        return self::Identities[$role] ?? throw new RuntimeException("No fixed E2E WireGuard identity is defined for role [{$role}].");
+        return self::Identities[$role] ?? throw new RuntimeException(
+            "No fixed E2E WireGuard identity is defined for role [{$role}].",
+        );
     }
 
     public static function version(): string

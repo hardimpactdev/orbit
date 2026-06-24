@@ -98,10 +98,14 @@ describe('dns:list', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['dns'])->toBe([])
-                ->and($decoded['success']['meta']['count'])->toBe(0)
-                ->and($decoded['success']['meta']['resolver_backend'])->toBe('dnsmasq');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['dns'])
+                ->toBe([])
+                ->and($decoded['success']['meta']['count'])
+                ->toBe(0)
+                ->and($decoded['success']['meta']['resolver_backend'])
+                ->toBe('dnsmasq');
         });
 
         it('returns JSON success with non-empty override list', function (): void {
@@ -119,10 +123,14 @@ describe('dns:list', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['dns'])->toBe($this->resolver->overrides)
-                ->and($decoded['success']['meta']['count'])->toBe(1)
-                ->and($decoded['success']['meta']['resolver_backend'])->toBe('dnsmasq');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['dns'])
+                ->toBe($this->resolver->overrides)
+                ->and($decoded['success']['meta']['count'])
+                ->toBe(1)
+                ->and($decoded['success']['meta']['resolver_backend'])
+                ->toBe('dnsmasq');
         });
 
         it('renders human output without error for non-empty list', function (): void {
@@ -151,9 +159,12 @@ describe('dns:list', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('node.unsupported_platform')
-                ->and($decoded['error']['meta']['platform'])->toBe('unsupported');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('node.unsupported_platform')
+                ->and($decoded['error']['meta']['platform'])
+                ->toBe('unsupported');
         });
 
         it('returns local_resolver_read_failed when listOverrides throws', function (): void {
@@ -163,9 +174,12 @@ describe('dns:list', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('local_resolver_read_failed')
-                ->and($decoded['error']['meta']['resolver_backend'])->toBe('dnsmasq');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('local_resolver_read_failed')
+                ->and($decoded['error']['meta']['resolver_backend'])
+                ->toBe('dnsmasq');
         });
     });
 });

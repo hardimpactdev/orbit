@@ -18,7 +18,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final readonly class DeployController
 {
-    public function __construct(private DeployManager $deploy) {}
+    public function __construct(
+        private DeployManager $deploy,
+    ) {}
 
     #[RequiresPermission('deploy:step', servingNode: ServingNode::AppOwning)]
     public function storeStep(Request $request): JsonResponse
@@ -27,7 +29,12 @@ final readonly class DeployController
         $command = $this->stringInput($request, 'command');
 
         if ($app === null || $command === null) {
-            return $this->error('validation_failed', 'App and command are required.', ['field' => $app === null ? 'app' : 'command'], 400);
+            return $this->error(
+                'validation_failed',
+                'App and command are required.',
+                ['field' => $app === null ? 'app' : 'command'],
+                400,
+            );
         }
 
         $timeout = $this->positiveIntInput($request, 'timeout', DeployStep::DEFAULT_TIMEOUT_SECONDS);
@@ -36,12 +43,24 @@ final readonly class DeployController
 
         foreach (['timeout' => $timeout, 'order' => $order, 'retention' => $retention] as $field => $value) {
             if ($value === false) {
-                return $this->error('validation_failed', "Invalid value for {$field}: must be a positive integer.", ['field' => $field], 400);
+                return $this->error(
+                    'validation_failed',
+                    "Invalid value for {$field}: must be a positive integer.",
+                    ['field' => $field],
+                    400,
+                );
             }
         }
 
         try {
-            $result = $this->deploy->addStep($app, $command, $this->stringInput($request, 'title'), $order, $timeout, $retention);
+            $result = $this->deploy->addStep(
+                $app,
+                $command,
+                $this->stringInput($request, 'title'),
+                $order,
+                $timeout,
+                $retention,
+            );
 
             return $this->success(['step' => $result['step']], $result['meta']);
         } catch (GatewayApiException $exception) {
@@ -71,7 +90,12 @@ final readonly class DeployController
     public function removeStep(string $step, Request $request): JsonResponse
     {
         if ($request->boolean('destructive_consent') !== true) {
-            return $this->error('destructive_consent_required', 'Use --force to remove this deployment step.', ['field' => 'force'], 400);
+            return $this->error(
+                'destructive_consent_required',
+                'Use --force to remove this deployment step.',
+                ['field' => 'force'],
+                400,
+            );
         }
 
         $app = $this->stringInput($request, 'app');
@@ -168,7 +192,12 @@ final readonly class DeployController
         $limit = $this->positiveIntInput($request, 'limit', 50);
 
         if ($limit === false) {
-            return $this->error('validation_failed', 'Invalid value for --limit: must be a positive integer.', ['field' => 'limit'], 400);
+            return $this->error(
+                'validation_failed',
+                'Invalid value for --limit: must be a positive integer.',
+                ['field' => 'limit'],
+                400,
+            );
         }
 
         try {
@@ -186,7 +215,12 @@ final readonly class DeployController
         $app = $this->stringInput($request, 'app');
 
         if ($app === null || ! ctype_digit($run) || (int) $run < 1) {
-            return $this->error('validation_failed', 'App and positive run id are required.', ['field' => $app === null ? 'app' : 'run'], 400);
+            return $this->error(
+                'validation_failed',
+                'App and positive run id are required.',
+                ['field' => $app === null ? 'app' : 'run'],
+                400,
+            );
         }
 
         $step = $this->optionalPositiveIntInput($request, 'step');
@@ -194,7 +228,12 @@ final readonly class DeployController
 
         foreach (['step' => $step, 'lines' => $lines] as $field => $value) {
             if ($value === false) {
-                return $this->error('validation_failed', "Invalid value for {$field}: must be a positive integer.", ['field' => $field], 400);
+                return $this->error(
+                    'validation_failed',
+                    "Invalid value for {$field}: must be a positive integer.",
+                    ['field' => $field],
+                    400,
+                );
             }
         }
 
@@ -214,7 +253,7 @@ final readonly class DeployController
     {
         $value = $request->query($key, $request->input($key));
 
-        return is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+        return is_scalar($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function positiveIntInput(Request $request, string $key, int $default): int|false

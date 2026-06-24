@@ -43,30 +43,32 @@ final readonly class IncusWorkerNetwork
     {
         $result = $host->run(sprintf(
             <<<'BASH'
-if incus network show %1$s >/dev/null 2>&1; then
-    incus network set %1$s ipv4.address %2$s
-    incus network set %1$s ipv4.nat true
-    incus network set %1$s ipv6.address none
-    incus network set %1$s raw.dnsmasq port=0
-else
-    incus network create %1$s ipv4.address=%2$s ipv4.nat=true ipv6.address=none raw.dnsmasq=port=0
-fi
+                if incus network show %1$s >/dev/null 2>&1; then
+                    incus network set %1$s ipv4.address %2$s
+                    incus network set %1$s ipv4.nat true
+                    incus network set %1$s ipv6.address none
+                    incus network set %1$s raw.dnsmasq port=0
+                else
+                    incus network create %1$s ipv4.address=%2$s ipv4.nat=true ipv6.address=none raw.dnsmasq=port=0
+                fi
 
-if command -v iptables >/dev/null 2>&1; then
-    sudo_prefix=
-    if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi
-    while $sudo_prefix iptables -D FORWARD -i %1$s -j ACCEPT 2>/dev/null; do :; done
-    while $sudo_prefix iptables -D FORWARD -o %1$s -j ACCEPT 2>/dev/null; do :; done
-    $sudo_prefix iptables -I FORWARD 1 -o %1$s -j ACCEPT
-    $sudo_prefix iptables -I FORWARD 1 -i %1$s -j ACCEPT
-fi
-BASH,
+                if command -v iptables >/dev/null 2>&1; then
+                    sudo_prefix=
+                    if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then sudo_prefix=sudo; fi
+                    while $sudo_prefix iptables -D FORWARD -i %1$s -j ACCEPT 2>/dev/null; do :; done
+                    while $sudo_prefix iptables -D FORWARD -o %1$s -j ACCEPT 2>/dev/null; do :; done
+                    $sudo_prefix iptables -I FORWARD 1 -o %1$s -j ACCEPT
+                    $sudo_prefix iptables -I FORWARD 1 -i %1$s -j ACCEPT
+                fi
+                BASH,
             escapeshellarg($this->name),
             escapeshellarg($this->ipv4Address),
         ), timeoutSeconds: 120);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not ensure Incus worker network [{$this->name}] on {$host->config->host}: {$result->errorOutput()}{$result->output()}");
+            throw new RuntimeException(
+                "Could not ensure Incus worker network [{$this->name}] on {$host->config->host}: {$result->errorOutput()}{$result->output()}",
+            );
         }
     }
 
@@ -74,12 +76,12 @@ BASH,
     {
         return sprintf(
             <<<'BASH'
-if incus config device get %1$s eth0 network >/dev/null 2>&1; then
-    incus config device set %1$s eth0 network %2$s
-else
-    incus config device add %1$s eth0 nic network=%2$s name=eth0
-fi
-BASH,
+                if incus config device get %1$s eth0 network >/dev/null 2>&1; then
+                    incus config device set %1$s eth0 network %2$s
+                else
+                    incus config device add %1$s eth0 nic network=%2$s name=eth0
+                fi
+                BASH,
             escapeshellarg($instance),
             escapeshellarg($this->name),
         );

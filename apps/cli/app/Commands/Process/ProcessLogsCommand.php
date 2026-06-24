@@ -38,22 +38,32 @@ final class ProcessLogsCommand extends GatewayCommand
         }
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->renderFailure('validation_failed', 'A node context cannot be combined with app or workspace context.', [
-                'field' => 'context',
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-            ]);
+            return $this->renderFailure(
+                'validation_failed',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'field' => 'context',
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
+                ],
+            );
         }
 
         $lines = $this->lines();
 
         if ($lines === null) {
-            return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', ['field' => 'lines']);
+            return $this->renderFailure('validation_failed', 'The --lines value must be a positive integer.', [
+                'field' => 'lines',
+            ]);
         }
 
         if ($this->option('follow') === true && $this->wantsJson()) {
-            return $this->renderFailure('validation_failed', '--json cannot be combined with --follow for log streams.', ['field' => 'json']);
+            return $this->renderFailure(
+                'validation_failed',
+                '--json cannot be combined with --follow for log streams.',
+                ['field' => 'json'],
+            );
         }
 
         if ($this->option('follow') === true) {

@@ -42,7 +42,8 @@ function grantAppShowAccess(Node $caller, Node $appNode, array $permissions = ['
         'permissions' => json_encode($permissions, JSON_THROW_ON_ERROR),
         'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('AppShowController', function (): void {
@@ -59,11 +60,13 @@ describe('AppShowController', function (): void {
             'document_root' => 'public',
             'repository' => 'git@github.com:orbit/docs.git',
             'php_version' => '8.5',
-            'adopted' => false]);
+            'adopted' => false,
+        ]);
 
         $response = $this->call('GET', '/api/apps/docs', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.app.node', 'app-1')
             ->assertJsonPath('success.data.app.url', 'https://docs.example.com')
@@ -85,7 +88,14 @@ describe('AppShowController', function (): void {
 
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
 
-        $response = $this->call('GET', '/api/apps/docs.example.com', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs.example.com',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs');
@@ -99,7 +109,14 @@ describe('AppShowController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'domain' => 'docs.example.com']);
         App::factory()->create(['name' => 'docs.example.com', 'node_id' => $node->id, 'domain' => 'other.example.com']);
 
-        $response = $this->call('GET', '/api/apps/docs.example.com', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps/docs.example.com',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs.example.com');
@@ -113,7 +130,8 @@ describe('AppShowController', function (): void {
 
         $response = $this->call('GET', '/api/apps/hidden', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:read')
             ->assertJsonPath('error.meta.serving_node', $node->name);
@@ -125,9 +143,17 @@ describe('AppShowController', function (): void {
         grantAppShowAccess($caller, $node, ['node:read']);
         App::factory()->create(['name' => 'hidden', 'node_id' => $node->id, 'domain' => 'hidden.example.com']);
 
-        $response = $this->call('GET', '/api/apps/hidden.example.com', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/apps/hidden.example.com',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:read')
             ->assertJsonPath('error.meta.serving_node', $node->name);
@@ -138,7 +164,8 @@ describe('AppShowController', function (): void {
 
         $response = $this->call('GET', '/api/apps/missing', [], [], [], ['REMOTE_ADDR' => APP_SHOW_CALLER_WG_IP]);
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'app.not_found')
             ->assertJsonPath('error.message', "App 'missing' not found.");
     });
@@ -157,7 +184,8 @@ describe('AppShowController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/apps/docs');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

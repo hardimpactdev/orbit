@@ -10,8 +10,7 @@ use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 
 it('binds the source-mounted checkout orbit cli into retained incus gateway shims', function (): void {
-    $gateway = new class implements E2EInstance, SourceMountedCheckoutInstance
-    {
+    $gateway = new class implements E2EInstance, SourceMountedCheckoutInstance {
         /** @var list<string> */
         public array $execCommands = [];
 
@@ -27,8 +26,12 @@ it('binds the source-mounted checkout orbit cli into retained incus gateway shim
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -71,8 +74,7 @@ it('binds the source-mounted checkout orbit cli into retained incus gateway shim
 });
 
 it('binds an explicit current checkout into prepared incus gateway shims', function (): void {
-    $gateway = new class implements E2EInstance
-    {
+    $gateway = new class implements E2EInstance {
         /** @var list<string> */
         public array $execCommands = [];
 
@@ -88,8 +90,12 @@ it('binds an explicit current checkout into prepared incus gateway shims', funct
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 
@@ -127,8 +133,7 @@ it('binds an explicit current checkout into prepared incus gateway shims', funct
 });
 
 it('lets an explicit runtime checkout override the source-mounted gateway path', function (): void {
-    $gateway = new class implements E2EInstance, SourceMountedCheckoutInstance
-    {
+    $gateway = new class implements E2EInstance, SourceMountedCheckoutInstance {
         /** @var list<string> */
         public array $execCommands = [];
 
@@ -144,8 +149,12 @@ it('lets an explicit runtime checkout override the source-mounted gateway path',
             return Process::result();
         }
 
-        public function ssh(string $user, SshKeyPair $keyPair, string $command, ?int $timeoutSeconds = null): ProcessResult
-        {
+        public function ssh(
+            string $user,
+            SshKeyPair $keyPair,
+            string $command,
+            ?int $timeoutSeconds = null,
+        ): ProcessResult {
             return Process::result();
         }
 

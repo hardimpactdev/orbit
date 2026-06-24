@@ -49,7 +49,11 @@ final class S3UnpublishController implements Loggable
         $this->activityHost = $input['host'];
         $this->activityNode = $input['node'];
 
-        return $streams->make(function (ProgressEventStreamEmitter $emitter) use ($unpublishAction, $caller, $input): void {
+        return $streams->make(function (ProgressEventStreamEmitter $emitter) use (
+            $unpublishAction,
+            $caller,
+            $input,
+        ): void {
             $emitter->tree('Unpublishing S3 Host', [
                 ['key' => 'confirm_destructive', 'label' => 'Confirm destructive removal'],
                 ['key' => 'resolve_node', 'label' => 'Resolve S3 node'],
@@ -142,7 +146,7 @@ final class S3UnpublishController implements Loggable
                 ->get();
 
             if ($nodes->count() === 1) {
-                return $nodes->first()->name;
+                return $nodes->first()?->name;
             }
 
             return null;

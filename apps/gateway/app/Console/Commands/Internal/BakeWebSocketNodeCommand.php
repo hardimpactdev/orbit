@@ -177,8 +177,11 @@ class BakeWebSocketNodeCommand extends Command
         return $existing->refresh();
     }
 
-    private function convergeRuntime(NodeRoleBaselineConverger $converger, Node $node, NodeRoleAssignment $assignment): void
-    {
+    private function convergeRuntime(
+        NodeRoleBaselineConverger $converger,
+        Node $node,
+        NodeRoleAssignment $assignment,
+    ): void {
         try {
             $converger->converge($node, $assignment);
 

@@ -19,7 +19,12 @@ it('renders app-dev FrankenPHP thread pool config for a registered app runtime',
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'app-runtime-config');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         appRuntimeConfigGrantAccess($topology);
         appRuntimeConfigCreateMinimalPhpApp($topology, $path);
@@ -41,11 +46,15 @@ it('renders app-dev FrankenPHP thread pool config for a registered app runtime',
         $runtime = appRuntimeConfigRenderedRuntime($topology, $name);
         $environment = $runtime['environment'] ?? [];
 
-        expect($runtime['container_name'] ?? null)->toBe($containerName)
-            ->and($environment['FRANKENPHP_CONFIG'] ?? null)->toBe("max_threads auto\nmax_idle_time 1h")
-            ->and($environment)->not->toHaveKey('MAX_REQUESTS')
-            ->and($environment['FRANKENPHP_CONFIG'] ?? '')->not->toContain('worker')
-            ->and($runtime['process_runtime_config']['container_spec_hash'] ?? null)->toBe($runtime['container_spec_hash'] ?? '');
+        expect($runtime['container_name'] ?? null)
+            ->toBe($containerName)
+            ->and($environment['FRANKENPHP_CONFIG'] ?? null)
+            ->toBe("max_threads auto\nmax_idle_time 1h")
+            ->and($environment)
+            ->not->toHaveKey('MAX_REQUESTS')->and($environment['FRANKENPHP_CONFIG'] ?? '')
+            ->not->toContain('worker')->and($runtime['process_runtime_config']['container_spec_hash'] ?? null)->toBe(
+                $runtime['container_spec_hash'] ?? '',
+            );
     } finally {
         $topology->ssh(
             'dev',
@@ -64,26 +73,26 @@ function appRuntimeConfigGrantAccess(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-], [
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('node_access')->updateOrInsert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+        ], [
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-echo 'granted';
-PHP;
+        echo 'granted';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -123,22 +132,22 @@ function appRuntimeConfigRenderedRuntime(E2ETopologyHarness $topology, string $a
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $appNameValue = var_export($appName, true);
     $script = <<<PHP
-\$app = \\App\\Models\\App::query()
-    ->with('node.roleAssignments')
-    ->where('name', {$appNameValue})
-    ->firstOrFail();
-\$container = app(\\App\\Services\\Apps\\AppRuntimeContainerRenderer::class)->render(\$app);
-\$process = \\App\\Models\\Process::query()
-    ->where('name', "frankenphp-{\$app->name}")
-    ->first();
+        \$app = \\App\\Models\\App::query()
+            ->with('node.roleAssignments')
+            ->where('name', {$appNameValue})
+            ->firstOrFail();
+        \$container = app(\\App\\Services\\Apps\\AppRuntimeContainerRenderer::class)->render(\$app);
+        \$process = \\App\\Models\\Process::query()
+            ->where('name', "frankenphp-{\$app->name}")
+            ->first();
 
-echo json_encode([
-    'environment' => \$container->environment(),
-    'container_name' => \$container->name(),
-    'container_spec_hash' => \$container->specHash(),
-    'process_runtime_config' => \$process?->runtime_config,
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'environment' => \$container->environment(),
+            'container_name' => \$container->name(),
+            'container_spec_hash' => \$container->specHash(),
+            'process_runtime_config' => \$process?->runtime_config,
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = $topology->ssh(
         'gateway',

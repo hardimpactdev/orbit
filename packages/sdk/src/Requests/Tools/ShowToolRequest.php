@@ -31,11 +31,14 @@ final class ShowToolRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-            'live' => $this->live ? '1' : null,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+                'live' => $this->live ? '1' : null,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolShowResponse
@@ -44,7 +47,7 @@ final class ShowToolRequest extends GatewayRequest
         $tool = $data['tool'] ?? [];
 
         return new ToolShowResponse(
-            tool: is_array($tool) ? $tool : [],
+            tool: $this->stringKeyedArray($tool),
         );
     }
 }

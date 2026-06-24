@@ -19,11 +19,16 @@ it('selects service versions from the managed service catalog instead of tool in
     $mysql8 = $catalog->resolve('mysql', '8', ProcessRuntime::Docker, $node, 'mysql8');
     $mysql84 = $catalog->resolve('mysql', '8.4', ProcessRuntime::Docker, $node, 'mysql8-alt');
 
-    expect(app(ToolCatalog::class)->supports('mysql'))->toBeFalse()
-        ->and($mysql8->versionFamily)->toBe('8')
-        ->and($mysql8->version)->toBe('8.4')
-        ->and($mysql84->versionFamily)->toBe('8')
-        ->and($mysql84->version)->toBe('8.4');
+    expect(app(ToolCatalog::class)->supports('mysql'))
+        ->toBeFalse()
+        ->and($mysql8->versionFamily)
+        ->toBe('8')
+        ->and($mysql8->version)
+        ->toBe('8.4')
+        ->and($mysql84->versionFamily)
+        ->toBe('8')
+        ->and($mysql84->version)
+        ->toBe('8.4');
 });
 
 it('rejects unsupported managed service versions', function (): void {

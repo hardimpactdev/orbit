@@ -27,8 +27,12 @@ trait WithStepTree
      * @param  list<array{label: string, doneLabel?: string, run: callable(): mixed}>  $steps
      * @param  string|Closure(): string  $doneFooter
      */
-    protected function runStepTree(string $title, array $steps, string|Closure $doneFooter, ?string $failFooter = null): StepTreeResult
-    {
+    protected function runStepTree(
+        string $title,
+        array $steps,
+        string|Closure $doneFooter,
+        ?string $failFooter = null,
+    ): StepTreeResult {
         return new StepTree($this->output)->run($title, $steps, $doneFooter, $failFooter);
     }
 
@@ -41,8 +45,13 @@ trait WithStepTree
      * @param  Closure(): mixed  $work
      * @param  string|Closure(): string  $doneFooter
      */
-    protected function runStepOperation(string $title, array $phases, Closure $work, string|Closure $doneFooter, ?string $failFooter = null): StepTreeResult
-    {
+    protected function runStepOperation(
+        string $title,
+        array $phases,
+        Closure $work,
+        string|Closure $doneFooter,
+        ?string $failFooter = null,
+    ): StepTreeResult {
         return new StepTree($this->output)->runOperation($title, $phases, $work, $doneFooter, $failFooter);
     }
 }

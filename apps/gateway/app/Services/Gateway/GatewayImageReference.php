@@ -111,7 +111,7 @@ final readonly class GatewayImageReference implements \Stringable
         $lastSlash = strrpos($nameAndTag, '/');
         $lastColon = strrpos($nameAndTag, ':');
 
-        if ($lastColon === false || ($lastSlash !== false && $lastColon < $lastSlash)) {
+        if ($lastColon === false || $lastSlash !== false && $lastColon < $lastSlash) {
             return [$nameAndTag, null];
         }
 
@@ -137,7 +137,12 @@ final readonly class GatewayImageReference implements \Stringable
         $segments = explode('/', $name);
         $first = $segments[0] ?? '';
 
-        if (count($segments) > 1 && (str_contains($first, '.') || str_contains($first, ':') || $first === 'localhost')) {
+        if (
+            count($segments) > 1
+            && (str_contains($first, '.')
+            || str_contains($first, ':')
+            || $first === 'localhost')
+        ) {
             array_shift($segments);
 
             return [$first, implode('/', $segments)];
@@ -154,7 +159,9 @@ final readonly class GatewayImageReference implements \Stringable
 
         foreach (explode('/', $repository) as $segment) {
             if (preg_match('/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/', $segment) !== 1) {
-                throw new InvalidArgumentException("Gateway image reference repository segment [{$segment}] is invalid.");
+                throw new InvalidArgumentException(
+                    "Gateway image reference repository segment [{$segment}] is invalid.",
+                );
             }
         }
     }

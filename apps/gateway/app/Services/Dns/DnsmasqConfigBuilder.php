@@ -78,8 +78,7 @@ final class DnsmasqConfigBuilder
         $tld = $node->tld;
         $address = $node->wireguard_address;
 
-        return is_string($tld) && $tld !== ''
-            && is_string($address) && $address !== '';
+        return is_string($tld) && $tld !== '' && is_string($address) && $address !== '';
     }
 
     /**

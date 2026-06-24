@@ -17,11 +17,11 @@ it('builds linux platform identifiers from os-release', function (): void {
     $detector = new PlatformDetector;
 
     expect($detector->linuxIdentifier(<<<'OS'
-NAME="Ubuntu"
-ID=ubuntu
-VERSION_ID="24.04"
-PRETTY_NAME="Ubuntu 24.04 LTS"
-OS))->toBe('ubuntu_24-04');
+        NAME="Ubuntu"
+        ID=ubuntu
+        VERSION_ID="24.04"
+        PRETTY_NAME="Ubuntu 24.04 LTS"
+        OS))->toBe('ubuntu_24-04');
 });
 
 it('fails when linux platform metadata is incomplete', function (): void {

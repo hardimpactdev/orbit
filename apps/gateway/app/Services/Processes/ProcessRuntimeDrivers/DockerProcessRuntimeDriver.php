@@ -27,8 +27,13 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         return $this->renderer->containerName($app, $process, $workspace);
     }
 
-    public function apply(Node $node, App $app, Process $process, ?Workspace $workspace = null, ?string $preApplyScript = null): bool
-    {
+    public function apply(
+        Node $node,
+        App $app,
+        Process $process,
+        ?Workspace $workspace = null,
+        ?string $preApplyScript = null,
+    ): bool {
         try {
             if ($preApplyScript !== null && trim($preApplyScript) !== '') {
                 $preApply = $this->remoteShell->run($node, $this->strictScript($preApplyScript));
@@ -109,14 +114,22 @@ final readonly class DockerProcessRuntimeDriver implements ProcessRuntimeDriver
         return 'set -euo pipefail'.PHP_EOL.$script;
     }
 
-    public function logScript(App $app, Process $process, ?Workspace $workspace, string $runtimeUnit, int $lines, bool $follow): string
-    {
+    public function logScript(
+        App $app,
+        Process $process,
+        ?Workspace $workspace,
+        string $runtimeUnit,
+        int $lines,
+        bool $follow,
+    ): string {
         return collect([
             'docker logs',
             "--tail {$lines}",
             $follow ? '--follow' : null,
             escapeshellarg($runtimeUnit),
             '2>&1',
-        ])->filter()->implode(' ');
+        ])
+            ->filter()
+            ->implode(' ');
     }
 }

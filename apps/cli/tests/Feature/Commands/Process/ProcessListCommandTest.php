@@ -30,14 +30,15 @@ describe('process:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/processes')
                 && str_contains($url, 'app=docs')
-                && str_contains($url, 'workspace=feature-docs');
+                && str_contains($url, 'workspace=feature-docs')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['processes'][0]['name'])->toBe('vite');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['processes'][0]['name'])->toBe('vite');
     });
 
     it('renders human output as a table with uppercase headers and derived status', function (): void {
@@ -63,22 +64,37 @@ describe('process:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:list', ['--app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Processes for docs')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('COMMAND')
-            ->and($output)->toContain('RESTART')
-            ->and($output)->toContain('TOOL')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('vite')
-            ->and($output)->toContain('npm run dev')
-            ->and($output)->toContain('never')
-            ->and($output)->toContain('agent_ide')
-            ->and($output)->toContain('running')
-            ->and($output)->toContain('queue')
-            ->and($output)->toContain('stopped')
-            ->and($output)->not->toContain('processes: [')
-            ->and($output)->not->toContain('"last_event"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Processes for docs')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('COMMAND')
+            ->and($output)
+            ->toContain('RESTART')
+            ->and($output)
+            ->toContain('TOOL')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('vite')
+            ->and($output)
+            ->toContain('npm run dev')
+            ->and($output)
+            ->toContain('never')
+            ->and($output)
+            ->toContain('agent_ide')
+            ->and($output)
+            ->toContain('running')
+            ->and($output)
+            ->toContain('queue')
+            ->and($output)
+            ->toContain('stopped')
+            ->and($output)
+            ->not->toContain('processes: [')->and($output)
+            ->not->toContain('"last_event"');
     });
 
     it('renders the missing-tool cell as an em dash', function (): void {
@@ -91,8 +107,7 @@ describe('process:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:list', ['--app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('—');
+        expect($exitCode)->toBe(0)->and($output)->toContain('—');
     });
 
     it('renders the documented empty state when no processes exist', function (): void {
@@ -103,8 +118,7 @@ describe('process:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'process:list', ['--app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No processes found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No processes found.');
     });
 
     it('passes through gateway error envelopes from HTTP failures', function (): void {
@@ -116,9 +130,12 @@ describe('process:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -131,7 +148,6 @@ describe('process:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

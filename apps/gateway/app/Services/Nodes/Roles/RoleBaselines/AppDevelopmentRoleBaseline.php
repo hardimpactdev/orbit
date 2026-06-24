@@ -40,7 +40,9 @@ class AppDevelopmentRoleBaseline implements RoleBaseline
             return;
         }
 
-        throw new RuntimeException('The app-dev role requires a WireGuard address so the development DNS mapping can be materialized.');
+        throw new RuntimeException(
+            'The app-dev role requires a WireGuard address so the development DNS mapping can be materialized.',
+        );
     }
 
     public function remove(Node $node, NodeRoleAssignment $assignment, bool $purgeData): void

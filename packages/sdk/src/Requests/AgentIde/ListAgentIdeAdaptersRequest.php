@@ -65,6 +65,24 @@ final class ListAgentIdeAdaptersRequest extends GatewayRequest
             return [];
         }
 
-        return array_values(array_filter($value, is_array(...)));
+        $result = [];
+
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $row = [];
+
+            foreach ($item as $key => $field) {
+                if (is_string($key)) {
+                    $row[$key] = $field;
+                }
+            }
+
+            $result[] = $row;
+        }
+
+        return $result;
     }
 }

@@ -36,12 +36,24 @@ final readonly class ScheduleDestroyController implements Loggable
         }
 
         try {
-            $schedule = $this->payload->find($name, $this->stringQuery($request, 'app'), $this->stringQuery($request, 'node'), $caller, 'schedule:remove');
+            $schedule = $this->payload->find(
+                $name,
+                $this->stringQuery($request, 'app'),
+                $this->stringQuery($request, 'node'),
+                $caller,
+                'schedule:remove',
+            );
 
             $this->setScheduleActivitySubject($request, $schedule);
             $result = $removeSchedule->handle($schedule);
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->status($e), $e->errorData());
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->status($e),
+                $e->errorData(),
+            );
         }
 
         return response()->json(['success' => $result]);

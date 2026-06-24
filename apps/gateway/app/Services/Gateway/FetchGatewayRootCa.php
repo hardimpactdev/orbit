@@ -30,9 +30,7 @@ final readonly class FetchGatewayRootCa
         if (! is_string($rootCa) || $rootCa === '' || str_starts_with($rootCa, '{')) {
             if (is_string($rootCa) && str_starts_with($rootCa, '{')) {
                 $decoded = json_decode($rootCa, true);
-                $rootCa = $decoded['data']['root_ca']
-                    ?? $decoded['success']['data']['root_ca']
-                    ?? null;
+                $rootCa = $decoded['data']['root_ca'] ?? $decoded['success']['data']['root_ca'] ?? null;
             }
         }
 
@@ -40,7 +38,10 @@ final readonly class FetchGatewayRootCa
             throw new RuntimeException("Gateway at {$gatewayIp} returned an invalid or empty CA.");
         }
 
-        if (! str_contains($rootCa, '-----BEGIN CERTIFICATE-----') || ! str_contains($rootCa, '-----END CERTIFICATE-----')) {
+        if (
+            ! str_contains($rootCa, '-----BEGIN CERTIFICATE-----')
+            || ! str_contains($rootCa, '-----END CERTIFICATE-----')
+        ) {
             throw new RuntimeException("Gateway at {$gatewayIp} returned non-PEM content.");
         }
 

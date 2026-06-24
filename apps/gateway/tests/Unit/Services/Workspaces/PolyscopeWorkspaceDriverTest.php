@@ -56,32 +56,45 @@ it('reads Polyscope config through the local executor lookup command with stdout
 
         $this->fail('Expected Polyscope workspace creation to fail before creating a remote workspace.');
     } catch (WorkspaceCreateFailed $exception) {
-        expect($exception->errorCode)->toBe('workspace.agent_ide_not_configured')
-            ->and($exception->meta['missing'])->toBe(['server_id']);
+        expect($exception->errorCode)
+            ->toBe('workspace.agent_ide_not_configured')
+            ->and($exception->meta['missing'])
+            ->toBe(['server_id']);
     }
 
     expect($transport->calls)->toHaveCount(1);
 
     $script = $transport->calls[0]['script'];
 
-    expect($script)->toContain('internal:workspace-adapter:lookup')
-        ->and($script)->toContain("--adapter='polyscope'")
-        ->and($script)->toContain("--lookup='config'")
-        ->and($script)->toContain("--app-path='/srv/docs'")
-        ->and($script)->toContain('--operation-token=')
-        ->and($script)->not->toContain('python3')
-        ->and($script)->not->toContain('python -c')
-        ->and($script)->not->toContain('sqlite3')
-        ->and($script)->not->toContain('php -r');
+    expect($script)
+        ->toContain('internal:workspace-adapter:lookup')
+        ->and($script)
+        ->toContain("--adapter='polyscope'")
+        ->and($script)
+        ->toContain("--lookup='config'")
+        ->and($script)
+        ->toContain("--app-path='/srv/docs'")
+        ->and($script)
+        ->toContain('--operation-token=')
+        ->and($script)
+        ->not->toContain('python3')->and($script)
+        ->not->toContain('python -c')->and($script)
+        ->not->toContain('sqlite3')->and($script)
+        ->not->toContain('php -r');
 
     $completed = polyscopeWorkspaceDriverLocalExecutorActivityRows()[1];
     $properties = json_decode((string) $completed->properties, true, flags: JSON_THROW_ON_ERROR);
 
-    expect($properties['stdout_summary'])->toBe('<suppressed>')
-        ->and(json_encode($properties, JSON_THROW_ON_ERROR))->not->toContain('poly-token-secret');
+    expect($properties['stdout_summary'])
+        ->toBe('<suppressed>')
+        ->and(json_encode($properties, JSON_THROW_ON_ERROR))
+        ->not->toContain('poly-token-secret');
 });
 
-it('does not leak Polyscope api tokens from config lookup output into workspace exceptions', function (Closure $resultFactory, array $expectedMeta): void {
+it('does not leak Polyscope api tokens from config lookup output into workspace exceptions', function (
+    Closure $resultFactory,
+    array $expectedMeta,
+): void {
     $secret = 'poly-token-secret-round-2';
     $node = polyscopeWorkspaceDriverAppDevNode();
     $app = App::factory()->create([
@@ -101,9 +114,9 @@ it('does not leak Polyscope api tokens from config lookup output into workspace 
 
         $this->fail('Expected Polyscope workspace creation to fail.');
     } catch (WorkspaceCreateFailed $exception) {
-        expect($exception->getMessage())->not->toContain($secret)
-            ->and(polyscopeWorkspaceDriverExceptionBlob($exception))->not->toContain($secret)
-            ->and($exception->meta)->toMatchArray($expectedMeta);
+        expect($exception->getMessage())
+            ->not->toContain($secret)->and(polyscopeWorkspaceDriverExceptionBlob($exception))
+            ->not->toContain($secret)->and($exception->meta)->toMatchArray($expectedMeta);
     }
 })->with([
     'malformed output' => [
@@ -169,13 +182,15 @@ it('treats Polyscope config lookup error messages as untrusted remote output', f
     } catch (WorkspaceCreateFailed $exception) {
         $exceptionBlob = polyscopeWorkspaceDriverExceptionBlob($exception);
 
-        expect($exception->getMessage())->not->toContain($secret)
-            ->and($exception->errorCode)->not->toContain($secret)
-            ->and((string) $exception->getCode())->not->toContain($secret)
-            ->and($exceptionBlob)->not->toContain($secret)
-            ->and($exception->getTraceAsString())->not->toContain($secret)
-            ->and($exception->meta)->not->toHaveKey('adapter_error_code')
-            ->and($exception->meta['reason'])->toBe('Polyscope configuration lookup failed.');
+        expect($exception->getMessage())
+            ->not->toContain($secret)->and($exception->errorCode)
+            ->not->toContain($secret)->and((string) $exception->getCode())
+            ->not->toContain($secret)->and($exceptionBlob)
+            ->not->toContain($secret)->and($exception->getTraceAsString())
+            ->not->toContain($secret)->and($exception->meta)
+            ->not->toHaveKey('adapter_error_code')->and($exception->meta['reason'])->toBe(
+                'Polyscope configuration lookup failed.',
+            );
     }
 });
 

@@ -19,11 +19,12 @@ describe('app:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/apps/orbit-docs'));
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/api/apps/orbit-docs'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['app']['name'])->toBe('orbit-docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['app']['name'])->toBe('orbit-docs');
     });
 
     it('fails validation when no app can be resolved', function (): void {
@@ -31,9 +32,12 @@ describe('app:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('renders human output containing app fields', function (): void {
@@ -56,13 +60,20 @@ describe('app:show', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'app:show', ['app' => 'orbit-docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('App: orbit-docs')
-            ->and($output)->toContain('Domain')
-            ->and($output)->toContain('orbit-docs.test')
-            ->and($output)->toContain('Node')
-            ->and($output)->toContain('app-1 (192.0.2.10)')
-            ->and($output)->not->toContain('app: {');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('App: orbit-docs')
+            ->and($output)
+            ->toContain('Domain')
+            ->and($output)
+            ->toContain('orbit-docs.test')
+            ->and($output)
+            ->toContain('Node')
+            ->and($output)
+            ->toContain('app-1 (192.0.2.10)')
+            ->and($output)
+            ->not->toContain('app: {');
     });
 
     it('preserves structured gateway errors', function (): void {
@@ -77,9 +88,12 @@ describe('app:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('app.not_found')
-            ->and($decoded['error']['meta']['app'])->toBe('missing-app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('app.not_found')
+            ->and($decoded['error']['meta']['app'])
+            ->toBe('missing-app');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -92,7 +106,6 @@ describe('app:show', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

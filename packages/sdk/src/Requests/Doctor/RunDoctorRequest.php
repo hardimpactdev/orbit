@@ -40,14 +40,17 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'families' => $this->families,
-            'node' => $this->node,
-            'self' => $this->self,
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-            'key' => $this->key,
-        ], static fn (mixed $value): bool => $value !== null && $value !== [] && $value !== false);
+        return array_filter(
+            [
+                'families' => $this->families,
+                'node' => $this->node,
+                'self' => $this->self,
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+                'key' => $this->key,
+            ],
+            static fn (mixed $value): bool => $value !== null && $value !== [] && $value !== false,
+        );
     }
 
     public function createDtoFromResponse(Response $response): DoctorRunResponse
@@ -56,7 +59,7 @@ final class RunDoctorRequest extends GatewayRequest implements HasBody
         $doctor = $data['doctor'] ?? [];
 
         return new DoctorRunResponse(
-            doctor: is_array($doctor) ? $doctor : [],
+            doctor: $this->stringKeyedArray($doctor),
         );
     }
 }

@@ -11,9 +11,12 @@ it('lists the agent node from a operator caller against the agent-extended topol
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAgent, withGatewayApi: true);
 
     try {
-        expect($topology->lease()->devApp())->toBeNull()
-            ->and($topology->lease()->prodApp())->toBeNull()
-            ->and($topology->lease()->agent())->not->toBeNull();
+        expect($topology->lease()->devApp())
+            ->toBeNull()
+            ->and($topology->lease()->prodApp())
+            ->toBeNull()
+            ->and($topology->lease()->agent())
+            ->not->toBeNull();
 
         $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
@@ -38,8 +41,7 @@ it('lists the agent node from a operator caller against the agent-extended topol
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $nodes = $payload['success']['data']['nodes'] ?? null;
 
-        expect($nodes)->toBeArray()
-            ->and(array_column($nodes, 'name'))->toContain('agent-1');
+        expect($nodes)->toBeArray()->and(array_column($nodes, 'name'))->toContain('agent-1');
     } finally {
         $topology->cleanup();
     }

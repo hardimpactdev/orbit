@@ -1,0 +1,757 @@
+variant = "loose"
+
+[[issues]]
+file = "src/GatewayConnector.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "src/GatewayRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "src/GatewayResponse.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "avoid-catching-error"
+message = "Avoid catching 'Error' class instances."
+count = 2
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "impossible-type-comparison"
+message = "Impossible condition: variable `$failure` (type `null`) can never be `Throwable`."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "redundant-type-comparison"
+message = "Redundant condition: variable `$terminal` (type `null`) is already known to be `null`."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$resource` is already `open-resource`."
+count = 1
+
+[[issues]]
+file = "src/GatewayStreamTransport.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Activity/ListActivityRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Activity/ListActivityRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "src/Requests/Activity/ListActivityRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Activity/ShowActivityRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Activity/ShowActivityRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "src/Requests/Apps/CreateAppRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/CreateAppRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/ListAppsRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/ListAppsRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/PruneAppRequest.php"
+code = "mixed-operand"
+message = "Casting `mixed` to `bool`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RegisterAppRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RegisterAppRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RemoveAppRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/RemoveAppRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/ShowAppRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "src/Requests/Apps/UpdateAppRootRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/UpdateAppRootRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Apps/UpdateAppRootRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Database/ListDatabaseConnectionsRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Database/ListDatabaseConnectionsRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Database/SchemaDatabaseConnectionRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/AddDeployStepRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/AddDeployStepRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/DeployResponseFactory.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/DeployResponseFactory.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
+file = "src/Requests/Deploy/ShowDeployLogRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Deploy/ShowDeployLogRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/FixDoctorRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/FixDoctorRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/FixDoctorRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/RunDoctorRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/RunDoctorRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Doctor/RunDoctorRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Firewall/ListFirewallRulesRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Gateway/ShowGatewayIdentityRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/GrantNodeRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/ListNodesRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/ListNodesRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/ListNodesRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/ListNodesRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "redundant-condition"
+message = "This condition (type `true`) will always evaluate to true."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/NodePermissionsRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$json` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/RemoveNodeRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/SetNodeAgentIdeRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/ShowNodeRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Nodes/UpdateNodeRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "src/Requests/Operations/UpdateAllRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 2
+
+[[issues]]
+file = "src/Requests/Php/ShowPhpRuntimeRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Php/UsePhpRuntimeRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/AddProcessRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/AddProcessRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/EditProcessRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/EditProcessRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/EditProcessRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/ListProcessesRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/RemoveProcessRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/RemoveProcessRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/RestartProcessesRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/ShowProcessLogsRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/ShowProcessLogsRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 2
+
+[[issues]]
+file = "src/Requests/Processes/ShowProcessLogsRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/StartProcessesRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/StopProcessesRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Proxy/AddProxyRouteRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Proxy/AddProxyRouteRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Proxy/ListProxyRoutesRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/ListSchedulesRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Schedules/ShowScheduleRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/CredentialsToolRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/CredentialsToolRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/InstallToolRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/InstallToolRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ListToolsRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ListToolsRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ReconfigureToolRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ReconfigureToolRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/RemoveToolRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/RemoveToolRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ShowToolRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/ShowToolRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/UpdateToolRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/UpdateToolRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Tools/UpdateToolsBulkRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/ChangeVpnWebUiPasswordRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/ChangeVpnWebUiPasswordRequest.php"
+code = "unused-method"
+message = "Method `defaultbody()` is never used."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/CreateVpnClientRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/CreateVpnClientRequest.php"
+code = "unused-method"
+message = "Method `defaultbody()` is never used."
+count = 1
+
+[[issues]]
+file = "src/Requests/Vpn/RemoveVpnClientRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 5
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/AddWorkspaceStepRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/CreateWorkspaceRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/CreateWorkspaceRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ListWorkspaceStepsRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ListWorkspaceStepsRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ListWorkspaceStepsRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$value` is already `string`."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ListWorkspacesRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 5
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/RemoveWorkspaceStepRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/SetupWorkspaceRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/SetupWorkspaceRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 5
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceHistoryRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceLogRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceLogRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "src/Requests/Workspaces/ShowWorkspaceRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Testing/GatewayPendingRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Testing/GatewayPendingRequest.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 1

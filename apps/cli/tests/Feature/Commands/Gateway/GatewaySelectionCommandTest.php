@@ -69,13 +69,20 @@ describe('gateway:list', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:list', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['active_gateway'])->toBe('default')
-            ->and($decoded['success']['data']['gateways'])->toHaveCount(2)
-            ->and($decoded['success']['data']['gateways'][0]['name'])->toBe('default')
-            ->and($decoded['success']['data']['gateways'][0]['active'])->toBeTrue()
-            ->and($decoded['success']['data']['gateways'][1]['name'])->toBe('incus-dev')
-            ->and($decoded['success']['data']['gateways'][1]['active'])->toBeFalse();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['active_gateway'])
+            ->toBe('default')
+            ->and($decoded['success']['data']['gateways'])
+            ->toHaveCount(2)
+            ->and($decoded['success']['data']['gateways'][0]['name'])
+            ->toBe('default')
+            ->and($decoded['success']['data']['gateways'][0]['active'])
+            ->toBeTrue()
+            ->and($decoded['success']['data']['gateways'][1]['name'])
+            ->toBe('incus-dev')
+            ->and($decoded['success']['data']['gateways'][1]['active'])
+            ->toBeFalse();
 
         cleanupGatewaySelectionStore($tempDir);
     });
@@ -85,17 +92,27 @@ describe('gateway:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Active gateway: default')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('URL')
-            ->and($output)->toContain('WIREGUARD IP')
-            ->and($output)->toContain('default')
-            ->and($output)->toContain('incus-dev')
-            ->and($output)->toContain('https://10.6.0.2')
-            ->and($output)->toContain('10.6.0.12')
-            ->and($output)->not->toContain('gateways: [')
-            ->and($output)->not->toContain('"ca_fingerprint"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Active gateway: default')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('URL')
+            ->and($output)
+            ->toContain('WIREGUARD IP')
+            ->and($output)
+            ->toContain('default')
+            ->and($output)
+            ->toContain('incus-dev')
+            ->and($output)
+            ->toContain('https://10.6.0.2')
+            ->and($output)
+            ->toContain('10.6.0.12')
+            ->and($output)
+            ->not->toContain('gateways: [')->and($output)
+            ->not->toContain('"ca_fingerprint"');
 
         cleanupGatewaySelectionStore($tempDir);
     });
@@ -107,8 +124,10 @@ describe('gateway:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:list');
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toBe('validation_failed: No gateways are configured. Run orbit gateway:add first.');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toBe('validation_failed: No gateways are configured. Run orbit gateway:add first.');
 
         @rmdir($tempDir);
     });
@@ -121,9 +140,12 @@ describe('gateway:list', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:list', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['reason'])->toBe('missing');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('missing');
 
         @rmdir($tempDir);
     });
@@ -140,10 +162,14 @@ describe('gateway:use', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $config = $store->read();
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('selected')
-            ->and($decoded['success']['data']['gateway']['name'])->toBe('incus-dev')
-            ->and($config['active_gateway'])->toBe('incus-dev');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['result']['action'])
+            ->toBe('selected')
+            ->and($decoded['success']['data']['gateway']['name'])
+            ->toBe('incus-dev')
+            ->and($config['active_gateway'])
+            ->toBe('incus-dev');
 
         cleanupGatewaySelectionStore($tempDir);
     });
@@ -157,9 +183,12 @@ describe('gateway:use', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['reason'])->toBe('not_found');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('not_found');
 
         cleanupGatewaySelectionStore($tempDir);
     });
@@ -169,8 +198,7 @@ describe('gateway:use', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:use', ['name' => 'incus-dev']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Now using gateway 'incus-dev' (https://10.6.0.12).");
+        expect($exitCode)->toBe(0)->and($output)->toBe("Now using gateway 'incus-dev' (https://10.6.0.12).");
 
         cleanupGatewaySelectionStore($tempDir);
     });
@@ -180,10 +208,12 @@ describe('gateway:use', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:use', ['name' => 'missing']);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->not->toContain('"error"')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('gateway:');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->not->toContain('"error"')->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('gateway:');
 
         cleanupGatewaySelectionStore($tempDir);
     });

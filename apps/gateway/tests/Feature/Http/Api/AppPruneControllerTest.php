@@ -56,12 +56,20 @@ describe('AppPruneController', function (): void {
             'app_id' => $app->id,
         ]);
 
-        $response = $this->call('POST', '/api/apps/prune', [
-            'app' => 'docs',
-            'dry_run' => true,
-        ], [], [], ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/prune',
+            [
+                'app' => 'docs',
+                'dry_run' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app', 'docs')
             ->assertJsonPath('success.data.stale_workspaces.0.name', 'stale-ws')
             ->assertJsonPath('success.data.stale_workspaces.0.removed', false)
@@ -78,12 +86,20 @@ describe('AppPruneController', function (): void {
             'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
 
-        $response = $this->call('POST', '/api/apps/prune', [
-            'app' => 'docs',
-            'dry_run' => true,
-        ], [], [], ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/apps/prune',
+            [
+                'app' => 'docs',
+                'dry_run' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => APP_PRUNE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:prune')
             ->assertJsonPath('error.meta.serving_node', 'app-1');

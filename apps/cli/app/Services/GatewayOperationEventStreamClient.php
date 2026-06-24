@@ -91,7 +91,14 @@ class GatewayOperationEventStreamClient
             CURLOPT_CONNECTTIMEOUT => $this->timeout,
             CURLOPT_HEADER => false,
             CURLOPT_RETURNTRANSFER => false,
-            CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use ($decoder, &$frameBuffer, &$bodyBuffer, &$terminal, &$failure, $onEvent): int {
+            CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use (
+                $decoder,
+                &$frameBuffer,
+                &$bodyBuffer,
+                &$terminal,
+                &$failure,
+                $onEvent,
+            ): int {
                 $bodyBuffer .= $chunk;
 
                 if ($terminal !== null) {
@@ -246,8 +253,11 @@ class GatewayOperationEventStreamClient
      * @param  callable(ProgressEventType, array<string, mixed>, int|null): void  $onEvent
      * @return array{type: ProgressEventType, payload: array<string, mixed>}|null
      */
-    private function processCompleteFrames(ProgressEventDecoder $decoder, string &$frameBuffer, callable $onEvent): ?array
-    {
+    private function processCompleteFrames(
+        ProgressEventDecoder $decoder,
+        string &$frameBuffer,
+        callable $onEvent,
+    ): ?array {
         while (($pos = $this->findFrameEnd($frameBuffer)) !== false) {
             $rawFrame = substr($frameBuffer, 0, $pos);
             $frameBuffer = ltrim(substr($frameBuffer, $pos), "\r\n");
@@ -368,7 +378,8 @@ class GatewayOperationEventStreamClient
     {
         $message = strtolower($exception->getMessage());
 
-        $isWireGuardReachabilityFailure = str_contains($message, 'timed out')
+        $isWireGuardReachabilityFailure =
+            str_contains($message, 'timed out')
             || str_contains($message, 'no route to host')
             || str_contains($message, 'network is unreachable')
             || str_contains($message, 'could not resolve host');

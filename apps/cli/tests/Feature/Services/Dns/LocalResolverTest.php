@@ -49,7 +49,8 @@ describe(LocalResolver::class, function (): void {
 
         $resolver = new LocalResolver;
 
-        expect(fn () => $resolver->configDir())->toThrow(RuntimeException::class, 'HOME environment variable is not set.');
+        expect(fn () => $resolver->configDir())
+            ->toThrow(RuntimeException::class, 'HOME environment variable is not set.');
     });
 
     it('detects Homebrew dnsmasq under sbin when it is not on PATH', function (): void {
@@ -85,8 +86,10 @@ describe(LocalResolver::class, function (): void {
 
         $expectedConf = "{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf";
 
-        expect(File::exists($expectedConf))->toBeTrue()
-            ->and(File::get($expectedConf))->toBe("address=/test/10.6.0.1\n");
+        expect(File::exists($expectedConf))
+            ->toBeTrue()
+            ->and(File::get($expectedConf))
+            ->toBe("address=/test/10.6.0.1\n");
     });
 
     it('writes the master dnsmasq conf under the faked Homebrew prefix', function (): void {
@@ -99,8 +102,10 @@ describe(LocalResolver::class, function (): void {
 
         $masterConfig = "{$this->tempPrefix}/etc/dnsmasq.conf";
 
-        expect(File::exists($masterConfig))->toBeTrue()
-            ->and(File::get($masterConfig))->toContain("conf-dir={$this->tempHome}/.config/orbit/dnsmasq.d/,*.conf");
+        expect(File::exists($masterConfig))
+            ->toBeTrue()
+            ->and(File::get($masterConfig))
+            ->toContain("conf-dir={$this->tempHome}/.config/orbit/dnsmasq.d/,*.conf");
     });
 
     it('reads the dnsmasq address format that resolve writes', function (): void {
@@ -143,8 +148,14 @@ describe(LocalResolver::class, function (): void {
             'changed' => false,
         ]);
 
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short');
-        Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => (
+                $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short'
+            ),
+        );
+        Process::assertNotRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq',
+        );
     });
 
     it('repairs the macOS resolver file when an existing mapping points at the requested target', function (): void {
@@ -162,8 +173,15 @@ describe(LocalResolver::class, function (): void {
         ]);
 
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'cat \'/etc/resolver/test\'');
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null');
-        Process::assertNotRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => (
+                $process->command
+                === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null'
+            ),
+        );
+        Process::assertNotRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq',
+        );
     });
 
     it('refreshes dnsmasq when the requested mapping exists but is not served locally', function (): void {
@@ -180,8 +198,15 @@ describe(LocalResolver::class, function (): void {
             'changed' => false,
         ]);
 
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
-        Process::assertRanTimes(fn (PendingProcess $process): bool => $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short', 2);
+        Process::assertRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq',
+        );
+        Process::assertRanTimes(
+            fn (PendingProcess $process): bool => (
+                $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short'
+            ),
+            2,
+        );
     });
 
     it('flushes the macOS resolver cache when an existing mapping target changes', function (): void {
@@ -202,7 +227,9 @@ describe(LocalResolver::class, function (): void {
             ->toBe("address=/test/10.6.0.7\n");
 
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder',
+        );
     });
 
     it('returns refresh_failed when an existing mapping cannot be served after refresh', function (): void {
@@ -216,10 +243,14 @@ describe(LocalResolver::class, function (): void {
 
         $result = $resolver->resolve('test', '192.168.1.150');
 
-        expect($result['status'])->toBe('refresh_failed')
-            ->and($result['changed'])->toBeFalse()
-            ->and($result['error'])->toContain('dnsmasq did not return 192.168.1.150')
-            ->and($result['error'])->toContain('Running: false');
+        expect($result['status'])
+            ->toBe('refresh_failed')
+            ->and($result['changed'])
+            ->toBeFalse()
+            ->and($result['error'])
+            ->toContain('dnsmasq did not return 192.168.1.150')
+            ->and($result['error'])
+            ->toContain('Running: false');
     });
 
     it('removes stale Orbit dnsmasq master config entries before refreshing an existing mapping', function (): void {
@@ -253,7 +284,9 @@ describe(LocalResolver::class, function (): void {
             ->not->toContain('orbit-resolver-test-old')
             ->not->toContain('/storage/app/orbit/dnsmasq.d/')
             ->not->toContain('/app/orbit/dnsmasq.d/');
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq',
+        );
     });
 
     it('flushes the macOS resolver cache when resetting an existing mapping', function (): void {
@@ -272,9 +305,13 @@ describe(LocalResolver::class, function (): void {
 
         expect(File::exists("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf"))->toBeFalse();
 
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo -n rm \'/etc/resolver/test\'');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo -n rm \'/etc/resolver/test\'',
+        );
         Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dscacheutil -flushcache');
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo killall -HUP mDNSResponder',
+        );
     });
 
     it('refreshes macOS dnsmasq as a root Homebrew service and verifies the target is served locally', function (): void {
@@ -288,8 +325,14 @@ describe(LocalResolver::class, function (): void {
             'changed' => true,
         ]);
 
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq');
-        Process::assertRan(fn (PendingProcess $process): bool => $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short');
+        Process::assertRan(
+            fn (PendingProcess $process): bool => $process->command === 'sudo brew services restart dnsmasq',
+        );
+        Process::assertRan(
+            fn (PendingProcess $process): bool => (
+                $process->command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short'
+            ),
+        );
     });
 
     it('returns refresh_failed when dnsmasq does not serve the configured target after restart', function (): void {
@@ -300,25 +343,39 @@ describe(LocalResolver::class, function (): void {
 
         $result = $resolver->resolve('test', '192.168.1.150');
 
-        expect($result['status'])->toBe('refresh_failed')
-            ->and($result['changed'])->toBeTrue()
-            ->and($result['error'])->toContain('dnsmasq did not return 192.168.1.150')
-            ->and($result['error'])->toContain('192.168.1.151')
-            ->and($result['error'])->toContain('Running: false');
+        expect($result['status'])
+            ->toBe('refresh_failed')
+            ->and($result['changed'])
+            ->toBeTrue()
+            ->and($result['error'])
+            ->toContain('dnsmasq did not return 192.168.1.150')
+            ->and($result['error'])
+            ->toContain('192.168.1.151')
+            ->and($result['error'])
+            ->toContain('Running: false');
     });
 
     it('returns refresh_failed when dnsmasq verification times out after restart', function (): void {
-        fakeLocalResolverProcesses($this, healthOutput: '', healthErrorOutput: 'operation timed out', healthExitCode: 1);
+        fakeLocalResolverProcesses(
+            $this,
+            healthOutput: '',
+            healthErrorOutput: 'operation timed out',
+            healthExitCode: 1,
+        );
 
         $resolver = new LocalResolver;
         $resolver->setPlatform('macos');
 
         $result = $resolver->resolve('test', '192.168.1.150');
 
-        expect($result['status'])->toBe('refresh_failed')
-            ->and($result['changed'])->toBeTrue()
-            ->and($result['error'])->toContain('operation timed out')
-            ->and($result['error'])->toContain('Running: false');
+        expect($result['status'])
+            ->toBe('refresh_failed')
+            ->and($result['changed'])
+            ->toBeTrue()
+            ->and($result['error'])
+            ->toContain('operation timed out')
+            ->and($result['error'])
+            ->toContain('Running: false');
     });
 
     it('returns refresh_failed when DNS verification exceeds the process timeout', function (): void {
@@ -329,15 +386,25 @@ describe(LocalResolver::class, function (): void {
 
         $result = $resolver->resolve('test', '192.168.1.150');
 
-        expect($result['status'])->toBe('refresh_failed')
-            ->and($result['changed'])->toBeTrue()
-            ->and($result['error'])->toContain('dnsmasq did not return 192.168.1.150')
-            ->and($result['error'])->toContain('exceeded the timeout')
-            ->and($result['error'])->toContain('Running: false');
+        expect($result['status'])
+            ->toBe('refresh_failed')
+            ->and($result['changed'])
+            ->toBeTrue()
+            ->and($result['error'])
+            ->toContain('dnsmasq did not return 192.168.1.150')
+            ->and($result['error'])
+            ->toContain('exceeded the timeout')
+            ->and($result['error'])
+            ->toContain('Running: false');
     });
 
     it('returns write_failed when syncing the macOS system resolver exceeds the process timeout', function (): void {
-        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverContents: "nameserver 10.6.0.1\n", resolverWriteThrowsTimeout: true);
+        fakeLocalResolverProcesses(
+            $this,
+            healthOutput: '192.168.1.150',
+            resolverContents: "nameserver 10.6.0.1\n",
+            resolverWriteThrowsTimeout: true,
+        );
         writeCurrentMasterDnsmasqConfig($this);
         File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
         File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
@@ -347,10 +414,14 @@ describe(LocalResolver::class, function (): void {
 
         $result = $resolver->resolve('test', '192.168.1.150');
 
-        expect($result['status'])->toBe('write_failed')
-            ->and($result['changed'])->toBeFalse()
-            ->and($result['error'])->toContain('exceeded the timeout')
-            ->and($result['error'])->toContain('/etc/resolver/test');
+        expect($result['status'])
+            ->toBe('write_failed')
+            ->and($result['changed'])
+            ->toBeFalse()
+            ->and($result['error'])
+            ->toContain('exceeded the timeout')
+            ->and($result['error'])
+            ->toContain('/etc/resolver/test');
     });
 
     it('returns write_failed when writing the macOS system resolver exceeds the process timeout', function (): void {
@@ -363,13 +434,20 @@ describe(LocalResolver::class, function (): void {
 
         expect(function () use ($resolver, &$result): void {
             $result = $resolver->resolve('test', '192.168.1.150');
-        })->not->toThrow(ProcessTimedOutException::class);
+        })
+            ->not
+            ->toThrow(ProcessTimedOutException::class);
 
-        expect($result['status'])->toBe('write_failed')
-            ->and($result['changed'])->toBeFalse()
-            ->and($result['error'])->toContain('Process timed out while running')
-            ->and($result['error'])->toContain('exceeded the timeout')
-            ->and($result['error'])->toContain('/etc/resolver/test');
+        expect($result['status'])
+            ->toBe('write_failed')
+            ->and($result['changed'])
+            ->toBeFalse()
+            ->and($result['error'])
+            ->toContain('Process timed out while running')
+            ->and($result['error'])
+            ->toContain('exceeded the timeout')
+            ->and($result['error'])
+            ->toContain('/etc/resolver/test');
     });
 
     it('returns write_failed when removing the macOS system resolver exceeds the process timeout', function (): void {
@@ -385,17 +463,29 @@ describe(LocalResolver::class, function (): void {
 
         expect(function () use ($resolver, &$result): void {
             $result = $resolver->reset('test');
-        })->not->toThrow(ProcessTimedOutException::class);
+        })
+            ->not
+            ->toThrow(ProcessTimedOutException::class);
 
-        expect($result['status'])->toBe('write_failed')
-            ->and($result['changed'])->toBeTrue()
-            ->and($result['error'])->toContain('Process timed out while running')
-            ->and($result['error'])->toContain('exceeded the timeout')
-            ->and($result['error'])->toContain('/etc/resolver/test');
+        expect($result['status'])
+            ->toBe('write_failed')
+            ->and($result['changed'])
+            ->toBeTrue()
+            ->and($result['error'])
+            ->toContain('Process timed out while running')
+            ->and($result['error'])
+            ->toContain('exceeded the timeout')
+            ->and($result['error'])
+            ->toContain('/etc/resolver/test');
     });
 
     it('returns write_failed when syncing the macOS system resolver lacks cached sudo credentials', function (): void {
-        fakeLocalResolverProcesses($this, healthOutput: '192.168.1.150', resolverContents: "nameserver 10.6.0.1\n", resolverWriteFailsNoninteractive: true);
+        fakeLocalResolverProcesses(
+            $this,
+            healthOutput: '192.168.1.150',
+            resolverContents: "nameserver 10.6.0.1\n",
+            resolverWriteFailsNoninteractive: true,
+        );
         writeCurrentMasterDnsmasqConfig($this);
         File::ensureDirectoryExists("{$this->tempHome}/.config/orbit/dnsmasq.d");
         File::put("{$this->tempHome}/.config/orbit/dnsmasq.d/test.conf", "address=/test/192.168.1.150\n");
@@ -407,11 +497,16 @@ describe(LocalResolver::class, function (): void {
 
         expect(function () use ($resolver, &$result): void {
             $result = $resolver->resolve('test', '192.168.1.150');
-        })->not->toThrow(ProcessTimedOutException::class);
+        })
+            ->not
+            ->toThrow(ProcessTimedOutException::class);
 
-        expect($result['status'])->toBe('write_failed')
-            ->and($result['changed'])->toBeFalse()
-            ->and($result['error'])->toContain('sudo: a password is required');
+        expect($result['status'])
+            ->toBe('write_failed')
+            ->and($result['changed'])
+            ->toBeFalse()
+            ->and($result['error'])
+            ->toContain('sudo: a password is required');
     });
 
     it('returns write_failed when writing the macOS system resolver lacks cached sudo credentials', function (): void {
@@ -424,11 +519,16 @@ describe(LocalResolver::class, function (): void {
 
         expect(function () use ($resolver, &$result): void {
             $result = $resolver->resolve('test', '192.168.1.150');
-        })->not->toThrow(ProcessTimedOutException::class);
+        })
+            ->not
+            ->toThrow(ProcessTimedOutException::class);
 
-        expect($result['status'])->toBe('write_failed')
-            ->and($result['changed'])->toBeFalse()
-            ->and($result['error'])->toContain('sudo: a password is required');
+        expect($result['status'])
+            ->toBe('write_failed')
+            ->and($result['changed'])
+            ->toBeFalse()
+            ->and($result['error'])
+            ->toContain('sudo: a password is required');
     });
 
     it('returns write_failed when removing the macOS system resolver lacks cached sudo credentials', function (): void {
@@ -444,16 +544,24 @@ describe(LocalResolver::class, function (): void {
 
         expect(function () use ($resolver, &$result): void {
             $result = $resolver->reset('test');
-        })->not->toThrow(ProcessTimedOutException::class);
+        })
+            ->not
+            ->toThrow(ProcessTimedOutException::class);
 
-        expect($result['status'])->toBe('write_failed')
-            ->and($result['changed'])->toBeTrue()
-            ->and($result['error'])->toContain('sudo: a password is required');
+        expect($result['status'])
+            ->toBe('write_failed')
+            ->and($result['changed'])
+            ->toBeTrue()
+            ->and($result['error'])
+            ->toContain('sudo: a password is required');
     });
 });
 
-function fakeSuccessfulLocalResolverProcesses(object $test, string $target, ?string $resolverContents = "nameserver 127.0.0.1\n"): void
-{
+function fakeSuccessfulLocalResolverProcesses(
+    object $test,
+    string $target,
+    ?string $resolverContents = "nameserver 127.0.0.1\n",
+): void {
     fakeLocalResolverProcesses($test, healthOutput: "{$target}\n", resolverContents: $resolverContents);
 }
 
@@ -483,7 +591,18 @@ function fakeLocalResolverProcesses(
 ): void {
     $healthOutputs = is_array($healthOutput) ? array_values($healthOutput) : [$healthOutput];
 
-    Process::fake(function (PendingProcess $process) use ($test, &$healthOutputs, $healthErrorOutput, $healthExitCode, $healthThrowsTimeout, $resolverContents, $resolverWriteThrowsTimeout, $resolverRemoveThrowsTimeout, $resolverWriteFailsNoninteractive, $resolverRemoveFailsNoninteractive) {
+    Process::fake(function (PendingProcess $process) use (
+        $test,
+        &$healthOutputs,
+        $healthErrorOutput,
+        $healthExitCode,
+        $healthThrowsTimeout,
+        $resolverContents,
+        $resolverWriteThrowsTimeout,
+        $resolverRemoveThrowsTimeout,
+        $resolverWriteFailsNoninteractive,
+        $resolverRemoveFailsNoninteractive,
+    ) {
         $command = $process->command;
 
         if ($command === 'brew --prefix') {
@@ -502,7 +621,10 @@ function fakeLocalResolverProcesses(
             return Process::result('', '', 0);
         }
 
-        if ($command === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null') {
+        if (
+            $command
+            === 'sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null'
+        ) {
             if ($resolverWriteThrowsTimeout) {
                 throw fakeProcessTimedOutException($command);
             }
@@ -539,7 +661,11 @@ function fakeLocalResolverProcesses(
         }
 
         if ($command === 'sudo brew services info dnsmasq') {
-            return Process::result("dnsmasq (homebrew.mxcl.dnsmasq)\nRunning: false\nLoaded: true\nSchedulable: false\n", '', 0);
+            return Process::result(
+                "dnsmasq (homebrew.mxcl.dnsmasq)\nRunning: false\nLoaded: true\nSchedulable: false\n",
+                '',
+                0,
+            );
         }
 
         if ($command === 'dig @127.0.0.1 orbit-local-resolver-health.test +short') {

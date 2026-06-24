@@ -6,8 +6,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         Schema::create('update_leases', function (Blueprint $table): void {
@@ -15,7 +14,8 @@ return new class extends Migration
             $table->string('resource_type');
             $table->string('resource_key');
             $table->string('active_resource_key')->nullable()->unique();
-            $table->foreignUuid('operation_run_id')
+            $table
+                ->foreignUuid('operation_run_id')
                 ->constrained('operation_runs')
                 ->cascadeOnDelete();
             $table->string('owner_token');

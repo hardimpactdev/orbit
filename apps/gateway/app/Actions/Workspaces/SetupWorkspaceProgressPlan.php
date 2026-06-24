@@ -88,7 +88,7 @@ final class SetupWorkspaceProgressPlan
                     $this->warnings = array_merge($this->warnings, $routeWarnings);
 
                     if ($routeWarnings !== []) {
-                        return 'skip:'.(string) ($routeWarnings[0]['message'] ?? 'Proxy route requires convergence.');
+                        return 'skip:'.($routeWarnings[0]['message'] ?? 'Proxy route requires convergence.');
                     }
 
                     return 'ready';
@@ -150,7 +150,11 @@ final class SetupWorkspaceProgressPlan
                 'label' => 'Render inherited runtime units',
                 'doneLabel' => 'Rendered inherited runtime units',
                 'run' => function (): string {
-                    $this->processResult = $this->setupWorkspace->startProcesses($this->app, $this->workspace, $this->node);
+                    $this->processResult = $this->setupWorkspace->startProcesses(
+                        $this->app,
+                        $this->workspace,
+                        $this->node,
+                    );
 
                     if (! $this->processResult['success']) {
                         $this->failure = [
@@ -212,7 +216,7 @@ final class SetupWorkspaceProgressPlan
             $reporter->stepStart($step['key']);
 
             try {
-                $message = (string) ($step['run'])();
+                $message = $step['run']();
             } catch (Throwable $e) {
                 $this->failure ??= [
                     'code' => 'workspace.enactment_failed',

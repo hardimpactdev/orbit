@@ -28,14 +28,15 @@ describe('tool:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
-                && str_contains($url, '/api/tools')
-                && str_contains($url, 'node=app-1');
+            return $request->method() === 'GET' && str_contains($url, '/api/tools') && str_contains($url, 'node=app-1');
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['tools'][0]['name'])->toBe('composer')
-            ->and($decoded['success']['meta']['count'])->toBe(1);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['tools'][0]['name'])
+            ->toBe('composer')
+            ->and($decoded['success']['meta']['count'])
+            ->toBe(1);
     });
 
     it('renders human output containing tool fields', function (): void {
@@ -55,15 +56,24 @@ describe('tool:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'tool:list', ['--node' => 'app-1']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Node: app-1')
-            ->and($output)->toContain('TOOL')
-            ->and($output)->toContain('EXPECTED')
-            ->and($output)->toContain('MANAGED')
-            ->and($output)->toContain('VERSION')
-            ->and($output)->toContain('composer')
-            ->and($output)->toContain('installed')
-            ->and($output)->toContain('—');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Node: app-1')
+            ->and($output)
+            ->toContain('TOOL')
+            ->and($output)
+            ->toContain('EXPECTED')
+            ->and($output)
+            ->toContain('MANAGED')
+            ->and($output)
+            ->toContain('VERSION')
+            ->and($output)
+            ->toContain('composer')
+            ->and($output)
+            ->toContain('installed')
+            ->and($output)
+            ->toContain('—');
     });
 
     it('passes through gateway error codes from HTTP failures', function (): void {
@@ -73,8 +83,7 @@ describe('tool:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('authorization_failed');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -84,7 +93,6 @@ describe('tool:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

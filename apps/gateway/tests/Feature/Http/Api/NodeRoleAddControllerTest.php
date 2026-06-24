@@ -31,14 +31,21 @@ describe('NodeRoleAddController', function (): void {
             'settings' => [],
         ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node', 'target-1')
             ->assertJsonPath('success.data.assignment.role', 'database')
             ->assertJsonPath('success.data.assignment.status', 'active')
             ->assertJsonPath('success.data.assignment.settings', [])
             ->assertJsonPath('success.data.assignment.last_error', null);
 
-        expect($target->roleAssignments()->where('role', 'database')->where('status', NodeRoleStatus::Active->value)->exists())->toBeTrue();
+        expect(
+            $target
+                ->roleAssignments()
+                ->where('role', 'database')
+                ->where('status', NodeRoleStatus::Active->value)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('reconverges an existing metrics role when requested', function (): void {
@@ -46,15 +53,17 @@ describe('NodeRoleAddController', function (): void {
         createNodeRoleApiContractAssignment($target, 'metrics');
         app()->instance(RemoteShell::class, new NodeRoleAddMetricsRecordingShell);
 
-        Process::factory()->forOwner($target)->create([
-            'name' => 'prometheus',
-            'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
-            'runtime' => ProcessRuntime::DockerSwarm,
-            'runtime_config' => [
-                'service' => 'prometheus',
-                'endpoint' => ['port' => 9090],
-            ],
-        ]);
+        Process::factory()
+            ->forOwner($target)
+            ->create([
+                'name' => 'prometheus',
+                'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
+                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime_config' => [
+                    'service' => 'prometheus',
+                    'endpoint' => ['port' => 9090],
+                ],
+            ]);
 
         $response = postNodeRoleApiContractJson('/api/nodes/target-1/roles', [
             'role' => 'metrics',
@@ -62,7 +71,8 @@ describe('NodeRoleAddController', function (): void {
             'reconverge_existing' => true,
         ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node', 'target-1')
             ->assertJsonPath('success.data.assignment.role', 'metrics')
             ->assertJsonPath('success.data.assignment.status', 'active');
@@ -72,8 +82,10 @@ describe('NodeRoleAddController', function (): void {
             ->where('name', 'prometheus')
             ->sole();
 
-        expect($prometheus->runtime_config['managed_files'][0]['content'])->toContain("'10.6.0.20:9100'")
-            ->and($prometheus->runtime_config['bind_mounts'][0])->toMatchArray([
+        expect($prometheus->runtime_config['managed_files'][0]['content'])
+            ->toContain("'10.6.0.20:9100'")
+            ->and($prometheus->runtime_config['bind_mounts'][0])
+            ->toMatchArray([
                 'source' => '/var/lib/orbit/processes/prometheus/prometheus.yml',
                 'target' => '/etc/prometheus/prometheus.yml',
                 'read_only' => true,
@@ -83,8 +95,7 @@ describe('NodeRoleAddController', function (): void {
     it('returns an error envelope when role convergence fails', function (): void {
         [, , $target] = setUpNodeRoleApiContractAccess(['role:add']);
 
-        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger
-        {
+        app()->instance(NodeRoleBaselineConverger::class, new class extends NodeRoleBaselineConverger {
             public function __construct()
             {
                 parent::__construct(
@@ -107,7 +118,8 @@ describe('NodeRoleAddController', function (): void {
             'settings' => [],
         ]);
 
-        $response->assertStatus(500)
+        $response
+            ->assertStatus(500)
             ->assertJsonPath('error.code', 'node_role.convergence_failed')
             ->assertJsonPath('error.message', "Role 'database' convergence failed.")
             ->assertJsonPath('error.meta.role', 'database')
@@ -120,8 +132,10 @@ describe('NodeRoleAddController', function (): void {
             ->where('role', 'database')
             ->sole();
 
-        expect($assignment->status)->toBe(NodeRoleStatus::Error)
-            ->and($assignment->last_error)->toBe('Docker is missing.');
+        expect($assignment->status)
+            ->toBe(NodeRoleStatus::Error)
+            ->and($assignment->last_error)
+            ->toBe('Docker is missing.');
     });
 
     it('rejects reconverge existing for non metrics roles', function (): void {
@@ -133,7 +147,8 @@ describe('NodeRoleAddController', function (): void {
             'reconverge_existing' => true,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'reconverge_existing')
             ->assertJsonPath('error.meta.role', 'database');
@@ -149,7 +164,8 @@ describe('NodeRoleAddController', function (): void {
             'settings' => [],
         ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', "Role 'gateway' is gateway-coupled and cannot be assigned independently.")
             ->assertJsonPath('error.meta.field', 'role')
@@ -167,7 +183,8 @@ describe('NodeRoleAddController', function (): void {
             'settings' => ['tld' => 'test'],
         ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonStructure([
                 'success' => [
                     'data' => [
@@ -190,8 +207,7 @@ describe('NodeRoleAddController', function (): void {
             ->where('serving_node_id', $target->id)
             ->first();
 
-        expect($selfGrant?->permissions)->toBe(['workspace:setup'])
-            ->and($selfGrant?->custom_permissions)->toBe([]);
+        expect($selfGrant?->permissions)->toBe(['workspace:setup'])->and($selfGrant?->custom_permissions)->toBe([]);
     });
 });
 
@@ -200,11 +216,17 @@ final class NodeRoleAddMetricsRecordingShell implements RemoteShell
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
-            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'exists' => false,
-                'hash' => null,
-                'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => false,
+                    'hash' => null,
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

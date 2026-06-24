@@ -85,7 +85,7 @@ it('builds the reusable superset topology from the base image', function (): voi
 
     // Build and bundle the linux x64 orbit binary so the VM does not need
     // gh/GH_TOKEN for the CLI binary download step during provision.
-    (new OrbitCliBinaryBundle)->buildLinuxBinaryInto($bundleDir);
+    new OrbitCliBinaryBundle()->buildLinuxBinaryInto($bundleDir);
 
     $remoteBundle = $host->pushBundle($bundleDir);
     $passed = false;
@@ -96,13 +96,18 @@ it('builds the reusable superset topology from the base image', function (): voi
         $builder->useBundle($remoteBundle);
         $manifest = $builder->build($kind);
 
-        expect(array_column($manifest, 'role'))->toBe($roles)
-            ->and(array_column($manifest, 'name'))->toBe($templateNames)
-            ->and(array_unique(array_column($manifest, 'snapshot')))->toBe([$snapshotName]);
+        expect(array_column($manifest, 'role'))
+            ->toBe($roles)
+            ->and(array_column($manifest, 'name'))
+            ->toBe($templateNames)
+            ->and(array_unique(array_column($manifest, 'snapshot')))
+            ->toBe([$snapshotName]);
 
         foreach ($templateNames as $templateName) {
-            expect($host->instanceExists($templateName))->toBeTrue()
-                ->and($host->snapshotExists($templateName, $snapshotName))->toBeTrue();
+            expect($host->instanceExists($templateName))
+                ->toBeTrue()
+                ->and($host->snapshotExists($templateName, $snapshotName))
+                ->toBeTrue();
         }
 
         // --- Binary validation ---
@@ -118,7 +123,7 @@ it('builds the reusable superset topology from the base image', function (): voi
 
         if (! $copyResult->successful()) {
             throw new RuntimeException(
-                "Could not clone operator template for binary validation: {$copyResult->errorOutput()}"
+                "Could not clone operator template for binary validation: {$copyResult->errorOutput()}",
             );
         }
 
@@ -126,7 +131,7 @@ it('builds the reusable superset topology from the base image', function (): voi
 
         if (! $startResult->successful()) {
             throw new RuntimeException(
-                "Could not start validation instance {$validationInstanceName}: {$startResult->errorOutput()}"
+                "Could not start validation instance {$validationInstanceName}: {$startResult->errorOutput()}",
             );
         }
 
@@ -136,9 +141,10 @@ it('builds the reusable superset topology from the base image', function (): voi
         // Assert `orbit --version` responds with Orbit version info.
         $versionResult = $validationInstance->exec('/usr/local/bin/orbit --version', timeoutSeconds: 30);
 
-        expect($versionResult->successful())->toBeTrue(
-            "orbit --version failed: {$versionResult->output()}{$versionResult->errorOutput()}"
-        );
+        expect($versionResult->successful())
+            ->toBeTrue(
+                "orbit --version failed: {$versionResult->output()}{$versionResult->errorOutput()}",
+            );
 
         $version = trim((string) file_get_contents(repo_path('VERSION')));
 
@@ -155,9 +161,10 @@ it('builds the reusable superset topology from the base image', function (): voi
             timeoutSeconds: 30,
         );
 
-        expect($listResult->successful())->toBeTrue(
-            "orbit list failed: {$listResult->output()}{$listResult->errorOutput()}"
-        );
+        expect($listResult->successful())
+            ->toBeTrue(
+                "orbit list failed: {$listResult->output()}{$listResult->errorOutput()}",
+            );
         expect($listResult->output())
             ->toContain('dns:')
             ->toContain('gateway:')

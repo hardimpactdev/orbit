@@ -113,10 +113,12 @@ final readonly class NodeWireGuardSelfRouteProbe
             return false;
         }
 
-        return $platform === 'macos'
+        return (
+            $platform === 'macos'
             || $platform === 'darwin'
             || str_starts_with($platform, 'macos_')
-            || str_starts_with($platform, 'darwin_');
+            || str_starts_with($platform, 'darwin_')
+        );
     }
 
     private function hasLocalRoute(string $output, string $address): bool

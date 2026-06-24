@@ -38,17 +38,21 @@ describe('ProxyRouteIntent', function (): void {
             force: false,
         );
 
-        expect($result['data']['route'])->toMatchArray([
-            'domain' => 'vite.docs.test',
-            'kind' => 'proxy',
-            'owner' => ['type' => 'custom', 'name' => null],
-            'node' => 'app-1',
-            'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
-            'status' => 'expected',
-        ])
-            ->and($result['meta']['action'])->toBe('created')
-            ->and($result['meta']['warnings'][0]['code'])->toBe('proxy.enactment_deferred')
-            ->and(ProxyRoute::query()->where('domain', 'vite.docs.test')->exists())->toBeTrue();
+        expect($result['data']['route'])
+            ->toMatchArray([
+                'domain' => 'vite.docs.test',
+                'kind' => 'proxy',
+                'owner' => ['type' => 'custom', 'name' => null],
+                'node' => 'app-1',
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'status' => 'expected',
+            ])
+            ->and($result['meta']['action'])
+            ->toBe('created')
+            ->and($result['meta']['warnings'][0]['code'])
+            ->toBe('proxy.enactment_deferred')
+            ->and(ProxyRoute::query()->where('domain', 'vite.docs.test')->exists())
+            ->toBeTrue();
 
         $route = ProxyRoute::query()->where('domain', 'vite.docs.test')->firstOrFail();
 
@@ -83,7 +87,10 @@ describe('ProxyRouteIntent', function (): void {
             'domain' => 'vite.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                'upstream' => 'http://127.0.0.1:5173',
+            ],
         ]);
 
         app(ProxyRouteIntent::class)->add(
@@ -130,14 +137,18 @@ describe('ProxyRouteIntent', function (): void {
 
         $result = app(ProxyRouteIntent::class)->remove('old.test');
 
-        expect($result['data']['route'])->toMatchArray([
-            'domain' => 'old.test',
-            'kind' => 'redirect',
-            'status' => 'removed_with_drift',
-        ])
-            ->and($result['meta']['backend_removed'])->toBeFalse()
-            ->and($result['meta']['warnings'][0]['code'])->toBe('proxy.cleanup_deferred')
-            ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())->toBeFalse();
+        expect($result['data']['route'])
+            ->toMatchArray([
+                'domain' => 'old.test',
+                'kind' => 'redirect',
+                'status' => 'removed_with_drift',
+            ])
+            ->and($result['meta']['backend_removed'])
+            ->toBeFalse()
+            ->and($result['meta']['warnings'][0]['code'])
+            ->toBe('proxy.cleanup_deferred')
+            ->and(ProxyRoute::query()->where('domain', 'old.test')->exists())
+            ->toBeFalse();
     });
 
     it('authorizes non-gateway callers by serving node grant', function (): void {

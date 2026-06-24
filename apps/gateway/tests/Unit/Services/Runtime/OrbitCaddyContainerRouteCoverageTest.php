@@ -73,8 +73,10 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
 
         $artifact = $route->config['backend_artifacts'][0];
 
-        expect(todo314PathIsReachableFromContainer($route->config['tls']['cert_path']))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer($route->config['tls']['key_path']))->toBeTrue();
+        expect(todo314PathIsReachableFromContainer($route->config['tls']['cert_path']))
+            ->toBeTrue()
+            ->and(todo314PathIsReachableFromContainer($route->config['tls']['key_path']))
+            ->toBeTrue();
 
         expect($renderer->renderPrivateBackend($route, $artifact))
             ->toContain('reverse_proxy http://orbit-app-docs:8080')
@@ -100,10 +102,14 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
         $certPath = "/home/orbit/.config/orbit/certs/{$workspace->name}.{$app->name}.test.crt";
         $keyPath = "/home/orbit/.config/orbit/certs/{$workspace->name}.{$app->name}.test.key";
 
-        expect(todo314PathIsReachableFromContainer($documentRoot))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer($phpSocket))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer($certPath))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer($keyPath))->toBeTrue();
+        expect(todo314PathIsReachableFromContainer($documentRoot))
+            ->toBeTrue()
+            ->and(todo314PathIsReachableFromContainer($phpSocket))
+            ->toBeTrue()
+            ->and(todo314PathIsReachableFromContainer($certPath))
+            ->toBeTrue()
+            ->and(todo314PathIsReachableFromContainer($keyPath))
+            ->toBeTrue();
     });
 
     it('mounts the /etc/orbit fallback that custom proxy routes default TLS paths to', function (): void {
@@ -120,8 +126,10 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
             ],
         ]);
 
-        expect(todo314PathIsReachableFromContainer('/etc/orbit/certs/vite.docs.test.crt'))->toBeTrue()
-            ->and(todo314PathIsReachableFromContainer('/etc/orbit/certs/vite.docs.test.key'))->toBeTrue();
+        expect(todo314PathIsReachableFromContainer('/etc/orbit/certs/vite.docs.test.crt'))
+            ->toBeTrue()
+            ->and(todo314PathIsReachableFromContainer('/etc/orbit/certs/vite.docs.test.key'))
+            ->toBeTrue();
 
         expect($renderer->render($route))
             ->toContain('tls /etc/orbit/certs/vite.docs.test.crt /etc/orbit/certs/vite.docs.test.key')
@@ -151,7 +159,11 @@ describe('orbit-caddy container coverage of route renderer outputs', function ()
                     'url' => 'http://10.6.0.2:80',
                 ],
                 'router_backend_pool' => [
-                    ['node_id' => 42, 'node' => 'web-1', 'url' => 'http://10.6.0.21:'.OrbitCaddyContainer::PrivateBackendPort],
+                    [
+                        'node_id' => 42,
+                        'node' => 'web-1',
+                        'url' => 'http://10.6.0.21:'.OrbitCaddyContainer::PrivateBackendPort,
+                    ],
                 ],
             ],
         ]);

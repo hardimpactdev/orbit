@@ -78,10 +78,15 @@ it('resolves every role snapshot source through one host call', function (): voi
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAgent),
     );
 
-    expect($resolutionCalls)->toBe(1)
+    expect($resolutionCalls)
+        ->toBe(1)
         ->and($script)
-        ->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
-        ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'");
+        ->toContain(
+            "incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+        )
+        ->toContain(
+            "incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+        );
 });
 
 it('falls back to base snapshot sources per role inside the single resolution call', function (): void {
@@ -112,21 +117,26 @@ it('falls back to base snapshot sources per role inside the single resolution ca
         );
 
         expect($script)
-            ->toContain("incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'")
-            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
+            ->toContain(
+                "incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'",
+            )
+            ->toContain(
+                "incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+            )
             ->not->toContain("incus copy 'orbit-template-operator-base/");
     });
 });
 
 it('creates the acquisition ssh key pair in one host call', function (): void {
     $commands = [];
-    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, public array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -144,7 +154,8 @@ it('creates the acquisition ssh key pair in one host call', function (): void {
     $method->setAccessible(true);
     $method->invoke($provider, $host, 'runKeys');
 
-    expect($host->commands)->toHaveCount(1)
+    expect($host->commands)
+        ->toHaveCount(1)
         ->and($host->commands[0])
         ->toContain('mkdir -p')
         ->toContain('ssh-keygen -t ed25519');
@@ -152,13 +163,14 @@ it('creates the acquisition ssh key pair in one host call', function (): void {
 
 it('cleans up acquisition instances through one bulk host call', function (): void {
     $commands = [];
-    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusRoundTripsConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, public array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            public array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -181,7 +193,8 @@ it('cleans up acquisition instances through one bulk host call', function (): vo
 
     $cleanup(new E2EPhaseTimer);
 
-    expect($host->commands)->toHaveCount(1)
+    expect($host->commands)
+        ->toHaveCount(1)
         ->and($host->commands[0])
         ->toContain("incus delete --force 'clone-operator'")
         ->toContain("incus delete --force 'clone-gateway'");

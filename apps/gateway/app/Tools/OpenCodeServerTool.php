@@ -40,33 +40,33 @@ final class OpenCodeServerTool extends BaseTool
     public function installScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit install opencode-server
-set -e
-curl -fsSL https://opencode.ai/install | bash
-BASH;
+            #!/usr/bin/env bash
+            # orbit install opencode-server
+            set -e
+            curl -fsSL https://opencode.ai/install | bash
+            BASH;
     }
 
     public function removeScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit remove opencode-server
-set -e
-home=$(echo $HOME)
-rm -rf "${home}/.opencode"
-BASH;
+            #!/usr/bin/env bash
+            # orbit remove opencode-server
+            set -e
+            home=$(echo $HOME)
+            rm -rf "${home}/.opencode"
+            BASH;
     }
 
     public function updateScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit update opencode-server
-set -e
-home=$(echo $HOME)
-"${home}/.opencode/bin/opencode" upgrade
-BASH;
+            #!/usr/bin/env bash
+            # orbit update opencode-server
+            set -e
+            home=$(echo $HOME)
+            "${home}/.opencode/bin/opencode" upgrade
+            BASH;
     }
 
     public function credentialsScript(array $config = []): string
@@ -79,28 +79,28 @@ BASH;
         $authUsername = $password === null || $password === '' ? '(no auth)' : $username;
         $authPassword = $password === null || $password === '' ? '(no auth)' : $password;
 
-        return <<<"BASH"
-cat <<EOF
-{
-  "Host": "{$hostname}",
-  "Port": "{$port}",
-  "Username": "{$authUsername}",
-  "Password": "{$authPassword}"
-}
-EOF
-BASH;
+        return <<<BASH
+            cat <<EOF
+            {
+              "Host": "{$hostname}",
+              "Port": "{$port}",
+              "Username": "{$authUsername}",
+              "Password": "{$authPassword}"
+            }
+            EOF
+            BASH;
     }
 
     public function reconfigureScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit reconfigure opencode-server
-set -e
-# Runtime changes are owned by the related process. This command only records
-# tool capability config and credentials in gateway intent.
-true
-BASH;
+            #!/usr/bin/env bash
+            # orbit reconfigure opencode-server
+            set -e
+            # Runtime changes are owned by the related process. This command only records
+            # tool capability config and credentials in gateway intent.
+            true
+            BASH;
     }
 
     #[\Override]

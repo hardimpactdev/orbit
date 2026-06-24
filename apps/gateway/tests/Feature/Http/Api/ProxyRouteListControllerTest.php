@@ -62,9 +62,17 @@ describe('ProxyRouteListController', function (): void {
             'domain' => 'hidden.test',
         ]);
 
-        $response = $this->call('GET', '/api/proxy-routes?filter=app', [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/proxy-routes?filter=app',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.routes')
             ->assertJsonPath('success.data.routes.0.domain', 'docs.test')
             ->assertJsonPath('success.meta.filter', 'app')
@@ -78,19 +86,37 @@ describe('ProxyRouteListController', function (): void {
 
         ProxyRoute::factory()->count(2)->create();
 
-        $response = $this->call('GET', '/api/proxy-routes', [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/proxy-routes',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonCount(2, 'success.data.routes');
     });
 
-    it('returns validation failures for invalid filters and node scopes', function (string $query, string $field): void {
+    it('returns validation failures for invalid filters and node scopes', function (
+        string $query,
+        string $field,
+    ): void {
         $caller = createProxyRouteListCallerNode();
         assignProxyRouteListRole($caller);
 
-        $response = $this->call('GET', "/api/proxy-routes?{$query}", [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            "/api/proxy-routes?{$query}",
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', $field);
     })->with([
@@ -103,9 +129,17 @@ describe('ProxyRouteListController', function (): void {
 
         ProxyRoute::factory()->count(2)->create();
 
-        $response = $this->call('GET', '/api/proxy-routes', [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/proxy-routes',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'proxy:read');
@@ -115,9 +149,17 @@ describe('ProxyRouteListController', function (): void {
         $caller = createProxyRouteListCallerNode();
         assignProxyRouteListRole($caller, 'app-dev');
 
-        $response = $this->call('GET', '/api/proxy-routes', [], [], [], ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/proxy-routes',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROXY_ROUTE_LIST_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'proxy:read');

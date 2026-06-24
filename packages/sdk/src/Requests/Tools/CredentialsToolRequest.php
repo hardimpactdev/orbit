@@ -30,10 +30,13 @@ final class CredentialsToolRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolCredentialsResponse
@@ -42,7 +45,7 @@ final class CredentialsToolRequest extends GatewayRequest
         $credentials = $data['credentials'] ?? [];
 
         return new ToolCredentialsResponse(
-            credentials: is_array($credentials) ? $credentials : [],
+            credentials: $this->stringKeyedArray($credentials),
         );
     }
 }

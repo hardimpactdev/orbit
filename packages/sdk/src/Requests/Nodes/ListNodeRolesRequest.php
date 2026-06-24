@@ -26,14 +26,11 @@ final class ListNodeRolesRequest extends GatewayRequest
     public function createDtoFromResponse(Response $response): NodeRoleListResponse
     {
         $data = $this->unwrapData($response);
-        $roles = is_array($data['roles'] ?? null) ? $data['roles'] : [];
+        $roles = $this->listOfStringKeyedArrays($data['roles'] ?? []);
 
         return new NodeRoleListResponse(
             node: is_string($data['node'] ?? null) ? $data['node'] : $this->node,
-            roles: array_values(array_map(
-                static fn (mixed $assignment): array => is_array($assignment) ? $assignment : [],
-                $roles,
-            )),
+            roles: $roles,
         );
     }
 }

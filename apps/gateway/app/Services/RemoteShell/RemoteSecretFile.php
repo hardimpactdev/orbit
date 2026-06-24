@@ -22,16 +22,20 @@ final readonly class RemoteSecretFile
      */
     public function stage(Node $node, string $secret, callable $callback): mixed
     {
-        $staged = $this->remoteShell->run($node, <<<'SH'
-set -euo pipefail
-path="$(mktemp /tmp/orbit-secret.XXXXXX)"
-base64 -d > "$path"
-chmod 600 "$path"
-printf '%s\n' "$path"
-SH, [
-            'input' => base64_encode($secret),
-            'throw' => false,
-        ]);
+        $staged = $this->remoteShell->run(
+            $node,
+            <<<'SH'
+                set -euo pipefail
+                path="$(mktemp /tmp/orbit-secret.XXXXXX)"
+                base64 -d > "$path"
+                chmod 600 "$path"
+                printf '%s\n' "$path"
+                SH,
+            [
+                'input' => base64_encode($secret),
+                'throw' => false,
+            ],
+        );
 
         if (! $staged->successful()) {
             throw new RuntimeException(trim($staged->stderr) ?: 'Remote secret file staging failed.');

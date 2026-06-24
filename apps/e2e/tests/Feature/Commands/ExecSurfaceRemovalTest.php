@@ -33,9 +33,10 @@ it('does not expose app or workspace exec command or api surface', function (): 
             timeoutSeconds: 120,
         );
 
-        expect($commandListResult->successful())->toBeTrue(
-            "orbit list failed: {$commandListResult->output()}{$commandListResult->errorOutput()}"
-        );
+        expect($commandListResult->successful())
+            ->toBeTrue(
+                "orbit list failed: {$commandListResult->output()}{$commandListResult->errorOutput()}",
+            );
 
         $commandList = json_decode(trim($commandListResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $commandNames = array_column($commandList['commands'] ?? [], 'name');
@@ -53,9 +54,10 @@ it('does not expose app or workspace exec command or api surface', function (): 
             timeoutSeconds: 120,
         );
 
-        expect($routeListResult->successful())->toBeTrue(
-            "gateway route:list failed: {$routeListResult->output()}{$routeListResult->errorOutput()}"
-        );
+        expect($routeListResult->successful())
+            ->toBeTrue(
+                "gateway route:list failed: {$routeListResult->output()}{$routeListResult->errorOutput()}",
+            );
 
         $routeList = json_decode(trim($routeListResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $routeUris = array_column($routeList, 'uri');
@@ -82,9 +84,10 @@ it('does not expose app or workspace exec command or api surface', function (): 
                 timeoutSeconds: 120,
             );
 
-            expect($probeResult->successful())->toBeTrue(
-                "exec endpoint probe failed for {$path}: {$probeResult->output()}{$probeResult->errorOutput()}"
-            );
+            expect($probeResult->successful())
+                ->toBeTrue(
+                    "exec endpoint probe failed for {$path}: {$probeResult->output()}{$probeResult->errorOutput()}",
+                );
 
             expect(trim($probeResult->output()))->toBe('404');
         }

@@ -31,8 +31,7 @@ afterEach(function (): void {
 
 function fakeAgentRemoteShell(): RemoteShell
 {
-    return new class implements RemoteShell
-    {
+    return new class implements RemoteShell {
         /** @var list<array{node: Node, script: string, options: array<string, mixed>}> */
         public array $calls = [];
 
@@ -76,7 +75,8 @@ describe('agent role baseline', function (): void {
             ->orderBy('name')
             ->get();
 
-        expect($tools->pluck('name')->all())->toBe(['caddy'])
+        expect($tools->pluck('name')->all())
+            ->toBe(['caddy'])
             ->and($tools->mapWithKeys(fn (NodeTool $tool): array => [$tool->name => $tool->expected_state])->all())
             ->toBe([
                 'caddy' => 'installed',
@@ -130,14 +130,22 @@ describe('agent role baseline', function (): void {
 
         $baseline->converge($node, $assignment);
 
-        expect($shell->calls)->toHaveCount(3)
-            ->and($shell->calls[0]['script'])->toBe('id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent')
-            ->and($shell->calls[0]['options'])->toBe(['throw' => true])
-            ->and($shell->calls[1]['script'])->toBe('sudo passwd -l agent >/dev/null 2>&1 || true')
-            ->and($shell->calls[1]['options'])->toBe(['throw' => true])
-            ->and($shell->calls[2]['script'])->toContain('sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin')
-            ->and($shell->calls[2]['script'])->toContain('sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary')
-            ->and($shell->calls[2]['options'])->toBe(['throw' => true]);
+        expect($shell->calls)
+            ->toHaveCount(3)
+            ->and($shell->calls[0]['script'])
+            ->toBe('id -u agent >/dev/null 2>&1 || sudo useradd --create-home --shell /bin/bash agent')
+            ->and($shell->calls[0]['options'])
+            ->toBe(['throw' => true])
+            ->and($shell->calls[1]['script'])
+            ->toBe('sudo passwd -l agent >/dev/null 2>&1 || true')
+            ->and($shell->calls[1]['options'])
+            ->toBe(['throw' => true])
+            ->and($shell->calls[2]['script'])
+            ->toContain('sudo setfacl -m u:agent:--x /home/orbit /home/orbit/orbit /home/orbit/orbit/bin')
+            ->and($shell->calls[2]['script'])
+            ->toContain('sudo setfacl -m u:agent:r-x /home/orbit/orbit/bin/orbit-binary')
+            ->and($shell->calls[2]['options'])
+            ->toBe(['throw' => true]);
     });
 
     it('rejects agent convergence without a wireguard address', function (): void {
@@ -158,7 +166,10 @@ describe('agent role baseline', function (): void {
         );
 
         expect(fn () => $baseline->converge($node, $assignment))
-            ->toThrow(RuntimeException::class, 'The agent role requires a WireGuard address so the agent DNS mapping can be materialized.');
+            ->toThrow(
+                RuntimeException::class,
+                'The agent role requires a WireGuard address so the agent DNS mapping can be materialized.',
+            );
     });
 
     it('rejects agent convergence on gateway nodes', function (): void {
@@ -306,7 +317,9 @@ describe('agent role tld uniqueness', function (): void {
             'wireguard_address' => '10.0.0.12',
         ]);
 
-        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, NodeRoleName::AppDevelopment->value, ['tld' => 'test']))
+        expect(fn () => app(NodeRoleAssignmentService::class)->add($node, NodeRoleName::AppDevelopment->value, [
+            'tld' => 'test',
+        ]))
             ->toThrow(InvalidArgumentException::class, "Node TLD 'test' is already assigned to another node.");
 
         expect($node->roleAssignments()->where('role', NodeRoleName::AppDevelopment->value)->exists())->toBeFalse();

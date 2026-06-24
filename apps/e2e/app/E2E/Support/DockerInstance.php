@@ -98,7 +98,10 @@ final class DockerInstance implements E2EInstance, SourceMountedCheckoutInstance
 
         $template = $this->networkName === null
             ? '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
-            : sprintf('{{(index .NetworkSettings.Networks %s).IPAddress}}', json_encode($this->networkName, JSON_THROW_ON_ERROR));
+            : sprintf('{{(index .NetworkSettings.Networks %s).IPAddress}}', json_encode(
+                $this->networkName,
+                JSON_THROW_ON_ERROR,
+            ));
 
         $result = $this->host->run(sprintf(
             'docker inspect -f %s %s',
@@ -115,7 +118,12 @@ final class DockerInstance implements E2EInstance, SourceMountedCheckoutInstance
 
     public function waitForSsh(string $user, SshKeyPair $keyPair): void
     {
-        $result = $this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 10);
+        $result = $this->ssh(
+            $user,
+            $keyPair,
+            'test "$(uname -s)" = Linux && test -r /etc/os-release',
+            timeoutSeconds: 10,
+        );
 
         if (! $result->successful()) {
             throw new \RuntimeException("Docker command transport is not ready for {$user}@{$this->name}.");

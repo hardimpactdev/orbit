@@ -24,6 +24,9 @@ final class VpnClientEnableController extends VpnControllerSupport
             return $this->fail($manager);
         }
 
-        return $this->respondWithVpnClientMutation($manager->enable($name, $request->string('totp')->trim()->toString() ?: null));
+        return $this->respondWithVpnClientMutation($manager->enable(
+            $name,
+            $request->string('totp')->trim()->toString() ?: null,
+        ));
     }
 }

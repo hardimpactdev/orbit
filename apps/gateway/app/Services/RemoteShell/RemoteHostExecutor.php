@@ -53,7 +53,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
 
         $this->auditLogger->log('remote_shell.run', $node, $script, $options, $result);
 
-        if ((bool) ($options['throw'] ?? false) && ! $result->successful()) {
+        if (($options['throw'] ?? false) && ! $result->successful()) {
             throw new RemoteShellFailed($node, $composedScript, $result);
         }
 
@@ -105,7 +105,7 @@ final readonly class RemoteHostExecutor implements RemoteExecutor
         }
 
         if (array_key_exists('input', $options)) {
-            return $pendingProcess->input((string) $options['input']);
+            return $pendingProcess->input($options['input']);
         }
 
         return $pendingProcess;

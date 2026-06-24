@@ -163,10 +163,11 @@ describe('record completeness', function (): void {
         $drift = $probe->diff($node, new ProbeSnapshot([]));
         $keys = array_map(fn (DriftEntry $entry): string => $entry->key, $drift);
 
-        expect($keys)->toContain('node.record_incomplete')
-            ->and($keys)->not->toContain('node.ssh_unreachable')
-            ->and($keys)->not->toContain('node.runtime_missing')
-            ->and($remoteShell->scripts)->toBe([]);
+        expect($keys)
+            ->toContain('node.record_incomplete')
+            ->and($keys)
+            ->not->toContain('node.ssh_unreachable')->and($keys)
+            ->not->toContain('node.runtime_missing')->and($remoteShell->scripts)->toBe([]);
     });
 
     it('does not synthesize missing role drift for unassigned nodes', function (): void {
@@ -180,7 +181,10 @@ describe('record completeness', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $missingRoleAssignment = array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_assignment_missing');
+        $missingRoleAssignment = array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.role_assignment_missing',
+        );
 
         expect($missingRoleAssignment)->toHaveCount(0);
     });
@@ -351,7 +355,10 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $wireguard = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.wireguard_peer_missing'));
+        $wireguard = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.wireguard_peer_missing',
+        ));
 
         expect($wireguard)->toHaveCount(1);
         expect($wireguard[0]->kind)->toBe(DriftKind::Missing);
@@ -394,7 +401,10 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $wireguard = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.wireguard_address_mismatch'));
+        $wireguard = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.wireguard_address_mismatch',
+        ));
 
         expect($wireguard)->toHaveCount(1);
         expect($wireguard[0]->kind)->toBe(DriftKind::Divergent);
@@ -416,7 +426,10 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $wireguard = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.wireguard_peer_extra'));
+        $wireguard = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.wireguard_peer_extra',
+        ));
 
         expect($wireguard)->toHaveCount(1);
         expect($wireguard[0]->kind)->toBe(DriftKind::Extra);
@@ -439,9 +452,7 @@ describe('external service stubs', function (): void {
     });
 
     it('detects local platform record mismatches', function (): void {
-
-        $probe = new NodesProbe(new class extends PlatformDetector
-        {
+        $probe = new NodesProbe(new class extends PlatformDetector {
             public function detectLocal(): string
             {
                 return 'macos_15-4';
@@ -459,7 +470,10 @@ describe('external service stubs', function (): void {
         assignNodesProbeGatewayRole($node);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $platform = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.platform_record_mismatch'));
+        $platform = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.platform_record_mismatch',
+        ));
 
         expect($platform)->toHaveCount(1);
         expect($platform[0]->kind)->toBe(DriftKind::Divergent);
@@ -470,9 +484,7 @@ describe('external service stubs', function (): void {
     });
 
     it('detects unsupported local platform detection', function (): void {
-
-        $probe = new NodesProbe(new class extends PlatformDetector
-        {
+        $probe = new NodesProbe(new class extends PlatformDetector {
             public function detectLocal(): string
             {
                 throw new RuntimeException('Unsupported platform family: Solaris');
@@ -490,11 +502,15 @@ describe('external service stubs', function (): void {
         assignNodesProbeGatewayRole($node);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $platform = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.platform_unsupported'));
+        $platform = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.platform_unsupported',
+        ));
 
         expect($platform)->toHaveCount(1);
         expect($platform[0]->kind)->toBe(DriftKind::Unverifiable);
-        expect($platform[0]->summary)->toBe('Could not detect local platform for test: Unsupported platform family: Solaris');
+        expect($platform[0]->summary)
+            ->toBe('Could not detect local platform for test: Unsupported platform family: Solaris');
     });
 
     it('accepts reachable app nodes over SSH', function (): void {
@@ -780,13 +796,16 @@ describe('external service stubs', function (): void {
             'settings' => ['tld' => 'test'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=test',
-            '# bind-scope=orbit_network',
-            'address=/test/10.6.0.5',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('test.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=test',
+                '# bind-scope=orbit_network',
+                'address=/test/10.6.0.5',
+                '',
+            ]),
+        );
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
         $tld = array_filter($drift, fn (DriftEntry $e): bool => str_starts_with($e->key, 'node.role_'));
@@ -811,7 +830,10 @@ describe('external service stubs', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch'));
+        $mapping = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch',
+        ));
 
         expect($mapping)->toHaveCount(1);
         expect($mapping[0]->kind)->toBe(DriftKind::Missing);
@@ -833,16 +855,22 @@ describe('external service stubs', function (): void {
             'settings' => ['tld' => 'test'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=test',
-            '# bind-scope=orbit_network',
-            'address=/test/10.6.0.99',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('test.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=test',
+                '# bind-scope=orbit_network',
+                'address=/test/10.6.0.99',
+                '',
+            ]),
+        );
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $mapping = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch'));
+        $mapping = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch',
+        ));
 
         expect($mapping)->toHaveCount(1);
         expect($mapping[0]->kind)->toBe(DriftKind::Divergent);
@@ -864,16 +892,22 @@ describe('external service stubs', function (): void {
             'settings' => ['tld' => 'test'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=test',
-            '# bind-scope=public',
-            'address=/test/10.6.0.5',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('test.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=test',
+                '# bind-scope=public',
+                'address=/test/10.6.0.5',
+                '',
+            ]),
+        );
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $exposure = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch'));
+        $exposure = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch',
+        ));
 
         expect($exposure)->toHaveCount(1);
         expect($exposure[0]->kind)->toBe(DriftKind::Divergent);
@@ -1020,13 +1054,16 @@ describe('reconciliation', function (): void {
             'settings' => ['tld' => 'test'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('test.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=test',
-            '# bind-scope=public',
-            'address=/test/10.6.0.99',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('test.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=test',
+                '# bind-scope=public',
+                'address=/test/10.6.0.99',
+                '',
+            ]),
+        );
 
         $entry = new DriftEntry(
             family: 'nodes',
@@ -1064,9 +1101,7 @@ describe('adoption', function (): void {
     });
 
     it('snapshots local platform record mismatches for adopt', function (): void {
-
-        $probe = new NodesProbe(new class extends PlatformDetector
-        {
+        $probe = new NodesProbe(new class extends PlatformDetector {
             public function detectLocal(): string
             {
                 return 'macos_15-4';
@@ -1243,7 +1278,12 @@ describe('adoption', function (): void {
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['role' => 'unknown', 'local_role' => 'unknown']), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: nodeIdentityArtifactPayload(['role' => 'unknown', 'local_role' => 'unknown']),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
@@ -1259,8 +1299,10 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.wireguard_peer_missing'))->toBeNull()
-            ->and($snapshot->get('node.runtime_missing'))->toMatchArray([
+        expect($snapshot->get('node.wireguard_peer_missing'))
+            ->toBeNull()
+            ->and($snapshot->get('node.runtime_missing'))
+            ->toMatchArray([
                 'available' => true,
                 'exit_code' => 0,
             ]);
@@ -1283,9 +1325,12 @@ describe('adoption', function (): void {
 
         $snapshot = $probe->snapshotForAdopt($node);
 
-        expect($snapshot->get('node.wireguard_peer_missing'))->toBeNull()
-            ->and($snapshot->get('node.runtime_missing'))->toBeNull()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect($snapshot->get('node.wireguard_peer_missing'))
+            ->toBeNull()
+            ->and($snapshot->get('node.runtime_missing'))
+            ->toBeNull()
+            ->and($remoteShell->scripts)
+            ->toBe([]);
     });
 
     it('does not snapshot unproven live WireGuard peer missing for adopt', function (): void {
@@ -1297,7 +1342,12 @@ describe('adoption', function (): void {
 
         $probe = new NodesProbe(remoteShell: new NodesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: "app-public-key\n", stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: nodeIdentityArtifactPayload(['name' => 'other']), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: nodeIdentityArtifactPayload(['name' => 'other']),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
         ]));
 
@@ -1405,9 +1455,7 @@ describe('adoption', function (): void {
     });
 
     it('adopts local platform record mismatches', function (): void {
-
-        $probe = new NodesProbe(new class extends PlatformDetector
-        {
+        $probe = new NodesProbe(new class extends PlatformDetector {
             public function detectLocal(): string
             {
                 return 'macos_15-4';
@@ -1425,7 +1473,10 @@ describe('adoption', function (): void {
         assignNodesProbeGatewayRole($node);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
-        $platform = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.platform_record_mismatch'));
+        $platform = array_values(array_filter(
+            $results,
+            fn ($result): bool => $result->key === 'node.platform_record_mismatch',
+        ));
 
         expect($platform)->toHaveCount(1);
         expect($platform[0]->action)->toBe(AdoptAction::Updated);
@@ -1452,7 +1503,10 @@ describe('adoption', function (): void {
         ]);
 
         $results = $this->probe->adopt($node, $this->probe->snapshotForAdopt($node));
-        $wireguard = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.wireguard_address_mismatch'));
+        $wireguard = array_values(array_filter(
+            $results,
+            fn ($result): bool => $result->key === 'node.wireguard_address_mismatch',
+        ));
 
         expect($wireguard)->toHaveCount(1);
         expect($wireguard[0]->action)->toBe(AdoptAction::Updated);
@@ -1486,7 +1540,10 @@ describe('adoption', function (): void {
         ]);
 
         $results = $this->probe->adopt($node, $this->probe->snapshotForAdopt($node));
-        $wireguard = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.wireguard_peer_extra'));
+        $wireguard = array_values(array_filter(
+            $results,
+            fn ($result): bool => $result->key === 'node.wireguard_peer_extra',
+        ));
 
         expect($wireguard)->toHaveCount(1);
         expect($wireguard[0]->action)->toBe(AdoptAction::Updated);
@@ -1524,7 +1581,10 @@ describe('adoption', function (): void {
         assignNodesProbeAppHostRole($node);
 
         $results = $probe->adopt($node, $probe->snapshotForAdopt($node));
-        $wireguard = array_values(array_filter($results, fn ($result): bool => $result->key === 'node.wireguard_peer_missing'));
+        $wireguard = array_values(array_filter(
+            $results,
+            fn ($result): bool => $result->key === 'node.wireguard_peer_missing',
+        ));
         $peer = WireGuardPeer::query()->where('node_id', $node->id)->first();
 
         expect($wireguard)->toHaveCount(1);
@@ -1639,7 +1699,13 @@ describe('agent role baseline', function (): void {
         ]);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'dns_mapping'));
+        $baseline = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => (
+                $e->key === 'node.role_baseline_mismatch'
+                && ($e->detail['component'] ?? null) === 'dns_mapping'
+            ),
+        ));
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Missing);
@@ -1662,16 +1728,25 @@ describe('agent role baseline', function (): void {
             'settings' => ['tld' => 'agent'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=agent-1',
-            '# bind-scope=orbit_network',
-            'address=/agent/10.6.0.5',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('agent.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=agent-1',
+                '# bind-scope=orbit_network',
+                'address=/agent/10.6.0.5',
+                '',
+            ]),
+        );
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['tool'] ?? null) === 'caddy'));
+        $baseline = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => (
+                $e->key === 'node.role_baseline_mismatch'
+                && ($e->detail['tool'] ?? null) === 'caddy'
+            ),
+        ));
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Missing);
@@ -1698,17 +1773,26 @@ describe('agent role baseline', function (): void {
             'settings' => ['tld' => 'agent'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=agent-1',
-            '# bind-scope=orbit_network',
-            'address=/agent/10.6.0.5',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('agent.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=agent-1',
+                '# bind-scope=orbit_network',
+                'address=/agent/10.6.0.5',
+                '',
+            ]),
+        );
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'agent_user'));
+        $baseline = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => (
+                $e->key === 'node.role_baseline_mismatch'
+                && ($e->detail['component'] ?? null) === 'agent_user'
+            ),
+        ));
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Missing);
@@ -1736,17 +1820,26 @@ describe('agent role baseline', function (): void {
             'settings' => ['tld' => 'agent'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=agent-1',
-            '# bind-scope=orbit_network',
-            'address=/agent/10.6.0.5',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('agent.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=agent-1',
+                '# bind-scope=orbit_network',
+                'address=/agent/10.6.0.5',
+                '',
+            ]),
+        );
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
 
         $drift = $probe->diff($node, new ProbeSnapshot([]));
-        $baseline = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.role_baseline_mismatch' && ($e->detail['component'] ?? null) === 'agent_orbit_cli'));
+        $baseline = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => (
+                $e->key === 'node.role_baseline_mismatch'
+                && ($e->detail['component'] ?? null) === 'agent_orbit_cli'
+            ),
+        ));
 
         expect($baseline)->toHaveCount(1);
         expect($baseline[0]->kind)->toBe(DriftKind::Divergent);
@@ -1770,13 +1863,16 @@ describe('agent role baseline', function (): void {
             'settings' => ['tld' => 'agent'],
         ]);
         File::ensureDirectoryExists(nodesProbeDevelopmentDnsPath());
-        File::put(nodesProbeDevelopmentDnsPath('agent.conf'), implode("\n", [
-            '# orbit-managed=node-development-dns',
-            '# node=agent-1',
-            '# bind-scope=orbit_network',
-            'address=/agent/10.6.0.5',
-            '',
-        ]));
+        File::put(
+            nodesProbeDevelopmentDnsPath('agent.conf'),
+            implode("\n", [
+                '# orbit-managed=node-development-dns',
+                '# node=agent-1',
+                '# bind-scope=orbit_network',
+                'address=/agent/10.6.0.5',
+                '',
+            ]),
+        );
         NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
 
         $drift = $this->probe->diff($node, new ProbeSnapshot([]));
@@ -1860,7 +1956,10 @@ describe('access permission validity', function (): void {
         ]);
 
         $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
-        $permission = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid'));
+        $permission = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid',
+        ));
 
         expect($permission)->toHaveCount(1);
         expect($permission[0]->kind)->toBe(DriftKind::Divergent);
@@ -1893,7 +1992,10 @@ describe('access permission validity', function (): void {
         ]);
 
         $drift = $this->probe->diff($consumer, new ProbeSnapshot([]));
-        $permission = array_values(array_filter($drift, fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid'));
+        $permission = array_values(array_filter(
+            $drift,
+            fn (DriftEntry $e): bool => $e->key === 'node.access_permission_invalid',
+        ));
 
         expect($permission)->toHaveCount(1);
         expect($permission[0]->kind)->toBe(DriftKind::Divergent);

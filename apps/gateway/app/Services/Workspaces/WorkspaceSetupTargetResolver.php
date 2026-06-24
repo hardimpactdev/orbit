@@ -29,8 +29,13 @@ final readonly class WorkspaceSetupTargetResolver
     /**
      * @return array{Workspace, App, Node, bool}
      */
-    public function resolve(?string $name, ?string $appName, ?string $path, ?string $callerCwd = null, ?Node $callerNode = null): array
-    {
+    public function resolve(
+        ?string $name,
+        ?string $appName,
+        ?string $path,
+        ?string $callerCwd = null,
+        ?Node $callerNode = null,
+    ): array {
         if ($path !== null) {
             return $this->resolveByPath($path, $appName, $name);
         }
@@ -39,7 +44,7 @@ final readonly class WorkspaceSetupTargetResolver
             return $this->resolveByName($name, $appName);
         }
 
-        $cwd = $this->normalizePath($callerCwd ?? ((string) getcwd()));
+        $cwd = $this->normalizePath($callerCwd ?? (string) getcwd());
         $outcome = $this->pathOwnership($cwd);
 
         if ($outcome['type'] === 'workspace') {
@@ -97,7 +102,11 @@ final readonly class WorkspaceSetupTargetResolver
         $app = $this->resolveApp($appName);
 
         if (! $app instanceof App) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', 'App not found. Pass --app=<name> explicitly.', ['field' => 'app']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'App not found. Pass --app=<name> explicitly.',
+                ['field' => 'app'],
+            );
         }
 
         $workspaceName = $name ?? basename($path);
@@ -147,7 +156,9 @@ final readonly class WorkspaceSetupTargetResolver
         $workspace = $query->first();
 
         if (! $workspace instanceof Workspace) {
-            throw new WorkspaceSetupResolutionFailed('workspace.not_found', "Workspace '{$name}' not found.", ['field' => 'workspace']);
+            throw new WorkspaceSetupResolutionFailed('workspace.not_found', "Workspace '{$name}' not found.", [
+                'field' => 'workspace',
+            ]);
         }
 
         return $this->unwrap($workspace, false);
@@ -180,9 +191,11 @@ final readonly class WorkspaceSetupTargetResolver
             ->first(fn (App $app): bool => $this->pathMatches($this->normalizePath($app->path), $cwd));
 
         if ($app instanceof App) {
-            return $this->normalizePath($app->path) === $cwd
-                ? ['type' => 'app_root', 'app' => $app]
-                : ['type' => 'inside_app', 'app' => $app];
+            return (
+                $this->normalizePath($app->path) === $cwd
+                    ? ['type' => 'app_root', 'app' => $app]
+                    : ['type' => 'inside_app', 'app' => $app]
+            );
         }
 
         return ['type' => 'unregistered'];
@@ -226,8 +239,10 @@ final readonly class WorkspaceSetupTargetResolver
             return false;
         }
 
-        return $workspace->agent_ide_workspace_id === null
-            || $workspace->agent_ide_workspace_id === $resolution->adapterWorkspaceId;
+        return (
+            $workspace->agent_ide_workspace_id === null
+            || $workspace->agent_ide_workspace_id === $resolution->adapterWorkspaceId
+        );
     }
 
     /**
@@ -296,7 +311,9 @@ final readonly class WorkspaceSetupTargetResolver
         $app = $this->resolveApp($resolution->appSlug);
 
         if (! $app instanceof App) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', 'Adapter resolved an unknown parent app.', ['field' => 'app']);
+            throw new WorkspaceSetupResolutionFailed('validation_failed', 'Adapter resolved an unknown parent app.', [
+                'field' => 'app',
+            ]);
         }
 
         $workspace = Workspace::query()
@@ -346,22 +363,41 @@ final readonly class WorkspaceSetupTargetResolver
     private function assertExplicitMatches(Workspace $workspace, ?string $appName, ?string $path): void
     {
         if ($appName !== null && $workspace->app?->name !== $appName) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', 'The --app value does not match the workspace resolved from the current directory.', ['field' => 'app']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'The --app value does not match the workspace resolved from the current directory.',
+                ['field' => 'app'],
+            );
         }
 
         if ($path !== null && $this->normalizePath($workspace->path) !== $this->normalizePath($path)) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', 'The --path value does not match the workspace resolved from the current directory.', ['field' => 'path']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'The --path value does not match the workspace resolved from the current directory.',
+                ['field' => 'path'],
+            );
         }
     }
 
-    private function assertAdapterMatchesExplicitInput(WorkspacePathResolution $resolution, ?string $name, ?string $appName): void
-    {
+    private function assertAdapterMatchesExplicitInput(
+        WorkspacePathResolution $resolution,
+        ?string $name,
+        ?string $appName,
+    ): void {
         if ($name !== null && $name !== $resolution->workspaceName) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', 'The workspace name does not match the Agent IDE adapter resolution.', ['field' => 'name', 'reason' => 'adapter_mismatch']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'The workspace name does not match the Agent IDE adapter resolution.',
+                ['field' => 'name', 'reason' => 'adapter_mismatch'],
+            );
         }
 
         if ($appName !== null && $appName !== $resolution->appSlug) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', 'The --app value does not match the Agent IDE adapter resolution.', ['field' => 'app', 'reason' => 'adapter_mismatch']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                'The --app value does not match the Agent IDE adapter resolution.',
+                ['field' => 'app', 'reason' => 'adapter_mismatch'],
+            );
         }
     }
 
@@ -373,19 +409,31 @@ final readonly class WorkspaceSetupTargetResolver
         $app = $workspace->app;
 
         if (! $app instanceof App) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', "App not found for workspace '{$workspace->name}'.", ['field' => 'app']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                "App not found for workspace '{$workspace->name}'.",
+                ['field' => 'app'],
+            );
         }
 
         $node = $app->node;
 
         if (! $node instanceof Node) {
-            throw new WorkspaceSetupResolutionFailed('validation_failed', "Node not found for workspace '{$workspace->name}'.", ['field' => 'app']);
+            throw new WorkspaceSetupResolutionFailed(
+                'validation_failed',
+                "Node not found for workspace '{$workspace->name}'.",
+                ['field' => 'app'],
+            );
         }
 
         try {
             $this->roleGuard->ensureAppSupportsWorkspaces($app);
         } catch (WorkspaceUnsupportedForProduction $exception) {
-            throw new WorkspaceSetupResolutionFailed($exception->errorCode(), $exception->getMessage(), $exception->meta);
+            throw new WorkspaceSetupResolutionFailed(
+                $exception->errorCode(),
+                $exception->getMessage(),
+                $exception->meta,
+            );
         }
 
         return [$workspace, $app, $node, $isAdoption];

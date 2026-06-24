@@ -24,16 +24,21 @@ it('falls back to synchronous remote shell runs when async start is unavailable'
     $second = Node::factory()->create(['name' => 'app-2']);
     $shell = new RemoteShellPoolSynchronousShell;
 
-    $results = (new RemoteShellPool($shell))->run([
+    $results = new RemoteShellPool($shell)->run([
         new RemoteShellPoolJob(key: 'first', node: $first, script: 'echo first', options: ['cwd' => '/srv/one']),
         new RemoteShellPoolJob(key: 'second', node: $second, script: 'echo second', options: ['timeout' => 45]),
     ], concurrency: 4);
 
-    expect(array_map(fn (RemoteShellPoolResult $result): string => $result->key, $results))->toBe(['first', 'second'])
-        ->and($results[0]->result?->stdout)->toBe("app-1:echo first\n")
-        ->and($results[1]->result?->stdout)->toBe("app-2:echo second\n")
-        ->and($results[0]->exception)->toBeNull()
-        ->and($shell->calls)->toBe([
+    expect(array_map(fn (RemoteShellPoolResult $result): string => $result->key, $results))
+        ->toBe(['first', 'second'])
+        ->and($results[0]->result?->stdout)
+        ->toBe("app-1:echo first\n")
+        ->and($results[1]->result?->stdout)
+        ->toBe("app-2:echo second\n")
+        ->and($results[0]->exception)
+        ->toBeNull()
+        ->and($shell->calls)
+        ->toBe([
             ['node' => 'app-1', 'script' => 'echo first', 'options' => ['cwd' => '/srv/one']],
             ['node' => 'app-2', 'script' => 'echo second', 'options' => ['timeout' => 45]],
         ]);
@@ -47,20 +52,24 @@ it('runs remote shell jobs concurrently through async process starts', function 
     ];
     $shell = new RemoteShellPoolAsyncShell;
 
-    $results = (new RemoteShellPool($shell))->run([
+    $results = new RemoteShellPool($shell)->run([
         new RemoteShellPoolJob(key: 'one', node: $nodes[0], script: 'echo one'),
         new RemoteShellPoolJob(key: 'two', node: $nodes[1], script: 'echo two'),
         new RemoteShellPoolJob(key: 'three', node: $nodes[2], script: 'echo three'),
     ], concurrency: 2);
 
-    expect(array_map(fn (RemoteShellPoolResult $result): string => $result->key, $results))->toBe(['one', 'two', 'three'])
-        ->and(array_map(fn (RemoteShellPoolResult $result): ?string => $result->result?->stdout, $results))->toBe([
+    expect(array_map(fn (RemoteShellPoolResult $result): string => $result->key, $results))
+        ->toBe(['one', 'two', 'three'])
+        ->and(array_map(fn (RemoteShellPoolResult $result): ?string => $result->result?->stdout, $results))
+        ->toBe([
             "app-1:echo one\n",
             "app-2:echo two\n",
             "app-3:echo three\n",
         ])
-        ->and($shell->maxActiveProcesses)->toBe(2)
-        ->and($shell->runCalls)->toBe(0);
+        ->and($shell->maxActiveProcesses)
+        ->toBe(2)
+        ->and($shell->runCalls)
+        ->toBe(0);
 });
 
 it('captures start exceptions and continues running later jobs', function (): void {
@@ -70,18 +79,25 @@ it('captures start exceptions and continues running later jobs', function (): vo
     ];
     $shell = new RemoteShellPoolAsyncShell(failToStartFor: ['app-1']);
 
-    $results = (new RemoteShellPool($shell))->run([
+    $results = new RemoteShellPool($shell)->run([
         new RemoteShellPoolJob(key: 'broken', node: $nodes[0], script: 'echo broken'),
         new RemoteShellPoolJob(key: 'ok', node: $nodes[1], script: 'echo ok'),
     ], concurrency: 2);
 
-    expect($results)->toHaveCount(2)
-        ->and($results[0]->key)->toBe('broken')
-        ->and($results[0]->result)->toBeNull()
-        ->and($results[0]->exception?->getMessage())->toBe('could not start app-1')
-        ->and($results[1]->key)->toBe('ok')
-        ->and($results[1]->result?->successful())->toBeTrue()
-        ->and($results[1]->result?->stdout)->toBe("app-2:echo ok\n");
+    expect($results)
+        ->toHaveCount(2)
+        ->and($results[0]->key)
+        ->toBe('broken')
+        ->and($results[0]->result)
+        ->toBeNull()
+        ->and($results[0]->exception?->getMessage())
+        ->toBe('could not start app-1')
+        ->and($results[1]->key)
+        ->toBe('ok')
+        ->and($results[1]->result?->successful())
+        ->toBeTrue()
+        ->and($results[1]->result?->stdout)
+        ->toBe("app-2:echo ok\n");
 });
 
 it('preserves throw option semantics for failed async results', function (): void {
@@ -91,7 +107,7 @@ it('preserves throw option semantics for failed async results', function (): voi
         errorOutputs: ['app-1' => 'permission denied'],
     );
 
-    $results = (new RemoteShellPool($shell))->run([
+    $results = new RemoteShellPool($shell)->run([
         new RemoteShellPoolJob(
             key: 'failed',
             node: $node,
@@ -100,9 +116,12 @@ it('preserves throw option semantics for failed async results', function (): voi
         ),
     ], concurrency: 2);
 
-    expect($results[0]->result)->toBeNull()
-        ->and($results[0]->exception)->toBeInstanceOf(RemoteShellFailed::class)
-        ->and($results[0]->exception->getMessage())->toContain('RemoteShell failed on app-1 (exit 13): permission denied');
+    expect($results[0]->result)
+        ->toBeNull()
+        ->and($results[0]->exception)
+        ->toBeInstanceOf(RemoteShellFailed::class)
+        ->and($results[0]->exception->getMessage())
+        ->toContain('RemoteShell failed on app-1 (exit 13): permission denied');
 });
 
 final class RemoteShellPoolSynchronousShell implements RemoteShell

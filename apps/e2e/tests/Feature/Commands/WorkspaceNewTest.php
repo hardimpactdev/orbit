@@ -13,47 +13,47 @@ if (! function_exists('workspaceLifecycleSeed')) {
         $checkout = escapeshellarg($topology->checkout('gateway'));
         $appPathValue = var_export($appPath, true);
         $script = <<<PHP
-\$nodes = \\App\\Models\\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+            \$nodes = \\App\\Models\\Node::query()
+                ->whereIn('name', ['operator-1', 'app-dev-1'])
+                ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as \$name) {
-    if (! \$nodes->has(\$name)) {
-        throw new \\RuntimeException("Missing prepared node [{\$name}].");
-    }
-}
+            foreach (['operator-1', 'app-dev-1'] as \$name) {
+                if (! \$nodes->has(\$name)) {
+                    throw new \\RuntimeException("Missing prepared node [{\$name}].");
+                }
+            }
 
-\\App\\Models\\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->update(['agent_ide_config' => null]);
+            \\App\\Models\\Node::query()
+                ->whereIn('name', ['operator-1', 'app-dev-1'])
+                ->update(['agent_ide_config' => null]);
 
-\\Illuminate\\Support\\Facades\\DB::table('workspace_run_steps')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('workspace_runs')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
-\\App\\Models\\App::query()->delete();
-\\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
-\\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
-    'consumer_node_id' => \$nodes->get('operator-1'),
-    'serving_node_id' => \$nodes->get('app-dev-1'),
-    'permissions' => json_encode(['workspace:new'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+            \\Illuminate\\Support\\Facades\\DB::table('workspace_run_steps')->delete();
+            \\Illuminate\\Support\\Facades\\DB::table('workspace_runs')->delete();
+            \\Illuminate\\Support\\Facades\\DB::table('workspace_steps')->delete();
+            \\Illuminate\\Support\\Facades\\DB::table('proxy_routes')->delete();
+            \\Illuminate\\Support\\Facades\\DB::table('workspaces')->delete();
+            \\App\\Models\\App::query()->delete();
+            \\Illuminate\\Support\\Facades\\DB::table('node_access')->delete();
+            \\Illuminate\\Support\\Facades\\DB::table('node_access')->insert([
+                'consumer_node_id' => \$nodes->get('operator-1'),
+                'serving_node_id' => \$nodes->get('app-dev-1'),
+                'permissions' => json_encode(['workspace:new'], JSON_THROW_ON_ERROR),
+                'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
 
-\\App\\Models\\App::query()->create([
-    'name' => 'docs',
-    'node_id' => \$nodes->get('app-dev-1'),
-    'path' => {$appPathValue},
-    'document_root' => 'public',
-    'php_version' => '8.5',
-    'agent_ide_config' => ['adapter' => 'none'],
-]);
+            \\App\\Models\\App::query()->create([
+                'name' => 'docs',
+                'node_id' => \$nodes->get('app-dev-1'),
+                'path' => {$appPathValue},
+                'document_root' => 'public',
+                'php_version' => '8.5',
+                'agent_ide_config' => ['adapter' => 'none'],
+            ]);
 
-echo 'seeded';
-PHP;
+            echo 'seeded';
+            PHP;
 
         $topology->ssh(
             'gateway',
@@ -65,14 +65,14 @@ PHP;
             'dev',
             sprintf(
                 <<<'SH'
-sudo rm -rf %1$s && mkdir -p %1$s/public && cd %1$s
-git init -b main
-git config user.email orbit@example.test
-git config user.name Orbit
-printf 'ok\n' > public/index.html
-git add .
-git commit -m init
-SH,
+                    sudo rm -rf %1$s && mkdir -p %1$s/public && cd %1$s
+                    git init -b main
+                    git config user.email orbit@example.test
+                    git config user.name Orbit
+                    printf 'ok\n' > public/index.html
+                    git add .
+                    git commit -m init
+                    SH,
                 escapeshellarg($appPath),
             ),
             timeoutSeconds: 120,
@@ -91,7 +91,12 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-new');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         workspaceLifecycleSeed($topology);
 
@@ -108,18 +113,25 @@ it('creates and sets up a workspace from a non-gateway caller through the gatewa
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
         $data = e2eJsonCommandResultData($payload);
 
-        expect($data['result'])->toBe(['action' => 'created'])
-            ->and($data['workspace']['name'])->toBe($workspaceName)
-            ->and($data['workspace']['app'])->toBe('docs')
-            ->and($data['workspace']['path'])->toBe($workspacePath)
-            ->and($data['workspace']['lifecycle_status'])->toBe('active')
-            ->and($data['meta']['base'])->toBe('main');
+        expect($data['result'])
+            ->toBe(['action' => 'created'])
+            ->and($data['workspace']['name'])
+            ->toBe($workspaceName)
+            ->and($data['workspace']['app'])
+            ->toBe('docs')
+            ->and($data['workspace']['path'])
+            ->toBe($workspacePath)
+            ->and($data['workspace']['lifecycle_status'])
+            ->toBe('active')
+            ->and($data['meta']['base'])
+            ->toBe('main');
 
         $topology->ssh('dev', 'test -e '.escapeshellarg("{$workspacePath}/.git"), timeoutSeconds: 60);
 
         $gatewayRecord = $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg("echo json_encode([
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg("echo json_encode([
                 'workspace' => \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('lifecycle_status'),
                 'route_count' => \\App\\Models\\ProxyRoute::query()
                     ->where('workspace_id', \\App\\Models\\Workspace::query()->where('name', '{$workspaceName}')->value('id'))

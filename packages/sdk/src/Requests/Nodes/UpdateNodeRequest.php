@@ -53,12 +53,12 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
         return new NodeUpdateResponse(
             name: is_string($data['name'] ?? null) ? $data['name'] : $this->name,
             changed: is_array($changed) ? array_values(array_filter($changed, is_string(...))) : [],
-            warnings: is_array($warnings) ? $this->normalizeWarnings($warnings) : [],
+            warnings: $this->normalizeWarnings(is_array($warnings) ? $warnings : []),
         );
     }
 
     /**
-     * @param  array<int, mixed>  $warnings
+     * @param  array<array-key, mixed>  $warnings
      * @return list<array<string, string>>
      */
     private function normalizeWarnings(array $warnings): array
@@ -69,12 +69,15 @@ final class UpdateNodeRequest extends GatewayRequest implements HasBody
                     return null;
                 }
 
-                return array_filter([
-                    'code' => is_string($warning['code'] ?? null) ? $warning['code'] : null,
-                    'message' => is_string($warning['message'] ?? null) ? $warning['message'] : null,
-                    'family' => is_string($warning['family'] ?? null) ? $warning['family'] : null,
-                    'next_command' => is_string($warning['next_command'] ?? null) ? $warning['next_command'] : null,
-                ], is_string(...));
+                return array_filter(
+                    [
+                        'code' => is_string($warning['code'] ?? null) ? $warning['code'] : null,
+                        'message' => is_string($warning['message'] ?? null) ? $warning['message'] : null,
+                        'family' => is_string($warning['family'] ?? null) ? $warning['family'] : null,
+                        'next_command' => is_string($warning['next_command'] ?? null) ? $warning['next_command'] : null,
+                    ],
+                    is_string(...),
+                );
             },
             $warnings,
         )));

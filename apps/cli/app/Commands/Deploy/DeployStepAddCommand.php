@@ -72,7 +72,11 @@ final class DeployStepAddCommand extends DeployGatewayCommand
         $command = $this->stepString($step, 'command');
 
         if ($command !== null) {
-            $this->line("Command: {$command} (order {$this->stepDetail($step, 'order')}, retention {$this->retentionLabel($step)}).");
+            $this->line(
+                "Command: {$command} (order {$this->stepDetail($step, 'order')}, retention {$this->retentionLabel(
+                    $step,
+                )}).",
+            );
         }
 
         return self::SUCCESS;
@@ -85,7 +89,7 @@ final class DeployStepAddCommand extends DeployGatewayCommand
     private function stepData(array $response): array
     {
         $data = $response['success']['data'] ?? null;
-        $step = is_array($data) ? ($data['step'] ?? null) : null;
+        $step = is_array($data) ? $data['step'] ?? null : null;
 
         return is_array($step) ? $step : [];
     }

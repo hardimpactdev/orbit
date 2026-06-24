@@ -19,8 +19,7 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
-    {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
          * @return array{url: string, sha256: string, source_url: string}
          */
@@ -29,7 +28,11 @@ beforeEach(function (): void {
         {
             $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+            if (
+                ! is_array($artifact)
+                || ! is_string($artifact['url'] ?? null)
+                || ! is_string($artifact['sha256'] ?? null)
+            ) {
                 throw new RuntimeException("Missing test artifact for [{$platform}].");
             }
 
@@ -78,7 +81,8 @@ it('records a completed activity entry when the fleet update succeeds', function
     expect($entry->properties->get('target_version'))->toBe('3.0.0');
     expect($entry->properties->get('manifest_version'))->toBe('3.0.0');
     expect($entry->properties->get('manifest_source'))->toBe('github-release');
-    expect($entry->properties->get('gateway_image_digest'))->toBe('sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc');
+    expect($entry->properties->get('gateway_image_digest'))
+        ->toBe('sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc');
     expect($entry->properties->has('failed_step'))->toBeFalse();
 
     // Must not contain secrets or raw output
@@ -99,8 +103,7 @@ it('records a failed activity entry with failed_step when the fleet update fails
         gatewayImage: 'ghcr.io/hardimpactdev/orbit-gateway:4.0.0@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
     ));
 
-    $failingPipeline = new class extends NoopUpdateRunnerPipeline
-    {
+    $failingPipeline = new class extends NoopUpdateRunnerPipeline {
         #[Override]
         public function verifyFleet(OperationRun $operationRun, OperationUpdatePlan $plan): void
         {
@@ -128,7 +131,8 @@ it('records a failed activity entry with failed_step when the fleet update fails
     expect($entry->properties->get('target_version'))->toBe('4.0.0');
     expect($entry->properties->get('manifest_version'))->toBe('4.0.0');
     expect($entry->properties->get('manifest_source'))->toBe('github-release');
-    expect($entry->properties->get('gateway_image_digest'))->toBe('sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd');
+    expect($entry->properties->get('gateway_image_digest'))
+        ->toBe('sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd');
     expect($entry->properties->get('failed_step'))->toBe('verification');
 });
 

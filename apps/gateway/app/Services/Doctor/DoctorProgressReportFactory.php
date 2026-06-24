@@ -78,22 +78,34 @@ final class DoctorProgressReportFactory
         $fixed = count(array_filter(
             $actions,
             fn (array $action): bool => in_array($action['mode'] ?? $mode, ['fix', 'restore'], true)
-                && ($action['status'] ?? null) === 'completed',
+            && ($action['status'] ?? null) === 'completed',
         ));
         $adopted = count(array_filter(
             $actions,
             fn (array $action): bool => ($action['mode'] ?? $mode) === 'adopt'
-                && in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true),
+            && in_array($action['status'] ?? null, ['completed', 'created', 'updated'], true),
         ));
 
         return [
             'issues' => count($issues),
             'fixed' => $fixed,
             'adopted' => $adopted,
-            'skipped' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'skipped')),
-            'conflicts' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'conflict')),
-            'failed' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'failed')),
-            'planned' => count(array_filter($actions, fn (array $action): bool => ($action['status'] ?? null) === 'planned')),
+            'skipped' => count(array_filter(
+                $actions,
+                fn (array $action): bool => ($action['status'] ?? null) === 'skipped',
+            )),
+            'conflicts' => count(array_filter(
+                $actions,
+                fn (array $action): bool => ($action['status'] ?? null) === 'conflict',
+            )),
+            'failed' => count(array_filter(
+                $actions,
+                fn (array $action): bool => ($action['status'] ?? null) === 'failed',
+            )),
+            'planned' => count(array_filter(
+                $actions,
+                fn (array $action): bool => ($action['status'] ?? null) === 'planned',
+            )),
         ];
     }
 }

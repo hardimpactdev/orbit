@@ -29,12 +29,12 @@ class RemoveNodeRoleApiRequest extends FormRequest
 
     public function force(): bool
     {
-        return (bool) $this->boolean('force');
+        return $this->boolean('force');
     }
 
     public function purgeData(): bool
     {
-        return (bool) $this->boolean('purge_data');
+        return $this->boolean('purge_data');
     }
 
     protected function validationFailureFields(): array

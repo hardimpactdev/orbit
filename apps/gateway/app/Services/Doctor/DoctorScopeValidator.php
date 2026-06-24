@@ -11,8 +11,11 @@ final readonly class DoctorScopeValidator
     /**
      * @param  list<string>  $families
      */
-    public function validate(array $families, DoctorReportRunner $runner, ?Node $target = null): ?DoctorValidationFailure
-    {
+    public function validate(
+        array $families,
+        DoctorReportRunner $runner,
+        ?Node $target = null,
+    ): ?DoctorValidationFailure {
         foreach ($families as $family) {
             if (! in_array($family, $runner->supportedFamilies(), true)) {
                 return new DoctorValidationFailure(

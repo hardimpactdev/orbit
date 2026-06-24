@@ -122,7 +122,11 @@ final class ProfileHumanRenderer
         }
 
         if ($accountedMs > 0.0) {
-            $lines[] = $this->dottedLine('Transport', $this->formatMs(max(0.0, $waitingMs - $accountedMs)).'ms', indent: 2);
+            $lines[] = $this->dottedLine(
+                'Transport',
+                $this->formatMs(max(0.0, $waitingMs - $accountedMs)).'ms',
+                indent: 2,
+            );
         }
 
         return $lines;
@@ -189,7 +193,8 @@ final class ProfileHumanRenderer
      */
     private function headerFloat(array $headers, string $name): ?float
     {
-        $value = $headers[$name] ?? $headers[strtolower($name)] ?? $headers[mb_convert_case($name, MB_CASE_TITLE)] ?? null;
+        $value =
+            $headers[$name] ?? $headers[strtolower($name)] ?? $headers[mb_convert_case($name, MB_CASE_TITLE)] ?? null;
 
         return is_numeric($value) ? (float) $value : null;
     }

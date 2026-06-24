@@ -28,8 +28,11 @@ final class ProcessLogController implements Loggable
         private readonly ProcessOwnerContextResolver $contexts,
     ) {}
 
-    public function __invoke(string $name, Request $request, ShowProcessLogs $showProcessLogs): JsonResponse|StreamedResponse
-    {
+    public function __invoke(
+        string $name,
+        Request $request,
+        ShowProcessLogs $showProcessLogs,
+    ): JsonResponse|StreamedResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -44,7 +47,12 @@ final class ProcessLogController implements Loggable
                 workspaceName: $this->optionalString($request, 'workspace'),
             );
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:logs');
@@ -57,31 +65,45 @@ final class ProcessLogController implements Loggable
             try {
                 $target = $showProcessLogs->streamTarget($context, $name, $this->lines($request));
             } catch (GatewayApiException $e) {
-                return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+                return $this->error(
+                    $e->errorCode() ?? 'validation_failed',
+                    $e->getMessage(),
+                    $e->errorMeta(),
+                    $this->statusFor($e),
+                );
             }
 
             $this->activitySubject = $context->subject();
 
-            return response()->stream(function () use ($showProcessLogs, $target): void {
-                $showProcessLogs->followTarget($target, function (string $output): void {
-                    echo $output;
+            return response()->stream(
+                function () use ($showProcessLogs, $target): void {
+                    $showProcessLogs->followTarget($target, function (string $output): void {
+                        echo $output;
 
-                    if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
-                        @ob_flush();
-                        @flush();
-                    }
-                });
-            }, 200, [
-                'Cache-Control' => 'no-cache',
-                'Content-Type' => 'text/plain; charset=UTF-8',
-                'X-Accel-Buffering' => 'no',
-            ]);
+                        if (PHP_SAPI === 'fpm-fcgi' || PHP_SAPI === 'cli-server') {
+                            @ob_flush();
+                            @flush();
+                        }
+                    });
+                },
+                200,
+                [
+                    'Cache-Control' => 'no-cache',
+                    'Content-Type' => 'text/plain; charset=UTF-8',
+                    'X-Accel-Buffering' => 'no',
+                ],
+            );
         }
 
         try {
             $result = $showProcessLogs->handle($context, $name, $this->lines($request));
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->statusFor($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->statusFor($e),
+            );
         }
 
         $this->activitySubject = $context->subject();
@@ -102,11 +124,16 @@ final class ProcessLogController implements Loggable
             return null;
         }
 
-        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ], 403);
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$node->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+            403,
+        );
     }
 
     private function lines(Request $request): int

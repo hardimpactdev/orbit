@@ -29,10 +29,31 @@ final readonly class ReaderAddressRule implements GroupedRule
      * @var list<string>
      */
     private const array IMPERATIVE_OPENERS = [
-        'Run', 'Use', 'Pass', 'Add', 'Check', 'Verify', 'Configure',
-        'Provide', 'Confirm', 'Pick', 'Choose', 'Set', 'Open',
-        'Edit', 'Try', 'Install', 'Restart', 'Stop', 'Start',
-        'Apply', 'Remove', 'Inspect', 'Review', 'Read', 'See',
+        'Run',
+        'Use',
+        'Pass',
+        'Add',
+        'Check',
+        'Verify',
+        'Configure',
+        'Provide',
+        'Confirm',
+        'Pick',
+        'Choose',
+        'Set',
+        'Open',
+        'Edit',
+        'Try',
+        'Install',
+        'Restart',
+        'Stop',
+        'Start',
+        'Apply',
+        'Remove',
+        'Inspect',
+        'Review',
+        'Read',
+        'See',
     ];
 
     public function __construct(
@@ -100,6 +121,7 @@ final readonly class ReaderAddressRule implements GroupedRule
     private function actionSections(string $contents): array
     {
         $sections = [];
+        /** @var array{heading: string, body: string, line: int}|null $current */
         $current = null;
         $inFence = false;
 
@@ -117,6 +139,7 @@ final readonly class ReaderAddressRule implements GroupedRule
             }
 
             if (! $inFence && preg_match('/^(?<level>#{2,3})\s+(?<heading>.+?)\s*$/', $line, $matches) === 1) {
+                /** @var array{heading: string} $matches */
                 if ($current !== null) {
                     $sections[] = $current;
                     $current = null;
@@ -160,6 +183,9 @@ final readonly class ReaderAddressRule implements GroupedRule
             return true;
         }
 
-        return array_any(self::IMPERATIVE_OPENERS, fn ($verb) => preg_match('/(?:^|\n|\.\s)'.preg_quote((string) $verb, '/').'\b/', $stripped) === 1);
+        return array_any(
+            self::IMPERATIVE_OPENERS,
+            fn ($verb) => preg_match('/(?:^|\n|\.\s)'.preg_quote((string) $verb, '/').'\b/', $stripped) === 1,
+        );
     }
 }

@@ -102,34 +102,34 @@ final readonly class PolyscopeWorkspaceBranchAligner
     private function script(): string
     {
         return <<<'SH'
-set -eu
+            set -eu
 
-workspace_path="${ORBIT_POLYSCOPE_WORKSPACE_PATH:-}"
-workspace_name="${ORBIT_WORKSPACE_NAME:-}"
+            workspace_path="${ORBIT_POLYSCOPE_WORKSPACE_PATH:-}"
+            workspace_name="${ORBIT_WORKSPACE_NAME:-}"
 
-if [ -z "$workspace_path" ] || [ -z "$workspace_name" ]; then
-    echo "Polyscope workspace path and target name are required." >&2
-    exit 2
-fi
+            if [ -z "$workspace_path" ] || [ -z "$workspace_name" ]; then
+                echo "Polyscope workspace path and target name are required." >&2
+                exit 2
+            fi
 
-if [ ! -d "$workspace_path" ]; then
-    echo "Polyscope workspace path is missing." >&2
-    exit 2
-fi
+            if [ ! -d "$workspace_path" ]; then
+                echo "Polyscope workspace path is missing." >&2
+                exit 2
+            fi
 
-current_branch="$(git -C "$workspace_path" branch --show-current)"
+            current_branch="$(git -C "$workspace_path" branch --show-current)"
 
-if [ "$current_branch" != "$workspace_name" ]; then
-    if git -C "$workspace_path" rev-parse --verify --quiet "$workspace_name" >/dev/null 2>&1; then
-        echo "Git branch already exists." >&2
-        exit 2
-    fi
+            if [ "$current_branch" != "$workspace_name" ]; then
+                if git -C "$workspace_path" rev-parse --verify --quiet "$workspace_name" >/dev/null 2>&1; then
+                    echo "Git branch already exists." >&2
+                    exit 2
+                fi
 
-    git -C "$workspace_path" branch -m "$workspace_name"
-fi
+                git -C "$workspace_path" branch -m "$workspace_name"
+            fi
 
-printf '%s\n' '{"branch_renamed":true}'
-SH;
+            printf '%s\n' '{"branch_renamed":true}'
+            SH;
     }
 
     private function alignmentFailed(

@@ -27,10 +27,13 @@ final class RemoveVpnClientRequest extends GatewayRequest
 
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'force' => $this->force,
-            'totp' => $this->totp,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'force' => $this->force,
+                'totp' => $this->totp,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): VpnClientResponse
@@ -38,7 +41,7 @@ final class RemoveVpnClientRequest extends GatewayRequest
         $data = $this->unwrapData($response);
 
         return new VpnClientResponse(
-            client: is_array($data['client'] ?? null) ? $data['client'] : [],
+            client: $this->stringKeyedArray($data['client'] ?? []),
             meta: $this->unwrapMeta($response),
         );
     }

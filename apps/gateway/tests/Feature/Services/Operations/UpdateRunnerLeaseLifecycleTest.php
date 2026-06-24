@@ -21,8 +21,7 @@ use Orbit\Core\Enums\OperationStatus;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
-    {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
          * @return array{url: string, sha256: string, source_url: string}
          */
@@ -31,7 +30,11 @@ beforeEach(function (): void {
         {
             $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+            if (
+                ! is_array($artifact)
+                || ! is_string($artifact['url'] ?? null)
+                || ! is_string($artifact['sha256'] ?? null)
+            ) {
                 throw new RuntimeException("Missing test artifact for [{$platform}].");
             }
 
@@ -65,13 +68,19 @@ it('holds the fleet lease across gateway workload and verification phases', func
 
     app(UpdateRunner::class)->run($run->id);
 
-    expect($collector->records)->toBe([
-        ['phase' => 'gateway', 'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler']],
-        ['phase' => 'workloads', 'active' => ['fleet:update-all']],
-        ['phase' => 'verification', 'active' => ['fleet:update-all']],
-    ])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0)
-        ->and($run->refresh()->status)->toBe(OperationStatus::Succeeded);
+    expect($collector->records)
+        ->toBe([
+            [
+                'phase' => 'gateway',
+                'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler'],
+            ],
+            ['phase' => 'workloads', 'active' => ['fleet:update-all']],
+            ['phase' => 'verification', 'active' => ['fleet:update-all']],
+        ])
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0)
+        ->and($run->refresh()->status)
+        ->toBe(OperationStatus::Succeeded);
 });
 
 it('reports the conflicting operation caller node when the fleet lease is already held', function (): void {
@@ -93,29 +102,33 @@ it('reports the conflicting operation caller node when the fleet lease is alread
     expect(fn () => app(UpdateRunner::class)->run($run->id))
         ->toThrow(UpdateLeaseConflict::class);
 
-    $error = $run->events()
+    $error = $run
+        ->events()
         ->where('event_type', 'error')
         ->firstOrFail();
-    $eventMarkers = $run->events()
+    $eventMarkers = $run
+        ->events()
         ->get()
         ->map(fn ($event): string => $event->event_type === 'step'
             ? "{$event->payload['key']}:{$event->payload['status']}"
             : $event->event_type)
         ->all();
 
-    expect($run->refresh()->error)->toMatchArray([
-        'code' => 'update_lease_conflict',
-        'data' => [
-            'resource' => 'fleet:update-all',
-            'resource_type' => 'fleet',
-            'resource_key' => 'update-all',
-            'lease_id' => $conflictingLease->id,
-            'conflicting_operation_id' => $otherRun->id,
-            'conflicting_node' => 'ingress',
-            'expires_at' => $conflictingLease->expires_at->toIso8601String(),
-        ],
-    ])
-        ->and($error->payload)->toMatchArray([
+    expect($run->refresh()->error)
+        ->toMatchArray([
+            'code' => 'update_lease_conflict',
+            'data' => [
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'lease_id' => $conflictingLease->id,
+                'conflicting_operation_id' => $otherRun->id,
+                'conflicting_node' => 'ingress',
+                'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+            ],
+        ])
+        ->and($error->payload)
+        ->toMatchArray([
             'exit_code' => 1,
             'data' => [
                 'code' => 'update_lease_conflict',
@@ -129,7 +142,8 @@ it('reports the conflicting operation caller node when the fleet lease is alread
             ],
         ]);
 
-    expect($eventMarkers)->toContain('check-updates:done', 'check-fleet-versions:done', 'error')
+    expect($eventMarkers)
+        ->toContain('check-updates:done', 'check-fleet-versions:done', 'error')
         ->and(array_search('check-fleet-versions:done', $eventMarkers, true))
         ->toBeLessThan(array_search('error', $eventMarkers, true));
 });
@@ -152,18 +166,20 @@ it('omits conflicting_node when the conflicting operation has no caller node', f
     expect(fn () => app(UpdateRunner::class)->run($run->id))
         ->toThrow(UpdateLeaseConflict::class);
 
-    expect($run->refresh()->error)->toMatchArray([
-        'code' => 'update_lease_conflict',
-        'data' => [
-            'resource' => 'fleet:update-all',
-            'resource_type' => 'fleet',
-            'resource_key' => 'update-all',
-            'lease_id' => $conflictingLease->id,
-            'conflicting_operation_id' => $otherRun->id,
-            'expires_at' => $conflictingLease->expires_at->toIso8601String(),
-        ],
-    ])
-        ->and($run->error['data'])->not->toHaveKey('conflicting_node');
+    expect($run->refresh()->error)
+        ->toMatchArray([
+            'code' => 'update_lease_conflict',
+            'data' => [
+                'resource' => 'fleet:update-all',
+                'resource_type' => 'fleet',
+                'resource_key' => 'update-all',
+                'lease_id' => $conflictingLease->id,
+                'conflicting_operation_id' => $otherRun->id,
+                'expires_at' => $conflictingLease->expires_at->toIso8601String(),
+            ],
+        ])
+        ->and($run->error['data'])
+        ->not->toHaveKey('conflicting_node');
 });
 
 it('releases fleet gateway and scheduler leases when the gateway phase fails', function (): void {
@@ -176,10 +192,15 @@ it('releases fleet gateway and scheduler leases when the gateway phase fails', f
     expect(fn () => app(UpdateRunner::class)->run($run->id))
         ->toThrow(RuntimeException::class, 'gateway failed');
 
-    expect($collector->records)->toBe([
-        ['phase' => 'gateway', 'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler']],
-    ])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+    expect($collector->records)
+        ->toBe([
+            [
+                'phase' => 'gateway',
+                'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler'],
+            ],
+        ])
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 });
 
 it('keeps the fleet lease through workload failure after releasing gateway leases', function (): void {
@@ -192,11 +213,16 @@ it('keeps the fleet lease through workload failure after releasing gateway lease
     expect(fn () => app(UpdateRunner::class)->run($run->id))
         ->toThrow(RuntimeException::class, 'workloads failed');
 
-    expect($collector->records)->toBe([
-        ['phase' => 'gateway', 'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler']],
-        ['phase' => 'workloads', 'active' => ['fleet:update-all']],
-    ])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+    expect($collector->records)
+        ->toBe([
+            [
+                'phase' => 'gateway',
+                'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler'],
+            ],
+            ['phase' => 'workloads', 'active' => ['fleet:update-all']],
+        ])
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 });
 
 it('keeps the fleet lease through verification failure and releases it afterward', function (): void {
@@ -209,12 +235,17 @@ it('keeps the fleet lease through verification failure and releases it afterward
     expect(fn () => app(UpdateRunner::class)->run($run->id))
         ->toThrow(RuntimeException::class, 'verification failed');
 
-    expect($collector->records)->toBe([
-        ['phase' => 'gateway', 'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler']],
-        ['phase' => 'workloads', 'active' => ['fleet:update-all']],
-        ['phase' => 'verification', 'active' => ['fleet:update-all']],
-    ])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+    expect($collector->records)
+        ->toBe([
+            [
+                'phase' => 'gateway',
+                'active' => ['fleet:update-all', 'gateway:orbit-gateway', 'scheduler:orbit-scheduler'],
+            ],
+            ['phase' => 'workloads', 'active' => ['fleet:update-all']],
+            ['phase' => 'verification', 'active' => ['fleet:update-all']],
+        ])
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 });
 
 function updateRunnerLeaseRun(?int $callerNodeId = null): OperationRun

@@ -15,11 +15,13 @@ it('acquires app production ingress on the prod node', function (): void {
         $prod = $lease->prodApp();
         $ingress = $lease->ingress();
 
-        expect($lease->devApp())->toBeNull()
-            ->and($lease->agent())->toBeNull()
-            ->and($prod)->not->toBeNull()
-            ->and($ingress)->not->toBeNull()
-            ->and($ingress?->name())->toBe($prod?->name());
+        expect($lease->devApp())
+            ->toBeNull()
+            ->and($lease->agent())
+            ->toBeNull()
+            ->and($prod)
+            ->not->toBeNull()->and($ingress)
+            ->not->toBeNull()->and($ingress?->name())->toBe($prod?->name());
 
         $gateway = $lease->gateway();
 
@@ -30,12 +32,18 @@ it('acquires app production ingress on the prod node', function (): void {
         $prodNode = E2EGatewayApi::getNode($gateway, 'app-prod-1');
         $state = readAppProdIngressState($gateway);
 
-        expect($prodNode['gateway_endpoint'])->toBe('10.6.0.2')
-            ->and($prodNode['wireguard_address'])->toBe('10.6.0.5')
-            ->and($state['roles'])->toContain('app-prod')
-            ->and($state['roles'])->toContain('ingress')
-            ->and($state['app_production_ingress_node'])->toBe('app-prod-1')
-            ->and($state['node_names'])->toBe(['app-prod-1', 'gateway', 'operator-1']);
+        expect($prodNode['gateway_endpoint'])
+            ->toBe('10.6.0.2')
+            ->and($prodNode['wireguard_address'])
+            ->toBe('10.6.0.5')
+            ->and($state['roles'])
+            ->toContain('app-prod')
+            ->and($state['roles'])
+            ->toContain('ingress')
+            ->and($state['app_production_ingress_node'])
+            ->toBe('app-prod-1')
+            ->and($state['node_names'])
+            ->toBe(['app-prod-1', 'gateway', 'operator-1']);
     } finally {
         $topology->cleanup();
     }
@@ -47,27 +55,27 @@ it('acquires app production ingress on the prod node', function (): void {
 function readAppProdIngressState(E2EInstance $gateway): array
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
-$assignments = $node->roleAssignments()
-    ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
-    ->orderBy('role')
-    ->get(['role', 'settings']);
+        $node = \App\Models\Node::query()->where('name', 'app-prod-1')->firstOrFail();
+        $assignments = $node->roleAssignments()
+            ->where('status', \App\Enums\Nodes\NodeRoleStatus::Active->value)
+            ->orderBy('role')
+            ->get(['role', 'settings']);
 
-$appProduction = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::AppProduction->value);
-$appProductionSettings = $appProduction === null ? [] : ($appProduction->settings ?? []);
-$ingressNodeId = $appProductionSettings['ingress_node_id'] ?? null;
-$ingressNodeName = null;
+        $appProduction = $assignments->firstWhere('role', \App\Enums\Nodes\NodeRoleName::AppProduction->value);
+        $appProductionSettings = $appProduction === null ? [] : ($appProduction->settings ?? []);
+        $ingressNodeId = $appProductionSettings['ingress_node_id'] ?? null;
+        $ingressNodeName = null;
 
-if ($ingressNodeId !== null) {
-    $ingressNodeName = \App\Models\Node::query()->whereKey($ingressNodeId)->value('name');
-}
+        if ($ingressNodeId !== null) {
+            $ingressNodeName = \App\Models\Node::query()->whereKey($ingressNodeId)->value('name');
+        }
 
-echo json_encode([
-    'roles' => $assignments->pluck('role')->values()->all(),
-    'app_production_ingress_node' => $ingressNodeName,
-    'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'roles' => $assignments->pluck('role')->values()->all(),
+            'app_production_ingress_node' => $ingressNodeName,
+            'node_names' => \App\Models\Node::query()->orderBy('name')->pluck('name')->values()->all(),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $encodedPhp = base64_encode($php);
 

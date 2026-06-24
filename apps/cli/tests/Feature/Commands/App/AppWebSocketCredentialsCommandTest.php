@@ -26,14 +26,22 @@ describe('AppWebSocketCredentialsCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/apps/docs/websocket/credentials'
-            && $request->data() === []);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/apps/docs/websocket/credentials'
+                && $request->data() === []
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['credentials']['internal_host'])->toBe('websocket.orbit')
-            ->and($decoded['success']['data']['credentials']['reverb_app_key'])->toBe('reverb-key')
-            ->and($decoded['success']['data']['credentials']['reverb_app_secret'])->toBe('reverb-secret');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['credentials']['internal_host'])
+            ->toBe('websocket.orbit')
+            ->and($decoded['success']['data']['credentials']['reverb_app_key'])
+            ->toBe('reverb-key')
+            ->and($decoded['success']['data']['credentials']['reverb_app_secret'])
+            ->toBe('reverb-secret');
     });
 
     it('renders credentials responses in human mode', function (): void {
@@ -53,18 +61,30 @@ describe('AppWebSocketCredentialsCommand', function (): void {
             'app' => 'docs',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('credentials:')
-            ->and($output)->toContain('  app: docs')
-            ->and($output)->toContain('  internal_host: websocket.orbit')
-            ->and($output)->toContain('  public_hosts:')
-            ->and($output)->toContain('    - ws.docs.test')
-            ->and($output)->toContain('  allowed_origins:')
-            ->and($output)->toContain('    - https://docs.test')
-            ->and($output)->toContain('  reverb_app_id: docs')
-            ->and($output)->toContain('  reverb_app_key: reverb-key')
-            ->and($output)->toContain('  reverb_app_secret: reverb-secret')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('credentials:')
+            ->and($output)
+            ->toContain('  app: docs')
+            ->and($output)
+            ->toContain('  internal_host: websocket.orbit')
+            ->and($output)
+            ->toContain('  public_hosts:')
+            ->and($output)
+            ->toContain('    - ws.docs.test')
+            ->and($output)
+            ->toContain('  allowed_origins:')
+            ->and($output)
+            ->toContain('    - https://docs.test')
+            ->and($output)
+            ->toContain('  reverb_app_id: docs')
+            ->and($output)
+            ->toContain('  reverb_app_key: reverb-key')
+            ->and($output)
+            ->toContain('  reverb_app_secret: reverb-secret')
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('requires an app selector before sending gateway requests', function (): void {
@@ -78,9 +98,12 @@ describe('AppWebSocketCredentialsCommand', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
@@ -97,8 +120,11 @@ describe('AppWebSocketCredentialsCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('app:credentials');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('app:credentials');
     });
 });

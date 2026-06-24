@@ -139,8 +139,16 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'code' => 'remote_shell_failed',
                     'duration_ms' => $sanitizedResult->durationMs,
                 ],
-                stdoutSummary: $this->outputSummary($sanitizedResult->stdout, $dispatch['operationToken'], (bool) ($transportOptions['redact_stdout'] ?? false)),
-                stderrSummary: $this->outputSummary($sanitizedResult->stderr, $dispatch['operationToken'], (bool) ($transportOptions['redact_stderr'] ?? false)),
+                stdoutSummary: $this->outputSummary(
+                    $sanitizedResult->stdout,
+                    $dispatch['operationToken'],
+                    $transportOptions['redact_stdout'] ?? false,
+                ),
+                stderrSummary: $this->outputSummary(
+                    $sanitizedResult->stderr,
+                    $dispatch['operationToken'],
+                    $transportOptions['redact_stderr'] ?? false,
+                ),
             );
 
             $this->logCompleted(
@@ -198,8 +206,16 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         $this->operationRuns->succeeded(
             id: $run->id,
             exitCode: $result->exitCode,
-            stdoutSummary: $this->outputSummary($result->stdout, $dispatch['operationToken'], (bool) ($transportOptions['redact_stdout'] ?? false)),
-            stderrSummary: $this->outputSummary($result->stderr, $dispatch['operationToken'], (bool) ($transportOptions['redact_stderr'] ?? false)),
+            stdoutSummary: $this->outputSummary(
+                $result->stdout,
+                $dispatch['operationToken'],
+                $transportOptions['redact_stdout'] ?? false,
+            ),
+            stderrSummary: $this->outputSummary(
+                $result->stderr,
+                $dispatch['operationToken'],
+                $transportOptions['redact_stderr'] ?? false,
+            ),
         );
 
         $this->logCompleted(
@@ -278,11 +294,13 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
             operationToken: 'validation-placeholder',
         );
 
-        $operationToken = $this->operationTokens->mint(
-            operationId: $operationId,
-            targetNode: (string) $node->name,
-            command: $commandName,
-        )->toString();
+        $operationToken = $this->operationTokens
+            ->mint(
+                operationId: $operationId,
+                targetNode: $node->name,
+                command: $commandName,
+            )
+            ->toString();
 
         return [
             'operationToken' => $operationToken,
@@ -328,7 +346,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'status' => 'dispatching',
                     'operation_id' => $operationId,
                     'target_node_id' => $node->getKey(),
-                    'target_node_name' => (string) $node->name,
+                    'target_node_name' => $node->name,
                     'command' => $commandName,
                     'arguments' => $this->scalarPayload($arguments),
                     'command_options' => $this->scalarPayload($commandOptions, $redactedCommandOptionNames),
@@ -360,11 +378,19 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'status' => $status,
                     'operation_id' => $operationId,
                     'target_node_id' => $node->getKey(),
-                    'target_node_name' => (string) $node->name,
+                    'target_node_name' => $node->name,
                     'command' => $commandName,
                     'exit_code' => $result->exitCode,
-                    'stdout_summary' => $this->outputSummary($result->stdout, $operationToken, (bool) ($transportOptions['redact_stdout'] ?? false)),
-                    'stderr_summary' => $this->outputSummary($result->stderr, $operationToken, (bool) ($transportOptions['redact_stderr'] ?? false)),
+                    'stdout_summary' => $this->outputSummary(
+                        $result->stdout,
+                        $operationToken,
+                        (bool) ($transportOptions['redact_stdout'] ?? false),
+                    ),
+                    'stderr_summary' => $this->outputSummary(
+                        $result->stderr,
+                        $operationToken,
+                        (bool) ($transportOptions['redact_stderr'] ?? false),
+                    ),
                     'duration_ms' => $result->durationMs,
                 ],
             ),
@@ -390,7 +416,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
                     'status' => 'failed',
                     'operation_id' => $operationId,
                     'target_node_id' => $node->getKey(),
-                    'target_node_name' => (string) $node->name,
+                    'target_node_name' => $node->name,
                     'command' => $commandName,
                     'exit_code' => null,
                     'stdout_summary' => '',
@@ -505,8 +531,7 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      */
     private function shouldSuppressExceptionMessage(array $transportOptions): bool
     {
-        return (bool) ($transportOptions['redact_stdout'] ?? false)
-            || (bool) ($transportOptions['redact_stderr'] ?? false);
+        return ($transportOptions['redact_stdout'] ?? false) || ($transportOptions['redact_stderr'] ?? false);
     }
 
     /**
@@ -533,11 +558,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
 
     private function redactOperationToken(string $value, string $operationToken): string
     {
-        $redacted = preg_replace(
-            '/--operation-token\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
-            '--operation-token='.self::REDACTED_VALUE,
-            $value,
-        ) ?? $value;
+        $redacted =
+            preg_replace(
+                '/--operation-token\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
+                '--operation-token='.self::REDACTED_VALUE,
+                $value,
+            ) ?? $value;
 
         if ($operationToken === '') {
             return $redacted;
@@ -713,11 +739,12 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
         $redacted = $value;
 
         foreach ($optionNames as $optionName) {
-            $redacted = preg_replace(
-                '/--'.preg_quote($optionName, '/').'\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
-                "--{$optionName}=".self::REDACTED_VALUE,
-                $redacted,
-            ) ?? $redacted;
+            $redacted =
+                preg_replace(
+                    '/--'.preg_quote($optionName, '/').'\s*(?:=\s*|\s+)(?:"[^"]*"|\'[^\']*\'|\S+)/',
+                    "--{$optionName}=".self::REDACTED_VALUE,
+                    $redacted,
+                ) ?? $redacted;
         }
 
         return $redacted;
@@ -842,7 +869,11 @@ final readonly class RemoteLocalExecutor implements RemoteExecutor
      */
     private function transportDispatchOptions(array $transportOptions): array
     {
-        unset($transportOptions['redact_stdout'], $transportOptions['redact_stderr'], $transportOptions['redact_command_options']);
+        unset(
+            $transportOptions['redact_stdout'],
+            $transportOptions['redact_stderr'],
+            $transportOptions['redact_command_options'],
+        );
 
         $environment = $this->transportEnvironment($transportOptions);
         $environment['HOME'] = self::LOCAL_EXECUTOR_HOME;
@@ -934,8 +965,11 @@ final class RemoteLocalExecutorTransportFailed extends RuntimeException
     /**
      * @param  array<array-key, mixed>  $meta
      */
-    public function __construct(string $message, public readonly array $meta = [], int $code = 0)
-    {
+    public function __construct(
+        string $message,
+        public readonly array $meta = [],
+        int $code = 0,
+    ) {
         parent::__construct($message, $code);
     }
 }

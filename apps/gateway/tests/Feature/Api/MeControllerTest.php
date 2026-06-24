@@ -52,7 +52,8 @@ describe('GET /api/me', function (): void {
     it('returns 403 for unknown peer', function (): void {
         $response = getJson('/api/me');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertExactJson([
                 'error' => [
                     'code' => 'authorization_failed',
@@ -73,7 +74,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertExactJson([
                 'success' => [
                     'data' => [
@@ -116,7 +118,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.2']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertExactJson([
                 'success' => [
                     'data' => [
@@ -168,7 +171,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.self.platform', 'unknown')
             ->assertJsonPath('success.data.self.status', 'active');
     });
@@ -187,7 +191,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.self.roles.0.role', 'app-dev')
             ->assertJsonMissingPath('success.data.self.environment')
             ->assertJsonMissingPath('success.data.gateway.environment');
@@ -206,7 +211,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.9']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonMissingPath('success.data.self.environment')
             ->assertJsonMissingPath('success.data.gateway.environment');
     });
@@ -246,7 +252,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.self.roles', [
                 [
                     'role' => 'database',
@@ -286,7 +293,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.6.0.8']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.gateway.name', 'gateway-1')
             ->assertJsonPath('success.data.gateway.roles.0.role', 'gateway');
     });
@@ -304,8 +312,9 @@ describe('GET /api/me', function (): void {
         $response->assertOk();
 
         $json = $response->json();
-        expect($json['success']['data']['self'])->not->toHaveKey('id')
-            ->and($json['success']['data']['gateway'])->not->toHaveKey('id');
+        expect($json['success']['data']['self'])
+            ->not->toHaveKey('id')->and($json['success']['data']['gateway'])
+            ->not->toHaveKey('id');
     });
 
     it('authenticates scheduler clients by wireguard address instead of client headers', function (): void {
@@ -332,7 +341,8 @@ describe('GET /api/me', function (): void {
             ],
         );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.self.name', 'app-1')
             ->assertJsonPath('success.data.self.roles.0.role', 'app-dev')
             ->assertJsonMissingPath('success.data.self.role');
@@ -425,7 +435,8 @@ describe('GET /api/me', function (): void {
 
         $response = call('GET', '/api/me', [], [], [], ['REMOTE_ADDR' => '10.61.0.3']);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.self.name', 'peer-1')
             ->assertJsonPath('success.data.self.addresses.wireguard', '10.6.0.3');
     });

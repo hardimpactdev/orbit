@@ -19,18 +19,21 @@ it('lists Orbit-managed resolver overrides on a Linux operator node', function (
         $result = $topology->ssh('operator', "cd {$topology->checkout('operator')} && orbit dns:list --json");
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($payload['success']['data']['dns'])->toBe([
-            [
-                'tld' => 'test',
-                'target' => '10.6.0.7',
-                'source' => 'local_resolver',
+        expect($payload['success']['data']['dns'])
+            ->toBe([
+                [
+                    'tld' => 'test',
+                    'target' => '10.6.0.7',
+                    'source' => 'local_resolver',
+                    'resolver_backend' => 'dnsmasq',
+                    'status' => 'active',
+                ],
+            ])
+            ->and($payload['success']['meta'])
+            ->toBe([
+                'count' => 1,
                 'resolver_backend' => 'dnsmasq',
-                'status' => 'active',
-            ],
-        ])->and($payload['success']['meta'])->toBe([
-            'count' => 1,
-            'resolver_backend' => 'dnsmasq',
-        ]);
+            ]);
     } finally {
         $topology->cleanup();
     }

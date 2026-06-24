@@ -12,10 +12,13 @@ it('routes the private s3 service to a seaweedfs backend through the router and 
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev, withGatewayApi: true);
 
     try {
-        expect($topology->lease()->prodApp())->toBeNull()
-            ->and($topology->lease()->agent())->toBeNull()
-            ->and($topology->lease()->devApp())->not->toBeNull()
-            ->and($topology->lease()->gateway())->not->toBeNull();
+        expect($topology->lease()->prodApp())
+            ->toBeNull()
+            ->and($topology->lease()->agent())
+            ->toBeNull()
+            ->and($topology->lease()->devApp())
+            ->not->toBeNull()->and($topology->lease()->gateway())
+            ->not->toBeNull();
 
         $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
@@ -34,20 +37,29 @@ it('routes the private s3 service to a seaweedfs backend through the router and 
         $config = $route['config'];
         $renderedRoute = $snapshot['rendered_route'];
 
-        expect($route)->toMatchArray([
-            'domain' => 's3.orbit',
-            'node' => 'gateway',
-            'owner_type' => 'router',
-            'kind' => 'proxy',
-        ])
-            ->and($snapshot['proxy_route_count'])->toBe(1)
-            ->and($route['source_hash'])->toBe($route['expected_source_hash'])
-            ->and($config['protocol'])->toBe('s3')
-            ->and($config['owner_name'])->toBe('seaweedfs')
-            ->and($config['upstreams'][0]['scheme'])->toBe('http')
-            ->and($config['upstreams'][0]['host'])->toBe('app-dev-1.s3.orbit')
-            ->and($config['upstreams'][0]['port'])->toBe(8333)
-            ->and($config['target']['value'])->toBe('http://app-dev-1.s3.orbit:8333');
+        expect($route)
+            ->toMatchArray([
+                'domain' => 's3.orbit',
+                'node' => 'gateway',
+                'owner_type' => 'router',
+                'kind' => 'proxy',
+            ])
+            ->and($snapshot['proxy_route_count'])
+            ->toBe(1)
+            ->and($route['source_hash'])
+            ->toBe($route['expected_source_hash'])
+            ->and($config['protocol'])
+            ->toBe('s3')
+            ->and($config['owner_name'])
+            ->toBe('seaweedfs')
+            ->and($config['upstreams'][0]['scheme'])
+            ->toBe('http')
+            ->and($config['upstreams'][0]['host'])
+            ->toBe('app-dev-1.s3.orbit')
+            ->and($config['upstreams'][0]['port'])
+            ->toBe(8333)
+            ->and($config['target']['value'])
+            ->toBe('http://app-dev-1.s3.orbit:8333');
 
         expect($renderedRoute)
             ->toContain('s3.orbit {')
@@ -67,14 +79,22 @@ it('routes the private s3 service to a seaweedfs backend through the router and 
         $credentials = $payload['success']['data']['credentials'] ?? [];
         $meta = $payload['success']['meta'] ?? [];
 
-        expect($credResult->successful())->toBeTrue()
-            ->and($credentials['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($credentials['region'])->toBe('orbit')
-            ->and($credentials['access_key_id'])->toBe('TESTKEYID12345678901')
-            ->and($credentials['secret_access_key'])->toBe('test-secret-access-key-e2e')
-            ->and($credentials['bucket_endpoint_style'])->toBe('path')
-            ->and($credentials['backend_pool'])->toContain('http://app-dev-1.s3.orbit:8333')
-            ->and($meta['tool'])->toBe('seaweedfs');
+        expect($credResult->successful())
+            ->toBeTrue()
+            ->and($credentials['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($credentials['region'])
+            ->toBe('orbit')
+            ->and($credentials['access_key_id'])
+            ->toBe('TESTKEYID12345678901')
+            ->and($credentials['secret_access_key'])
+            ->toBe('test-secret-access-key-e2e')
+            ->and($credentials['bucket_endpoint_style'])
+            ->toBe('path')
+            ->and($credentials['backend_pool'])
+            ->toContain('http://app-dev-1.s3.orbit:8333')
+            ->and($meta['tool'])
+            ->toBe('seaweedfs');
     } finally {
         $topology->cleanup();
     }
@@ -98,63 +118,63 @@ it('routes the private s3 service to a seaweedfs backend through the router and 
 function s3PrivateRouteSnapshot(E2ETopologyHarness $topology): array
 {
     $php = <<<'PHP'
-$appDevNode = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $appDevNode = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\App\Models\NodeRoleAssignment::query()->updateOrCreate(
-    [
-        'node_id' => $appDevNode->id,
-        'role' => 's3',
-    ],
-    [
-        'status' => 'active',
-        'settings' => ['data_path' => '/srv/orbit/s3/data'],
-        'last_error' => null,
-        'converged_at' => now(),
-    ],
-);
-
-\App\Models\NodeTool::query()->updateOrCreate(
-    [
-        'node_id' => $appDevNode->id,
-        'name' => 'seaweedfs',
-    ],
-    [
-        'expected_state' => 'running',
-        'config' => [
-            'backend_host' => 'app-dev-1.s3.orbit',
-            'public_hosts' => [],
-        ],
-        'credentials' => [
-            'fields' => [
-                'access_key_id' => 'TESTKEYID12345678901',
-                'secret_access_key' => 'test-secret-access-key-e2e',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        \App\Models\NodeRoleAssignment::query()->updateOrCreate(
+            [
+                'node_id' => $appDevNode->id,
+                'role' => 's3',
             ],
-        ],
-    ],
-);
+            [
+                'status' => 'active',
+                'settings' => ['data_path' => '/srv/orbit/s3/data'],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
 
-$route = app(\App\Services\S3\S3RouteRegistrar::class)->syncServiceRoute()->load('node');
-$renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
+        \App\Models\NodeTool::query()->updateOrCreate(
+            [
+                'node_id' => $appDevNode->id,
+                'name' => 'seaweedfs',
+            ],
+            [
+                'expected_state' => 'running',
+                'config' => [
+                    'backend_host' => 'app-dev-1.s3.orbit',
+                    'public_hosts' => [],
+                ],
+                'credentials' => [
+                    'fields' => [
+                        'access_key_id' => 'TESTKEYID12345678901',
+                        'secret_access_key' => 'test-secret-access-key-e2e',
+                        'region' => 'orbit',
+                        'endpoint' => 'https://s3.orbit',
+                        'bucket_style' => 'path',
+                    ],
+                ],
+            ],
+        );
 
-echo json_encode([
-    'route' => [
-        'domain' => $route->domain,
-        'node' => $route->node->name,
-        'owner_type' => $route->owner_type,
-        'kind' => $route->kind,
-        'config' => $route->config,
-        'source_hash' => $route->source_hash,
-        'expected_source_hash' => $renderer->sourceHash($route),
-    ],
-    'rendered_route' => $renderer->render($route),
-    'proxy_route_count' => \App\Models\ProxyRoute::query()
-        ->where('domain', \App\Services\S3\S3RouteRegistrar::ServiceDomain)
-        ->count(),
-], JSON_THROW_ON_ERROR);
-PHP;
+        $route = app(\App\Services\S3\S3RouteRegistrar::class)->syncServiceRoute()->load('node');
+        $renderer = app(\App\Services\Proxy\ProxyRouteRenderer::class);
+
+        echo json_encode([
+            'route' => [
+                'domain' => $route->domain,
+                'node' => $route->node->name,
+                'owner_type' => $route->owner_type,
+                'kind' => $route->kind,
+                'config' => $route->config,
+                'source_hash' => $route->source_hash,
+                'expected_source_hash' => $renderer->sourceHash($route),
+            ],
+            'rendered_route' => $renderer->render($route),
+            'proxy_route_count' => \App\Models\ProxyRoute::query()
+                ->where('domain', \App\Services\S3\S3RouteRegistrar::ServiceDomain)
+                ->count(),
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = $topology->ssh(
         'gateway',

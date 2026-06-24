@@ -10,7 +10,9 @@ use RuntimeException;
 
 class IncusImageDistributor
 {
-    public function __construct(private readonly IncusHost $sourceHost) {}
+    public function __construct(
+        private readonly IncusHost $sourceHost,
+    ) {}
 
     /**
      * @param  list<IncusHost>  $targetHosts
@@ -31,7 +33,10 @@ class IncusImageDistributor
         $sourceDirectory = null;
 
         try {
-            $sourceDirectory = $this->createRemoteWorkDirectory($this->sourceHost, '/tmp/orbit-e2e-image-export-XXXXXX');
+            $sourceDirectory = $this->createRemoteWorkDirectory(
+                $this->sourceHost,
+                '/tmp/orbit-e2e-image-export-XXXXXX',
+            );
             $sourceArchive = "{$sourceDirectory}/image-export.tar.gz";
             $localArchive = "{$localDirectory}/image-export.tar.gz";
 
@@ -77,7 +82,9 @@ class IncusImageDistributor
         $result = $host->run('mktemp -d '.escapeshellarg($template), timeoutSeconds: 30);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not create image export directory on {$host->config->host}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create image export directory on {$host->config->host}: {$result->errorOutput()}",
+            );
         }
 
         $directory = trim($result->output());
@@ -99,7 +106,9 @@ class IncusImageDistributor
         ), timeoutSeconds: $this->sourceHost->config->timeoutSeconds);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not export Incus image [{$alias}] on {$this->sourceHost->config->host}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not export Incus image [{$alias}] on {$this->sourceHost->config->host}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -113,7 +122,9 @@ class IncusImageDistributor
         ));
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not copy image archive from {$host->config->host}:{$remotePath}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not copy image archive from {$host->config->host}:{$remotePath}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -125,10 +136,15 @@ class IncusImageDistributor
             $remoteArchive = "{$targetDirectory}/image-export.tar.gz";
             $this->copyToHost($targetHost, $localArchive, $remoteArchive);
 
-            $result = $targetHost->run($this->importCommand($alias, $targetDirectory, $remoteArchive), timeoutSeconds: $targetHost->config->timeoutSeconds);
+            $result = $targetHost->run(
+                $this->importCommand($alias, $targetDirectory, $remoteArchive),
+                timeoutSeconds: $targetHost->config->timeoutSeconds,
+            );
 
             if (! $result->successful()) {
-                throw new RuntimeException("Could not import Incus image [{$alias}] on {$targetHost->config->host}: {$result->errorOutput()}");
+                throw new RuntimeException(
+                    "Could not import Incus image [{$alias}] on {$targetHost->config->host}: {$result->errorOutput()}",
+                );
             }
         } finally {
             $targetHost->run('rm -rf '.escapeshellarg($targetDirectory), timeoutSeconds: 60);
@@ -145,7 +161,9 @@ class IncusImageDistributor
         ));
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not copy image archive to {$host->config->host}:{$remotePath}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not copy image archive to {$host->config->host}:{$remotePath}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -156,17 +174,17 @@ class IncusImageDistributor
         $remoteArchive = escapeshellarg($remoteArchive);
 
         return <<<BASH
-mkdir -p {$targetDirectory}/import
-tar -C {$targetDirectory}/import -xzf {$remoteArchive}
-metadata_file=\$(find {$targetDirectory}/import -maxdepth 1 -type f \( -name '*.tar.xz' -o -name '*.tar.gz' -o -name '*.tar' \) | sort | head -n 1)
-test -n "\${metadata_file}"
-image_files=()
-while IFS= read -r image_file; do
-    image_files+=("\${image_file}")
-done < <(find {$targetDirectory}/import -maxdepth 1 -type f ! -path "\${metadata_file}" | sort)
-incus image delete {$alias} >/dev/null 2>&1 || true
-incus image import "\${metadata_file}" "\${image_files[@]}" --alias {$alias} >/dev/null
-BASH;
+            mkdir -p {$targetDirectory}/import
+            tar -C {$targetDirectory}/import -xzf {$remoteArchive}
+            metadata_file=\$(find {$targetDirectory}/import -maxdepth 1 -type f \( -name '*.tar.xz' -o -name '*.tar.gz' -o -name '*.tar' \) | sort | head -n 1)
+            test -n "\${metadata_file}"
+            image_files=()
+            while IFS= read -r image_file; do
+                image_files+=("\${image_file}")
+            done < <(find {$targetDirectory}/import -maxdepth 1 -type f ! -path "\${metadata_file}" | sort)
+            incus image delete {$alias} >/dev/null 2>&1 || true
+            incus image import "\${metadata_file}" "\${image_files[@]}" --alias {$alias} >/dev/null
+            BASH;
     }
 
     private function sameHost(IncusHost $sourceHost, IncusHost $targetHost): bool

@@ -11,7 +11,9 @@ use Throwable;
 
 final readonly class ToolShowLiveInspector
 {
-    public function __construct(private ToolsProbe $probe) {}
+    public function __construct(
+        private ToolsProbe $probe,
+    ) {}
 
     /**
      * @return array{observed_state: string|null, observed_version: string|null}
@@ -65,8 +67,13 @@ final readonly class ToolShowLiveInspector
 
 final class ToolShowLiveInspectionFailed extends RuntimeException
 {
-    private function __construct(string $message, public readonly string $tool, public readonly string $node, public readonly string $reason, ?Throwable $previous = null)
-    {
+    private function __construct(
+        string $message,
+        public readonly string $tool,
+        public readonly string $node,
+        public readonly string $reason,
+        ?Throwable $previous = null,
+    ) {
         parent::__construct($message, previous: $previous);
     }
 

@@ -40,7 +40,9 @@ final readonly class DatabaseConnectionPayload
         return new self(
             driver: $driver,
             host: is_string($payload['host'] ?? null) ? $payload['host'] : null,
-            port: is_int($payload['port'] ?? null) ? $payload['port'] : (is_numeric($payload['port'] ?? null) ? (int) $payload['port'] : null),
+            port: is_int($payload['port'] ?? null)
+                ? $payload['port']
+                : (is_numeric($payload['port'] ?? null) ? (int) $payload['port'] : null),
             database: is_string($payload['database'] ?? null) ? $payload['database'] : null,
             path: is_string($payload['path'] ?? null) ? $payload['path'] : null,
             username: is_string($payload['username'] ?? null) ? $payload['username'] : null,

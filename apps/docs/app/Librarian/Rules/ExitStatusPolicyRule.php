@@ -60,7 +60,7 @@ final readonly class ExitStatusPolicyRule implements GroupedRule
             }
 
             foreach ($matches[0] as $match) {
-                $violations[] = $this->lineForOffset($contents, $match[1]);
+                $violations[] = $this->lineForOffset($contents, (int) $match[1]);
             }
         }
 

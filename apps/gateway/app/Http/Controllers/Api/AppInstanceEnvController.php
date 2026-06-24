@@ -69,7 +69,10 @@ final class AppInstanceEnvController implements Loggable
         $value = $this->stringInput($request, 'value');
 
         if ($key === null || ! preg_match('/^[A-Z][A-Z0-9_]*$/', $key)) {
-            return $this->validationFailed('key', 'Env key must start with a letter and use only uppercase letters, digits, or underscores.');
+            return $this->validationFailed(
+                'key',
+                'Env key must start with a letter and use only uppercase letters, digits, or underscores.',
+            );
         }
 
         if ($value === null) {

@@ -46,17 +46,24 @@ it('stages GitHub auth for laravel installer repairs without embedding the token
 
     $result = app(ToolInstaller::class)->install('laravel-installer', node: 'app-dev-1');
 
-    expect($result)->toMatchArray([
-        'name' => 'laravel-installer',
-        'node' => 'app-dev-1',
-        'state' => 'installed',
-    ])
-        ->and($shell->options[0]['input'])->toBe(base64_encode('ghp_unit_secret'))
-        ->and($shell->scripts[0])->toContain('base64 -d')
-        ->and($shell->scripts[1])->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
-        ->and($shell->scripts[1])->toContain('composer config --global github-oauth.github.com')
-        ->and($shell->scripts[1])->toContain('gh auth login --hostname github.com --with-token')
-        ->and($shell->scripts[2])->toBe("rm -f '/tmp/orbit-secret.github'");
+    expect($result)
+        ->toMatchArray([
+            'name' => 'laravel-installer',
+            'node' => 'app-dev-1',
+            'state' => 'installed',
+        ])
+        ->and($shell->options[0]['input'])
+        ->toBe(base64_encode('ghp_unit_secret'))
+        ->and($shell->scripts[0])
+        ->toContain('base64 -d')
+        ->and($shell->scripts[1])
+        ->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
+        ->and($shell->scripts[1])
+        ->toContain('composer config --global github-oauth.github.com')
+        ->and($shell->scripts[1])
+        ->toContain('gh auth login --hostname github.com --with-token')
+        ->and($shell->scripts[2])
+        ->toBe("rm -f '/tmp/orbit-secret.github'");
 
     foreach ($shell->scripts as $script) {
         expect($script)
@@ -95,16 +102,23 @@ it('stages GitHub auth for laravel installer updates without embedding the token
 
     $result = app(ToolUpdater::class)->update('laravel-installer', node: 'app-dev-1');
 
-    expect($result)->toMatchArray([
-        'name' => 'laravel-installer',
-        'node' => 'app-dev-1',
-    ])
-        ->and($shell->options[0]['input'])->toBe(base64_encode('ghp_update_secret'))
-        ->and($shell->scripts[1])->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
-        ->and($shell->scripts[1])->toContain('composer config --global github-oauth.github.com')
-        ->and($shell->scripts[1])->toContain('composer global update laravel/installer')
-        ->and($shell->scripts[1])->toContain('gh auth login --hostname github.com --with-token')
-        ->and($shell->scripts[2])->toBe("rm -f '/tmp/orbit-secret.github'");
+    expect($result)
+        ->toMatchArray([
+            'name' => 'laravel-installer',
+            'node' => 'app-dev-1',
+        ])
+        ->and($shell->options[0]['input'])
+        ->toBe(base64_encode('ghp_update_secret'))
+        ->and($shell->scripts[1])
+        ->toContain("GITHUB_TOKEN_FILE='/tmp/orbit-secret.github'")
+        ->and($shell->scripts[1])
+        ->toContain('composer config --global github-oauth.github.com')
+        ->and($shell->scripts[1])
+        ->toContain('composer global update laravel/installer')
+        ->and($shell->scripts[1])
+        ->toContain('gh auth login --hostname github.com --with-token')
+        ->and($shell->scripts[2])
+        ->toBe("rm -f '/tmp/orbit-secret.github'");
 
     foreach ($shell->scripts as $script) {
         expect($script)
@@ -124,7 +138,9 @@ final class ToolInstallerGitHubAuthRecordingShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

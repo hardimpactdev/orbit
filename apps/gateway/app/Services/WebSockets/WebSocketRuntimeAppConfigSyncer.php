@@ -135,14 +135,14 @@ class WebSocketRuntimeAppConfigSyncer
 
         return sprintf(
             <<<'SH'
-set -e
-sudo install -d -m 0755 /etc/orbit/websocket
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0644 %s
-if docker container inspect %s >/dev/null 2>&1; then
-    docker restart %s >/dev/null
-fi
-SH,
+                set -e
+                sudo install -d -m 0755 /etc/orbit/websocket
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                sudo chmod 0644 %s
+                if docker container inspect %s >/dev/null 2>&1; then
+                    docker restart %s >/dev/null
+                fi
+                SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg(WebSocketRuntimeSourceInstaller::AppsConfigPath),
             escapeshellarg(WebSocketRuntimeSourceInstaller::AppsConfigPath),

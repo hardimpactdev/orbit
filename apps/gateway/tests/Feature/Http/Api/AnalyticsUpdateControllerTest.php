@@ -29,29 +29,33 @@ function createAnalyticsUpdateCallerNode(array $overrides = [], ?string $role = 
 
 function createAnalyticsUpdateNode(string $name = 'analytics-1'): Node
 {
-    return Node::factory()->withActiveRole('analytics')->create([
-        'name' => $name,
-        'wireguard_address' => '10.6.0.50',
-    ]);
+    return Node::factory()
+        ->withActiveRole('analytics')
+        ->create([
+            'name' => $name,
+            'wireguard_address' => '10.6.0.50',
+        ]);
 }
 
 function createAnalyticsUpdateProcess(Node $node, string $version = '3.2.1'): Process
 {
-    return Process::factory()->forOwner($node)->create([
-        'name' => 'plausible',
-        'command' => 'plausible start',
-        'runtime' => ProcessRuntime::DockerSwarm,
-        'runtime_config' => [
-            'service' => 'plausible',
-            'version_family' => $version,
-            'version' => $version,
-            'image' => "ghcr.io/plausible/community-edition:{$version}",
-            'labels' => [
-                'orbit.process.service' => 'plausible',
-                'orbit.process.version' => $version,
+    return Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'plausible',
+            'command' => 'plausible start',
+            'runtime' => ProcessRuntime::DockerSwarm,
+            'runtime_config' => [
+                'service' => 'plausible',
+                'version_family' => $version,
+                'version' => $version,
+                'image' => "ghcr.io/plausible/community-edition:{$version}",
+                'labels' => [
+                    'orbit.process.service' => 'plausible',
+                    'orbit.process.version' => $version,
+                ],
             ],
-        ],
-    ]);
+        ]);
 }
 
 function grantAnalyticsUpdateAccess(Node $caller, Node $analyticsNode): void
@@ -96,7 +100,8 @@ describe('AnalyticsUpdateController', function (): void {
             'node' => 'analytics-1',
         ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.analytics.node', 'analytics-1')
             ->assertJsonPath('success.data.analytics.process', 'plausible')
             ->assertJsonPath('success.data.analytics.previous_version', '3.2.1')
@@ -105,12 +110,18 @@ describe('AnalyticsUpdateController', function (): void {
 
         $runtimeConfig = $process->refresh()->runtime_config;
 
-        expect($runtimeConfig['version'])->toBe('3.2.2')
-            ->and($runtimeConfig['version_family'])->toBe('3.2.2')
-            ->and($runtimeConfig['image'])->toBe('ghcr.io/plausible/community-edition:3.2.2')
-            ->and($runtimeConfig['service'])->toBe('plausible')
-            ->and($runtimeConfig['labels']['orbit.process.service'])->toBe('plausible')
-            ->and($runtimeConfig['labels']['orbit.process.version'])->toBe('3.2.2');
+        expect($runtimeConfig['version'])
+            ->toBe('3.2.2')
+            ->and($runtimeConfig['version_family'])
+            ->toBe('3.2.2')
+            ->and($runtimeConfig['image'])
+            ->toBe('ghcr.io/plausible/community-edition:3.2.2')
+            ->and($runtimeConfig['service'])
+            ->toBe('plausible')
+            ->and($runtimeConfig['labels']['orbit.process.service'])
+            ->toBe('plausible')
+            ->and($runtimeConfig['labels']['orbit.process.version'])
+            ->toBe('3.2.2');
     });
 
     it('rejects missing versions before mutating Plausible intent', function (): void {
@@ -120,7 +131,8 @@ describe('AnalyticsUpdateController', function (): void {
 
         $response = postAnalyticsUpdateJson([]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'version');
 
@@ -134,7 +146,8 @@ describe('AnalyticsUpdateController', function (): void {
             'version' => '3.2.2',
         ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.prerequisite_failed')
             ->assertJsonPath('error.meta.version', '3.2.2');
     });
@@ -149,7 +162,8 @@ describe('AnalyticsUpdateController', function (): void {
             'node' => 'analytics-1',
         ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'process:edit');
 

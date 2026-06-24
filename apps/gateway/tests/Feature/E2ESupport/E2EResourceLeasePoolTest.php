@@ -21,9 +21,12 @@ it('acquires and releases a named resource slot', function (): void {
 
     $lease = $pool->acquire('docker', ['sidecar1' => 2]);
 
-    expect($lease->backend())->toBe('docker')
-        ->and($lease->host())->toBe('sidecar1')
-        ->and($lease->slot())->toBe(1);
+    expect($lease->backend())
+        ->toBe('docker')
+        ->and($lease->host())
+        ->toBe('sidecar1')
+        ->and($lease->slot())
+        ->toBe(1);
 
     expect($pool->snapshot('docker', ['sidecar1' => 2]))->toMatchArray([
         ['host' => 'sidecar1', 'slot' => 1, 'leased' => true],
@@ -44,8 +47,7 @@ it('allocates different slots while prior leases are held', function (): void {
     $first = $pool->acquire('docker', ['sidecar1' => 2]);
     $second = $pool->acquire('docker', ['sidecar1' => 2]);
 
-    expect($first->slot())->toBe(1)
-        ->and($second->slot())->toBe(2);
+    expect($first->slot())->toBe(1)->and($second->slot())->toBe(2);
 
     $first->release();
     $second->release();
@@ -56,8 +58,10 @@ it('acquires and releases weighted capacity on one host', function (): void {
 
     $lease = $pool->acquireWeighted('incus', ['beast' => 4], slots: 3);
 
-    expect($lease->host())->toBe('beast')
-        ->and($pool->snapshot('incus', ['beast' => 4]))->toMatchArray([
+    expect($lease->host())
+        ->toBe('beast')
+        ->and($pool->snapshot('incus', ['beast' => 4]))
+        ->toMatchArray([
             ['host' => 'beast', 'slot' => 1, 'leased' => true],
             ['host' => 'beast', 'slot' => 2, 'leased' => true],
             ['host' => 'beast', 'slot' => 3, 'leased' => true],
@@ -97,8 +101,7 @@ it('keeps different backends independent on non-exclusive hosts', function (): v
     $incus = $pool->acquire('incus', ['beast' => 1]);
     $docker = $pool->acquire('docker', ['beast' => 1]);
 
-    expect($incus->host())->toBe('beast')
-        ->and($docker->host())->toBe('beast');
+    expect($incus->host())->toBe('beast')->and($docker->host())->toBe('beast');
 
     $incus->release();
     $docker->release();
@@ -110,9 +113,12 @@ it('blocks other backends on configured exclusive hosts while allowing same back
     $firstDocker = $pool->acquire('docker', ['beast' => 2], ['beast']);
     $secondDocker = $pool->acquire('docker', ['beast' => 2], ['beast']);
 
-    expect($firstDocker->slot())->toBe(1)
-        ->and($secondDocker->slot())->toBe(2)
-        ->and($pool->snapshot('incus', ['beast' => 1], ['beast']))->toMatchArray([
+    expect($firstDocker->slot())
+        ->toBe(1)
+        ->and($secondDocker->slot())
+        ->toBe(2)
+        ->and($pool->snapshot('incus', ['beast' => 1], ['beast']))
+        ->toMatchArray([
             ['host' => 'beast', 'slot' => 1, 'leased' => true],
         ]);
 
@@ -166,8 +172,7 @@ it('reclaims stale leases before acquiring', function (): void {
 
     $fresh = $pool->acquire('docker', ['beast' => 1]);
 
-    expect($stale->slot())->toBe(1)
-        ->and($fresh->slot())->toBe(1);
+    expect($stale->slot())->toBe(1)->and($fresh->slot())->toBe(1);
 
     $fresh->release();
 });
@@ -183,22 +188,25 @@ it('reclaims leases owned by dead processes before acquiring', function (): void
 
     $fresh = $pool->acquire('docker', ['beast' => 1]);
 
-    expect($lease->slot())->toBe(1)
-        ->and($fresh->slot())->toBe(1);
+    expect($lease->slot())->toBe(1)->and($fresh->slot())->toBe(1);
 
     $fresh->release();
 });
 
 it('uses an explicit lease directory from the environment', function (): void {
-    withE2EEnvironment([], [
-        'ORBIT_E2E_LEASE_DIRECTORY' => $this->leaseDirectory,
-        'ORBIT_E2E_SLOT_WAIT_SECONDS' => '3',
-        'ORBIT_E2E_SLOT_STALE_SECONDS' => '4',
-    ], function (): void {
-        $pool = E2EResourceLeasePool::fromEnvironment();
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_LEASE_DIRECTORY' => $this->leaseDirectory,
+            'ORBIT_E2E_SLOT_WAIT_SECONDS' => '3',
+            'ORBIT_E2E_SLOT_STALE_SECONDS' => '4',
+        ],
+        function (): void {
+            $pool = E2EResourceLeasePool::fromEnvironment();
 
-        expect($pool->directory())->toBe($this->leaseDirectory);
-    });
+            expect($pool->directory())->toBe($this->leaseDirectory);
+        },
+    );
 });
 
 it('uses the main checkout lease directory for git worktrees', function (): void {

@@ -23,7 +23,8 @@ function createFirewallRuleMutationCallerNode(array $overrides = [], ?string $ro
         'name' => 'caller',
         'host' => FIREWALL_RULE_MUTATION_CALLER_WG_IP,
         'wireguard_address' => FIREWALL_RULE_MUTATION_CALLER_WG_IP,
-        'platform' => 'ubuntu'], $overrides);
+        'platform' => 'ubuntu',
+    ], $overrides);
 
     return match ($role) {
         'app-dev' => createTestAppHostNode($attributes),
@@ -38,7 +39,8 @@ function grantFirewallRuleMutationAccess(Node $caller, Node $servingNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $servingNode->id,
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('FirewallRule mutation controllers', function (): void {
@@ -47,15 +49,24 @@ describe('FirewallRule mutation controllers', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
         grantFirewallRuleMutationAccess($caller, $node);
 
-        $response = $this->call('POST', '/api/firewall-rules', [
-            'action' => 'allow',
-            'name' => 'local-vite',
-            'node' => 'app-1',
-            'source' => '10.6.0.0/24',
-            'port' => '5173',
-            'protocol' => 'tcp'], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/firewall-rules',
+            [
+                'action' => 'allow',
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'source' => '10.6.0.0/24',
+                'port' => '5173',
+                'protocol' => 'tcp',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.rule.name', 'local-vite')
             ->assertJsonPath('success.meta.backend_enacted', true)
             ->assertJsonPath('success.meta.warnings', []);
@@ -67,11 +78,19 @@ describe('FirewallRule mutation controllers', function (): void {
         createFirewallRuleMutationCallerNode();
         createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
 
-        $response = $this->call('POST', '/api/firewall-rules', [
-            'action' => 'allow',
-            'name' => 'local-vite',
-            'node' => 'app-1',
-            'port' => '5173'], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/firewall-rules',
+            [
+                'action' => 'allow',
+                'name' => 'local-vite',
+                'node' => 'app-1',
+                'port' => '5173',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -84,7 +103,14 @@ describe('FirewallRule mutation controllers', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
-        $response = $this->call('DELETE', '/api/firewall-rules/local-vite?node=app-1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/firewall-rules/local-vite?node=app-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'destructive_consent_required');
@@ -97,9 +123,17 @@ describe('FirewallRule mutation controllers', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'platform' => 'ubuntu']);
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite']);
 
-        $response = $this->call('DELETE', '/api/firewall-rules/local-vite?node=app-1&destructive_consent=1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/firewall-rules/local-vite?node=app-1&destructive_consent=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.rule.status', 'removed_with_drift')
             ->assertJsonPath('success.meta.backend_removed', true)
             ->assertJsonPath('success.meta.warnings', []);
@@ -118,9 +152,17 @@ describe('FirewallRule mutation controllers', function (): void {
             'address_family' => 'v4',
             'interface' => 'public',
             'owner' => 'node-security',
-            'protected' => true]);
+            'protected' => true,
+        ]);
 
-        $response = $this->call('DELETE', '/api/firewall-rules/orbit-public-ssh-deny-v4?node=app-1&destructive_consent=1', [], [], [], ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP]);
+        $response = $this->call(
+            'DELETE',
+            '/api/firewall-rules/orbit-public-ssh-deny-v4?node=app-1&destructive_consent=1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => FIREWALL_RULE_MUTATION_CALLER_WG_IP],
+        );
 
         $response->assertStatus(422)
             ->assertJsonPath('error.code', 'firewall_rule.protected');

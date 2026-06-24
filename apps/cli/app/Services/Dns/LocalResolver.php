@@ -77,8 +77,7 @@ class LocalResolver implements ResolvesLocalDns
 
         $prefix = trim($prefixResult->output());
 
-        return is_executable("{$prefix}/sbin/dnsmasq")
-            || is_executable("{$prefix}/bin/dnsmasq");
+        return is_executable("{$prefix}/sbin/dnsmasq") || is_executable("{$prefix}/bin/dnsmasq");
     }
 
     public function existingTarget(string $tld): ?string
@@ -165,7 +164,11 @@ class LocalResolver implements ResolvesLocalDns
                 $refreshError = $this->refreshDnsmasq($tld, $target);
 
                 if ($refreshError !== null) {
-                    return ['status' => 'refresh_failed', 'changed' => $configChanged || $systemResolverChanged, 'error' => $refreshError];
+                    return [
+                        'status' => 'refresh_failed',
+                        'changed' => $configChanged || $systemResolverChanged,
+                        'error' => $refreshError,
+                    ];
                 }
             }
 
@@ -178,12 +181,19 @@ class LocalResolver implements ResolvesLocalDns
 
         File::put($this->configPath($tld), "address=/{$tld}/{$target}\n");
 
-        $resolverWriteCommand = "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null';
+        $resolverWriteCommand =
+            "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee "
+            .escapeshellarg("/etc/resolver/{$tld}")
+            .' > /dev/null';
 
         try {
             $resolverResult = Process::timeout(10)->run($resolverWriteCommand);
         } catch (ProcessTimedOutException $exception) {
-            return ['status' => 'write_failed', 'changed' => false, 'error' => $this->formatTimeoutFailure($resolverWriteCommand, $exception)];
+            return [
+                'status' => 'write_failed',
+                'changed' => false,
+                'error' => $this->formatTimeoutFailure($resolverWriteCommand, $exception),
+            ];
         }
 
         if (! $resolverResult->successful()) {
@@ -224,7 +234,11 @@ class LocalResolver implements ResolvesLocalDns
             try {
                 $removeResult = Process::timeout(10)->run($removeCommand);
             } catch (ProcessTimedOutException $exception) {
-                return ['status' => 'write_failed', 'changed' => true, 'error' => $this->formatTimeoutFailure($removeCommand, $exception)];
+                return [
+                    'status' => 'write_failed',
+                    'changed' => true,
+                    'error' => $this->formatTimeoutFailure($removeCommand, $exception),
+                ];
             }
 
             if (! $removeResult->successful()) {
@@ -256,7 +270,10 @@ class LocalResolver implements ResolvesLocalDns
             return ['changed' => false];
         }
 
-        $writeCommand = "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee ".escapeshellarg("/etc/resolver/{$tld}").' > /dev/null';
+        $writeCommand =
+            "sudo -n mkdir -p /etc/resolver && echo 'nameserver 127.0.0.1' | sudo -n tee "
+            .escapeshellarg("/etc/resolver/{$tld}")
+            .' > /dev/null';
 
         try {
             $writeResult = Process::timeout(10)->run($writeCommand);
@@ -395,7 +412,10 @@ class LocalResolver implements ResolvesLocalDns
         }
 
         if (! $restartResult->successful()) {
-            return trim($restartResult->errorOutput()) ?: 'Failed to restart dnsmasq with sudo brew services restart dnsmasq.';
+            return (
+                trim($restartResult->errorOutput())
+                ?: 'Failed to restart dnsmasq with sudo brew services restart dnsmasq.'
+            );
         }
 
         if ($tld === null || $target === null) {
@@ -417,8 +437,11 @@ class LocalResolver implements ResolvesLocalDns
         return $this->verifyDnsmasqServesTarget($tld, $target);
     }
 
-    private function verifyDnsmasqServesTarget(string $tld, string $target, bool $includeServiceDiagnostics = true): ?string
-    {
+    private function verifyDnsmasqServesTarget(
+        string $tld,
+        string $target,
+        bool $includeServiceDiagnostics = true,
+    ): ?string {
         $hostname = "orbit-local-resolver-health.{$tld}";
         $command = "dig @127.0.0.1 {$hostname} +short";
 

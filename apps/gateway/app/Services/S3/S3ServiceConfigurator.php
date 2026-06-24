@@ -109,12 +109,14 @@ final readonly class S3ServiceConfigurator
         $accessKeyId = $fields['access_key_id'] ?? null;
         $secretAccessKey = $fields['secret_access_key'] ?? null;
 
-        return is_string($accessKeyId) && $accessKeyId !== ''
-            && is_string($secretAccessKey) && $secretAccessKey !== '';
+        return is_string($accessKeyId) && $accessKeyId !== '' && is_string($secretAccessKey) && $secretAccessKey !== '';
     }
 
-    private function persistSeaweedfsTool(Node $node, S3ServiceConfig $serviceConfig, S3RuntimeContainer $runtimeContainer): NodeTool
-    {
+    private function persistSeaweedfsTool(
+        Node $node,
+        S3ServiceConfig $serviceConfig,
+        S3RuntimeContainer $runtimeContainer,
+    ): NodeTool {
         $toolConfig = [
             'data_path' => $serviceConfig->dataPath,
             'service_host' => S3ServiceConfig::ServiceHost,

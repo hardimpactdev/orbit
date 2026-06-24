@@ -16,8 +16,7 @@ final readonly class IncusWarmTopologyPool
     {
         $value = getenv(self::EnabledEnvironmentVariable);
 
-        return is_string($value)
-            && in_array(strtolower($value), ['1', 'true', 'yes'], true);
+        return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes'], true);
     }
 
     public static function backend(E2ETopologyKind $kind): string
@@ -120,7 +119,11 @@ final readonly class IncusWarmTopologyPool
         $instances = [];
 
         foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
-            $instances[$role] = new IncusInstance($host, self::instanceName($kind, $slot, $role), commandTransport: true);
+            $instances[$role] = new IncusInstance(
+                $host,
+                self::instanceName($kind, $slot, $role),
+                commandTransport: true,
+            );
         }
 
         return $instances;

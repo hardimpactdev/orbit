@@ -84,7 +84,9 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
             $findings[] = $this->finding(
                 $canonicalFile,
                 'Signature arguments do not match the live command definition. '
-                ."Docs have: [{$this->tokenList($signature['arguments'])}]. Live command has: [{$this->tokenList($live->arguments)}] in that order.",
+                ."Docs have: [{$this->tokenList(
+                    $signature['arguments'],
+                )}]. Live command has: [{$this->tokenList($live->arguments)}] in that order.",
                 $line,
             );
         }
@@ -160,8 +162,11 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
             }
 
             if (str_starts_with($token, '--') || str_starts_with($token, '[--')) {
-                preg_match_all('/--(?<option>[a-z0-9][a-z0-9-]*)/', $token, $optionMatches);
-                array_push($options, ...$optionMatches['option']);
+                preg_match_all('/--(?<option>[a-z0-9][a-z0-9-]*)/', $token, $optionMatches, PREG_SET_ORDER);
+                array_push(
+                    $options,
+                    ...array_values(array_filter(array_column($optionMatches, 'option'), is_string(...))),
+                );
 
                 continue;
             }
@@ -184,7 +189,7 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
             return null;
         }
 
-        return substr_count(substr($contents, 0, $match[0][1]), "\n") + 1;
+        return substr_count(substr($contents, 0, (int) $match[0][1]), "\n") + 1;
     }
 
     /**

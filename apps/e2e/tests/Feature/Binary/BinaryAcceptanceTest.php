@@ -174,10 +174,11 @@ it('linux x64 binary boots on the real container and --version reports the expec
 
         // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
         // second argument; it would be interpreted as a second needle and fail.
-        expect($result['exit_code'])->toBe(
-            0,
-            "Binary --version exited {$result['exit_code']} on container.\nstdout: {$result['stdout']}\nstderr: {$result['stderr']}",
-        );
+        expect($result['exit_code'])
+            ->toBe(
+                0,
+                "Binary --version exited {$result['exit_code']} on container.\nstdout: {$result['stdout']}\nstderr: {$result['stderr']}",
+            );
 
         expect($result['stdout'])->toContain($version);
     } finally {
@@ -185,106 +186,118 @@ it('linux x64 binary boots on the real container and --version reports the expec
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-binary-acceptance');
 
-it('NodeGatewayBootstrapper routes through docker exec when orbit-gateway is absent and returns the gateway_bootstrap_unavailable envelope', function (): void {
-    // The gateway container in the prepared topology does not have orbit-gateway
-    // running. Calling node:new --template=gateway with no configured gateway
-    // triggers NodeGatewayBootstrapper::run() which first calls
-    // gatewayRuntimeAvailable() (docker exec orbit-gateway test -f ...).
-    // With orbit-gateway absent the check fails and the method returns the
-    // gateway_bootstrap_unavailable JSON envelope without reaching host PHP or
-    // a source-tree artisan. This proves the binary-only docker-exec path works.
-    $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
+it(
+    'NodeGatewayBootstrapper routes through docker exec when orbit-gateway is absent and returns the gateway_bootstrap_unavailable envelope',
+    function (): void {
+        // The gateway container in the prepared topology does not have orbit-gateway
+        // running. Calling node:new --template=gateway with no configured gateway
+        // triggers NodeGatewayBootstrapper::run() which first calls
+        // gatewayRuntimeAvailable() (docker exec orbit-gateway test -f ...).
+        // With orbit-gateway absent the check fails and the method returns the
+        // gateway_bootstrap_unavailable JSON envelope without reaching host PHP or
+        // a source-tree artisan. This proves the binary-only docker-exec path works.
+        $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
 
-    try {
-        $binaryPath = dropBinaryOntoContainer($topology, 'gateway');
+        try {
+            $binaryPath = dropBinaryOntoContainer($topology, 'gateway');
 
-        // Run node:new --template=gateway with no gateway configured. This hits
-        // the bootstrapper path (line 82 of NodeNewCommand: template === 'gateway'
-        // && !hasConfiguredGateway). The bootstrapper checks orbit-gateway via
-        // `docker exec orbit-gateway test -f apps/gateway/artisan`; with the
-        // container absent it falls through to the unavailable envelope.
-        $result = runBinaryOnContainer(
-            $topology,
-            'gateway',
-            $binaryPath,
-            ['node:new', '--template=gateway', '--operator-name=acceptance-test-op', '--json'],
-            env: ['HOME' => '/tmp/orbit-acceptance-gw-bootstrap'],
-            timeoutSeconds: 30,
-        );
+            // Run node:new --template=gateway with no gateway configured. This hits
+            // the bootstrapper path (line 82 of NodeNewCommand: template === 'gateway'
+            // && !hasConfiguredGateway). The bootstrapper checks orbit-gateway via
+            // `docker exec orbit-gateway test -f apps/gateway/artisan`; with the
+            // container absent it falls through to the unavailable envelope.
+            $result = runBinaryOnContainer(
+                $topology,
+                'gateway',
+                $binaryPath,
+                ['node:new', '--template=gateway', '--operator-name=acceptance-test-op', '--json'],
+                env: ['HOME' => '/tmp/orbit-acceptance-gw-bootstrap'],
+                timeoutSeconds: 30,
+            );
 
-        // The command exits non-zero (bootstrap failure) and emits a JSON error.
-        $stdout = trim($result['stdout']);
+            // The command exits non-zero (bootstrap failure) and emits a JSON error.
+            $stdout = trim($result['stdout']);
 
-        expect($stdout)->not->toBeEmpty(
-            "Binary produced no output on container. This may indicate the binary failed to start.\nstderr: {$result['stderr']}",
-        );
+            expect($stdout)->not->toBeEmpty(
+                "Binary produced no output on container. This may indicate the binary failed to start.\nstderr: {$result['stderr']}",
+            );
 
-        $decoded = json_decode($stdout, associative: true);
+            $decoded = json_decode($stdout, associative: true);
 
-        expect($decoded)->not->toBeNull(
-            "Binary output is not valid JSON. Output:\n{$stdout}\nstderr: {$result['stderr']}",
-        );
+            expect($decoded)->not->toBeNull(
+                "Binary output is not valid JSON. Output:\n{$stdout}\nstderr: {$result['stderr']}",
+            );
 
-        // Either the gateway_bootstrap_unavailable envelope (orbit-gateway absent)
-        // OR a gateway connectivity error (if the topology has something on that port).
-        // Both prove the binary executed and reached the NodeGatewayBootstrapper path.
-        $errorCode = $decoded['error']['code'] ?? null;
+            // Either the gateway_bootstrap_unavailable envelope (orbit-gateway absent)
+            // OR a gateway connectivity error (if the topology has something on that port).
+            // Both prove the binary executed and reached the NodeGatewayBootstrapper path.
+            $errorCode = $decoded['error']['code'] ?? null;
 
-        expect($errorCode)->not->toBeNull(
-            "Expected an error envelope but got:\n{$stdout}",
-        );
+            expect($errorCode)->not->toBeNull(
+                "Expected an error envelope but got:\n{$stdout}",
+            );
 
-        // The canonical path: orbit-gateway is not running → unavailable envelope.
-        // An alternative: gateway_not_configured when there is no gateway URL set at all
-        // and the command fails before reaching the bootstrapper (acceptable — proves
-        // the binary ran and returned structured JSON).
-        $acceptableCodes = ['gateway_bootstrap_unavailable', 'gateway_not_configured', 'validation_failed'];
+            // The canonical path: orbit-gateway is not running → unavailable envelope.
+            // An alternative: gateway_not_configured when there is no gateway URL set at all
+            // and the command fails before reaching the bootstrapper (acceptable — proves
+            // the binary ran and returned structured JSON).
+            $acceptableCodes = ['gateway_bootstrap_unavailable', 'gateway_not_configured', 'validation_failed'];
 
-        expect(in_array($errorCode, $acceptableCodes, true))->toBeTrue(
-            "Unexpected error code [{$errorCode}]; expected one of: ".implode(', ', $acceptableCodes).".\nOutput: {$stdout}",
-        );
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-binary-acceptance');
+            expect(in_array($errorCode, $acceptableCodes, true))
+                ->toBeTrue(
+                    "Unexpected error code [{$errorCode}]; expected one of: "
+                    .implode(', ', $acceptableCodes)
+                    .".\nOutput: {$stdout}",
+                );
+        } finally {
+            $topology->cleanup();
+        }
+    },
+)->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-binary-acceptance');
 
-it('embedded curl+openssl: gateway:status --help boots service providers on the real Linux container without extension errors', function (): void {
-    // Proves that the embedded curl and openssl in the linux x64 PHPacker binary
-    // are functional: GatewayApiServiceProvider and OperationTokenGuardServiceProvider
-    // both boot during --help resolution, and missing extensions would produce a fatal
-    // error or a "could not open extension" notice in the combined output.
-    $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
+it(
+    'embedded curl+openssl: gateway:status --help boots service providers on the real Linux container without extension errors',
+    function (): void {
+        // Proves that the embedded curl and openssl in the linux x64 PHPacker binary
+        // are functional: GatewayApiServiceProvider and OperationTokenGuardServiceProvider
+        // both boot during --help resolution, and missing extensions would produce a fatal
+        // error or a "could not open extension" notice in the combined output.
+        $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
 
-    try {
-        $binaryPath = dropBinaryOntoContainer($topology, 'gateway');
+        try {
+            $binaryPath = dropBinaryOntoContainer($topology, 'gateway');
 
-        $result = runBinaryOnContainer(
-            $topology,
-            'gateway',
-            $binaryPath,
-            ['gateway:status', '--help'],
-            env: ['HOME' => '/tmp/orbit-acceptance-curl-test'],
-        );
+            $result = runBinaryOnContainer(
+                $topology,
+                'gateway',
+                $binaryPath,
+                ['gateway:status', '--help'],
+                env: ['HOME' => '/tmp/orbit-acceptance-curl-test'],
+            );
 
-        $combined = $result['stdout'].$result['stderr'];
+            $combined = $result['stdout'].$result['stderr'];
 
-        expect($result['exit_code'])->toBe(
-            0,
-            "gateway:status --help exited {$result['exit_code']} on container.\n{$combined}",
-        );
+            expect($result['exit_code'])
+                ->toBe(
+                    0,
+                    "gateway:status --help exited {$result['exit_code']} on container.\n{$combined}",
+                );
 
-        // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
-        // second argument; it would be interpreted as a second needle and fail.
-        expect($combined)->not->toContain('extension');
-        expect($combined)->not->toContain('Class not found');
+            // Note: Pest 4's toContain() is variadic — do not pass a failure message as a
+            // second argument; it would be interpreted as a second needle and fail.
+            expect($combined)->not->toContain('extension');
+            expect($combined)->not->toContain('Class not found');
 
-        // The help text should mention the gateway status description or usage.
-        // We assert on "gateway" which appears in "gateway:status" usage, or the
-        // description "Show gateway API status" / "Usage: gateway:status".
-        expect($result['stdout'])->not->toBeEmpty(
-            "Binary gateway:status --help produced no stdout on container.\n{$combined}",
-        );
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-binary-acceptance');
+            // The help text should mention the gateway status description or usage.
+            // We assert on "gateway" which appears in "gateway:status" usage, or the
+            // description "Show gateway API status" / "Usage: gateway:status".
+            expect($result['stdout'])
+                ->not
+                ->toBeEmpty(
+                    "Binary gateway:status --help produced no stdout on container.\n{$combined}",
+                );
+        } finally {
+            $topology->cleanup();
+        }
+    },
+)->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-binary-acceptance');

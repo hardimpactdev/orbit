@@ -95,8 +95,7 @@ describe('ToolsProbe', function (): void {
     it('has key and label', function (): void {
         $probe = new ToolsProbe;
 
-        expect($probe->key())->toBe('tool')
-            ->and($probe->label())->toBe('Tools');
+        expect($probe->key())->toBe('tool')->and($probe->label())->toBe('Tools');
     });
 
     it('detects incomplete tool records', function (): void {
@@ -107,7 +106,7 @@ describe('ToolsProbe', function (): void {
             'expected_state' => '',
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)->toBe(DriftKind::Missing);
     });
@@ -116,7 +115,7 @@ describe('ToolsProbe', function (): void {
         $node = Node::factory()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -125,10 +124,12 @@ describe('ToolsProbe', function (): void {
         $node = Node::factory()->ingress()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'caddy']);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
-        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
-            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))
+            ->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)
+            ->toBe(DriftKind::Missing);
     });
 
     it('allows managed caddy on active agent nodes', function (): void {
@@ -147,25 +148,29 @@ describe('ToolsProbe', function (): void {
 
         $drift = $probe->diff($tool, $probe->introspect($tool));
 
-        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
-            ->and(toolProbeIssue($drift, 'tool.container_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))
+            ->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.container_missing')?->kind)
+            ->toBe(DriftKind::Missing);
     });
 
     it('allows metrics node exporter on ingress nodes', function (): void {
         $node = Node::factory()->ingress()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'node-exporter']);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
-        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
-            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))
+            ->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)
+            ->toBe(DriftKind::Missing);
     });
 
     it('does not allow non-caddy managed tools on ingress-only nodes', function (): void {
         $node = Node::factory()->ingress()->create(['status' => 'active']);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.node_invalid')?->kind)->toBe(DriftKind::Divergent);
     });
@@ -174,17 +179,19 @@ describe('ToolsProbe', function (): void {
         $node = createToolsProbeAppHostNode(['status' => NodeStatus::Provisioning]);
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'composer']);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]), allowProvisioning: true);
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]), allowProvisioning: true);
 
-        expect(toolProbeIssue($drift, 'tool.node_invalid'))->toBeNull()
-            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+        expect(toolProbeIssue($drift, 'tool.node_invalid'))
+            ->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)
+            ->toBe(DriftKind::Missing);
     });
 
     it('requires known tool catalog definitions', function (): void {
         $node = createToolsProbeAppHostNode();
         $tool = NodeTool::factory()->create(['node_id' => $node->id, 'name' => 'not-a-tool']);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.definition_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -223,11 +230,16 @@ describe('ToolsProbe', function (): void {
 
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($input['binary'])->toBe('/opt/orbit/php/8.5/bin/php')
-            ->and($shell->script)->toStartWith('set -eu')
-            ->and($shell->script)->toContain('case "$binary" in')
-            ->and($shell->script)->toContain('[ -x "$binary" ]')
-            ->and($shell->script)->toContain('command -v');
+        expect($input['binary'])
+            ->toBe('/opt/orbit/php/8.5/bin/php')
+            ->and($shell->script)
+            ->toStartWith('set -eu')
+            ->and($shell->script)
+            ->toContain('case "$binary" in')
+            ->and($shell->script)
+            ->toContain('[ -x "$binary" ]')
+            ->and($shell->script)
+            ->toContain('command -v');
     });
 
     it('does not contain host-lane php eval probe snippets', function (): void {
@@ -236,7 +248,8 @@ describe('ToolsProbe', function (): void {
 
     it('does not carry inert PHP payload markers in shell probe scripts', function (): void {
         expect(file_get_contents(app_path('Services/Tools/ToolsProbe.php')))
-            ->not->toContain('json_decode(stream_get_contents(STDIN), true);');
+            ->not
+            ->toContain('json_decode(stream_get_contents(STDIN), true);');
     });
 
     it('uses POSIX shell for single tool capability probes while preserving tab output parsing', function (): void {
@@ -250,10 +263,15 @@ describe('ToolsProbe', function (): void {
 
         $snapshot = $probe->introspect($tool);
 
-        expect($shell->script)->not->toContain('php -r')
-            ->and($shell->script)->toContain('# orbit-tool-probe:capability')
-            ->and($shell->script)->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
-            ->and($snapshot->get('composer'))->toMatchArray([
+        expect($shell->script)
+            ->not
+            ->toContain('php -r')
+            ->and($shell->script)
+            ->toContain('# orbit-tool-probe:capability')
+            ->and($shell->script)
+            ->toContain('printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\'')
+            ->and($snapshot->get('composer'))
+            ->toMatchArray([
                 'installed' => true,
                 'path' => '/usr/local/bin/composer',
                 'version' => 'Composer version 2.8.0',
@@ -272,15 +290,20 @@ describe('ToolsProbe', function (): void {
 
         $snapshot = $probe->introspect($tool);
 
-        expect($shell->script)->toContain('docker image inspect')
-            ->not->toContain('command -v php')
-            ->and($shell->input)->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
-            ->and($snapshot->get('php'))->toMatchArray([
+        expect($shell->script)
+            ->toContain('docker image inspect')
+            ->not
+            ->toContain('command -v php')
+            ->and($shell->input)
+            ->toContain('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+            ->and($snapshot->get('php'))
+            ->toMatchArray([
                 'installed' => true,
                 'version' => '8.5',
                 'images' => ['ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm'],
             ])
-            ->and($probe->diff($tool, $snapshot))->toBe([]);
+            ->and($probe->diff($tool, $snapshot))
+            ->toBe([]);
     });
 
     it('frankenphp does not accept host PHP output as PHP tool capability', function (): void {
@@ -294,11 +317,13 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect($snapshot->get('php'))->toMatchArray([
-            'installed' => false,
-            'images' => [],
-        ])
-            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)->toBe(DriftKind::Missing);
+        expect($snapshot->get('php'))
+            ->toMatchArray([
+                'installed' => false,
+                'images' => [],
+            ])
+            ->and(toolProbeIssue($drift, 'tool.capability_missing')?->kind)
+            ->toBe(DriftKind::Missing);
     });
 
     it('detects version drift when the catalog tracks versions', function (): void {
@@ -308,13 +333,18 @@ describe('ToolsProbe', function (): void {
             'name' => 'composer',
             'expected_version' => '2.8',
         ]);
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.7.0\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/local/bin/composer\tComposer version 2.7.0\n",
+        ));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.version_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.version_mismatch')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.version_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.version_mismatch')?->detail)
+            ->toMatchArray([
                 'expected_version' => '2.8',
                 'observed_version' => 'Composer version 2.7.0',
             ]);
@@ -328,7 +358,10 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
         ]);
         // Probe reports binary present but runtime state stopped — must produce no tool issue code
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n",
+        ));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -336,8 +369,10 @@ describe('ToolsProbe', function (): void {
         $codes = array_column($drift, null);
         $issueKeys = array_map(fn ($entry) => $entry->key, $drift);
 
-        expect(in_array('tool.lifecycle_state_mismatch', $issueKeys, true))->toBeFalse()
-            ->and($probe->diff($tool, $snapshot))->toBe([]);
+        expect(in_array('tool.lifecycle_state_mismatch', $issueKeys, true))
+            ->toBeFalse()
+            ->and($probe->diff($tool, $snapshot))
+            ->toBe([]);
     });
 
     it('does not produce any tool issue code when a tool is installed but its backing service is not running', function (): void {
@@ -348,7 +383,10 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
         ]);
         // Service down: binary exists, state is stopped — runtime state is process-family fact
-        $probe = new ToolsProbe(new ToolsProbeRemoteShell(exitCode: 0, stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n"));
+        $probe = new ToolsProbe(new ToolsProbeRemoteShell(
+            exitCode: 0,
+            stdout: "/usr/local/bin/composer\tComposer version 2.8.0\tstopped\n",
+        ));
 
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
@@ -366,7 +404,7 @@ describe('ToolsProbe', function (): void {
         $tool->expected_state = 'running'; // bypasses factory default to test validation
         $tool->save();
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(collect($drift)->first(fn ($entry) => $entry->key === 'tool.record_incomplete'))->not->toBeNull();
     });
@@ -387,46 +425,58 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($input)->not->toHaveKey('supervisor_program')
-            ->and($snapshot->get('opencode-server'))->toMatchArray([
+        expect($input)
+            ->not
+            ->toHaveKey('supervisor_program')
+            ->and($snapshot->get('opencode-server'))
+            ->toMatchArray([
                 'installed' => true,
                 'path' => '/home/orbit/.opencode/bin/opencode',
             ]);
     });
 
     it('detects stopped orbit-caddy containers instead of only checking the docker binary', function (): void {
-        withE2EEnvironment(['ORBIT_E2E_DOCKER_NETWORK'], [
-            'ORBIT_E2E_DOCKER_NETWORK' => 'orbit-e2e-dev-abc123',
-        ], function (): void {
-            $node = createToolsProbeAppHostNode();
-            $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50', OrbitContainerNames::forNodeScope('dev'));
-            $tool = NodeTool::factory()->create([
-                'node_id' => $node->id,
-                'name' => 'caddy',
-                'expected_state' => 'installed',
-                'config' => ['container' => $container->spec()],
-            ]);
-            $shell = new RecordingToolsProbeRemoteShell(
-                exitCode: 0,
-                stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\tstopped\t{$container->specHash()}\n",
-            );
-            $probe = new ToolsProbe($shell);
-
-            $snapshot = $probe->introspect($tool);
-            $drift = $probe->diff($tool, $snapshot);
-            $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
-
-            $issueKeys = array_map(fn ($entry) => $entry->key, $drift);
-
-            expect($shell->script)->toContain('docker container inspect')
-                ->and($input['container'])->toBe($container->name())
-                ->and($input['container'])->toBe('orbit-e2e-dev-abc123-dev-orbit-caddy')
-                ->and($issueKeys)->toContain('tool.container_not_running')
-                ->and(toolProbeIssue($drift, 'tool.container_not_running')?->detail)->toMatchArray([
-                    'container' => 'orbit-e2e-dev-abc123-dev-orbit-caddy',
-                    'observed_state' => 'stopped',
+        withE2EEnvironment(
+            ['ORBIT_E2E_DOCKER_NETWORK'],
+            [
+                'ORBIT_E2E_DOCKER_NETWORK' => 'orbit-e2e-dev-abc123',
+            ],
+            function (): void {
+                $node = createToolsProbeAppHostNode();
+                $container = OrbitCaddyContainer::forPrivateNode('10.6.0.50', OrbitContainerNames::forNodeScope('dev'));
+                $tool = NodeTool::factory()->create([
+                    'node_id' => $node->id,
+                    'name' => 'caddy',
+                    'expected_state' => 'installed',
+                    'config' => ['container' => $container->spec()],
                 ]);
-        });
+                $shell = new RecordingToolsProbeRemoteShell(
+                    exitCode: 0,
+                    stdout: "/usr/bin/docker\tDocker version 27.0.0\tunknown\t\t\t\t\t1\tstopped\t{$container->specHash()}\n",
+                );
+                $probe = new ToolsProbe($shell);
+
+                $snapshot = $probe->introspect($tool);
+                $drift = $probe->diff($tool, $snapshot);
+                $input = json_decode($shell->input, associative: true, flags: JSON_THROW_ON_ERROR);
+
+                $issueKeys = array_map(fn ($entry) => $entry->key, $drift);
+
+                expect($shell->script)
+                    ->toContain('docker container inspect')
+                    ->and($input['container'])
+                    ->toBe($container->name())
+                    ->and($input['container'])
+                    ->toBe('orbit-e2e-dev-abc123-dev-orbit-caddy')
+                    ->and($issueKeys)
+                    ->toContain('tool.container_not_running')
+                    ->and(toolProbeIssue($drift, 'tool.container_not_running')?->detail)
+                    ->toMatchArray([
+                        'container' => 'orbit-e2e-dev-abc123-dev-orbit-caddy',
+                        'observed_state' => 'stopped',
+                    ]);
+            },
+        );
     });
 
     it('detects missing orbit-caddy containers separately from missing docker capability', function (): void {
@@ -445,8 +495,10 @@ describe('ToolsProbe', function (): void {
 
         $drift = $probe->diff($tool, $probe->introspect($tool));
 
-        expect(toolProbeIssue($drift, 'tool.container_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.capability_missing'))->toBeNull();
+        expect(toolProbeIssue($drift, 'tool.container_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.capability_missing'))
+            ->toBeNull();
     });
 
     it('detects orbit-caddy container spec hash drift', function (): void {
@@ -465,8 +517,10 @@ describe('ToolsProbe', function (): void {
 
         $drift = $probe->diff($tool, $probe->introspect($tool));
 
-        expect(toolProbeIssue($drift, 'tool.container_spec_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.container_spec_mismatch')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.container_spec_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.container_spec_mismatch')?->detail)
+            ->toMatchArray([
                 'expected_hash' => $container->specHash(),
                 'observed_hash' => str_repeat('b', 64),
             ]);
@@ -496,15 +550,20 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect($drift)->toBe([])
-            ->and($snapshot->get('dns'))->toMatchArray([
+        expect($drift)
+            ->toBe([])
+            ->and($snapshot->get('dns'))
+            ->toMatchArray([
                 'config_exists' => true,
                 'config_hash' => $hash,
                 'config_mode' => '0644',
             ])
-            ->and($shell->scripts)->toHaveCount(2)
-            ->and($shell->scripts[1])->toContain('sudo test -f "$path"')
-            ->and($shell->options[1])->toMatchArray(['throw' => false]);
+            ->and($shell->scripts)
+            ->toHaveCount(2)
+            ->and($shell->scripts[1])
+            ->toContain('sudo test -f "$path"')
+            ->and($shell->options[1])
+            ->toMatchArray(['throw' => false]);
     });
 
     it('uses managed file resource probes when batch introspecting managed config', function (): void {
@@ -534,7 +593,8 @@ describe('ToolsProbe', function (): void {
                     'container_exists' => null,
                     'container_state' => null,
                     'container_spec_hash' => null,
-                ], JSON_THROW_ON_ERROR)."\n",
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
                 '',
                 1,
             ),
@@ -544,13 +604,16 @@ describe('ToolsProbe', function (): void {
 
         $snapshots = $probe->introspectMany([$tool]);
 
-        expect($snapshots['dns']->get('dns'))->toMatchArray([
-            'config_exists' => true,
-            'config_hash' => $hash,
-            'config_mode' => '0644',
-        ])
-            ->and($shell->scripts)->toHaveCount(2)
-            ->and($shell->scripts[1])->toContain('sudo test -f "$path"');
+        expect($snapshots['dns']->get('dns'))
+            ->toMatchArray([
+                'config_exists' => true,
+                'config_hash' => $hash,
+                'config_mode' => '0644',
+            ])
+            ->and($shell->scripts)
+            ->toHaveCount(2)
+            ->and($shell->scripts[1])
+            ->toContain('sudo test -f "$path"');
     });
 
     it('uses POSIX shell for batched tool probes while preserving line-delimited JSON parsing', function (): void {
@@ -569,7 +632,8 @@ describe('ToolsProbe', function (): void {
                     'container_exists' => null,
                     'container_state' => null,
                     'container_spec_hash' => null,
-                ], JSON_THROW_ON_ERROR)."\n"
+                ], JSON_THROW_ON_ERROR)
+                ."\n"
                 .json_encode([
                     'name' => 'docker',
                     'installed' => true,
@@ -579,7 +643,8 @@ describe('ToolsProbe', function (): void {
                     'container_exists' => null,
                     'container_state' => null,
                     'container_spec_hash' => null,
-                ], JSON_THROW_ON_ERROR)."\n",
+                ], JSON_THROW_ON_ERROR)
+                ."\n",
                 '',
                 1,
             ),
@@ -588,15 +653,21 @@ describe('ToolsProbe', function (): void {
 
         $snapshots = $probe->introspectMany([$composer, $docker]);
 
-        expect($shell->scripts[0])->not->toContain('php -r')
-            ->and($shell->scripts[0])->toContain('# orbit-tool-probe:capability-batch')
-            ->and($shell->scripts[0])->toContain('printf \'{"name":')
-            ->and($snapshots['composer']->get('composer'))->toMatchArray([
+        expect($shell->scripts[0])
+            ->not
+            ->toContain('php -r')
+            ->and($shell->scripts[0])
+            ->toContain('# orbit-tool-probe:capability-batch')
+            ->and($shell->scripts[0])
+            ->toContain('printf \'{"name":')
+            ->and($snapshots['composer']->get('composer'))
+            ->toMatchArray([
                 'installed' => true,
                 'path' => '/usr/local/bin/composer',
                 'version' => 'Composer version 2.8.0',
             ])
-            ->and($snapshots['docker']->get('docker'))->toMatchArray([
+            ->and($snapshots['docker']->get('docker'))
+            ->toMatchArray([
                 'installed' => true,
                 'path' => '/usr/bin/docker',
                 'version' => 'Docker version 27.0.0',
@@ -613,8 +684,7 @@ describe('ToolsProbe', function (): void {
             'config' => ['container' => $container->spec()],
         ]);
         $catalog = new ToolCatalog(new ToolDefinitionRegistry([
-            new class extends BaseTool
-            {
+            new class extends BaseTool {
                 public function slug(): string
                 {
                     return 'caddy';
@@ -634,13 +704,16 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspectMany([$tool])['caddy'];
         $drift = $probe->diff($tool, $snapshot);
 
-        expect($snapshot->get('caddy'))->toMatchArray([
-            'installed' => true,
-            'container_exists' => false,
-            'container_state' => 'missing',
-        ])
-            ->and(toolProbeIssue($drift, 'tool.container_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.capability_missing'))->toBeNull();
+        expect($snapshot->get('caddy'))
+            ->toMatchArray([
+                'installed' => true,
+                'container_exists' => false,
+                'container_state' => 'missing',
+            ])
+            ->and(toolProbeIssue($drift, 'tool.container_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.capability_missing'))
+            ->toBeNull();
     });
 
     it('detects missing managed config files through the managed file resource plan', function (): void {
@@ -666,8 +739,10 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.config_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.config_missing')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.config_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.config_missing')?->detail)
+            ->toMatchArray([
                 'path' => '/etc/orbit/dns.conf',
                 'expected_hash' => $hash,
             ]);
@@ -696,8 +771,10 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)
+            ->toMatchArray([
                 'path' => '/etc/orbit/dns.conf',
                 'expected_hash' => $hash,
                 'observed_hash' => str_repeat('b', 64),
@@ -728,8 +805,10 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.config_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.config_mismatch')?->detail)
+            ->toMatchArray([
                 'path' => '/etc/orbit/dns.conf',
                 'expected_hash' => $hash,
                 'observed_hash' => $hash,
@@ -761,9 +840,12 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.config_probe_failed')?->kind)->toBe(DriftKind::Unverifiable)
-            ->and(toolProbeIssue($drift, 'tool.config_mismatch'))->toBeNull()
-            ->and(toolProbeIssue($drift, 'tool.config_probe_failed')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.config_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.config_mismatch'))
+            ->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.config_probe_failed')?->detail)
+            ->toMatchArray([
                 'path' => '/etc/orbit/dns.conf',
                 'error' => 'ssh: connection refused',
             ]);
@@ -783,12 +865,14 @@ describe('ToolsProbe', function (): void {
             ],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
             'dns' => ['installed' => true],
         ]));
 
-        expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)
+            ->toMatchArray([
                 'tool' => 'dns',
                 'field' => 'managed_config',
             ]);
@@ -817,8 +901,10 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.credentials_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.credentials_missing')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.credentials_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.credentials_missing')?->detail)
+            ->toMatchArray([
                 'path' => '/home/orbit/.config/opencode-server/password',
                 'expected_hash' => $hash,
                 'mode' => '0600',
@@ -848,8 +934,10 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)
+            ->toMatchArray([
                 'path' => '/home/orbit/.config/opencode-server/password',
                 'expected_hash' => $hash,
                 'observed_hash' => str_repeat('b', 64),
@@ -880,8 +968,10 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.credentials_mismatch')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch')?->detail)
+            ->toMatchArray([
                 'path' => '/home/orbit/.config/opencode-server/password',
                 'expected_hash' => $hash,
                 'observed_hash' => $hash,
@@ -913,9 +1003,12 @@ describe('ToolsProbe', function (): void {
         $snapshot = $probe->introspect($tool);
         $drift = $probe->diff($tool, $snapshot);
 
-        expect(toolProbeIssue($drift, 'tool.credentials_probe_failed')?->kind)->toBe(DriftKind::Unverifiable)
-            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch'))->toBeNull()
-            ->and(toolProbeIssue($drift, 'tool.credentials_probe_failed')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.credentials_probe_failed')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(toolProbeIssue($drift, 'tool.credentials_mismatch'))
+            ->toBeNull()
+            ->and(toolProbeIssue($drift, 'tool.credentials_probe_failed')?->detail)
+            ->toMatchArray([
                 'path' => '/home/orbit/.config/opencode-server/password',
                 'error' => 'ssh: connection refused',
             ]);
@@ -935,12 +1028,14 @@ describe('ToolsProbe', function (): void {
             ],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([
             'opencode-server' => ['installed' => true],
         ]));
 
-        expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.record_incomplete')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.record_incomplete')?->detail)
+            ->toMatchArray([
                 'tool' => 'opencode-server',
                 'field' => 'managed_secret',
             ]);
@@ -954,10 +1049,12 @@ describe('ToolsProbe', function (): void {
             'expected_state' => 'installed',
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
-        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)
+            ->toMatchArray([
                 'tool' => 'openclaw',
                 'domain' => 'openclaw.agent',
             ]);
@@ -979,7 +1076,7 @@ describe('ToolsProbe', function (): void {
             'config' => toolsProbeAgentRouteConfig('openclaw'),
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_route_missing'))->toBeNull();
     });
@@ -998,10 +1095,12 @@ describe('ToolsProbe', function (): void {
             'config' => ['owner_name' => 'hermes'],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
-        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)
+            ->toMatchArray([
                 'tool' => 'openclaw',
                 'domain' => 'openclaw.agent',
                 'route_owner' => 'hermes',
@@ -1024,10 +1123,12 @@ describe('ToolsProbe', function (): void {
             'config' => toolsProbeAgentRouteConfig('openclaw'),
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
-        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)
+            ->toMatchArray([
                 'tool' => 'openclaw',
                 'domain' => 'openclaw.agent',
                 'expected_kind' => 'proxy',
@@ -1055,10 +1156,12 @@ describe('ToolsProbe', function (): void {
             ],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
-        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)->toBe(DriftKind::Divergent)
-            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)->toMatchArray([
+        expect(toolProbeIssue($drift, 'tool.agent_route_missing')?->kind)
+            ->toBe(DriftKind::Divergent)
+            ->and(toolProbeIssue($drift, 'tool.agent_route_missing')?->detail)
+            ->toMatchArray([
                 'tool' => 'openclaw',
                 'domain' => 'openclaw.agent',
                 'expected_upstream' => 'http://host.docker.internal:8080',
@@ -1075,7 +1178,7 @@ describe('ToolsProbe', function (): void {
             'credentials' => null,
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, new ProbeSnapshot([]));
+        $drift = new ToolsProbe()->diff($tool, new ProbeSnapshot([]));
 
         expect(toolProbeIssue($drift, 'tool.agent_credentials_missing')?->kind)->toBe(DriftKind::Missing);
     });
@@ -1089,7 +1192,7 @@ describe('ToolsProbe', function (): void {
             'credentials' => ['fields' => ['url' => 'https://openclaw.agent']],
         ]);
 
-        $drift = (new ToolsProbe)->diff($tool, (new ToolsProbe)->introspect($tool));
+        $drift = new ToolsProbe()->diff($tool, new ToolsProbe()->introspect($tool));
 
         expect(toolProbeIssue($drift, 'tool.agent_credentials_missing'))->toBeNull();
     });

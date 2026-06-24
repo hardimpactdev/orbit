@@ -28,11 +28,11 @@ final class ShowGatewayIdentityRequest extends GatewayRequest
     public function createDtoFromResponse(Response $response): GatewayIdentityResponse
     {
         $data = $this->unwrapData($response);
-        $self = is_array($data['self'] ?? null) ? $data['self'] : ($data['node'] ?? null);
-        $gateway = is_array($data['gateway'] ?? null) ? $data['gateway'] : null;
+        $self = is_array($data['self'] ?? null) ? $this->stringKeyedArray($data['self']) : $data['node'] ?? null;
+        $gateway = is_array($data['gateway'] ?? null) ? $this->stringKeyedArray($data['gateway']) : null;
 
         return new GatewayIdentityResponse(
-            self: is_array($self) ? $self : null,
+            self: is_array($self) ? $this->stringKeyedArray($self) : null,
             gateway: $gateway,
         );
     }

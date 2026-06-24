@@ -31,34 +31,40 @@ it('checks unattended-upgrades posture on an Incus app node from the gateway', f
         nodeUpdatesDoctorClearRebootRequired($topology);
         $topology->cleanup();
     }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+})->group(
+    'e2e-feature',
+    'e2e-provider-incus',
+    'e2e-feature-operator_gateway_app-dev',
+    'e2e-feature-operator-gateway-dev',
+);
 
 function nodeUpdatesDoctorPrepareGatewayRecord(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-$node->forceFill([
-    'platform' => 'ubuntu_24-04',
-    'status' => 'active',
-])->save();
+        $node->forceFill([
+            'platform' => 'ubuntu_24-04',
+            'status' => 'active',
+        ])->save();
 
-\App\Models\NodeRoleAssignment::query()->updateOrCreate(
-    ['node_id' => $node->id, 'role' => \App\Enums\Nodes\NodeRoleName::AppDevelopment->value],
-    [
-        'status' => \App\Enums\Nodes\NodeRoleStatus::Active->value,
-        'settings' => ['tld' => 'test'],
-        'last_error' => null,
-        'converged_at' => now(),
-    ],
-);
+        \App\Models\NodeRoleAssignment::query()->updateOrCreate(
+            ['node_id' => $node->id, 'role' => \App\Enums\Nodes\NodeRoleName::AppDevelopment->value],
+            [
+                'status' => \App\Enums\Nodes\NodeRoleStatus::Active->value,
+                'settings' => ['tld' => 'test'],
+                'last_error' => null,
+                'converged_at' => now(),
+            ],
+        );
 
-echo 'prepared';
-PHP;
+        echo 'prepared';
+        PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -69,20 +75,20 @@ function nodeUpdatesDoctorRestoreExpectedAptConfig(E2ETopologyHarness $topology)
     $autoUpgrades = rtrim($config->autoUpgrades(), "\n");
     $unattendedUpgrades = rtrim($config->unattendedUpgrades(), "\n");
     $script = <<<SH
-if ! command -v unattended-upgrade >/dev/null 2>&1; then
-    sudo tee /usr/local/bin/unattended-upgrade >/dev/null <<'EOF'
-#!/usr/bin/env bash
-exit 0
-EOF
-    sudo chmod 0755 /usr/local/bin/unattended-upgrade
-fi
-sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
-{$autoUpgrades}
-EOF
-sudo tee /etc/apt/apt.conf.d/50unattended-upgrades >/dev/null <<'EOF'
-{$unattendedUpgrades}
-EOF
-SH;
+        if ! command -v unattended-upgrade >/dev/null 2>&1; then
+            sudo tee /usr/local/bin/unattended-upgrade >/dev/null <<'EOF'
+        #!/usr/bin/env bash
+        exit 0
+        EOF
+            sudo chmod 0755 /usr/local/bin/unattended-upgrade
+        fi
+        sudo tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
+        {$autoUpgrades}
+        EOF
+        sudo tee /etc/apt/apt.conf.d/50unattended-upgrades >/dev/null <<'EOF'
+        {$unattendedUpgrades}
+        EOF
+        SH;
 
     $result = $topology->ssh(
         'dev',
@@ -108,10 +114,10 @@ function nodeUpdatesDoctorAssertExpectedAptConfig(E2ETopologyHarness $topology):
     $result = $topology->ssh(
         'dev',
         <<<'SH'
-auto_hash="$(sudo sha256sum /etc/apt/apt.conf.d/20auto-upgrades | awk '{print $1}')"
-unattended_hash="$(sudo sha256sum /etc/apt/apt.conf.d/50unattended-upgrades | awk '{print $1}')"
-printf '%s\n%s\n' "$auto_hash" "$unattended_hash"
-SH,
+            auto_hash="$(sudo sha256sum /etc/apt/apt.conf.d/20auto-upgrades | awk '{print $1}')"
+            unattended_hash="$(sudo sha256sum /etc/apt/apt.conf.d/50unattended-upgrades | awk '{print $1}')"
+            printf '%s\n%s\n' "$auto_hash" "$unattended_hash"
+            SH,
         timeoutSeconds: 60,
     );
 
@@ -128,9 +134,12 @@ function nodeUpdatesDoctorAssertMissingConfig(E2ETopologyHarness $topology): voi
     $error = e2eJsonCommandError($payload);
     $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_config_missing');
 
-    expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
-        ->and($error['code'])->toBe('drift_detected')
-        ->and($issue)->toMatchArray([
+    expect($result->successful())
+        ->toBeFalse($result->output().$result->errorOutput())
+        ->and($error['code'])
+        ->toBe('drift_detected')
+        ->and($issue)
+        ->toMatchArray([
             'family' => 'node',
             'node' => 'app-dev-1',
             'key' => 'node.updates',
@@ -146,9 +155,12 @@ function nodeUpdatesDoctorAssertRestoresConfig(E2ETopologyHarness $topology): vo
     $payload = nodeUpdatesDoctorPayload($result->output());
     $data = e2eJsonCommandData($payload);
 
-    expect($result->successful())->toBeTrue($result->output().$result->errorOutput())
-        ->and($data['doctor']['healthy'])->toBeTrue(json_encode($data, JSON_PRETTY_PRINT))
-        ->and($data['doctor']['actions'][0])->toMatchArray([
+    expect($result->successful())
+        ->toBeTrue($result->output().$result->errorOutput())
+        ->and($data['doctor']['healthy'])
+        ->toBeTrue(json_encode($data, JSON_PRETTY_PRINT))
+        ->and($data['doctor']['actions'][0])
+        ->toMatchArray([
             'family' => 'node',
             'node' => 'app-dev-1',
             'key' => 'node.updates',
@@ -175,9 +187,12 @@ function nodeUpdatesDoctorAssertRebootRequired(E2ETopologyHarness $topology): vo
     $error = e2eJsonCommandError($payload);
     $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_reboot_required');
 
-    expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
-        ->and($error['code'])->toBe('drift_detected')
-        ->and($issue)->toMatchArray([
+    expect($result->successful())
+        ->toBeFalse($result->output().$result->errorOutput())
+        ->and($error['code'])
+        ->toBe('drift_detected')
+        ->and($issue)
+        ->toMatchArray([
             'family' => 'node',
             'node' => 'app-dev-1',
             'key' => 'node.updates',
@@ -185,7 +200,8 @@ function nodeUpdatesDoctorAssertRebootRequired(E2ETopologyHarness $topology): vo
             'kind' => 'divergent',
             'restorable' => false,
         ])
-        ->and($issue['summary'])->toContain('Orbit will not reboot it automatically');
+        ->and($issue['summary'])
+        ->toContain('Orbit will not reboot it automatically');
 }
 
 function nodeUpdatesDoctorClearRebootRequired(E2ETopologyHarness $topology): void
@@ -198,8 +214,11 @@ function nodeUpdatesDoctorClearRebootRequired(E2ETopologyHarness $topology): voi
     );
 }
 
-function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure = false, bool $restore = false): ProcessResult
-{
+function nodeUpdatesDoctorRun(
+    E2ETopologyHarness $topology,
+    bool $allowFailure = false,
+    bool $restore = false,
+): ProcessResult {
     return $topology->ssh(
         'gateway',
         sprintf(
@@ -228,11 +247,11 @@ function nodeUpdatesDoctorIssue(array $payload, string $code): array
 {
     $error = e2eJsonCommandError($payload);
     $data = $error !== []
-        ? ($error['data'] ?? [])
+        ? $error['data'] ?? []
         : e2eJsonCommandData($payload);
 
     $issues = is_array($data)
-        ? ($data['doctor']['issues'] ?? [])
+        ? $data['doctor']['issues'] ?? []
         : [];
     $issue = collect($issues)->firstWhere('code', $code);
 

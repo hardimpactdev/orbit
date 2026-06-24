@@ -19,7 +19,12 @@ it('enforces grants through real gateway middleware and node access rows', funct
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'grant-authorization');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         grantAuthorizationE2eResetGatewayState($topology);
 
@@ -32,9 +37,12 @@ it('enforces grants through real gateway middleware and node access rows', funct
             payload: ['destructive_consent' => true],
         );
 
-        expect($denied['status'])->toBe(403)
-            ->and($denied['body']['error']['code'])->toBe('authorization_failed')
-            ->and($denied['body']['error']['meta'])->toMatchArray([
+        expect($denied['status'])
+            ->toBe(403)
+            ->and($denied['body']['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($denied['body']['error']['meta'])
+            ->toMatchArray([
                 'reason' => 'missing_permission',
                 'missing_permission' => 'node:remove',
                 'serving_node' => 'app-prod-1',
@@ -53,8 +61,10 @@ it('enforces grants through real gateway middleware and node access rows', funct
             ],
         );
 
-        expect($gatewayGrant['status'])->toBe(200)
-            ->and($gatewayGrant['body']['success']['data'])->toMatchArray([
+        expect($gatewayGrant['status'])
+            ->toBe(200)
+            ->and($gatewayGrant['body']['success']['data'])
+            ->toMatchArray([
                 'consuming_node' => 'operator-1',
                 'serving_node' => 'gateway',
                 'permissions' => ['node:grant'],
@@ -73,8 +83,10 @@ it('enforces grants through real gateway middleware and node access rows', funct
             ],
         );
 
-        expect($targetGrant['status'])->toBe(200)
-            ->and($targetGrant['body']['success']['data'])->toMatchArray([
+        expect($targetGrant['status'])
+            ->toBe(200)
+            ->and($targetGrant['body']['success']['data'])
+            ->toMatchArray([
                 'consuming_node' => 'operator-1',
                 'serving_node' => 'app-prod-1',
                 'permissions' => ['node:remove'],
@@ -89,8 +101,10 @@ it('enforces grants through real gateway middleware and node access rows', funct
             payload: ['force' => true],
         );
 
-        expect($removeRole['status'])->toBe(200)
-            ->and($removeRole['body']['success']['data'])->toMatchArray([
+        expect($removeRole['status'])
+            ->toBe(200)
+            ->and($removeRole['body']['success']['data'])
+            ->toMatchArray([
                 'node' => 'app-dev-1',
                 'role' => 'app-dev',
             ]);
@@ -113,8 +127,10 @@ it('enforces grants through real gateway middleware and node access rows', funct
             payload: ['force' => true],
         );
 
-        expect($removeRoleWithCustomGrant['status'])->toBe(200)
-            ->and(grantAuthorizationE2eSelfGrant($topology))->toMatchArray([
+        expect($removeRoleWithCustomGrant['status'])
+            ->toBe(200)
+            ->and(grantAuthorizationE2eSelfGrant($topology))
+            ->toMatchArray([
                 'permissions' => ['node:read'],
                 'custom_permissions' => ['node:read'],
             ]);
@@ -143,8 +159,10 @@ it('enforces grants through real gateway middleware and node access rows', funct
             timeoutSeconds: 300,
         );
 
-        expect($workspaceSetup['status'])->toBe(200)
-            ->and($workspaceSetup['body']['success']['data'])->toMatchArray([
+        expect($workspaceSetup['status'])
+            ->toBe(200)
+            ->and($workspaceSetup['body']['success']['data'])
+            ->toMatchArray([
                 'app' => 'grant-docs',
                 'workspace' => $workspaceName,
                 'node' => 'app-dev-1',
@@ -161,8 +179,10 @@ it('enforces grants through real gateway middleware and node access rows', funct
             timeoutSeconds: 180,
         );
 
-        expect($removed['status'])->toBe(200)
-            ->and($removed['body']['success']['data'])->toMatchArray([
+        expect($removed['status'])
+            ->toBe(200)
+            ->and($removed['body']['success']['data'])
+            ->toMatchArray([
                 'name' => 'app-prod-1',
                 'action' => 'removed',
             ]);
@@ -269,28 +289,28 @@ function grantAuthorizationE2eApiUrl(E2ETopologyHarness $topology, string $path)
 function grantAuthorizationE2eResetGatewayState(E2ETopologyHarness $topology): void
 {
     grantAuthorizationE2eTinker($topology, <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['gateway', 'operator-1', 'app-dev-1', 'app-prod-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['gateway', 'operator-1', 'app-dev-1', 'app-prod-1'])
+            ->pluck('id', 'name');
 
-foreach (['gateway', 'operator-1', 'app-dev-1', 'app-prod-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['gateway', 'operator-1', 'app-dev-1', 'app-prod-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
-\Illuminate\Support\Facades\DB::table('processes')->delete();
-\Illuminate\Support\Facades\DB::table('proxy_routes')->delete();
-\Illuminate\Support\Facades\DB::table('workspaces')->delete();
-\App\Models\App::query()->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('activity_log')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('processes')->delete();
+        \Illuminate\Support\Facades\DB::table('proxy_routes')->delete();
+        \Illuminate\Support\Facades\DB::table('workspaces')->delete();
+        \App\Models\App::query()->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('activity_log')->delete();
 
-echo 'reset';
-PHP);
+        echo 'reset';
+        PHP);
 }
 
 function grantAuthorizationE2eApplyAppDevelopmentRole(E2ETopologyHarness $topology): void
@@ -308,8 +328,7 @@ function grantAuthorizationE2eApplyAppDevelopmentRole(E2ETopologyHarness $topolo
         timeoutSeconds: 180,
     );
 
-    expect($response['status'])->toBe(200)
-        ->and($response['body']['success']['data']['node'])->toBe('app-dev-1');
+    expect($response['status'])->toBe(200)->and($response['body']['success']['data']['node'])->toBe('app-dev-1');
 }
 
 /**
@@ -318,17 +337,17 @@ function grantAuthorizationE2eApplyAppDevelopmentRole(E2ETopologyHarness $topolo
 function grantAuthorizationE2eSelfGrant(E2ETopologyHarness $topology): array
 {
     $payload = grantAuthorizationE2eTinker($topology, <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-$grant = \App\Models\NodeAccess::query()
-    ->where('consumer_node_id', $node->id)
-    ->where('serving_node_id', $node->id)
-    ->first();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $grant = \App\Models\NodeAccess::query()
+            ->where('consumer_node_id', $node->id)
+            ->where('serving_node_id', $node->id)
+            ->first();
 
-echo json_encode([
-    'permissions' => $grant?->permissions,
-    'custom_permissions' => $grant?->custom_permissions,
-], JSON_THROW_ON_ERROR);
-PHP);
+        echo json_encode([
+            'permissions' => $grant?->permissions,
+            'custom_permissions' => $grant?->custom_permissions,
+        ], JSON_THROW_ON_ERROR);
+        PHP);
 
     $decoded = json_decode($payload, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -342,18 +361,18 @@ PHP);
 function grantAuthorizationE2eSetCustomSelfGrant(E2ETopologyHarness $topology): void
 {
     grantAuthorizationE2eTinker($topology, <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-$grant = \App\Models\NodeAccess::query()->firstOrNew([
-    'consumer_node_id' => $node->id,
-    'serving_node_id' => $node->id,
-]);
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $grant = \App\Models\NodeAccess::query()->firstOrNew([
+            'consumer_node_id' => $node->id,
+            'serving_node_id' => $node->id,
+        ]);
 
-$grant->permissions = ['node:read', 'workspace:setup'];
-$grant->custom_permissions = ['node:read'];
-$grant->save();
+        $grant->permissions = ['node:read', 'workspace:setup'];
+        $grant->custom_permissions = ['node:read'];
+        $grant->save();
 
-echo 'custom';
-PHP);
+        echo 'custom';
+        PHP);
 }
 
 function grantAuthorizationE2eSeedWorkspaceApp(E2ETopologyHarness $topology, string $appPath): void
@@ -361,39 +380,42 @@ function grantAuthorizationE2eSeedWorkspaceApp(E2ETopologyHarness $topology, str
     $appPathValue = var_export($appPath, true);
 
     grantAuthorizationE2eTinker($topology, <<<PHP
-\$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\\App\\Models\\App::query()->updateOrCreate([
-    'name' => 'grant-docs',
-], [
-    'node_id' => \$node->id,
-    'path' => {$appPathValue},
-    'document_root' => 'public',
-    'php_version' => '8.5',
-    'adopted' => true,
-]);
+        \\App\\Models\\App::query()->updateOrCreate([
+            'name' => 'grant-docs',
+        ], [
+            'node_id' => \$node->id,
+            'path' => {$appPathValue},
+            'document_root' => 'public',
+            'php_version' => '8.5',
+            'adopted' => true,
+        ]);
 
-echo 'app';
-PHP);
+        echo 'app';
+        PHP);
 }
 
-function grantAuthorizationE2ePrepareWorkspacePath(E2ETopologyHarness $topology, string $appPath, string $workspacePath): void
-{
+function grantAuthorizationE2ePrepareWorkspacePath(
+    E2ETopologyHarness $topology,
+    string $appPath,
+    string $workspacePath,
+): void {
     $topology->ssh(
         'dev',
         sprintf(
             <<<'SH'
-sudo rm -rf %1$s
-mkdir -p %1$s/public
-cd %1$s
-git init -b main
-git config user.email orbit@example.test
-git config user.name Orbit
-printf 'ok\n' > public/index.html
-git add .
-git commit -m init
-mkdir -p %2$s/public
-SH,
+                sudo rm -rf %1$s
+                mkdir -p %1$s/public
+                cd %1$s
+                git init -b main
+                git config user.email orbit@example.test
+                git config user.name Orbit
+                printf 'ok\n' > public/index.html
+                git add .
+                git commit -m init
+                mkdir -p %2$s/public
+                SH,
             escapeshellarg($appPath),
             escapeshellarg($workspacePath),
         ),

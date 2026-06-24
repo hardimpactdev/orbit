@@ -8,7 +8,6 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('S3Unpublish CLI command', function (): void {
-
     // -----------------------------------------------------------------------
     // Non-interactive: request payloads
     // -----------------------------------------------------------------------
@@ -19,7 +18,7 @@ describe('S3Unpublish CLI command', function (): void {
                 'title' => 'Unpublishing S3 Host',
                 'steps' => [['key' => 'confirm_destructive', 'label' => 'Confirm destructive removal']],
             ])
-            .gatewayProgressFrame('complete', s3UnpublishCompleteFrame()),
+                .gatewayProgressFrame('complete', s3UnpublishCompleteFrame()),
         );
 
         [$exitCode] = runCommand($this, 's3:unpublish', [
@@ -29,10 +28,14 @@ describe('S3Unpublish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
-            && $request->url() === 'https://gateway.test/api/s3/public-hosts/s3.example.com'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === ['node' => 'storage-1']);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'DELETE'
+                && $request->url() === 'https://gateway.test/api/s3/public-hosts/s3.example.com'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === ['node' => 'storage-1']
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -49,9 +52,13 @@ describe('S3Unpublish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com')
-            && (! isset($request->data()['host'])));
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'DELETE'
+                && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com')
+                && ! isset($request->data()['host'])
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -75,8 +82,10 @@ describe('S3Unpublish CLI command', function (): void {
 
         expect($exitCode)->toBe(0);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com'));
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com'),
+        );
     });
 
     // -----------------------------------------------------------------------
@@ -96,10 +105,14 @@ describe('S3Unpublish CLI command', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('force')
-            ->and($decoded['error']['meta']['reason'])->toBe('destructive_consent_required');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('force')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('destructive_consent_required');
     });
 
     it('fails before contacting the gateway when host is missing in non-interactive mode', function (): void {
@@ -122,9 +135,12 @@ describe('S3Unpublish CLI command', function (): void {
 
         Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/api/s3/public-hosts/'));
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('host');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('host');
     });
 
     it('fails before contacting the gateway when node is ambiguous in non-interactive mode', function (): void {
@@ -150,9 +166,12 @@ describe('S3Unpublish CLI command', function (): void {
 
         Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/api/s3/public-hosts/'));
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node');
     });
 
     it('fails before contacting the gateway when no s3 nodes exist', function (): void {
@@ -173,10 +192,14 @@ describe('S3Unpublish CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('node')
-            ->and($decoded['error']['meta']['required_role'])->toBe('s3');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('node')
+            ->and($decoded['error']['meta']['required_role'])
+            ->toBe('s3');
     });
 
     // -----------------------------------------------------------------------
@@ -188,9 +211,8 @@ describe('S3Unpublish CLI command', function (): void {
             gatewayProgressFrame('tree', [
                 'title' => 'Unpublishing S3 Host',
                 'steps' => [['key' => 'confirm_destructive', 'label' => 'Confirm destructive removal']],
-            ])
-            .gatewayProgressFrame('step', ['key' => 'confirm_destructive', 'status' => 'done'])
-            .gatewayProgressFrame('complete', s3UnpublishCompleteFrame('s3.example.com', 'storage-1')),
+            ]).gatewayProgressFrame('step', ['key' => 'confirm_destructive', 'status' => 'done'])
+                .gatewayProgressFrame('complete', s3UnpublishCompleteFrame('s3.example.com', 'storage-1')),
         );
 
         [$exitCode, $output] = runCommand($this, 's3:unpublish', [
@@ -202,11 +224,15 @@ describe('S3Unpublish CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and(count(array_filter(explode("\n", $output))))->toBe(1)
-            ->and($output)->not->toContain('Unpublishing S3 Host')
-            ->and($output)->not->toContain('Confirm destructive removal');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and(count(array_filter(explode("\n", $output))))
+            ->toBe(1)
+            ->and($output)
+            ->not->toContain('Unpublishing S3 Host')->and($output)
+            ->not->toContain('Confirm destructive removal');
     });
 
     it('renders the success envelope fields in --json mode', function (): void {
@@ -223,12 +249,18 @@ describe('S3Unpublish CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['data']['data']['s3']['node'])->toBe('storage-1')
-            ->and($decoded['data']['data']['s3']['private_endpoint'])->toBe('https://s3.orbit')
-            ->and($decoded['data']['data']['meta']['host'])->toBe('s3.example.com')
-            ->and($decoded['data']['data']['meta']['action'])->toBe('unpublished')
-            ->and($decoded['data']['data']['meta']['already_absent'])->toBeFalse();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['data']['data']['s3']['node'])
+            ->toBe('storage-1')
+            ->and($decoded['data']['data']['s3']['private_endpoint'])
+            ->toBe('https://s3.orbit')
+            ->and($decoded['data']['data']['meta']['host'])
+            ->toBe('s3.example.com')
+            ->and($decoded['data']['data']['meta']['action'])
+            ->toBe('unpublished')
+            ->and($decoded['data']['data']['meta']['already_absent'])
+            ->toBeFalse();
     });
 
     it('preserves gateway error envelopes through --json', function (): void {
@@ -253,8 +285,7 @@ describe('S3Unpublish CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['event'])->toBe('error');
+        expect($exitCode)->toBe(1)->and($decoded['event'])->toBe('error');
     });
 
     it('preserves proxy.owned_route_denied error code through --json', function (): void {
@@ -277,8 +308,7 @@ describe('S3Unpublish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('proxy.owned_route_denied');
+        expect($exitCode)->toBe(1)->and($output)->toContain('proxy.owned_route_denied');
     });
 
     it('preserves s3.unpublish_failed error code through --json', function (): void {
@@ -301,13 +331,16 @@ describe('S3Unpublish CLI command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('s3.unpublish_failed');
+        expect($exitCode)->toBe(1)->and($output)->toContain('s3.unpublish_failed');
     });
 
     it('returns already_absent=true in the success frame for idempotent removal', function (): void {
         fakeGatewayProgressStream(
-            gatewayProgressFrame('complete', s3UnpublishCompleteFrame('s3.example.com', 'storage-1', alreadyAbsent: true)),
+            gatewayProgressFrame('complete', s3UnpublishCompleteFrame(
+                's3.example.com',
+                'storage-1',
+                alreadyAbsent: true,
+            )),
         );
 
         [$exitCode, $output] = runCommand($this, 's3:unpublish', [
@@ -319,9 +352,12 @@ describe('S3Unpublish CLI command', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['data']['data']['meta']['already_absent'])->toBeTrue()
-            ->and($decoded['data']['data']['meta']['action'])->toBe('unpublished');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['data']['data']['meta']['already_absent'])
+            ->toBeTrue()
+            ->and($decoded['data']['data']['meta']['action'])
+            ->toBe('unpublished');
     });
 
     // -----------------------------------------------------------------------
@@ -341,7 +377,7 @@ describe('S3Unpublish CLI command', function (): void {
                     ['key' => 'apply_cleanup', 'label' => 'Apply route cleanup'],
                 ],
             ])
-            .gatewayProgressFrame('complete', s3UnpublishCompleteFrame()),
+                .gatewayProgressFrame('complete', s3UnpublishCompleteFrame()),
         );
 
         [$exitCode, $output] = runCommand($this, 's3:unpublish', [
@@ -350,14 +386,22 @@ describe('S3Unpublish CLI command', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Unpublishing S3 Host')
-            ->and($output)->toContain('Confirm destructive removal')
-            ->and($output)->toContain('Resolve S3 node')
-            ->and($output)->toContain('Check router')
-            ->and($output)->toContain('Remove ingress host')
-            ->and($output)->toContain('Remove SeaweedFS public host config')
-            ->and($output)->toContain('Apply route cleanup');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Unpublishing S3 Host')
+            ->and($output)
+            ->toContain('Confirm destructive removal')
+            ->and($output)
+            ->toContain('Resolve S3 node')
+            ->and($output)
+            ->toContain('Check router')
+            ->and($output)
+            ->toContain('Remove ingress host')
+            ->and($output)
+            ->toContain('Remove SeaweedFS public host config')
+            ->and($output)
+            ->toContain('Apply route cleanup');
     });
 
     it('outputs human-readable success without --json', function (): void {
@@ -377,7 +421,10 @@ describe('S3Unpublish CLI command', function (): void {
     // -----------------------------------------------------------------------
 
     it('prompts for the host when the host argument is omitted in interactive mode', function (): void {
-        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame('prompted.example.com', 'storage-1')));
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame(
+            'prompted.example.com',
+            'storage-1',
+        )));
 
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(s3UnpublishFakeNodeListEnvelope(['storage-1']), 200),
@@ -387,16 +434,22 @@ describe('S3Unpublish CLI command', function (): void {
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
 
-        $this->artisan('s3:unpublish', ['--node' => 'storage-1', '--force' => true])
+        $this
+            ->artisan('s3:unpublish', ['--node' => 'storage-1', '--force' => true])
             ->expectsQuestion('Public hostname to remove (e.g. s3.example.com)', 'prompted.example.com')
             ->assertSuccessful();
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/s3/public-hosts/prompted.example.com'));
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/api/s3/public-hosts/prompted.example.com'),
+        );
     });
 
     it('prompts for confirmation in interactive mode without --force', function (): void {
-        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame('s3.example.com', 'storage-1')));
+        fakeGatewayProgressStreamClient(gatewayProgressFrame('complete', s3UnpublishCompleteFrame(
+            's3.example.com',
+            'storage-1',
+        )));
 
         Http::fake([
             'https://gateway.test/api/nodes*' => Http::response(s3UnpublishFakeNodeListEnvelope(['storage-1']), 200),
@@ -406,12 +459,15 @@ describe('S3Unpublish CLI command', function (): void {
         config()->set('orbit.gateway.timeout', 30);
         app()->forgetInstance(GatewayApiClient::class);
 
-        $this->artisan('s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1'])
+        $this
+            ->artisan('s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1'])
             ->expectsConfirmation("Remove public S3 host 's3.example.com'?", 'yes')
             ->assertSuccessful();
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com'));
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'DELETE'
+            && str_contains($request->url(), '/api/s3/public-hosts/s3.example.com'),
+        );
     });
 
     it('aborts removal when the interactive confirmation is rejected', function (): void {
@@ -424,11 +480,15 @@ describe('S3Unpublish CLI command', function (): void {
         app()->forgetInstance(GatewayApiClient::class);
         app()->forgetInstance(GatewayStreamClient::class);
 
-        $this->artisan('s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1'])
+        $this
+            ->artisan('s3:unpublish', ['host' => 's3.example.com', '--node' => 'storage-1'])
             ->expectsConfirmation("Remove public S3 host 's3.example.com'?", 'no')
             ->assertFailed();
 
-        assertGatewayStreamNotSent(fn (FakeGatewayStreamRequest $request): bool => str_contains($request->url(), '/api/s3/public-hosts/'));
+        assertGatewayStreamNotSent(fn (FakeGatewayStreamRequest $request): bool => str_contains(
+            $request->url(),
+            '/api/s3/public-hosts/',
+        ));
     });
 });
 

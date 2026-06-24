@@ -39,9 +39,13 @@ describe('CorrelationHeader middleware', function (): void {
             return new Response('ok');
         });
 
-        expect($capturedUuid)->not->toBeNull()
-            ->and(Str::isUuid($capturedUuid))->toBeTrue()
-            ->and($correlation->current())->toBeNull();
+        expect($capturedUuid)
+            ->not
+            ->toBeNull()
+            ->and(Str::isUuid($capturedUuid))
+            ->toBeTrue()
+            ->and($correlation->current())
+            ->toBeNull();
     });
 
     it('preserves outer correlation UUID when nested', function (): void {

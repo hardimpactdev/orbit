@@ -11,62 +11,62 @@ function workspaceStepListSeed(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $script = <<<'PHP'
-$nodes = \App\Models\Node::query()
-    ->whereIn('name', ['operator-1', 'app-dev-1'])
-    ->pluck('id', 'name');
+        $nodes = \App\Models\Node::query()
+            ->whereIn('name', ['operator-1', 'app-dev-1'])
+            ->pluck('id', 'name');
 
-foreach (['operator-1', 'app-dev-1'] as $name) {
-    if (! $nodes->has($name)) {
-        throw new \RuntimeException("Missing prepared node [{$name}].");
-    }
-}
+        foreach (['operator-1', 'app-dev-1'] as $name) {
+            if (! $nodes->has($name)) {
+                throw new \RuntimeException("Missing prepared node [{$name}].");
+            }
+        }
 
-\Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
-\Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
-\Illuminate\Support\Facades\DB::table('workspaces')->delete();
-\App\Models\App::query()->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->delete();
-\Illuminate\Support\Facades\DB::table('node_access')->insert([
-    'consumer_node_id' => $nodes->get('operator-1'),
-    'serving_node_id' => $nodes->get('app-dev-1'),
-    'permissions' => json_encode(['workspace:read'], JSON_THROW_ON_ERROR),
-    'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
-    'created_at' => now(),
-    'updated_at' => now(),
-]);
+        \Illuminate\Support\Facades\DB::table('workspace_run_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_runs')->delete();
+        \Illuminate\Support\Facades\DB::table('workspace_steps')->delete();
+        \Illuminate\Support\Facades\DB::table('workspaces')->delete();
+        \App\Models\App::query()->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->delete();
+        \Illuminate\Support\Facades\DB::table('node_access')->insert([
+            'consumer_node_id' => $nodes->get('operator-1'),
+            'serving_node_id' => $nodes->get('app-dev-1'),
+            'permissions' => json_encode(['workspace:read'], JSON_THROW_ON_ERROR),
+            'custom_permissions' => json_encode([], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
 
-$app = \App\Models\App::query()->create([
-    'name' => 'docs',
-    'node_id' => $nodes->get('app-dev-1'),
-    'path' => '/srv/docs',
-    'document_root' => 'public',
-]);
+        $app = \App\Models\App::query()->create([
+            'name' => 'docs',
+            'node_id' => $nodes->get('app-dev-1'),
+            'path' => '/srv/docs',
+            'document_root' => 'public',
+        ]);
 
-\App\Models\WorkspaceStep::query()->create([
-    'app_id' => $app->id,
-    'phase' => \App\Enums\WorkspaceLifecyclePhase::Setup,
-    'sort_order' => 2,
-    'command' => 'npm install',
-    'timeout_seconds' => 300,
-]);
-\App\Models\WorkspaceStep::query()->create([
-    'app_id' => $app->id,
-    'phase' => \App\Enums\WorkspaceLifecyclePhase::Setup,
-    'sort_order' => 1,
-    'command' => 'composer install',
-    'timeout_seconds' => 600,
-]);
-\App\Models\WorkspaceStep::query()->create([
-    'app_id' => $app->id,
-    'phase' => \App\Enums\WorkspaceLifecyclePhase::Teardown,
-    'sort_order' => 1,
-    'command' => 'dropdb docs',
-    'timeout_seconds' => 60,
-]);
+        \App\Models\WorkspaceStep::query()->create([
+            'app_id' => $app->id,
+            'phase' => \App\Enums\WorkspaceLifecyclePhase::Setup,
+            'sort_order' => 2,
+            'command' => 'npm install',
+            'timeout_seconds' => 300,
+        ]);
+        \App\Models\WorkspaceStep::query()->create([
+            'app_id' => $app->id,
+            'phase' => \App\Enums\WorkspaceLifecyclePhase::Setup,
+            'sort_order' => 1,
+            'command' => 'composer install',
+            'timeout_seconds' => 600,
+        ]);
+        \App\Models\WorkspaceStep::query()->create([
+            'app_id' => $app->id,
+            'phase' => \App\Enums\WorkspaceLifecyclePhase::Teardown,
+            'sort_order' => 1,
+            'command' => 'dropdb docs',
+            'timeout_seconds' => 60,
+        ]);
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
@@ -84,7 +84,12 @@ it('reads workspace setup and teardown step policy from a non-gateway caller thr
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'workspace-step-list');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         workspaceStepListSeed($topology);
 
@@ -110,13 +115,20 @@ it('reads workspace setup and teardown step policy from a non-gateway caller thr
         $setupSteps = $setupPayload['success']['data']['steps'] ?? null;
         $teardownSteps = $teardownPayload['success']['data']['steps'] ?? null;
 
-        expect($setupSteps)->toBeArray()
-            ->and(array_column($setupSteps, 'command'))->toBe(['composer install', 'npm install'])
-            ->and($setupSteps[0]['phase'])->toBe('setup')
-            ->and($setupSteps[0]['timeout_seconds'])->toBe(600)
-            ->and($teardownSteps)->toBeArray()
-            ->and($teardownSteps[0]['command'])->toBe('dropdb docs')
-            ->and($teardownSteps[0]['phase'])->toBe('teardown');
+        expect($setupSteps)
+            ->toBeArray()
+            ->and(array_column($setupSteps, 'command'))
+            ->toBe(['composer install', 'npm install'])
+            ->and($setupSteps[0]['phase'])
+            ->toBe('setup')
+            ->and($setupSteps[0]['timeout_seconds'])
+            ->toBe(600)
+            ->and($teardownSteps)
+            ->toBeArray()
+            ->and($teardownSteps[0]['command'])
+            ->toBe('dropdb docs')
+            ->and($teardownSteps[0]['phase'])
+            ->toBe('teardown');
     } finally {
         $topology->cleanup();
     }

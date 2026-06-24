@@ -78,20 +78,25 @@ final readonly class SystemdUnitRenderer
 
         return sprintf(
             <<<'SH'
-sudo mkdir -p /etc/systemd/system
-sudo tee %1$s >/dev/null <<'EOF'
-%2$sEOF
-sudo systemctl daemon-reload
-sudo systemctl enable %3$s >/dev/null
-SH,
+                sudo mkdir -p /etc/systemd/system
+                sudo tee %1$s >/dev/null <<'EOF'
+                %2$sEOF
+                sudo systemctl daemon-reload
+                sudo systemctl enable %3$s >/dev/null
+                SH,
             escapeshellarg($this->unitPath($runtimeUnit)),
             $this->render($node, $app, $process, $workspace),
             escapeshellarg($serviceName),
         );
     }
 
-    private function workingDirectory(Node $node, App $app, Process $process, ?Workspace $workspace, string $home): string
-    {
+    private function workingDirectory(
+        Node $node,
+        App $app,
+        Process $process,
+        ?Workspace $workspace,
+        string $home,
+    ): string {
         $ownerClass = Relation::getMorphedModel($process->owner_type) ?? $process->owner_type;
 
         if ($ownerClass === Node::class) {
@@ -124,7 +129,11 @@ SH,
         ];
 
         return collect($environment)
-            ->map(fn (string $value, string $key): string => 'Environment="'.$key.'='.$this->escapeEnvironmentValue($value).'"')
+            ->map(
+                fn (string $value, string $key): string => (
+                    'Environment="'.$key.'='.$this->escapeEnvironmentValue($value).'"'
+                ),
+            )
             ->values()
             ->all();
     }

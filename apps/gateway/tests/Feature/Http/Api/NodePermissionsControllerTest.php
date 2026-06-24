@@ -99,7 +99,8 @@ describe('NodePermissionsController', function (): void {
             'serving_node' => 'app-1',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'read')
             ->assertJsonPath('success.data.permissions', ['node:read', 'tool:read']);
     });
@@ -157,7 +158,14 @@ describe('NodePermissionsController', function (): void {
             ->where('serving_node_id', $appId)
             ->first();
 
-        expect($grant->permissions)->toBe(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read']);
+        expect($grant->permissions)->toBe([
+            'app:read',
+            'database:read',
+            'doctor:verify',
+            'firewall_rule:read',
+            'node:read',
+            'tool:read',
+        ]);
     });
 
     it('creates grant with preset when missing', function (): void {
@@ -213,7 +221,8 @@ describe('NodePermissionsController', function (): void {
             'remove' => 'tool:read',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'updated')
             ->assertJsonPath('success.data.permissions', ['node:read']);
 
@@ -284,7 +293,8 @@ describe('NodePermissionsController', function (): void {
             'serving_node' => 'app-1',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'read')
             ->assertJsonPath('success.data.permissions', ['node:read']);
     });
@@ -373,9 +383,13 @@ describe('NodePermissionsController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.message', 'This action requires the node:permissions permission on a grant to the gateway.')
+            ->assertJsonPath(
+                'error.message',
+                'This action requires the node:permissions permission on a grant to the gateway.',
+            )
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:permissions')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
@@ -398,7 +412,8 @@ describe('NodePermissionsController', function (): void {
             'preset' => ['operator'],
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'preset');
     });
@@ -420,7 +435,8 @@ describe('NodePermissionsController', function (): void {
             'permissions' => true,
         ], ['REMOTE_ADDR' => PERMS_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'permissions');
     });

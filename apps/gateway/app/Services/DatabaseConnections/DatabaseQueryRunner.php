@@ -33,8 +33,11 @@ final readonly class DatabaseQueryRunner
      * @param  array<string, mixed>  $options
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    public function run(DatabaseConnection|DatabaseConnectionPayload|array $connection, string $sql, array $options = []): array
-    {
+    public function run(
+        DatabaseConnection|DatabaseConnectionPayload|array $connection,
+        string $sql,
+        array $options = [],
+    ): array {
         $payload = $this->payload($connection);
         $write = (bool) ($options['write'] ?? false);
         $full = (bool) ($options['full'] ?? false);
@@ -183,7 +186,9 @@ final readonly class DatabaseQueryRunner
                 'search_path' => 'public',
                 'options' => [PDO::ATTR_TIMEOUT => $timeout],
             ],
-            default => throw new InvalidArgumentException("Unsupported database connection driver [{$payload->driver}]."),
+            default => throw new InvalidArgumentException(
+                "Unsupported database connection driver [{$payload->driver}].",
+            ),
         };
     }
 

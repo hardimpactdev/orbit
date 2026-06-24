@@ -27,11 +27,14 @@ final class CreateVpnClientRequest extends GatewayRequest
 
     protected function defaultBody(): array
     {
-        return array_filter([
-            'name' => $this->name,
-            'config' => $this->includeConfig,
-            'totp' => $this->totp,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'name' => $this->name,
+                'config' => $this->includeConfig,
+                'totp' => $this->totp,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): VpnClientResponse
@@ -39,7 +42,7 @@ final class CreateVpnClientRequest extends GatewayRequest
         $data = $this->unwrapData($response);
 
         return new VpnClientResponse(
-            client: is_array($data['client'] ?? null) ? $data['client'] : [],
+            client: $this->stringKeyedArray($data['client'] ?? []),
             meta: $this->unwrapMeta($response),
         );
     }

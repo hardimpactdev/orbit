@@ -29,7 +29,8 @@ uses(RefreshDatabase::class);
 it('runs one scheduler daemon tick on demand', function (): void {
     createOrbitSchedulerGatewayNode();
 
-    $this->artisan('orbit-scheduler --once')
+    $this
+        ->artisan('orbit-scheduler --once')
         ->expectsOutputToContain('Orbit Scheduler tick completed')
         ->assertSuccessful();
 });
@@ -47,18 +48,22 @@ it('starts the scheduler through the gateway image scheduler entrypoint', functi
 it('renders scheduler repair through the gateway Swarm scheduler service instead of host supervisor', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
     Process::fake([
-        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"),
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'" => Process::result(
+            output: "ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+        ),
         "docker service scale --detach=true 'orbit_orbit-scheduler=1'" => Process::result(),
     ]);
 
-    (new SchedulesFixer)->fixGateway($gateway, new DriftEntry(
+    new SchedulesFixer()->fixGateway($gateway, new DriftEntry(
         family: 'schedule',
         key: 'schedule.scheduler_stopped',
         kind: DriftKind::Divergent,
         summary: 'Orbit Scheduler service is stopped.',
     ));
 
-    Process::assertRan("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'");
+    Process::assertRan(
+        "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' 'orbit_orbit-scheduler'",
+    );
     Process::assertRan("docker service scale --detach=true 'orbit_orbit-scheduler=1'");
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'orbit'.'-runtime'));
     Process::assertNotRan(fn ($process): bool => str_contains((string) $process->command, 'supervisor'));
@@ -69,12 +74,14 @@ it('dispatches due app schedules from the gateway and records run history centra
     $gateway = createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id, 'path' => '/srv/docs']);
-    Schedule::factory()->forApp($app)->create([
-        'name' => 'laravel-scheduler',
-        'schedule_key' => 'app:docs:laravel-scheduler',
-        'execution_value' => 'php artisan schedule:run',
-        'interval' => 'every minute',
-    ]);
+    Schedule::factory()
+        ->forApp($app)
+        ->create([
+            'name' => 'laravel-scheduler',
+            'schedule_key' => 'app:docs:laravel-scheduler',
+            'execution_value' => 'php artisan schedule:run',
+            'interval' => 'every minute',
+        ]);
     $remoteShell = new OrbitSchedulerRecordingRemoteShell([
         new RemoteShellResult(exitCode: 0, stdout: "ran\n", stderr: '', durationMs: 25),
     ]);
@@ -85,29 +92,44 @@ it('dispatches due app schedules from the gateway and records run history centra
     $run = ScheduleRun::query()->firstOrFail();
     $state = SchedulerState::query()->firstOrFail();
 
-    expect($result->dueSchedules)->toBe(1)
-        ->and($result->executedSchedules)->toBe(1)
-        ->and($remoteShell->nodes)->toBe(['app-1'])
-        ->and($remoteShell->scripts)->toBe(['php artisan schedule:run'])
-        ->and($remoteShell->options[0]['timeout'])->toBe(900)
-        ->and($remoteShell->options[0]['cwd'])->toBe('/srv/docs')
-        ->and($run->node_id)->toBe($appNode->id)
-        ->and($run->schedule_key)->toBe('app:docs:laravel-scheduler')
-        ->and($run->status)->toBe('completed')
-        ->and($run->stdout)->toBe("ran\n")
-        ->and($state->node_id)->toBe($gateway->id)
-        ->and($state->heartbeat_at?->toIso8601String())->toBe('2026-05-06T12:34:00+00:00')
-        ->and(ScheduleLock::query()->count())->toBe(0);
+    expect($result->dueSchedules)
+        ->toBe(1)
+        ->and($result->executedSchedules)
+        ->toBe(1)
+        ->and($remoteShell->nodes)
+        ->toBe(['app-1'])
+        ->and($remoteShell->scripts)
+        ->toBe(['php artisan schedule:run'])
+        ->and($remoteShell->options[0]['timeout'])
+        ->toBe(900)
+        ->and($remoteShell->options[0]['cwd'])
+        ->toBe('/srv/docs')
+        ->and($run->node_id)
+        ->toBe($appNode->id)
+        ->and($run->schedule_key)
+        ->toBe('app:docs:laravel-scheduler')
+        ->and($run->status)
+        ->toBe('completed')
+        ->and($run->stdout)
+        ->toBe("ran\n")
+        ->and($state->node_id)
+        ->toBe($gateway->id)
+        ->and($state->heartbeat_at?->toIso8601String())
+        ->toBe('2026-05-06T12:34:00+00:00')
+        ->and(ScheduleLock::query()->count())
+        ->toBe(0);
 });
 
 it('runs gateway-target schedules locally without remote shell dispatch', function (): void {
     $gateway = createOrbitSchedulerGatewayNode();
-    Schedule::factory()->orbit()->create([
-        'name' => 'gateway-maintenance',
-        'schedule_key' => 'orbit:gateway:gateway-maintenance',
-        'execution_value' => 'php apps/gateway/artisan orbit:cleanup',
-        'interval' => 'every minute',
-    ]);
+    Schedule::factory()
+        ->orbit()
+        ->create([
+            'name' => 'gateway-maintenance',
+            'schedule_key' => 'orbit:gateway:gateway-maintenance',
+            'execution_value' => 'php apps/gateway/artisan orbit:cleanup',
+            'interval' => 'every minute',
+        ]);
     $remoteShell = new OrbitSchedulerRecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
     Process::fake([
@@ -119,12 +141,18 @@ it('runs gateway-target schedules locally without remote shell dispatch', functi
 
     $run = ScheduleRun::query()->firstOrFail();
 
-    expect($result->dueSchedules)->toBe(1)
-        ->and($result->executedSchedules)->toBe(1)
-        ->and($remoteShell->scripts)->toBe([])
-        ->and($run->node_id)->toBe($gateway->id)
-        ->and($run->status)->toBe('completed')
-        ->and($run->stdout)->toBe("local\n");
+    expect($result->dueSchedules)
+        ->toBe(1)
+        ->and($result->executedSchedules)
+        ->toBe(1)
+        ->and($remoteShell->scripts)
+        ->toBe([])
+        ->and($run->node_id)
+        ->toBe($gateway->id)
+        ->and($run->status)
+        ->toBe('completed')
+        ->and($run->stdout)
+        ->toBe("local\n");
 
     Process::assertRan('php apps/gateway/artisan orbit:cleanup');
 });
@@ -142,12 +170,14 @@ it('dispatches multiple remote schedules through the remote shell pool', functio
             'path' => "/srv/{$name}",
         ]);
 
-        Schedule::factory()->forApp($app)->create([
-            'name' => 'scheduler',
-            'schedule_key' => "app:{$name}:scheduler",
-            'execution_value' => "echo {$name}",
-            'interval' => 'every minute',
-        ]);
+        Schedule::factory()
+            ->forApp($app)
+            ->create([
+                'name' => 'scheduler',
+                'schedule_key' => "app:{$name}:scheduler",
+                'execution_value' => "echo {$name}",
+                'interval' => 'every minute',
+            ]);
     }
 
     $remoteShell = new OrbitSchedulerAsyncRemoteShell;
@@ -155,73 +185,105 @@ it('dispatches multiple remote schedules through the remote shell pool', functio
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
 
-    expect($result->dueSchedules)->toBe(3)
-        ->and($result->executedSchedules)->toBe(3)
-        ->and($remoteShell->runCalls)->toBe(0)
-        ->and($remoteShell->started)->toBe([
+    expect($result->dueSchedules)
+        ->toBe(3)
+        ->and($result->executedSchedules)
+        ->toBe(3)
+        ->and($remoteShell->runCalls)
+        ->toBe(0)
+        ->and($remoteShell->started)
+        ->toBe([
             ['node' => 'app-1', 'script' => 'echo one', 'cwd' => '/srv/one'],
             ['node' => 'app-2', 'script' => 'echo two', 'cwd' => '/srv/two'],
             ['node' => 'app-3', 'script' => 'echo three', 'cwd' => '/srv/three'],
         ])
-        ->and($remoteShell->maxActiveProcesses)->toBe(3)
-        ->and(ScheduleRun::query()->where('status', 'completed')->count())->toBe(3)
-        ->and(ScheduleLock::query()->count())->toBe(0);
+        ->and($remoteShell->maxActiveProcesses)
+        ->toBe(3)
+        ->and(ScheduleRun::query()->where('status', 'completed')->count())
+        ->toBe(3)
+        ->and(ScheduleLock::query()->count())
+        ->toBe(0);
 });
 
 it('skips schedules that are not due', function (): void {
     createOrbitSchedulerGatewayNode();
 
-    Schedule::factory()->orbit()->create([
-        'name' => 'daily-report',
-        'schedule_key' => 'orbit:gateway:daily-report',
-        'interval' => 'daily at 09:00',
-    ]);
+    Schedule::factory()
+        ->orbit()
+        ->create([
+            'name' => 'daily-report',
+            'schedule_key' => 'orbit:gateway:daily-report',
+            'interval' => 'daily at 09:00',
+        ]);
 
     $remoteShell = new OrbitSchedulerRecordingRemoteShell;
     app()->instance(RemoteShell::class, $remoteShell);
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
 
-    expect($result->dueSchedules)->toBe(0)
-        ->and($result->executedSchedules)->toBe(0)
-        ->and($remoteShell->scripts)->toBe([])
-        ->and(ScheduleRun::query()->count())->toBe(0);
+    expect($result->dueSchedules)
+        ->toBe(0)
+        ->and($result->executedSchedules)
+        ->toBe(0)
+        ->and($remoteShell->scripts)
+        ->toBe([])
+        ->and(ScheduleRun::query()->count())
+        ->toBe(0);
 });
 
 it('records remote dispatch failures as failed gateway history', function (): void {
     createOrbitSchedulerGatewayNode();
     $appNode = createOrbitSchedulerAppHostNode(['name' => 'app-1']);
     $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
-    Schedule::factory()->forApp($app)->create([
-        'name' => 'laravel-scheduler',
-        'schedule_key' => 'app:docs:laravel-scheduler',
-        'interval' => 'every minute',
-    ]);
-    app()->instance(RemoteShell::class, new OrbitSchedulerRecordingRemoteShell(throwable: new RuntimeException('ssh timeout')));
+    Schedule::factory()
+        ->forApp($app)
+        ->create([
+            'name' => 'laravel-scheduler',
+            'schedule_key' => 'app:docs:laravel-scheduler',
+            'interval' => 'every minute',
+        ]);
+    app()->instance(
+        RemoteShell::class,
+        new OrbitSchedulerRecordingRemoteShell(throwable: new RuntimeException('ssh timeout')),
+    );
 
     $result = app(OrbitScheduler::class)->tick(CarbonImmutable::parse('2026-05-06T12:34:00Z'));
     $run = ScheduleRun::query()->firstOrFail();
 
-    expect($result->dueSchedules)->toBe(1)
-        ->and($result->executedSchedules)->toBe(1)
-        ->and($run->node_id)->toBe($appNode->id)
-        ->and($run->status)->toBe('failed')
-        ->and($run->exit_code)->toBe(1)
-        ->and($run->stderr)->toBe('ssh timeout')
-        ->and(ScheduleLock::query()->count())->toBe(0);
+    expect($result->dueSchedules)
+        ->toBe(1)
+        ->and($result->executedSchedules)
+        ->toBe(1)
+        ->and($run->node_id)
+        ->toBe($appNode->id)
+        ->and($run->status)
+        ->toBe('failed')
+        ->and($run->exit_code)
+        ->toBe(1)
+        ->and($run->stderr)
+        ->toBe('ssh timeout')
+        ->and(ScheduleLock::query()->count())
+        ->toBe(0);
 });
 
 it('evaluates portable schedule interval expressions', function (): void {
     $interval = new ScheduleInterval;
     $now = CarbonImmutable::parse('2026-05-06T12:35:00Z');
 
-    expect($interval->isDue('every minute', 'UTC', $now))->toBeTrue()
-        ->and($interval->isDue('every 5 minutes', 'UTC', $now))->toBeTrue()
-        ->and($interval->isDue('every 10 minutes', 'UTC', $now))->toBeFalse()
-        ->and($interval->isDue('daily at 14:35', 'Europe/Amsterdam', $now))->toBeTrue()
-        ->and($interval->isDue('weekdays at 14:35', 'Europe/Amsterdam', $now))->toBeTrue()
-        ->and($interval->isDue('weekly on wednesday at 14:35', 'Europe/Amsterdam', $now))->toBeTrue()
-        ->and($interval->isDue('weekly on monday at 14:35', 'Europe/Amsterdam', $now))->toBeFalse();
+    expect($interval->isDue('every minute', 'UTC', $now))
+        ->toBeTrue()
+        ->and($interval->isDue('every 5 minutes', 'UTC', $now))
+        ->toBeTrue()
+        ->and($interval->isDue('every 10 minutes', 'UTC', $now))
+        ->toBeFalse()
+        ->and($interval->isDue('daily at 14:35', 'Europe/Amsterdam', $now))
+        ->toBeTrue()
+        ->and($interval->isDue('weekdays at 14:35', 'Europe/Amsterdam', $now))
+        ->toBeTrue()
+        ->and($interval->isDue('weekly on wednesday at 14:35', 'Europe/Amsterdam', $now))
+        ->toBeTrue()
+        ->and($interval->isDue('weekly on monday at 14:35', 'Europe/Amsterdam', $now))
+        ->toBeFalse();
 });
 
 function createOrbitSchedulerGatewayNode(array $attributes = []): Node

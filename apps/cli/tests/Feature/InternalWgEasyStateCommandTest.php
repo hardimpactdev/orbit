@@ -37,8 +37,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -58,8 +60,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -72,8 +76,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_action',
                 'wg-easy state action must be one of: update-user, update-general, ensure-writable, upsert-peer, delete-peer, update-interface, update-user-password, update-session-password.',
                 [
@@ -88,8 +94,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'missing_token',
                 'Operation token is required.',
             ));
@@ -111,8 +119,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'invalid_token',
                 'Operation token is invalid.',
             ));
@@ -142,17 +152,22 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'user_configs_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-user',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['host'])->toBe($host)
-            ->and($row['default_dns'])->toBe($defaultDns)
-            ->and($row['default_persistent_keepalive'])->toBe(25);
+            ->and($row['host'])
+            ->toBe($host)
+            ->and($row['default_dns'])
+            ->toBe($defaultDns)
+            ->and($row['default_persistent_keepalive'])
+            ->toBe(25);
     });
 
     it('updates general setup step with a parameterized statement', function (): void {
@@ -168,15 +183,18 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'general_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-general',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['setup_step'])->toBe(0);
+            ->and($row['setup_step'])
+            ->toBe(0);
     });
 
     it('upserts a peer with parameterized statements', function (): void {
@@ -207,27 +225,42 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'clients_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'upsert-peer',
                     'upserted' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and(countWgEasyStateRows($databasePath, 'clients_table'))->toBe(1)
-            ->and($row['name'])->toBe($name)
-            ->and($row['ipv4_address'])->toBe('10.6.0.2')
-            ->and($row['ipv6_address'])->toBe('fdcc:ad94:bacf:61a4::cafe:2')
-            ->and($row['private_key'])->toBe('gateway-private-key')
-            ->and($row['public_key'])->toBe('gateway-public-key')
-            ->and($row['pre_shared_key'])->toBe('gateway-pre-shared-key')
-            ->and($row['allowed_ips'])->toBe('["0.0.0.0/0", "::/0"]')
-            ->and($row['server_allowed_ips'])->toBe('["10.6.0.2/32"]')
-            ->and($row['persistent_keepalive'])->toBe(25)
-            ->and($row['mtu'])->toBe(1420)
-            ->and($row['dns'])->toBe('["10.6.0.1"]')
-            ->and($row['enabled'])->toBe(1);
+            ->and(countWgEasyStateRows($databasePath, 'clients_table'))
+            ->toBe(1)
+            ->and($row['name'])
+            ->toBe($name)
+            ->and($row['ipv4_address'])
+            ->toBe('10.6.0.2')
+            ->and($row['ipv6_address'])
+            ->toBe('fdcc:ad94:bacf:61a4::cafe:2')
+            ->and($row['private_key'])
+            ->toBe('gateway-private-key')
+            ->and($row['public_key'])
+            ->toBe('gateway-public-key')
+            ->and($row['pre_shared_key'])
+            ->toBe('gateway-pre-shared-key')
+            ->and($row['allowed_ips'])
+            ->toBe('["0.0.0.0/0", "::/0"]')
+            ->and($row['server_allowed_ips'])
+            ->toBe('["10.6.0.2/32"]')
+            ->and($row['persistent_keepalive'])
+            ->toBe(25)
+            ->and($row['mtu'])
+            ->toBe(1420)
+            ->and($row['dns'])
+            ->toBe('["10.6.0.1"]')
+            ->and($row['enabled'])
+            ->toBe(1);
     });
 
     it('deletes a peer by one whitelisted identity with a parameterized statement', function (): void {
@@ -259,16 +292,20 @@ describe('internal wg-easy state command', function (): void {
 
         $remaining = readWgEasyStateRow($databasePath, 'clients_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'delete-peer',
                     'deleted' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and(countWgEasyStateRows($databasePath, 'clients_table'))->toBe(1)
-            ->and($remaining['name'])->toBe('control');
+            ->and(countWgEasyStateRows($databasePath, 'clients_table'))
+            ->toBe(1)
+            ->and($remaining['name'])
+            ->toBe('control');
     });
 
     it('updates the wg0 interface cidr with a parameterized statement', function (): void {
@@ -285,16 +322,20 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'interfaces_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-interface',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['name'])->toBe('wg0')
-            ->and($row['ipv4_cidr'])->toBe('10.6.0.0/24');
+            ->and($row['name'])
+            ->toBe('wg0')
+            ->and($row['ipv4_cidr'])
+            ->toBe('10.6.0.0/24');
     });
 
     it('updates the wg-easy user password hash without printing the value', function (): void {
@@ -311,16 +352,21 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'users_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-user-password',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($output)->not->toContain($passwordHash)
-            ->and($row['password'])->toBe($passwordHash);
+            ->and($output)
+            ->not
+            ->toContain($passwordHash)
+            ->and($row['password'])
+            ->toBe($passwordHash);
     });
 
     it('updates the wg-easy session password hash without printing the value', function (): void {
@@ -337,16 +383,21 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'general_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-session-password',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($output)->not->toContain($passwordHash)
-            ->and($row['session_password'])->toBe($passwordHash);
+            ->and($output)
+            ->not
+            ->toContain($passwordHash)
+            ->and($row['session_password'])
+            ->toBe($passwordHash);
     });
 
     it('updates the wg-easy user password hash when the value is a valid argon2id hash', function (): void {
@@ -363,15 +414,18 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'users_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-user-password',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['password'])->toBe($passwordHash);
+            ->and($row['password'])
+            ->toBe($passwordHash);
     });
 
     it('updates the wg-easy session password hash when the value is a valid argon2id hash', function (): void {
@@ -388,15 +442,18 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'general_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-session-password',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['session_password'])->toBe($passwordHash);
+            ->and($row['session_password'])
+            ->toBe($passwordHash);
     });
 
     it('accepts a structurally complete low cost argon2id user password hash because validation is format only', function (): void {
@@ -413,15 +470,18 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'users_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-user-password',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['password'])->toBe($passwordHash);
+            ->and($row['password'])
+            ->toBe($passwordHash);
     });
 
     it('accepts a structurally complete low cost argon2id session password hash because validation is format only', function (): void {
@@ -438,15 +498,18 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'general_table');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'update-session-password',
                     'updated' => true,
                 ]),
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
             ))
-            ->and($row['session_password'])->toBe($passwordHash);
+            ->and($row['session_password'])
+            ->toBe($passwordHash);
     });
 
     it('returns success when the database file is writable', function (): void {
@@ -458,8 +521,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe(json_encode(
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe(json_encode(
                 JsonEnvelope::success([
                     'action' => 'ensure-writable',
                     'writable' => true,
@@ -482,23 +547,30 @@ describe('internal wg-easy state command', function (): void {
 
         chmod($databasePath, 0644);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'database_unwritable',
                 'wg-easy database is not writable.',
                 ['reason' => 'path_not_chown_eligible'],
             ));
     });
 
-    it('rejects invalid update-user options before opening the database', function (array $options, string $field): void {
+    it('rejects invalid update-user options before opening the database', function (
+        array $options,
+        string $field,
+    ): void {
         [$exitCode, $output] = runWgEasyStateCommand($this, array_merge([
             '--action' => 'update-user',
             '--operation-token' => wgEasyStateSignedOperationToken(),
             '--json' => true,
         ], $options));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 "The --{$field} option is invalid.",
                 ['field' => $field],
@@ -537,22 +609,30 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'The --setup-step option is invalid.',
                 ['field' => 'setup-step'],
             ));
     });
 
-    it('rejects invalid new action options before opening the database', function (array $parameters, string $message, array $meta): void {
+    it('rejects invalid new action options before opening the database', function (
+        array $parameters,
+        string $message,
+        array $meta,
+    ): void {
         [$exitCode, $output] = runWgEasyStateCommand($this, array_merge($parameters, [
             '--operation-token' => wgEasyStateSignedOperationToken(),
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 $message,
                 $meta,
@@ -661,8 +741,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'database_missing',
                 'wg-easy database does not exist.',
             ));
@@ -683,8 +765,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'interface_not_found',
                 'wg-easy interface was not found.',
                 ['interface' => 'wg0'],
@@ -700,8 +784,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'peer_not_found',
                 'wg-easy peer was not found.',
             ));
@@ -716,8 +802,10 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'interface_not_found',
                 'wg-easy interface was not found.',
                 ['interface' => 'wg0'],
@@ -728,13 +816,18 @@ describe('internal wg-easy state command', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
         createWgEasyUsersDatabase($databasePath, insertUser: false);
 
-        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyPasswordOptions('update-user-password'), [
-            '--operation-token' => wgEasyStateSignedOperationToken(),
-            '--json' => true,
-        ]));
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(
+            validWgEasyPasswordOptions('update-user-password'),
+            [
+                '--operation-token' => wgEasyStateSignedOperationToken(),
+                '--json' => true,
+            ],
+        ));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'user_not_found',
                 'wg-easy user was not found.',
             ));
@@ -744,13 +837,18 @@ describe('internal wg-easy state command', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
         createWgEasySessionPasswordDatabase($databasePath, insertSettings: false);
 
-        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(validWgEasyPasswordOptions('update-session-password'), [
-            '--operation-token' => wgEasyStateSignedOperationToken(),
-            '--json' => true,
-        ]));
+        [$exitCode, $output] = runWgEasyStateCommand($this, array_merge(
+            validWgEasyPasswordOptions('update-session-password'),
+            [
+                '--operation-token' => wgEasyStateSignedOperationToken(),
+                '--json' => true,
+            ],
+        ));
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'session_password_not_found',
                 'wg-easy session password row was not found.',
             ));
@@ -770,11 +868,17 @@ describe('internal wg-easy state command', function (): void {
             'ORBIT_WG_EASY_DB_PATH' => $databasePath,
         ]);
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->not->toContain($passwordHash)
-            ->and($process->getErrorOutput())->not->toContain($passwordHash)
-            ->and(json_decode(trim($process->getOutput()), associative: true, flags: JSON_THROW_ON_ERROR))->not->toContain($passwordHash)
-            ->and(wgEasyStateLogContents())->not->toContain($passwordHash);
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->not->toContain($passwordHash)->and($process->getErrorOutput())
+            ->not->toContain($passwordHash)->and(json_decode(
+                trim($process->getOutput()),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            ))
+            ->not->toContain($passwordHash)->and(wgEasyStateLogContents())
+            ->not->toContain($passwordHash);
     });
 
     it('does not leak session password hash values to stdout, stderr, json, or logs', function (): void {
@@ -791,11 +895,17 @@ describe('internal wg-easy state command', function (): void {
             'ORBIT_WG_EASY_DB_PATH' => $databasePath,
         ]);
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->not->toContain($passwordHash)
-            ->and($process->getErrorOutput())->not->toContain($passwordHash)
-            ->and(json_decode(trim($process->getOutput()), associative: true, flags: JSON_THROW_ON_ERROR))->not->toContain($passwordHash)
-            ->and(wgEasyStateLogContents())->not->toContain($passwordHash);
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->not->toContain($passwordHash)->and($process->getErrorOutput())
+            ->not->toContain($passwordHash)->and(json_decode(
+                trim($process->getOutput()),
+                associative: true,
+                flags: JSON_THROW_ON_ERROR,
+            ))
+            ->not->toContain($passwordHash)->and(wgEasyStateLogContents())
+            ->not->toContain($passwordHash);
     });
 
     it('rejects host values with null bytes before writing to the database', function (): void {
@@ -813,13 +923,16 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'user_configs_table');
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'The --host option is invalid.',
                 ['field' => 'host'],
             ))
-            ->and($row['host'])->toBe('old.example.test');
+            ->and($row['host'])
+            ->toBe('old.example.test');
     });
 
     it('rejects default DNS values with null bytes before writing to the database', function (): void {
@@ -837,13 +950,16 @@ describe('internal wg-easy state command', function (): void {
 
         $row = readWgEasyStateRow($databasePath, 'user_configs_table');
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'The --default-dns option is invalid.',
                 ['field' => 'default-dns'],
             ))
-            ->and($row['default_dns'])->toBe('["8.8.8.8"]');
+            ->and($row['default_dns'])
+            ->toBe('["8.8.8.8"]');
     });
 
     it('rejects database path overrides with null bytes before file operations', function (): void {
@@ -856,14 +972,17 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'validation_failed',
                 'The ORBIT_WG_EASY_DB_PATH environment value is invalid.',
                 ['field' => 'ORBIT_WG_EASY_DB_PATH'],
             ))
-            ->and($output)->not->toContain('ValueError')
-            ->and($output)->not->toContain('null byte');
+            ->and($output)
+            ->not->toContain('ValueError')->and($output)
+            ->not->toContain('null byte');
     });
 
     it('returns a database_missing failure envelope without raw PDO details', function (): void {
@@ -874,21 +993,26 @@ describe('internal wg-easy state command', function (): void {
             '--json' => true,
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))->toBe(JsonEnvelope::failure(
+        expect($exitCode)
+            ->toBe(1)
+            ->and(json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(JsonEnvelope::failure(
                 'database_missing',
                 'wg-easy database does not exist.',
             ))
-            ->and($output)->not->toContain('SQLSTATE')
-            ->and($output)->not->toContain('PDOException');
+            ->and($output)
+            ->not->toContain('SQLSTATE')->and($output)
+            ->not->toContain('PDOException');
     });
 
     it('hides the internal wg-easy state command from php orbit list', function (): void {
         $process = new Process([PHP_BINARY, 'orbit', 'list'], base_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0)
-            ->and($process->getOutput())->not->toContain('internal:wg-easy:state');
+        expect($process->getExitCode())
+            ->toBe(0)
+            ->and($process->getOutput())
+            ->not->toContain('internal:wg-easy:state');
     });
 });
 
@@ -907,14 +1031,16 @@ function wgEasyStateSignedOperationToken(
     $issuedAt ??= time() - 10;
     $expiresAt ??= time() + 120;
 
-    return (new OperationTokenSigner)->sign(
-        secret: 'gateway-secret',
-        id: $id,
-        node: $node,
-        command: $command,
-        issuedAt: $issuedAt,
-        expiresAt: $expiresAt,
-    )->toString();
+    return new OperationTokenSigner()
+        ->sign(
+            secret: 'gateway-secret',
+            id: $id,
+            node: $node,
+            command: $command,
+            issuedAt: $issuedAt,
+            expiresAt: $expiresAt,
+        )
+        ->toString();
 }
 
 /**
@@ -934,8 +1060,12 @@ function runWgEasyStateCommand(object $test, array $parameters = []): array
 function createWgEasyUserConfigDatabase(string $path): void
 {
     $pdo = createWgEasyStateWritableSqliteDatabase($path);
-    $pdo->exec('create table user_configs_table (host text not null, default_dns text not null, default_persistent_keepalive integer not null)');
-    $pdo->exec("insert into user_configs_table (host, default_dns, default_persistent_keepalive) values ('old.example.test', '[\"8.8.8.8\"]', 0)");
+    $pdo->exec(
+        'create table user_configs_table (host text not null, default_dns text not null, default_persistent_keepalive integer not null)',
+    );
+    $pdo->exec(
+        "insert into user_configs_table (host, default_dns, default_persistent_keepalive) values ('old.example.test', '[\"8.8.8.8\"]', 0)",
+    );
 }
 
 function createWgEasyGeneralDatabase(string $path): void
@@ -1202,11 +1332,15 @@ function runWgEasyStateCommandProcess(array $parameters, array $environment = []
     chmod($configPath, 0600);
 
     try {
-        $process = new Process($arguments, base_path(), array_merge([
-            'APP_KEY' => 'gateway-secret',
-            'ORBIT_CONFIG_PATH' => $configPath,
-            'ORBIT_GATEWAY_URL' => '',
-        ], $environment));
+        $process = new Process(
+            $arguments,
+            base_path(),
+            array_merge([
+                'APP_KEY' => 'gateway-secret',
+                'ORBIT_CONFIG_PATH' => $configPath,
+                'ORBIT_GATEWAY_URL' => '',
+            ], $environment),
+        );
         $process->run();
 
         return $process;

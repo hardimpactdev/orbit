@@ -9,7 +9,9 @@ use App\Models\DatabaseConnectionTarget;
 
 final readonly class DatabaseAuditPayload
 {
-    public function __construct(private DatabaseQueryClassifier $classifier) {}
+    public function __construct(
+        private DatabaseQueryClassifier $classifier,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $extra
@@ -19,7 +21,7 @@ final readonly class DatabaseAuditPayload
     {
         return $this->compact([
             'operation' => $operation,
-            ...$connection instanceof DatabaseConnection ? $this->connection($connection) : [],
+            ...($connection instanceof DatabaseConnection ? $this->connection($connection) : []),
             ...$extra,
         ]);
     }
@@ -30,8 +32,14 @@ final readonly class DatabaseAuditPayload
      * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
-    public function query(DatabaseConnection $connection, string $target, string $sql, array $options = [], array $meta = [], array $extra = []): array
-    {
+    public function query(
+        DatabaseConnection $connection,
+        string $target,
+        string $sql,
+        array $options = [],
+        array $meta = [],
+        array $extra = [],
+    ): array {
         return $this->compact([
             ...$this->connection($connection),
             ...$this->target($connection, $target),
@@ -47,8 +55,13 @@ final readonly class DatabaseAuditPayload
      * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
-    public function queryAttempt(string $target, string $sql, array $options = [], array $meta = [], array $extra = []): array
-    {
+    public function queryAttempt(
+        string $target,
+        string $sql,
+        array $options = [],
+        array $meta = [],
+        array $extra = [],
+    ): array {
         $statementClass = $this->statementClass($sql);
 
         return $this->compact([
@@ -68,8 +81,14 @@ final readonly class DatabaseAuditPayload
      * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
-    public function schema(string $operation, DatabaseConnection $connection, string $target, array $meta = [], ?string $table = null, array $extra = []): array
-    {
+    public function schema(
+        string $operation,
+        DatabaseConnection $connection,
+        string $target,
+        array $meta = [],
+        ?string $table = null,
+        array $extra = [],
+    ): array {
         return $this->compact([
             'operation' => $operation,
             ...$this->connection($connection),
@@ -99,7 +118,8 @@ final readonly class DatabaseAuditPayload
      */
     private function target(DatabaseConnection $connection, string $target): array
     {
-        $targetRow = $connection->targets()
+        $targetRow = $connection
+            ->targets()
             ->with(['app', 'workspace'])
             ->get()
             ->first(fn ($row): bool => $row->app?->name === $target || $row->workspace?->name === $target);

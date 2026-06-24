@@ -21,13 +21,16 @@ describe('app:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/apps')
-            && str_contains($request->url(), 'node=app-1')
-            && ! str_contains($request->url(), 'environment='));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_contains($request->url(), '/api/apps')
+                && str_contains($request->url(), 'node=app-1')
+                && ! str_contains($request->url(), 'environment=')
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['apps'][0]['name'])->toBe('orbit-docs');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['apps'][0]['name'])->toBe('orbit-docs');
     });
 
     it('does not expose the retired environment filter', function (): void {
@@ -45,7 +48,11 @@ describe('app:list', function (): void {
                     'url' => 'https://docs.test',
                     'workspaces' => [
                         ['name' => 'feature-a', 'url' => 'https://feature-a.docs.test', 'lifecycle_status' => 'active'],
-                        ['name' => 'feature-b', 'url' => 'https://feature-b.docs.test', 'lifecycle_status' => 'setting_up'],
+                        [
+                            'name' => 'feature-b',
+                            'url' => 'https://feature-b.docs.test',
+                            'lifecycle_status' => 'setting_up',
+                        ],
                     ],
                 ],
                 [
@@ -65,22 +72,37 @@ describe('app:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'app:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Node: app-1')
-            ->and($output)->toContain('Node: app-2')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('URL')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('docs')
-            ->and($output)->toContain('blog')
-            ->and($output)->toContain('api')
-            ->and($output)->toContain('expected')
-            ->and($output)->toContain('├─ feature-a')
-            ->and($output)->toContain('└─ feature-b')
-            ->and($output)->toContain('active')
-            ->and($output)->toContain('setting_up')
-            ->and($output)->not->toContain('apps: [')
-            ->and($output)->not->toContain('"lifecycle_status"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Node: app-1')
+            ->and($output)
+            ->toContain('Node: app-2')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('URL')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('docs')
+            ->and($output)
+            ->toContain('blog')
+            ->and($output)
+            ->toContain('api')
+            ->and($output)
+            ->toContain('expected')
+            ->and($output)
+            ->toContain('├─ feature-a')
+            ->and($output)
+            ->toContain('└─ feature-b')
+            ->and($output)
+            ->toContain('active')
+            ->and($output)
+            ->toContain('setting_up')
+            ->and($output)
+            ->not->toContain('apps: [')->and($output)
+            ->not->toContain('"lifecycle_status"');
     });
 
     it('renders human empty output when no apps are visible', function (): void {
@@ -90,8 +112,7 @@ describe('app:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'app:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No apps found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No apps found.');
     });
 
     it('surfaces gateway_unavailable on gateway HTTP errors', function (): void {
@@ -101,8 +122,7 @@ describe('app:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('preserves structured gateway authorization failures', function (): void {
@@ -114,9 +134,12 @@ describe('app:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('app:read');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('app:read');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -126,7 +149,6 @@ describe('app:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

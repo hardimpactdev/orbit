@@ -21,9 +21,12 @@ it('targets the activity list endpoint with normalized query parameters', functi
         limit: 50,
     );
 
-    expect($request->getMethod())->toBe(Method::GET)
-        ->and($request->resolveEndpoint())->toBe('/api/activity')
-        ->and($request->query()->all())->toBe([
+    expect($request->getMethod())
+        ->toBe(Method::GET)
+        ->and($request->resolveEndpoint())
+        ->toBe('/api/activity')
+        ->and($request->query()->all())
+        ->toBe([
             'app' => 'docs',
             'node' => 'app-1',
             'effect' => 'destructive',
@@ -59,14 +62,17 @@ it('creates an activity list dto from the gateway envelope', function (): void {
 
     $dto = $connector->send($request)->dto();
 
-    expect($dto)->toBeInstanceOf(ActivityListResponse::class)
-        ->and($dto->activities)->toBe([
+    expect($dto)
+        ->toBeInstanceOf(ActivityListResponse::class)
+        ->and($dto->activities)
+        ->toBe([
             [
                 'id' => 42,
                 'effect' => 'destructive',
             ],
         ])
-        ->and($dto->meta)->toBe([
+        ->and($dto->meta)
+        ->toBe([
             'count' => 1,
             'has_more' => false,
         ]);

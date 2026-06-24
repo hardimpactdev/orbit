@@ -9,7 +9,9 @@ final readonly class ProbeSnapshot
     /**
      * @param  array<string, array<string, mixed>>  $items
      */
-    public function __construct(public array $items) {}
+    public function __construct(
+        public array $items,
+    ) {}
 
     /**
      * @return list<string>

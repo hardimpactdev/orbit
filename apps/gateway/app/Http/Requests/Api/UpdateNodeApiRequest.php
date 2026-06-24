@@ -36,7 +36,16 @@ class UpdateNodeApiRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            if ($this->hasAny(['host', 'user', 'tld', 'gateway_endpoint', 'public_ipv4', 'public_ipv6', 'role', 'environment'])) {
+            if ($this->hasAny([
+                'host',
+                'user',
+                'tld',
+                'gateway_endpoint',
+                'public_ipv4',
+                'public_ipv6',
+                'role',
+                'environment',
+            ])) {
                 return;
             }
 
@@ -76,7 +85,8 @@ class UpdateNodeApiRequest extends FormRequest
             'fields' => 'At least one field must be provided to update a node.',
             'role', 'environment' => "Field '{$field}' is not supported for node:update.",
             'tld' => "Invalid value for --tld: '{$value}'. TLD must be a lowercase DNS label without a leading dot.",
-            'gateway_endpoint' => "Invalid value for --gateway-endpoint: '{$value}'. Gateway endpoint must be a valid IP address or dotted DNS name.",
+            'gateway_endpoint'
+                => "Invalid value for --gateway-endpoint: '{$value}'. Gateway endpoint must be a valid IP address or dotted DNS name.",
             'public_ipv4' => "Invalid IPv4 address: '{$value}'.",
             'public_ipv6' => "Invalid IPv6 address: '{$value}'.",
             default => "Field '{$field}' cannot be empty.",

@@ -29,10 +29,13 @@ final class ListSchedulesRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ScheduleListResponse
@@ -42,7 +45,7 @@ final class ListSchedulesRequest extends GatewayRequest
         $schedules = $data['schedules'] ?? [];
 
         return new ScheduleListResponse(
-            schedules: is_array($schedules) ? array_values($schedules) : [],
+            schedules: $this->listOfStringKeyedArrays($schedules),
             meta: $meta,
         );
     }

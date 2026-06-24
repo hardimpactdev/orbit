@@ -70,13 +70,14 @@ function s3ProbeTool(Node $node, array $overrides = []): NodeTool
  */
 function s3ProbeShell(array $results = []): RemoteShell
 {
-    return new class($results) implements RemoteShell
-    {
+    return new class($results) implements RemoteShell {
         /** @var list<string> */
         public array $scripts = [];
 
         /** @param list<RemoteShellResult|Throwable> $results */
-        public function __construct(private array $results) {}
+        public function __construct(
+            private array $results,
+        ) {}
 
         /** @param array<string, mixed> $options */
         public function run(Node $node, string $script, array $options = []): RemoteShellResult
@@ -131,7 +132,12 @@ describe('s3 node drift — wireguard_missing', function (): void {
         $node = s3ProbeNode(['wireguard_address' => '10.6.0.20']);
         $assignment = s3ProbeAssignment($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->nodeDrift($node, $assignment);
@@ -148,9 +154,13 @@ describe('s3 node drift — wireguard_missing', function (): void {
         $drift = s3Probe($shell)->nodeDrift($node, $assignment);
 
         $entry = collect($drift)->firstWhere('key', 'node.s3.wireguard_missing');
-        expect($entry)->not->toBeNull()
-            ->and($entry->family)->toBe('node')
-            ->and($entry->kind)->toBe(DriftKind::Missing);
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->family)
+            ->toBe('node')
+            ->and($entry->kind)
+            ->toBe(DriftKind::Missing);
     });
 });
 
@@ -164,7 +174,12 @@ describe('s3 node drift — s3_data_path_invalid', function (): void {
         $node = s3ProbeNode();
         $assignment = s3ProbeAssignment($node, []);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->nodeDrift($node, $assignment);
@@ -194,7 +209,12 @@ describe('s3 node drift — s3_data_path_invalid', function (): void {
         $node = s3ProbeNode();
         $assignment = s3ProbeAssignment($node, ['data_path' => '/srv/orbit/s3/data']);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->nodeDrift($node, $assignment);
@@ -217,9 +237,13 @@ describe('s3 node drift — s3_data_path_invalid', function (): void {
         $drift = s3Probe($shell)->nodeDrift($node, $assignment);
 
         $entry = collect($drift)->firstWhere('key', 'node.s3_data_path_invalid');
-        expect($entry)->not->toBeNull()
-            ->and($entry->family)->toBe('node')
-            ->and($entry->kind)->toBe(DriftKind::Missing);
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->family)
+            ->toBe('node')
+            ->and($entry->kind)
+            ->toBe(DriftKind::Missing);
     });
 });
 
@@ -245,7 +269,12 @@ describe('s3 tool drift — tool.seaweedfs.row_missing', function (): void {
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -262,9 +291,13 @@ describe('s3 tool drift — tool.seaweedfs.row_missing', function (): void {
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $entry = collect($drift)->firstWhere('key', 'tool.seaweedfs.row_missing');
-        expect($entry)->not->toBeNull()
-            ->and($entry->family)->toBe('tool')
-            ->and($entry->kind)->toBe(DriftKind::Missing);
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->family)
+            ->toBe('tool')
+            ->and($entry->kind)
+            ->toBe(DriftKind::Missing);
     });
 });
 
@@ -278,7 +311,12 @@ describe('s3 tool drift — tool.seaweedfs.credentials_missing', function (): vo
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node, ['credentials' => null]);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -292,7 +330,12 @@ describe('s3 tool drift — tool.seaweedfs.credentials_missing', function (): vo
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node, ['credentials' => ['fields' => ['access_key_id' => 'key', 'secret_access_key' => '']]]);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -308,7 +351,12 @@ describe('s3 tool drift — tool.seaweedfs.credentials_missing', function (): vo
             'credentials' => ['fields' => ['access_key_id' => 'key-id', 'secret_access_key' => 'secret']],
         ]);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -322,14 +370,22 @@ describe('s3 tool drift — tool.seaweedfs.credentials_missing', function (): vo
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node, ['credentials' => null]);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $entry = collect($drift)->firstWhere('key', 'tool.seaweedfs.credentials_missing');
-        expect($entry)->not->toBeNull()
-            ->and($entry->family)->toBe('tool');
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->family)
+            ->toBe('tool');
     });
 });
 
@@ -343,7 +399,12 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=0\nrunning=false\npublished_address=\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=0\nrunning=false\npublished_address=\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -357,7 +418,12 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=false\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=false\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -391,8 +457,11 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $entry = collect($drift)->firstWhere('key', 'tool.seaweedfs.runtime_container_missing');
-        expect($entry)->not->toBeNull()
-            ->and($entry->kind)->toBe(DriftKind::Unverifiable);
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->kind)
+            ->toBe(DriftKind::Unverifiable);
     });
 
     it('does not emit tool.seaweedfs.runtime_container_missing when the container is running', function (): void {
@@ -400,7 +469,12 @@ describe('s3 tool drift — tool.seaweedfs.runtime_container_missing', function 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -420,7 +494,12 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=0.0.0.0:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=0.0.0.0:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -434,7 +513,12 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=1.2.3.4:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=1.2.3.4:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -448,7 +532,12 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=10.6.0.20:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
@@ -462,14 +551,23 @@ describe('s3 tool drift — tool.seaweedfs.bind_public_interface', function (): 
         $assignment = s3ProbeAssignment($node);
         s3ProbeTool($node);
         $shell = s3ProbeShell([
-            new RemoteShellResult(exitCode: 0, stdout: "exists=1\nrunning=true\npublished_address=0.0.0.0:8333\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "exists=1\nrunning=true\npublished_address=0.0.0.0:8333\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
         $drift = s3Probe($shell)->toolDrift($node, $assignment);
 
         $entry = collect($drift)->firstWhere('key', 'tool.seaweedfs.bind_public_interface');
-        expect($entry)->not->toBeNull()
-            ->and($entry->family)->toBe('tool')
-            ->and($entry->kind)->toBe(DriftKind::Divergent);
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->family)
+            ->toBe('tool')
+            ->and($entry->kind)
+            ->toBe(DriftKind::Divergent);
     });
 });

@@ -154,7 +154,11 @@ it('bootstraps the runtime image without guest user-data', function (): void {
                 return fakeProcessResult(output: "ssh-ed25519 AAAA fake-key\n");
             }
 
-            if (str_contains($command, 'bash -lc') && str_contains($command, 'docker.io') && str_contains($command, 'orbit-e2e-docker-swarm-init.service')) {
+            if (
+                str_contains($command, 'bash -lc')
+                && str_contains($command, 'docker.io')
+                && str_contains($command, 'orbit-e2e-docker-swarm-init.service')
+            ) {
                 $bootstrapScript = $command;
 
                 return fakeProcessResult();
@@ -182,7 +186,9 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('php8.5-bcmath');
     expect($bootstrapScript)->toContain('docker.io');
     expect($bootstrapScript)->toContain('static_php_arch=');
-    expect($bootstrapScript)->toContain('https://dl.static-php.dev/static-php-cli/bulk/php-$php_patch-cli-linux-$static_php_arch.tar.gz');
+    expect($bootstrapScript)->toContain(
+        'https://dl.static-php.dev/static-php-cli/bulk/php-$php_patch-cli-linux-$static_php_arch.tar.gz',
+    );
     expect($bootstrapScript)->toContain('/opt/orbit/php/$php_minor/bin');
     expect($bootstrapScript)->toContain('ln -sf /opt/orbit/php/8.5/bin/php /usr/local/bin/php');
     expect($bootstrapScript)->toContain('https://getcomposer.org/installer');
@@ -190,7 +196,9 @@ it('bootstraps the runtime image without guest user-data', function (): void {
     expect($bootstrapScript)->toContain('https://cli.github.com/packages/githubcli-archive-keyring.gpg');
     expect($bootstrapScript)->toContain('apt-get install -y -qq gh');
     expect($bootstrapScript)->toContain('composer global require laravel/installer');
-    expect($bootstrapScript)->toContain('ln -sf /home/orbit/.config/composer/vendor/bin/laravel /usr/local/bin/laravel');
+    expect($bootstrapScript)->toContain(
+        'ln -sf /home/orbit/.config/composer/vendor/bin/laravel /usr/local/bin/laravel',
+    );
     expect($bootstrapScript)->toContain('docker swarm init');
     expect($bootstrapScript)->toContain('docker pull "$image"');
     expect($bootstrapScript)->toContain('caddy:2-alpine');

@@ -22,11 +22,16 @@ describe('key generation', function (): void {
         $privateKey = base64_decode($result['private_key'], strict: true);
         $publicKey = base64_decode($result['public_key'], strict: true);
 
-        expect($privateKey)->toBeString()
-            ->and(strlen($privateKey))->toBe(32)
-            ->and($publicKey)->toBeString()
-            ->and(strlen($publicKey))->toBe(32)
-            ->and($result['public_key'])->toBe(base64_encode(sodium_crypto_scalarmult_base($privateKey)));
+        expect($privateKey)
+            ->toBeString()
+            ->and(strlen($privateKey))
+            ->toBe(32)
+            ->and($publicKey)
+            ->toBeString()
+            ->and(strlen($publicKey))
+            ->toBe(32)
+            ->and($result['public_key'])
+            ->toBe(base64_encode(sodium_crypto_scalarmult_base($privateKey)));
     });
 });
 

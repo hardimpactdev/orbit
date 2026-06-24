@@ -138,11 +138,13 @@ describe('NodeListController', function (): void {
         $response = getApiNodesJson('/api/nodes?role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);
         $metricsResponse = getApiNodesJson('/api/nodes?role=metrics', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'app-1');
 
-        $metricsResponse->assertOk()
+        $metricsResponse
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'metrics-1');
     });
@@ -168,7 +170,8 @@ describe('NodeListController', function (): void {
         $gatewayResponse = getApiNodesJson('/api/nodes?role=gateway', ['REMOTE_ADDR' => CALLER_WG_IP]);
         $vpnResponse = getApiNodesJson('/api/nodes?role=vpn', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $databaseResponse->assertOk()
+        $databaseResponse
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'db-1');
 
@@ -178,7 +181,8 @@ describe('NodeListController', function (): void {
         expect(array_column($gatewayResponse->json('success.data.nodes'), 'name'))
             ->toBe(['assigned-gateway', 'gateway-vpn']);
 
-        $vpnResponse->assertOk()
+        $vpnResponse
+            ->assertOk()
             ->assertJsonCount(1, 'success.data.nodes')
             ->assertJsonPath('success.data.nodes.0.name', 'gateway-vpn');
     });
@@ -193,7 +197,8 @@ describe('NodeListController', function (): void {
 
         $response = getApiNodesJson('/api/nodes?environment=production', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'environment')
             ->assertJsonPath('error.meta.reason', 'unsupported_field');
@@ -202,7 +207,8 @@ describe('NodeListController', function (): void {
     it('returns validation error for invalid role', function (): void {
         $response = getApiNodesJson('/api/nodes?role=invalid', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
@@ -210,7 +216,20 @@ describe('NodeListController', function (): void {
                     'meta' => [
                         'field' => 'role',
                         'value' => 'invalid',
-                        'allowed' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3', 'metrics', 'analytics'],
+                        'allowed' => [
+                            'gateway',
+                            'vpn',
+                            'router',
+                            'app-dev',
+                            'app-prod',
+                            'database',
+                            'agent',
+                            'ingress',
+                            'websocket',
+                            's3',
+                            'metrics',
+                            'analytics',
+                        ],
                     ],
                 ],
             ]);
@@ -219,7 +238,8 @@ describe('NodeListController', function (): void {
     it('returns validation error for invalid environment', function (): void {
         $response = getApiNodesJson('/api/nodes?environment=invalid', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJson([
                 'error' => [
                     'code' => 'validation_failed',
@@ -298,8 +318,7 @@ describe('NodeListController', function (): void {
                         ->where('role', 'app-dev')
                         ->where('node_id', DB::table('nodes')->where('name', 'app-1')->value('id'))
                         ->first()
-                        ?->converged_at
-                        ?->toJSON(),
+                        ?->converged_at?->toJSON(),
                 ],
             ],
         ]);
@@ -327,9 +346,13 @@ describe('NodeListController', function (): void {
         $gatewayNode = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'gateway-1');
 
-        expect($gatewayNode)->not->toHaveKey('role')
-            ->and($gatewayNode['roles'])->toHaveCount(2)
-            ->and($gatewayNode['roles'][1])->toMatchArray([
+        expect($gatewayNode)
+            ->not
+            ->toHaveKey('role')
+            ->and($gatewayNode['roles'])
+            ->toHaveCount(2)
+            ->and($gatewayNode['roles'][1])
+            ->toMatchArray([
                 'role' => 'vpn',
                 'status' => 'active',
                 'settings' => [
@@ -357,8 +380,7 @@ describe('NodeListController', function (): void {
         $node = collect($response->json('success.data.nodes'))
             ->first(fn (array $node): bool => $node['name'] === 'prod-app');
 
-        expect($node['host'])->toBe('203.0.113.10')
-            ->and($node['addresses']['wireguard'])->toBe('10.6.0.13');
+        expect($node['host'])->toBe('203.0.113.10')->and($node['addresses']['wireguard'])->toBe('10.6.0.13');
     });
 
     it('keeps app role environment out of node serialization', function (): void {
@@ -375,14 +397,16 @@ describe('NodeListController', function (): void {
         $response = getApiNodesJson('/api/nodes', ['REMOTE_ADDR' => CALLER_WG_IP]);
         $nodes = collect($response->json('success.data.nodes'))->keyBy('name');
 
-        expect($nodes['control-app'])->not->toHaveKey('environment')
-            ->and($nodes['plain-app'])->not->toHaveKey('environment');
+        expect($nodes['control-app'])
+            ->not->toHaveKey('environment')->and($nodes['plain-app'])
+            ->not->toHaveKey('environment');
     });
 
     it('rejects unauthenticated requests', function (): void {
         $response = getApiNodesJson('/api/nodes');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJson([
                 'error' => [
                     'code' => 'authorization_failed',
@@ -404,7 +428,8 @@ describe('NodeListController', function (): void {
 
         $response = getApiNodesJson('/api/nodes?doctor=1&role=app-dev', ['REMOTE_ADDR' => CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.meta.doctor.checked', 1)
             ->assertJsonPath('success.meta.doctor.issues', 2);
 

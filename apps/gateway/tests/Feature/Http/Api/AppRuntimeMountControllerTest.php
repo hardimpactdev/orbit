@@ -93,7 +93,8 @@ describe('AppRuntimeMountController', function (): void {
             'target' => '/home/nckrtl/packages',
         ]);
 
-        $created->assertOk()
+        $created
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'created')
             ->assertJsonPath('success.data.mount.source', '/home/nckrtl/packages')
             ->assertJsonPath('success.data.mount.target', '/home/nckrtl/packages')
@@ -106,16 +107,25 @@ describe('AppRuntimeMountController', function (): void {
             'read_only' => false,
         ]);
 
-        $updated->assertOk()
+        $updated
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'updated')
             ->assertJsonPath('success.data.mount.read_only', false);
 
-        $list = $this->call('GET', '/api/apps/nckrtl/mounts', [], [], [], [
-            'HTTP_ACCEPT' => 'application/json',
-            'REMOTE_ADDR' => APP_RUNTIME_MOUNT_CALLER_WG_IP,
-        ]);
+        $list = $this->call(
+            'GET',
+            '/api/apps/nckrtl/mounts',
+            [],
+            [],
+            [],
+            [
+                'HTTP_ACCEPT' => 'application/json',
+                'REMOTE_ADDR' => APP_RUNTIME_MOUNT_CALLER_WG_IP,
+            ],
+        );
 
-        $list->assertOk()
+        $list
+            ->assertOk()
             ->assertJsonPath('success.data.app.name', 'nckrtl')
             ->assertJsonPath('success.data.mounts.0.source', '/home/nckrtl/packages')
             ->assertJsonPath('success.data.mounts.0.target', '/home/nckrtl/packages')
@@ -125,7 +135,8 @@ describe('AppRuntimeMountController', function (): void {
             'target' => '/home/nckrtl/packages',
         ]);
 
-        $removed->assertOk()
+        $removed
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'removed')
             ->assertJsonPath('success.data.mounts', []);
     });
@@ -141,7 +152,8 @@ describe('AppRuntimeMountController', function (): void {
             'target' => '/home/nckrtl/packages',
         ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:mount');
     });
@@ -158,39 +170,62 @@ describe('AppRuntimeMountController', function (): void {
 
         $response = postAppRuntimeMountJson('/api/apps/nckrtl/mounts', $payload);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', $reason);
 
         expect(DB::table('app_runtime_mounts')->count())->toBe(0);
     })->with([
-        'relative source' => [[
-            'source' => 'packages',
-            'target' => '/home/nckrtl/packages',
-        ], 'source_must_be_absolute'],
-        'outside node home' => [[
-            'source' => '/srv/shared',
-            'target' => '/srv/shared',
-        ], 'source_outside_app_dev_home'],
-        'secret source' => [[
-            'source' => '/home/nckrtl/.ssh',
-            'target' => '/home/nckrtl/.ssh',
-        ], 'source_sensitive'],
-        'reserved target' => [[
-            'source' => '/home/nckrtl/packages',
-            'target' => '/packages',
-        ], 'target_reserved'],
-        'reserved xdg root' => [[
-            'source' => '/home/nckrtl/packages',
-            'target' => '/tmp/orbit-frankenphp',
-        ], 'target_reserved'],
-        'reserved xdg child' => [[
-            'source' => '/home/nckrtl/packages',
-            'target' => '/tmp/orbit-frankenphp/data/cache',
-        ], 'target_reserved'],
+        'relative source' => [
+            [
+                'source' => 'packages',
+                'target' => '/home/nckrtl/packages',
+            ],
+            'source_must_be_absolute',
+        ],
+        'outside node home' => [
+            [
+                'source' => '/srv/shared',
+                'target' => '/srv/shared',
+            ],
+            'source_outside_app_dev_home',
+        ],
+        'secret source' => [
+            [
+                'source' => '/home/nckrtl/.ssh',
+                'target' => '/home/nckrtl/.ssh',
+            ],
+            'source_sensitive',
+        ],
+        'reserved target' => [
+            [
+                'source' => '/home/nckrtl/packages',
+                'target' => '/packages',
+            ],
+            'target_reserved',
+        ],
+        'reserved xdg root' => [
+            [
+                'source' => '/home/nckrtl/packages',
+                'target' => '/tmp/orbit-frankenphp',
+            ],
+            'target_reserved',
+        ],
+        'reserved xdg child' => [
+            [
+                'source' => '/home/nckrtl/packages',
+                'target' => '/tmp/orbit-frankenphp/data/cache',
+            ],
+            'target_reserved',
+        ],
     ]);
 
-    it('rejects configurable runtime mounts for static apps and app-prod apps in the first slice', function (array $nodeState, array $appState, string $reason): void {
+    it('rejects configurable runtime mounts for static apps and app-prod apps in the first slice', function (
+        array $nodeState,
+        array $appState,
+        string $reason,
+    ): void {
         $caller = createAppRuntimeMountCaller();
         $appNode = Node::factory()
             ->{$nodeState['role']}()
@@ -206,7 +241,8 @@ describe('AppRuntimeMountController', function (): void {
             'target' => '/home/orbit/packages',
         ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', $reason);
     })->with([

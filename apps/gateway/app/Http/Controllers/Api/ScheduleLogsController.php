@@ -39,7 +39,12 @@ final readonly class ScheduleLogsController implements Loggable
         }
 
         if ($lines === false) {
-            return $this->error('validation_failed', 'The line limit must be a positive integer.', ['field' => 'lines'], 422);
+            return $this->error(
+                'validation_failed',
+                'The line limit must be a positive integer.',
+                ['field' => 'lines'],
+                422,
+            );
         }
 
         try {
@@ -57,7 +62,12 @@ final readonly class ScheduleLogsController implements Loggable
                 $this->setScheduleActivitySubject($request, $schedule);
             }
         } catch (GatewayApiException $e) {
-            return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $this->status($e));
+            return $this->error(
+                $e->errorCode() ?? 'validation_failed',
+                $e->getMessage(),
+                $e->errorMeta(),
+                $this->status($e),
+            );
         }
 
         return response()->json(['success' => $result]);

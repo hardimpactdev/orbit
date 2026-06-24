@@ -19,13 +19,26 @@ use Illuminate\Http\Request;
 
 final readonly class NodeListController implements Loggable
 {
-    private const array VALID_ROLES = ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress', 'websocket', 's3', 'metrics', 'analytics'];
+    private const array VALID_ROLES = [
+        'gateway',
+        'vpn',
+        'router',
+        'app-dev',
+        'app-prod',
+        'database',
+        'agent',
+        'ingress',
+        'websocket',
+        's3',
+        'metrics',
+        'analytics',
+    ];
 
     public function __invoke(Request $request, NodesDoctorSummary $doctorSummary): JsonResponse
     {
         $role = $request->query('role');
         $environment = $request->query('environment');
-        $doctor = (bool) filter_var($request->query('doctor', false), FILTER_VALIDATE_BOOLEAN);
+        $doctor = filter_var($request->query('doctor', false), FILTER_VALIDATE_BOOLEAN);
 
         if ($environment !== null) {
             return response()->json([
@@ -45,7 +58,8 @@ final readonly class NodeListController implements Loggable
                 return response()->json([
                     'error' => [
                         'code' => 'validation_failed',
-                        'message' => "Invalid value for role: '{$role}'. Allowed values: ".implode(', ', self::VALID_ROLES).'.',
+                        'message' =>
+                            "Invalid value for role: '{$role}'. Allowed values: ".implode(', ', self::VALID_ROLES).'.',
                         'meta' => [
                             'field' => 'role',
                             'value' => $role,
@@ -93,13 +107,17 @@ final readonly class NodeListController implements Loggable
 
         return $query
             ->get()
-            ->sort(fn (Node $first, Node $second): int => [
-                $assignments->assignmentRoleLabel($first),
-                mb_strtolower($first->name),
-            ] <=> [
-                $assignments->assignmentRoleLabel($second),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (Node $first, Node $second): int => (
+                    [
+                        $assignments->assignmentRoleLabel($first),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        $assignments->assignmentRoleLabel($second),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->values();
     }
 
@@ -127,7 +145,8 @@ final readonly class NodeListController implements Loggable
             ],
             'platform' => $node->platform ?? 'unknown',
             'status' => $node->status->value,
-            'roles' => $node->roleAssignments
+            'roles' => $node
+                ->roleAssignments
                 ->map(fn (NodeRoleAssignment $assignment): array => NodeRoleAssignmentPayload::fromModel($assignment))
                 ->all(),
         ])->all();

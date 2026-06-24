@@ -60,24 +60,33 @@ it('starts a durable update all operation and stores its immutable plan', functi
         'manifest' => updateAllStartManifest(),
     ]);
 
-    $response->assertStatus(202)
+    $response
+        ->assertStatus(202)
         ->assertJsonPath('success.data.operation_run.type', 'update:all')
         ->assertJsonPath('success.data.operation_run.status', 'queued')
         ->assertJsonPath('success.data.update_plan.target_version', '1.2.3')
-        ->assertJsonPath('success.data.update_plan.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+        ->assertJsonPath(
+            'success.data.update_plan.gateway_image',
+            'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        )
         ->assertJsonPath('success.data.update_plan.manifest_source', 'github-release');
 
     $operationRunId = $response->json('success.data.operation_run.id');
 
-    expect($operationRunId)->toBeString()
-        ->and($response->json('success.data.events_url'))->toBe("/api/operations/{$operationRunId}/events");
+    expect($operationRunId)
+        ->toBeString()
+        ->and($response->json('success.data.events_url'))
+        ->toBe("/api/operations/{$operationRunId}/events");
 
     $run = OperationRun::query()->findOrFail($operationRunId);
     $plan = OperationUpdatePlan::query()->where('operation_run_id', $operationRunId)->firstOrFail();
 
-    expect($run->status)->toBe(OperationStatus::Queued)
-        ->and($plan->manifest_snapshot)->toBe(updateAllStartManifest())
-        ->and($run->events()->pluck('event_type')->all())->toBe(['tree', 'step']);
+    expect($run->status)
+        ->toBe(OperationStatus::Queued)
+        ->and($plan->manifest_snapshot)
+        ->toBe(updateAllStartManifest())
+        ->and($run->events()->pluck('event_type')->all())
+        ->toBe(['tree', 'step']);
 
     Process::assertRan(function ($process) use ($operationRunId): bool {
         $command = (string) $process->command;
@@ -100,10 +109,11 @@ it('starts a durable update all operation and stores its immutable plan', functi
 });
 
 it('rejects unauthenticated start requests', function (): void {
-    $this->postJson('/api/update/all/start', [
-        'target_version' => '1.2.3',
-        'manifest' => updateAllStartManifest(),
-    ])
+    $this
+        ->postJson('/api/update/all/start', [
+            'target_version' => '1.2.3',
+            'manifest' => updateAllStartManifest(),
+        ])
         ->assertForbidden()
         ->assertJsonPath('error.code', 'authorization_failed');
 });
@@ -155,13 +165,17 @@ it('rejects raw request gateway image overrides when overrides are disabled', fu
         'manifest' => updateAllStartManifest(),
     ]);
 
-    $response->assertStatus(422)
+    $response
+        ->assertStatus(422)
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.meta.reason', 'update_plan_invalid');
 
-    expect($response->json('error.message'))->toContain('gateway image override is disabled')
-        ->and(OperationUpdatePlan::query()->count())->toBe(0)
-        ->and(OperationRun::query()->first()?->status)->toBe(OperationStatus::Rejected);
+    expect($response->json('error.message'))
+        ->toContain('gateway image override is disabled')
+        ->and(OperationUpdatePlan::query()->count())
+        ->toBe(0)
+        ->and(OperationRun::query()->first()?->status)
+        ->toBe(OperationStatus::Rejected);
 });
 
 it('accepts configured local testing gateway image overrides when digest pinned', function (): void {
@@ -174,7 +188,10 @@ it('accepts configured local testing gateway image overrides when digest pinned'
     ]);
 
     $response->assertStatus(202)
-        ->assertJsonPath('success.data.update_plan.gateway_image', 'ghcr.io/hardimpactdev/orbit-gateway:testing@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee');
+        ->assertJsonPath(
+            'success.data.update_plan.gateway_image',
+            'ghcr.io/hardimpactdev/orbit-gateway:testing@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        );
 });
 
 it('returns the event stream before resolving a remote manifest when the request omits an inline manifest', function (): void {
@@ -191,17 +208,22 @@ it('returns the event stream before resolving a remote manifest when the request
 
     $response = updateAllStartRequest([]);
 
-    $response->assertStatus(202)
+    $response
+        ->assertStatus(202)
         ->assertJsonPath('success.data.operation_run.type', 'update:all')
         ->assertJsonPath('success.data.operation_run.status', 'queued')
         ->assertJsonMissingPath('success.data.update_plan');
 
     $operationRunId = $response->json('success.data.operation_run.id');
 
-    expect($operationRunId)->toBeString()
-        ->and($response->json('success.data.events_url'))->toBe("/api/operations/{$operationRunId}/events")
-        ->and(OperationUpdatePlan::query()->count())->toBe(0)
-        ->and(OperationRun::query()->findOrFail($operationRunId)->result)->toMatchArray([
+    expect($operationRunId)
+        ->toBeString()
+        ->and($response->json('success.data.events_url'))
+        ->toBe("/api/operations/{$operationRunId}/events")
+        ->and(OperationUpdatePlan::query()->count())
+        ->toBe(0)
+        ->and(OperationRun::query()->findOrFail($operationRunId)->result)
+        ->toMatchArray([
             'update_start_request' => [],
         ]);
 
@@ -228,36 +250,44 @@ it('returns the event stream before recording a deferred runner launch failure',
         'manifest' => updateAllStartManifest(),
     ]);
 
-    $response->assertStatus(202)
+    $response
+        ->assertStatus(202)
         ->assertJsonPath('success.data.operation_run.type', 'update:all')
         ->assertJsonPath('success.data.operation_run.status', 'queued');
 
     $operationRunId = $response->json('success.data.operation_run.id');
     $run = OperationRun::query()->findOrFail($operationRunId);
     $errorEvent = $run->events()->where('event_type', 'error')->firstOrFail();
-    $stepPayloads = $run->events()
+    $stepPayloads = $run
+        ->events()
         ->where('event_type', 'step')
         ->get()
         ->map(fn (OperationEvent $event): array => $event->payload)
         ->all();
 
-    expect($run->status)->toBe(OperationStatus::Failed)
-        ->and($run->error['code'])->toBe('update_runner_launch_failed')
-        ->and($run->events()->pluck('event_type')->all())->toBe(['tree', 'step', 'step', 'error'])
-        ->and($stepPayloads)->toContain([
+    expect($run->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->error['code'])
+        ->toBe('update_runner_launch_failed')
+        ->and($run->events()->pluck('event_type')->all())
+        ->toBe(['tree', 'step', 'step', 'error'])
+        ->and($stepPayloads)
+        ->toContain([
             'key' => 'runner',
             'status' => 'failed',
             'message' => 'Update runner launch failed',
         ])
-        ->and($errorEvent->payload)->toMatchArray([
+        ->and($errorEvent->payload)
+        ->toMatchArray([
             'message' => 'Update runner launch failed',
             'exit_code' => 1,
             'data' => [
                 'reason' => 'update_runner_launch_failed',
             ],
         ])
-        ->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))->not->toContain('docker denied')
-        ->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))->not->toContain('Failed to launch update runner');
+        ->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))
+        ->not->toContain('docker denied')->and(json_encode($errorEvent->payload, JSON_THROW_ON_ERROR))
+        ->not->toContain('Failed to launch update runner');
 });
 
 it('returns validation errors before creating an operation run', function (): void {
@@ -273,15 +303,14 @@ it('returns validation errors before creating an operation run', function (): vo
 });
 
 it('declares gateway-wide permission on the start controller', function (): void {
-    $attributes = (new ReflectionClass(UpdateAllStartController::class))
+    $attributes = new ReflectionClass(UpdateAllStartController::class)
         ->getAttributes(RequiresPermission::class);
 
     expect($attributes)->toHaveCount(1);
 
     $permission = $attributes[0]->newInstance();
 
-    expect($permission->permission)->toBe('*')
-        ->and($permission->servingNode)->toBe(ServingNode::Gateway);
+    expect($permission->permission)->toBe('*')->and($permission->servingNode)->toBe(ServingNode::Gateway);
 });
 
 it('lives in the logged authenticated gateway API group', function (): void {
@@ -291,9 +320,12 @@ it('lives in the logged authenticated gateway API group', function (): void {
 
     $middleware = $route->gatherMiddleware();
 
-    expect($middleware)->toContain(WireGuardIdentity::class)
-        ->and($middleware)->toContain(RequireGrantPermission::class)
-        ->and($middleware)->toContain(LogActivity::class);
+    expect($middleware)
+        ->toContain(WireGuardIdentity::class)
+        ->and($middleware)
+        ->toContain(RequireGrantPermission::class)
+        ->and($middleware)
+        ->toContain(LogActivity::class);
 });
 
 /**
@@ -301,9 +333,16 @@ it('lives in the logged authenticated gateway API group', function (): void {
  */
 function updateAllStartRequest(array $payload, string $remoteAddress = UPDATE_ALL_START_GATEWAY_WG_IP): TestResponse
 {
-    return test()->call('POST', '/api/update/all/start', $payload, [], [], [
-        'REMOTE_ADDR' => $remoteAddress,
-    ]);
+    return test()->call(
+        'POST',
+        '/api/update/all/start',
+        $payload,
+        [],
+        [],
+        [
+            'REMOTE_ADDR' => $remoteAddress,
+        ],
+    );
 }
 
 /**

@@ -28,7 +28,8 @@ use Illuminate\Support\Str;
 use JsonException;
 use RuntimeException;
 
-#[Signature('orbit:internal:bootstrap-gateway-local
+#[Signature(
+    'orbit:internal:bootstrap-gateway-local
     {name : Gateway node name}
     {wireguard-address : WireGuard address for the gateway}
     {--identity-json= : Gateway/operator WireGuard identity payload; use - to read JSON from STDIN}
@@ -36,7 +37,8 @@ use RuntimeException;
     {--tld=gateway : TLD assigned to the gateway node; used to resolve <gateway-name>.<tld> over WG-served DNS}
     {--metadata-json : Output bootstrap metadata JSON instead of only the root CA PEM}
     {--skip-gateway-service-install : Skip orbit-caddy gateway API site write, wg-easy, and orbit-dns installation for container-only E2E topology preparation}
-    {--skip-wireguard-install : Skip gateway WireGuard interface installation for Docker E2E topology preparation}')]
+    {--skip-wireguard-install : Skip gateway WireGuard interface installation for Docker E2E topology preparation}',
+)]
 #[Description('Bootstrap gateway-local identity and root CA on the gateway host')]
 class BootstrapGatewayLocalCommand extends Command
 {
@@ -60,7 +62,14 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         /** @var array{gateway_name: string, gateway_public_key: string, gateway_private_key: string, gateway_pre_shared_key: string|null, gateway_wireguard_address: string|null, operator_name: string, operator_public_key: string, operator_private_key: string, operator_pre_shared_key: string|null, operator_wireguard_address: string|null}|null $enrollment */
-        $enrollment = DB::transaction(function () use ($name, $wireguardAddress, $identity, $gatewayTld, $publicHost, $hostKey) {
+        $enrollment = DB::transaction(function () use (
+            $name,
+            $wireguardAddress,
+            $identity,
+            $gatewayTld,
+            $publicHost,
+            $hostKey,
+        ) {
             $gateway = Node::query()->updateOrCreate(
                 ['name' => $name],
                 [
@@ -187,8 +196,13 @@ class BootstrapGatewayLocalCommand extends Command
                 $wireguardServerPublicKey = $vpnDnsSwarmInstaller->publicKey();
 
                 if ($enrollment !== null) {
-                    if ($enrollment['gateway_pre_shared_key'] === null || $enrollment['operator_pre_shared_key'] === null) {
-                        throw new RuntimeException('WireGuard identity payload must include pre-shared keys when bootstrapping through wg-easy.');
+                    if (
+                        $enrollment['gateway_pre_shared_key'] === null
+                        || $enrollment['operator_pre_shared_key'] === null
+                    ) {
+                        throw new RuntimeException(
+                            'WireGuard identity payload must include pre-shared keys when bootstrapping through wg-easy.',
+                        );
                     }
 
                     $vpnDnsSwarmInstaller->configurePeers([
@@ -212,20 +226,22 @@ class BootstrapGatewayLocalCommand extends Command
         }
 
         if ($enrollment !== null && ! (bool) $this->option('skip-wireguard-install')) {
-            $wireGuard->install($wireguardServerPublicKey !== null && $publicHost !== null
-                ? $this->gatewayClientWireGuardConfig(
-                    gatewayPrivateKey: $enrollment['gateway_private_key'],
-                    gatewayWireguardAddress: $wireguardAddress,
-                    wireguardServerPublicKey: $wireguardServerPublicKey,
-                    preSharedKey: $enrollment['gateway_pre_shared_key'],
-                    endpoint: $publicHost,
-                )
-                : $this->gatewayWireGuardConfig(
-                    gatewayPrivateKey: $enrollment['gateway_private_key'],
-                    gatewayWireguardAddress: $wireguardAddress,
-                    controlPublicKey: $enrollment['operator_public_key'],
-                    controlWireguardAddress: $enrollment['operator_wireguard_address'],
-                ));
+            $wireGuard->install(
+                $wireguardServerPublicKey !== null && $publicHost !== null
+                    ? $this->gatewayClientWireGuardConfig(
+                        gatewayPrivateKey: $enrollment['gateway_private_key'],
+                        gatewayWireguardAddress: $wireguardAddress,
+                        wireguardServerPublicKey: $wireguardServerPublicKey,
+                        preSharedKey: $enrollment['gateway_pre_shared_key'],
+                        endpoint: $publicHost,
+                    )
+                    : $this->gatewayWireGuardConfig(
+                        gatewayPrivateKey: $enrollment['gateway_private_key'],
+                        gatewayWireguardAddress: $wireguardAddress,
+                        controlPublicKey: $enrollment['operator_public_key'],
+                        controlWireguardAddress: $enrollment['operator_wireguard_address'],
+                    ),
+            );
         }
 
         if (! (bool) $this->option('skip-gateway-service-install')) {

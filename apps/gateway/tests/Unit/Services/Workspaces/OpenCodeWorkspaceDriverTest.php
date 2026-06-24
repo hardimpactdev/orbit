@@ -32,22 +32,33 @@ it('creates an OpenCode workspace and aligns it to the requested branch', functi
 
     $result = $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main');
 
-    expect($result->name)->toBe('feature-a')
-        ->and($result->path)->toBe('/srv/demo/.worktrees/feature-a')
-        ->and($result->agentIde)->toBe('opencode')
-        ->and($result->agentIdeWorkspaceId)->toBe('sess_feature_a')
-        ->and($shell->scripts)->toHaveCount(1)
-        ->and($shell->options[0]['metadata'])->toMatchArray([
+    expect($result->name)
+        ->toBe('feature-a')
+        ->and($result->path)
+        ->toBe('/srv/demo/.worktrees/feature-a')
+        ->and($result->agentIde)
+        ->toBe('opencode')
+        ->and($result->agentIdeWorkspaceId)
+        ->toBe('sess_feature_a')
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($shell->options[0]['metadata'])
+        ->toMatchArray([
             'ORBIT_WORKSPACE_PATH' => '/srv/demo/.worktrees/feature-a',
             'ORBIT_WORKSPACE_NAME' => 'feature-a',
             'ORBIT_WORKSPACE_BASE' => 'main',
         ])
-        ->and($shell->scripts[0])->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
-        ->and($shell->scripts[0])->toContain('git -C "$workspace_path" reset --hard "$base_ref"');
+        ->and($shell->scripts[0])
+        ->toContain('git -C "$workspace_path" branch -m "$workspace_name"')
+        ->and($shell->scripts[0])
+        ->toContain('git -C "$workspace_path" reset --hard "$base_ref"');
 
-    expect($client->projectCurrentCalls)->toBe(1)
-        ->and($client->worktreeCreateCalls)->toBe(1)
-        ->and($client->sessionCreateCalls)->toBe(1);
+    expect($client->projectCurrentCalls)
+        ->toBe(1)
+        ->and($client->worktreeCreateCalls)
+        ->toBe(1)
+        ->and($client->sessionCreateCalls)
+        ->toBe(1);
 });
 
 it('cleans up the OpenCode workspace when branch alignment fails', function (): void {
@@ -57,19 +68,26 @@ it('cleans up the OpenCode workspace when branch alignment fails', function (): 
         worktreeCreateQueue: [openCodeWorkspacePayload()],
     );
 
-    $driver = openCodeWorkspaceDriver($client, $shell = new OpenCodeWorkspaceDriverTestShell([
-        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'reset failed', durationMs: 1),
-    ]));
+    $driver = openCodeWorkspaceDriver(
+        $client,
+        $shell = new OpenCodeWorkspaceDriverTestShell([
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'reset failed', durationMs: 1),
+        ]),
+    );
 
     expect(fn () => $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main'))
         ->toThrow(WorkspaceCreateFailed::class, 'OpenCode could not create the workspace.');
 
     expect($shell->scripts)->toHaveCount(1);
 
-    expect($client->projectCurrentCalls)->toBe(1)
-        ->and($client->worktreeCreateCalls)->toBe(1)
-        ->and($client->worktreeRemoveCalls)->toBe(1)
-        ->and($client->sessionCreateCalls)->toBe(0);
+    expect($client->projectCurrentCalls)
+        ->toBe(1)
+        ->and($client->worktreeCreateCalls)
+        ->toBe(1)
+        ->and($client->worktreeRemoveCalls)
+        ->toBe(1)
+        ->and($client->sessionCreateCalls)
+        ->toBe(0);
 });
 
 it('recovers when OpenCode creates a workspace but returns a timeout response', function (): void {
@@ -84,17 +102,25 @@ it('recovers when OpenCode creates a workspace but returns a timeout response', 
 
     $result = $driver->create(openCodeWorkspaceApp(), openCodeWorkspaceNode(), 'feature-a', 'main');
 
-    expect($result->name)->toBe('feature-a')
-        ->and($result->path)->toBe('/srv/demo/.worktrees/feature-a')
-        ->and($shell->scripts)->toHaveCount(1);
+    expect($result->name)
+        ->toBe('feature-a')
+        ->and($result->path)
+        ->toBe('/srv/demo/.worktrees/feature-a')
+        ->and($shell->scripts)
+        ->toHaveCount(1);
 
-    expect($client->projectCurrentCalls)->toBe(1)
-        ->and($client->worktreeCreateCalls)->toBe(1)
-        ->and($client->sessionCreateCalls)->toBe(1);
+    expect($client->projectCurrentCalls)
+        ->toBe(1)
+        ->and($client->worktreeCreateCalls)
+        ->toBe(1)
+        ->and($client->sessionCreateCalls)
+        ->toBe(1);
 });
 
-function openCodeWorkspaceDriver(OpenCodeWorkspaceDriverTestClient $client, OpenCodeWorkspaceDriverTestShell $shell): OpenCodeWorkspaceDriver
-{
+function openCodeWorkspaceDriver(
+    OpenCodeWorkspaceDriverTestClient $client,
+    OpenCodeWorkspaceDriverTestShell $shell,
+): OpenCodeWorkspaceDriver {
     return new OpenCodeWorkspaceDriver(
         clientFactory: new OpenCodeWorkspaceDriverTestClientFactory($client),
         remoteShell: $shell,
@@ -103,7 +129,7 @@ function openCodeWorkspaceDriver(OpenCodeWorkspaceDriverTestClient $client, Open
 
 function openCodeWorkspaceApp(): App
 {
-    return (new App)->forceFill([
+    return new App()->forceFill([
         'name' => 'demo',
         'path' => '/srv/demo',
     ]);
@@ -111,7 +137,7 @@ function openCodeWorkspaceApp(): App
 
 function openCodeWorkspaceNode(): Node
 {
-    return (new Node)->forceFill([
+    return new Node()->forceFill([
         'name' => 'app-1',
         'host' => '10.6.0.7',
     ]);
@@ -236,7 +262,9 @@ final class OpenCodeWorkspaceDriverTestClient extends OpenCode
     {
         $this->projectCurrentCalls++;
 
-        return openCodeProjectFromPayload(array_shift($this->projectCurrentQueue) ?? openCodeProjectPayload(sandboxes: []));
+        return openCodeProjectFromPayload(
+            array_shift($this->projectCurrentQueue) ?? openCodeProjectPayload(sandboxes: []),
+        );
     }
 
     /**
@@ -303,8 +331,11 @@ final class OpenCodeWorkspaceDriverTestWorktreeResource extends WorktreeResource
         return $this->testClient()->nextWorktreeList();
     }
 
-    public function create(?string $name = null, ?string $startCommand = null, ?string $directory = null): OpenCodeWorktree
-    {
+    public function create(
+        ?string $name = null,
+        ?string $startCommand = null,
+        ?string $directory = null,
+    ): OpenCodeWorktree {
         return $this->testClient()->nextCreatedWorktree();
     }
 

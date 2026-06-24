@@ -38,7 +38,12 @@ it('uses the archive checkout path for prepared docker host-launcher instances',
 
 it('keeps explicit source-mounted docker checkout paths', function (): void {
     $method = new ReflectionMethod(E2ECurrentCheckout::class, 'sourceMountedCheckoutPath');
-    $instance = new DockerInstance(new DockerHost(E2EConfig::fromEnvironment()), 'orbit-e2e-gateway', null, '/home/orbit/orbit');
+    $instance = new DockerInstance(
+        new DockerHost(E2EConfig::fromEnvironment()),
+        'orbit-e2e-gateway',
+        null,
+        '/home/orbit/orbit',
+    );
 
     expect($method->invoke(null, $instance, 'orbit', true))->toBe('/home/orbit/orbit');
 });
@@ -87,10 +92,13 @@ it('prunes stale checkout archive cache tarballs and locks', function (): void {
         $method = new ReflectionMethod(E2ECurrentCheckout::class, 'pruneCheckoutArchiveCache');
         $method->invoke(null, $cacheDirectory, $currentArchive, $currentLock);
 
-        expect($currentArchive)->toBeFile()
-            ->and($currentLock)->toBeFile()
-            ->and($staleArchive)->not->toBeFile()
-            ->and($staleLock)->not->toBeFile();
+        expect($currentArchive)
+            ->toBeFile()
+            ->and($currentLock)
+            ->toBeFile()
+            ->and($staleArchive)
+            ->not->toBeFile()->and($staleLock)
+            ->not->toBeFile();
     } finally {
         File::deleteDirectory($cacheDirectory);
     }
@@ -141,8 +149,10 @@ it('prunes stale checkout archive artifacts while building temporary archives', 
         Process::fake(function ($process) {
             $command = (string) $process->command;
 
-            if (str_starts_with($command, 'COPYFILE_DISABLE=1 tar ')
-                && preg_match("/ -czf '([^']+)' /", $command, $matches) === 1) {
+            if (
+                str_starts_with($command, 'COPYFILE_DISABLE=1 tar ')
+                && preg_match("/ -czf '([^']+)' /", $command, $matches) === 1
+            ) {
                 File::put($matches[1], 'archive');
             }
 
@@ -151,10 +161,12 @@ it('prunes stale checkout archive artifacts while building temporary archives', 
 
         $builtArchive = E2ECurrentCheckout::buildArchive();
 
-        expect($builtArchive)->toBeFile()
-            ->and($staleArchive)->not->toBeFile()
-            ->and($staleLock)->not->toBeFile()
-            ->and($staleTemporaryArchive)->not->toBeFile();
+        expect($builtArchive)
+            ->toBeFile()
+            ->and($staleArchive)
+            ->not->toBeFile()->and($staleLock)
+            ->not->toBeFile()->and($staleTemporaryArchive)
+            ->not->toBeFile();
     } finally {
         if (is_string($builtArchive)) {
             File::delete($builtArchive);

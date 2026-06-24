@@ -47,17 +47,23 @@ final class NodePermissionsCommand extends GatewayCommand
         }
 
         if ($modeCount > 1) {
-            return $this->renderFailure('validation_failed', 'Use only one of --preset, --permissions, --add, or --remove.');
+            return $this->renderFailure(
+                'validation_failed',
+                'Use only one of --preset, --permissions, --add, or --remove.',
+            );
         }
 
-        $payload = array_filter([
-            'consuming_node' => $consumingNode,
-            'serving_node' => $servingNode,
-            'preset' => $this->stringOption('preset'),
-            'permissions' => $this->stringOption('permissions'),
-            'add' => $this->stringOption('add'),
-            'remove' => $this->stringOption('remove'),
-        ], fn (?string $value): bool => $value !== null);
+        $payload = array_filter(
+            [
+                'consuming_node' => $consumingNode,
+                'serving_node' => $servingNode,
+                'preset' => $this->stringOption('preset'),
+                'permissions' => $this->stringOption('permissions'),
+                'add' => $this->stringOption('add'),
+                'remove' => $this->stringOption('remove'),
+            ],
+            fn (?string $value): bool => $value !== null,
+        );
 
         $isReadMode = $modeCount === 0;
 

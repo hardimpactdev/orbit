@@ -127,7 +127,13 @@ final class DoctorRunController implements Loggable
         array $families,
         ?string $key,
     ): StreamedResponse {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $progressReports, $target, $families, $key): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use (
+            $runner,
+            $progressReports,
+            $target,
+            $families,
+            $key,
+        ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
             /** @var list<array<string, mixed>> $issues */
@@ -157,15 +163,7 @@ final class DoctorRunController implements Loggable
                 string $family,
                 string $phase,
                 array $familyIssues = [],
-            ) use (
-                $events,
-                $progressReports,
-                $target,
-                $key,
-                $renderedFamilies,
-                &$familyStatuses,
-                &$issues,
-            ): void {
+            ) use ($events, $progressReports, $target, $key, $renderedFamilies, &$familyStatuses, &$issues): void {
                 if ($phase === 'running') {
                     $familyStatuses[$family] = 'checking';
                 }
@@ -233,13 +231,16 @@ final class DoctorRunController implements Loggable
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $families, $key): void {
             $targets = $runner->fleetTargetsForFamilies($families);
-            $events->tree('Running Doctor', $targets
-                ->map(fn (Node $node): array => [
-                    'key' => $node->name,
-                    'label' => "Check {$node->name}",
-                ])
-                ->values()
-                ->all());
+            $events->tree(
+                'Running Doctor',
+                $targets
+                    ->map(fn (Node $node): array => [
+                        'key' => $node->name,
+                        'label' => "Check {$node->name}",
+                    ])
+                    ->values()
+                    ->all(),
+            );
 
             $doctor = $runner->probeFleet(
                 families: $families,
@@ -300,7 +301,10 @@ final class DoctorRunController implements Loggable
             return [];
         }
 
-        return array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== ''));
+        return array_values(array_filter(
+            $families,
+            static fn (mixed $family): bool => is_string($family) && $family !== '',
+        ));
     }
 
     private function resolveTarget(Request $request, Node $caller): ?Node

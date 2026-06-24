@@ -43,7 +43,9 @@ final class ProfileController implements Loggable
             return response()->json([
                 'error' => [
                     'code' => is_string($error['code'] ?? null) ? $error['code'] : 'profile_request_failed',
-                    'message' => is_string($error['message'] ?? null) ? $error['message'] : 'Failed to complete profile request.',
+                    'message' => is_string($error['message'] ?? null)
+                        ? $error['message']
+                        : 'Failed to complete profile request.',
                     'data' => is_array($error['data'] ?? null) ? $error['data'] : [],
                     'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
                 ],
@@ -176,7 +178,10 @@ final class ProfileController implements Loggable
             )
             ->when(
                 $nodeConstraint !== null,
-                fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $nodeConstraint)),
+                fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where(
+                    'name',
+                    $nodeConstraint,
+                )),
             );
 
         if (str_starts_with($selector, '/')) {
@@ -185,8 +190,7 @@ final class ProfileController implements Loggable
             return $baseQuery->get()->first(function (AppModel $app) use ($normalizedSelector): bool {
                 $path = realpath($app->path) ?: $app->path;
 
-                return $normalizedSelector === $path
-                    || str_starts_with($normalizedSelector, rtrim($path, '/').'/');
+                return $normalizedSelector === $path || str_starts_with($normalizedSelector, rtrim($path, '/').'/');
             });
         }
 

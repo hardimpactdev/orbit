@@ -94,14 +94,20 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
 
         if ($section === null) {
             return [
-                $this->finding($readme, 'Non-state command domain README files must include a `## State Ownership` section.'),
+                $this->finding(
+                    $readme,
+                    'Non-state command domain README files must include a `## State Ownership` section.',
+                ),
             ];
         }
 
         $findings = [];
 
         if (! str_contains(strtolower($section), 'does not own a state family')) {
-            $findings[] = $this->finding($readme, '`## State Ownership` must state that the command domain does not own a state family.');
+            $findings[] = $this->finding(
+                $readme,
+                '`## State Ownership` must state that the command domain does not own a state family.',
+            );
         }
 
         foreach (self::REQUIRED_DOCTOR_HANDOFFS[$familyName] as $stateFamily) {
@@ -109,7 +115,10 @@ final readonly class NonStateDomainHandoffRule implements GroupedRule
                 continue;
             }
 
-            $findings[] = $this->finding($readme, "`## State Ownership` must reference `doctor --family={$stateFamily}`.");
+            $findings[] = $this->finding(
+                $readme,
+                "`## State Ownership` must reference `doctor --family={$stateFamily}`.",
+            );
         }
 
         return $findings;

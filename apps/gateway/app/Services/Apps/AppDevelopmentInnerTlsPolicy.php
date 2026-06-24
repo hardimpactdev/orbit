@@ -60,7 +60,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
         }
 
         $app->loadMissing('node');
-        $tld = is_string($app->node?->tld) ? trim($app->node->tld, '.') : '';
+        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
 
         if ($tld === '') {
             return $app->name;
@@ -82,7 +82,7 @@ final readonly class AppDevelopmentInnerTlsPolicy
             return "{$workspace->name}.{$app->domain}";
         }
 
-        $tld = is_string($app->node?->tld) ? trim($app->node->tld, '.') : '';
+        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
 
         if ($tld === '') {
             return "{$workspace->name}.{$app->name}";
@@ -139,7 +139,8 @@ final readonly class AppDevelopmentInnerTlsPolicy
     {
         return [
             'SERVER_NAME' => "https://{$domain}:".self::InternalTlsPort,
-            'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls '.self::RuntimeTlsCertContainerPath.' '.self::RuntimeTlsKeyContainerPath,
+            'CADDY_SERVER_EXTRA_DIRECTIVES' =>
+                'tls '.self::RuntimeTlsCertContainerPath.' '.self::RuntimeTlsKeyContainerPath,
         ];
     }
 
@@ -163,10 +164,10 @@ final readonly class AppDevelopmentInnerTlsPolicy
 
         return sprintf(
             <<<'SH'
-sudo install -d -m 0755 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0644 %s
-SH,
+                sudo install -d -m 0755 %s
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                sudo chmod 0644 %s
+                SH,
             escapeshellarg(dirname($caPath)),
             escapeshellarg(base64_encode($rootCertificate)),
             escapeshellarg($caPath),
@@ -194,9 +195,11 @@ SH,
             return '';
         }
 
-        return "        transport http {\n"
+        return (
+            "        transport http {\n"
             ."            tls_trust_pool file {$caPath}\n"
             ."            tls_server_name {$serverName}\n"
-            ."        }\n";
+            ."        }\n"
+        );
     }
 }

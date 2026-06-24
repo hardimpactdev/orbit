@@ -69,7 +69,12 @@ final readonly class UpdateRunner
                     ownerToken: $this->ownerToken($operationRun, 'fleet', self::FleetResourceKey),
                     ttlSeconds: $this->leaseTtlSeconds(),
                     callback: function () use ($operationRun, $plan): void {
-                        $this->operationRuns->appendStep($operationRun->id, 'lease.fleet', 'done', 'Fleet update lease acquired');
+                        $this->operationRuns->appendStep(
+                            $operationRun->id,
+                            'lease.fleet',
+                            'done',
+                            'Fleet update lease acquired',
+                        );
 
                         $this->runPhase(
                             $operationRun,
@@ -219,7 +224,12 @@ final readonly class UpdateRunner
                     ownerToken: $this->ownerToken($operationRun, 'scheduler', self::SchedulerResourceKey),
                     ttlSeconds: $this->leaseTtlSeconds(),
                     callback: function () use ($operationRun, $plan): null {
-                        $this->operationRuns->appendStep($operationRun->id, 'lease.gateway', 'done', 'Gateway and scheduler update leases acquired');
+                        $this->operationRuns->appendStep(
+                            $operationRun->id,
+                            'lease.gateway',
+                            'done',
+                            'Gateway and scheduler update leases acquired',
+                        );
 
                         return $this->updateGatewayWithSchedulerLease($operationRun, $plan);
                     },
@@ -235,8 +245,13 @@ final readonly class UpdateRunner
         return null;
     }
 
-    private function runPhase(OperationRun $operationRun, string $key, string $runningMessage, string $doneMessage, callable $callback): null
-    {
+    private function runPhase(
+        OperationRun $operationRun,
+        string $key,
+        string $runningMessage,
+        string $doneMessage,
+        callable $callback,
+    ): null {
         $this->operationRuns->appendStep($operationRun->id, $key, 'running', $runningMessage);
 
         try {
@@ -263,8 +278,11 @@ final readonly class UpdateRunner
         ]);
     }
 
-    private function markSucceeded(OperationRun $operationRun, OperationUpdatePlan $plan, bool $allCurrent = false): void
-    {
+    private function markSucceeded(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        bool $allCurrent = false,
+    ): void {
         $result = [
             'status' => $allCurrent ? 'skipped' : 'succeeded',
             'target_version' => $plan->target_version,
@@ -301,8 +319,12 @@ final readonly class UpdateRunner
         }
     }
 
-    private function logOutcomeActivity(OperationRun $operationRun, OperationUpdatePlan $plan, string $status, ?string $failedStep = null): void
-    {
+    private function logOutcomeActivity(
+        OperationRun $operationRun,
+        OperationUpdatePlan $plan,
+        string $status,
+        ?string $failedStep = null,
+    ): void {
         try {
             $this->activityLogger->log(
                 new FleetUpdateOutcomeActivity($operationRun, $plan, $status, $failedStep),
@@ -376,15 +398,18 @@ final readonly class UpdateRunner
             return [
                 'code' => $exception->resourceType === 'node' ? 'update.node_locked' : 'update_lease_conflict',
                 'message' => $exception->getMessage(),
-                'data' => array_filter([
-                    'resource' => "{$exception->resourceType}:{$exception->resourceKey}",
-                    'resource_type' => $exception->resourceType,
-                    'resource_key' => $exception->resourceKey,
-                    'lease_id' => $exception->leaseId,
-                    'conflicting_operation_id' => $exception->operationRunId,
-                    'expires_at' => $exception->expiresAt->toIso8601String(),
-                    'conflicting_node' => $this->conflictingLeaseCallerNode($exception->operationRunId),
-                ], fn (mixed $value): bool => $value !== null),
+                'data' => array_filter(
+                    [
+                        'resource' => "{$exception->resourceType}:{$exception->resourceKey}",
+                        'resource_type' => $exception->resourceType,
+                        'resource_key' => $exception->resourceKey,
+                        'lease_id' => $exception->leaseId,
+                        'conflicting_operation_id' => $exception->operationRunId,
+                        'expires_at' => $exception->expiresAt->toIso8601String(),
+                        'conflicting_node' => $this->conflictingLeaseCallerNode($exception->operationRunId),
+                    ],
+                    fn (mixed $value): bool => $value !== null,
+                ),
             ];
         }
 

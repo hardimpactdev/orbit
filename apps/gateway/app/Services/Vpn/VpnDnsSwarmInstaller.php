@@ -94,7 +94,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to read wg-easy WireGuard public key: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to read wg-easy WireGuard public key: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
 
@@ -142,7 +142,7 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to configure wg-easy peers: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to configure wg-easy peers: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
     }
@@ -150,26 +150,26 @@ class VpnDnsSwarmInstaller extends WgEasyServiceInstaller
     private function waitUntilReady(): void
     {
         $result = Process::timeout(75)->run(<<<'SH'
-set -eu
-for i in $(seq 1 60); do
-    container_id="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
+            set -eu
+            for i in $(seq 1 60); do
+                container_id="$(docker ps -q --filter 'label=com.docker.swarm.service.name=orbit_orbit-vpn' | head -n 1)"
 
-    if [ -n "$container_id" ] && docker exec "$container_id" test -f /etc/wireguard/wg-easy.db && docker exec "$container_id" ip link show wg0 >/dev/null 2>&1; then
-        exit 0
-    fi
+                if [ -n "$container_id" ] && docker exec "$container_id" test -f /etc/wireguard/wg-easy.db && docker exec "$container_id" ip link show wg0 >/dev/null 2>&1; then
+                    exit 0
+                fi
 
-    sleep 1
-done
+                sleep 1
+            done
 
-exit 1
-SH);
+            exit 1
+            SH);
 
         if ($result->successful()) {
             return;
         }
 
         throw new RuntimeException(
-            'wg-easy Swarm service did not become ready: '.trim($result->errorOutput().' '.$result->output())
+            'wg-easy Swarm service did not become ready: '.trim($result->errorOutput().' '.$result->output()),
         );
     }
 
@@ -177,10 +177,10 @@ SH);
     {
         $result = Process::timeout(30)->run(sprintf(
             <<<'SH'
-set -e
-chmod 0777 %s
-chmod 0666 %s
-SH,
+                set -e
+                chmod 0777 %s
+                chmod 0666 %s
+                SH,
             escapeshellarg($this->statePath()),
             escapeshellarg($this->statePath().'/wg-easy.db'),
         ));
@@ -190,7 +190,7 @@ SH,
         }
 
         throw new RuntimeException(
-            'Failed to make wg-easy Swarm state writable: '.trim($result->errorOutput().' '.$result->output())
+            'Failed to make wg-easy Swarm state writable: '.trim($result->errorOutput().' '.$result->output()),
         );
     }
 
@@ -202,10 +202,10 @@ SH,
 
         $result = Process::timeout(30)->run(sprintf(
             <<<'SH'
-set -e
-docker exec %s ip addr replace %s dev wg0
-docker exec %s ip route replace %s dev wg0
-SH,
+                set -e
+                docker exec %s ip addr replace %s dev wg0
+                docker exec %s ip route replace %s dev wg0
+                SH,
             escapeshellarg($containerId),
             escapeshellarg($serverAddress),
             escapeshellarg($containerId),
@@ -214,7 +214,7 @@ SH,
 
         if (! $result->successful()) {
             throw new RuntimeException(
-                'Failed to converge wg-easy server address: '.trim($result->errorOutput().' '.$result->output())
+                'Failed to converge wg-easy server address: '.trim($result->errorOutput().' '.$result->output()),
             );
         }
 

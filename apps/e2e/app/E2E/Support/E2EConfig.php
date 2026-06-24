@@ -56,7 +56,10 @@ final readonly class E2EConfig
             providerNames: self::providerNames(),
             topologyProviderNames: self::topologyProviderNames(),
             host: $host,
-            sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString('ORBIT_E2E_IMAGE', 'images:ubuntu/26.04')),
+            sourceImage: self::envString('ORBIT_E2E_SOURCE_IMAGE', self::envString(
+                'ORBIT_E2E_IMAGE',
+                'images:ubuntu/26.04',
+            )),
             baseImage: self::envString('ORBIT_E2E_BASE_IMAGE', 'orbit-base-ubuntu-26.04-runtime'),
             bootstrapUser: self::envString('ORBIT_E2E_BOOTSTRAP_USER', 'provisioner'),
             operatorUser: self::envString('ORBIT_E2E_OPERATOR_USER', 'orbit'),
@@ -88,16 +91,22 @@ final readonly class E2EConfig
     {
         $host = strtolower($host);
 
-        return $this->dockerHostContainerCaps[$host]
-            ?? throw new \InvalidArgumentException("Missing Docker container cap for host [{$host}]. Set ORBIT_E2E_DOCKER_TEST_RUNNERS.");
+        return (
+            $this->dockerHostContainerCaps[$host] ?? throw new \InvalidArgumentException(
+                "Missing Docker container cap for host [{$host}]. Set ORBIT_E2E_DOCKER_TEST_RUNNERS.",
+            )
+        );
     }
 
     public function incusMaxVmsForHost(string $host): int
     {
         $host = strtolower($host);
 
-        return $this->incusHostVmCaps[$host]
-            ?? throw new \InvalidArgumentException("Missing Incus VM cap for host [{$host}]. Set ORBIT_E2E_INCUS_HOST_VM_CAPS.");
+        return (
+            $this->incusHostVmCaps[$host] ?? throw new \InvalidArgumentException(
+                "Missing Incus VM cap for host [{$host}]. Set ORBIT_E2E_INCUS_HOST_VM_CAPS.",
+            )
+        );
     }
 
     /**
@@ -184,7 +193,7 @@ final readonly class E2EConfig
             }
 
             throw new \InvalidArgumentException(
-                'Unsupported E2E provider ['.$name.']. Supported providers: '.implode(', ', $supported).'.'
+                'Unsupported E2E provider ['.$name.']. Supported providers: '.implode(', ', $supported).'.',
             );
         }
 
@@ -222,13 +231,17 @@ final readonly class E2EConfig
             $host = strtolower($host);
 
             if ($host === '' || $slotCount === '') {
-                throw new \InvalidArgumentException("Invalid {$backend} host slot entry [{$entry}]. Expected host:slots.");
+                throw new \InvalidArgumentException(
+                    "Invalid {$backend} host slot entry [{$entry}]. Expected host:slots.",
+                );
             }
 
             $slots = (int) $slotCount;
 
             if ((string) $slots !== $slotCount || $slots < 1) {
-                throw new \InvalidArgumentException("Invalid {$backend} host slot count [{$slotCount}] for host [{$host}].");
+                throw new \InvalidArgumentException(
+                    "Invalid {$backend} host slot count [{$slotCount}] for host [{$host}].",
+                );
             }
 
             $hostSlots[$host] = $slots;
@@ -264,19 +277,25 @@ final readonly class E2EConfig
             $host = strtolower($host);
 
             if ($host === '' || $slotCount === '' || $cap === '') {
-                throw new \InvalidArgumentException("Invalid Docker test runner entry [{$entry}]. Expected host:slots:containers.");
+                throw new \InvalidArgumentException(
+                    "Invalid Docker test runner entry [{$entry}]. Expected host:slots:containers.",
+                );
             }
 
             $slots = (int) $slotCount;
 
             if ((string) $slots !== $slotCount || $slots < 1) {
-                throw new \InvalidArgumentException("Invalid Docker test runner slot count [{$slotCount}] for host [{$host}].");
+                throw new \InvalidArgumentException(
+                    "Invalid Docker test runner slot count [{$slotCount}] for host [{$host}].",
+                );
             }
 
             $containers = (int) $cap;
 
             if ((string) $containers !== $cap || $containers < 1) {
-                throw new \InvalidArgumentException("Invalid Docker test runner container cap [{$cap}] for host [{$host}].");
+                throw new \InvalidArgumentException(
+                    "Invalid Docker test runner container cap [{$cap}] for host [{$host}].",
+                );
             }
 
             $hosts[] = $host;

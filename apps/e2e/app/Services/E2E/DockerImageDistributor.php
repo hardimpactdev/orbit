@@ -35,7 +35,10 @@ class DockerImageDistributor
         $sourceDirectory = null;
 
         try {
-            $sourceDirectory = $this->createRemoteWorkDirectory($this->sourceHost, '/tmp/orbit-e2e-docker-image-export-XXXXXX');
+            $sourceDirectory = $this->createRemoteWorkDirectory(
+                $this->sourceHost,
+                '/tmp/orbit-e2e-docker-image-export-XXXXXX',
+            );
             $sourceArchive = "{$sourceDirectory}/images.tar.gz";
             $localArchive = "{$localDirectory}/images.tar.gz";
             $imports = [];
@@ -82,7 +85,9 @@ class DockerImageDistributor
         $result = $this->runOnHost($host, 'mktemp -d '.escapeshellarg($template), timeoutSeconds: 30);
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not create Docker image work directory on {$host}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not create Docker image work directory on {$host}: {$result->errorOutput()}",
+            );
         }
 
         $directory = trim($result->output());
@@ -106,16 +111,22 @@ class DockerImageDistributor
         );
         $escapedImages = implode(' ', array_map(escapeshellarg(...), $imageNames));
 
-        $result = $this->runOnHost($this->sourceHost, sprintf(
-            '%s && rm -f %s && docker save %s | gzip -1 > %s',
-            implode(' && ', $inspectCommands),
-            escapeshellarg($sourceArchive),
-            $escapedImages,
-            escapeshellarg($sourceArchive),
-        ), timeoutSeconds: $this->timeoutSeconds);
+        $result = $this->runOnHost(
+            $this->sourceHost,
+            sprintf(
+                '%s && rm -f %s && docker save %s | gzip -1 > %s',
+                implode(' && ', $inspectCommands),
+                escapeshellarg($sourceArchive),
+                $escapedImages,
+                escapeshellarg($sourceArchive),
+            ),
+            timeoutSeconds: $this->timeoutSeconds,
+        );
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not export Docker images on {$this->sourceHost}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not export Docker images on {$this->sourceHost}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -132,15 +143,22 @@ class DockerImageDistributor
             $this->copyToHost($targetHost, $localArchive, $remoteArchive);
 
             $inspectCommands = array_map(
-                fn (array $image): string => sprintf('docker image inspect %s >/dev/null', escapeshellarg($image['image'])),
+                fn (array $image): string => sprintf(
+                    'docker image inspect %s >/dev/null',
+                    escapeshellarg($image['image']),
+                ),
                 $images,
             );
 
-            $result = $this->runOnHost($targetHost, sprintf(
-                'gzip -dc %s | docker load >/dev/null && %s',
-                escapeshellarg($remoteArchive),
-                implode(' && ', $inspectCommands),
-            ), timeoutSeconds: $this->timeoutSeconds);
+            $result = $this->runOnHost(
+                $targetHost,
+                sprintf(
+                    'gzip -dc %s | docker load >/dev/null && %s',
+                    escapeshellarg($remoteArchive),
+                    implode(' && ', $inspectCommands),
+                ),
+                timeoutSeconds: $this->timeoutSeconds,
+            );
 
             if (! $result->successful()) {
                 throw new RuntimeException("Could not import Docker images on {$targetHost}: {$result->errorOutput()}");
@@ -168,7 +186,9 @@ class DockerImageDistributor
         }
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not copy Docker image archive from {$host}:{$remotePath}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not copy Docker image archive from {$host}:{$remotePath}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -190,7 +210,9 @@ class DockerImageDistributor
         }
 
         if (! $result->successful()) {
-            throw new RuntimeException("Could not copy Docker image archive to {$host}:{$remotePath}: {$result->errorOutput()}");
+            throw new RuntimeException(
+                "Could not copy Docker image archive to {$host}:{$remotePath}: {$result->errorOutput()}",
+            );
         }
     }
 

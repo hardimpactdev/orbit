@@ -29,21 +29,27 @@ final class ListProcessesRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'workspace' => $this->workspace,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'workspace' => $this->workspace,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ProcessListResponse
     {
         $data = $this->unwrapData($response);
-        $context = $data['context'] ?? [];
+        $context = $this->stringKeyedArray($data['context'] ?? []);
         $processes = $data['processes'] ?? [];
 
         return new ProcessListResponse(
-            context: is_array($context) ? $context : [],
-            processes: is_array($processes) ? array_values($processes) : [],
+            context: [
+                'app' => is_string($context['app'] ?? null) ? $context['app'] : null,
+                'workspace' => is_string($context['workspace'] ?? null) ? $context['workspace'] : null,
+            ],
+            processes: $this->listOfStringKeyedArrays($processes),
         );
     }
 }

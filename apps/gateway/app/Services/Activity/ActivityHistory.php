@@ -30,10 +30,22 @@ final class ActivityHistory
     {
         $query = Activity::query()
             ->with(['causer', 'subject'])
-            ->when($filters['effect'] !== null, fn (Builder $query): Builder => $query->where('properties->type', $filters['effect']))
-            ->when($filters['correlation'] !== null, fn (Builder $query): Builder => $query->where('batch_uuid', $filters['correlation']))
-            ->when($filters['node'] !== null, fn (Builder $query): Builder => $this->applyNodeFilter($query, $filters['node']))
-            ->when($filters['app'] !== null, fn (Builder $query): Builder => $this->applyAppFilter($query, $filters['app']))
+            ->when($filters['effect'] !== null, fn (Builder $query): Builder => $query->where(
+                'properties->type',
+                $filters['effect'],
+            ))
+            ->when($filters['correlation'] !== null, fn (Builder $query): Builder => $query->where(
+                'batch_uuid',
+                $filters['correlation'],
+            ))
+            ->when($filters['node'] !== null, fn (Builder $query): Builder => $this->applyNodeFilter(
+                $query,
+                $filters['node'],
+            ))
+            ->when($filters['app'] !== null, fn (Builder $query): Builder => $this->applyAppFilter(
+                $query,
+                $filters['app'],
+            ))
             ->orderByDesc('id');
 
         $rows = $query
@@ -123,7 +135,10 @@ final class ActivityHistory
         return $query->where(function (Builder $query) use ($node): void {
             $query
                 ->whereHasMorph('causer', [Node::class], fn (Builder $query): Builder => $query->where('name', $node))
-                ->orWhereHasMorph('subject', [Node::class], fn (Builder $query): Builder => $query->where('name', $node))
+                ->orWhereHasMorph('subject', [Node::class], fn (Builder $query): Builder => $query->where(
+                    'name',
+                    $node,
+                ))
                 ->orWhere('properties->node', $node)
                 ->orWhere('properties->target_node', $node)
                 ->orWhere('properties->serving_node', $node);
@@ -171,7 +186,8 @@ final class ActivityHistory
         ];
 
         if ($includeDetails) {
-            $payload['details'] = $activity->properties
+            $payload['details'] = $activity
+                ->properties
                 ->except(['type', 'command'])
                 ->toArray();
         }

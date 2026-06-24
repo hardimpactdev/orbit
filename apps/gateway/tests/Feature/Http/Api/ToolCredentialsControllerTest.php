@@ -61,9 +61,17 @@ describe('ToolCredentialsController', function (): void {
 
         grantToolCredentialsAccess($caller, $agentNode);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials?node=agent-1', [], [], [], ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials?node=agent-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.tool', 'openclaw')
             ->assertJsonPath('success.data.credentials.node', 'agent-1')
             ->assertJsonPath('success.data.credentials.fields.url', 'https://openclaw.agent');
@@ -97,7 +105,14 @@ describe('ToolCredentialsController', function (): void {
 
         // No grant inserted - caller has no tool:credentials permission
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials?node=agent-1', [], [], [], ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials?node=agent-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -130,7 +145,14 @@ describe('ToolCredentialsController', function (): void {
             ],
         ]);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials?node=agent-1', [], [], [], ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials?node=agent-1',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_CREDENTIALS_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -139,7 +161,8 @@ describe('ToolCredentialsController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/tools/openclaw/credentials');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

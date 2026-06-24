@@ -156,7 +156,10 @@ final class E2EArtifactBuildFingerprint
      */
     private static function isExcluded(string $path, array $excludedPaths): bool
     {
-        return array_any($excludedPaths, fn ($excludedPath) => $path === $excludedPath || str_starts_with($path, "{$excludedPath}/"));
+        return array_any(
+            $excludedPaths,
+            fn ($excludedPath) => $path === $excludedPath || str_starts_with($path, "{$excludedPath}/"),
+        );
     }
 
     private static function relativePath(string $path): ?string

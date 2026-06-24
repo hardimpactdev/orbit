@@ -106,8 +106,12 @@ final readonly class AppCodexController
         ], $warnings);
     }
 
-    public function list(Request $request, RemoteShell $remoteShell, CodexAppConfigMerger $merger, ToolCatalog $catalog): JsonResponse
-    {
+    public function list(
+        Request $request,
+        RemoteShell $remoteShell,
+        CodexAppConfigMerger $merger,
+        ToolCatalog $catalog,
+    ): JsonResponse {
         $caller = $this->caller($request);
 
         if (! $caller instanceof Node) {
@@ -163,10 +167,15 @@ final readonly class AppCodexController
         }
 
         if (! app(NodeAccessAuthorizer::class)->allows($caller, $model->node, 'app:codex')) {
-            return $this->error('authorization_failed', "This node is not authorized for 'app:codex' on '{$model->node->name}'.", [
-                'serving_node' => $model->node->name,
-                'missing_permission' => 'app:codex',
-            ], 403);
+            return $this->error(
+                'authorization_failed',
+                "This node is not authorized for 'app:codex' on '{$model->node?->name}'.",
+                [
+                    'serving_node' => $model->node?->name,
+                    'missing_permission' => 'app:codex',
+                ],
+                403,
+            );
         }
 
         $target = $this->targetNode($request, $caller, 'app:codex');
@@ -198,25 +207,40 @@ final readonly class AppCodexController
             ->first();
 
         if (! $target instanceof Node) {
-            return $this->error('validation_failed', "Invalid value for --node: '{$node}'. Expected an active visible node name.", [
-                'field' => 'node',
-                'value' => $node,
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                "Invalid value for --node: '{$node}'. Expected an active visible node name.",
+                [
+                    'field' => 'node',
+                    'value' => $node,
+                ],
+                422,
+            );
         }
 
         if (app(NodeRoleAssignments::class)->nodeIsGateway($target)) {
-            return $this->error('validation_failed', "Invalid value for --node: '{$node}'. Gateway nodes are not Codex App targets.", [
-                'field' => 'node',
-                'value' => $node,
-                'reason' => 'gateway_not_tool_eligible',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                "Invalid value for --node: '{$node}'. Gateway nodes are not Codex App targets.",
+                [
+                    'field' => 'node',
+                    'value' => $node,
+                    'reason' => 'gateway_not_tool_eligible',
+                ],
+                422,
+            );
         }
 
         if (! app(NodeAccessAuthorizer::class)->allows($caller, $target, $permission)) {
-            return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$target->name}'.", [
-                'serving_node' => $target->name,
-                'missing_permission' => $permission,
-            ], 403);
+            return $this->error(
+                'authorization_failed',
+                "This node is not authorized for '{$permission}' on '{$target->name}'.",
+                [
+                    'serving_node' => $target->name,
+                    'missing_permission' => $permission,
+                ],
+                403,
+            );
         }
 
         return $target;
@@ -228,36 +252,55 @@ final readonly class AppCodexController
             return null;
         }
 
-        return $this->error('tool.unsupported_on_node', "Tool 'codex-app' does not support node '{$target->name}' platform.", [
-            'tool' => 'codex-app',
-            'node' => $target->name,
-            'platform' => $target->platform,
-            'supported_operating_systems' => $catalog->supportedOperatingSystems('codex-app'),
-        ], 422);
+        return $this->error(
+            'tool.unsupported_on_node',
+            "Tool 'codex-app' does not support node '{$target->name}' platform.",
+            [
+                'tool' => 'codex-app',
+                'node' => $target->name,
+                'platform' => $target->platform,
+                'supported_operating_systems' => $catalog->supportedOperatingSystems('codex-app'),
+            ],
+            422,
+        );
     }
 
     private function readConfig(RemoteShell $remoteShell, Node $target): array|JsonResponse
     {
-        $result = $remoteShell->run($target, 'if [ -f '.self::ConfigPath.' ]; then cat '.self::ConfigPath."; else printf '{}'; fi", ['throw' => false]);
+        $result = $remoteShell->run(
+            $target,
+            'if [ -f '.self::ConfigPath.' ]; then cat '.self::ConfigPath."; else printf '{}'; fi",
+            ['throw' => false],
+        );
 
         if (! $result->successful()) {
-            return $this->error('codex_app.config_read_failed', "Codex App config could not be read on node '{$target->name}'.", [
-                'node' => $target->name,
-                'path' => self::ConfigPath,
-                'exit_code' => $result->exitCode,
-                'stderr' => trim($result->stderr),
-            ], 502);
+            return $this->error(
+                'codex_app.config_read_failed',
+                "Codex App config could not be read on node '{$target->name}'.",
+                [
+                    'node' => $target->name,
+                    'path' => self::ConfigPath,
+                    'exit_code' => $result->exitCode,
+                    'stderr' => trim($result->stderr),
+                ],
+                502,
+            );
         }
 
         $json = trim($result->stdout) !== '' ? $result->stdout : '{}';
         $decoded = json_decode($json, true);
 
         if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
-            return $this->error('codex_app.config_read_failed', "Codex App config is not valid JSON on node '{$target->name}'.", [
-                'node' => $target->name,
-                'path' => self::ConfigPath,
-                'json_error' => json_last_error_msg(),
-            ], 422);
+            return $this->error(
+                'codex_app.config_read_failed',
+                "Codex App config is not valid JSON on node '{$target->name}'.",
+                [
+                    'node' => $target->name,
+                    'path' => self::ConfigPath,
+                    'json_error' => json_last_error_msg(),
+                ],
+                422,
+            );
         }
 
         return $decoded;
@@ -271,18 +314,18 @@ final readonly class AppCodexController
         $result = $remoteShell->run(
             $target,
             <<<'BASH'
-set -e
-config="$HOME/.codex/codex-app/config.json"
-dir="$(dirname "$config")"
-mkdir -p "$dir"
-chmod 700 "$dir"
-tmp="$(mktemp "$dir/config.json.XXXXXX")"
-trap 'rm -f "$tmp"' EXIT
-cat > "$tmp"
-chmod 600 "$tmp"
-mv "$tmp" "$config"
-trap - EXIT
-BASH,
+                set -e
+                config="$HOME/.codex/codex-app/config.json"
+                dir="$(dirname "$config")"
+                mkdir -p "$dir"
+                chmod 700 "$dir"
+                tmp="$(mktemp "$dir/config.json.XXXXXX")"
+                trap 'rm -f "$tmp"' EXIT
+                cat > "$tmp"
+                chmod 600 "$tmp"
+                mv "$tmp" "$config"
+                trap - EXIT
+                BASH,
             [
                 'throw' => false,
                 'input' => json_encode($config, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT)."\n",
@@ -293,12 +336,17 @@ BASH,
             return null;
         }
 
-        return $this->error('codex_app.config_write_failed', "Codex App config write failed on node '{$target->name}'.", [
-            'node' => $target->name,
-            'path' => self::ConfigPath,
-            'exit_code' => $result->exitCode,
-            'stderr' => trim($result->stderr),
-        ], 502);
+        return $this->error(
+            'codex_app.config_write_failed',
+            "Codex App config write failed on node '{$target->name}'.",
+            [
+                'node' => $target->name,
+                'path' => self::ConfigPath,
+                'exit_code' => $result->exitCode,
+                'stderr' => trim($result->stderr),
+            ],
+            502,
+        );
     }
 
     /**

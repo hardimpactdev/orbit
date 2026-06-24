@@ -27,7 +27,10 @@ abstract class AbstractWorkspaceStepRemoveCommand extends WorkspaceGatewayComman
         }
 
         if (! $this->hasDestructiveConsent()) {
-            return $this->failValidation('force', 'This is a destructive operation. Use --force or confirm the prompt.');
+            return $this->failValidation(
+                'force',
+                'This is a destructive operation. Use --force or confirm the prompt.',
+            );
         }
 
         $app = $this->stringOption('app') ?? $this->appFromOrbitMarker();

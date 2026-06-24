@@ -45,36 +45,45 @@ function grantAppAnalyticsAccess(Node $caller, Node $appNode, array $permissions
 function createAppAnalyticsRoutePrerequisites(bool $withRouter = true, bool $withAnalytics = true): void
 {
     if ($withRouter) {
-        Node::factory()->router()->create([
-            'name' => 'router-1',
-            'wireguard_address' => '10.6.0.2',
-        ]);
+        Node::factory()
+            ->router()
+            ->create([
+                'name' => 'router-1',
+                'wireguard_address' => '10.6.0.2',
+            ]);
     }
 
     if ($withAnalytics) {
-        Node::factory()->withActiveRole('analytics')->create([
-            'name' => 'analytics-1',
-            'wireguard_address' => '10.6.0.50',
-        ]);
+        Node::factory()
+            ->withActiveRole('analytics')
+            ->create([
+                'name' => 'analytics-1',
+                'wireguard_address' => '10.6.0.50',
+            ]);
     }
 }
 
 function createAppAnalyticsApp(?string $domain = 'docs.test', bool $withIngress = true): App
 {
     $ingress = $withIngress
-        ? Node::factory()->ingress()->create([
-            'name' => 'edge-1',
-            'wireguard_address' => '10.6.0.10',
-        ])
+        ? Node::factory()
+            ->ingress()
+            ->create([
+                'name' => 'edge-1',
+                'wireguard_address' => '10.6.0.10',
+            ])
         : null;
 
-    $appNode = Node::factory()->appProd()->create([
-        'name' => 'app-1',
-        'wireguard_address' => '10.6.0.21',
-    ]);
+    $appNode = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-1',
+            'wireguard_address' => '10.6.0.21',
+        ]);
 
     if ($ingress instanceof Node) {
-        $appNode->roleAssignments()
+        $appNode
+            ->roleAssignments()
             ->where('role', 'app-prod')
             ->update(['settings' => ['ingress_node_id' => $ingress->id]]);
     }
@@ -147,7 +156,8 @@ describe('AppAnalyticsController', function (): void {
             'public_hosts' => [],
         ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.internal_host', 'analytics.orbit')
@@ -155,9 +165,17 @@ describe('AppAnalyticsController', function (): void {
             ->assertJsonPath('success.data.binding.public_hosts', ['analytics.docs.test'])
             ->assertJsonPath('success.data.binding.tracking_paths', ['/js/*', '/api/event']);
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())->toBeTrue()
-            ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())->toBeTrue()
-            ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->where('owner_type', 'app-analytics')->exists())->toBeTrue();
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', true)->exists())
+            ->toBeTrue()
+            ->and(ProxyRoute::query()->where('domain', 'analytics.orbit')->where('owner_type', 'router')->exists())
+            ->toBeTrue()
+            ->and(
+                ProxyRoute::query()
+                    ->where('domain', 'analytics.docs.test')
+                    ->where('owner_type', 'app-analytics')
+                    ->exists(),
+            )
+            ->toBeTrue();
     });
 
     it('rejects callers without app write permission before mutation', function (): void {
@@ -170,7 +188,8 @@ describe('AppAnalyticsController', function (): void {
             'public_hosts' => ['analytics.docs.test'],
         ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:write');
 
@@ -186,7 +205,8 @@ describe('AppAnalyticsController', function (): void {
             'public_hosts' => [],
         ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.prerequisite_failed')
             ->assertJsonPath('error.meta.app', 'docs');
 
@@ -203,13 +223,21 @@ describe('AppAnalyticsController', function (): void {
 
         $response = postAppAnalyticsDisableJson('/api/apps/docs/analytics/disable');
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', false)
             ->assertJsonPath('success.data.binding.public_hosts', []);
 
-        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', false)->exists())->toBeTrue()
-            ->and(ProxyRoute::query()->where('domain', 'analytics.docs.test')->where('owner_type', 'app-analytics')->exists())->toBeFalse();
+        expect(AppAnalyticsBinding::query()->where('app_id', $app->id)->where('enabled', false)->exists())
+            ->toBeTrue()
+            ->and(
+                ProxyRoute::query()
+                    ->where('domain', 'analytics.docs.test')
+                    ->where('owner_type', 'app-analytics')
+                    ->exists(),
+            )
+            ->toBeFalse();
     });
 
     it('shows app analytics bindings for authorized callers', function (): void {
@@ -222,7 +250,8 @@ describe('AppAnalyticsController', function (): void {
 
         $response = getAppAnalyticsJson('/api/apps/docs/analytics');
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.binding.app', 'docs')
             ->assertJsonPath('success.data.binding.enabled', true)
             ->assertJsonPath('success.data.binding.public_hosts', ['analytics.docs.test']);
@@ -235,7 +264,8 @@ describe('AppAnalyticsController', function (): void {
 
         $response = getAppAnalyticsJson('/api/apps/docs/analytics');
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'analytics.binding_missing')
             ->assertJsonPath('error.meta.app', 'docs');
     });

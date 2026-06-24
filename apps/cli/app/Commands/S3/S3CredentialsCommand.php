@@ -145,8 +145,12 @@ final class S3CredentialsCommand extends GatewayCommand
             : '';
         $region = is_string($credentials['region'] ?? null) ? $credentials['region'] : '';
         $accessKeyId = is_string($credentials['access_key_id'] ?? null) ? $credentials['access_key_id'] : '';
-        $secretAccessKey = is_string($credentials['secret_access_key'] ?? null) ? $credentials['secret_access_key'] : '';
-        $bucketStyle = is_string($credentials['bucket_endpoint_style'] ?? null) ? $credentials['bucket_endpoint_style'] : '';
+        $secretAccessKey = is_string($credentials['secret_access_key'] ?? null)
+            ? $credentials['secret_access_key']
+            : '';
+        $bucketStyle = is_string($credentials['bucket_endpoint_style'] ?? null)
+            ? $credentials['bucket_endpoint_style']
+            : '';
         $backendPool = is_array($credentials['backend_pool'] ?? null)
             ? implode(', ', array_filter($credentials['backend_pool'], is_string(...)))
             : '';

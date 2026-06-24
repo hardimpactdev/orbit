@@ -43,10 +43,12 @@ final readonly class E2ETopologyCapabilities
 
     public function satisfies(self $required): bool
     {
-        return (! $required->realSsh || $this->realSsh)
+        return (
+            (! $required->realSsh || $this->realSsh)
             && (! $required->systemd || $this->systemd)
             && (! $required->hostMutation || $this->hostMutation)
             && (! $required->kernelNetworking || $this->kernelNetworking)
-            && (! $required->dockerSiblingContainers || $this->dockerSiblingContainers);
+            && (! $required->dockerSiblingContainers || $this->dockerSiblingContainers)
+        );
     }
 }

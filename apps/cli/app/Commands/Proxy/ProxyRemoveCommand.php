@@ -169,7 +169,7 @@ final class ProxyRemoveCommand extends ProxyGatewayCommand
     private function routeData(array $response): array
     {
         $data = $response['success']['data'] ?? null;
-        $route = is_array($data) ? ($data['route'] ?? null) : null;
+        $route = is_array($data) ? $data['route'] ?? null : null;
 
         return is_array($route) ? $route : [];
     }

@@ -8,7 +8,10 @@ it('separates source-dev and artifact-prod node bootstrap contracts', function (
     $sourceDevEntrypointScript = E2ETopologyExecutionLaneContract::sourceDevEntrypointScript();
     $sourceDevDependencyHydrationScript = E2ETopologyExecutionLaneContract::sourceDevDependencyHydrationScript();
     $artifactProdGatewayOnlyScript = E2ETopologyExecutionLaneContract::artifactProdBootstrapScript(['gateway']);
-    $artifactProdGatewayRouterScript = E2ETopologyExecutionLaneContract::artifactProdBootstrapScript(['gateway', 'router']);
+    $artifactProdGatewayRouterScript = E2ETopologyExecutionLaneContract::artifactProdBootstrapScript([
+        'gateway',
+        'router',
+    ]);
     $artifactProdDatabaseScript = E2ETopologyExecutionLaneContract::artifactProdBootstrapScript(['database']);
     $artifactProdAppScript = E2ETopologyExecutionLaneContract::artifactProdBootstrapScript(['app-dev']);
 
@@ -62,12 +65,20 @@ it('separates source-dev and artifact-prod node bootstrap contracts', function (
 });
 
 it('declares host PHP as an artifact-prod app-role-only prerequisite', function (): void {
-    expect(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['gateway']))->toBeFalse()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['operator']))->toBeFalse()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['database']))->toBeFalse()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['websocket']))->toBeFalse()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['s3']))->toBeFalse()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['app-dev']))->toBeTrue()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['app-prod']))->toBeTrue()
-        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['gateway', 'app-prod']))->toBeTrue();
+    expect(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['gateway']))
+        ->toBeFalse()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['operator']))
+        ->toBeFalse()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['database']))
+        ->toBeFalse()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['websocket']))
+        ->toBeFalse()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['s3']))
+        ->toBeFalse()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['app-dev']))
+        ->toBeTrue()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['app-prod']))
+        ->toBeTrue()
+        ->and(E2ETopologyExecutionLaneContract::artifactProdRequiresHostPhp(['gateway', 'app-prod']))
+        ->toBeTrue();
 });

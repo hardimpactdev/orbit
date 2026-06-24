@@ -36,7 +36,11 @@ final class CaddyTool extends BaseTool
 
     public static function reloadCommand(string $container = 'orbit-caddy'): string
     {
-        return 'docker exec '.escapeshellarg($container).' caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019';
+        return (
+            'docker exec '
+            .escapeshellarg($container)
+            .' caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address localhost:2019'
+        );
     }
 
     public static function reloadWithRetryCommand(string $container = 'orbit-caddy', int $attempts = 20): string
@@ -45,15 +49,15 @@ final class CaddyTool extends BaseTool
 
         return sprintf(
             <<<'SH'
-orbit_caddy_reload_attempt=1
-until %s; do
-    if [ "$orbit_caddy_reload_attempt" -ge %d ]; then
-        exit 1
-    fi
-    orbit_caddy_reload_attempt=$((orbit_caddy_reload_attempt + 1))
-    sleep 0.25
-done
-SH,
+                orbit_caddy_reload_attempt=1
+                until %s; do
+                    if [ "$orbit_caddy_reload_attempt" -ge %d ]; then
+                        exit 1
+                    fi
+                    orbit_caddy_reload_attempt=$((orbit_caddy_reload_attempt + 1))
+                    sleep 0.25
+                done
+                SH,
             self::reloadCommand($container),
             $attempts,
         );
@@ -153,13 +157,13 @@ SH,
 
         return sprintf(
             <<<'SH'
-sudo install -d -m 0755 %s
-if [ ! -f /etc/caddy/Caddyfile ]; then
-    printf %%s %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null
-fi
-SH,
+                sudo install -d -m 0755 %s
+                if [ ! -f /etc/caddy/Caddyfile ]; then
+                    printf %%s %s | base64 -d | sudo tee /etc/caddy/Caddyfile >/dev/null
+                fi
+                SH,
             $directories,
-            escapeshellarg(base64_encode((new CaddyGlobalConfig)->fresh())),
+            escapeshellarg(base64_encode(new CaddyGlobalConfig()->fresh())),
         );
     }
 }

@@ -37,7 +37,9 @@ function fakeBundleProcessing(): void
         // Remote ops (SSH-wrapped). pushBundle creates a stage dir and an
         // orbit-e2e-bundle subdir, then scps into it.
         'ssh *mktemp -d /tmp/orbit-e2e-cli-binary*' => Process::result(output: "/tmp/orbit-e2e-cli-binary-remote\n"),
-        'ssh *mktemp -d /tmp/orbit-e2e-gateway-artifacts*' => Process::result(output: "/tmp/orbit-e2e-gateway-artifacts-remote\n"),
+        'ssh *mktemp -d /tmp/orbit-e2e-gateway-artifacts*' => Process::result(
+            output: "/tmp/orbit-e2e-gateway-artifacts-remote\n",
+        ),
         'ssh *mktemp -d /tmp/orbit-e2e-stage*' => Process::result(output: "/tmp/orbit-e2e-stage-remote\n"),
         'ssh *' => Process::result(),
         'scp *' => Process::result(),
@@ -46,156 +48,265 @@ function fakeBundleProcessing(): void
 }
 
 it('defaults to the websocket-capable prepared full Incus source kind', function (): void {
-    $this->artisan('e2e:prepare-topology')
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+    $this
+        ->artisan('e2e:prepare-topology')
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->assertSuccessful();
 });
 
 it('plans Incus warm topology stateful snapshot slots', function (): void {
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:4',
-    ], function (): void {
-        $this->artisan('e2e:prepare-warm-topology', [
-            'kind' => 'operator_gateway',
-            '--slots' => '1',
-        ])
-            ->expectsOutputToContain('Dry run. Pass --force to create Incus warm stateful snapshots.')
-            ->expectsOutputToContain('requested topology: operator_gateway')
-            ->expectsOutputToContain('planned: slot 1 (snapshot: warm-ready)')
-            ->expectsOutputToContain('instance: orbit-e2e-warm-')
-            ->assertSuccessful();
-    });
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:4',
+        ],
+        function (): void {
+            $this
+                ->artisan('e2e:prepare-warm-topology', [
+                    'kind' => 'operator_gateway',
+                    '--slots' => '1',
+                ])
+                ->expectsOutputToContain('Dry run. Pass --force to create Incus warm stateful snapshots.')
+                ->expectsOutputToContain('requested topology: operator_gateway')
+                ->expectsOutputToContain('planned: slot 1 (snapshot: warm-ready)')
+                ->expectsOutputToContain('instance: orbit-e2e-warm-')
+                ->assertSuccessful();
+        },
+    );
 });
 
 it('renders Incus warm topology dry-run output as json', function (): void {
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:4',
-    ], function (): void {
-        $exitCode = Artisan::call('e2e:prepare-warm-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--slots' => '1',
-            '--json' => true,
-        ]);
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:4',
+        ],
+        function (): void {
+            $exitCode = Artisan::call('e2e:prepare-warm-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--slots' => '1',
+                '--json' => true,
+            ]);
 
-        $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+            $payload = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($payload['success']['data']['dry_run'])->toBeTrue()
-            ->and($payload['success']['data']['kind'])->toBe('operator_gateway_agent')
-            ->and($payload['success']['data']['slots'][0]['snapshot'])->toBe('warm-ready')
-            ->and($payload['success']['data']['slots'][0]['instances'])->toHaveCount(3);
-    });
+            expect($exitCode)
+                ->toBe(0)
+                ->and($payload['success']['data']['dry_run'])
+                ->toBeTrue()
+                ->and($payload['success']['data']['kind'])
+                ->toBe('operator_gateway_agent')
+                ->and($payload['success']['data']['slots'][0]['snapshot'])
+                ->toBe('warm-ready')
+                ->and($payload['success']['data']['slots'][0]['instances'])
+                ->toHaveCount(3);
+        },
+    );
 });
 
 it('rejects warm topology slots that exceed the host VM capacity', function (): void {
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:2',
-    ], function (): void {
-        $this->artisan('e2e:prepare-warm-topology', [
-            'kind' => 'operator_gateway',
-            '--slots' => '2',
-        ])
-            ->expectsOutputToContain('requested 2 slots, but beast can fit 1 warm slot')
-            ->assertFailed();
-    });
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:2',
+        ],
+        function (): void {
+            $this
+                ->artisan('e2e:prepare-warm-topology', [
+                    'kind' => 'operator_gateway',
+                    '--slots' => '2',
+                ])
+                ->expectsOutputToContain('requested 2 slots, but beast can fit 1 warm slot')
+                ->assertFailed();
+        },
+    );
 });
 
 it('supports operator kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator'])
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'operator'])
         ->expectsOutputToContain('requested roles: operator')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent_websocket')
         ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->assertSuccessful();
 });
 
 it('supports operator_gateway kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway'])
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway'])
         ->expectsOutputToContain('requested roles: operator, gateway')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent_websocket')
         ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_app-dev kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev'])
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev'])
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_agent kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
         ->expectsOutputToContain('requested roles: operator, gateway, agent')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent_websocket')
         ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_app-prod_ingress kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-prod_ingress'])
         ->expectsOutputToContain('requested roles: operator, gateway, prod')
         ->expectsOutputToContain('source topology: operator_gateway_app-dev_app-prod_agent_websocket')
         ->expectsOutputToContain('source roles: operator, gateway, dev, prod, agent')
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-        ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+        )
         ->doesntExpectOutputToContain('planned: orbit-template-ingress-base')
         ->assertSuccessful();
 });
 
 it('supports operator_gateway_app-dev_app-prod_ingress kind with a dedicated ingress template', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_ingress'])
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_ingress'])
         ->expectsOutputToContain('requested roles: operator, gateway, dev, prod, ingress')
-        ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
-        ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
-        ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
-        ->expectsOutputToContain('planned: orbit-template-ingress-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)')
+        ->expectsOutputToContain(
+            'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)',
+        )
+        ->expectsOutputToContain(
+            'planned: orbit-template-ingress-base (snapshot: clean-operator_gateway_app-dev_app-prod_ingress-base)',
+        )
         ->assertSuccessful();
 });
 
 it('documents Incus topology templates in a separate namespace', function (): void {
     withE2ETopologyEnvironment([], function (): void {
-        $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
-            ->expectsOutputToContain('planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-            ->expectsOutputToContain('planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-            ->expectsOutputToContain('planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-            ->expectsOutputToContain('planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-            ->expectsOutputToContain('planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)')
-            ->doesntExpectOutputToContain('planned: orbit-template-operator (snapshot: clean-operator_gateway_app-dev_app-prod_agent)')
+        $this
+            ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_app-dev_app-prod_agent'])
+            ->expectsOutputToContain(
+                'planned: orbit-template-operator-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+            )
+            ->expectsOutputToContain(
+                'planned: orbit-template-gateway-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+            )
+            ->expectsOutputToContain(
+                'planned: orbit-template-app-dev-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+            )
+            ->expectsOutputToContain(
+                'planned: orbit-template-app-prod-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+            )
+            ->expectsOutputToContain(
+                'planned: orbit-template-agent-base (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-base)',
+            )
+            ->doesntExpectOutputToContain(
+                'planned: orbit-template-operator (snapshot: clean-operator_gateway_app-dev_app-prod_agent)',
+            )
             ->assertSuccessful();
     });
 });
@@ -206,7 +317,8 @@ it('rejects custom Incus artifact namespace preparation without explicit roles',
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function (): void {
-        $this->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
+        $this
+            ->artisan('e2e:prepare-topology', ['kind' => 'operator_gateway_agent'])
             ->expectsOutputToContain('Set --roles or --all-roles when ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE is set')
             ->assertFailed();
     });
@@ -218,11 +330,14 @@ it('rejects selected Incus role preparation without a custom namespace', functio
     Process::fake();
 
     withE2ETopologyEnvironment([], function (): void {
-        $this->artisan('e2e:prepare-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--roles' => 'agent',
-        ])
-            ->expectsOutputToContain('Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes')
+        $this
+            ->artisan('e2e:prepare-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--roles' => 'agent',
+            ])
+            ->expectsOutputToContain(
+                'Set ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE when using --roles for Incus selected-role rebakes',
+            )
             ->assertFailed();
     });
 
@@ -235,11 +350,14 @@ it('plans only selected branch Incus role templates', function (): void {
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function (): void {
-        $this->artisan('e2e:prepare-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--roles' => 'agent',
-        ])
-            ->expectsOutputToContain('planned: orbit-template-agent-agent-isolation (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation)')
+        $this
+            ->artisan('e2e:prepare-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--roles' => 'agent',
+            ])
+            ->expectsOutputToContain(
+                'planned: orbit-template-agent-agent-isolation (snapshot: clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation)',
+            )
             ->doesntExpectOutputToContain('orbit-template-operator-agent-isolation')
             ->doesntExpectOutputToContain('orbit-template-gateway-agent-isolation')
             ->doesntExpectOutputToContain('orbit-template-app-dev-agent-isolation')
@@ -254,12 +372,17 @@ it('accepts targeted Incus role preparation when forced with a custom namespace'
     fakeBundleProcessing();
 
     $manifest = [
-        ['role' => 'agent', 'name' => 'orbit-template-agent-agent-isolation', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation'],
+        [
+            'role' => 'agent',
+            'name' => 'orbit-template-agent-agent-isolation',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-agent-isolation',
+        ],
     ];
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
-    $builder->shouldReceive('buildSelectedRoles')
+    $builder
+        ->shouldReceive('buildSelectedRoles')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, ['agent'], true)
         ->andReturn($manifest);
 
@@ -270,25 +393,28 @@ it('accepts targeted Incus role preparation when forced with a custom namespace'
     withE2ETopologyEnvironment([
         'ORBIT_E2E_TOPOLOGY_ARTIFACT_NAMESPACE' => 'Agent isolation',
     ], function (): void {
-        $this->artisan('e2e:prepare-topology', [
-            'kind' => 'operator_gateway_agent',
-            '--force' => true,
-            '--use-build-artifacts' => true,
-            '--roles' => 'agent',
-        ])
+        $this
+            ->artisan('e2e:prepare-topology', [
+                'kind' => 'operator_gateway_agent',
+                '--force' => true,
+                '--use-build-artifacts' => true,
+                '--roles' => 'agent',
+            ])
             ->doesntExpectOutputToContain('not implemented')
             ->assertSuccessful();
     });
 });
 
 it('rejects invalid kind', function (): void {
-    $this->artisan('e2e:prepare-topology', ['kind' => 'invalid'])
+    $this
+        ->artisan('e2e:prepare-topology', ['kind' => 'invalid'])
         ->expectsOutputToContain('Invalid topology kind')
         ->assertFailed();
 });
 
 it('defaults to dry run', function (): void {
-    $this->artisan('e2e:prepare-topology')
+    $this
+        ->artisan('e2e:prepare-topology')
         ->expectsOutputToContain('Dry run. Pass --force to create Incus topology templates.')
         ->assertSuccessful();
 });
@@ -319,7 +445,8 @@ it('outputs json for dry run with default kind', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-topology', ['--json' => true])
+    $this
+        ->artisan('e2e:prepare-topology', ['--json' => true])
         ->expectsOutput($expected)
         ->assertSuccessful();
 });
@@ -353,10 +480,11 @@ it('outputs json for each supported kind', function (string $kindValue): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-topology', [
-        'kind' => $kindValue,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:prepare-topology', [
+            'kind' => $kindValue,
+            '--json' => true,
+        ])
         ->expectsOutput($expected)
         ->assertSuccessful();
 })->with([
@@ -383,10 +511,11 @@ it('outputs json error for invalid kind', function (): void {
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-topology', [
-        'kind' => 'invalid',
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:prepare-topology', [
+            'kind' => 'invalid',
+            '--json' => true,
+        ])
         ->expectsOutput($expected)
         ->assertFailed();
 });
@@ -404,19 +533,41 @@ it('--force uses the default Incus host when host environment is unset', functio
     $previousHost = getenv('ORBIT_E2E_HOST');
     $previousProvider = getenv('ORBIT_E2E_PROVIDER');
     $manifest = [
-        ['role' => 'operator', 'name' => 'orbit-template-operator-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base'],
-        ['role' => 'gateway', 'name' => 'orbit-template-gateway-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base'],
-        ['role' => 'dev', 'name' => 'orbit-template-app-dev-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base'],
-        ['role' => 'prod', 'name' => 'orbit-template-app-prod-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base'],
-        ['role' => 'agent', 'name' => 'orbit-template-agent-base', 'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base'],
+        [
+            'role' => 'operator',
+            'name' => 'orbit-template-operator-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+        ],
+        [
+            'role' => 'gateway',
+            'name' => 'orbit-template-gateway-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+        ],
+        [
+            'role' => 'dev',
+            'name' => 'orbit-template-app-dev-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+        ],
+        [
+            'role' => 'prod',
+            'name' => 'orbit-template-app-prod-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+        ],
+        [
+            'role' => 'agent',
+            'name' => 'orbit-template-agent-base',
+            'snapshot' => 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+        ],
     ];
     $selectedHost = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useGatewayArtifactBundle')
+    $builder
+        ->shouldReceive('useGatewayArtifactBundle')
         ->once()
         ->with('/tmp/orbit-e2e-gateway-artifacts-remote');
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
 
@@ -456,12 +607,14 @@ it('--force builds the source archive and forwards the bundle path to the builde
     $forwardedBundle = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useBundle')
+    $builder
+        ->shouldReceive('useBundle')
         ->once()
         ->andReturnUsing(function (string $path) use (&$forwardedBundle): void {
             $forwardedBundle = $path;
         });
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
 
@@ -476,7 +629,11 @@ it('--force builds the source archive and forwards the bundle path to the builde
     ])->assertSuccessful();
 
     expect($forwardedBundle)->toBe('/tmp/orbit-e2e-stage-remote/orbit-e2e-bundle');
-    Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
+    Process::assertRan(
+        fn (PendingProcess $p): bool => (
+            str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf')
+        ),
+    );
 });
 
 it('--force excludes persisted orbit gateway state from the source archive', function (): void {
@@ -498,7 +655,8 @@ it('--force excludes persisted orbit gateway state from the source archive', fun
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useBundle')->once();
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn([]);
 
@@ -526,15 +684,20 @@ it('--force records prepare topology phase timings', function (): void {
     $capturedTimer = null;
 
     $builder = m::mock(IncusTopologyBuilder::class);
-    $builder->shouldReceive('useGatewayArtifactBundle')
+    $builder
+        ->shouldReceive('useGatewayArtifactBundle')
         ->once()
         ->with('/tmp/orbit-e2e-gateway-artifacts-remote');
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
 
     $command = app(E2EPrepareTopologyCommand::class);
-    $command->setBuilderFactory(function (IncusHost $host, E2EPhaseTimer $timer) use ($builder, &$capturedTimer): IncusTopologyBuilder {
+    $command->setBuilderFactory(function (IncusHost $host, E2EPhaseTimer $timer) use (
+        $builder,
+        &$capturedTimer,
+    ): IncusTopologyBuilder {
         $capturedTimer = $timer;
 
         return $builder;
@@ -548,13 +711,19 @@ it('--force records prepare topology phase timings', function (): void {
 
     $eventNames = array_column($capturedTimer?->events() ?? [], 'name');
 
-    expect($capturedTimer)->toBeInstanceOf(E2EPhaseTimer::class)
-        ->and($capturedTimer->streamsCheckpoints())->toBeFalse()
-        ->and($eventNames)->toContain('gateway-artifacts.local')
-        ->and($eventNames)->toContain('gateway-artifacts.push')
-        ->and($eventNames)->toContain('builder.build')
-        ->and($eventNames)->not->toContain('gateway-artifacts.fingerprint')
-        ->and($eventNames)->not->toContain('builder.reuse-check');
+    expect($capturedTimer)
+        ->toBeInstanceOf(E2EPhaseTimer::class)
+        ->and($capturedTimer->streamsCheckpoints())
+        ->toBeFalse()
+        ->and($eventNames)
+        ->toContain('gateway-artifacts.local')
+        ->and($eventNames)
+        ->toContain('gateway-artifacts.push')
+        ->and($eventNames)
+        ->toContain('builder.build')
+        ->and($eventNames)
+        ->not->toContain('gateway-artifacts.fingerprint')->and($eventNames)
+        ->not->toContain('builder.reuse-check');
 });
 
 it('builds the gateway artifact image on the Incus host', function (): void {
@@ -600,7 +769,13 @@ it('--branch uses git archive instead of tar', function (): void {
         '--branch' => 'main',
     ])->assertSuccessful();
 
-    Process::assertRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'git -C') && str_contains((string) $p->command, 'archive') && str_contains((string) $p->command, "'main'"));
+    Process::assertRan(
+        fn (PendingProcess $p): bool => (
+            str_contains((string) $p->command, 'git -C')
+            && str_contains((string) $p->command, 'archive')
+            && str_contains((string) $p->command, "'main'")
+        ),
+    );
 });
 
 it('--source-archive forwards the provided archive', function (): void {
@@ -629,8 +804,16 @@ it('--source-archive forwards the provided archive', function (): void {
             '--source-archive' => $tempArchive,
         ])->assertSuccessful();
 
-        Process::assertNotRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf'));
-        Process::assertNotRan(fn (PendingProcess $p): bool => str_contains((string) $p->command, 'git -C') && str_contains((string) $p->command, 'archive'));
+        Process::assertNotRan(
+            fn (PendingProcess $p): bool => (
+                str_contains((string) $p->command, 'tar ') && str_contains((string) $p->command, '-czf')
+            ),
+        );
+        Process::assertNotRan(
+            fn (PendingProcess $p): bool => (
+                str_contains((string) $p->command, 'git -C') && str_contains((string) $p->command, 'archive')
+            ),
+        );
     } finally {
         @unlink($tempArchive);
     }
@@ -643,12 +826,13 @@ it('--source-archive fails clearly when archive is missing', function (): void {
     $command->setBuilderFactory(fn () => m::mock(IncusTopologyBuilder::class));
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
-    $this->artisan('e2e:prepare-topology', [
-        'kind' => 'operator',
-        '--force' => true,
-        '--use-build-artifacts' => true,
-        '--source-archive' => '/tmp/orbit-source-does-not-exist.tar.gz',
-    ])
+    $this
+        ->artisan('e2e:prepare-topology', [
+            'kind' => 'operator',
+            '--force' => true,
+            '--use-build-artifacts' => true,
+            '--source-archive' => '/tmp/orbit-source-does-not-exist.tar.gz',
+        ])
         ->expectsOutputToContain('--source-archive not found')
         ->assertFailed();
 });
@@ -660,12 +844,13 @@ it('--composer-cache fails clearly when an explicit cache directory is missing',
     $command->setBuilderFactory(fn () => m::mock(IncusTopologyBuilder::class));
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
-    $this->artisan('e2e:prepare-topology', [
-        'kind' => 'operator',
-        '--force' => true,
-        '--use-build-artifacts' => true,
-        '--composer-cache' => '/tmp/orbit-composer-cache-does-not-exist',
-    ])
+    $this
+        ->artisan('e2e:prepare-topology', [
+            'kind' => 'operator',
+            '--force' => true,
+            '--use-build-artifacts' => true,
+            '--composer-cache' => '/tmp/orbit-composer-cache-does-not-exist',
+        ])
         ->expectsOutputToContain('--composer-cache directory not found')
         ->assertFailed();
 });
@@ -679,7 +864,8 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useGatewayArtifactBundle')->once();
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->with(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, true)
         ->andReturn($manifest);
 
@@ -701,11 +887,12 @@ it('--force outputs JSON success envelope when builder returns a manifest', func
         ],
     ], JSON_THROW_ON_ERROR);
 
-    $this->artisan('e2e:prepare-topology', [
-        'kind' => 'operator',
-        '--force' => true,
-        '--json' => true,
-    ])
+    $this
+        ->artisan('e2e:prepare-topology', [
+            'kind' => 'operator',
+            '--force' => true,
+            '--json' => true,
+        ])
         ->expectsOutput($expected)
         ->assertSuccessful();
 });
@@ -715,17 +902,19 @@ it('--force surfaces builder failure as command failure', function (): void {
 
     $builder = m::mock(IncusTopologyBuilder::class);
     $builder->shouldReceive('useGatewayArtifactBundle');
-    $builder->shouldReceive('build')
+    $builder
+        ->shouldReceive('build')
         ->andThrow(new RuntimeException('Required base image [orbit-base-ubuntu-26.04-runtime] not found.'));
 
     $command = app(E2EPrepareTopologyCommand::class);
     $command->setBuilderFactory(fn () => $builder);
     $this->app->instance(E2EPrepareTopologyCommand::class, $command);
 
-    $this->artisan('e2e:prepare-topology', [
-        'kind' => 'operator',
-        '--force' => true,
-    ])
+    $this
+        ->artisan('e2e:prepare-topology', [
+            'kind' => 'operator',
+            '--force' => true,
+        ])
         ->expectsOutputToContain('Required base image [orbit-base-ubuntu-26.04-runtime] not found.')
         ->assertFailed();
 });

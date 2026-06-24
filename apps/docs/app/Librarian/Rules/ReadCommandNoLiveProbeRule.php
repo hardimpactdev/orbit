@@ -63,7 +63,7 @@ final readonly class ReadCommandNoLiveProbeRule implements GroupedRule
             return false;
         }
 
-        $effects = strtolower((string) $matches['effects']);
+        $effects = strtolower($matches['effects']);
 
         if (! str_contains($effects, 'read')) {
             return false;

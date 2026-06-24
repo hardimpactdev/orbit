@@ -34,8 +34,12 @@ final readonly class S3PublishAction
      *     error: array{code: string, message: string, meta: array<string, mixed>, status: int}
      * }
      */
-    public function publishWithProgress(Node $caller, string $nodeName, string $host, ProgressEventStreamEmitter $emitter): array
-    {
+    public function publishWithProgress(
+        Node $caller,
+        string $nodeName,
+        string $host,
+        ProgressEventStreamEmitter $emitter,
+    ): array {
         // Step 1: Resolve S3 node.
         $emitter->stepEvent('resolve_node', 'running', "Resolving s3 node '{$nodeName}'");
         $s3Node = $this->resolveS3Node($nodeName);
@@ -100,7 +104,8 @@ final readonly class S3PublishAction
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
         if ($existing instanceof ProxyRoute) {
-            $isS3Tool = $existing->owner_type === 's3'
+            $isS3Tool =
+                $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
                 && $existing->config['owner_name'] === 'seaweedfs'
                 && isset($existing->config['protocol'])
@@ -305,7 +310,8 @@ final readonly class S3PublishAction
         $existing = ProxyRoute::query()->where('domain', $host)->first();
 
         if ($existing instanceof ProxyRoute) {
-            $isS3Tool = $existing->owner_type === 's3'
+            $isS3Tool =
+                $existing->owner_type === 's3'
                 && isset($existing->config['owner_name'])
                 && $existing->config['owner_name'] === 'seaweedfs'
                 && isset($existing->config['protocol'])

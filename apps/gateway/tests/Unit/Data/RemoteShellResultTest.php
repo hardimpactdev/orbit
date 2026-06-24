@@ -12,8 +12,7 @@ it('reports success and combines output streams', function (): void {
         durationMs: 12,
     );
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->output())->toBe("created\nwarning\n");
+    expect($result->successful())->toBeTrue()->and($result->output())->toBe("created\nwarning\n");
 });
 
 it('omits empty output streams from combined output', function (): void {
@@ -24,6 +23,5 @@ it('omits empty output streams from combined output', function (): void {
         durationMs: 8,
     );
 
-    expect($result->successful())->toBeFalse()
-        ->and($result->output())->toBe("failed\n");
+    expect($result->successful())->toBeFalse()->and($result->output())->toBe("failed\n");
 });

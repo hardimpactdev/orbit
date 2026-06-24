@@ -13,15 +13,20 @@ it('reports the runtime backend as available when systemd responds', function ()
         new RemoteShellResult(exitCode: 0, stdout: "systemd 255\n", stderr: '', durationMs: 1),
     );
 
-    $result = (new RuntimeBackendProbe($remoteShell))->check($node);
+    $result = new RuntimeBackendProbe($remoteShell)->check($node);
 
-    expect($result->available)->toBeTrue()
-        ->and($result->exitCode)->toBe(0)
-        ->and($result->output)->toBe('systemd 255')
-        ->and($remoteShell->scripts)->toBe([
+    expect($result->available)
+        ->toBeTrue()
+        ->and($result->exitCode)
+        ->toBe(0)
+        ->and($result->output)
+        ->toBe('systemd 255')
+        ->and($remoteShell->scripts)
+        ->toBe([
             'command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1',
         ])
-        ->and($remoteShell->options[0]['timeout'])->toBe(15);
+        ->and($remoteShell->options[0]['timeout'])
+        ->toBe(15);
 });
 
 it('reports the runtime backend as unavailable when systemd is missing or unreachable', function (): void {
@@ -30,11 +35,14 @@ it('reports the runtime backend as unavailable when systemd is missing or unreac
         new RemoteShellResult(exitCode: 127, stdout: '', stderr: 'missing systemctl', durationMs: 1),
     );
 
-    $result = (new RuntimeBackendProbe($remoteShell))->check($node);
+    $result = new RuntimeBackendProbe($remoteShell)->check($node);
 
-    expect($result->available)->toBeFalse()
-        ->and($result->exitCode)->toBe(127)
-        ->and($result->output)->toBe('missing systemctl');
+    expect($result->available)
+        ->toBeFalse()
+        ->and($result->exitCode)
+        ->toBe(127)
+        ->and($result->output)
+        ->toBe('missing systemctl');
 });
 
 final class RuntimeBackendProbeRecordingRemoteShell implements RemoteShell

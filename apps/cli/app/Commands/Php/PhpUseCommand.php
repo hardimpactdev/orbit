@@ -70,7 +70,11 @@ final class PhpUseCommand extends GatewayCommand
             return null;
         }
 
-        if ($this->stringOption('app') === null && $this->stringOption('workspace') === null && $this->option('inherit') !== true) {
+        if (
+            $this->stringOption('app') === null
+            && $this->stringOption('workspace') === null
+            && $this->option('inherit') !== true
+        ) {
             return null;
         }
 
@@ -102,12 +106,14 @@ final class PhpUseCommand extends GatewayCommand
 
         $answer = $this->choice('PHP version', self::SUPPORTED, self::DEFAULT);
 
-        return is_string($answer) && trim($answer) !== ''
-            ? trim($answer)
-            : $this->renderFailure('validation_failed', 'A PHP version is required.', [
-                'field' => 'version',
-                'reason' => 'missing',
-            ]);
+        return (
+            is_string($answer) && trim($answer) !== ''
+                ? trim($answer)
+                : $this->renderFailure('validation_failed', 'A PHP version is required.', [
+                    'field' => 'version',
+                    'reason' => 'missing',
+                ])
+        );
     }
 
     /**
@@ -122,13 +128,16 @@ final class PhpUseCommand extends GatewayCommand
             $node = $this->targetNodeOptionOrDefault();
         }
 
-        return array_filter([
-            'version' => $version,
-            'app' => $cli ? null : ($this->stringOption('app') ?? $this->appFromOrbitMarker()),
-            'workspace' => $cli ? null : $this->stringOption('workspace'),
-            'node' => $node,
-            'inherit' => $this->option('inherit') === true,
-            'cli' => $cli,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'version' => $version,
+                'app' => $cli ? null : $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+                'workspace' => $cli ? null : $this->stringOption('workspace'),
+                'node' => $node,
+                'inherit' => $this->option('inherit') === true,
+                'cli' => $cli,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 }

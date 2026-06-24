@@ -19,7 +19,8 @@ function createToolRemoveApiCallerNode(array $overrides = []): Node
     return Node::factory()->create(array_merge([
         'name' => 'tool-remove-api-caller',
         'host' => TOOL_REMOVE_API_CALLER_WG_IP,
-        'wireguard_address' => TOOL_REMOVE_API_CALLER_WG_IP], $overrides));
+        'wireguard_address' => TOOL_REMOVE_API_CALLER_WG_IP,
+    ], $overrides));
 }
 
 function grantToolRemoveApiAccess(Node $caller, Node $appNode): void
@@ -28,7 +29,8 @@ function grantToolRemoveApiAccess(Node $caller, Node $appNode): void
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $appNode->id,
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('ToolRemoveController', function (): void {
@@ -39,28 +41,46 @@ describe('ToolRemoveController', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'laravel-installer',
-            'expected_state' => 'installed']);
+            'expected_state' => 'installed',
+        ]);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = test()->call('DELETE', '/api/tools/laravel-installer', [
-            'node' => 'app-remove-api-1',
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/laravel-installer',
+            [
+                'node' => 'app-remove-api-1',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.tool.name', 'laravel-installer')
             ->assertJsonPath('success.data.tool.node', 'app-remove-api-1');
 
         $entry = Activity::query()->first();
 
-        expect(NodeTool::find($tool->id))->toBeNull()
-            ->and($shell->scripts)->toHaveCount(1)
-            ->and($entry)->not->toBeNull()
-            ->and($entry->properties->get('destructive_consent'))->toBeTrue()
-            ->and($entry->properties->get('destructive_consent_source'))->toBe('json')
-            ->and($entry->properties->get('tool'))->toBe('laravel-installer')
-            ->and($entry->properties->get('node'))->toBe('app-remove-api-1');
+        expect(NodeTool::find($tool->id))
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toHaveCount(1)
+            ->and($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->properties->get('destructive_consent'))
+            ->toBeTrue()
+            ->and($entry->properties->get('destructive_consent_source'))
+            ->toBe('json')
+            ->and($entry->properties->get('tool'))
+            ->toBe('laravel-installer')
+            ->and($entry->properties->get('node'))
+            ->toBe('app-remove-api-1');
     });
 
     it('records explicit destructive consent source for a streamed human removal', function (): void {
@@ -70,15 +90,25 @@ describe('ToolRemoveController', function (): void {
         NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'laravel-installer',
-            'expected_state' => 'installed']);
+            'expected_state' => 'installed',
+        ]);
         app()->instance(RemoteShell::class, new ToolRemoveApiRecordingShell);
 
-        $response = test()->call('DELETE', '/api/tools/laravel-installer', [
-            'node' => 'app-remove-api-1',
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'interactive_confirm'], [], [], [
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/laravel-installer',
+            [
+                'node' => 'app-remove-api-1',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'interactive_confirm',
+            ],
+            [],
+            [],
+            [
                 'HTTP_ACCEPT' => 'text/event-stream',
-                'REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+                'REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP,
+            ],
+        );
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
@@ -88,9 +118,13 @@ describe('ToolRemoveController', function (): void {
 
         $entry = Activity::query()->first();
 
-        expect($entry)->not->toBeNull()
-            ->and($entry->properties->get('destructive_consent'))->toBeTrue()
-            ->and($entry->properties->get('destructive_consent_source'))->toBe('interactive_confirm');
+        expect($entry)
+            ->not
+            ->toBeNull()
+            ->and($entry->properties->get('destructive_consent'))
+            ->toBeTrue()
+            ->and($entry->properties->get('destructive_consent_source'))
+            ->toBe('interactive_confirm');
     });
 
     it('rejects missing destructive consent with validation metadata before side effects', function (): void {
@@ -100,20 +134,33 @@ describe('ToolRemoveController', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'composer',
-            'expected_state' => 'installed']);
+            'expected_state' => 'installed',
+        ]);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = test()->call('DELETE', '/api/tools/composer', [
-            'node' => 'app-remove-api-1'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/composer',
+            [
+                'node' => 'app-remove-api-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force')
             ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
 
-        expect(NodeTool::find($tool->id))->not->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::find($tool->id))
+            ->not
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
     });
 
     it('requires an explicit target selector even when exactly one app node is visible', function (): void {
@@ -123,20 +170,33 @@ describe('ToolRemoveController', function (): void {
         $tool = NodeTool::factory()->create([
             'node_id' => $node->id,
             'name' => 'composer',
-            'expected_state' => 'installed']);
+            'expected_state' => 'installed',
+        ]);
         $shell = new ToolRemoveApiRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = test()->call('DELETE', '/api/tools/composer', [
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+        $response = test()->call(
+            'DELETE',
+            '/api/tools/composer',
+            [
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.fields', ['target']);
 
-        expect(NodeTool::find($tool->id))->not->toBeNull()
-            ->and($shell->scripts)->toBe([]);
+        expect(NodeTool::find($tool->id))
+            ->not
+            ->toBeNull()
+            ->and($shell->scripts)
+            ->toBe([]);
     });
 
     it('rejects unauthenticated and unauthorized removals with documented codes', function (): void {
@@ -149,12 +209,21 @@ describe('ToolRemoveController', function (): void {
         $unauthenticated = test()->call('DELETE', '/api/tools/composer', [
             'node' => 'hidden-node',
             'destructive_consent' => true,
-            'destructive_consent_source' => 'json']);
+            'destructive_consent_source' => 'json',
+        ]);
 
-        $unauthorized = test()->call('DELETE', '/api/tools/composer', [
-            'node' => 'hidden-node',
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'json'], [], [], ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP]);
+        $unauthorized = test()->call(
+            'DELETE',
+            '/api/tools/composer',
+            [
+                'node' => 'hidden-node',
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'json',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_REMOVE_API_CALLER_WG_IP],
+        );
 
         $unauthenticated->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');

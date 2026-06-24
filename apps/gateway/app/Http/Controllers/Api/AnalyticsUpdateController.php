@@ -50,24 +50,39 @@ final class AnalyticsUpdateController implements Loggable
         $version = $this->version($request);
 
         if ($version === null) {
-            return $this->error('validation_failed', 'Plausible version is required.', [
-                'field' => 'version',
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Plausible version is required.',
+                [
+                    'field' => 'version',
+                ],
+                422,
+            );
         }
 
         if (! $this->isValidVersion($version)) {
-            return $this->error('validation_failed', 'Plausible version must be a semantic version string.', [
-                'field' => 'version',
-                'value' => $version,
-            ], 422);
+            return $this->error(
+                'validation_failed',
+                'Plausible version must be a semantic version string.',
+                [
+                    'field' => 'version',
+                    'value' => $version,
+                ],
+                422,
+            );
         }
 
         $node = $this->resolveAnalyticsNode($request);
 
         if (! $node instanceof Node) {
-            return $this->error('analytics.prerequisite_failed', 'No active analytics node could be resolved.', [
-                'version' => $version,
-            ], 422);
+            return $this->error(
+                'analytics.prerequisite_failed',
+                'No active analytics node could be resolved.',
+                [
+                    'version' => $version,
+                ],
+                422,
+            );
         }
 
         $authorization = $this->authorizeProcessAccess($caller, $node, 'process:edit');
@@ -79,11 +94,16 @@ final class AnalyticsUpdateController implements Loggable
         $process = $this->plausibleProcess($node);
 
         if (! $process instanceof Process) {
-            return $this->error('process.not_found', "Process 'plausible' was not found on analytics node '{$node->name}'.", [
-                'node' => $node->name,
-                'process' => self::ProcessName,
-                'service' => self::ProcessService,
-            ], 404);
+            return $this->error(
+                'process.not_found',
+                "Process 'plausible' was not found on analytics node '{$node->name}'.",
+                [
+                    'node' => $node->name,
+                    'process' => self::ProcessName,
+                    'service' => self::ProcessService,
+                ],
+                404,
+            );
         }
 
         $previousVersion = $this->processVersion($process);
@@ -148,11 +168,16 @@ final class AnalyticsUpdateController implements Loggable
             return null;
         }
 
-        return $this->error('authorization_failed', "This node is not authorized for '{$permission}' on '{$node->name}'.", [
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ], 403);
+        return $this->error(
+            'authorization_failed',
+            "This node is not authorized for '{$permission}' on '{$node->name}'.",
+            [
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+            403,
+        );
     }
 
     private function plausibleProcess(Node $node): ?Process

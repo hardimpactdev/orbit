@@ -32,8 +32,10 @@ final readonly class E2ETopologyProviderPool
         };
     }
 
-    public function select(E2ETopologyKind $kind, ?E2ETopologyCapabilities $required = null): E2ETopologyProviderSelection
-    {
+    public function select(
+        E2ETopologyKind $kind,
+        ?E2ETopologyCapabilities $required = null,
+    ): E2ETopologyProviderSelection {
         $failures = [];
 
         foreach ($this->providers as $provider) {

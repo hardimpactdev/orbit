@@ -14,10 +14,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('seeds app-dev redis with renderable process runtime config', function (): void {
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'wireguard_address' => '10.6.0.4',
-    ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'wireguard_address' => '10.6.0.4',
+        ]);
 
     eval(E2EPreparedTopologyRegistry::appdevDatabaseAndRedisPhp());
 
@@ -31,10 +33,14 @@ it('seeds app-dev redis with renderable process runtime config', function (): vo
         ->where('name', 'redis')
         ->sole();
 
-    expect($databaseRole->status)->toBe(NodeRoleStatus::Active)
-        ->and($process->runtime)->toBe(ProcessRuntime::Docker)
-        ->and($process->command)->toBe('redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no')
-        ->and($process->runtime_config)->toMatchArray([
+    expect($databaseRole->status)
+        ->toBe(NodeRoleStatus::Active)
+        ->and($process->runtime)
+        ->toBe(ProcessRuntime::Docker)
+        ->and($process->command)
+        ->toBe('redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no')
+        ->and($process->runtime_config)
+        ->toMatchArray([
             'service' => 'redis',
             'version_family' => '7',
             'version' => '7.2',
@@ -47,6 +53,8 @@ it('seeds app-dev redis with renderable process runtime config', function (): vo
                 'port' => 6379,
             ],
         ])
-        ->and($process->runtime_config['labels']['orbit.process'])->toBe('redis')
-        ->and($process->runtime_config['mounts'][0]['source'])->toBe('/var/lib/orbit/processes/redis');
+        ->and($process->runtime_config['labels']['orbit.process'])
+        ->toBe('redis')
+        ->and($process->runtime_config['mounts'][0]['source'])
+        ->toBe('/var/lib/orbit/processes/redis');
 });

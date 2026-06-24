@@ -16,17 +16,29 @@ describe('workspace:log', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/workspaces/runs/12/log');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/workspaces/runs/12/log'
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['run']['id'])->toBe(12)
-            ->and($decoded['success']['data']['run']['workspace'])->toBe('feature-docs')
-            ->and($decoded['success']['data']['run']['steps'][0]['duration_ms'])->toBe(1000)
-            ->and($decoded['success']['data']['run']['steps'][0]['stdout_truncated'])->toBeFalse()
-            ->and($decoded['success']['data']['run']['steps'][1]['duration_ms'])->toBe(8200)
-            ->and($decoded['success']['data']['run']['steps'][1]['stderr_truncated'])->toBeTrue()
-            ->and($decoded['success']['meta']['registry_only'])->toBeTrue();
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['run']['id'])
+            ->toBe(12)
+            ->and($decoded['success']['data']['run']['workspace'])
+            ->toBe('feature-docs')
+            ->and($decoded['success']['data']['run']['steps'][0]['duration_ms'])
+            ->toBe(1000)
+            ->and($decoded['success']['data']['run']['steps'][0]['stdout_truncated'])
+            ->toBeFalse()
+            ->and($decoded['success']['data']['run']['steps'][1]['duration_ms'])
+            ->toBe(8200)
+            ->and($decoded['success']['data']['run']['steps'][1]['stderr_truncated'])
+            ->toBeTrue()
+            ->and($decoded['success']['meta']['registry_only'])
+            ->toBeTrue();
     });
 
     it('renders captured step output for human output', function (): void {
@@ -34,17 +46,28 @@ describe('workspace:log', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'workspace:log', ['run' => '12']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Workspace Log Run #12  (docs/feature-docs on app-1)')
-            ->and($output)->toContain('✔ Validate workspace configuration')
-            ->and($output)->toContain('✘ Install dependencies (composer install)')
-            ->and($output)->toContain('[EXIT CODE 1]')
-            ->and($output)->toContain('STDOUT:')
-            ->and($output)->toContain('> Updating dependencies')
-            ->and($output)->toContain('STDERR:')
-            ->and($output)->toContain('> Could not resolve dependencies [TRUNCATED]')
-            ->and($output)->toContain('· Notify skipped step')
-            ->and($output)->toContain('Run #12 failed (started 2026-04-30 10:00:00, duration 12.5s)');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Workspace Log Run #12  (docs/feature-docs on app-1)')
+            ->and($output)
+            ->toContain('✔ Validate workspace configuration')
+            ->and($output)
+            ->toContain('✘ Install dependencies (composer install)')
+            ->and($output)
+            ->toContain('[EXIT CODE 1]')
+            ->and($output)
+            ->toContain('STDOUT:')
+            ->and($output)
+            ->toContain('> Updating dependencies')
+            ->and($output)
+            ->toContain('STDERR:')
+            ->and($output)
+            ->toContain('> Could not resolve dependencies [TRUNCATED]')
+            ->and($output)
+            ->toContain('· Notify skipped step')
+            ->and($output)
+            ->toContain('Run #12 failed (started 2026-04-30 10:00:00, duration 12.5s)');
     });
 
     it('fails validation before opening a gateway request when run is missing', function (): void {
@@ -56,10 +79,14 @@ describe('workspace:log', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('Workspace run ID is required.')
-            ->and($decoded['error']['meta']['field'])->toBe('run');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('Workspace run ID is required.')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('run');
     });
 
     it('fails validation before opening a gateway request when run is not positive integer', function (string $run): void {
@@ -74,11 +101,16 @@ describe('workspace:log', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['message'])->toBe('Workspace run ID must be a positive integer.')
-            ->and($decoded['error']['meta']['field'])->toBe('run')
-            ->and($decoded['error']['meta']['value'])->toBe($run);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['message'])
+            ->toBe('Workspace run ID must be a positive integer.')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('run')
+            ->and($decoded['error']['meta']['value'])
+            ->toBe($run);
     })->with(['0', 'nope']);
 
     it('surfaces gateway run-not-found failures without collapsing the error code', function (): void {
@@ -91,10 +123,14 @@ describe('workspace:log', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('workspace.run_not_found')
-            ->and($decoded['error']['message'])->toBe('Workspace run 999 not found.')
-            ->and($decoded['error']['meta']['id'])->toBe(999);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('workspace.run_not_found')
+            ->and($decoded['error']['message'])
+            ->toBe('Workspace run 999 not found.')
+            ->and($decoded['error']['meta']['id'])
+            ->toBe(999);
     });
 
     it('surfaces gateway authorization failures with stable metadata', function (): void {
@@ -111,10 +147,14 @@ describe('workspace:log', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['workspace'])->toBe('feature-docs')
-            ->and($decoded['error']['meta']['app'])->toBe('docs');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['workspace'])
+            ->toBe('feature-docs')
+            ->and($decoded['error']['meta']['app'])
+            ->toBe('docs');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -127,8 +167,7 @@ describe('workspace:log', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });
 

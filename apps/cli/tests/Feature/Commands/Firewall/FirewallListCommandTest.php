@@ -31,12 +31,17 @@ describe('firewall:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/firewall-rules'));
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
+            && str_contains($request->url(), '/api/firewall-rules'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['rules'][0]['name'])->toBe('local-vite')
-            ->and($decoded['success']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['rules'][0]['name'])
+            ->toBe('local-vite')
+            ->and($decoded['success']['meta'])
+            ->toMatchArray([
                 'node' => null,
                 'count' => 1,
             ]);
@@ -67,12 +72,10 @@ describe('firewall:list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/firewall-rules')
-                && str_contains($url, 'node=app-1');
+            return str_contains($url, '/api/firewall-rules') && str_contains($url, 'node=app-1');
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['meta']['node'])->toBe('app-1');
+        expect($exitCode)->toBe(0)->and($decoded['success']['meta']['node'])->toBe('app-1');
     });
 
     it('renders human output grouped by node as tables with uppercase headers', function (): void {
@@ -108,26 +111,45 @@ describe('firewall:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'firewall:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Node: app-1')
-            ->and($output)->toContain('Node: app-2')
-            ->and($output)->toContain('NAME')
-            ->and($output)->toContain('DIRECTION')
-            ->and($output)->toContain('ACTION')
-            ->and($output)->toContain('SOURCE')
-            ->and($output)->toContain('DESTINATION')
-            ->and($output)->toContain('PORT')
-            ->and($output)->toContain('PROTOCOL')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('local-vite')
-            ->and($output)->toContain('allow')
-            ->and($output)->toContain('10.6.0.0/24')
-            ->and($output)->toContain('5173')
-            ->and($output)->toContain('block-ssh')
-            ->and($output)->toContain('deny')
-            ->and($output)->toContain('—')
-            ->and($output)->not->toContain('rules: [')
-            ->and($output)->not->toContain('"protocol"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Node: app-1')
+            ->and($output)
+            ->toContain('Node: app-2')
+            ->and($output)
+            ->toContain('NAME')
+            ->and($output)
+            ->toContain('DIRECTION')
+            ->and($output)
+            ->toContain('ACTION')
+            ->and($output)
+            ->toContain('SOURCE')
+            ->and($output)
+            ->toContain('DESTINATION')
+            ->and($output)
+            ->toContain('PORT')
+            ->and($output)
+            ->toContain('PROTOCOL')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('local-vite')
+            ->and($output)
+            ->toContain('allow')
+            ->and($output)
+            ->toContain('10.6.0.0/24')
+            ->and($output)
+            ->toContain('5173')
+            ->and($output)
+            ->toContain('block-ssh')
+            ->and($output)
+            ->toContain('deny')
+            ->and($output)
+            ->toContain('—')
+            ->and($output)
+            ->not->toContain('rules: [')->and($output)
+            ->not->toContain('"protocol"');
     });
 
     it('renders a scope-aware empty state when filtered with no matches', function (): void {
@@ -135,8 +157,7 @@ describe('firewall:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'firewall:list', ['--node' => 'app-1']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No firewall rules found on node app-1.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No firewall rules found on node app-1.');
     });
 
     it('renders a plain empty state when unfiltered with no rules', function (): void {
@@ -144,8 +165,7 @@ describe('firewall:list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'firewall:list');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No firewall rules found.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No firewall rules found.');
     });
 
     it('rejects invalid node input before calling the gateway', function (): void {
@@ -160,9 +180,12 @@ describe('firewall:list', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
                 'field' => 'node',
                 'node' => 'one,two',
             ]);
@@ -177,9 +200,12 @@ describe('firewall:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('firewall_rule:read');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('firewall_rule:read');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -189,7 +215,6 @@ describe('firewall:list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

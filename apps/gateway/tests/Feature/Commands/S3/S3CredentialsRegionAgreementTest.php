@@ -168,9 +168,12 @@ describe('S3 region agreement between tool:credentials and s3:credentials', func
         $toolRegion = $toolResponse->json('success.data.credentials.fields.region');
         $s3Region = $s3Response->json('success.data.credentials.region');
 
-        expect($toolRegion)->toBe('orbit')
-            ->and($s3Region)->toBe('orbit')
-            ->and($toolRegion)->toBe($s3Region);
+        expect($toolRegion)
+            ->toBe('orbit')
+            ->and($s3Region)
+            ->toBe('orbit')
+            ->and($toolRegion)
+            ->toBe($s3Region);
     });
 
     it('S3ServiceConfigurator writes region=orbit to the stored credentials fields', function (): void {

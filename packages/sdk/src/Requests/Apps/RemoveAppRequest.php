@@ -48,7 +48,7 @@ final class RemoveAppRequest extends GatewayRequest implements HasBody
             $meta = $body['success']['meta'];
 
             if (isset($meta['warnings']) && is_array($meta['warnings'])) {
-                $warnings = array_values($meta['warnings']);
+                $warnings = $this->listOfStringKeyedArrays($meta['warnings']);
             }
         }
 

@@ -169,9 +169,9 @@ describe('install-orbit Docker-first gateway contract', function (): void {
         expect($this->installer)
             ->toContain('clear_laravel_bootstrap_cache()')
             ->toContain('"$TARGET_DIR/apps/gateway/bootstrap/cache"/*.php')
-            ->and($cacheClear)->not->toBeFalse()
-            ->and($gatewayBootstrap)->not->toBeFalse()
-            ->and($cacheClear)->toBeLessThan($gatewayBootstrap);
+            ->and($cacheClear)
+            ->not->toBeFalse()->and($gatewayBootstrap)
+            ->not->toBeFalse()->and($cacheClear)->toBeLessThan($gatewayBootstrap);
     });
 
     it('uses the gateway app key for operation token signing during bootstrap', function (): void {
@@ -198,71 +198,77 @@ describe('install-orbit Docker-first gateway contract', function (): void {
             ->not->toContain('target=/opt/orbit');
     });
 
-    it('grants the orbit user docker group membership and uses sudo for install-time docker invocations so a fresh orbit user does not need the docker socket up front', function (): void {
-        expect($this->installer)
-            ->toContain('grant_orbit_user_docker_access')
-            ->toContain('usermod -aG docker')
-            ->toContain('docker_cli()')
-            ->toContain('sudo -n docker')
-            ->toContain('docker_cli info')
-            ->toContain('docker_cli build')
-            ->toContain('docker_cli pull')
-            ->toContain('docker_cli run')
-            ->toContain('docker_cli image inspect');
+    it(
+        'grants the orbit user docker group membership and uses sudo for install-time docker invocations so a fresh orbit user does not need the docker socket up front',
+        function (): void {
+            expect($this->installer)
+                ->toContain('grant_orbit_user_docker_access')
+                ->toContain('usermod -aG docker')
+                ->toContain('docker_cli()')
+                ->toContain('sudo -n docker')
+                ->toContain('docker_cli info')
+                ->toContain('docker_cli build')
+                ->toContain('docker_cli pull')
+                ->toContain('docker_cli run')
+                ->toContain('docker_cli image inspect');
 
-        // Walk every line of bin/install-orbit looking for a literal
-        // `docker ` invocation that is not routed through docker_cli. The
-        // helper itself, plus comments/docs, are exempt — but every
-        // install-time docker call must go through the helper so the fresh
-        // orbit user does not hit a permission-denied socket before the
-        // docker group is picked up.
-        $offenders = [];
-        $insideDockerCliFn = false;
-        $insideUsage = false;
+            // Walk every line of bin/install-orbit looking for a literal
+            // `docker ` invocation that is not routed through docker_cli. The
+            // helper itself, plus comments/docs, are exempt — but every
+            // install-time docker call must go through the helper so the fresh
+            // orbit user does not hit a permission-denied socket before the
+            // docker group is picked up.
+            $offenders = [];
+            $insideDockerCliFn = false;
+            $insideUsage = false;
 
-        foreach (preg_split('/\R/', $this->installer) ?: [] as $lineNumber => $line) {
-            $trimmed = trim($line);
+            foreach (preg_split('/\R/', $this->installer) ?: [] as $lineNumber => $line) {
+                $trimmed = trim($line);
 
-            if (str_contains($line, "<<'HELP'")) {
-                $insideUsage = true;
-            }
-
-            if ($insideUsage) {
-                if ($trimmed === 'HELP') {
-                    $insideUsage = false;
+                if (str_contains($line, "<<'HELP'")) {
+                    $insideUsage = true;
                 }
 
-                continue;
-            }
+                if ($insideUsage) {
+                    if ($trimmed === 'HELP') {
+                        $insideUsage = false;
+                    }
 
-            if (str_starts_with($trimmed, '#')) {
-                continue;
-            }
-
-            if (str_starts_with($trimmed, 'docker_cli()')) {
-                $insideDockerCliFn = true;
-
-                continue;
-            }
-
-            if ($insideDockerCliFn) {
-                if ($trimmed === '}') {
-                    $insideDockerCliFn = false;
+                    continue;
                 }
 
-                continue;
+                if (str_starts_with($trimmed, '#')) {
+                    continue;
+                }
+
+                if (str_starts_with($trimmed, 'docker_cli()')) {
+                    $insideDockerCliFn = true;
+
+                    continue;
+                }
+
+                if ($insideDockerCliFn) {
+                    if ($trimmed === '}') {
+                        $insideDockerCliFn = false;
+                    }
+
+                    continue;
+                }
+
+                // Catches `docker ...` or `run docker ...` at the start of a
+                // command. Ignores `docker_cli` and lines that mention `docker`
+                // only as a label/string value (no leading whitespace or `run`).
+                if (preg_match('/^(?:\s*|\s*run\s+)docker(\s+|$)/', $line) === 1) {
+                    $offenders[] = sprintf('line %d: %s', $lineNumber + 1, $trimmed);
+                }
             }
 
-            // Catches `docker ...` or `run docker ...` at the start of a
-            // command. Ignores `docker_cli` and lines that mention `docker`
-            // only as a label/string value (no leading whitespace or `run`).
-            if (preg_match('/^(?:\s*|\s*run\s+)docker(\s+|$)/', $line) === 1) {
-                $offenders[] = sprintf('line %d: %s', $lineNumber + 1, $trimmed);
-            }
-        }
-
-        expect($offenders)->toBe([], 'install-orbit must route every Docker invocation through docker_cli so the fresh orbit user does not hit a permission-denied socket before the docker group is picked up.');
-    });
+            expect($offenders)->toBe(
+                [],
+                'install-orbit must route every Docker invocation through docker_cli so the fresh orbit user does not hit a permission-denied socket before the docker group is picked up.',
+            );
+        },
+    );
 
     it('runs Docker-touching install steps in a way that survives an unprivileged orbit user (sudo-wrapped) on a fresh host', function (): void {
         $root = sys_get_temp_dir().'/orbit-install-orbit-docker-access-'.bin2hex(random_bytes(4));
@@ -286,68 +292,68 @@ describe('install-orbit Docker-first gateway contract', function (): void {
         // build` while the orbit user lacks docker group membership, this
         // assertion catches it as a permission-denied probe.
         file_put_contents("{$bin}/docker", <<<'BASH'
-#!/usr/bin/env bash
-{
-    printf 'docker'
-    for arg in "$@"; do printf ' %s' "$arg"; done
-    printf '\n'
-} >> "$DOCKER_CALL_LOG"
+            #!/usr/bin/env bash
+            {
+                printf 'docker'
+                for arg in "$@"; do printf ' %s' "$arg"; done
+                printf '\n'
+            } >> "$DOCKER_CALL_LOG"
 
-if [ "$ORBIT_INSTALL_DOCKER_FORCE_SUDO" = "1" ] && [ "${SUDO_USER:-}" = "" ]; then
-    printf 'permission denied while trying to connect to the Docker daemon socket\n' >&2
-    exit 1
-fi
+            if [ "$ORBIT_INSTALL_DOCKER_FORCE_SUDO" = "1" ] && [ "${SUDO_USER:-}" = "" ]; then
+                printf 'permission denied while trying to connect to the Docker daemon socket\n' >&2
+                exit 1
+            fi
 
-case "$1" in
-    info) exit 0 ;;
-    network)
-        if [ "${2:-}" = "inspect" ]; then
-            exit 1
-        fi
-        exit 0
-        ;;
-    container)
-        if [ "${2:-}" = "inspect" ]; then
-            if [ "$(cat "$DOCKER_STATE_DIR/exists")" != "1" ]; then exit 1; fi
-            for arg in "$@"; do
-                case "$arg" in
-                    '{{.State.Running}}') cat "$DOCKER_STATE_DIR/running"; exit 0 ;;
-                    '{{range .Config.Env}}{{println .}}{{end}}') cat "$DOCKER_STATE_DIR/env"; printf '\n'; exit 0 ;;
-                esac
-            done
-            printf '{}\n'
+            case "$1" in
+                info) exit 0 ;;
+                network)
+                    if [ "${2:-}" = "inspect" ]; then
+                        exit 1
+                    fi
+                    exit 0
+                    ;;
+                container)
+                    if [ "${2:-}" = "inspect" ]; then
+                        if [ "$(cat "$DOCKER_STATE_DIR/exists")" != "1" ]; then exit 1; fi
+                        for arg in "$@"; do
+                            case "$arg" in
+                                '{{.State.Running}}') cat "$DOCKER_STATE_DIR/running"; exit 0 ;;
+                                '{{range .Config.Env}}{{println .}}{{end}}') cat "$DOCKER_STATE_DIR/env"; printf '\n'; exit 0 ;;
+                            esac
+                        done
+                        printf '{}\n'
+                        exit 0
+                    fi
+                    ;;
+                rm) printf '0' > "$DOCKER_STATE_DIR/exists"; exit 0 ;;
+                start) printf 'true' > "$DOCKER_STATE_DIR/running"; exit 0 ;;
+                run)
+                    printf '1' > "$DOCKER_STATE_DIR/exists"
+                    printf 'true' > "$DOCKER_STATE_DIR/running"
+                    exit 0
+                    ;;
+                image) exit 0 ;;
+            esac
+
             exit 0
-        fi
-        ;;
-    rm) printf '0' > "$DOCKER_STATE_DIR/exists"; exit 0 ;;
-    start) printf 'true' > "$DOCKER_STATE_DIR/running"; exit 0 ;;
-    run)
-        printf '1' > "$DOCKER_STATE_DIR/exists"
-        printf 'true' > "$DOCKER_STATE_DIR/running"
-        exit 0
-        ;;
-    image) exit 0 ;;
-esac
-
-exit 0
-BASH);
+            BASH);
         chmod("{$bin}/docker", 0755);
 
         // sudo stub: records each invocation, sets SUDO_USER, and then
         // execs the wrapped command. This proves install-orbit's docker
         // calls reach `docker` through `sudo -n docker ...`.
         file_put_contents("{$bin}/sudo", <<<'BASH'
-#!/usr/bin/env bash
-shift_count=0
-for arg in "$@"; do
-    case "$arg" in
-        -*) shift_count=$((shift_count+1)) ;;
-        *) break ;;
-    esac
-done
-shift "$shift_count"
-SUDO_USER="${SUDO_USER:-test}" exec "$@"
-BASH);
+            #!/usr/bin/env bash
+            shift_count=0
+            for arg in "$@"; do
+                case "$arg" in
+                    -*) shift_count=$((shift_count+1)) ;;
+                    *) break ;;
+                esac
+            done
+            shift "$shift_count"
+            SUDO_USER="${SUDO_USER:-test}" exec "$@"
+            BASH);
         chmod("{$bin}/sudo", 0755);
 
         file_put_contents("{$bin}/install", "#!/usr/bin/env bash\nexit 0\n");
@@ -375,13 +381,23 @@ BASH);
 
         try {
             expect($process->getExitCode())
-                ->toBe(0, "install-orbit must succeed when the orbit user lacks the docker group; stderr was:\n{$stderr}\nstdout was:\n{$stdout}");
+                ->toBe(
+                    0,
+                    "install-orbit must succeed when the orbit user lacks the docker group; stderr was:\n{$stderr}\nstdout was:\n{$stdout}",
+                );
 
             expect($calls)->not->toBeEmpty();
 
-            $dockerRunCalls = array_filter($calls, fn (string $line): bool => str_starts_with($line, 'docker run --rm') && str_contains($line, 'orbit-gateway:current'));
+            $dockerRunCalls = array_filter(
+                $calls,
+                fn (string $line): bool => (
+                    str_starts_with($line, 'docker run --rm') && str_contains($line, 'orbit-gateway:current')
+                ),
+            );
 
-            expect($dockerRunCalls)->not->toBeEmpty('expected install-orbit to run orbit-gateway through sudo-wrapped docker run');
+            expect($dockerRunCalls)->not->toBeEmpty(
+                'expected install-orbit to run orbit-gateway through sudo-wrapped docker run',
+            );
         } finally {
             File::deleteDirectory($root);
         }
@@ -398,10 +414,9 @@ BASH);
             ->not->toContain('-v "$TARGET_DIR":/opt/orbit')
             ->not->toContain('orbit'.'-runtime:current')
             ->not->toContain('php /opt/orbit/artisan migrate --force --no-interaction')
-            ->not->toContain('docker_cli exec \\')
-            ->and($bootstrapStep)->not->toBeFalse()
-            ->and($migrationStep)->not->toBeFalse()
-            ->and($bootstrapStep)->toBeLessThan($migrationStep);
+            ->not->toContain('docker_cli exec \\')->and($bootstrapStep)
+            ->not->toBeFalse()->and($migrationStep)
+            ->not->toBeFalse()->and($bootstrapStep)->toBeLessThan($migrationStep);
     });
 
     it('links the downloaded Orbit CLI binary as the host orbit command', function (): void {

@@ -93,20 +93,31 @@ beforeEach(function (): void {
 describe('dns:resolve-tld', function (): void {
     describe('resolve sub-action', function (): void {
         it('returns JSON success on resolve', function (): void {
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.1', '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                'target' => '10.6.0.1',
+                '--json' => true,
+            ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['dns']['tld'])->toBe('test')
-                ->and($decoded['success']['data']['dns']['target'])->toBe('10.6.0.1')
-                ->and($decoded['success']['data']['dns']['action'])->toBe('resolve')
-                ->and($decoded['success']['data']['dns']['status'])->toBe('resolved')
-                ->and($decoded['success']['data']['dns']['changed'])->toBeTrue();
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['dns']['tld'])
+                ->toBe('test')
+                ->and($decoded['success']['data']['dns']['target'])
+                ->toBe('10.6.0.1')
+                ->and($decoded['success']['data']['dns']['action'])
+                ->toBe('resolve')
+                ->and($decoded['success']['data']['dns']['status'])
+                ->toBe('resolved')
+                ->and($decoded['success']['data']['dns']['changed'])
+                ->toBeTrue();
         });
 
         it('prompts for Target IP address in interactive mode when target is missing (Item 4 gap)', function (): void {
-            $this->artisan('dns:resolve-tld', ['tld' => 'test'])
+            $this
+                ->artisan('dns:resolve-tld', ['tld' => 'test'])
                 ->expectsQuestion('Target IP address', '10.6.0.7')
                 ->assertExitCode(0);
         });
@@ -118,14 +129,22 @@ describe('dns:resolve-tld', function (): void {
                 'error' => 'dnsmasq did not return 192.168.1.150 for orbit-local-resolver-health.test.',
             ];
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '192.168.1.150', '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                'target' => '192.168.1.150',
+                '--json' => true,
+            ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('local_resolver_refresh_failed')
-                ->and($decoded['error']['meta']['diagnostics'])->toContain('dnsmasq did not return 192.168.1.150')
-                ->and($decoded['error']['data']['dns'])->toMatchArray([
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('local_resolver_refresh_failed')
+                ->and($decoded['error']['meta']['diagnostics'])
+                ->toContain('dnsmasq did not return 192.168.1.150')
+                ->and($decoded['error']['data']['dns'])
+                ->toMatchArray([
                     'tld' => 'test',
                     'target' => '192.168.1.150',
                     'action' => 'resolve',
@@ -143,19 +162,30 @@ describe('dns:resolve-tld', function (): void {
                 'error' => 'Process timed out while running sudo -n mkdir -p /etc/resolver && echo \'nameserver 127.0.0.1\' | sudo -n tee \'/etc/resolver/test\' > /dev/null. Error: The process exceeded the timeout of 10 seconds.',
             ];
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '192.168.1.150', '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                'target' => '192.168.1.150',
+                '--json' => true,
+            ]);
 
-            expect($output)->not->toBeEmpty()
-                ->and(json_decode($output, true))->not->toBeNull();
+            expect($output)
+                ->not->toBeEmpty()->and(json_decode($output, true))
+                ->not->toBeNull();
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded)->toHaveKey('error')
-                ->and($decoded['error']['code'])->toBe('local_resolver_write_failed')
-                ->and($decoded['error']['message'])->toBe('Failed to update local DNS resolver configuration.')
-                ->and($decoded['error']['meta']['tld'])->toBe('test')
-                ->and($decoded['error']['meta']['resolver_backend'])->toBe('dnsmasq');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded)
+                ->toHaveKey('error')
+                ->and($decoded['error']['code'])
+                ->toBe('local_resolver_write_failed')
+                ->and($decoded['error']['message'])
+                ->toBe('Failed to update local DNS resolver configuration.')
+                ->and($decoded['error']['meta']['tld'])
+                ->toBe('test')
+                ->and($decoded['error']['meta']['resolver_backend'])
+                ->toBe('dnsmasq');
         });
 
         it('returns valid JSON write failure when resolver write_failed lacks cached sudo credentials', function (): void {
@@ -165,19 +195,30 @@ describe('dns:resolve-tld', function (): void {
                 'error' => 'sudo: a password is required',
             ];
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '192.168.1.150', '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                'target' => '192.168.1.150',
+                '--json' => true,
+            ]);
 
-            expect($output)->not->toBeEmpty()
-                ->and(json_decode($output, true))->not->toBeNull();
+            expect($output)
+                ->not->toBeEmpty()->and(json_decode($output, true))
+                ->not->toBeNull();
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded)->toHaveKey('error')
-                ->and($decoded['error']['code'])->toBe('local_resolver_write_failed')
-                ->and($decoded['error']['message'])->toBe('Failed to update local DNS resolver configuration.')
-                ->and($decoded['error']['meta']['tld'])->toBe('test')
-                ->and($decoded['error']['meta']['resolver_backend'])->toBe('dnsmasq');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded)
+                ->toHaveKey('error')
+                ->and($decoded['error']['code'])
+                ->toBe('local_resolver_write_failed')
+                ->and($decoded['error']['message'])
+                ->toBe('Failed to update local DNS resolver configuration.')
+                ->and($decoded['error']['meta']['tld'])
+                ->toBe('test')
+                ->and($decoded['error']['meta']['resolver_backend'])
+                ->toBe('dnsmasq');
         });
     });
 
@@ -185,24 +226,38 @@ describe('dns:resolve-tld', function (): void {
         it('returns JSON success on reset when already absent (idempotent)', function (): void {
             $this->resolver->resetResult = ['status' => 'already_absent', 'changed' => false];
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--force' => true, '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                '--reset' => true,
+                '--force' => true,
+                '--json' => true,
+            ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['dns']['tld'])->toBe('test')
-                ->and($decoded['success']['data']['dns']['action'])->toBe('reset')
-                ->and($decoded['success']['data']['dns']['status'])->toBe('already_absent')
-                ->and($decoded['success']['data']['dns']['changed'])->toBeFalse();
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['dns']['tld'])
+                ->toBe('test')
+                ->and($decoded['success']['data']['dns']['action'])
+                ->toBe('reset')
+                ->and($decoded['success']['data']['dns']['status'])
+                ->toBe('already_absent')
+                ->and($decoded['success']['data']['dns']['changed'])
+                ->toBeFalse();
         });
 
         it('succeeds with --reset --force in non-interactive mode', function (): void {
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--force' => true, '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                '--reset' => true,
+                '--force' => true,
+                '--json' => true,
+            ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['dns']['status'])->toBe('reset');
+            expect($exitCode)->toBe(0)->and($decoded['success']['data']['dns']['status'])->toBe('reset');
         });
     });
 
@@ -212,10 +267,14 @@ describe('dns:resolve-tld', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('validation_failed')
-                ->and($decoded['error']['meta']['field'])->toBe('tld')
-                ->and($decoded['error']['meta']['reason'])->toBe('missing');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('validation_failed')
+                ->and($decoded['error']['meta']['field'])
+                ->toBe('tld')
+                ->and($decoded['error']['meta']['reason'])
+                ->toBe('missing');
         });
 
         it('returns validation_failed for missing target non-interactively', function (): void {
@@ -223,32 +282,46 @@ describe('dns:resolve-tld', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('validation_failed')
-                ->and($decoded['error']['meta']['field'])->toBe('target')
-                ->and($decoded['error']['meta']['reason'])->toBe('missing');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('validation_failed')
+                ->and($decoded['error']['meta']['field'])
+                ->toBe('target')
+                ->and($decoded['error']['meta']['reason'])
+                ->toBe('missing');
         });
 
         it('returns destructive_consent_required for --reset without --force non-interactively', function (): void {
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                '--reset' => true,
+                '--json' => true,
+            ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('destructive_consent_required');
+            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('destructive_consent_required');
         });
 
         it('returns node.unsupported_platform when resolver does not support mutation', function (): void {
             $this->resolver->mutationSupportedValue = false;
             $this->resolver->platformValue = 'linux';
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.1', '--json' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                'target' => '10.6.0.1',
+                '--json' => true,
+            ]);
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('node.unsupported_platform')
-                ->and($decoded['error']['meta']['platform'])->toBe('linux');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('node.unsupported_platform')
+                ->and($decoded['error']['meta']['platform'])
+                ->toBe('linux');
         });
     });
 
@@ -258,14 +331,21 @@ describe('dns:resolve-tld', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Configuring Local DNS')
-                ->and($output)->toContain('Validate .test')
-                ->and($output)->toContain('Write resolver override')
-                ->and($output)->toContain('Refresh resolver')
-                ->and($output)->toContain('.test resolves to 10.6.0.7.')
-                ->and($output)->not->toContain('{')
-                ->and($output)->not->toContain('dns:');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Configuring Local DNS')
+                ->and($output)
+                ->toContain('Validate .test')
+                ->and($output)
+                ->toContain('Write resolver override')
+                ->and($output)
+                ->toContain('Refresh resolver')
+                ->and($output)
+                ->toContain('.test resolves to 10.6.0.7.')
+                ->and($output)
+                ->not->toContain('{')->and($output)
+                ->not->toContain('dns:');
         });
 
         it('renders the already-converged resolve tree without a write step', function (): void {
@@ -274,40 +354,67 @@ describe('dns:resolve-tld', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Configuring Local DNS')
-                ->and($output)->toContain('Validate .test')
-                ->and($output)->toContain('Check resolver override')
-                ->and($output)->toContain('.test already resolves to 10.6.0.7.')
-                ->and($output)->not->toContain('Write resolver override');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Configuring Local DNS')
+                ->and($output)
+                ->toContain('Validate .test')
+                ->and($output)
+                ->toContain('Check resolver override')
+                ->and($output)
+                ->toContain('.test already resolves to 10.6.0.7.')
+                ->and($output)
+                ->not->toContain('Write resolver override');
         });
 
         it('renders the reset progress tree with a removed success line', function (): void {
             $this->resolver->existingTargetValue = '10.6.0.7';
             $this->resolver->resetResult = ['status' => 'reset', 'changed' => true];
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--force' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                '--reset' => true,
+                '--force' => true,
+            ]);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Resetting Local DNS')
-                ->and($output)->toContain('Validate .test')
-                ->and($output)->toContain('Remove resolver override')
-                ->and($output)->toContain('Refresh resolver')
-                ->and($output)->toContain('.test resolver override removed.')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Resetting Local DNS')
+                ->and($output)
+                ->toContain('Validate .test')
+                ->and($output)
+                ->toContain('Remove resolver override')
+                ->and($output)
+                ->toContain('Refresh resolver')
+                ->and($output)
+                ->toContain('.test resolver override removed.')
+                ->and($output)
+                ->not->toContain('{');
         });
 
         it('renders the already-absent reset tree without a remove step', function (): void {
             $this->resolver->resetResult = ['status' => 'already_absent', 'changed' => false];
 
-            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', '--reset' => true, '--force' => true]);
+            [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', [
+                'tld' => 'test',
+                '--reset' => true,
+                '--force' => true,
+            ]);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Resetting Local DNS')
-                ->and($output)->toContain('Validate .test')
-                ->and($output)->toContain('Check resolver override')
-                ->and($output)->toContain('.test resolver override already absent.')
-                ->and($output)->not->toContain('Remove resolver override');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Resetting Local DNS')
+                ->and($output)
+                ->toContain('Validate .test')
+                ->and($output)
+                ->toContain('Check resolver override')
+                ->and($output)
+                ->toContain('.test resolver override already absent.')
+                ->and($output)
+                ->not->toContain('Remove resolver override');
         });
 
         it('renders resolver write failures as prose in the failing tree', function (): void {
@@ -315,10 +422,13 @@ describe('dns:resolve-tld', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
 
-            expect($exitCode)->toBe(1)
-                ->and($output)->toContain('Failed to update local DNS resolver configuration.')
-                ->and($output)->not->toContain('{')
-                ->and($output)->not->toContain('local_resolver_write_failed:');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($output)
+                ->toContain('Failed to update local DNS resolver configuration.')
+                ->and($output)
+                ->not->toContain('{')->and($output)
+                ->not->toContain('local_resolver_write_failed:');
         });
 
         it('renders resolver refresh failures as prose in the failing tree', function (): void {
@@ -330,9 +440,12 @@ describe('dns:resolve-tld', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
 
-            expect($exitCode)->toBe(1)
-                ->and($output)->toContain('Local DNS resolver configuration changed, but the resolver could not be refreshed.')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($output)
+                ->toContain('Local DNS resolver configuration changed, but the resolver could not be refreshed.')
+                ->and($output)
+                ->not->toContain('{');
         });
 
         it('renders unsupported-platform failures as prose without a JSON envelope', function (): void {
@@ -341,9 +454,12 @@ describe('dns:resolve-tld', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'dns:resolve-tld', ['tld' => 'test', 'target' => '10.6.0.7']);
 
-            expect($exitCode)->toBe(1)
-                ->and($output)->toContain('This platform does not support automatic local DNS resolver configuration.')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($output)
+                ->toContain('This platform does not support automatic local DNS resolver configuration.')
+                ->and($output)
+                ->not->toContain('{');
         });
     });
 });

@@ -34,14 +34,17 @@ final class AddDeployStepRequest extends GatewayRequest implements HasBody
 
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'command' => $this->command,
-            'title' => $this->title,
-            'order' => $this->order,
-            'timeout' => $this->timeout,
-            'retention' => $this->retention,
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'app' => $this->app,
+                'command' => $this->command,
+                'title' => $this->title,
+                'order' => $this->order,
+                'timeout' => $this->timeout,
+                'retention' => $this->retention,
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): DeployResponse

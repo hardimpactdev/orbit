@@ -14,7 +14,9 @@ final class ListDeployStepsRequest extends GatewayRequest
     #[\Override]
     protected Method $method = Method::GET;
 
-    public function __construct(public readonly string $app) {}
+    public function __construct(
+        public readonly string $app,
+    ) {}
 
     public function resolveEndpoint(): string
     {

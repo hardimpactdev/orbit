@@ -46,11 +46,21 @@ final class NodeRoleRemoveController implements Loggable
         $this->activitySubject = $node;
 
         if ($request->purgeData() && ! $request->force()) {
-            return $this->error('validation_failed', 'The purge-data option requires --force.', ['field' => 'purge_data'], 422);
+            return $this->error(
+                'validation_failed',
+                'The purge-data option requires --force.',
+                ['field' => 'purge_data'],
+                422,
+            );
         }
 
         if (in_array($role, ['gateway', 'vpn', 'router'], true)) {
-            return $this->error('validation_failed', "Role '{$role}' is gateway-coupled and cannot be assigned independently.", ['field' => 'role', 'role' => $role], 422);
+            return $this->error(
+                'validation_failed',
+                "Role '{$role}' is gateway-coupled and cannot be assigned independently.",
+                ['field' => 'role', 'role' => $role],
+                422,
+            );
         }
 
         $assignment = NodeRoleAssignment::query()
@@ -59,7 +69,12 @@ final class NodeRoleRemoveController implements Loggable
             ->first();
 
         if (! $assignment instanceof NodeRoleAssignment) {
-            return $this->error('validation_failed', "Role '{$role}' is not assigned to node '{$name}'.", ['role' => $role], 422);
+            return $this->error(
+                'validation_failed',
+                "Role '{$role}' is not assigned to node '{$name}'.",
+                ['role' => $role],
+                422,
+            );
         }
 
         $dependents = $this->dependencyInspector->dependentSummaries($node, $assignment);
@@ -151,8 +166,8 @@ final class NodeRoleRemoveController implements Loggable
         return [
             'node' => (string) request()->route('name'),
             'role' => (string) request()->route('role'),
-            'force' => (bool) request()->boolean('force'),
-            'purge_data' => (bool) request()->boolean('purge_data'),
+            'force' => request()->boolean('force'),
+            'purge_data' => request()->boolean('purge_data'),
             'dependents' => $this->activityDependents,
         ];
     }

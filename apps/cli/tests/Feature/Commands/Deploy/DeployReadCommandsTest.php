@@ -31,14 +31,19 @@ describe('deploy:history', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/history')
-                && str_contains($url, 'app=docs');
+                && str_contains($url, 'app=docs')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['runs'][0]['id'])->toBe(12)
-            ->and($decoded['success']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['runs'][0]['id'])
+            ->toBe(12)
+            ->and($decoded['success']['meta'])
+            ->toMatchArray([
                 'app' => 'docs',
                 'count' => 1,
             ]);
@@ -56,9 +61,11 @@ describe('deploy:history', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return str_contains($url, '/api/deploy/history')
+            return (
+                str_contains($url, '/api/deploy/history')
                 && str_contains($url, 'app=docs')
-                && str_contains($url, 'limit=10');
+                && str_contains($url, 'limit=10')
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -84,18 +91,29 @@ describe('deploy:history', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', ['app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Deployment History: docs')
-            ->and($output)->toContain('ID')
-            ->and($output)->toContain('STATUS')
-            ->and($output)->toContain('EXIT')
-            ->and($output)->toContain('STARTED')
-            ->and($output)->toContain('failed')
-            ->and($output)->toContain('completed')
-            ->and($output)->toContain('2026-05-07T10:20:00Z')
-            ->and(mb_strpos($output, '44'))->toBeLessThan(mb_strpos($output, '43'))
-            ->and($output)->not->toContain('runs: [')
-            ->and($output)->not->toContain('"exit_code"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Deployment History: docs')
+            ->and($output)
+            ->toContain('ID')
+            ->and($output)
+            ->toContain('STATUS')
+            ->and($output)
+            ->toContain('EXIT')
+            ->and($output)
+            ->toContain('STARTED')
+            ->and($output)
+            ->toContain('failed')
+            ->and($output)
+            ->toContain('completed')
+            ->and($output)
+            ->toContain('2026-05-07T10:20:00Z')
+            ->and(mb_strpos($output, '44'))
+            ->toBeLessThan(mb_strpos($output, '43'))
+            ->and($output)
+            ->not->toContain('runs: [')->and($output)
+            ->not->toContain('"exit_code"');
     });
 
     it('renders empty human output naming the app when no deploy history exists', function (): void {
@@ -103,8 +121,7 @@ describe('deploy:history', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'deploy:history', ['app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No deployment history found for docs.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No deployment history found for docs.');
     });
 
     it('rejects a missing app argument before calling the gateway', function (): void {
@@ -119,9 +136,12 @@ describe('deploy:history', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('passes through gateway validation failures for invalid limits', function (): void {
@@ -137,9 +157,12 @@ describe('deploy:history', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('limit');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('limit');
     });
 
     it('passes through authorization failures from the gateway', function (): void {
@@ -154,9 +177,12 @@ describe('deploy:history', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('deploy:read');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('deploy:read');
     });
 
     it('passes through production-app-required failures from the gateway', function (): void {
@@ -171,8 +197,7 @@ describe('deploy:history', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('deploy.production_app_required');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('deploy.production_app_required');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -185,8 +210,7 @@ describe('deploy:history', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });
 
@@ -217,14 +241,19 @@ describe('deploy:step-list', function (): void {
         Http::assertSent(function (Request $request): bool {
             $url = urldecode($request->url());
 
-            return $request->method() === 'GET'
+            return (
+                $request->method() === 'GET'
                 && str_contains($url, '/api/deploy/steps')
-                && str_contains($url, 'app=docs');
+                && str_contains($url, 'app=docs')
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['steps'][0]['title'])->toBe('Build')
-            ->and($decoded['success']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['steps'][0]['title'])
+            ->toBe('Build')
+            ->and($decoded['success']['meta'])
+            ->toMatchArray([
                 'app' => 'docs',
                 'count' => 1,
             ]);
@@ -254,20 +283,33 @@ describe('deploy:step-list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', ['app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('ID')
-            ->and($output)->toContain('ORDER')
-            ->and($output)->toContain('TITLE')
-            ->and($output)->toContain('COMMAND')
-            ->and($output)->toContain('TIMEOUT')
-            ->and($output)->toContain('Build')
-            ->and($output)->toContain('composer install --no-dev')
-            ->and($output)->toContain('600')
-            ->and($output)->toContain('Migrate')
-            ->and($output)->toContain('—')
-            ->and(mb_strpos($output, 'Build'))->toBeLessThan(mb_strpos($output, 'Migrate'))
-            ->and($output)->not->toContain('steps: [')
-            ->and($output)->not->toContain('"timeout_seconds"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('ID')
+            ->and($output)
+            ->toContain('ORDER')
+            ->and($output)
+            ->toContain('TITLE')
+            ->and($output)
+            ->toContain('COMMAND')
+            ->and($output)
+            ->toContain('TIMEOUT')
+            ->and($output)
+            ->toContain('Build')
+            ->and($output)
+            ->toContain('composer install --no-dev')
+            ->and($output)
+            ->toContain('600')
+            ->and($output)
+            ->toContain('Migrate')
+            ->and($output)
+            ->toContain('—')
+            ->and(mb_strpos($output, 'Build'))
+            ->toBeLessThan(mb_strpos($output, 'Migrate'))
+            ->and($output)
+            ->not->toContain('steps: [')->and($output)
+            ->not->toContain('"timeout_seconds"');
     });
 
     it('renders empty human output naming the app when no deploy steps exist', function (): void {
@@ -275,8 +317,7 @@ describe('deploy:step-list', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'deploy:step-list', ['app' => 'docs']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('No deployment steps found for docs.');
+        expect($exitCode)->toBe(0)->and($output)->toBe('No deployment steps found for docs.');
     });
 
     it('rejects a missing app argument before calling the gateway', function (): void {
@@ -291,9 +332,12 @@ describe('deploy:step-list', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
     it('passes through authorization failures from the gateway', function (): void {
@@ -308,9 +352,12 @@ describe('deploy:step-list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed')
-            ->and($decoded['error']['meta']['missing_permission'])->toBe('deploy:read');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('authorization_failed')
+            ->and($decoded['error']['meta']['missing_permission'])
+            ->toBe('deploy:read');
     });
 
     it('passes through app-not-found failures from the gateway', function (): void {
@@ -325,8 +372,7 @@ describe('deploy:step-list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('app.not_found');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('app.not_found');
     });
 
     it('surfaces wireguard-specific gateway failures', function (): void {
@@ -339,7 +385,6 @@ describe('deploy:step-list', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
     });
 });

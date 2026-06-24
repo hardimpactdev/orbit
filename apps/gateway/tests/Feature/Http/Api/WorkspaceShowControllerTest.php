@@ -72,17 +72,27 @@ describe('WorkspaceShowController', function (): void {
             'agent_ide_workspace_id' => null,
         ]);
 
-        Process::factory()->forOwner($app)->create([
-            'name' => 'vite',
-            'command' => 'npm run dev',
-            'restart_policy' => ProcessRestartPolicy::Always,
-            'crash_notification' => ProcessCrashNotification::None,
-            'sort_order' => 1,
-        ]);
+        Process::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'restart_policy' => ProcessRestartPolicy::Always,
+                'crash_notification' => ProcessCrashNotification::None,
+                'sort_order' => 1,
+            ]);
 
-        $response = $this->call('GET', '/api/workspaces/feature-docs?app=docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs?app=docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.meta.registry_only', true)
             // canonical workspace entity
             ->assertJsonPath('success.data.workspace.name', 'feature-docs')
@@ -103,11 +113,12 @@ describe('WorkspaceShowController', function (): void {
             ->assertJsonPath('success.data.workspace.node', 'app-1');
         $ws = $response->json('success.data.workspace');
         // absent legacy fields
-        expect($ws)->not->toHaveKey('branch')
-            ->and($ws)->not->toHaveKey('runtime_expectations')
-            ->and($ws)->not->toHaveKey('route')
-            ->and($ws)->not->toHaveKey('latest_setup_run')
-            ->and($ws['agent_ide'])->not->toHaveKey('inherited_from');
+        expect($ws)
+            ->not->toHaveKey('branch')->and($ws)
+            ->not->toHaveKey('runtime_expectations')->and($ws)
+            ->not->toHaveKey('route')->and($ws)
+            ->not->toHaveKey('latest_setup_run')->and($ws['agent_ide'])
+            ->not->toHaveKey('inherited_from');
     });
 
     it('returns ambiguous name errors when app is omitted', function (): void {
@@ -122,9 +133,17 @@ describe('WorkspaceShowController', function (): void {
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $docs->id]);
         Workspace::factory()->create(['name' => 'feature-docs', 'app_id' => $api->id]);
 
-        $response = $this->call('GET', '/api/workspaces/feature-docs', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/feature-docs',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(400)
+        $response
+            ->assertStatus(400)
             ->assertJsonPath('error.code', 'workspace.ambiguous_name')
             ->assertJsonPath('error.meta.name', 'feature-docs')
             ->assertJsonPath('error.meta.apps', ['docs', 'api']);
@@ -142,9 +161,17 @@ describe('WorkspaceShowController', function (): void {
             'path' => '/srv/docs/.worktrees/feature-docs',
         ]);
 
-        $response = $this->call('GET', '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/resolve-by-path?path=/srv/docs/.worktrees/feature-docs/app',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.workspace.name', 'feature-docs')
             ->assertJsonPath('success.meta.registry_only', true);
     });
@@ -156,7 +183,14 @@ describe('WorkspaceShowController', function (): void {
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
 
-        $response = $this->call('GET', '/api/workspaces/hidden', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/hidden',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -169,9 +203,17 @@ describe('WorkspaceShowController', function (): void {
         $app = App::factory()->create(['node_id' => $node->id]);
         Workspace::factory()->create(['name' => 'hidden', 'app_id' => $app->id]);
 
-        $response = $this->call('GET', '/api/workspaces/hidden', [], [], [], ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/workspaces/hidden',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => WORKSPACE_SHOW_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'workspace:read');
@@ -180,7 +222,8 @@ describe('WorkspaceShowController', function (): void {
     it('rejects unauthenticated requests', function (): void {
         $response = $this->getJson('/api/workspaces/feature-docs');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.');
     });

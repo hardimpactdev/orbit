@@ -204,17 +204,24 @@ describe('command list visibility', function (): void {
         $list = orbitCommandList();
         $visible = visibleCommandNames($list);
 
-        expect($visible)->not->toContain('app:exec', 'workspace:exec')
-            ->and(findCommandInList($list, 'app:exec'))->toBeNull()
-            ->and(findCommandInList($list, 'workspace:exec'))->toBeNull();
+        expect($visible)
+            ->not
+            ->toContain('app:exec', 'workspace:exec')
+            ->and(findCommandInList($list, 'app:exec'))
+            ->toBeNull()
+            ->and(findCommandInList($list, 'workspace:exec'))
+            ->toBeNull();
     });
 
     it('contains ported commands in the registered command set', function (string $name): void {
         $list = orbitCommandList();
         $command = findCommandInList($list, $name);
 
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeFalse();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeFalse();
     })->with([
         'activity:list',
         'activity:show',
@@ -356,79 +363,118 @@ describe('command list visibility', function (): void {
 
     it('hides internal:executor:verify', function (): void {
         $command = findCommandInList(orbitCommandList(), 'internal:executor:verify');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides internal:wg-easy:state', function (): void {
         $command = findCommandInList(orbitCommandList(), 'internal:wg-easy:state');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides internal:database-query-local', function (): void {
         $command = findCommandInList(orbitCommandList(), 'internal:database-query-local');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides internal:workspace-adapter:lookup', function (): void {
         $command = findCommandInList(orbitCommandList(), 'internal:workspace-adapter:lookup');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides internal:workspace-adapter:update', function (): void {
         $command = findCommandInList(orbitCommandList(), 'internal:workspace-adapter:update');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides make:command', function (): void {
         $command = findCommandInList(orbitCommandList(), 'make:command');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides make:test', function (): void {
         $command = findCommandInList(orbitCommandList(), 'make:test');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides app:build', function (): void {
         $command = findCommandInList(orbitCommandList(), 'app:build');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides app:install', function (): void {
         $command = findCommandInList(orbitCommandList(), 'app:install');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides app:rename', function (): void {
         $command = findCommandInList(orbitCommandList(), 'app:rename');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides test', function (): void {
         $command = findCommandInList(orbitCommandList(), 'test');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides vendor:publish', function (): void {
         $command = findCommandInList(orbitCommandList(), 'vendor:publish');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 
     it('hides stub:publish', function (): void {
         $command = findCommandInList(orbitCommandList(), 'stub:publish');
-        expect($command)->not->toBeNull()
-            ->and($command['hidden'] ?? false)->toBeTrue();
+        expect($command)
+            ->not
+            ->toBeNull()
+            ->and($command['hidden'] ?? false)
+            ->toBeTrue();
     });
 });

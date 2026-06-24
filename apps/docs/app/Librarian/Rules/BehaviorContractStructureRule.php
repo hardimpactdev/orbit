@@ -59,8 +59,9 @@ final readonly class BehaviorContractStructureRule implements GroupedRule
 
         $meaningfulHeadings = array_values(array_filter(
             $headings,
-            fn (string $heading): bool => ! $this->isPlaceholderHeading($heading)
-                && ! $this->isBoundaryHeading($heading),
+            fn (string $heading): bool => (
+                ! $this->isPlaceholderHeading($heading) && ! $this->isBoundaryHeading($heading)
+            ),
         ));
 
         if ($headings === []) {
@@ -88,7 +89,9 @@ final readonly class BehaviorContractStructureRule implements GroupedRule
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 
@@ -100,38 +103,46 @@ final readonly class BehaviorContractStructureRule implements GroupedRule
      */
     private function headings(string $section): array
     {
-        preg_match_all('/^###\s+(?<heading>.+?)\s*$/m', $section, $matches);
+        preg_match_all('/^###\s+(?<heading>.+?)\s*$/m', $section, $matches, PREG_SET_ORDER);
 
-        return array_map(
+        return array_values(array_map(
             trim(...),
-            $matches['heading'],
-        );
+            array_filter(array_column($matches, 'heading'), is_string(...)),
+        ));
     }
 
     private function isPlaceholderHeading(string $heading): bool
     {
-        return in_array($this->normalizeHeading($heading), [
-            'behavior',
-            'command behavior',
-            'command rules',
-            'core behavior',
-            'general behavior',
-            'general rules',
-            'rules',
-        ], true);
+        return in_array(
+            $this->normalizeHeading($heading),
+            [
+                'behavior',
+                'command behavior',
+                'command rules',
+                'core behavior',
+                'general behavior',
+                'general rules',
+                'rules',
+            ],
+            true,
+        );
     }
 
     private function isBoundaryHeading(string $heading): bool
     {
-        return in_array($this->normalizeHeading($heading), [
-            'boundaries',
-            'constraints',
-            'exclusions',
-            'non-goals',
-            'out of scope',
-            'scope',
-            'scope boundaries',
-        ], true);
+        return in_array(
+            $this->normalizeHeading($heading),
+            [
+                'boundaries',
+                'constraints',
+                'exclusions',
+                'non-goals',
+                'out of scope',
+                'scope',
+                'scope boundaries',
+            ],
+            true,
+        );
     }
 
     private function normalizeHeading(string $heading): string
@@ -145,7 +156,7 @@ final readonly class BehaviorContractStructureRule implements GroupedRule
             return null;
         }
 
-        return substr_count(substr($contents, 0, $matches[0][1]), "\n") + 1;
+        return substr_count(substr($contents, 0, (int) $matches[0][1]), "\n") + 1;
     }
 
     private function finding(string $path, string $message, ?int $line): Finding

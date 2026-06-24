@@ -28,9 +28,12 @@ final class ListFirewallRulesRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'node' => $this->node,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'node' => $this->node,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): FirewallRuleListResponse
@@ -40,7 +43,7 @@ final class ListFirewallRulesRequest extends GatewayRequest
         $rules = $data['rules'] ?? [];
 
         return new FirewallRuleListResponse(
-            rules: is_array($rules) ? array_values($rules) : [],
+            rules: $this->listOfStringKeyedArrays($rules),
             meta: $meta,
         );
     }

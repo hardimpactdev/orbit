@@ -51,7 +51,15 @@ final class DatabaseQueryClassifier
         while (true) {
             $offset = $this->skipWhitespaceAndComments($sql, $offset);
 
-            if (preg_match('/\G(?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)(?:\s*\([^)]*\))?\s+as\s*\(/i', $sql, $matches, 0, $offset) !== 1) {
+            if (
+                preg_match(
+                    '/\G(?:"[^"]+"|`[^`]+`|[A-Za-z_][A-Za-z0-9_]*)(?:\s*\([^)]*\))?\s+as\s*\(/i',
+                    $sql,
+                    $matches,
+                    0,
+                    $offset,
+                ) !== 1
+            ) {
                 return $this->writeClassification();
             }
 

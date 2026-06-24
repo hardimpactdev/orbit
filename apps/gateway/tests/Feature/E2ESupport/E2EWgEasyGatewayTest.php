@@ -21,9 +21,12 @@ afterEach(function (): void {
 it('uses fixed E2E WireGuard identities for prepared topology roles', function (): void {
     expect(E2EWireGuardIdentitySet::forRole('gateway'))
         ->toBe(E2EWireGuardIdentitySet::forRole('gateway'))
-        ->and(E2EWireGuardIdentitySet::forRole('gateway')['public_key'])->toBe('FGvPNoz2W40e67fcPssa5XgmqJJWOY6PGReQZ1eQ2T0=')
-        ->and(E2EWireGuardIdentitySet::forRole('operator')['public_key'])->toBe('8Kk1eHvFjl9KapqdZ6U2epl3KkMLhscWFhABalzBplk=')
-        ->and(E2EWireGuardIdentitySet::version())->toBe('2026-06-05.1');
+        ->and(E2EWireGuardIdentitySet::forRole('gateway')['public_key'])
+        ->toBe('FGvPNoz2W40e67fcPssa5XgmqJJWOY6PGReQZ1eQ2T0=')
+        ->and(E2EWireGuardIdentitySet::forRole('operator')['public_key'])
+        ->toBe('8Kk1eHvFjl9KapqdZ6U2epl3KkMLhscWFhABalzBplk=')
+        ->and(E2EWireGuardIdentitySet::version())
+        ->toBe('2026-06-05.1');
 });
 
 function e2eWgEasyGatewayResult(bool $successful = true, string $output = '', string $errorOutput = ''): ProcessResult
@@ -40,7 +43,8 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
     $commands = [];
     $instance = m::mock(E2EInstance::class);
     $instance->shouldReceive('name')->andReturn('gateway');
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
             $commands[] = $command;
@@ -48,41 +52,47 @@ it('starts wg-easy as the only WireGuard server on host UDP 51820', function ():
             return e2eWgEasyGatewayResult();
         });
 
-    (new E2EWgEasyGateway)->start($instance, '10.231.0.11');
+    new E2EWgEasyGateway()->start($instance, '10.231.0.11');
 
-    expect($commands[0])->toContain('docker run -d')
-        ->and($commands[0])->toContain('--name wg-easy')
-        ->and($commands[0])->toContain('command -v docker')
-        ->and($commands[0])->not->toContain('apt-get')
-        ->and($commands[0])->toContain('-p 51820:51820/udp')
-        ->and($commands[0])->not->toContain('51822')
-        ->and($commands[0])->not->toContain('wg-quick down wg-orbit')
-        ->and($commands[0])->not->toContain('sqlite3')
-        ->and($commands[0])->toContain('-p 127.0.0.1:51821:51821/tcp')
-        ->and($commands[0])->toContain('--cap-add NET_ADMIN')
-        ->and($commands[0])->toContain('--cap-add SYS_MODULE')
-        ->and($commands[0])->toContain('-v /lib/modules:/lib/modules:ro')
-        ->and($commands[0])->toContain('ghcr.io/wg-easy/wg-easy:15')
-        ->and($commands[0])->toContain('docker exec wg-easy wg show wg0 public-key')
-        ->and($commands[0])->toContain('test -n "${wg_easy_public_key:-}"')
-        ->and($commands[0])->toContain('docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0')
-        ->and($commands[0])->toContain('docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0')
-        ->and($commands[0])->toContain('sudo -u orbit env')
-        ->and($commands[0])->toContain('ORBIT_WG_EASY_ADVERTISED_HOST=')
-        ->and($commands[0])->toContain('PDO::SQLITE_OPEN_READWRITE')
-        ->and($commands[0])->toContain('UPDATE interfaces_table SET ipv4_cidr = :ipv4_cidr WHERE name = :name')
-        ->and($commands[0])->toContain('UPDATE user_configs_table')
-        ->and($commands[0])->toContain('UPDATE general_table SET setup_step = :setup_step')
-        ->and($commands[0])->toContain('INIT_HOST=10.231.0.11')
-        ->and($commands[0])->toContain('INIT_PASSWORD=orbit-e2e-bootstrap-password')
-        ->and($commands[0])->toContain('INSECURE=true');
+    expect($commands[0])
+        ->toContain('docker run -d')
+        ->and($commands[0])
+        ->toContain('--name wg-easy')
+        ->and($commands[0])
+        ->toContain('command -v docker')
+        ->and($commands[0])
+        ->not->toContain('apt-get')->and($commands[0])->toContain('-p 51820:51820/udp')->and($commands[0])
+        ->not->toContain('51822')->and($commands[0])
+        ->not->toContain('wg-quick down wg-orbit')->and($commands[0])
+        ->not->toContain('sqlite3')->and($commands[0])->toContain('-p 127.0.0.1:51821:51821/tcp')->and(
+            $commands[0],
+        )->toContain('--cap-add NET_ADMIN')->and($commands[0])->toContain('--cap-add SYS_MODULE')->and(
+            $commands[0],
+        )->toContain('-v /lib/modules:/lib/modules:ro')->and($commands[0])->toContain(
+            'ghcr.io/wg-easy/wg-easy:15',
+        )->and($commands[0])->toContain('docker exec wg-easy wg show wg0 public-key')->and($commands[0])->toContain(
+            'test -n "${wg_easy_public_key:-}"',
+        )->and($commands[0])->toContain('docker exec wg-easy ip addr replace 10.6.0.1/24 dev wg0')->and(
+            $commands[0],
+        )->toContain('docker exec wg-easy ip route replace 10.6.0.0/24 dev wg0')->and($commands[0])->toContain(
+            'sudo -u orbit env',
+        )->and($commands[0])->toContain('ORBIT_WG_EASY_ADVERTISED_HOST=')->and($commands[0])->toContain(
+            'PDO::SQLITE_OPEN_READWRITE',
+        )->and($commands[0])->toContain('UPDATE interfaces_table SET ipv4_cidr = :ipv4_cidr WHERE name = :name')->and(
+            $commands[0],
+        )->toContain('UPDATE user_configs_table')->and($commands[0])->toContain(
+            'UPDATE general_table SET setup_step = :setup_step',
+        )->and($commands[0])->toContain('INIT_HOST=10.231.0.11')->and($commands[0])->toContain(
+            'INIT_PASSWORD=orbit-e2e-bootstrap-password',
+        )->and($commands[0])->toContain('INSECURE=true');
 });
 
 it('persists and activates topology peers on wg-easy wg0', function (): void {
     $commands = [];
     $instance = m::mock(E2EInstance::class);
     $instance->shouldReceive('name')->andReturn('gateway');
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
             $commands[] = $command;
@@ -90,28 +100,44 @@ it('persists and activates topology peers on wg-easy wg0', function (): void {
             return e2eWgEasyGatewayResult();
         });
 
-    (new E2EWgEasyGateway)->configurePeers($instance, [
-        ['name' => 'gateway', 'private_key' => 'gateway-host-private', 'public_key' => 'gateway-host-public', 'pre_shared_key' => 'gateway-psk', 'address' => '10.6.0.2'],
-        ['name' => 'operator', 'private_key' => 'operator-private', 'public_key' => 'operator-public', 'pre_shared_key' => 'operator-psk', 'address' => '10.6.0.3'],
-        ['name' => 'dev', 'private_key' => 'dev-private', 'public_key' => 'dev-public', 'pre_shared_key' => 'dev-psk', 'address' => '10.6.0.4'],
+    new E2EWgEasyGateway()->configurePeers($instance, [
+        [
+            'name' => 'gateway',
+            'private_key' => 'gateway-host-private',
+            'public_key' => 'gateway-host-public',
+            'pre_shared_key' => 'gateway-psk',
+            'address' => '10.6.0.2',
+        ],
+        [
+            'name' => 'operator',
+            'private_key' => 'operator-private',
+            'public_key' => 'operator-public',
+            'pre_shared_key' => 'operator-psk',
+            'address' => '10.6.0.3',
+        ],
+        [
+            'name' => 'dev',
+            'private_key' => 'dev-private',
+            'public_key' => 'dev-public',
+            'pre_shared_key' => 'dev-psk',
+            'address' => '10.6.0.4',
+        ],
     ]);
 
-    expect($commands[0])->not->toContain('sqlite3')
-        ->and($commands[0])->toContain('sudo -u orbit env')
-        ->and($commands[0])->toContain('ORBIT_WG_EASY_PEERS=')
-        ->and($commands[0])->toContain('PDO::SQLITE_OPEN_READWRITE')
-        ->and($commands[0])->toContain('clients_table')
-        ->and($commands[0])->not->toContain("'',")
-        ->and($commands[0])->toContain('10.6.0.2/32')
-        ->and($commands[0])->toContain('wg set wg0 peer')
-        ->and($commands[0])->toContain('gateway-host-public')
-        ->and($commands[0])->toContain('preshared-key')
-        ->and($commands[0])->toContain('10.6.0.2/32')
-        ->and($commands[0])->toContain('operator-public')
-        ->and($commands[0])->toContain('10.6.0.3/32')
-        ->and($commands[0])->toContain('dev-public')
-        ->and($commands[0])->toContain('10.6.0.4/32')
-        ->and($commands[0])->not->toContain('ListenPort = 51820');
+    expect($commands[0])
+        ->not->toContain('sqlite3')->and($commands[0])->toContain('sudo -u orbit env')->and($commands[0])->toContain(
+            'ORBIT_WG_EASY_PEERS=',
+        )->and($commands[0])->toContain('PDO::SQLITE_OPEN_READWRITE')->and($commands[0])->toContain(
+            'clients_table',
+        )->and($commands[0])
+        ->not->toContain("'',")->and($commands[0])->toContain('10.6.0.2/32')->and($commands[0])->toContain(
+            'wg set wg0 peer',
+        )->and($commands[0])->toContain('gateway-host-public')->and($commands[0])->toContain('preshared-key')->and(
+            $commands[0],
+        )->toContain('10.6.0.2/32')->and($commands[0])->toContain('operator-public')->and($commands[0])->toContain(
+            '10.6.0.3/32',
+        )->and($commands[0])->toContain('dev-public')->and($commands[0])->toContain('10.6.0.4/32')->and($commands[0])
+        ->not->toContain('ListenPort = 51820');
 });
 
 it('updates a fixture wg-easy database through the generated start PDO script', function (): void {
@@ -122,7 +148,8 @@ it('updates a fixture wg-easy database through the generated start PDO script', 
     $commands = [];
     $instance = m::mock(E2EInstance::class);
     $instance->shouldReceive('name')->andReturn('gateway');
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
             $commands[] = $command;
@@ -132,18 +159,23 @@ it('updates a fixture wg-easy database through the generated start PDO script', 
 
     $host = "vpn.example.test', default_dns = 'mutated";
 
-    (new E2EWgEasyGateway($databasePath))->start($instance, $host);
+    new E2EWgEasyGateway($databasePath)->start($instance, $host);
 
     runE2EWgEasyGatewayPhpBlock($commands[0], 'ORBIT_WG_EASY_START_PHP', [
         'ORBIT_WG_EASY_ADVERTISED_HOST' => $host,
         'ORBIT_WG_EASY_DB_PATH' => $databasePath,
     ]);
 
-    expect(e2eWgEasyGatewayRow($databasePath, 'interfaces_table', "name = 'wg0'")['ipv4_cidr'])->toBe('10.6.0.0/24')
-        ->and(e2eWgEasyGatewayRow($databasePath, 'user_configs_table')['host'])->toBe($host)
-        ->and(e2eWgEasyGatewayRow($databasePath, 'user_configs_table')['default_dns'])->toBe('["10.6.0.1"]')
-        ->and(e2eWgEasyGatewayRow($databasePath, 'user_configs_table')['default_persistent_keepalive'])->toBe(25)
-        ->and(e2eWgEasyGatewayRow($databasePath, 'general_table')['setup_step'])->toBe(0);
+    expect(e2eWgEasyGatewayRow($databasePath, 'interfaces_table', "name = 'wg0'")['ipv4_cidr'])
+        ->toBe('10.6.0.0/24')
+        ->and(e2eWgEasyGatewayRow($databasePath, 'user_configs_table')['host'])
+        ->toBe($host)
+        ->and(e2eWgEasyGatewayRow($databasePath, 'user_configs_table')['default_dns'])
+        ->toBe('["10.6.0.1"]')
+        ->and(e2eWgEasyGatewayRow($databasePath, 'user_configs_table')['default_persistent_keepalive'])
+        ->toBe(25)
+        ->and(e2eWgEasyGatewayRow($databasePath, 'general_table')['setup_step'])
+        ->toBe(0);
 });
 
 it('persists fixture peers through the generated PDO script', function (): void {
@@ -154,7 +186,8 @@ it('persists fixture peers through the generated PDO script', function (): void 
     $commands = [];
     $instance = m::mock(E2EInstance::class);
     $instance->shouldReceive('name')->andReturn('gateway');
-    $instance->shouldReceive('exec')
+    $instance
+        ->shouldReceive('exec')
         ->once()
         ->andReturnUsing(function (string $command) use (&$commands): ProcessResult {
             $commands[] = $command;
@@ -163,13 +196,24 @@ it('persists fixture peers through the generated PDO script', function (): void 
         });
 
     $peers = [
-        ['name' => "gateway', enabled = 0 --", 'private_key' => 'gateway-host-private', 'public_key' => 'gateway-host-public', 'pre_shared_key' => 'gateway-psk', 'address' => '10.6.0.2'],
-        ['name' => 'operator', 'private_key' => 'operator-private', 'public_key' => 'operator-public', 'address' => '10.6.0.3'],
+        [
+            'name' => "gateway', enabled = 0 --",
+            'private_key' => 'gateway-host-private',
+            'public_key' => 'gateway-host-public',
+            'pre_shared_key' => 'gateway-psk',
+            'address' => '10.6.0.2',
+        ],
+        [
+            'name' => 'operator',
+            'private_key' => 'operator-private',
+            'public_key' => 'operator-public',
+            'address' => '10.6.0.3',
+        ],
     ];
 
     seedE2EWgEasyGatewayClient($databasePath, name: 'stale', publicKey: 'gateway-host-public', address: '10.6.0.99');
 
-    (new E2EWgEasyGateway($databasePath))->configurePeers($instance, $peers);
+    new E2EWgEasyGateway($databasePath)->configurePeers($instance, $peers);
 
     runE2EWgEasyGatewayPhpBlock($commands[0], 'ORBIT_WG_EASY_PEERS_PHP', [
         'ORBIT_WG_EASY_DB_PATH' => $databasePath,
@@ -179,14 +223,22 @@ it('persists fixture peers through the generated PDO script', function (): void 
     $gateway = e2eWgEasyGatewayRow($databasePath, 'clients_table', "public_key = 'gateway-host-public'");
     $operator = e2eWgEasyGatewayRow($databasePath, 'clients_table', "public_key = 'operator-public'");
 
-    expect(e2eWgEasyGatewayCount($databasePath, 'clients_table'))->toBe(2)
-        ->and($gateway['name'])->toBe("gateway', enabled = 0 --")
-        ->and($gateway['ipv4_address'])->toBe('10.6.0.2')
-        ->and($gateway['pre_shared_key'])->toBe('gateway-psk')
-        ->and($gateway['server_allowed_ips'])->toBe('["10.6.0.2/32"]')
-        ->and($gateway['enabled'])->toBe(1)
-        ->and($operator['pre_shared_key'])->toBe(base64_encode(hash('sha256', 'orbit-e2e-operator-public', binary: true)))
-        ->and($operator['ipv6_address'])->toBe('fdcc:ad94:bacf:61a4::cafe:3');
+    expect(e2eWgEasyGatewayCount($databasePath, 'clients_table'))
+        ->toBe(2)
+        ->and($gateway['name'])
+        ->toBe("gateway', enabled = 0 --")
+        ->and($gateway['ipv4_address'])
+        ->toBe('10.6.0.2')
+        ->and($gateway['pre_shared_key'])
+        ->toBe('gateway-psk')
+        ->and($gateway['server_allowed_ips'])
+        ->toBe('["10.6.0.2/32"]')
+        ->and($gateway['enabled'])
+        ->toBe(1)
+        ->and($operator['pre_shared_key'])
+        ->toBe(base64_encode(hash('sha256', 'orbit-e2e-operator-public', binary: true)))
+        ->and($operator['ipv6_address'])
+        ->toBe('fdcc:ad94:bacf:61a4::cafe:3');
 });
 
 /**
@@ -235,7 +287,9 @@ function createE2EWgEasyGatewayFixtureDatabase(string $path): PDO
     $pdo = new PDO("sqlite:{$path}");
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->exec('create table interfaces_table (name text primary key, ipv4_cidr text not null)');
-    $pdo->exec('create table user_configs_table (host text not null, default_dns text not null, default_persistent_keepalive integer not null)');
+    $pdo->exec(
+        'create table user_configs_table (host text not null, default_dns text not null, default_persistent_keepalive integer not null)',
+    );
     $pdo->exec('create table general_table (setup_step integer not null)');
     $pdo->exec(<<<'SQL'
         create table clients_table (
@@ -256,7 +310,9 @@ function createE2EWgEasyGatewayFixtureDatabase(string $path): PDO
         )
         SQL);
     $pdo->exec("insert into interfaces_table (name, ipv4_cidr) values ('wg0', '10.0.0.0/24')");
-    $pdo->exec("insert into user_configs_table (host, default_dns, default_persistent_keepalive) values ('old.example.test', '[\"8.8.8.8\"]', 0)");
+    $pdo->exec(
+        "insert into user_configs_table (host, default_dns, default_persistent_keepalive) values ('old.example.test', '[\"8.8.8.8\"]', 0)",
+    );
     $pdo->exec('insert into general_table (setup_step) values (1)');
 
     return $pdo;

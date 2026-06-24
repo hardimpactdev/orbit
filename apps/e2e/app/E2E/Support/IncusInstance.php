@@ -33,10 +33,14 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         $authScript = E2EGitHubAuth::shellInputScript($command);
 
         if ($authScript !== null) {
-            return $this->host->runWithInput(sprintf(
-                'incus exec %s -- bash -s',
-                escapeshellarg($this->name),
-            ), $authScript, $timeoutSeconds);
+            return $this->host->runWithInput(
+                sprintf(
+                    'incus exec %s -- bash -s',
+                    escapeshellarg($this->name),
+                ),
+                $authScript,
+                $timeoutSeconds,
+            );
         }
 
         return $this->host->run(sprintf(
@@ -52,11 +56,15 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
         if ($this->commandTransport) {
             if ($authScript !== null) {
-                return $this->host->runWithInput(sprintf(
-                    'incus exec %s -- runuser -u %s -- bash -s',
-                    escapeshellarg($this->name),
-                    escapeshellarg($user),
-                ), $authScript, $timeoutSeconds);
+                return $this->host->runWithInput(
+                    sprintf(
+                        'incus exec %s -- runuser -u %s -- bash -s',
+                        escapeshellarg($this->name),
+                        escapeshellarg($user),
+                    ),
+                    $authScript,
+                    $timeoutSeconds,
+                );
             }
 
             return $this->host->run(sprintf(
@@ -68,12 +76,16 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         }
 
         if ($authScript !== null) {
-            return $this->host->runWithInput(sprintf(
-                'ssh -i %s -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s',
-                escapeshellarg($keyPair->privateKeyPath),
-                escapeshellarg("{$user}@{$this->waitForIpv4()}"),
-                escapeshellarg('bash -s'),
-            ), $authScript, $timeoutSeconds);
+            return $this->host->runWithInput(
+                sprintf(
+                    'ssh -i %s -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null %s %s',
+                    escapeshellarg($keyPair->privateKeyPath),
+                    escapeshellarg("{$user}@{$this->waitForIpv4()}"),
+                    escapeshellarg('bash -s'),
+                ),
+                $authScript,
+                $timeoutSeconds,
+            );
         }
 
         return $this->host->run(sprintf(
@@ -150,7 +162,9 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
             ));
 
             if (! $result->successful()) {
-                throw new \RuntimeException("Could not copy {$sourcePath} to {$hostName}:{$remotePath}: {$result->errorOutput()}");
+                throw new \RuntimeException(
+                    "Could not copy {$sourcePath} to {$hostName}:{$remotePath}: {$result->errorOutput()}",
+                );
             }
         }
 
@@ -185,7 +199,10 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
         while (time() < $deadline) {
             try {
-                if ($this->host->run(sprintf('incus exec %s -- true', escapeshellarg($this->name)), timeoutSeconds: 15)->successful()) {
+                if ($this->host->run(
+                    sprintf('incus exec %s -- true', escapeshellarg($this->name)),
+                    timeoutSeconds: 15,
+                )->successful()) {
                     return;
                 }
             } catch (\Throwable) {
@@ -209,7 +226,9 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         $result = $this->exec(self::networkIdentityRefreshCommand(), timeoutSeconds: 60);
 
         if (! $result->successful()) {
-            throw new \RuntimeException("Could not refresh network identity for {$this->name}: {$result->errorOutput()}");
+            throw new \RuntimeException(
+                "Could not refresh network identity for {$this->name}: {$result->errorOutput()}",
+            );
         }
 
         $this->ipv4 = null;
@@ -245,7 +264,12 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
             while (time() < $deadline) {
                 try {
-                    $result = $this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 15);
+                    $result = $this->ssh(
+                        $user,
+                        $keyPair,
+                        'test "$(uname -s)" = Linux && test -r /etc/os-release',
+                        timeoutSeconds: 15,
+                    );
 
                     if ($result->successful()) {
                         return;
@@ -263,7 +287,12 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
         while (time() < $deadline) {
             try {
-                if ($this->ssh($user, $keyPair, 'test "$(uname -s)" = Linux && test -r /etc/os-release', timeoutSeconds: 15)->successful()) {
+                if ($this->ssh(
+                    $user,
+                    $keyPair,
+                    'test "$(uname -s)" = Linux && test -r /etc/os-release',
+                    timeoutSeconds: 15,
+                )->successful()) {
                     return;
                 }
             } catch (\Throwable) {
@@ -322,7 +351,9 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
         $result = $this->host->snapshotStatefulInstance($this->name, $snapshot);
 
         if (! $result->successful()) {
-            throw new \RuntimeException("Could not statefully snapshot {$this->name} as {$snapshot}: {$result->errorOutput()}");
+            throw new \RuntimeException(
+                "Could not statefully snapshot {$this->name} as {$snapshot}: {$result->errorOutput()}",
+            );
         }
     }
 
@@ -347,28 +378,29 @@ final class IncusInstance implements E2EInstance, SourceMountedCheckoutInstance
 
         try {
             $python = <<<'PY'
-import json
-import sys
+                import json
+                import sys
 
-state = json.load(sys.stdin)
-ignored = {"docker0", "docker_gwbridge", "lo", "wg-orbit", "wg0"}
+                state = json.load(sys.stdin)
+                ignored = {"docker0", "docker_gwbridge", "lo", "wg-orbit", "wg0"}
 
-for interface, details in state.get("network", {}).items():
-    if interface in ignored or interface.startswith(("br-", "veth")):
-        continue
+                for interface, details in state.get("network", {}).items():
+                    if interface in ignored or interface.startswith(("br-", "veth")):
+                        continue
 
-    for address in details.get("addresses", []):
-        if address.get("family") == "inet" and address.get("scope") == "global":
-            print(address.get("address", ""))
-            raise SystemExit(0)
-PY;
+                    for address in details.get("addresses", []):
+                        if address.get("family") == "inet" and address.get("scope") == "global":
+                            print(address.get("address", ""))
+                            raise SystemExit(0)
+                PY;
 
             $result = $this->host->run(sprintf(
                 "if command -v python3 >/dev/null 2>&1; then\n"
-                    .'incus query %s | python3 -c %s'."\n"
-                    ."else\n"
-                    ."incus list --format csv -c n,4 | awk -F, -v name=%s '\$1 == name {print \$2}' | grep -Ev '\\((wg-orbit|docker0|docker_gwbridge|br-|veth|wg0|lo)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true\n"
-                    .'fi',
+                .'incus query %s | python3 -c %s'
+                ."\n"
+                ."else\n"
+                ."incus list --format csv -c n,4 | awk -F, -v name=%s '\$1 == name {print \$2}' | grep -Ev '\\((wg-orbit|docker0|docker_gwbridge|br-|veth|wg0|lo)' | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true\n"
+                .'fi',
                 escapeshellarg("/1.0/instances/{$this->name}/state"),
                 escapeshellarg($python),
                 escapeshellarg($this->name),
@@ -386,23 +418,23 @@ PY;
     {
         try {
             $python = <<<'PY'
-import json
-import sys
+                import json
+                import sys
 
-addresses = json.load(sys.stdin)
-ignored = {"docker0", "docker_gwbridge", "lo", "wg-orbit", "wg0"}
+                addresses = json.load(sys.stdin)
+                ignored = {"docker0", "docker_gwbridge", "lo", "wg-orbit", "wg0"}
 
-for details in addresses:
-    interface = details.get("ifname", "")
+                for details in addresses:
+                    interface = details.get("ifname", "")
 
-    if interface in ignored or interface.startswith(("br-", "veth")):
-        continue
+                    if interface in ignored or interface.startswith(("br-", "veth")):
+                        continue
 
-    for address in details.get("addr_info", []):
-        if address.get("family") == "inet" and address.get("scope") == "global":
-            print(address.get("local", ""))
-            raise SystemExit(0)
-PY;
+                    for address in details.get("addr_info", []):
+                        if address.get("family") == "inet" and address.get("scope") == "global":
+                            print(address.get("local", ""))
+                            raise SystemExit(0)
+                PY;
 
             $result = $this->host->run(sprintf(
                 'incus exec %s -- sh -lc %s | python3 -c %s',
@@ -425,7 +457,9 @@ PY;
 
     private function isLocalHost(string $host): bool
     {
-        return in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
-            || strtolower($host) === strtolower((string) gethostname());
+        return (
+            in_array(strtolower($host), ['', 'localhost', '127.0.0.1', '::1'], true)
+            || strtolower($host) === strtolower((string) gethostname())
+        );
     }
 }

@@ -25,6 +25,7 @@
         "laravel/tinker": "^3.0"
     },
     "require-dev": {
+        "carthage-software/mago": "^1.40.1",
         "fakerphp/faker": "^1.23",
         "larastan/larastan": "^3.0",
         "laravel/pint": "^1.29",
@@ -58,16 +59,20 @@
             "Illuminate\\Foundation\\ComposerScripts::postAutoloadDump",
             "@php artisan package:discover --ansi"
         ],
-        "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
+        "analyse": "vendor/bin/mago analyze app config database --reporting-format=medium",
         "e2e:dev-topology": "php bin/e2e-dev-topology @additional_args",
         "e2e:incus": "php bin/e2e-incus @additional_args",
         "e2e:dev-topology:release": "php bin/e2e-dev-topology-release @additional_args",
-        "format": "vendor/bin/pint",
+        "format": "vendor/bin/mago format",
         "rector": "vendor/bin/rector process",
         "test": [
             "@php artisan config:clear --ansi",
             "vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact"
-        ]
+        ],
+        "mago:analyze": "vendor/bin/mago analyze app config database --reporting-format=medium",
+        "mago:lint": "vendor/bin/mago lint --reporting-format=medium",
+        "mago:format": "vendor/bin/mago format",
+        "mago:format:check": "vendor/bin/mago format --check"
     },
     "extra": {
         "laravel": {

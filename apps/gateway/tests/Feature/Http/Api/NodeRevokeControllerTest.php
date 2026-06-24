@@ -125,7 +125,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -139,10 +140,12 @@ describe('NodeRevokeController', function (): void {
                 ],
             ]);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeFalse();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('logs activity for a successful grant revocation', function (): void {
@@ -198,15 +201,18 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'revoked')
             ->assertJsonPath('success.data.already_absent', false)
             ->assertJsonPath('success.data.was_gateway_admin', false);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeFalse();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('rejects gateway-named callers without gateway assignment before mutation', function (): void {
@@ -232,16 +238,19 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:revoke')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('allows database assigned callers with node revoke permission', function (): void {
@@ -265,14 +274,17 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'revoked')
             ->assertJsonPath('success.data.already_absent', false);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeFalse();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('checks control caller authorization against active gateway assignments', function (): void {
@@ -300,16 +312,19 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:revoke')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('returns idempotent success when the grant is already absent', function (): void {
@@ -331,7 +346,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'revoked')
             ->assertJsonPath('success.data.already_absent', true)
             ->assertJsonPath('success.data.self_lockout', false)
@@ -349,7 +365,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.consuming_node', 'control-caller')
             ->assertJsonPath('success.data.serving_node', 'gateway-1')
             ->assertJsonPath('success.data.action', 'revoked')
@@ -357,10 +374,12 @@ describe('NodeRevokeController', function (): void {
             ->assertJsonPath('success.data.self_lockout', true)
             ->assertJsonPath('success.data.was_gateway_admin', false);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $callerId)
-            ->where('serving_node_id', $gatewayId)
-            ->exists())->toBeFalse();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $callerId)
+                ->where('serving_node_id', $gatewayId)
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('reports when the revoked grant was a gateway admin grant', function (): void {
@@ -383,7 +402,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'revoked')
             ->assertJsonPath('success.data.already_absent', false)
             ->assertJsonPath('success.data.self_lockout', false)
@@ -397,7 +417,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.')
             ->assertJsonPath('error.meta', []);
@@ -422,16 +443,19 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:revoke')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('rejects callers without gateway grant before mutation', function (): void {
@@ -453,16 +477,19 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:revoke')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('rejects requests without destructive consent', function (): void {
@@ -475,7 +502,8 @@ describe('NodeRevokeController', function (): void {
             'serving_node' => 'app-1',
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Use --force to revoke this grant.')
             ->assertJsonPath('error.meta.field', 'force');
@@ -491,7 +519,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Consuming node is required.')
             ->assertJsonPath('error.meta.field', 'consuming_node');
@@ -507,7 +536,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Serving node is required.')
             ->assertJsonPath('error.meta.field', 'serving_node');
@@ -525,7 +555,8 @@ describe('NodeRevokeController', function (): void {
             'force' => true,
         ], ['REMOTE_ADDR' => REVOKE_CALLER_WG_IP]);
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'node.not_found')
             ->assertJsonPath('error.message', "Node 'missing-control' not found.")
             ->assertJsonPath('error.meta.name', 'missing-control');

@@ -70,7 +70,7 @@ final readonly class ToolReconfigurer
         if (! $result->successful()) {
             return ToolRegistryFailure::remoteActionFailed(
                 $tool,
-                $model->node->name,
+                $model->node?->name,
                 'reconfigure',
                 $result->exitCode,
                 trim($result->stderr),
@@ -79,7 +79,7 @@ final readonly class ToolReconfigurer
 
         return [
             'name' => $tool,
-            'node' => $model->node->name,
+            'node' => $model->node?->name,
             'action' => 'reconfigured',
         ];
     }

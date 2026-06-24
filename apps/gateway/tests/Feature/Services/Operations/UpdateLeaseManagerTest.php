@@ -35,14 +35,22 @@ it('acquires active leases for update resources', function (string $resourceType
         ttlSeconds: 120,
     );
 
-    expect($lease)->toBeInstanceOf(UpdateLease::class)
-        ->and($lease->resource_type)->toBe($resourceType)
-        ->and($lease->resource_key)->toBe($resourceKey)
-        ->and($lease->active_resource_key)->toBe("{$resourceType}:{$resourceKey}")
-        ->and($lease->operation_run_id)->toBe($run->id)
-        ->and($lease->owner_token)->toBe('runner-token')
-        ->and($lease->expires_at?->toIso8601String())->toBe('2026-06-02T10:02:00+00:00')
-        ->and(UpdateLease::query()->where('active_resource_key', "{$resourceType}:{$resourceKey}")->count())->toBe(1);
+    expect($lease)
+        ->toBeInstanceOf(UpdateLease::class)
+        ->and($lease->resource_type)
+        ->toBe($resourceType)
+        ->and($lease->resource_key)
+        ->toBe($resourceKey)
+        ->and($lease->active_resource_key)
+        ->toBe("{$resourceType}:{$resourceKey}")
+        ->and($lease->operation_run_id)
+        ->toBe($run->id)
+        ->and($lease->owner_token)
+        ->toBe('runner-token')
+        ->and($lease->expires_at?->toIso8601String())
+        ->toBe('2026-06-02T10:02:00+00:00')
+        ->and(UpdateLease::query()->where('active_resource_key', "{$resourceType}:{$resourceKey}")->count())
+        ->toBe(1);
 })->with([
     'fleet' => ['fleet', 'update-all'],
     'gateway' => ['gateway', 'orbit-gateway'],
@@ -61,12 +69,18 @@ it('throws a typed conflict with active owner metadata', function (): void {
     try {
         $this->manager->acquire('gateway', 'orbit-gateway', $secondRun, 'second-owner', 300);
     } catch (UpdateLeaseConflict $exception) {
-        expect($exception->resourceType)->toBe('gateway')
-            ->and($exception->resourceKey)->toBe('orbit-gateway')
-            ->and($exception->operationRunId)->toBe($firstRun->id)
-            ->and($exception->ownerToken)->toBe('first-owner')
-            ->and($exception->expiresAt->toIso8601String())->toBe('2026-06-02T10:05:00+00:00')
-            ->and($exception->context())->toMatchArray([
+        expect($exception->resourceType)
+            ->toBe('gateway')
+            ->and($exception->resourceKey)
+            ->toBe('orbit-gateway')
+            ->and($exception->operationRunId)
+            ->toBe($firstRun->id)
+            ->and($exception->ownerToken)
+            ->toBe('first-owner')
+            ->and($exception->expiresAt->toIso8601String())
+            ->toBe('2026-06-02T10:05:00+00:00')
+            ->and($exception->context())
+            ->toMatchArray([
                 'resource_type' => 'gateway',
                 'resource_key' => 'orbit-gateway',
                 'operation_run_id' => $firstRun->id,
@@ -91,11 +105,17 @@ it('reclaims expired leases before acquiring the resource again', function (): v
 
     $fresh = $this->manager->acquire('fleet', 'update-all', $freshRun, 'fresh-owner', 300);
 
-    expect($stale->refresh()->active_resource_key)->toBeNull()
-        ->and($stale->released_at?->toIso8601String())->toBe('2026-06-02T10:00:31+00:00')
-        ->and($fresh->id)->not->toBe($stale->id)
-        ->and($fresh->active_resource_key)->toBe('fleet:update-all')
-        ->and($fresh->operation_run_id)->toBe($freshRun->id);
+    expect($stale->refresh()->active_resource_key)
+        ->toBeNull()
+        ->and($stale->released_at?->toIso8601String())
+        ->toBe('2026-06-02T10:00:31+00:00')
+        ->and($fresh->id)
+        ->not
+        ->toBe($stale->id)
+        ->and($fresh->active_resource_key)
+        ->toBe('fleet:update-all')
+        ->and($fresh->operation_run_id)
+        ->toBe($freshRun->id);
 });
 
 it('releases an active lease and allows a later acquire', function (): void {
@@ -109,11 +129,17 @@ it('releases an active lease and allows a later acquire', function (): void {
 
     $reacquired = $this->manager->acquire('node', 'worker-01', $secondRun, 'new-owner', 300);
 
-    expect($released->active_resource_key)->toBeNull()
-        ->and($released->released_at?->toIso8601String())->toBe('2026-06-02T10:00:00+00:00')
-        ->and($reacquired->id)->not->toBe($lease->id)
-        ->and($reacquired->active_resource_key)->toBe('node:worker-01')
-        ->and($reacquired->owner_token)->toBe('new-owner');
+    expect($released->active_resource_key)
+        ->toBeNull()
+        ->and($released->released_at?->toIso8601String())
+        ->toBe('2026-06-02T10:00:00+00:00')
+        ->and($reacquired->id)
+        ->not
+        ->toBe($lease->id)
+        ->and($reacquired->active_resource_key)
+        ->toBe('node:worker-01')
+        ->and($reacquired->owner_token)
+        ->toBe('new-owner');
 });
 
 it('maps insert-time unique constraint races to update lease conflicts', function (): void {
@@ -121,14 +147,18 @@ it('maps insert-time unique constraint races to update lease conflicts', functio
 
     $run = updateLeaseOperationRun();
     $competingRun = updateLeaseOperationRun();
-    $manager = new class($competingRun) extends UpdateLeaseManager
-    {
+    $manager = new class($competingRun) extends UpdateLeaseManager {
         private bool $injected = false;
 
-        public function __construct(private OperationRun $competingRun) {}
+        public function __construct(
+            private OperationRun $competingRun,
+        ) {}
 
-        protected function beforeActiveLeaseCreate(string $activeResourceKey, string $resourceType, string $resourceKey): void
-        {
+        protected function beforeActiveLeaseCreate(
+            string $activeResourceKey,
+            string $resourceType,
+            string $resourceKey,
+        ): void {
             if ($this->injected) {
                 return;
             }
@@ -149,10 +179,14 @@ it('maps insert-time unique constraint races to update lease conflicts', functio
     try {
         $manager->acquire('scheduler', 'orbit-scheduler', $run, 'runner-owner', 300);
     } catch (UpdateLeaseConflict $exception) {
-        expect($exception->resourceType)->toBe('scheduler')
-            ->and($exception->resourceKey)->toBe('orbit-scheduler')
-            ->and($exception->operationRunId)->toBe($competingRun->id)
-            ->and($exception->ownerToken)->toBe('race-owner');
+        expect($exception->resourceType)
+            ->toBe('scheduler')
+            ->and($exception->resourceKey)
+            ->toBe('orbit-scheduler')
+            ->and($exception->operationRunId)
+            ->toBe($competingRun->id)
+            ->and($exception->ownerToken)
+            ->toBe('race-owner');
 
         return;
     }
@@ -182,9 +216,12 @@ it('extends active leases with a heartbeat and expires them when heartbeats stop
 
     $fresh = $this->manager->acquire('node', 'worker-01', $nextRun, 'new-owner', 300);
 
-    expect($fresh->owner_token)->toBe('new-owner')
-        ->and($lease->refresh()->active_resource_key)->toBeNull()
-        ->and($lease->released_at?->toIso8601String())->toBe('2026-06-02T10:00:51+00:00');
+    expect($fresh->owner_token)
+        ->toBe('new-owner')
+        ->and($lease->refresh()->active_resource_key)
+        ->toBeNull()
+        ->and($lease->released_at?->toIso8601String())
+        ->toBe('2026-06-02T10:00:51+00:00');
 });
 
 it('does not revive an already expired lease on heartbeat', function (): void {
@@ -198,8 +235,10 @@ it('does not revive an already expired lease on heartbeat', function (): void {
     expect(fn () => $this->manager->heartbeat($lease, 'gateway-owner', 300))
         ->toThrow(RuntimeException::class, 'expired');
 
-    expect($lease->refresh()->active_resource_key)->toBeNull()
-        ->and($lease->released_at?->toIso8601String())->toBe('2026-06-02T10:00:31+00:00');
+    expect($lease->refresh()->active_resource_key)
+        ->toBeNull()
+        ->and($lease->released_at?->toIso8601String())
+        ->toBe('2026-06-02T10:00:31+00:00');
 });
 
 it('releases stage leases in finally paths', function (): void {
@@ -218,12 +257,15 @@ it('releases stage leases in finally paths', function (): void {
 
             throw new RuntimeException('stage failed');
         },
-    ))->toThrow(RuntimeException::class, 'stage failed');
+    ))
+        ->toThrow(RuntimeException::class, 'stage failed');
 
     $released = UpdateLease::query()->where('resource_type', 'scheduler')->firstOrFail();
 
-    expect($released->active_resource_key)->toBeNull()
-        ->and($released->released_at?->toIso8601String())->toBe('2026-06-02T10:00:00+00:00');
+    expect($released->active_resource_key)
+        ->toBeNull()
+        ->and($released->released_at?->toIso8601String())
+        ->toBe('2026-06-02T10:00:00+00:00');
 });
 
 function updateLeaseOperationRun(): OperationRun

@@ -9,7 +9,8 @@ use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\ProgressEventType;
 
 it('gets operation events with last event id and exposes decoded event ids', function (): void {
-    $body = "id: 42\n"
+    $body =
+        "id: 42\n"
         ."event: step\n"
         ."data: {\"message\":\"runner started\"}\n\n"
         ."id: 43\n"
@@ -23,8 +24,12 @@ it('gets operation events with last event id and exposes decoded event ids', fun
         ]),
     ]);
 
-    $terminal = (new GatewayOperationEventStreamClient('https://gateway.test', 30))
-        ->replay('/api/operations/run-1/events', 41, function (ProgressEventType $type, array $payload, ?int $eventId) use (&$events): void {
+    $terminal = new GatewayOperationEventStreamClient('https://gateway.test', 30)
+        ->replay('/api/operations/run-1/events', 41, function (
+            ProgressEventType $type,
+            array $payload,
+            ?int $eventId,
+        ) use (&$events): void {
             $events[] = [
                 'id' => $eventId,
                 'type' => $type->value,
@@ -32,16 +37,22 @@ it('gets operation events with last event id and exposes decoded event ids', fun
             ];
         });
 
-    Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-        && $request->url() === 'https://gateway.test/api/operations/run-1/events'
-        && $request->hasHeader('Accept', 'text/event-stream')
-        && $request->hasHeader('Last-Event-ID', '41'));
+    Http::assertSent(
+        fn (Request $request): bool => (
+            $request->method() === 'GET'
+            && $request->url() === 'https://gateway.test/api/operations/run-1/events'
+            && $request->hasHeader('Accept', 'text/event-stream')
+            && $request->hasHeader('Last-Event-ID', '41')
+        ),
+    );
 
-    expect($terminal)->toBe([
-        'type' => ProgressEventType::Complete,
-        'payload' => ['exit_code' => 0],
-    ])
-        ->and($events)->toBe([
+    expect($terminal)
+        ->toBe([
+            'type' => ProgressEventType::Complete,
+            'payload' => ['exit_code' => 0],
+        ])
+        ->and($events)
+        ->toBe([
             ['id' => 42, 'type' => 'step', 'payload' => ['message' => 'runner started']],
             ['id' => 43, 'type' => 'complete', 'payload' => ['exit_code' => 0]],
         ]);
@@ -57,11 +68,13 @@ it('disables idle read timeout so long silent operation replays can complete', f
         return Http::response($body, 200, ['Content-Type' => 'text/event-stream']);
     });
 
-    (new GatewayOperationEventStreamClient('https://gateway.test', 30))
+    new GatewayOperationEventStreamClient('https://gateway.test', 30)
         ->replay('/api/operations/run-1/events', null, fn () => null);
 
-    expect($options['stream'] ?? null)->toBeTrue()
-        ->and($options['read_timeout'] ?? null)->toBe(0);
+    expect($options['stream'] ?? null)
+        ->toBeTrue()
+        ->and($options['read_timeout'] ?? null)
+        ->toBe(0);
 });
 
 it('keeps idle callbacks on cadence while opening a slow operation event stream without fork signals', function (): void {
@@ -100,7 +113,12 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
 
             usleep(120_000);
             $body = "id: 1\nevent: complete\ndata: {\"exit_code\":0}\n\n";
-            fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
+            fwrite(
+                $connection,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: "
+                .strlen($body)
+                ."\r\nConnection: close\r\n\r\n{$body}",
+            );
             fclose($connection);
         }
 
@@ -109,19 +127,23 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
     }
 
     $ticks = [];
-    $cleanupIdleCallback = registerGatewayOperationEventStreamIdleCallbackWithoutFork(30_000, function () use (&$ticks): void {
+    $cleanupIdleCallback = registerGatewayOperationEventStreamIdleCallbackWithoutFork(30_000, function () use (
+        &$ticks,
+    ): void {
         $ticks[] = hrtime(true);
     });
 
     try {
-        $terminal = (new GatewayOperationEventStreamClient("http://127.0.0.1:{$port}", 30))
+        $terminal = new GatewayOperationEventStreamClient("http://127.0.0.1:{$port}", 30)
             ->replay('/api/operations/run-1/events', null, fn () => null);
 
-        expect($terminal)->toBe([
-            'type' => ProgressEventType::Complete,
-            'payload' => ['exit_code' => 0],
-        ])
-            ->and(count($ticks))->toBeGreaterThanOrEqual(3);
+        expect($terminal)
+            ->toBe([
+                'type' => ProgressEventType::Complete,
+                'payload' => ['exit_code' => 0],
+            ])
+            ->and(count($ticks))
+            ->toBeGreaterThanOrEqual(3);
 
         $maxGapMicroseconds = max(array_map(
             static fn (array $pair): int => intdiv($pair[1] - $pair[0], 1000),
@@ -149,25 +171,32 @@ it('verifies TLS against the configured gateway CA when a PEM file exists', func
     });
 
     try {
-        (new GatewayOperationEventStreamClient('https://gateway.test', 30, $pemPath))
+        new GatewayOperationEventStreamClient('https://gateway.test', 30, $pemPath)
             ->replay('/api/operations/run-1/events', null, fn () => null);
     } finally {
         @unlink($pemPath);
     }
 
-    expect($options['verify'] ?? null)->toBe($pemPath)
-        ->and($options['stream'] ?? null)->toBeTrue()
-        ->and($options['read_timeout'] ?? null)->toBe(0);
+    expect($options['verify'] ?? null)
+        ->toBe($pemPath)
+        ->and($options['stream'] ?? null)
+        ->toBeTrue()
+        ->and($options['read_timeout'] ?? null)
+        ->toBe(0);
 });
 
 it('returns null when an operation replay closes without a terminal event', function (): void {
     Http::fake([
-        'https://gateway.test/api/operations/run-1/events' => Http::response("id: 44\nevent: step\ndata: {\"message\":\"still running\"}\n\n", 200, [
-            'Content-Type' => 'text/event-stream',
-        ]),
+        'https://gateway.test/api/operations/run-1/events' => Http::response(
+            "id: 44\nevent: step\ndata: {\"message\":\"still running\"}\n\n",
+            200,
+            [
+                'Content-Type' => 'text/event-stream',
+            ],
+        ),
     ]);
 
-    $terminal = (new GatewayOperationEventStreamClient('https://gateway.test', 30))
+    $terminal = new GatewayOperationEventStreamClient('https://gateway.test', 30)
         ->replay('/api/operations/run-1/events', null, fn () => null);
 
     expect($terminal)->toBeNull();

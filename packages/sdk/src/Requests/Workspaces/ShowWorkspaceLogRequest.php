@@ -26,14 +26,14 @@ final class ShowWorkspaceLogRequest extends GatewayRequest
     public function createDtoFromResponse(Response $response): WorkspaceLogResponse
     {
         $body = json_decode($response->body(), true, 512, JSON_THROW_ON_ERROR);
-        $success = is_array($body) ? ($body['success'] ?? []) : [];
-        $data = is_array($success) ? ($success['data'] ?? []) : [];
-        $meta = is_array($success) ? ($success['meta'] ?? []) : [];
-        $run = is_array($data) ? ($data['run'] ?? []) : [];
+        $success = is_array($body) ? $body['success'] ?? [] : [];
+        $data = is_array($success) ? $success['data'] ?? [] : [];
+        $meta = is_array($success) ? $success['meta'] ?? [] : [];
+        $run = is_array($data) ? $data['run'] ?? [] : [];
 
         return new WorkspaceLogResponse(
-            run: is_array($run) ? $run : [],
-            meta: is_array($meta) ? $meta : [],
+            run: $this->stringKeyedArray($run),
+            meta: $this->stringKeyedArray($meta),
         );
     }
 }

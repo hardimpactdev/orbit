@@ -66,7 +66,7 @@ final readonly class NodesDoctorSummary
     private function failureFor(Node $node, DriftEntry $entry): array
     {
         return [
-            'node' => (string) $node->name,
+            'node' => $node->name,
             'code' => $entry->key,
             'message' => $entry->summary,
             'family' => 'node',

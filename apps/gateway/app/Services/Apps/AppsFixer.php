@@ -41,11 +41,14 @@ final readonly class AppsFixer
         return match ($entry->key) {
             'app.runtime_container_missing',
             'app.runtime_container_mismatch',
-            'app.security.runtime_container_isolation' => $this->reapplyRuntimeContainer($app, $node, $entry),
-            'app.runtime_config_missing',
-            'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig($app, $node, $entry),
-            'app.security.system_user',
-            'app.security.fs_permissions' => $this->reapplyAppSecurity($app, $node, $entry),
+            'app.security.runtime_container_isolation',
+                => $this->reapplyRuntimeContainer($app, $node, $entry),
+            'app.runtime_config_missing', 'app.runtime_config_mismatch' => $this->reapplyRuntimeConfig(
+                $app,
+                $node,
+                $entry,
+            ),
+            'app.security.system_user', 'app.security.fs_permissions' => $this->reapplyAppSecurity($app, $node, $entry),
             default => null,
         };
     }
@@ -214,20 +217,20 @@ final readonly class AppsFixer
     {
         $user = $this->appRuntimeUser->forApp($app);
         $home = $user === 'root' ? '/root' : "/home/{$user}";
-        $appPath = rtrim((string) $app->path, '/');
+        $appPath = rtrim($app->path, '/');
 
         return sprintf(
             <<<'SH'
-set -e
-if ! id -u %s >/dev/null 2>&1; then
-    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
-fi
-sudo install -d -m 0750 -o %s -g %s %s
-if [ -d %s ]; then
-    sudo chown -R %s:%s %s
-    sudo chmod -R go-w %s
-fi
-SH,
+                set -e
+                if ! id -u %s >/dev/null 2>&1; then
+                    sudo useradd --system --create-home --home-dir %s --shell /usr/sbin/nologin %s
+                fi
+                sudo install -d -m 0750 -o %s -g %s %s
+                if [ -d %s ]; then
+                    sudo chown -R %s:%s %s
+                    sudo chmod -R go-w %s
+                fi
+                SH,
             escapeshellarg($user),
             escapeshellarg($home),
             escapeshellarg($user),

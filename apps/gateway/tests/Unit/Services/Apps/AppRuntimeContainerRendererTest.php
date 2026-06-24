@@ -42,35 +42,43 @@ it('renders a FrankenPHP app runtime container for a PHP app with deterministic 
     $container = rendererForTest()->render($app);
     $mountTargets = array_column($container->mounts(), 'target');
 
-    expect($container->name())->toBe('orbit-app-docs')
-        ->and($container->image())->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
-        ->and($container->network())->toBe('orbit-network')
-        ->and($container->restartPolicy())->toBe('unless-stopped')
-        ->and($container->networkAliases())->toContain('orbit-app-docs')
-        ->and($container->networkAliases())->toContain('app-docs')
-        ->and($container->mounts())->toContain([
+    expect($container->name())
+        ->toBe('orbit-app-docs')
+        ->and($container->image())
+        ->toBe('ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm')
+        ->and($container->network())
+        ->toBe('orbit-network')
+        ->and($container->restartPolicy())
+        ->toBe('unless-stopped')
+        ->and($container->networkAliases())
+        ->toContain('orbit-app-docs')
+        ->and($container->networkAliases())
+        ->toContain('app-docs')
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/home/orbit/apps/docs',
             'target' => '/app',
             'read_only' => false,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/home/orbit/apps/docs',
             'target' => '/home/orbit/apps/docs',
             'read_only' => false,
         ])
-        ->and($mountTargets)->not->toContain('/data')
-        ->and($mountTargets)->not->toContain('/config')
-        ->and($container->mounts())->not->toContain([
+        ->and($mountTargets)
+        ->not->toContain('/data')->and($mountTargets)
+        ->not->toContain('/config')->and($container->mounts())
+        ->not->toContain([
             'source' => '/home/orbit/apps/docs/.orbit/frankenphp/data',
             'target' => '/data',
             'read_only' => false,
-        ])
-        ->and($container->mounts())->not->toContain([
+        ])->and($container->mounts())
+        ->not->toContain([
             'source' => '/home/orbit/apps/docs/.orbit/frankenphp/config',
             'target' => '/config',
             'read_only' => false,
-        ])
-        ->and($container->environment())->toMatchArray([
+        ])->and($container->environment())->toMatchArray([
             'XDG_CONFIG_HOME' => '/tmp/orbit-frankenphp/config',
             'XDG_DATA_HOME' => '/tmp/orbit-frankenphp/data',
         ]);
@@ -112,15 +120,18 @@ it('renders configured app runtime mounts after built-in mounts', function (): v
 
     $mounts = rendererForTest()->render($app)->mounts();
 
-    expect($mounts)->toContain([
-        'source' => '/home/nckrtl/packages',
-        'target' => '/packages',
-        'read_only' => false,
-    ])->and($mounts)->toContain([
-        'source' => '/home/nckrtl/packages',
-        'target' => '/home/nckrtl/packages',
-        'read_only' => true,
-    ]);
+    expect($mounts)
+        ->toContain([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ])
+        ->and($mounts)
+        ->toContain([
+            'source' => '/home/nckrtl/packages',
+            'target' => '/home/nckrtl/packages',
+            'read_only' => true,
+        ]);
 });
 
 it('does not mount the packages directory for app-prod PHP app runtimes', function (): void {
@@ -136,11 +147,13 @@ it('does not mount the packages directory for app-prod PHP app runtimes', functi
 
     $container = rendererForTest()->render($app);
 
-    expect($container->mounts())->not->toContain([
-        'source' => '/home/orbit/packages',
-        'target' => '/packages',
-        'read_only' => false,
-    ]);
+    expect($container->mounts())
+        ->not
+        ->toContain([
+            'source' => '/home/orbit/packages',
+            'target' => '/packages',
+            'read_only' => false,
+        ]);
 });
 
 it('renders a production app runtime user from the app source owner but leaves development containers on the node user', function (): void {
@@ -162,8 +175,10 @@ it('renders a production app runtime user from the app source owner but leaves d
 
     $renderer = rendererForTest();
 
-    expect($renderer->render($productionApp)->runtimeUser())->toBe('docs')
-        ->and($renderer->render($developmentApp)->runtimeUser())->toBeNull();
+    expect($renderer->render($productionApp)->runtimeUser())
+        ->toBe('docs')
+        ->and($renderer->render($developmentApp)->runtimeUser())
+        ->toBeNull();
 });
 
 it('renders the selected PHP image when php_version differs', function (): void {
@@ -179,9 +194,11 @@ it('uses the approved glibc-based FrankenPHP image family rather than alpine/mus
 
     $container = rendererForTest()->render($app);
 
-    expect($container->image())->toEndWith('-bookworm')
-        ->and($container->image())->not->toContain('alpine')
-        ->and($container->image())->not->toContain('musl');
+    expect($container->image())
+        ->toEndWith('-bookworm')
+        ->and($container->image())
+        ->not->toContain('alpine')->and($container->image())
+        ->not->toContain('musl');
 });
 
 it('does not render an app runtime container for static apps', function (): void {
@@ -283,21 +300,25 @@ it('renders FrankenPHP-consumed SERVER_NAME and SERVER_ROOT so the configured ro
     $webRoot = $renderer->render(makePhpApp(['name' => 'b', 'document_root' => 'web']));
     $projectRoot = $renderer->render(makePhpApp(['name' => 'c', 'document_root' => '.']));
 
-    expect($publicRoot->environment())->toMatchArray([
-        'SERVER_NAME' => ':8080',
-        'SERVER_ROOT' => '/app/public',
-        'ORBIT_APP_DOCUMENT_ROOT' => 'public',
-    ])
-        ->and($webRoot->environment())->toMatchArray([
+    expect($publicRoot->environment())
+        ->toMatchArray([
+            'SERVER_NAME' => ':8080',
+            'SERVER_ROOT' => '/app/public',
+            'ORBIT_APP_DOCUMENT_ROOT' => 'public',
+        ])
+        ->and($webRoot->environment())
+        ->toMatchArray([
             'SERVER_NAME' => ':8080',
             'SERVER_ROOT' => '/app/web',
         ])
-        ->and($projectRoot->environment())->toMatchArray([
+        ->and($projectRoot->environment())
+        ->toMatchArray([
             'SERVER_NAME' => ':8080',
             'SERVER_ROOT' => '/app',
         ])
-        ->and($publicRoot->specHash())->not->toBe($webRoot->specHash())
-        ->and($publicRoot->specHash())->not->toBe($projectRoot->specHash());
+        ->and($publicRoot->specHash())
+        ->not->toBe($webRoot->specHash())->and($publicRoot->specHash())
+        ->not->toBe($projectRoot->specHash());
 });
 
 it('uses the internal app-dev runtime upstream on HTTP port 8080 by default', function (): void {
@@ -319,17 +340,21 @@ it('renders app-dev PHP runtimes with inner HTTPS on 8443, site cert mounts, and
 
     $container = rendererForTest()->render($app);
 
-    expect(rendererForTest()->upstreamUrl($app))->toBe('https://orbit-app-docs:8443')
-        ->and($container->environment())->toMatchArray([
+    expect(rendererForTest()->upstreamUrl($app))
+        ->toBe('https://orbit-app-docs:8443')
+        ->and($container->environment())
+        ->toMatchArray([
             'SERVER_NAME' => 'https://docs.test:8443',
             'CADDY_SERVER_EXTRA_DIRECTIVES' => 'tls /etc/orbit/runtime-tls/tls.crt /etc/orbit/runtime-tls/tls.key',
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/home/nckrtl/.config/orbit/certs/docs.test.crt',
             'target' => '/etc/orbit/runtime-tls/tls.crt',
             'read_only' => true,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/home/nckrtl/.config/orbit/certs/docs.test.key',
             'target' => '/etc/orbit/runtime-tls/tls.key',
             'read_only' => true,
@@ -349,27 +374,36 @@ it('keeps app-prod PHP runtimes on plain HTTP port 8080 without inner TLS mounts
 
     $container = rendererForTest()->render($app);
 
-    expect(rendererForTest()->upstreamUrl($app))->toBe('http://orbit-app-docs-prod:8080')
-        ->and($container->environment()['SERVER_NAME'])->toBe(':8080')
-        ->and(array_key_exists('CADDY_SERVER_EXTRA_DIRECTIVES', $container->environment()))->toBeFalse()
-        ->and(collect($container->mounts())->pluck('target'))->not->toContain('/etc/orbit/runtime-tls/tls.crt');
+    expect(rendererForTest()->upstreamUrl($app))
+        ->toBe('http://orbit-app-docs-prod:8080')
+        ->and($container->environment()['SERVER_NAME'])
+        ->toBe(':8080')
+        ->and(array_key_exists('CADDY_SERVER_EXTRA_DIRECTIVES', $container->environment()))
+        ->toBeFalse()
+        ->and(collect($container->mounts())->pluck('target'))
+        ->not->toContain('/etc/orbit/runtime-tls/tls.crt');
 });
 
 it('exposes the document-root env on the rendered docker run command so the configured root reaches FrankenPHP', function (): void {
     $app = makePhpApp(['document_root' => 'web']);
     $container = rendererForTest()->render($app);
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toContain("--env 'SERVER_NAME=:8080'")
-        ->and($command)->toContain("--env 'SERVER_ROOT=/app/web'")
-        ->and($command)->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
-        ->and($command)->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
-        ->and($command)->not->toContain('CADDY_SERVER_EXTRA_DIRECTIVES')
-        ->and($command)->not->toContain('/home/orbit/apps/docs/.orbit/frankenphp')
-        ->and($command)->not->toContain('target=/data')
-        ->and($command)->not->toContain('target=/config')
-        ->and($command)->not->toContain(' --publish ');
+    expect($command)
+        ->toContain("--env 'SERVER_NAME=:8080'")
+        ->and($command)
+        ->toContain("--env 'SERVER_ROOT=/app/web'")
+        ->and($command)
+        ->toContain("--env 'XDG_CONFIG_HOME=/tmp/orbit-frankenphp/config'")
+        ->and($command)
+        ->toContain("--env 'XDG_DATA_HOME=/tmp/orbit-frankenphp/data'")
+        ->and($command)
+        ->not->toContain('CADDY_SERVER_EXTRA_DIRECTIVES')->and($command)
+        ->not->toContain('/home/orbit/apps/docs/.orbit/frankenphp')->and($command)
+        ->not->toContain('target=/data')->and($command)
+        ->not->toContain('target=/config')->and($command)
+        ->not->toContain(' --publish ');
 });
 
 it('exposes labels with the spec hash so the manager can detect drift', function (): void {
@@ -377,11 +411,13 @@ it('exposes labels with the spec hash so the manager can detect drift', function
 
     $container = rendererForTest()->render($app);
 
-    expect($container->labels())->toMatchArray([
-        'orbit.managed' => 'true',
-        'orbit.container.kind' => 'app-runtime',
-    ])
-        ->and($container->labels()['orbit.app.spec_hash'] ?? null)->toBe($container->specHash());
+    expect($container->labels())
+        ->toMatchArray([
+            'orbit.managed' => 'true',
+            'orbit.container.kind' => 'app-runtime',
+        ])
+        ->and($container->labels()['orbit.app.spec_hash'] ?? null)
+        ->toBe($container->specHash());
 });
 
 it('does not render any worker-mode runtime config when worker_enabled is false', function (): void {
@@ -389,19 +425,23 @@ it('does not render any worker-mode runtime config when worker_enabled is false'
 
     $container = rendererForTest()->render($app);
 
-    expect($container->environment()['FRANKENPHP_CONFIG'] ?? null)->toBe("max_threads auto\nmax_idle_time 1h")
-        ->and(array_key_exists('MAX_REQUESTS', $container->environment()))->toBeFalse();
+    expect($container->environment()['FRANKENPHP_CONFIG'] ?? null)
+        ->toBe("max_threads auto\nmax_idle_time 1h")
+        ->and(array_key_exists('MAX_REQUESTS', $container->environment()))
+        ->toBeFalse();
 });
 
 it('does not include any FRANKENPHP_CONFIG worker directive in the docker run command when worker mode is off', function (): void {
     $app = makePhpApp();
     $container = rendererForTest()->render($app);
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toContain("FRANKENPHP_CONFIG=max_threads auto\nmax_idle_time 1h")
-        ->and($command)->not->toContain('worker /app')
-        ->and($command)->not->toContain('MAX_REQUESTS');
+    expect($command)
+        ->toContain("FRANKENPHP_CONFIG=max_threads auto\nmax_idle_time 1h")
+        ->and($command)
+        ->not->toContain('worker /app')->and($command)
+        ->not->toContain('MAX_REQUESTS');
 });
 
 it('does not render app-dev FrankenPHP thread pool settings for app-prod classic runtimes', function (): void {
@@ -454,20 +494,28 @@ it('renders the block-form `worker` directive with num when worker_config.worker
     ]);
 });
 
-it('does not emit any OCTANE_* or MAX_CONSECUTIVE_FAILURES env vars; FrankenPHP and Laravel only read FRANKENPHP_CONFIG and MAX_REQUESTS', function (): void {
-    $app = makePhpApp([
-        'worker_enabled' => true,
-        'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
-    ]);
+it(
+    'does not emit any OCTANE_* or MAX_CONSECUTIVE_FAILURES env vars; FrankenPHP and Laravel only read FRANKENPHP_CONFIG and MAX_REQUESTS',
+    function (): void {
+        $app = makePhpApp([
+            'worker_enabled' => true,
+            'worker_config' => ['workers' => 'auto', 'max_requests' => 500],
+        ]);
 
-    $container = rendererForTest()->render($app);
+        $container = rendererForTest()->render($app);
 
-    expect(array_key_exists('OCTANE_SERVER', $container->environment()))->toBeFalse()
-        ->and(array_key_exists('OCTANE_WORKERS', $container->environment()))->toBeFalse()
-        ->and(array_key_exists('OCTANE_MAX_REQUESTS', $container->environment()))->toBeFalse()
-        ->and(array_key_exists('OCTANE_MAX_CONSECUTIVE_FAILURES', $container->environment()))->toBeFalse()
-        ->and(array_key_exists('MAX_CONSECUTIVE_FAILURES', $container->environment()))->toBeFalse();
-});
+        expect(array_key_exists('OCTANE_SERVER', $container->environment()))
+            ->toBeFalse()
+            ->and(array_key_exists('OCTANE_WORKERS', $container->environment()))
+            ->toBeFalse()
+            ->and(array_key_exists('OCTANE_MAX_REQUESTS', $container->environment()))
+            ->toBeFalse()
+            ->and(array_key_exists('OCTANE_MAX_CONSECUTIVE_FAILURES', $container->environment()))
+            ->toBeFalse()
+            ->and(array_key_exists('MAX_CONSECUTIVE_FAILURES', $container->environment()))
+            ->toBeFalse();
+    },
+);
 
 it('points the worker directive at the configured document root, not always /app/public', function (): void {
     $app = makePhpApp([
@@ -478,21 +526,29 @@ it('points the worker directive at the configured document root, not always /app
 
     $container = rendererForTest()->render($app);
 
-    expect($container->environment()['FRANKENPHP_CONFIG'])->toBe("max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/web/frankenphp-worker.php\n}");
+    expect($container->environment()['FRANKENPHP_CONFIG'])
+        ->toBe("max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/web/frankenphp-worker.php\n}");
 });
 
-it('exposes the worker directive and MAX_REQUESTS env on the rendered docker run command so FrankenPHP and the Laravel worker actually consume them', function (): void {
-    $app = makePhpApp([
-        'worker_enabled' => true,
-        'worker_config' => ['workers' => 4, 'max_requests' => 500],
-    ]);
-    $container = rendererForTest()->render($app);
+it(
+    'exposes the worker directive and MAX_REQUESTS env on the rendered docker run command so FrankenPHP and the Laravel worker actually consume them',
+    function (): void {
+        $app = makePhpApp([
+            'worker_enabled' => true,
+            'worker_config' => ['workers' => 4, 'max_requests' => 500],
+        ]);
+        $container = rendererForTest()->render($app);
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+        $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toContain("FRANKENPHP_CONFIG=max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n\tnum 4\n}")
-        ->and($command)->toContain("--env 'MAX_REQUESTS=500'");
-});
+        expect($command)
+            ->toContain(
+                "FRANKENPHP_CONFIG=max_threads auto\nmax_idle_time 1h\nworker {\n\tfile /app/public/frankenphp-worker.php\n\tnum 4\n}",
+            )
+            ->and($command)
+            ->toContain("--env 'MAX_REQUESTS=500'");
+    },
+);
 
 it('changes the spec hash when worker mode toggles on the same app so the manager recreates the container', function (): void {
     $renderer = rendererForTest();
@@ -512,10 +568,14 @@ it('changes the spec hash when worker mode toggles on the same app so the manage
 
     $worker = $renderer->render($app);
 
-    expect($classic->name())->toBe($worker->name())
-        ->and($classic->appSlug())->toBe($worker->appSlug())
-        ->and($classic->image())->toBe($worker->image())
-        ->and($classic->specHash())->not->toBe($worker->specHash());
+    expect($classic->name())
+        ->toBe($worker->name())
+        ->and($classic->appSlug())
+        ->toBe($worker->appSlug())
+        ->and($classic->image())
+        ->toBe($worker->image())
+        ->and($classic->specHash())
+        ->not->toBe($worker->specHash());
 });
 
 it('uses worker config defaults when worker_enabled is true and worker_config is empty', function (): void {

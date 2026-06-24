@@ -20,7 +20,7 @@ class UpdatePlanBuilder
     public function fromStoredStartRequest(OperationRun $operationRun): OperationUpdatePlanSnapshot
     {
         $result = $operationRun->result;
-        $startRequest = is_array($result) ? ($result['update_start_request'] ?? null) : null;
+        $startRequest = is_array($result) ? $result['update_start_request'] ?? null : null;
 
         if (! is_array($startRequest)) {
             throw new RuntimeException('Deferred update start request payload was not found on the operation run.');
@@ -37,18 +37,13 @@ class UpdatePlanBuilder
         $manifest = $this->releaseManifest($request);
 
         return new OperationUpdatePlanSnapshot(
-            targetVersion: $this->stringInput($request, 'target_version')
-                ?? $manifest->version,
+            targetVersion: $this->stringInput($request, 'target_version') ?? $manifest->version,
             gatewayImage: $this->gatewayImage($request, $manifest),
-            manifestSource: $this->stringInput($request, 'manifest_source')
-                ?? $manifest->source,
-            manifestVersion: $this->stringInput($request, 'manifest_version')
-                ?? $manifest->version,
+            manifestSource: $this->stringInput($request, 'manifest_source') ?? $manifest->source,
+            manifestVersion: $this->stringInput($request, 'manifest_version') ?? $manifest->version,
             manifestSnapshot: $manifest->snapshot(),
-            cliArtifacts: $this->arrayInput($request, 'cli_artifacts')
-                ?? $manifest->cliArtifacts,
-            roleImages: $this->arrayInput($request, 'role_images')
-                ?? $manifest->roleImages,
+            cliArtifacts: $this->arrayInput($request, 'cli_artifacts') ?? $manifest->cliArtifacts,
+            roleImages: $this->arrayInput($request, 'role_images') ?? $manifest->roleImages,
         );
     }
 

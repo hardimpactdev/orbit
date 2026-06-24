@@ -35,18 +35,20 @@ function assignDatabaseAddUserGatewayRole(Node $node): void
 
 function createManagedMysqlProcess(Node $node, array $overrides = []): Process
 {
-    return Process::factory()->forOwner($node)->create(array_merge([
-        'name' => 'mysql8',
-        'runtime' => ProcessRuntime::Docker,
-        'runtime_config' => [
-            'service' => 'mysql',
-            'version' => '8.3',
-            'endpoint' => [
-                'host' => '10.6.0.42',
-                'port' => 3308,
+    return Process::factory()
+        ->forOwner($node)
+        ->create(array_merge([
+            'name' => 'mysql8',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'service' => 'mysql',
+                'version' => '8.3',
+                'endpoint' => [
+                    'host' => '10.6.0.42',
+                    'port' => 3308,
+                ],
             ],
-        ],
-    ], $overrides));
+        ], $overrides));
 }
 
 it('adds a mysql user through a managed docker process and stores the connection without leaking secrets', function (): void {
@@ -63,15 +65,23 @@ it('adds a mysql user through a managed docker process and stores the connection
 
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/database-connections/dlf-leden/users', [
-        'service' => 'mysql8',
-        'node' => 'beast',
-        'database' => 'dlf_leden',
-        'username' => 'dlf_leden',
-        'password' => 'super-secret',
-    ], [], [], ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/database-connections/dlf-leden/users',
+        [
+            'service' => 'mysql8',
+            'node' => 'beast',
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'password' => 'super-secret',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP],
+    );
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.connection.slug', 'dlf-leden')
         ->assertJsonPath('success.data.connection.driver', 'mysql')
         ->assertJsonPath('success.data.connection.host', '10.6.0.42')
@@ -82,12 +92,13 @@ it('adds a mysql user through a managed docker process and stores the connection
 
     $connection = DatabaseConnection::query()->where('slug', 'dlf-leden')->firstOrFail();
 
-    expect($connection->credentials)->toBe(['password' => 'super-secret'])
-        ->and($response->getContent())->not->toContain('super-secret')
-        ->and($shell->script)->toContain("container='mysql8'")
-        ->and($shell->script)->not->toContain('super-secret')
-        ->and($shell->options['input'])->toContain('CREATE DATABASE IF NOT EXISTS `dlf_leden`')
-        ->and($shell->options['input'])->toContain("IDENTIFIED BY 'super-secret'");
+    expect($connection->credentials)
+        ->toBe(['password' => 'super-secret'])
+        ->and($response->getContent())
+        ->not->toContain('super-secret')->and($shell->script)->toContain("container='mysql8'")->and($shell->script)
+        ->not->toContain('super-secret')->and($shell->options['input'])->toContain(
+            'CREATE DATABASE IF NOT EXISTS `dlf_leden`',
+        )->and($shell->options['input'])->toContain("IDENTIFIED BY 'super-secret'");
 });
 
 it('updates an existing connection after converging the mysql user', function (): void {
@@ -112,15 +123,23 @@ it('updates an existing connection after converging the mysql user', function ()
         durationMs: 12,
     )));
 
-    $response = $this->call('POST', '/api/database-connections/dlf-leden/users', [
-        'service' => 'mysql8',
-        'node' => 'beast',
-        'database' => 'dlf_leden',
-        'username' => 'dlf_leden',
-        'password' => 'new-secret',
-    ], [], [], ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/database-connections/dlf-leden/users',
+        [
+            'service' => 'mysql8',
+            'node' => 'beast',
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'password' => 'new-secret',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP],
+    );
 
-    $response->assertOk()
+    $response
+        ->assertOk()
         ->assertJsonPath('success.data.connection.host', '10.6.0.42')
         ->assertJsonPath('success.data.connection.database', 'dlf_leden');
 
@@ -143,15 +162,23 @@ it('fails before remote convergence for non docker managed mysql processes', fun
 
     app()->instance(RemoteShell::class, $shell);
 
-    $response = $this->call('POST', '/api/database-connections/dlf-leden/users', [
-        'service' => 'mysql8',
-        'node' => 'beast',
-        'database' => 'dlf_leden',
-        'username' => 'dlf_leden',
-        'password' => 'super-secret',
-    ], [], [], ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP]);
+    $response = $this->call(
+        'POST',
+        '/api/database-connections/dlf-leden/users',
+        [
+            'service' => 'mysql8',
+            'node' => 'beast',
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'password' => 'super-secret',
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP],
+    );
 
-    $response->assertUnprocessable()
+    $response
+        ->assertUnprocessable()
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.meta.field', 'runtime');
 
@@ -165,7 +192,9 @@ final class DatabaseAddUserRemoteShell implements RemoteShell
     /** @var array<string, mixed> */
     public array $options = [];
 
-    public function __construct(private readonly RemoteShellResult $result) {}
+    public function __construct(
+        private readonly RemoteShellResult $result,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {

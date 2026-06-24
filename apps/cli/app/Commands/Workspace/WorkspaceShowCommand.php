@@ -40,7 +40,10 @@ final class WorkspaceShowCommand extends GatewayCommand
                 'app' => $this->stringOption('app'),
             ]));
         } catch (GatewayApiException $exception) {
-            if ($this->canPromptForRegistrySelection() && $exception->gatewayErrorCode() === 'workspace.ambiguous_name') {
+            if (
+                $this->canPromptForRegistrySelection()
+                && $exception->gatewayErrorCode() === 'workspace.ambiguous_name'
+            ) {
                 return $this->showPromptedWorkspace($name);
             }
 

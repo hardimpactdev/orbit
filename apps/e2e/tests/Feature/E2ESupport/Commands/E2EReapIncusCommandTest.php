@@ -29,7 +29,8 @@ it('defaults to older-than=30m', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus', ['--json' => true])
+    $this
+        ->artisan('e2e:reap-incus', ['--json' => true])
         ->expectsOutput(json_encode([
             'success' => [
                 'data' => [
@@ -66,7 +67,8 @@ it('parses 30m shorthand', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus', ['--older-than' => '30m', '--json' => true])
+    $this
+        ->artisan('e2e:reap-incus', ['--older-than' => '30m', '--json' => true])
         ->expectsOutput(json_encode([
             'success' => [
                 'data' => [
@@ -103,7 +105,8 @@ it('parses 2h shorthand', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus', ['--older-than' => '2h', '--json' => true])
+    $this
+        ->artisan('e2e:reap-incus', ['--older-than' => '2h', '--json' => true])
         ->expectsOutput(json_encode([
             'success' => [
                 'data' => [
@@ -140,7 +143,8 @@ it('parses 1d shorthand', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus', ['--older-than' => '1d', '--json' => true])
+    $this
+        ->artisan('e2e:reap-incus', ['--older-than' => '1d', '--json' => true])
         ->expectsOutput(json_encode([
             'success' => [
                 'data' => [
@@ -167,7 +171,8 @@ it('parses 1d shorthand', function (): void {
 it('rejects unsupported cleanup scopes before listing Incus resources', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:reap-incus', ['--scope' => 'instances,volumes'])
+    $this
+        ->artisan('e2e:reap-incus', ['--scope' => 'instances,volumes'])
         ->expectsOutputToContain('Unsupported --scope value(s): volumes.')
         ->assertFailed();
 
@@ -177,7 +182,8 @@ it('rejects unsupported cleanup scopes before listing Incus resources', function
 it('rejects negative older-than values before listing Incus resources', function (): void {
     Process::fake();
 
-    $this->artisan('e2e:reap-incus', ['--older-than' => '-1'])
+    $this
+        ->artisan('e2e:reap-incus', ['--older-than' => '-1'])
         ->expectsOutputToContain('Invalid --older-than format: -1')
         ->assertFailed();
 
@@ -198,7 +204,8 @@ it('lists stale instances without deleting them in dry run', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus')
+    $this
+        ->artisan('e2e:reap-incus')
         ->expectsOutputToContain('Dry run. Pass --force to delete stale instances.')
         ->expectsOutputToContain('orbit-e2e-old')
         ->doesntExpectOutputToContain('orbit-e2e-fresh')
@@ -249,12 +256,16 @@ it('runs Incus inventory locally for localhost Incus hosts', function (): void {
         return Process::result();
     });
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_INCUS_HOSTS' => 'localhost',
-    ], function (): void {
-        $this->artisan('e2e:reap-incus', ['--json' => true])
-            ->assertSuccessful();
-    });
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_INCUS_HOSTS' => 'localhost',
+        ],
+        function (): void {
+            $this->artisan('e2e:reap-incus', ['--json' => true])
+                ->assertSuccessful();
+        },
+    );
 
     expect($commands[0])
         ->toContain('bash -lc')
@@ -328,7 +339,8 @@ it('inventories stale networks templates images and tmp artifacts when those sco
     $resources = collect($payload['success']['data']['resources'])
         ->keyBy(fn (array $resource): string => "{$resource['type']}:{$resource['name']}");
 
-    expect($exitCode)->toBe(0)
+    expect($exitCode)
+        ->toBe(0)
         ->and($resources->keys()->all())
         ->toContain(
             'instance:orbit-e2e-old',
@@ -403,21 +415,47 @@ it('deletes only explicitly scoped stale Incus artifacts when forced', function 
         '--force' => true,
     ])->assertSuccessful();
 
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'incus network delete')
-        && str_contains($process->command, 'orbit-e2e-n-1'));
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'incus delete --force')
-        && str_contains($process->command, 'orbit-template-prepared-agent'));
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'incus image delete')
-        && str_contains($process->command, 'orbit-blank-ubuntu-26.04'));
-    Process::assertRan(fn ($process): bool => str_contains($process->command, 'rm -rf --')
-        && str_contains($process->command, '/tmp/orbit-e2e-docker-image-export-old'));
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'incus network delete') && str_contains($process->command, 'orbit-e2e-n-1')
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'incus delete --force')
+            && str_contains($process->command, 'orbit-template-prepared-agent')
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'incus image delete')
+            && str_contains($process->command, 'orbit-blank-ubuntu-26.04')
+        ),
+    );
+    Process::assertRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'rm -rf --')
+            && str_contains($process->command, '/tmp/orbit-e2e-docker-image-export-old')
+        ),
+    );
 
-    Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'incus network delete')
-        && str_contains($process->command, 'orbit-e2e-n-2'));
-    Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'incus delete --force')
-        && str_contains($process->command, 'orbit-template-operator-base'));
-    Process::assertNotRan(fn ($process): bool => str_contains($process->command, 'incus image delete')
-        && str_contains($process->command, 'orbit-base-ubuntu-26.04-runtime'));
+    Process::assertNotRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'incus network delete') && str_contains($process->command, 'orbit-e2e-n-2')
+        ),
+    );
+    Process::assertNotRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'incus delete --force')
+            && str_contains($process->command, 'orbit-template-operator-base')
+        ),
+    );
+    Process::assertNotRan(
+        fn ($process): bool => (
+            str_contains($process->command, 'incus image delete')
+            && str_contains($process->command, 'orbit-base-ubuntu-26.04-runtime')
+        ),
+    );
 });
 
 it('deletes stale instances when forced', function (): void {
@@ -433,7 +471,8 @@ it('deletes stale instances when forced', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus', ['--force' => true])
+    $this
+        ->artisan('e2e:reap-incus', ['--force' => true])
         ->expectsOutputToContain('Deleted 1 stale Incus E2E instances.')
         ->assertSuccessful();
 
@@ -456,23 +495,31 @@ it('only reaps instances matching the configured runtime prefix', function (): v
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    withE2EEnvironment([], [
-        'ORBIT_E2E_INSTANCE_PREFIX' => 'orbit-e2e-ab-current',
-    ], function (): void {
-        $this->artisan('e2e:reap-incus', ['--force' => true])
-            ->expectsOutputToContain('orbit-e2e-ab-current-old')
-            ->doesntExpectOutputToContain('orbit-e2e-old')
-            ->assertSuccessful();
-    });
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_INSTANCE_PREFIX' => 'orbit-e2e-ab-current',
+        ],
+        function (): void {
+            $this
+                ->artisan('e2e:reap-incus', ['--force' => true])
+                ->expectsOutputToContain('orbit-e2e-ab-current-old')
+                ->doesntExpectOutputToContain('orbit-e2e-old')
+                ->assertSuccessful();
+        },
+    );
 
     Process::assertRan(function ($process) {
-        return str_contains($process->command, 'incus delete --force')
-            && str_contains($process->command, 'orbit-e2e-ab-current-old');
+        return (
+            str_contains($process->command, 'incus delete --force')
+            && str_contains($process->command, 'orbit-e2e-ab-current-old')
+        );
     });
 
     Process::assertNotRan(function ($process) {
-        return str_contains($process->command, 'incus delete --force')
-            && str_contains($process->command, 'orbit-e2e-old');
+        return (
+            str_contains($process->command, 'incus delete --force') && str_contains($process->command, 'orbit-e2e-old')
+        );
     });
 });
 
@@ -491,7 +538,8 @@ it('skips orbit-template and orbit-ready instances', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus')
+    $this
+        ->artisan('e2e:reap-incus')
         ->expectsOutputToContain('orbit-e2e-old')
         ->expectsOutputToContain('Skipped protected names: orbit-template-operator, orbit-ready-gateway')
         ->assertSuccessful();
@@ -514,7 +562,8 @@ it('returns structured json output', function (): void {
 
     $this->travelTo(new DateTimeImmutable('2026-05-03T10:00:00Z'));
 
-    $this->artisan('e2e:reap-incus', ['--json' => true])
+    $this
+        ->artisan('e2e:reap-incus', ['--json' => true])
         ->expectsOutput(json_encode([
             'success' => [
                 'data' => [

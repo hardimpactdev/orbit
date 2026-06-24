@@ -23,9 +23,13 @@ describe('GatewayApiClient', function (): void {
 
         expect($result)->toBe(['self' => ['name' => 'operator']]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_starts_with($request->url(), 'https://gateway.test/api/me')
-            && str_contains($request->url(), 'include=permissions'));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && str_starts_with($request->url(), 'https://gateway.test/api/me')
+                && str_contains($request->url(), 'include=permissions')
+            ),
+        );
     });
 
     it('uses the stubbed blocking post path when the HTTP client is faked', function (): void {
@@ -48,8 +52,12 @@ describe('GatewayApiClient', function (): void {
             $ticker->stop();
         }
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/update/all/start');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/update/all/start'
+            ),
+        );
     });
 
     it('invokes progress idle callbacks while waiting for a slow post response', function (): void {
@@ -88,7 +96,12 @@ describe('GatewayApiClient', function (): void {
 
                 usleep(100_000);
                 $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
-                fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
+                fwrite(
+                    $connection,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                    .strlen($body)
+                    ."\r\nConnection: close\r\n\r\n{$body}",
+                );
                 fclose($connection);
             }
 
@@ -106,8 +119,7 @@ describe('GatewayApiClient', function (): void {
             $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
                 ->postWithIdleTicks('/api/update/all/start');
 
-            expect($result)->toBe(['started' => true])
-                ->and($tickCount)->toBeGreaterThanOrEqual(2);
+            expect($result)->toBe(['started' => true])->and($tickCount)->toBeGreaterThanOrEqual(2);
         } finally {
             $ticker->stop();
             pcntl_waitpid($serverPid, $status);
@@ -155,7 +167,12 @@ describe('GatewayApiClient', function (): void {
 
                 usleep(120_000);
                 $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
-                fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
+                fwrite(
+                    $connection,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "
+                    .strlen($body)
+                    ."\r\nConnection: close\r\n\r\n{$body}",
+                );
                 fclose($connection);
             }
 
@@ -174,8 +191,7 @@ describe('GatewayApiClient', function (): void {
             $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
                 ->postWithIdleTicks('/api/update/all/start');
 
-            expect($result)->toBe(['started' => true])
-                ->and(count($ticks))->toBeGreaterThanOrEqual(3);
+            expect($result)->toBe(['started' => true])->and(count($ticks))->toBeGreaterThanOrEqual(3);
 
             $maxGapMicroseconds = max(array_map(
                 static fn (array $pair): int => intdiv($pair[1] - $pair[0], 1000),
@@ -193,74 +209,74 @@ describe('GatewayApiClient', function (): void {
 
     it('closes the curl multi handler before PHP shutdown after idle tick requests resolve', function (): void {
         $script = <<<'PHP'
-declare(strict_types=1);
+            declare(strict_types=1);
 
-use App\Services\GatewayApiClient;
-use Illuminate\Contracts\Console\Kernel;
-use Orbit\Core\Progress\ForkedFrameTicker;
+            use App\Services\GatewayApiClient;
+            use Illuminate\Contracts\Console\Kernel;
+            use Orbit\Core\Progress\ForkedFrameTicker;
 
-require __DIR__.'/vendor/autoload.php';
-$app = require __DIR__.'/bootstrap/app.php';
-$app->make(Kernel::class)->bootstrap();
+            require __DIR__.'/vendor/autoload.php';
+            $app = require __DIR__.'/bootstrap/app.php';
+            $app->make(Kernel::class)->bootstrap();
 
-$server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+            $server = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
 
-if ($server === false) {
-    fwrite(STDERR, 'server unavailable');
-    exit(2);
-}
-
-$address = stream_socket_get_name($server, false);
-$port = (int) substr((string) $address, strrpos((string) $address, ':') + 1);
-$serverPid = pcntl_fork();
-
-if ($serverPid === -1) {
-    fclose($server);
-    fwrite(STDERR, 'fork unavailable');
-    exit(2);
-}
-
-if ($serverPid === 0) {
-    $connection = stream_socket_accept($server);
-
-    if (is_resource($connection)) {
-        while (! feof($connection)) {
-            $chunk = fread($connection, 8192);
-
-            if ($chunk === false || $chunk === '' || str_contains($chunk, "\r\n\r\n")) {
-                break;
+            if ($server === false) {
+                fwrite(STDERR, 'server unavailable');
+                exit(2);
             }
-        }
 
-        $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
-        fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
-        fclose($connection);
-    }
+            $address = stream_socket_get_name($server, false);
+            $port = (int) substr((string) $address, strrpos((string) $address, ':') + 1);
+            $serverPid = pcntl_fork();
 
-    fclose($server);
-    exit(0);
-}
+            if ($serverPid === -1) {
+                fclose($server);
+                fwrite(STDERR, 'fork unavailable');
+                exit(2);
+            }
 
-$ticker = new ForkedFrameTicker(50_000);
-$ticker->start(static function (): void {});
+            if ($serverPid === 0) {
+                $connection = stream_socket_accept($server);
 
-try {
-    $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
-        ->postWithIdleTicks('/api/update/all/start');
+                if (is_resource($connection)) {
+                    while (! feof($connection)) {
+                        $chunk = fread($connection, 8192);
 
-    if ($result !== ['started' => true]) {
-        fwrite(STDERR, 'unexpected result');
-        exit(1);
-    }
-} finally {
-    $ticker->stop();
-    posix_kill($serverPid, SIGTERM);
-    pcntl_waitpid($serverPid, $status);
-    fclose($server);
-}
+                        if ($chunk === false || $chunk === '' || str_contains($chunk, "\r\n\r\n")) {
+                            break;
+                        }
+                    }
 
-echo "done\n";
-PHP;
+                    $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
+                    fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
+                    fclose($connection);
+                }
+
+                fclose($server);
+                exit(0);
+            }
+
+            $ticker = new ForkedFrameTicker(50_000);
+            $ticker->start(static function (): void {});
+
+            try {
+                $result = new GatewayApiClient("http://127.0.0.1:{$port}", 30)
+                    ->postWithIdleTicks('/api/update/all/start');
+
+                if ($result !== ['started' => true]) {
+                    fwrite(STDERR, 'unexpected result');
+                    exit(1);
+                }
+            } finally {
+                $ticker->stop();
+                posix_kill($serverPid, SIGTERM);
+                pcntl_waitpid($serverPid, $status);
+                fclose($server);
+            }
+
+            echo "done\n";
+            PHP;
 
         $process = new Process([PHP_BINARY, '-r', $script], base_path());
         $process->setTimeout(3);
@@ -271,8 +287,10 @@ PHP;
             $this->fail('GatewayApiClient idle tick request process timed out during PHP shutdown.');
         }
 
-        expect($process->isSuccessful())->toBeTrue($process->getErrorOutput())
-            ->and($process->getOutput())->toContain('done');
+        expect($process->isSuccessful())
+            ->toBeTrue($process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('done');
     });
 
     it('returns decoded arrays from post requests and sends JSON payloads', function (): void {
@@ -285,10 +303,14 @@ PHP;
 
         expect($result)->toBe(['created' => true]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/nodes'
-            && $request->isJson()
-            && $request['name'] === 'app-dev');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/nodes'
+                && $request->isJson()
+                && $request['name'] === 'app-dev'
+            ),
+        );
     });
 
     it('returns decoded arrays from patch requests and sends JSON payloads', function (): void {
@@ -301,10 +323,14 @@ PHP;
 
         expect($result)->toBe(['updated' => true]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'PATCH'
-            && $request->url() === 'https://gateway.test/api/processes/vite'
-            && $request->isJson()
-            && $request['command'] === 'npm run dev');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PATCH'
+                && $request->url() === 'https://gateway.test/api/processes/vite'
+                && $request->isJson()
+                && $request['command'] === 'npm run dev'
+            ),
+        );
     });
 
     it('throws gateway api exceptions for client errors with the status code', function (): void {
@@ -312,13 +338,19 @@ PHP;
             'https://gateway.test/api/missing' => Http::response(['error' => ['message' => 'Missing']], 404),
         ]);
 
-        $exception = captureGatewayException(fn () => new GatewayApiClient('https://gateway.test', 30)
-            ->get('/api/missing'));
+        $exception = captureGatewayException(
+            fn () => new GatewayApiClient('https://gateway.test', 30)
+                ->get('/api/missing'),
+        );
 
-        expect($exception)->toBeInstanceOf(GatewayApiException::class)
-            ->and($exception?->statusCode())->toBe(404)
-            ->and($exception?->getMessage())->toContain('HTTP 404')
-            ->and($exception?->getMessage())->toContain('Missing');
+        expect($exception)
+            ->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->statusCode())
+            ->toBe(404)
+            ->and($exception?->getMessage())
+            ->toContain('HTTP 404')
+            ->and($exception?->getMessage())
+            ->toContain('Missing');
     });
 
     it('throws gateway api exceptions for server errors', function (): void {
@@ -326,12 +358,17 @@ PHP;
             'https://gateway.test/api/status' => Http::response('gateway unavailable', 503),
         ]);
 
-        $exception = captureGatewayException(fn () => new GatewayApiClient('https://gateway.test', 30)
-            ->get('/api/status'));
+        $exception = captureGatewayException(
+            fn () => new GatewayApiClient('https://gateway.test', 30)
+                ->get('/api/status'),
+        );
 
-        expect($exception)->toBeInstanceOf(GatewayApiException::class)
-            ->and($exception?->statusCode())->toBe(503)
-            ->and($exception?->getMessage())->toContain('HTTP 503');
+        expect($exception)
+            ->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->statusCode())
+            ->toBe(503)
+            ->and($exception?->getMessage())
+            ->toContain('HTTP 503');
     });
 
     it('throws gateway api exceptions for generic network errors', function (): void {
@@ -339,14 +376,21 @@ PHP;
             throw new ConnectionException('connection refused');
         });
 
-        $exception = captureGatewayException(fn () => new GatewayApiClient('https://gateway.test', 30)
-            ->get('/api/me'));
+        $exception = captureGatewayException(
+            fn () => new GatewayApiClient('https://gateway.test', 30)
+                ->get('/api/me'),
+        );
 
-        expect($exception)->toBeInstanceOf(GatewayApiException::class)
-            ->and($exception?->statusCode())->toBeNull()
-            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::Network)
-            ->and($exception?->cliFailureCode())->toBe('gateway_unavailable')
-            ->and($exception?->getMessage())->toContain('Gateway request failed');
+        expect($exception)
+            ->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->statusCode())
+            ->toBeNull()
+            ->and($exception?->failureKind())
+            ->toBe(GatewayApiFailureKind::Network)
+            ->and($exception?->cliFailureCode())
+            ->toBe('gateway_unavailable')
+            ->and($exception?->getMessage())
+            ->toContain('Gateway request failed');
     });
 
     it('surfaces wireguard_unreachable failure when the gateway is not reachable on the WireGuard route', function (): void {
@@ -354,13 +398,19 @@ PHP;
             throw new ConnectionException('Connection timed out after 30 seconds');
         });
 
-        $exception = captureGatewayException(fn () => new GatewayApiClient('https://10.6.0.1', 30)
-            ->get('/api/me'));
+        $exception = captureGatewayException(
+            fn () => new GatewayApiClient('https://10.6.0.1', 30)
+                ->get('/api/me'),
+        );
 
-        expect($exception)->toBeInstanceOf(GatewayApiException::class)
-            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::WireguardUnreachable)
-            ->and($exception?->cliFailureCode())->toBe('gateway_unreachable_wireguard')
-            ->and($exception?->getMessage())->toContain('Gateway unreachable over WireGuard');
+        expect($exception)
+            ->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->failureKind())
+            ->toBe(GatewayApiFailureKind::WireguardUnreachable)
+            ->and($exception?->cliFailureCode())
+            ->toBe('gateway_unreachable_wireguard')
+            ->and($exception?->getMessage())
+            ->toContain('Gateway unreachable over WireGuard');
     });
 
     it('classifies no route to host failures as wireguard unreachable', function (): void {
@@ -368,12 +418,17 @@ PHP;
             throw new ConnectionException('Failed to connect: no route to host');
         });
 
-        $exception = captureGatewayException(fn () => new GatewayApiClient('https://10.6.0.1', 30)
-            ->get('/api/me'));
+        $exception = captureGatewayException(
+            fn () => new GatewayApiClient('https://10.6.0.1', 30)
+                ->get('/api/me'),
+        );
 
-        expect($exception)->toBeInstanceOf(GatewayApiException::class)
-            ->and($exception?->failureKind())->toBe(GatewayApiFailureKind::WireguardUnreachable)
-            ->and($exception?->cliFailureCode())->toBe('gateway_unreachable_wireguard');
+        expect($exception)
+            ->toBeInstanceOf(GatewayApiException::class)
+            ->and($exception?->failureKind())
+            ->toBe(GatewayApiFailureKind::WireguardUnreachable)
+            ->and($exception?->cliFailureCode())
+            ->toBe('gateway_unreachable_wireguard');
     });
 
     it('never sends an Authorization header (D2: no bearer identity)', function (): void {
@@ -402,8 +457,10 @@ PHP;
 
         $result = app(GatewayApiClient::class)->get('/api/me');
 
-        expect($result)->toBe(['success' => ['data' => [], 'meta' => []]])
-            ->and($timeout)->toBe(12);
+        expect($result)
+            ->toBe(['success' => ['data' => [], 'meta' => []]])
+            ->and($timeout)
+            ->toBe(12);
     });
 
     it('can raise the timeout for long gateway requests without mutating the base client', function (): void {

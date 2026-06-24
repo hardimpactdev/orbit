@@ -355,7 +355,7 @@ final class AppEnvCommand extends AppGatewayCommand
                 continue;
             }
 
-            $value = is_array($entry) ? ($entry['value'] ?? null) : $entry;
+            $value = is_array($entry) ? $entry['value'] ?? null : $entry;
             $rendered[$key] = is_scalar($value) ? (string) $value : '';
         }
 
@@ -368,7 +368,10 @@ final class AppEnvCommand extends AppGatewayCommand
         $option = $this->stringOption('app');
 
         if ($argument !== null && $option !== null && $argument !== $option) {
-            return $this->failValidation('app', 'The [app] argument and --app option must match when both are provided.');
+            return $this->failValidation(
+                'app',
+                'The [app] argument and --app option must match when both are provided.',
+            );
         }
 
         $app = $option ?? $argument;

@@ -38,7 +38,9 @@ final readonly class GatewaySwarmManager
             return;
         }
 
-        throw new RuntimeException("Docker Swarm local node state [{$state}] is not supported for gateway service deployment.");
+        throw new RuntimeException(
+            "Docker Swarm local node state [{$state}] is not supported for gateway service deployment.",
+        );
     }
 
     public function ensureGatewayNodeLabel(): void
@@ -76,10 +78,15 @@ final readonly class GatewaySwarmManager
     public function ensureAttachableOverlayNetwork(string $network = GatewaySwarmStackRenderer::Network): void
     {
         $network = $this->normalizeName($network, 'network');
-        $inspect = Process::run("docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' ".escapeshellarg($network));
+        $inspect = Process::run(
+            "docker network inspect --format '{{.Driver}} {{.Scope}} {{.Attachable}}' ".escapeshellarg($network),
+        );
 
         if (! $inspect->successful()) {
-            $this->run('docker network create --driver overlay --attachable '.escapeshellarg($network), "create {$network} overlay network");
+            $this->run(
+                'docker network create --driver overlay --attachable '.escapeshellarg($network),
+                "create {$network} overlay network",
+            );
 
             return;
         }
@@ -107,7 +114,8 @@ final readonly class GatewaySwarmManager
     public function deployStack(string $stackFile, string $stack = 'orbit'): void
     {
         $this->run(
-            'docker stack deploy -c '.escapeshellarg($stackFile).' '.escapeshellarg($this->normalizeName($stack, 'stack')),
+            'docker stack deploy -c '.escapeshellarg($stackFile).' '
+                .escapeshellarg($this->normalizeName($stack, 'stack')),
             'deploy gateway Swarm stack',
         );
     }
@@ -118,10 +126,12 @@ final readonly class GatewaySwarmManager
         $order = $this->normalizeUpdateOrder($order);
 
         $this->run(
-            'docker service update --detach=true --image '.escapeshellarg($image->canonical())
-            .' --update-order '.escapeshellarg($order)
-            .' --update-failure-action rollback --update-monitor 60s '
-            .escapeshellarg($service),
+            'docker service update --detach=true --image '
+                .escapeshellarg($image->canonical())
+                .' --update-order '
+                .escapeshellarg($order)
+                .' --update-failure-action rollback --update-monitor 60s '
+                .escapeshellarg($service),
             "update {$service} image",
         );
     }
@@ -143,7 +153,9 @@ final readonly class GatewaySwarmManager
     public function serviceImage(string $service): ?string
     {
         $service = $this->normalizeName($service, 'service');
-        $result = Process::run("docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' ".escapeshellarg($service));
+        $result = Process::run(
+            "docker service inspect --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' ".escapeshellarg($service),
+        );
 
         if (! $result->successful()) {
             return null;
@@ -157,7 +169,9 @@ final readonly class GatewaySwarmManager
     public function serviceReplicas(string $service): ?string
     {
         $service = $this->normalizeName($service, 'service');
-        $result = Process::run('docker service ls --filter '.escapeshellarg("name={$service}")." --format '{{.Replicas}}'");
+        $result = Process::run(
+            'docker service ls --filter '.escapeshellarg("name={$service}")." --format '{{.Replicas}}'",
+        );
 
         if (! $result->successful()) {
             return null;

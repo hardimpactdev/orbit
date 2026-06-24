@@ -12,8 +12,10 @@ use RuntimeException;
 
 class OperationUpdatePlanStore
 {
-    public function create(OperationRun|string $operationRun, OperationUpdatePlanSnapshot $snapshot): OperationUpdatePlan
-    {
+    public function create(
+        OperationRun|string $operationRun,
+        OperationUpdatePlanSnapshot $snapshot,
+    ): OperationUpdatePlan {
         $operationRunId = $this->operationRunId($operationRun);
 
         if ($this->forOperationRun($operationRunId) instanceof OperationUpdatePlan) {
@@ -34,7 +36,10 @@ class OperationUpdatePlanStore
             ]);
         } catch (QueryException $exception) {
             if ($this->causedByUniqueConstraint($exception)) {
-                throw new RuntimeException("Operation update plan for run [{$operationRunId}] already exists.", previous: $exception);
+                throw new RuntimeException(
+                    "Operation update plan for run [{$operationRunId}] already exists.",
+                    previous: $exception,
+                );
             }
 
             throw $exception;
@@ -72,9 +77,11 @@ class OperationUpdatePlanStore
         $driverCode = (string) ($exception->errorInfo[1] ?? '');
         $message = strtolower($exception->getMessage());
 
-        return in_array($sqlState, ['23000', '23505'], true)
+        return (
+            in_array($sqlState, ['23000', '23505'], true)
             || in_array($driverCode, ['19', '1062'], true)
             || str_contains($message, 'unique constraint')
-            || str_contains($message, 'duplicate entry');
+            || str_contains($message, 'duplicate entry')
+        );
     }
 }

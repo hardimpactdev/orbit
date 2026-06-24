@@ -30,7 +30,9 @@ final readonly class AppProductionRoleSettings implements NodeRoleSettings
         }
 
         if (! is_int($ingressNodeId) || $ingressNodeId <= 0) {
-            throw new InvalidArgumentException('The app-prod role requires a positive ingress_node_id setting when provided.');
+            throw new InvalidArgumentException(
+                'The app-prod role requires a positive ingress_node_id setting when provided.',
+            );
         }
 
         return new self($ingressNodeId);

@@ -17,11 +17,15 @@ final readonly class PhpWorkerConfig
         public int $maxRequests = self::DefaultMaxRequests,
     ) {
         if (is_string($this->workers) && $this->workers !== 'auto') {
-            throw new InvalidArgumentException("Worker config 'workers' must be the string 'auto' or a positive integer.");
+            throw new InvalidArgumentException(
+                "Worker config 'workers' must be the string 'auto' or a positive integer.",
+            );
         }
 
         if (is_int($this->workers) && $this->workers <= 0) {
-            throw new InvalidArgumentException("Worker config 'workers' must be a positive integer when given as an int.");
+            throw new InvalidArgumentException(
+                "Worker config 'workers' must be a positive integer when given as an int.",
+            );
         }
 
         if ($this->maxRequests <= 0) {

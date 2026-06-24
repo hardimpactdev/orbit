@@ -27,27 +27,28 @@ it('adds a schedule from the operator node through the gateway api', function ()
         $scheduleName = 'e2e-sched-'.strtolower(bin2hex(random_bytes(3)));
 
         $seedPhp = <<<PHP
-\$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-\$app = \App\Models\App::query()->updateOrCreate(
-    ['name' => '{$appName}'],
-    [
-        'node_id' => \$node->id,
-        'path' => '/home/orbit/apps/{$appName}',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'adopted' => true,
-    ],
-);
-\$state = \App\Models\SchedulerState::query()->updateOrCreate(
-    ['node_id' => \$node->id],
-    ['heartbeat_at' => now(), 'status' => 'running'],
-);
-echo 'seeded';
-PHP;
+            \$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+            \$app = \App\Models\App::query()->updateOrCreate(
+                ['name' => '{$appName}'],
+                [
+                    'node_id' => \$node->id,
+                    'path' => '/home/orbit/apps/{$appName}',
+                    'document_root' => 'public',
+                    'php_version' => '8.5',
+                    'adopted' => true,
+                ],
+            );
+            \$state = \App\Models\SchedulerState::query()->updateOrCreate(
+                ['node_id' => \$node->id],
+                ['heartbeat_at' => now(), 'status' => 'running'],
+            );
+            echo 'seeded';
+            PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
@@ -66,9 +67,12 @@ PHP;
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['schedule']['name'])->toBe($scheduleName)
-            ->and($payload['success']['data']['result']['action'])->toBe('created');
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload['success']['data']['schedule']['name'])
+            ->toBe($scheduleName)
+            ->and($payload['success']['data']['result']['action'])
+            ->toBe('created');
     } finally {
         $topology->cleanup();
     }

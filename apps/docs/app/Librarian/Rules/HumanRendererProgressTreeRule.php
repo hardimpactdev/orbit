@@ -104,21 +104,39 @@ final readonly class HumanRendererProgressTreeRule implements GroupedRule
             return [];
         }
 
-        if (preg_match_all('/```text\s*\R(?<block>.*?)\R```/s', $section, $matches, PREG_OFFSET_CAPTURE) === false) {
+        if (
+            preg_match_all(
+                '/```text\s*\R(?<block>.*?)\R```/s',
+                $section,
+                $matches,
+                PREG_SET_ORDER,
+            ) === false
+        ) {
             return [];
         }
 
         $blocks = [];
         $sectionOffset = strpos($contents, $section);
 
-        foreach ($matches['block'] as [$block, $offset]) {
+        foreach ($matches as $match) {
+            $block = $match['block'] ?? null;
+
+            if (! is_string($block)) {
+                continue;
+            }
+
             if (! $this->looksLikeProgressTree($block) && ! $this->containsBracketedStatus($block)) {
                 continue;
             }
 
+            $offset = strpos($section, $block);
+
             $blocks[] = [
                 'text' => $block,
-                'line' => $this->lineForOffset($contents, ($sectionOffset === false ? 0 : $sectionOffset) + $offset),
+                'line' => $this->lineForOffset(
+                    $contents,
+                    ($sectionOffset === false ? 0 : $sectionOffset) + ($offset === false ? 0 : $offset),
+                ),
             ];
         }
 
@@ -287,14 +305,18 @@ final readonly class HumanRendererProgressTreeRule implements GroupedRule
 
     private function containsImplementationLabel(string $label): bool
     {
-        return preg_match('/\b(?:write|record|converge|update|remove|removing)\b.*\b(?:intent|registry)\b/i', $label) === 1
+        return (
+            preg_match('/\b(?:write|record|converge|update|remove|removing)\b.*\b(?:intent|registry)\b/i', $label) === 1
             || preg_match('/\benact\s+runtime(?:\/proxy)?\s+artifacts\b/i', $label) === 1
-            || preg_match('/\b(?:SQLite|database)\b/i', $label) === 1;
+            || preg_match('/\b(?:SQLite|database)\b/i', $label) === 1
+        );
     }
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 

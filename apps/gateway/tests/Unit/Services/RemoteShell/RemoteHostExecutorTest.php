@@ -27,14 +27,18 @@ it('preserves host shell env, timeout, input, stdout, and stderr semantics', fun
         'input' => 'stdin-payload',
     ]);
 
-    expect($result->successful())->toBeTrue()
-        ->and($result->stdout)->toBe("host-ok\n")
-        ->and($result->stderr)->toBe("host-warning\n");
+    expect($result->successful())
+        ->toBeTrue()
+        ->and($result->stdout)
+        ->toBe("host-ok\n")
+        ->and($result->stderr)
+        ->toBe("host-warning\n");
 
     Process::assertRan(function (PendingProcess $process, ProcessResultContract $processResult): bool {
         $command = (string) $process->command;
 
-        return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+        return (
+            str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
             && str_contains($command, 'bash -lc')
             && str_contains($command, 'ORBIT_REQUEST_ID')
             && str_contains($command, 'host-req')
@@ -43,7 +47,8 @@ it('preserves host shell env, timeout, input, stdout, and stderr semantics', fun
             && $process->timeout === 45
             && $process->input === 'stdin-payload'
             && $processResult->output() === "host-ok\n"
-            && $processResult->errorOutput() === "host-warning\n";
+            && $processResult->errorOutput() === "host-warning\n"
+        );
     });
 });
 
@@ -60,8 +65,10 @@ it('passes configured process environment without adding it to the shell command
     Process::assertRan(function (PendingProcess $process): bool {
         $command = (string) $process->command;
 
-        return ($process->environment['APP_KEY'] ?? null) === 'gateway-secret'
-            && ! str_contains($command, 'gateway-secret');
+        return (
+            ($process->environment['APP_KEY'] ?? null) === 'gateway-secret'
+            && ! str_contains($command, 'gateway-secret')
+        );
     });
 });
 
@@ -78,10 +85,14 @@ it('throws host shell failures with the current RemoteShellFailed semantics', fu
 
         $this->fail('Expected the host executor to throw a remote shell failure.');
     } catch (RemoteShellFailed $exception) {
-        expect($exception->node->name)->toBe('host-failure')
-            ->and($exception->script)->toBe('mkdir /srv/example')
-            ->and($exception->result->exitCode)->toBe(13)
-            ->and($exception->getMessage())->toContain('RemoteShell failed on host-failure (exit 13): permission denied');
+        expect($exception->node->name)
+            ->toBe('host-failure')
+            ->and($exception->script)
+            ->toBe('mkdir /srv/example')
+            ->and($exception->result->exitCode)
+            ->toBe(13)
+            ->and($exception->getMessage())
+            ->toContain('RemoteShell failed on host-failure (exit 13): permission denied');
     }
 });
 
@@ -107,11 +118,13 @@ it('carries docker e2e node scope into remote ssh sessions', function (): void {
         Process::assertRan(function (PendingProcess $process): bool {
             $command = (string) $process->command;
 
-            return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+            return (
+                str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
                 && str_contains($command, 'bash -lc')
                 && str_contains($command, escapeshellarg('ORBIT_E2E_DOCKER_NETWORK=orbit-e2e-run123'))
                 && str_contains($command, escapeshellarg('ORBIT_NODE_CONTAINER=orbit-e2e-run123-dev'))
-                && str_contains($command, 'docker container inspect orbit-caddy');
+                && str_contains($command, 'docker container inspect orbit-caddy')
+            );
         });
     } finally {
         if ($previousNetwork === false) {
@@ -148,10 +161,12 @@ it('uses ssh for gateway host commands when running inside the gateway container
         Process::assertRan(function (PendingProcess $process): bool {
             $command = (string) $process->command;
 
-            return str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
+            return (
+                str_contains($command, 'ssh -o StrictHostKeyChecking=yes')
                 && str_contains($command, "'orbit'@'10.6.0.2'")
                 && str_contains($command, 'bash -lc')
-                && ! str_starts_with($command, 'bash -c ');
+                && ! str_starts_with($command, 'bash -c ')
+            );
         });
     } finally {
         if ($previousExposureMode === false) {
@@ -172,13 +187,15 @@ it('starts host shell processes with the same command composition surface', func
         'input' => 'start-input',
     ]);
 
-    expect($process)->toBeInstanceOf(FakeInvokedProcess::class)
-        ->and($process->command())->toContain('ssh -o StrictHostKeyChecking=yes')
-        ->and($process->command())->toContain('tail -f /var/log/orbit.log');
+    expect($process)
+        ->toBeInstanceOf(FakeInvokedProcess::class)
+        ->and($process->command())
+        ->toContain('ssh -o StrictHostKeyChecking=yes')
+        ->and($process->command())
+        ->toContain('tail -f /var/log/orbit.log');
 
     Process::assertRan(function (PendingProcess $process): bool {
-        return $process->timeout === 90
-            && $process->input === 'start-input';
+        return $process->timeout === 90 && $process->input === 'start-input';
     });
 });
 

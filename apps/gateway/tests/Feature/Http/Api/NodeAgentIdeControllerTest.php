@@ -101,11 +101,16 @@ describe('NodeAgentIdeController', function (): void {
         $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
         grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/app-1/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -119,7 +124,11 @@ describe('NodeAgentIdeController', function (): void {
                 ],
             ]);
 
-        $config = json_decode((string) DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'), associative: true, flags: JSON_THROW_ON_ERROR);
+        $config = json_decode(
+            (string) DB::table('nodes')->where('name', 'app-1')->value('agent_ide_config'),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
         expect($config)->toBe(['adapter' => 'opencode']);
     });
@@ -130,11 +139,16 @@ describe('NodeAgentIdeController', function (): void {
             'agent_ide_config' => json_encode(['adapter' => 'opencode'], JSON_THROW_ON_ERROR),
         ]));
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
-            'agent_ide' => 'none',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/app-1/agent-ide',
+            [
+                'agent_ide' => 'none',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.agent_ide.adapter', null)
             ->assertJsonPath('success.data.agent_ide.source', 'default')
             ->assertJsonPath('success.data.action', 'set');
@@ -148,11 +162,16 @@ describe('NodeAgentIdeController', function (): void {
             'agent_ide_config' => json_encode(['adapter' => 'polyscope'], JSON_THROW_ON_ERROR),
         ]));
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
-            'agent_ide' => 'polyscope',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/app-1/agent-ide',
+            [
+                'agent_ide' => 'polyscope',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'converged')
             ->assertJsonPath('success.data.agent_ide.adapter', 'polyscope');
     });
@@ -162,9 +181,13 @@ describe('NodeAgentIdeController', function (): void {
         $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
         grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/app-1/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 
@@ -186,9 +209,13 @@ describe('NodeAgentIdeController', function (): void {
         $targetId = (int) DB::table('nodes')->insertGetId(apiNodeAgentIdeRow());
         grantAgentIdeNodeAccess($callerId, $targetId, ['node:agent']);
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/app-1/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.agent_ide.adapter', 'opencode');
@@ -200,11 +227,16 @@ describe('NodeAgentIdeController', function (): void {
         createAgentIdeCallerNode();
         DB::table('nodes')->insert(apiNodeAgentIdeRow());
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/app-1/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', "This node is not authorized for 'node:agent' on 'app-1'.")
             ->assertJsonPath('error.meta.reason', 'missing_permission')
@@ -212,29 +244,47 @@ describe('NodeAgentIdeController', function (): void {
             ->assertJsonPath('error.meta.serving_node', 'app-1');
     });
 
-    it('returns validation errors for missing and unsupported adapters', function (array $data, string $code, string $message, string $field): void {
+    it('returns validation errors for missing and unsupported adapters', function (
+        array $data,
+        string $code,
+        string $message,
+        string $field,
+    ): void {
         createAgentIdeCallerNode('gateway');
         DB::table('nodes')->insert(apiNodeAgentIdeRow());
 
-        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', $data, ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson('/api/nodes/app-1/agent-ide', $data, [
+            'REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP,
+        ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', $code)
             ->assertJsonPath('error.message', $message)
             ->assertJsonPath("error.meta.{$field}", $data['agent_ide'] ?? 'agent_ide');
     })->with([
         'missing adapter' => [[], 'validation_failed', 'Agent IDE adapter is required.', 'field'],
-        'unsupported adapter' => [['agent_ide' => 'unknown-ide'], 'node.unsupported_adapter', "Adapter 'unknown-ide' is not supported.", 'adapter'],
+        'unsupported adapter' => [
+            ['agent_ide' => 'unknown-ide'],
+            'node.unsupported_adapter',
+            "Adapter 'unknown-ide' is not supported.",
+            'adapter',
+        ],
     ]);
 
     it('returns not found for missing nodes', function (): void {
         createAgentIdeCallerNode('gateway');
 
-        $response = postNodeAgentIdeJson('/api/nodes/missing-node/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP]);
+        $response = postNodeAgentIdeJson(
+            '/api/nodes/missing-node/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'node.not_found')
             ->assertJsonPath('error.message', "Node 'missing-node' not found.")
             ->assertJsonPath('error.meta.name', 'missing-node');

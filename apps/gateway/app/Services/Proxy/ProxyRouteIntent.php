@@ -21,8 +21,15 @@ class ProxyRouteIntent
     /**
      * @return array{data: array<string, mixed>, meta: array<string, mixed>}
      */
-    public function add(string $domain, string $nodeName, ?string $upstream, ?string $redirect, ?int $code, bool $force, ?Node $caller = null): array
-    {
+    public function add(
+        string $domain,
+        string $nodeName,
+        ?string $upstream,
+        ?string $redirect,
+        ?int $code,
+        bool $force,
+        ?Node $caller = null,
+    ): array {
         $node = $this->resolveServingNode($nodeName, $caller, 'proxy:add');
         $this->validateAddTarget($upstream, $redirect, $code);
 
@@ -32,10 +39,14 @@ class ProxyRouteIntent
             ->first();
 
         if ($existing instanceof ProxyRoute && $existing->owner_type !== 'custom') {
-            throw new GatewayApiException("Domain '{$domain}' is owned by {$existing->owner_type}.", 'proxy.domain_conflict', [
-                'domain' => $domain,
-                'owner_type' => $existing->owner_type,
-            ]);
+            throw new GatewayApiException(
+                "Domain '{$domain}' is owned by {$existing->owner_type}.",
+                'proxy.domain_conflict',
+                [
+                    'domain' => $domain,
+                    'owner_type' => $existing->owner_type,
+                ],
+            );
         }
 
         $kind = $redirect !== null ? 'redirect' : 'proxy';
@@ -43,10 +54,18 @@ class ProxyRouteIntent
             ? ['target' => ['type' => 'redirect', 'value' => $redirect], 'code' => $code ?? 302]
             : ['target' => ['type' => 'upstream', 'value' => $upstream], 'upstream' => $upstream];
 
-        if ($existing instanceof ProxyRoute && ! $this->sameCustomIntent($existing, $node, $kind, $config) && ! $force) {
-            throw new GatewayApiException('Existing custom proxy route differs from requested intent. Use --force to replace it.', 'proxy.replacement_consent_required', [
-                'domain' => $domain,
-            ]);
+        if (
+            $existing instanceof ProxyRoute
+            && ! $this->sameCustomIntent($existing, $node, $kind, $config)
+            && ! $force
+        ) {
+            throw new GatewayApiException(
+                'Existing custom proxy route differs from requested intent. Use --force to replace it.',
+                'proxy.replacement_consent_required',
+                [
+                    'domain' => $domain,
+                ],
+            );
         }
 
         $action = $existing instanceof ProxyRoute
@@ -94,10 +113,14 @@ class ProxyRouteIntent
         }
 
         if ($route->owner_type !== 'custom') {
-            throw new GatewayApiException("Domain '{$domain}' is owned by {$route->owner_type}.", 'proxy.owned_route_denied', [
-                'domain' => $domain,
-                'owner_type' => $route->owner_type,
-            ]);
+            throw new GatewayApiException(
+                "Domain '{$domain}' is owned by {$route->owner_type}.",
+                'proxy.owned_route_denied',
+                [
+                    'domain' => $domain,
+                    'owner_type' => $route->owner_type,
+                ],
+            );
         }
 
         $node = $route->node;
@@ -154,17 +177,21 @@ class ProxyRouteIntent
             return;
         }
 
-        throw new GatewayApiException('This node is not authorized to manage custom proxy routes for the selected serving node.', 'authorization_failed', [
-            'node' => $node->name,
-            'reason' => $result->reason,
-            'missing_permission' => $result->missingPermission,
-            'serving_node' => $node->name,
-        ]);
+        throw new GatewayApiException(
+            'This node is not authorized to manage custom proxy routes for the selected serving node.',
+            'authorization_failed',
+            [
+                'node' => $node->name,
+                'reason' => $result->reason,
+                'missing_permission' => $result->missingPermission,
+                'serving_node' => $node->name,
+            ],
+        );
     }
 
     private function validateAddTarget(?string $upstream, ?string $redirect, ?int $code): void
     {
-        if (($upstream === null && $redirect === null) || ($upstream !== null && $redirect !== null)) {
+        if ($upstream === null && $redirect === null || $upstream !== null && $redirect !== null) {
             throw new GatewayApiException('Select exactly one of --upstream or --redirect.', 'validation_failed', [
                 'fields' => ['upstream', 'redirect'],
             ]);
@@ -182,10 +209,12 @@ class ProxyRouteIntent
      */
     private function sameCustomIntent(ProxyRoute $route, Node $node, string $kind, array $config): bool
     {
-        return $route->node_id === $node->id
+        return (
+            $route->node_id === $node->id
             && $route->owner_type === 'custom'
             && $route->kind === $kind
-            && $route->config === $config;
+            && $route->config === $config
+        );
     }
 
     /**

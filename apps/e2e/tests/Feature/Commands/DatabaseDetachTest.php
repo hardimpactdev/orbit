@@ -29,35 +29,36 @@ it('detaches a database connection from an app from the operator node through th
         $slugValue = var_export($slug, true);
         $appNameValue = var_export($appName, true);
         $seedPhp = <<<PHP
-\$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-\$app = \\App\\Models\\App::query()->updateOrCreate(
-    ['name' => {$appNameValue}],
-    [
-        'node_id' => \$node->id,
-        'path' => '/home/orbit/apps/{$appName}',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'adopted' => true,
-    ],
-);
-\$connection = \\App\\Models\\DatabaseConnection::query()->updateOrCreate(
-    ['slug' => {$slugValue}],
-    [
-        'node_id' => \$node->id,
-        'driver' => 'sqlite',
-        'path' => '/srv/docs/database.sqlite',
-    ],
-);
-\\App\\Models\\DatabaseConnectionTarget::query()->updateOrCreate(
-    ['database_connection_id' => \$connection->id, 'app_id' => \$app->id],
-    ['env_prefix' => 'DB'],
-);
-echo 'seeded';
-PHP;
+            \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+            \$app = \\App\\Models\\App::query()->updateOrCreate(
+                ['name' => {$appNameValue}],
+                [
+                    'node_id' => \$node->id,
+                    'path' => '/home/orbit/apps/{$appName}',
+                    'document_root' => 'public',
+                    'php_version' => '8.5',
+                    'adopted' => true,
+                ],
+            );
+            \$connection = \\App\\Models\\DatabaseConnection::query()->updateOrCreate(
+                ['slug' => {$slugValue}],
+                [
+                    'node_id' => \$node->id,
+                    'driver' => 'sqlite',
+                    'path' => '/srv/docs/database.sqlite',
+                ],
+            );
+            \\App\\Models\\DatabaseConnectionTarget::query()->updateOrCreate(
+                ['database_connection_id' => \$connection->id, 'app_id' => \$app->id],
+                ['env_prefix' => 'DB'],
+            );
+            echo 'seeded';
+            PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($seedPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($seedPhp),
             timeoutSeconds: 120,
         );
 
@@ -74,22 +75,27 @@ PHP;
 
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['result']['action'])->toBe('detached')
-            ->and($payload['success']['data']['result']['connection'])->toBe($slug)
-            ->and($payload['success']['data']['result']['target'])->toBe($appName);
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload['success']['data']['result']['action'])
+            ->toBe('detached')
+            ->and($payload['success']['data']['result']['connection'])
+            ->toBe($slug)
+            ->and($payload['success']['data']['result']['target'])
+            ->toBe($appName);
     } finally {
         $slugValue = var_export($slug, true);
         $appNameValue = var_export($appName, true);
         $cleanupPhp = <<<PHP
-\\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete();
-\\App\\Models\\App::query()->where('name', {$appNameValue})->delete();
-echo 'cleaned';
-PHP;
+            \\App\\Models\\DatabaseConnection::query()->where('slug', {$slugValue})->delete();
+            \\App\\Models\\App::query()->where('name', {$appNameValue})->delete();
+            echo 'cleaned';
+            PHP;
 
         $topology->ssh(
             'gateway',
-            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($cleanupPhp),
+            'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+                .escapeshellarg($cleanupPhp),
             timeoutSeconds: 60,
         );
 

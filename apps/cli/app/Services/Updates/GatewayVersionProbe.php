@@ -53,7 +53,7 @@ final readonly class GatewayVersionProbe
     private function extractVersion(array $response): ?string
     {
         $success = $response['success'] ?? null;
-        $data = is_array($success) ? ($success['data'] ?? null) : $response;
+        $data = is_array($success) ? $success['data'] ?? null : $response;
 
         if (! is_array($data)) {
             return null;

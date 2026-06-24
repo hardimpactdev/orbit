@@ -39,8 +39,8 @@ final readonly class LocalPlatformDetector
             $values[$key] = trim($value, "\"'");
         }
 
-        $id = strtolower((string) ($values['ID'] ?? 'linux'));
-        $version = str_replace('.', '-', strtolower((string) ($values['VERSION_ID'] ?? '')));
+        $id = strtolower($values['ID'] ?? 'linux');
+        $version = str_replace('.', '-', strtolower($values['VERSION_ID'] ?? ''));
 
         return $version === '' ? $id : "{$id}_{$version}";
     }

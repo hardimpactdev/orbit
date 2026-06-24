@@ -67,8 +67,7 @@ final class ScheduleRunCommand extends ScheduleGatewayCommand
                 return $response = $this->runScheduleForHuman($name);
             },
             doneFooter: function () use ($name, &$response): string {
-                return "Schedule '{$name}' "
-                    .($this->runStatus($response) === 'completed' ? 'completed' : 'finished');
+                return "Schedule '{$name}' ".($this->runStatus($response) === 'completed' ? 'completed' : 'finished');
             },
         );
 

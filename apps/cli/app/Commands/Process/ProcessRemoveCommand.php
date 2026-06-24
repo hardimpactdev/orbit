@@ -30,19 +30,22 @@ final class ProcessRemoveCommand extends ProcessGatewayCommand
         $name = $this->stringArgument('name');
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-            ]);
+            return $this->failValidation(
+                'context',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
+                ],
+            );
         }
 
         if ($node === null && $app === null && $workspace === null) {
             return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
-        $validation = $this->validateProcessName($name)
-            ?? $this->confirmRemoval((string) $name);
+        $validation = $this->validateProcessName($name) ?? $this->confirmRemoval((string) $name);
 
         if ($validation !== null) {
             return $validation;

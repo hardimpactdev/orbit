@@ -158,7 +158,9 @@ class E2ETestCommand extends Command
         $unsupported = array_values(array_diff($lanes, ['docker', 'incus']));
 
         if ($unsupported !== []) {
-            throw new \InvalidArgumentException('Unsupported E2E lane(s): '.implode(', ', $unsupported).'. Supported lanes: docker, incus.');
+            throw new \InvalidArgumentException(
+                'Unsupported E2E lane(s): '.implode(', ', $unsupported).'. Supported lanes: docker, incus.',
+            );
         }
 
         return $lanes;
@@ -258,7 +260,10 @@ class E2ETestCommand extends Command
                     return "Incus prepared topology [{$kind->value}] requires {$requiredVms} VMs on one host. Increase ORBIT_E2E_INCUS_HOST_VM_CAPS for at least one candidate host.";
                 }
 
-                if (IncusWarmTopologyPool::enabled() && IncusWarmTopologyPool::availableHostSlots($config, $kind) === []) {
+                if (
+                    IncusWarmTopologyPool::enabled()
+                    && IncusWarmTopologyPool::availableHostSlots($config, $kind) === []
+                ) {
                     return "Incus warm prepared topology [{$kind->value}] is missing. Run composer e2e:prepare-warm-topology -- --force {$kind->value}.";
                 }
             }
@@ -319,7 +324,10 @@ class E2ETestCommand extends Command
 
         if ($capacity !== null) {
             $processes = $capacity['processes'];
-            $environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners($capacity['host_slots'], $config);
+            $environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners(
+                $capacity['host_slots'],
+                $config,
+            );
             $environment['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $processes;
         }
 
@@ -494,8 +502,12 @@ class E2ETestCommand extends Command
      * @param  array<string, true>  $excludedHosts
      * @return array{host_slots: array<string, int>, processes: int}|null
      */
-    private function dockerCapacityPlan(E2EConfig $config, array $testFiles, int $requestedProcesses, array $excludedHosts = []): ?array
-    {
+    private function dockerCapacityPlan(
+        E2EConfig $config,
+        array $testFiles,
+        int $requestedProcesses,
+        array $excludedHosts = [],
+    ): ?array {
         if ($config->dockerHostSlots === []) {
             return null;
         }
@@ -539,9 +551,11 @@ class E2ETestCommand extends Command
      */
     private function shouldRunTestsInParallel(int $processes, array $passThroughArguments): bool
     {
-        return $processes > 1
+        return (
+            $processes > 1
             && ! (bool) $this->option('sequential-tests')
-            && ! $this->hasListTestsArgument($passThroughArguments);
+            && ! $this->hasListTestsArgument($passThroughArguments)
+        );
     }
 
     private function dockerRequestedProcessCount(E2EConfig $config): int
@@ -680,7 +694,8 @@ class E2ETestCommand extends Command
 
             $path = $file->getPathname();
 
-            if (str_contains($path, DIRECTORY_SEPARATOR.'.docker-feature-tests'.DIRECTORY_SEPARATOR)
+            if (
+                str_contains($path, DIRECTORY_SEPARATOR.'.docker-feature-tests'.DIRECTORY_SEPARATOR)
                 || str_contains($path, DIRECTORY_SEPARATOR.'.incus-feature-tests'.DIRECTORY_SEPARATOR)
             ) {
                 continue;
@@ -709,8 +724,7 @@ class E2ETestCommand extends Command
      */
     private function hasListTestsArgument(array $arguments): bool
     {
-        return in_array('--list-tests', $arguments, true)
-            || in_array('--list-tests-xml', $arguments, true);
+        return in_array('--list-tests', $arguments, true) || in_array('--list-tests-xml', $arguments, true);
     }
 
     /**
@@ -790,13 +804,18 @@ class E2ETestCommand extends Command
         $realPath = realpath($path);
         $basePath = realpath(base_path());
 
-        if (! is_string($realPath) || ! is_string($basePath) || ! str_starts_with($realPath, $basePath.DIRECTORY_SEPARATOR)) {
+        if (
+            ! is_string($realPath)
+            || ! is_string($basePath)
+            || ! str_starts_with($realPath, $basePath.DIRECTORY_SEPARATOR)
+        ) {
             return null;
         }
 
         $relative = str_replace(DIRECTORY_SEPARATOR, '/', substr($realPath, strlen($basePath) + 1));
 
-        if (! str_starts_with($relative, 'tests/Feature/Commands/')
+        if (
+            ! str_starts_with($relative, 'tests/Feature/Commands/')
             || str_contains($relative, '/.docker-feature-tests/')
             || str_contains($relative, '/.incus-feature-tests/')
             || ! str_ends_with($relative, 'Test.php')
@@ -856,7 +875,8 @@ class E2ETestCommand extends Command
     {
         $contents = file_get_contents(base_path($testFile));
 
-        if (! is_string($contents)
+        if (
+            ! is_string($contents)
             || ! str_contains($contents, 'e2e-feature')
             || str_contains($contents, 'e2e-provision')
             || str_contains($contents, 'e2e-topology-contract')
@@ -948,7 +968,12 @@ class E2ETestCommand extends Command
                 ...$kind->deprecatedFeatureGroups(),
             ];
 
-            if (array_any($groups, fn (string $group): bool => preg_match('/(?<![A-Za-z0-9_-])'.preg_quote($group, '/').'(?![A-Za-z0-9_-])/', $contents) === 1)) {
+            if (array_any(
+                $groups,
+                fn (string $group): bool => (
+                    preg_match('/(?<![A-Za-z0-9_-])'.preg_quote($group, '/').'(?![A-Za-z0-9_-])/', $contents) === 1
+                ),
+            )) {
                 $kinds[$kind->value] = $kind;
             }
         }
@@ -980,7 +1005,11 @@ class E2ETestCommand extends Command
                 continue;
             }
 
-            if (in_array($token, ['--canary', '--dry-run', '--json', '--sequential-lanes', '--sequential-tests'], true)) {
+            if (in_array(
+                $token,
+                ['--canary', '--dry-run', '--json', '--sequential-lanes', '--sequential-tests'],
+                true,
+            )) {
                 continue;
             }
 
@@ -1002,7 +1031,10 @@ class E2ETestCommand extends Command
 
     private function normalizePassThroughArgument(string $argument): string
     {
-        if ($argument === 'apps/e2e/tests/Feature/Commands' || str_starts_with($argument, 'apps/e2e/tests/Feature/Commands/')) {
+        if (
+            $argument === 'apps/e2e/tests/Feature/Commands'
+            || str_starts_with($argument, 'apps/e2e/tests/Feature/Commands/')
+        ) {
             return substr($argument, strlen('apps/e2e/'));
         }
 
@@ -1064,7 +1096,10 @@ class E2ETestCommand extends Command
             }
         }
 
-        $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners($capacity['host_slots'], $config);
+        $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $this->renderDockerTestRunners(
+            $capacity['host_slots'],
+            $config,
+        );
         $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $capacity['processes'];
         $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $capacity['processes']);
 
@@ -1268,7 +1303,10 @@ class E2ETestCommand extends Command
 
         $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $availability['test_runners'];
         $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $availability['processes'];
-        $plans['docker']['command'] = $this->applyPestProcessCount($plans['docker']['command'], $availability['processes']);
+        $plans['docker']['command'] = $this->applyPestProcessCount(
+            $plans['docker']['command'],
+            $availability['processes'],
+        );
 
         return $plans;
     }
@@ -1338,14 +1376,10 @@ class E2ETestCommand extends Command
     {
         $command = array_values(array_filter(
             $command,
-            fn (string $argument): bool => $argument !== '--parallel'
-                && ! str_starts_with($argument, '--processes='),
+            fn (string $argument): bool => $argument !== '--parallel' && ! str_starts_with($argument, '--processes='),
         ));
 
-        if ($processes <= 1
-            || (bool) $this->option('sequential-tests')
-            || $this->hasListTestsArgument($command)
-        ) {
+        if ($processes <= 1 || (bool) $this->option('sequential-tests') || $this->hasListTestsArgument($command)) {
             return $command;
         }
 
@@ -1411,7 +1445,8 @@ class E2ETestCommand extends Command
         $lowerReason = strtolower($reason);
         $kind = E2ETopologyKind::OperatorGatewayAppdevAppprodAgent->value;
 
-        if (str_contains($lowerReason, 'docker runtime image')
+        if (
+            str_contains($lowerReason, 'docker runtime image')
             || str_contains($lowerReason, 'docker orbit-caddy image')
             || str_contains($lowerReason, 'docker php runtime image')
         ) {
@@ -1447,13 +1482,16 @@ class E2ETestCommand extends Command
      */
     private function incusArtifactEnsureCommand(string $reason, array $plan): ?string
     {
-        if (! str_contains($reason, 'prepared topology') && ! str_contains($reason, 'prepared templates or snapshots')) {
+        if (
+            ! str_contains($reason, 'prepared topology')
+            && ! str_contains($reason, 'prepared templates or snapshots')
+        ) {
             return null;
         }
 
-        $kind = $this->topologyKindFromUnavailableReason($reason)
-            ?? $this->laneRequiredTopologies($plan)[0]
-            ?? E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
+        $kind =
+            $this->topologyKindFromUnavailableReason($reason) ?? $this->laneRequiredTopologies($plan)[0]
+                ?? E2ETopologyKind::OperatorGatewayAppdevAppprodAgent;
 
         if (E2ETopologyArtifactNamespace::artifactSet() === E2ETopologyArtifactNamespace::BaseArtifactSet) {
             $sourceKind = E2EPreparedTopology::incusSourceKindFor($kind);
@@ -1614,7 +1652,11 @@ class E2ETestCommand extends Command
 
                 unset($this->runningProcesses[$lane]);
 
-                $this->emitCheckpoint("e2e.lane.{$lane}", $result->successful() ? 'done' : 'failed', microtime(true) - $startedAt);
+                $this->emitCheckpoint(
+                    "e2e.lane.{$lane}",
+                    $result->successful() ? 'done' : 'failed',
+                    microtime(true) - $startedAt,
+                );
 
                 if ($result->failed()) {
                     $this->error("E2E lane [{$lane}] failed with exit code {$result->exitCode()}.");
@@ -1871,7 +1913,9 @@ class E2ETestCommand extends Command
                 $generatedSupportDirectory = $directory.'/Support';
 
                 if (! mkdir($generatedSupportDirectory, 0777, true) && ! is_dir($generatedSupportDirectory)) {
-                    throw new \RuntimeException("Could not create E2E support directory [{$generatedSupportDirectory}].");
+                    throw new \RuntimeException(
+                        "Could not create E2E support directory [{$generatedSupportDirectory}].",
+                    );
                 }
 
                 foreach (glob($supportDirectory.'/*.php') ?: [] as $supportFile) {
@@ -1987,7 +2031,8 @@ class E2ETestCommand extends Command
      */
     private function planMetadataLine(array $plan, string $laneExecutionMode): string
     {
-        return self::E2E_PLAN_PREFIX.json_encode(
+        return self::E2E_PLAN_PREFIX
+        .json_encode(
             $this->planMetadata($plan, $laneExecutionMode),
             JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
         );

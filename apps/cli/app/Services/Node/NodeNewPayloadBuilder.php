@@ -214,7 +214,11 @@ class NodeNewPayloadBuilder
         $template = trim($template);
 
         if ($template === '') {
-            throw new NodeWriteInputException('validation_failed', 'Node template is required when --template is supplied.', ['field' => 'template']);
+            throw new NodeWriteInputException(
+                'validation_failed',
+                'Node template is required when --template is supplied.',
+                ['field' => 'template'],
+            );
         }
 
         if (! in_array($template, self::TEMPLATES, true)) {
@@ -243,7 +247,11 @@ class NodeNewPayloadBuilder
         ));
 
         if ($parsed === []) {
-            throw new NodeWriteInputException('validation_failed', 'At least one role is required when --roles is supplied.', ['field' => 'roles']);
+            throw new NodeWriteInputException(
+                'validation_failed',
+                'At least one role is required when --roles is supplied.',
+                ['field' => 'roles'],
+            );
         }
 
         $parsed = array_values(array_unique($parsed));
@@ -274,22 +282,34 @@ class NodeNewPayloadBuilder
 
         if ($hasAnalytics) {
             if (! is_string($postgresNode) || $postgresNode === '') {
-                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --postgres-node.', ['field' => 'postgres_node']);
+                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --postgres-node.', [
+                    'field' => 'postgres_node',
+                ]);
             }
 
             if (! is_string($clickhouseNode) || $clickhouseNode === '') {
-                throw new NodeWriteInputException('validation_failed', 'The analytics role requires --clickhouse-node.', ['field' => 'clickhouse_node']);
+                throw new NodeWriteInputException(
+                    'validation_failed',
+                    'The analytics role requires --clickhouse-node.',
+                    ['field' => 'clickhouse_node'],
+                );
             }
 
             return $payload;
         }
 
         if ($postgresNode !== null) {
-            throw new NodeWriteInputException('validation_failed', 'Only the analytics role accepts --postgres-node.', ['field' => 'postgres_node']);
+            throw new NodeWriteInputException('validation_failed', 'Only the analytics role accepts --postgres-node.', [
+                'field' => 'postgres_node',
+            ]);
         }
 
         if ($clickhouseNode !== null) {
-            throw new NodeWriteInputException('validation_failed', 'Only the analytics role accepts --clickhouse-node.', ['field' => 'clickhouse_node']);
+            throw new NodeWriteInputException(
+                'validation_failed',
+                'Only the analytics role accepts --clickhouse-node.',
+                ['field' => 'clickhouse_node'],
+            );
         }
 
         return $payload;

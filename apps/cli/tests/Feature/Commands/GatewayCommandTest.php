@@ -70,43 +70,59 @@ describe('GatewayCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toHaveKey('success')
-            ->and($decoded['success'])->toHaveKey('data')
-            ->and($decoded['success']['data'])->toBe(['result' => 'ok'])
-            ->and($decoded['success'])->not->toHaveKey('success');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toHaveKey('success')
+            ->and($decoded['success'])
+            ->toHaveKey('data')
+            ->and($decoded['success']['data'])
+            ->toBe(['result' => 'ok'])
+            ->and($decoded['success'])
+            ->not->toHaveKey('success');
     });
 
     it('gatewayGet threads through the GatewayApiClient', function (): void {
         Http::fake([
-            'https://gateway.test/api/test*' => Http::response(['success' => ['data' => ['x' => 1], 'meta' => []]], 200),
+            'https://gateway.test/api/test*' => Http::response([
+                'success' => ['data' => ['x' => 1], 'meta' => []],
+            ], 200),
         ]);
 
         [$exitCode] = runGatewayCommand($this, 'get');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && str_contains($request->url(), '/api/test'));
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET' && str_contains($request->url(), '/api/test'),
+        );
 
         expect($exitCode)->toBe(0);
     });
 
     it('gatewayPost threads through the GatewayApiClient with JSON payload', function (): void {
         Http::fake([
-            'https://gateway.test/api/test*' => Http::response(['success' => ['data' => ['created' => true], 'meta' => []]], 200),
+            'https://gateway.test/api/test*' => Http::response([
+                'success' => ['data' => ['created' => true], 'meta' => []],
+            ], 200),
         ]);
 
         [$exitCode] = runGatewayCommand($this, 'post');
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->isJson()
-            && isset($request->data()['key']));
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->isJson()
+                && isset($request->data()['key'])
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
 
     it('gatewayDelete threads through the GatewayApiClient', function (): void {
         Http::fake([
-            'https://gateway.test/api/test*' => Http::response(['success' => ['data' => ['deleted' => true], 'meta' => []]], 200),
+            'https://gateway.test/api/test*' => Http::response([
+                'success' => ['data' => ['deleted' => true], 'meta' => []],
+            ], 200),
         ]);
 
         [$exitCode] = runGatewayCommand($this, 'delete');
@@ -128,14 +144,19 @@ describe('GatewayCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data'])->toBe(['key' => 'value'])
-            ->and($decoded['success']['meta'])->toBe(['page' => 1]);
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data'])
+            ->toBe(['key' => 'value'])
+            ->and($decoded['success']['meta'])
+            ->toBe(['page' => 1]);
     });
 
     it('gateway() accessor returns a GatewayApiClient', function (): void {
         Http::fake([
-            'https://gateway.test/api/test*' => Http::response(['success' => ['data' => ['ok' => true], 'meta' => []]], 200),
+            'https://gateway.test/api/test*' => Http::response([
+                'success' => ['data' => ['ok' => true], 'meta' => []],
+            ], 200),
         ]);
 
         [$exitCode] = runGatewayCommand($this, 'passthrough');
@@ -153,8 +174,7 @@ describe('GatewayCommand', function (): void {
 
         [$exitCode, $output] = runGatewayCommand($this, 'get');
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe('status: running');
+        expect($exitCode)->toBe(0)->and($output)->toBe('status: running');
     });
 
     it('renderFailure produces a canonical error envelope in JSON mode', function (): void {
@@ -162,8 +182,11 @@ describe('GatewayCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded)->toHaveKey('error')
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded)
+            ->toHaveKey('error')
+            ->and($decoded['error']['code'])
+            ->toBe('gateway_unavailable');
     });
 });

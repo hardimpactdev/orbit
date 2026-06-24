@@ -22,10 +22,15 @@ final class DatabaseConnectionDestroyController extends DatabaseConnectionApiCon
         }
 
         if (! $request->boolean('force')) {
-            return $this->validationFailed('force', 'Use --force to remove this database connection.', [
-                'field' => 'force',
-                'reason' => 'destructive_consent_required',
-            ], 422);
+            return $this->validationFailed(
+                'force',
+                'Use --force to remove this database connection.',
+                [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                ],
+                422,
+            );
         }
 
         $existing = $this->registry->show($connection);

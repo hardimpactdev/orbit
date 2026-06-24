@@ -64,12 +64,12 @@ final readonly class WebSocketDoctorProbe
                 node: $node,
                 assignment: $assignment,
                 detail: [
-                    'reason' => (($runtimeState['exists'] ?? null) !== '1') ? 'runtime_missing' : 'runtime_stopped',
+                    'reason' => ($runtimeState['exists'] ?? null) !== '1' ? 'runtime_missing' : 'runtime_stopped',
                     'container' => $this->runtimeRenderer->containerName($node),
                     'exists' => $runtimeState['exists'] ?? null,
                     'running' => $runtimeState['running'] ?? null,
                 ],
-                kind: (($runtimeState['exists'] ?? null) !== '1') ? DriftKind::Missing : DriftKind::Divergent,
+                kind: ($runtimeState['exists'] ?? null) !== '1' ? DriftKind::Missing : DriftKind::Divergent,
             );
         }
 
@@ -163,13 +163,16 @@ final readonly class WebSocketDoctorProbe
 
         $state = $this->parseKeyValueOutput($probe->stdout);
 
-        if (($state['cert_exists'] ?? null) === '1' && ($state['key_exists'] ?? null) === '1' && ($state['cert_matches'] ?? null) === '1') {
+        if (
+            ($state['cert_exists'] ?? null) === '1'
+            && ($state['key_exists'] ?? null) === '1'
+            && ($state['cert_matches'] ?? null) === '1'
+        ) {
             return [];
         }
 
         $kind = match (true) {
-            ($state['cert_exists'] ?? null) !== '1',
-            ($state['key_exists'] ?? null) !== '1' => DriftKind::Missing,
+            ($state['cert_exists'] ?? null) !== '1', ($state['key_exists'] ?? null) !== '1' => DriftKind::Missing,
             ($state['cert_matches'] ?? null) === '' => DriftKind::Unverifiable,
             default => DriftKind::Divergent,
         };
@@ -274,64 +277,76 @@ final readonly class WebSocketDoctorProbe
     {
         $container = $this->runtimeRenderer->containerName($node);
 
-        return $this->runProbe($node, sprintf(
-            <<<'SH'
-# orbit-websocket-doctor:runtime-probe
-set -eu
-container=%s
+        return $this->runProbe(
+            $node,
+            sprintf(
+                <<<'SH'
+                    # orbit-websocket-doctor:runtime-probe
+                    set -eu
+                    container=%s
 
-if ! docker container inspect "$container" >/dev/null 2>&1; then
-    printf 'exists=0\nrunning=false\nenv_host=\ncmd_host=\n'
-    exit 0
-fi
+                    if ! docker container inspect "$container" >/dev/null 2>&1; then
+                        printf 'exists=0\nrunning=false\nenv_host=\ncmd_host=\n'
+                        exit 0
+                    fi
 
-running="$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')"
-env_host="$(docker container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null | awk -F= '$1 == "REVERB_SERVER_HOST" {print $2; exit}')"
-cmd="$(docker container inspect --format '{{range .Config.Cmd}}{{print . " "}}{{end}}' "$container" 2>/dev/null || true)"
-cmd_host="$(printf '%%s' "$cmd" | sed -n 's/.*--host=\([^ ]*\).*/\1/p' | head -n 1)"
+                    running="$(docker container inspect --format '{{.State.Running}}' "$container" 2>/dev/null || printf 'false')"
+                    env_host="$(docker container inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" 2>/dev/null | awk -F= '$1 == "REVERB_SERVER_HOST" {print $2; exit}')"
+                    cmd="$(docker container inspect --format '{{range .Config.Cmd}}{{print . " "}}{{end}}' "$container" 2>/dev/null || true)"
+                    cmd_host="$(printf '%%s' "$cmd" | sed -n 's/.*--host=\([^ ]*\).*/\1/p' | head -n 1)"
 
-printf 'exists=1\nrunning=%%s\nenv_host=%%s\ncmd_host=%%s\n' "$running" "$env_host" "$cmd_host"
-SH,
-            escapeshellarg($container),
-        ), 'websocket-runtime-doctor-probe');
+                    printf 'exists=1\nrunning=%%s\nenv_host=%%s\ncmd_host=%%s\n' "$running" "$env_host" "$cmd_host"
+                    SH,
+                escapeshellarg($container),
+            ),
+            'websocket-runtime-doctor-probe',
+        );
     }
 
-    private function backendCertificateProbe(Node $node, string $backendName, string $certPath, string $keyPath): RemoteShellResult
-    {
-        return $this->runProbe($node, sprintf(
-            <<<'SH'
-# orbit-websocket-doctor:backend-cert-probe
-set -u
-backend=%s
-cert=%s
-key=%s
-cert_exists=0
-key_exists=0
-cert_matches=
+    private function backendCertificateProbe(
+        Node $node,
+        string $backendName,
+        string $certPath,
+        string $keyPath,
+    ): RemoteShellResult {
+        return $this->runProbe(
+            $node,
+            sprintf(
+                <<<'SH'
+                    # orbit-websocket-doctor:backend-cert-probe
+                    set -u
+                    backend=%s
+                    cert=%s
+                    key=%s
+                    cert_exists=0
+                    key_exists=0
+                    cert_matches=
 
-if sudo test -f "$cert"; then
-    cert_exists=1
-fi
+                    if sudo test -f "$cert"; then
+                        cert_exists=1
+                    fi
 
-if sudo test -f "$key"; then
-    key_exists=1
-fi
+                    if sudo test -f "$key"; then
+                        key_exists=1
+                    fi
 
-if [ "$cert_exists" = "1" ] && command -v openssl >/dev/null 2>&1; then
-    cert_text="$(sudo openssl x509 -in "$cert" -noout -subject -ext subjectAltName 2>/dev/null || true)"
+                    if [ "$cert_exists" = "1" ] && command -v openssl >/dev/null 2>&1; then
+                        cert_text="$(sudo openssl x509 -in "$cert" -noout -subject -ext subjectAltName 2>/dev/null || true)"
 
-    case "$cert_text" in
-        *"$backend"*) cert_matches=1 ;;
-        *) cert_matches=0 ;;
-    esac
-fi
+                        case "$cert_text" in
+                            *"$backend"*) cert_matches=1 ;;
+                            *) cert_matches=0 ;;
+                        esac
+                    fi
 
-printf 'cert_exists=%%s\nkey_exists=%%s\ncert_matches=%%s\n' "$cert_exists" "$key_exists" "$cert_matches"
-SH,
-            escapeshellarg($backendName),
-            escapeshellarg($certPath),
-            escapeshellarg($keyPath),
-        ), 'websocket-backend-cert-doctor-probe');
+                    printf 'cert_exists=%%s\nkey_exists=%%s\ncert_matches=%%s\n' "$cert_exists" "$key_exists" "$cert_matches"
+                    SH,
+                escapeshellarg($backendName),
+                escapeshellarg($certPath),
+                escapeshellarg($keyPath),
+            ),
+            'websocket-backend-cert-doctor-probe',
+        );
     }
 
     private function redisProbe(Node $node): RemoteShellResult
@@ -340,34 +355,38 @@ SH,
         // workload containers. The PHP below is fed to the WebSocket runtime
         // container, not executed on the host substrate.
         $php = <<<'PHP'
-<?php
+            <?php
 
-$host = getenv('REDIS_HOST') ?: 'redis.orbit';
-$port = (int) (getenv('REDIS_PORT') ?: 6379);
-$errno = 0;
-$errstr = '';
-$socket = @fsockopen($host, $port, $errno, $errstr, 2);
+            $host = getenv('REDIS_HOST') ?: 'redis.orbit';
+            $port = (int) (getenv('REDIS_PORT') ?: 6379);
+            $errno = 0;
+            $errstr = '';
+            $socket = @fsockopen($host, $port, $errno, $errstr, 2);
 
-if (! $socket) {
-    fwrite(STDERR, $errstr !== '' ? $errstr : 'redis unavailable');
-    exit(1);
-}
+            if (! $socket) {
+                fwrite(STDERR, $errstr !== '' ? $errstr : 'redis unavailable');
+                exit(1);
+            }
 
-fclose($socket);
-PHP;
+            fclose($socket);
+            PHP;
 
-        return $this->runProbe($node, sprintf(
-            <<<'SH'
-# orbit-websocket-doctor:redis-probe
-set -eu
-container=%s
-docker exec -i "$container" php <<'PHP'
-%s
-PHP
-SH,
-            escapeshellarg($this->runtimeRenderer->containerName($node)),
-            $php,
-        ), 'websocket-redis-doctor-probe');
+        return $this->runProbe(
+            $node,
+            sprintf(
+                <<<'SH'
+                    # orbit-websocket-doctor:redis-probe
+                    set -eu
+                    container=%s
+                    docker exec -i "$container" php <<'PHP'
+                    %s
+                    PHP
+                    SH,
+                escapeshellarg($this->runtimeRenderer->containerName($node)),
+                $php,
+            ),
+            'websocket-redis-doctor-probe',
+        );
     }
 
     private function runProbe(Node $node, string $script, string $operation): RemoteShellResult
@@ -420,8 +439,12 @@ SH,
     /**
      * @param  array<string, mixed>  $detail
      */
-    private function runtimeUnavailableEntry(Node $node, NodeRoleAssignment $assignment, array $detail, DriftKind $kind): DriftEntry
-    {
+    private function runtimeUnavailableEntry(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        array $detail,
+        DriftKind $kind,
+    ): DriftEntry {
         return new DriftEntry(
             family: 'tool',
             key: 'tool.websocket.reverb_unavailable',
@@ -437,8 +460,12 @@ SH,
     /**
      * @param  array<string, mixed>  $detail
      */
-    private function redisUnavailableEntry(Node $node, NodeRoleAssignment $assignment, array $detail, DriftKind $kind): DriftEntry
-    {
+    private function redisUnavailableEntry(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        array $detail,
+        DriftKind $kind,
+    ): DriftEntry {
         return new DriftEntry(
             family: 'tool',
             key: 'tool.websocket.redis_unavailable',

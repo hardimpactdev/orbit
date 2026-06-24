@@ -77,7 +77,9 @@ class S3RuntimeContainerRenderer
         $wireGuardAddress = trim((string) $node->wireguard_address);
 
         if ($wireGuardAddress === '') {
-            throw new RuntimeException('The s3 role requires a WireGuard address before runtime config can be rendered.');
+            throw new RuntimeException(
+                'The s3 role requires a WireGuard address before runtime config can be rendered.',
+            );
         }
 
         return $wireGuardAddress;

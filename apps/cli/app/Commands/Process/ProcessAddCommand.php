@@ -52,50 +52,78 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $startExplicit = $this->option('start') === true;
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-            ]);
+            return $this->failValidation(
+                'context',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
+                ],
+            );
         }
 
         if ($node === null && $app === null && $workspace === null) {
             return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
-        $validation = $this->validateProcessName($name)
-            ?? ($command === null && $service === null ? $this->failValidation('command', 'The process command is required.') : null)
-            ?? $this->validateRestartPolicy($restartPolicy)
-            ?? $this->validateCrashNotification($crashNotification)
-            ?? $this->validateRuntime($runtime)
-            ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node, $service)
-            ?? $this->validateTool($tool)
-            ?? $this->validateService($service)
-            ?? ($service === null && $version !== null ? $this->failValidation('version', 'Process service version requires --service.', [
-                'value' => $version,
-                'reason' => 'process_service_version_requires_service',
-            ]) : null)
-            ?? ($service === null && $image !== null ? $this->failValidation('image', 'Process service image requires --service.', [
-                'value' => $image,
-                'reason' => 'process_service_image_requires_service',
-            ]) : null)
-            ?? ($image !== null && $runtime === 'systemd' ? $this->failValidation('image', 'Process service image overrides require a Docker runtime.', [
-                'value' => $image,
-                'reason' => 'process_service_image_requires_docker_runtime',
-            ]) : null)
-            ?? ($service !== null && $node === null ? $this->failValidation('service', 'Managed services are only valid for node-owned service processes.', [
-                'value' => $service,
-                'reason' => 'process_service_requires_node_owned_process',
-            ]) : null)
-            ?? ($service !== null && $tool !== null ? $this->failValidation('tool', 'Managed services do not use tool dependencies.', [
-                'value' => $tool,
-                'reason' => 'process_service_cannot_reference_tool',
-            ]) : null)
-            ?? $this->validateReplaceContainers($replaceContainers, $node, $service, $runtime)
-            ?? $this->confirmReplaceContainers($replaceContainers, (string) $name)
-            ?? ($noStart && $startExplicit ? $this->failValidation('start', 'The start and no-start flags cannot be used together.', [
-                'reason' => 'start_and_no_start_conflict',
-            ]) : null);
+        $validation =
+            $this->validateProcessName($name) ?? (
+                $command === null && $service === null
+                    ? $this->failValidation('command', 'The process command is required.')
+                    : null
+            ) ?? $this->validateRestartPolicy($restartPolicy) ?? $this->validateCrashNotification(
+                $crashNotification,
+            ) ?? $this->validateRuntime($runtime) ?? $this->validateAppWorkspaceCommandRuntime(
+                $runtime,
+                $node,
+                $service,
+            ) ?? $this->validateTool($tool) ?? $this->validateService($service) ?? (
+                $service === null && $version !== null
+                    ? $this->failValidation('version', 'Process service version requires --service.', [
+                        'value' => $version,
+                        'reason' => 'process_service_version_requires_service',
+                    ]) : null
+            ) ?? (
+                $service === null && $image !== null
+                    ? $this->failValidation('image', 'Process service image requires --service.', [
+                        'value' => $image,
+                        'reason' => 'process_service_image_requires_service',
+                    ]) : null
+            ) ?? (
+                $image !== null && $runtime === 'systemd'
+                    ? $this->failValidation('image', 'Process service image overrides require a Docker runtime.', [
+                        'value' => $image,
+                        'reason' => 'process_service_image_requires_docker_runtime',
+                    ]) : null
+            ) ?? (
+                $service !== null && $node === null
+                    ? $this->failValidation(
+                        'service',
+                        'Managed services are only valid for node-owned service processes.',
+                        [
+                            'value' => $service,
+                            'reason' => 'process_service_requires_node_owned_process',
+                        ],
+                    ) : null
+            ) ?? (
+                $service !== null && $tool !== null
+                    ? $this->failValidation('tool', 'Managed services do not use tool dependencies.', [
+                        'value' => $tool,
+                        'reason' => 'process_service_cannot_reference_tool',
+                    ]) : null
+            ) ?? $this->validateReplaceContainers(
+                $replaceContainers,
+                $node,
+                $service,
+                $runtime,
+            ) ?? $this->confirmReplaceContainers($replaceContainers, (string) $name)
+                ?? (
+                    $noStart && $startExplicit
+                        ? $this->failValidation('start', 'The start and no-start flags cannot be used together.', [
+                            'reason' => 'start_and_no_start_conflict',
+                        ]) : null
+                );
 
         if ($validation !== null) {
             return $validation;
@@ -161,7 +189,9 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             'Adding Process',
             $phases,
             work: function () use ($payload, &$response): array {
-                return $response = $this->gatewayCallForHuman(fn (): array => $this->gatewayPost('/api/processes', $payload));
+                return $response = $this->gatewayCallForHuman(
+                    fn (): array => $this->gatewayPost('/api/processes', $payload),
+                );
             },
             doneFooter: fn (): string => "Process '{$name}' added for {$label}",
         );
@@ -185,9 +215,13 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             return null;
         }
 
-        return $this->failValidation('tool', 'The process tool must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
-            'value' => $tool,
-        ]);
+        return $this->failValidation(
+            'tool',
+            'The process tool must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+            [
+                'value' => $tool,
+            ],
+        );
     }
 
     private function validateService(?string $service): ?int
@@ -200,9 +234,13 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             return null;
         }
 
-        return $this->failValidation('service', 'The managed service must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
-            'value' => $service,
-        ]);
+        return $this->failValidation(
+            'service',
+            'The managed service must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+            [
+                'value' => $service,
+            ],
+        );
     }
 
     /**
@@ -224,16 +262,24 @@ final class ProcessAddCommand extends ProcessGatewayCommand
     /**
      * @param  list<string>  $replaceContainers
      */
-    private function validateReplaceContainers(array $replaceContainers, ?string $node, ?string $service, ?string $runtime): ?int
-    {
+    private function validateReplaceContainers(
+        array $replaceContainers,
+        ?string $node,
+        ?string $service,
+        ?string $runtime,
+    ): ?int {
         if ($replaceContainers === []) {
             return null;
         }
 
-        if ($node === null || $service === null || ($runtime !== null && $runtime !== 'docker')) {
-            return $this->failValidation('replace_containers', 'Replacement containers are only supported for node-owned Docker managed services.', [
-                'reason' => 'replace_container_requires_node_docker_service',
-            ]);
+        if ($node === null || $service === null || $runtime !== null && $runtime !== 'docker') {
+            return $this->failValidation(
+                'replace_containers',
+                'Replacement containers are only supported for node-owned Docker managed services.',
+                [
+                    'reason' => 'replace_container_requires_node_docker_service',
+                ],
+            );
         }
 
         foreach ($replaceContainers as $container) {
@@ -241,9 +287,13 @@ final class ProcessAddCommand extends ProcessGatewayCommand
                 continue;
             }
 
-            return $this->failValidation('replace_containers', 'Replacement container names must be valid Docker container names.', [
-                'value' => $container,
-            ]);
+            return $this->failValidation(
+                'replace_containers',
+                'Replacement container names must be valid Docker container names.',
+                [
+                    'value' => $container,
+                ],
+            );
         }
 
         return null;
@@ -267,7 +317,10 @@ final class ProcessAddCommand extends ProcessGatewayCommand
 
         $containerList = implode(', ', $replaceContainers);
 
-        if (confirm(label: "Remove Docker container(s) {$containerList} before adding process '{$name}'?", default: false)) {
+        if (confirm(
+            label: "Remove Docker container(s) {$containerList} before adding process '{$name}'?",
+            default: false,
+        )) {
             return null;
         }
 

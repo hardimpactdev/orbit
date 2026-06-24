@@ -17,7 +17,8 @@ final readonly class AppInstanceEnvRenderer
     {
         $instance->loadMissing('envVariables');
 
-        return $instance->envVariables
+        return $instance
+            ->envVariables
             ->map(fn (AppInstanceEnvVariable $variable): array => $this->variablePayload($variable))
             ->values()
             ->all();
@@ -73,7 +74,7 @@ final readonly class AppInstanceEnvRenderer
         return [
             'key' => $variable->key,
             'value' => $variable->secret ? null : $variable->value,
-            'secret' => (bool) $variable->secret,
+            'secret' => $variable->secret,
         ];
     }
 

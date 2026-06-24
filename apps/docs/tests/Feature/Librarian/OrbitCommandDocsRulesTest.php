@@ -132,8 +132,10 @@ it('passes valid Orbit command docs through Librarian structure linting', functi
         '--group' => 'structure',
     ]);
 
-    expect($exitCode)->toBe(0)
-        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR))
+        ->toMatchArray([
             'tool' => 'librarian',
             'result' => 'passed',
             'issues' => 0,
@@ -152,12 +154,15 @@ it('reports Orbit command family and command directory structure issues', functi
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and(array_column($payload['findings'], 'rule'))->toContain(
+    expect($exitCode)
+        ->toBe(1)
+        ->and(array_column($payload['findings'], 'rule'))
+        ->toContain(
             'command_docs.converted_family_structure',
             'command_docs.command_directory_structure',
         )
-        ->and(array_column($payload['findings'], 'message'))->toContain(
+        ->and(array_column($payload['findings'], 'message'))
+        ->toContain(
             'Converted family directories must contain README.md.',
             'Converted family commands must use numbered command directories with split technical docs; move this flat command file into N_command-name/command-name.md with technical contracts.',
             'Command directories must contain a technical directory.',
@@ -166,10 +171,26 @@ it('reports Orbit command family and command directory structure issues', functi
 
 it('reports commands placed in the wrong non-operation family', function (): void {
     writeOrbitCommandDocsFamily($this->docsRoot);
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/2_app-register/app-register.md', "# `orbit app:register`\n");
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/2_app-register/technical/1_app-register.md', "# Technical Contract\n");
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/2_app-register/technical/6.1_app-register_output-render_human.md', "# Human Renderer\n");
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/2_app-register/technical/6.2_app-register_output-render_json.md', "# JSON Renderer\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/2_app-register/app-register.md',
+        "# `orbit app:register`\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/2_app-register/technical/1_app-register.md',
+        "# Technical Contract\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/2_app-register/technical/6.1_app-register_output-render_human.md',
+        "# Human Renderer\n",
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/2_app-register/technical/6.2_app-register_output-render_json.md',
+        "# JSON Renderer\n",
+    );
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -178,8 +199,10 @@ it('reports commands placed in the wrong non-operation family', function (): voi
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/2_app-register',
             'severity' => 'error',
             'rule' => 'command_docs.family_command_prefix',
@@ -200,16 +223,20 @@ it('reports split compound command prefixes in Orbit command docs', function ():
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'])->toHaveCount(2)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'])
+        ->toHaveCount(2)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 1,
             'severity' => 'error',
             'rule' => 'command_docs.compound_command_prefix',
             'message' => 'Command `workspace:setup-step-add` splits a compound command prefix. Use `workspace-setup-step:add` so the longest command prefix stays before the colon.',
         ])
-        ->and($payload['findings'][1])->toMatchArray([
+        ->and($payload['findings'][1])
+        ->toMatchArray([
             'line' => 3,
             'rule' => 'command_docs.compound_command_prefix',
         ]);
@@ -226,8 +253,10 @@ it('reports command ambiguity files inside Orbit command docs', function (): voi
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/ambiguity.md',
             'severity' => 'error',
             'rule' => 'command_docs.no_command_ambiguity_files',
@@ -237,7 +266,11 @@ it('reports command ambiguity files inside Orbit command docs', function (): voi
 
 it('reports reserved technical slots with the wrong semantic filename', function (): void {
     writeOrbitCommandDocsFamily($this->docsRoot);
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/2_node-new_on-app-node.md', "# Wrong Slot\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/1_node-new/technical/2_node-new_on-app-node.md',
+        "# Wrong Slot\n",
+    );
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -246,8 +279,10 @@ it('reports reserved technical slots with the wrong semantic filename', function
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/2_node-new_on-app-node.md',
             'severity' => 'error',
             'rule' => 'command_docs.technical_slot_semantics',
@@ -270,8 +305,10 @@ it('reports broken relative markdown links inside Orbit command docs', function 
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'rule' => 'command_docs.markdown_link_integrity',
             'message' => 'Markdown link target does not exist: missing.md.',
@@ -280,7 +317,11 @@ it('reports broken relative markdown links inside Orbit command docs', function 
 
 it('reports family concept documents missing from the top-level concept index', function (): void {
     writeOrbitDocsFile($this->docsRoot, 'docs/concepts.md', "# Concepts\n");
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/node-concepts.md', "# Node Concepts\n\n- **Node intent:** Desired node state.\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/node-concepts.md',
+        "# Node Concepts\n\n- **Node intent:** Desired node state.\n",
+    );
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -289,8 +330,10 @@ it('reports family concept documents missing from the top-level concept index', 
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/concepts.md',
             'severity' => 'error',
             'rule' => 'command_docs.concept_index',
@@ -301,7 +344,9 @@ it('reports family concept documents missing from the top-level concept index', 
 it('reports missing role companion contracts when canonical docs declare role-specific behavior', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(extra: "\nRole-specific behavior is defined in these companion contracts.\n"),
+        canonicalContract: validOrbitCanonicalContract(
+            extra: "\nRole-specific behavior is defined in these companion contracts.\n",
+        ),
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -311,8 +356,10 @@ it('reports missing role companion contracts when canonical docs declare role-sp
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.role_companion_coverage',
@@ -323,11 +370,18 @@ it('reports missing role companion contracts when canonical docs declare role-sp
 it('allows deployment companion subsets without app-role companion contracts', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(extra: "\nDeployment-context test mapping lives in:\n\n- [Client](2_node-new_on-client.md#test-mapping)\n- [Gateway](3_node-new_on-gateway-node.md#test-mapping)\n"),
+        canonicalContract: validOrbitCanonicalContract(
+            extra: "\nDeployment-context test mapping lives in:\n\n- [Client](2_node-new_on-client.md#test-mapping)\n- [Gateway](3_node-new_on-gateway-node.md#test-mapping)\n",
+        ),
     );
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/README.md', "# Domain Docs\n\n## JSON Envelope\n\nShared envelope.\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/README.md',
+        "# Domain Docs\n\n## JSON Envelope\n\nShared envelope.\n",
+    );
 
-    $companionContract = "# Technical Contract: `node:new` From Configured Clients\n\n"
+    $companionContract =
+        "# Technical Contract: `node:new` From Configured Clients\n\n"
         ."[Back to `node:new` technical contract.](1_node-new.md)\n\n"
         ."## Allowed Paths\n\n"
         ."| Context | Behavior |\n"
@@ -338,8 +392,16 @@ it('allows deployment companion subsets without app-role companion contracts', f
         ."| --- | --- |\n"
         ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers optional deployment-context companion slots. |\n";
 
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/2_node-new_on-client.md', $companionContract);
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/3_node-new_on-gateway-node.md', $companionContract);
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/1_node-new/technical/2_node-new_on-client.md',
+        $companionContract,
+    );
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/1_node-new/technical/3_node-new_on-gateway-node.md',
+        $companionContract,
+    );
 
     config()->set('librarian.rules', [RoleCompanionCoverageRule::class]);
     app()->forgetInstance(DocsConfig::class);
@@ -351,9 +413,12 @@ it('allows deployment companion subsets without app-role companion contracts', f
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($payload['findings'] ?? [])->toBe([])
-        ->and($exitCode)->toBe(0)
-        ->and($payload)->toMatchArray([
+    expect($payload['findings'] ?? [])
+        ->toBe([])
+        ->and($exitCode)
+        ->toBe(0)
+        ->and($payload)
+        ->toMatchArray([
             'tool' => 'librarian',
             'result' => 'passed',
             'issues' => 0,
@@ -373,8 +438,10 @@ it('reports technical command files without test mapping sections', function ():
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
             'severity' => 'error',
             'rule' => 'command_docs.technical_test_mapping',
@@ -395,8 +462,10 @@ it('reports test mapping sections without a path coverage table', function (): v
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
             'severity' => 'error',
             'rule' => 'command_docs.test_mapping_format',
@@ -417,8 +486,10 @@ it('reports canonical doctor relationship sections that omit the family doctor c
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.doctor_relationship_reference',
@@ -436,8 +507,10 @@ it('reports non-state domains without state-family doctor handoffs', function ()
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/10_php/README.md',
             'severity' => 'error',
             'rule' => 'command_docs.non_state_domain_handoff',
@@ -458,9 +531,12 @@ it('reports public Orbit command pages without modern sections', function (): vo
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($payload['warnings'])->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($payload['warnings'])
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 1,
             'severity' => 'warning',
@@ -481,9 +557,12 @@ it('reports plural product code prefixes while allowing explicit storage fields'
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['issues'])->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['issues'])
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.product_code_namespace',
@@ -504,8 +583,10 @@ it('reports public command pages that omit the json option from canonical signat
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.public_json_option_contract',
@@ -526,8 +607,10 @@ it('reports json renderer files without the shared envelope link', function (): 
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'severity' => 'error',
             'rule' => 'command_docs.json_envelope',
@@ -548,8 +631,10 @@ it('reports per-command numeric exit status sections', function (): void {
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 9,
             'severity' => 'error',
@@ -571,8 +656,10 @@ it('reports dedicated authorization sections in canonical technical contracts', 
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.no_per_command_authorization_section',
@@ -581,7 +668,11 @@ it('reports dedicated authorization sections in canonical technical contracts', 
 });
 
 it('reports doctor issue codes with another product family prefix', function (): void {
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/3_tool/tool-doctor.md', "# Tool Doctor\n\n## Tool Issue Codes\n\n| Code | Detected when |\n| --- | --- |\n| `dns.container_missing` | DNS container is missing. |\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/3_tool/tool-doctor.md',
+        "# Tool Doctor\n\n## Tool Issue Codes\n\n| Code | Detected when |\n| --- | --- |\n| `dns.container_missing` | DNS container is missing. |\n",
+    );
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -590,8 +681,10 @@ it('reports doctor issue codes with another product family prefix', function ():
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/3_tool/tool-doctor.md',
             'severity' => 'error',
             'rule' => 'command_docs.doctor_issue_code_prefix',
@@ -602,7 +695,9 @@ it('reports doctor issue codes with another product family prefix', function ():
 it('reports canonical input contracts that repeat shared invocation behavior', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(inputContract: "Interactive input mode may prompt before continuing.\n"),
+        canonicalContract: validOrbitCanonicalContract(
+            inputContract: "Interactive input mode may prompt before continuing.\n",
+        ),
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -612,14 +707,17 @@ it('reports canonical input contracts that repeat shared invocation behavior', f
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.input_mode_contract',
             'message' => 'Canonical Input Contract sections must link the shared Invocation Model.',
         ])
-        ->and($payload['findings'][1])->toMatchArray([
+        ->and($payload['findings'][1])
+        ->toMatchArray([
             'rule' => 'command_docs.input_mode_contract',
             'message' => 'Canonical Input Contract sections should link the shared Invocation Model without repeating generic input-mode or `--json` behavior.',
         ]);
@@ -638,9 +736,12 @@ it('reports destructive commands without destructive consent contracts', functio
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and(array_column($payload['findings'], 'rule'))->toContain('command_docs.destructive_consent')
-        ->and(array_column($payload['findings'], 'message'))->toContain(
+    expect($exitCode)
+        ->toBe(1)
+        ->and(array_column($payload['findings'], 'rule'))
+        ->toContain('command_docs.destructive_consent')
+        ->and(array_column($payload['findings'], 'message'))
+        ->toContain(
             'Destructive canonical contracts must include [--force] in the command signature.',
             'Destructive commands must include an interactive input-mode contract for confirmation prompting.',
         );
@@ -659,9 +760,12 @@ it('reports canonical technical contracts missing required sections', function (
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and(array_column($payload['findings'], 'rule'))->toContain('command_docs.canonical_technical_contract')
-        ->and(array_column($payload['findings'], 'message'))->toContain(
+    expect($exitCode)
+        ->toBe(1)
+        ->and(array_column($payload['findings'], 'rule'))
+        ->toContain('command_docs.canonical_technical_contract')
+        ->and(array_column($payload['findings'], 'message'))
+        ->toContain(
             'Canonical technical contracts must define "**Effects:**".',
             'Canonical technical contracts must include "## Behavior Contract".',
         );
@@ -680,8 +784,10 @@ it('reports flat behavior contracts without command-specific subsections', funct
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'line' => 17,
             'severity' => 'warning',
@@ -693,7 +799,9 @@ it('reports flat behavior contracts without command-specific subsections', funct
 it('reports renderer details inside canonical behavior sections', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(behaviorContract: "### Node Creation\n\nThe human renderer prints the created node.\n"),
+        canonicalContract: validOrbitCanonicalContract(
+            behaviorContract: "### Node Creation\n\nThe human renderer prints the created node.\n",
+        ),
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -703,8 +811,10 @@ it('reports renderer details inside canonical behavior sections', function (): v
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'line' => 21,
             'severity' => 'error',
@@ -726,8 +836,10 @@ it('reports json field paths on public command pages', function (): void {
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 3,
             'severity' => 'error',
@@ -750,8 +862,10 @@ it('reports command signatures with options before arguments', function (): void
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'line' => 10,
             'severity' => 'error',
@@ -762,7 +876,11 @@ it('reports command signatures with options before arguments', function (): void
 
 it('reports companion options absent from the canonical signature', function (): void {
     writeOrbitCommandDocsFamily($this->docsRoot);
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/1_node/1_node-new/technical/2_node-new_on-control-node.md', "Uses `--force` here.\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/1_node/1_node-new/technical/2_node-new_on-control-node.md',
+        "Uses `--force` here.\n",
+    );
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -771,8 +889,10 @@ it('reports companion options absent from the canonical signature', function ():
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/2_node-new_on-control-node.md',
             'line' => 1,
             'severity' => 'error',
@@ -794,8 +914,10 @@ it('reports json examples that mix success and error envelopes', function (): vo
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'line' => 11,
             'severity' => 'error',
@@ -817,8 +939,10 @@ it('reports json warning entries that omit required warning fields', function ()
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'line' => 11,
             'severity' => 'error',
@@ -841,8 +965,10 @@ it('reports renderer files without primitive references', function (): void {
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.renderer_primitive_reference');
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
             'severity' => 'error',
             'rule' => 'command_docs.renderer_primitive_reference',
@@ -864,8 +990,7 @@ it('accepts the show detail renderer primitive reference', function (): void {
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.renderer_primitive_reference');
 
-    expect($exitCode)->toBe(0)
-        ->and($matchingFindings)->toBe([]);
+    expect($exitCode)->toBe(0)->and($matchingFindings)->toBe([]);
 });
 
 it('reports canonical technical contracts without activity logging declarations', function (): void {
@@ -885,8 +1010,10 @@ it('reports canonical technical contracts without activity logging declarations'
         fn (array $finding): bool => $finding['rule'] === 'command_docs.activity_logging_contract',
     ));
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.activity_logging_contract',
@@ -911,8 +1038,10 @@ it('reports unregistered product error codes in json renderer examples', functio
         fn (array $finding): bool => $finding['rule'] === 'command_docs.error_code_registry',
     ));
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'severity' => 'error',
             'rule' => 'command_docs.error_code_registry',
@@ -934,12 +1063,16 @@ it('reports warning codes that do not match the declared doctor family', functio
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = array_values(array_filter(
         $payload['findings'],
-        fn (array $finding): bool => $finding['rule'] === 'command_docs.doctor_warning_coherence'
-            && $finding['severity'] === 'error',
+        fn (array $finding): bool => (
+            $finding['rule'] === 'command_docs.doctor_warning_coherence'
+            && $finding['severity'] === 'error'
+        ),
     ));
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'severity' => 'error',
             'rule' => 'command_docs.doctor_warning_coherence',
@@ -964,8 +1097,10 @@ it('reports stale shared failure vocabulary', function (): void {
         fn (array $finding): bool => $finding['rule'] === 'command_docs.shared_failure_vocabulary',
     ));
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.shared_failure_vocabulary',
@@ -990,8 +1125,10 @@ it('reports json next command fields outside recovery metadata', function (): vo
         fn (array $finding): bool => $finding['rule'] === 'command_docs.next_action_contract',
     ));
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'severity' => 'error',
             'rule' => 'command_docs.next_action_contract',
@@ -1000,7 +1137,11 @@ it('reports json next command fields outside recovery metadata', function (): vo
 });
 
 it('reports app docs that use the old php option contract', function (): void {
-    writeOrbitDocsFile($this->docsRoot, 'docs/domains/5_app/README.md', "# App Commands\n\nUse `--php` to select the runtime.\n");
+    writeOrbitDocsFile(
+        $this->docsRoot,
+        'docs/domains/5_app/README.md',
+        "# App Commands\n\nUse `--php` to select the runtime.\n",
+    );
 
     $exitCode = Artisan::call('librarian:lint', [
         '--format' => 'agent',
@@ -1010,8 +1151,10 @@ it('reports app docs that use the old php option contract', function (): void {
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.app_php_version_contract');
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/5_app/README.md',
             'severity' => 'error',
             'rule' => 'command_docs.app_php_version_contract',
@@ -1034,8 +1177,10 @@ it('reports read-only command contracts that document implicit live checks', fun
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.read_command_no_live_probe');
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
             'severity' => 'error',
             'rule' => 'command_docs.read_command_no_live_probe',
@@ -1057,8 +1202,10 @@ it('reports drift issue codes that still use orphaned suffixes', function (): vo
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.drift_issue_suffix');
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.drift_issue_suffix',
@@ -1069,7 +1216,9 @@ it('reports drift issue codes that still use orphaned suffixes', function (): vo
 it('reports canonical failure semantics that restate common failures', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(failureSemantics: "| Failure | Meaning |\n| --- | --- |\n| Validation failed | Input was invalid. |\n"),
+        canonicalContract: validOrbitCanonicalContract(
+            failureSemantics: "| Failure | Meaning |\n| --- | --- |\n| Validation failed | Input was invalid. |\n",
+        ),
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1080,8 +1229,10 @@ it('reports canonical failure semantics that restate common failures', function 
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.common_failure_not_restated');
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'error',
             'rule' => 'command_docs.common_failure_not_restated',
@@ -1103,8 +1254,10 @@ it('reports human renderer files without progress tree sections', function (): v
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.human_progress_tree');
 
-    expect($exitCode)->toBe(1)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(1)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
             'severity' => 'error',
             'rule' => 'command_docs.human_progress_tree',
@@ -1125,15 +1278,19 @@ it('reports reader-facing sentences above the complexity threshold as warnings',
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($payload['warnings'])->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($payload['warnings'])
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 3,
             'severity' => 'warning',
             'rule' => 'librarian.document_complexity',
         ])
-        ->and($payload['findings'][0]['message'])->toContain('Sentence has');
+        ->and($payload['findings'][0]['message'])
+        ->toContain('Sentence has');
 });
 
 it('reports command public pages that read as specs instead of reader guidance', function (): void {
@@ -1150,8 +1307,10 @@ it('reports command public pages that read as specs instead of reader guidance',
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.reader_address');
 
-    expect($exitCode)->toBe(0)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 5,
             'severity' => 'warning',
@@ -1163,9 +1322,11 @@ it('reports command public pages that read as specs instead of reader guidance',
 it('reports overly complex command contracts', function (): void {
     writeOrbitCommandDocsFamily(
         $this->docsRoot,
-        canonicalContract: validOrbitCanonicalContract(behaviorContract: collect(range(1, 25))
-            ->map(fn (int $index): string => "- Performs behavior step {$index}.\n")
-            ->implode('')),
+        canonicalContract: validOrbitCanonicalContract(
+            behaviorContract: collect(range(1, 25))
+                ->map(fn (int $index): string => "- Performs behavior step {$index}.\n")
+                ->implode(''),
+        ),
     );
 
     $exitCode = Artisan::call('librarian:lint', [
@@ -1176,13 +1337,16 @@ it('reports overly complex command contracts', function (): void {
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $matchingFindings = findingsForRule($payload, 'command_docs.command_contract_complexity');
 
-    expect($exitCode)->toBe(0)
-        ->and($matchingFindings[0] ?? null)->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($matchingFindings[0] ?? null)
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/technical/1_node-new.md',
             'severity' => 'warning',
             'rule' => 'command_docs.command_contract_complexity',
         ])
-        ->and($matchingFindings[0]['message'])->toContain('Command contract complexity score is');
+        ->and($matchingFindings[0]['message'])
+        ->toContain('Command contract complexity score is');
 });
 
 it('reports invented compound noun stacks as warnings', function (): void {
@@ -1198,9 +1362,12 @@ it('reports invented compound noun stacks as warnings', function (): void {
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and($payload['warnings'])->toBe(1)
-        ->and($payload['findings'][0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($payload['warnings'])
+        ->toBe(1)
+        ->and($payload['findings'][0])
+        ->toMatchArray([
             'path' => 'docs/domains/1_node/1_node-new/node-new.md',
             'line' => 3,
             'severity' => 'warning',
@@ -1222,8 +1389,10 @@ it('opts into package prose hygiene rules through Librarian config', function ()
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and(array_column($payload['findings'], 'rule'))->toContain(
+    expect($exitCode)
+        ->toBe(0)
+        ->and(array_column($payload['findings'], 'rule'))
+        ->toContain(
             'librarian.requirement_smell',
             'librarian.section_opener_prose',
         );
@@ -1245,21 +1414,27 @@ it('flags legacy-narrative terms in docs as warnings', function (): void {
 
     $matchingFindings = findingsForRule($payload, 'command_docs.no_legacy_narrative');
 
-    expect($exitCode)->toBe(0)
-        ->and($matchingFindings)->toHaveCount(2)
-        ->and($matchingFindings[0])->toMatchArray([
+    expect($exitCode)
+        ->toBe(0)
+        ->and($matchingFindings)
+        ->toHaveCount(2)
+        ->and($matchingFindings[0])
+        ->toMatchArray([
             'path' => 'docs/architecture.md',
             'line' => 3,
             'severity' => 'warning',
             'rule' => 'command_docs.no_legacy_narrative',
         ])
-        ->and($matchingFindings[0]['message'])->toContain('legacy')
-        ->and($matchingFindings[1])->toMatchArray([
+        ->and($matchingFindings[0]['message'])
+        ->toContain('legacy')
+        ->and($matchingFindings[1])
+        ->toMatchArray([
             'path' => 'docs/architecture.md',
             'line' => 4,
             'severity' => 'warning',
         ])
-        ->and($matchingFindings[1]['message'])->toContain('no longer');
+        ->and($matchingFindings[1]['message'])
+        ->toContain('no longer');
 });
 
 it('skips docs/superpowers when checking legacy-narrative terms', function (): void {
@@ -1276,8 +1451,7 @@ it('skips docs/superpowers when checking legacy-narrative terms', function (): v
     ]);
     $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($exitCode)->toBe(0)
-        ->and(findingsForRule($payload, 'command_docs.no_legacy_narrative'))->toBe([]);
+    expect($exitCode)->toBe(0)->and(findingsForRule($payload, 'command_docs.no_legacy_narrative'))->toBe([]);
 });
 
 it('skips legacy-narrative terms inside output sample fences', function (): void {
@@ -1296,10 +1470,14 @@ it('skips legacy-narrative terms inside output sample fences', function (): void
 
     $matchingFindings = findingsForRule($payload, 'command_docs.no_legacy_narrative');
 
-    expect($exitCode)->toBe(0)
-        ->and($matchingFindings)->toHaveCount(1)
-        ->and($matchingFindings[0]['line'])->toBe(9)
-        ->and($matchingFindings[0]['message'])->toContain('legacy');
+    expect($exitCode)
+        ->toBe(0)
+        ->and($matchingFindings)
+        ->toHaveCount(1)
+        ->and($matchingFindings[0]['line'])
+        ->toBe(9)
+        ->and($matchingFindings[0]['message'])
+        ->toContain('legacy');
 });
 
 it('skips option mentions inside output sample fences for option consistency', function (): void {
@@ -1329,8 +1507,7 @@ it('still flags prose option mentions outside the canonical signature', function
 
     $matchingFindings = findingsForRule($payload, 'command_docs.signature_option_consistency');
 
-    expect($matchingFindings)->toHaveCount(1)
-        ->and($matchingFindings[0]['message'])->toContain('--version');
+    expect($matchingFindings)->toHaveCount(1)->and($matchingFindings[0]['message'])->toContain('--version');
 });
 
 it('accepts a test mapping that declares no gateway-side coverage', function (): void {
@@ -1356,8 +1533,11 @@ it('still requires a gateway test row when no coverage declaration exists', func
 
     $matchingFindings = findingsForRule($payload, 'command_docs.test_mapping_format');
 
-    expect($matchingFindings)->not->toBeEmpty()
-        ->and($matchingFindings[0]['message'])->toContain('no gateway-side coverage');
+    expect($matchingFindings)
+        ->not
+        ->toBeEmpty()
+        ->and($matchingFindings[0]['message'])
+        ->toContain('no gateway-side coverage');
 });
 
 function makeOrbitLibrarianDocsFixture(): string
@@ -1365,9 +1545,21 @@ function makeOrbitLibrarianDocsFixture(): string
     $path = sys_get_temp_dir().'/orbit-librarian-'.bin2hex(random_bytes(6));
 
     mkdir($path, 0777, true);
-    writeOrbitDocsFile($path, 'config/librarian-command-docs/state_families.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'node' => [\n        'singular' => 'node',\n        'doctor_doc' => 'domains/1_node/node-doctor.md',\n    ],\n];\n");
-    writeOrbitDocsFile($path, 'config/librarian-command-docs/error_codes.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'enforced_families' => [\n        'node',\n    ],\n    'shared' => [\n        'validation_failed',\n    ],\n    'products' => [\n        'node' => [\n            'not_found',\n        ],\n    ],\n];\n");
-    writeOrbitDocsFile($path, 'config/librarian-command-docs/warning_codes.php', "<?php\n\ndeclare(strict_types=1);\n\nreturn [];\n");
+    writeOrbitDocsFile(
+        $path,
+        'config/librarian-command-docs/state_families.php',
+        "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'node' => [\n        'singular' => 'node',\n        'doctor_doc' => 'domains/1_node/node-doctor.md',\n    ],\n];\n",
+    );
+    writeOrbitDocsFile(
+        $path,
+        'config/librarian-command-docs/error_codes.php',
+        "<?php\n\ndeclare(strict_types=1);\n\nreturn [\n    'enforced_families' => [\n        'node',\n    ],\n    'shared' => [\n        'validation_failed',\n    ],\n    'products' => [\n        'node' => [\n            'not_found',\n        ],\n    ],\n];\n",
+    );
+    writeOrbitDocsFile(
+        $path,
+        'config/librarian-command-docs/warning_codes.php',
+        "<?php\n\ndeclare(strict_types=1);\n\nreturn [];\n",
+    );
 
     return $path;
 }
@@ -1401,7 +1593,11 @@ function writeOrbitCommandDocsFamily(
     $canonicalContract ??= validOrbitCanonicalContract();
 
     writeOrbitDocsFile($root, 'docs/domains/1_node/README.md', "# Node Commands\n");
-    writeOrbitDocsFile($root, 'docs/domains/1_node/node.md', "# Node\n\n## Purpose\n\nNode command contracts describe how Orbit manages node identity, roles, relationships, and node-local integration.\n\n## Responsibilities\n\nNode docs own the node command family and its node-specific behavior contracts.\n\n## Boundaries\n\nShared command UX and cross-family behavior stay in their owning docs.\n");
+    writeOrbitDocsFile(
+        $root,
+        'docs/domains/1_node/node.md',
+        "# Node\n\n## Purpose\n\nNode command contracts describe how Orbit manages node identity, roles, relationships, and node-local integration.\n\n## Responsibilities\n\nNode docs own the node command family and its node-specific behavior contracts.\n\n## Boundaries\n\nShared command UX and cross-family behavior stay in their owning docs.\n",
+    );
     writeOrbitDocsFile($root, 'docs/domains/1_node/node-doctor.md', validOrbitNodeDoctorContract());
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/node-new.md', $publicCommandPage);
 
@@ -1410,8 +1606,16 @@ function writeOrbitCommandDocsFamily(
     }
 
     writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/1_node-new.md', $canonicalContract);
-    writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md', $humanRendererContract);
-    writeOrbitDocsFile($root, 'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md', $jsonRendererContract);
+    writeOrbitDocsFile(
+        $root,
+        'docs/domains/1_node/1_node-new/technical/6.1_node-new_output-render_human.md',
+        $humanRendererContract,
+    );
+    writeOrbitDocsFile(
+        $root,
+        'docs/domains/1_node/1_node-new/technical/6.2_node-new_output-render_json.md',
+        $jsonRendererContract,
+    );
 }
 
 function validOrbitCanonicalContract(
@@ -1424,7 +1628,8 @@ function validOrbitCanonicalContract(
     string $activityLogging = "This command does not emit activity events.\n",
     string $extra = '',
 ): string {
-    return "# Technical Contract: `orbit node:new`\n\n"
+    return (
+        "# Technical Contract: `orbit node:new`\n\n"
         ."**Owner:** Node domain.\n"
         ."**Effects:** {$effects}\n"
         ."**Prerequisites:** Gateway access.\n\n"
@@ -1443,12 +1648,14 @@ function validOrbitCanonicalContract(
         ."| Path | Coverage |\n"
         ."| --- | --- |\n"
         ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers canonical technical contract mapping for node commands. |\n"
-        .$extra;
+        .$extra
+    );
 }
 
 function validOrbitNodeDoctorContract(): string
 {
-    return "# Node Doctor\n\n"
+    return (
+        "# Node Doctor\n\n"
         ."## Node Probe Layers\n\n"
         ."Probe facts are documented here.\n\n"
         ."## Node Issue Codes\n\n"
@@ -1466,7 +1673,8 @@ function validOrbitNodeDoctorContract(): string
         ."## Test Mapping\n\n"
         ."| Path | Coverage |\n"
         ."| --- | --- |\n"
-        ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers node doctor relationship mapping for node commands. |\n";
+        ."| `apps/gateway/tests/Feature/Librarian/OrbitCommandDocsRulesTest.php` | Covers node doctor relationship mapping for node commands. |\n"
+    );
 }
 
 function writeOrbitDocsFile(string $root, string $path, string $contents): void

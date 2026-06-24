@@ -28,15 +28,24 @@ describe('App model', function (): void {
 
         $app->refresh();
 
-        expect($app->name)->toBe('docs')
-            ->and($app->node)->toBeInstanceOf(Node::class)
-            ->and($app->node->is($node))->toBeTrue()
-            ->and($app->environment)->toBe('development')
-            ->and($app->url())->toBe('https://docs.example.com')
-            ->and($app->documentRootPath())->toBe('/home/orbit/apps/docs/public')
-            ->and($app->repository)->toBe('git@github.com:orbit/docs.git')
-            ->and($app->php_version)->toBe('8.5')
-            ->and($app->adopted)->toBeFalse();
+        expect($app->name)
+            ->toBe('docs')
+            ->and($app->node)
+            ->toBeInstanceOf(Node::class)
+            ->and($app->node->is($node))
+            ->toBeTrue()
+            ->and($app->environment)
+            ->toBe('development')
+            ->and($app->url())
+            ->toBe('https://docs.example.com')
+            ->and($app->documentRootPath())
+            ->toBe('/home/orbit/apps/docs/public')
+            ->and($app->repository)
+            ->toBe('git@github.com:orbit/docs.git')
+            ->and($app->php_version)
+            ->toBe('8.5')
+            ->and($app->adopted)
+            ->toBeFalse();
     });
 
     it('defaults optional registry fields for a development app', function (): void {
@@ -53,16 +62,23 @@ describe('App model', function (): void {
 
         $app->refresh();
 
-        expect($app->document_root)->toBe('public')
-            ->and($app->repository)->toBeNull()
-            ->and($app->php_version)->toBe('8.5')
-            ->and($app->adopted)->toBeFalse()
-            ->and($app->environment)->toBe('development')
-            ->and($app->url())->toBe('https://api.test');
+        expect($app->document_root)
+            ->toBe('public')
+            ->and($app->repository)
+            ->toBeNull()
+            ->and($app->php_version)
+            ->toBe('8.5')
+            ->and($app->adopted)
+            ->toBeFalse()
+            ->and($app->environment)
+            ->toBe('development')
+            ->and($app->url())
+            ->toBe('https://api.test');
     });
 
     it('creates the apps table with the registry indexes needed by read commands', function (): void {
-        expect(Schema::hasTable('apps'))->toBeTrue()
+        expect(Schema::hasTable('apps'))
+            ->toBeTrue()
             ->and(Schema::hasColumns('apps', [
                 'id',
                 'name',
@@ -76,6 +92,7 @@ describe('App model', function (): void {
                 'adopted',
                 'created_at',
                 'updated_at',
-            ]))->toBeTrue();
+            ]))
+            ->toBeTrue();
     });
 });

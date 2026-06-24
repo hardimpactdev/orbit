@@ -43,8 +43,7 @@ describe('interface contract', function (): void {
     });
 
     it('does not depend on host PHP for host-lane process probes', function (): void {
-        expect((string) file_get_contents(app_path('Services/Processes/ProcessesProbe.php')))
-            ->not->toContain('php -r');
+        expect((string) file_get_contents(app_path('Services/Processes/ProcessesProbe.php')))->not->toContain('php -r');
     });
 
     it('returns an empty foundation snapshot before live runtime probing is added', function (): void {
@@ -62,10 +61,15 @@ describe('runtime backend availability', function (): void {
         $process = processFor($app, ['name' => 'vite']);
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_old_queue\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n__extra\torbit_docs_old_queue\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
         expect($snapshot->get('vite'))->toMatchArray([
             'runtime_backend_available' => true,
@@ -75,7 +79,8 @@ describe('runtime backend availability', function (): void {
         expect($shell->scripts[0])->toBe('command -v systemctl >/dev/null 2>&1 && systemctl --version >/dev/null 2>&1');
         expect($shell->scripts[1])
             ->toStartWith('set -eu')
-            ->not->toContain('php -r')
+            ->not
+            ->toContain('php -r')
             ->toContain('probe_unit')
             ->toContain("probe_unit 'orbit_{$app->name}_main_vite'")
             ->toContain("printf '%s\\t%s\\t%s\\t%s\\t%s\\n'");
@@ -127,35 +132,47 @@ describe('runtime backend availability', function (): void {
 
 describe('WireGuard self-route diagnostics', function (): void {
     it('reports unavailable Linux self-routes for node-owned service process endpoints', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'redis',
-            'command' => 'redis-server --appendonly yes',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'service' => 'redis',
-                'endpoint' => [
-                    'name' => 'redis',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 6379,
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'redis',
+                'command' => 'redis-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'redis',
+                    'endpoint' => [
+                        'name' => 'redis',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 6379,
+                    ],
                 ],
-            ],
-        ]);
+            ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "10.6.0.7 dev wg-orbit src 10.6.0.2\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "10.6.0.7 dev wg-orbit src 10.6.0.2\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
         app()->instance(RemoteShell::class, $shell);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'process.owner_app_invalid'))->toBeNull()
-            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->kind)->toBe(DriftKind::Unverifiable)
-            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)->toMatchArray([
+        expect(issue($drift, 'process.owner_app_invalid'))
+            ->toBeNull()
+            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
+            ->toMatchArray([
                 'process' => 'redis',
                 'node' => 'database-1',
                 'endpoint' => 'redis',
@@ -165,30 +182,40 @@ describe('WireGuard self-route diagnostics', function (): void {
                 'reason' => 'self_route_missing',
                 'message' => 'Linux node does not route its own WireGuard address locally.',
             ])
-            ->and($shell->scripts)->toBe(["ip route get '10.6.0.7'"]);
+            ->and($shell->scripts)
+            ->toBe(["ip route get '10.6.0.7'"]);
     });
 
     it('does not report process self-route drift when Linux routes its own WireGuard address locally', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'platform' => 'ubuntu_24-04',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'redis',
-            'command' => 'redis-server --appendonly yes',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'endpoint' => [
-                    'name' => 'redis',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 6379,
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'platform' => 'ubuntu_24-04',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'redis',
+                'command' => 'redis-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'endpoint' => [
+                        'name' => 'redis',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 6379,
+                    ],
                 ],
-            ],
-        ]);
+            ]);
         app()->instance(RemoteShell::class, new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: "local 10.6.0.7 dev lo src 10.6.0.7\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "local 10.6.0.7 dev lo src 10.6.0.7\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]));
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
@@ -197,35 +224,41 @@ describe('WireGuard self-route diagnostics', function (): void {
     });
 
     it('reports macOS as unsupported for process self-route diagnostics without route commands', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'platform' => 'macos_15-4',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'redis',
-            'command' => 'redis-server --appendonly yes',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'endpoint' => [
-                    'name' => 'redis',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 6379,
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'platform' => 'macos_15-4',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'redis',
+                'command' => 'redis-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'endpoint' => [
+                        'name' => 'redis',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 6379,
+                    ],
                 ],
-            ],
-        ]);
+            ]);
         $shell = new ProcessesProbeRecordingRemoteShell([]);
         app()->instance(RemoteShell::class, $shell);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)->toMatchArray([
-            'platform' => 'macos_15-4',
-            'reason' => 'unsupported_platform',
-            'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
-        ])
-            ->and($shell->scripts)->toBe([]);
+        expect(issue($drift, 'process.wireguard_self_route_unavailable')?->detail)
+            ->toMatchArray([
+                'platform' => 'macos_15-4',
+                'reason' => 'unsupported_platform',
+                'message' => NodeWireGuardSelfRouteProbe::UnsupportedMessage,
+            ])
+            ->and($shell->scripts)
+            ->toBe([]);
     });
 });
 
@@ -240,10 +273,15 @@ describe('lifecycle event notifier reality', function (): void {
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: 'systemd OK', stderr: '', durationMs: 1),
-            new RemoteShellResult(exitCode: 0, stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n", stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: "orbit_{$app->name}_main_vite\t1\t1\t1\t1\n__notifier\t1\t1\t1\t1\t1\n",
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
         expect($snapshot->get('vite')['event_notifier'])->toMatchArray([
             'script_exists' => true,
@@ -366,20 +404,24 @@ describe('stale systemd unit reality', function (): void {
     });
 
     it('ignores app-owned stale systemd units for node-owned host processes', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'metrics-worker-1',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-            'user' => 'orbit',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'node-exporter',
-            'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
-            'restart_policy' => ProcessRestartPolicy::Always,
-            'crash_notification' => ProcessCrashNotification::None,
-            'runtime' => ProcessRuntime::Systemd,
-            'sort_order' => 1,
-        ]);
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'metrics-worker-1',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+                'user' => 'orbit',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'node-exporter',
+                'command' => '/usr/local/bin/node_exporter --web.listen-address=0.0.0.0:9100',
+                'restart_policy' => ProcessRestartPolicy::Always,
+                'crash_notification' => ProcessCrashNotification::None,
+                'runtime' => ProcessRuntime::Systemd,
+                'sort_order' => 1,
+            ]);
 
         $snapshot = new ProbeSnapshot([
             'node-exporter' => [
@@ -697,16 +739,23 @@ describe('docker runtime probe scope', function (): void {
             ],
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $container->specHash()]],
-            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'running'],
+                    'Config' => ['Labels' => [AppRuntimeContainer::SpecHashLabel => $container->specHash()]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
-        expect($shell->scripts[0])->toContain("docker container inspect --format '{{json .}}' 'orbit-app-docs'")
-            ->and($snapshot->get('frankenphp-docs'))->toMatchArray([
+        expect($shell->scripts[0])
+            ->toContain("docker container inspect --format '{{json .}}' 'orbit-app-docs'")
+            ->and($snapshot->get('frankenphp-docs'))
+            ->toMatchArray([
                 'runtime_backend_available' => true,
                 'runtime_units' => [
                     'orbit-app-docs' => [
@@ -735,28 +784,38 @@ describe('docker runtime probe scope', function (): void {
             'php_version' => '8.5',
         ]);
         $container = app(WorkspaceRuntimeContainerRenderer::class)->render($workspace);
-        $process = Process::factory()->forOwner($workspace)->create([
-            'name' => 'frankenphp-docs-feature-a',
-            'command' => 'frankenphp',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'container_name' => 'orbit-ws-docs-feature-a',
-                'container_spec_hash' => $container->specHash(),
-                'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
-            ],
-        ]);
+        $process = Process::factory()
+            ->forOwner($workspace)
+            ->create([
+                'name' => 'frankenphp-docs-feature-a',
+                'command' => 'frankenphp',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'container_name' => 'orbit-ws-docs-feature-a',
+                    'container_spec_hash' => $container->specHash(),
+                    'container_spec_hash_label' => WorkspaceRuntimeContainer::SpecHashLabel,
+                ],
+            ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => [WorkspaceRuntimeContainer::SpecHashLabel => $container->specHash()]],
-            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'running'],
+                    'Config' => ['Labels' => [WorkspaceRuntimeContainer::SpecHashLabel => $container->specHash()]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
-        expect($shell->scripts)->toHaveCount(2)
-            ->and($shell->scripts[0])->toContain("docker container inspect --format '{{json .}}' 'orbit-ws-docs-feature-a'")
-            ->and($snapshot->get('frankenphp-docs-feature-a'))->toMatchArray([
+        expect($shell->scripts)
+            ->toHaveCount(2)
+            ->and($shell->scripts[0])
+            ->toContain("docker container inspect --format '{{json .}}' 'orbit-ws-docs-feature-a'")
+            ->and($snapshot->get('frankenphp-docs-feature-a'))
+            ->toMatchArray([
                 'runtime_backend_available' => true,
                 'runtime_units' => [
                     'orbit-ws-docs-feature-a' => [
@@ -769,55 +828,70 @@ describe('docker runtime probe scope', function (): void {
     });
 
     it('introspects node-owned Docker managed service processes without app labels', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'redis',
-            'command' => 'redis-server --appendonly yes',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'service' => 'redis',
-                'version_family' => '7',
-                'version' => '7.2',
-                'image' => 'redis:7.2',
-                'spec_hash' => 'managed-service-hash',
-                'endpoint' => [
-                    'name' => 'redis',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 6379,
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'redis',
+                'command' => 'redis-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'redis',
+                    'version_family' => '7',
+                    'version' => '7.2',
+                    'image' => 'redis:7.2',
+                    'spec_hash' => 'managed-service-hash',
+                    'endpoint' => [
+                        'name' => 'redis',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 6379,
+                    ],
+                    'labels' => [
+                        'orbit.managed' => 'true',
+                        'orbit.process' => 'redis',
+                        'orbit.process.service' => 'redis',
+                        'orbit.process.version_family' => '7',
+                        'orbit.process.version' => '7.2',
+                        'orbit.process.spec_hash' => 'managed-service-hash',
+                    ],
                 ],
-                'labels' => [
-                    'orbit.managed' => 'true',
-                    'orbit.process' => 'redis',
-                    'orbit.process.service' => 'redis',
-                    'orbit.process.version_family' => '7',
-                    'orbit.process.version' => '7.2',
-                    'orbit.process.spec_hash' => 'managed-service-hash',
-                ],
-            ],
-        ]);
+            ]);
         $containerHash = app(ProcessDockerContainerRenderer::class)
             ->render(new App(['name' => 'runtime']), $process)
             ->specHash();
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => $containerHash]],
-            ], JSON_THROW_ON_ERROR), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'running'],
+                    'Config' => ['Labels' => ['orbit.process.spec_hash' => $containerHash]],
+                ], JSON_THROW_ON_ERROR),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: "redis-old\n", stderr: '', durationMs: 1),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
-        expect($shell->nodes[0]->is($node))->toBeTrue()
-            ->and($shell->scripts[0])->toContain("docker container inspect --format '{{json .}}' 'redis'")
-            ->and($shell->scripts[1])->toContain("--filter label=orbit.process='redis'")
-            ->and($shell->scripts[1])->not->toContain('label=orbit.app=')
-            ->and($snapshot->get('redis'))->toMatchArray([
+        expect($shell->nodes[0]->is($node))
+            ->toBeTrue()
+            ->and($shell->scripts[0])
+            ->toContain("docker container inspect --format '{{json .}}' 'redis'")
+            ->and($shell->scripts[1])
+            ->toContain("--filter label=orbit.process='redis'")
+            ->and($shell->scripts[1])
+            ->not
+            ->toContain('label=orbit.app=')
+            ->and($snapshot->get('redis'))
+            ->toMatchArray([
                 'runtime_backend_available' => true,
                 'runtime_units' => [
                     'redis' => [
@@ -831,27 +905,33 @@ describe('docker runtime probe scope', function (): void {
     });
 
     it('reports unrenderable node-owned Docker process intent without aborting doctor', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'redis',
-            'command' => 'redis-server --appendonly yes',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'service' => 'redis',
-                'version_family' => '7',
-                'version' => '7.2',
-            ],
-        ]);
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'redis',
+                'command' => 'redis-server --appendonly yes',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'redis',
+                    'version_family' => '7',
+                    'version' => '7.2',
+                ],
+            ]);
 
-        $snapshot = (new ProcessesProbe)->introspect($process);
+        $snapshot = new ProcessesProbe()->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
-        expect(issue($drift, 'process.runtime_unit_unrenderable')?->kind)->toBe(DriftKind::Unverifiable)
-            ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail)->toMatchArray([
+        expect(issue($drift, 'process.runtime_unit_unrenderable')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail)
+            ->toMatchArray([
                 'process' => 'redis',
                 'runtime' => 'docker',
                 'service' => 'redis',
@@ -863,29 +943,33 @@ describe('docker runtime probe scope', function (): void {
     });
 
     it('reports concrete service metadata for missing Docker Swarm service units', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'mysql8',
-            'command' => 'mysqld',
-            'runtime' => ProcessRuntime::DockerSwarm,
-            'runtime_config' => [
-                'service' => 'mysql',
-                'version_family' => '8',
-                'version' => '8.4',
-                'service_name' => 'orbit-mysql8',
-                'spec_hash' => 'mysql-spec-hash',
-                'endpoint' => [
-                    'name' => 'mysql8',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 3308,
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql8',
+                'command' => 'mysqld',
+                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'version_family' => '8',
+                    'version' => '8.4',
+                    'service_name' => 'orbit-mysql8',
+                    'spec_hash' => 'mysql-spec-hash',
+                    'endpoint' => [
+                        'name' => 'mysql8',
+                        'kind' => 'tcp',
+                        'host' => '10.6.0.7',
+                        'port' => 3308,
+                    ],
                 ],
-            ],
-        ]);
+            ]);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([
             'mysql8' => [
@@ -899,8 +983,10 @@ describe('docker runtime probe scope', function (): void {
             ],
         ]));
 
-        expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing)
-            ->and(issue($drift, 'process.runtime_unit_missing')?->detail)->toMatchArray([
+        expect(issue($drift, 'process.runtime_unit_missing')?->kind)
+            ->toBe(DriftKind::Missing)
+            ->and(issue($drift, 'process.runtime_unit_missing')?->detail)
+            ->toMatchArray([
                 'process' => 'mysql8',
                 'runtime' => 'docker-swarm',
                 'runtime_unit' => 'orbit-mysql8',
@@ -917,22 +1003,26 @@ describe('docker runtime probe scope', function (): void {
     });
 
     it('reports runtime backend drift for node-owned service processes on the owning node', function (): void {
-        $node = Node::factory()->database()->create([
-            'name' => 'database-1',
-            'status' => 'active',
-            'wireguard_address' => '10.6.0.7',
-        ]);
-        $process = Process::factory()->forOwner($node)->create([
-            'name' => 'mysql8',
-            'command' => 'mysqld',
-            'runtime' => ProcessRuntime::DockerSwarm,
-            'runtime_config' => [
-                'service' => 'mysql',
-                'version_family' => '8',
-                'version' => '8.4',
-                'service_name' => 'orbit-mysql8',
-            ],
-        ]);
+        $node = Node::factory()
+            ->database()
+            ->create([
+                'name' => 'database-1',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $process = Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql8',
+                'command' => 'mysqld',
+                'runtime' => ProcessRuntime::DockerSwarm,
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'version_family' => '8',
+                    'version' => '8.4',
+                    'service_name' => 'orbit-mysql8',
+                ],
+            ]);
 
         $drift = $this->probe->diff($process, new ProbeSnapshot([
             'mysql8' => [
@@ -942,8 +1032,10 @@ describe('docker runtime probe scope', function (): void {
             ],
         ]));
 
-        expect(issue($drift, 'process.runtime_backend_unavailable')?->kind)->toBe(DriftKind::Unverifiable)
-            ->and(issue($drift, 'process.runtime_backend_unavailable')?->detail)->toMatchArray([
+        expect(issue($drift, 'process.runtime_backend_unavailable')?->kind)
+            ->toBe(DriftKind::Unverifiable)
+            ->and(issue($drift, 'process.runtime_backend_unavailable')?->detail)
+            ->toMatchArray([
                 'process' => 'mysql8',
                 'node' => 'database-1',
                 'runtime' => 'docker-swarm',
@@ -963,16 +1055,27 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'running'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
 
-        expect($shell->scripts[0])->toContain('docker container inspect')
-            ->and($snapshot->get('queue'))->toMatchArray([
+        expect($shell->scripts[0])
+            ->toContain('docker container inspect')
+            ->and($snapshot->get('queue'))
+            ->toMatchArray([
                 'runtime_backend_available' => true,
                 'runtime_units' => [
                     'orbit_docs_main_queue' => [
@@ -994,7 +1097,7 @@ describe('docker runtime probe scope', function (): void {
             new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'Error: No such container', durationMs: 1),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_missing')?->kind)->toBe(DriftKind::Missing);
@@ -1010,13 +1113,18 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => 'wrong-hash']],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'running'],
+                    'Config' => ['Labels' => ['orbit.process.spec_hash' => 'wrong-hash']],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch')?->kind)->toBe(DriftKind::Divergent);
@@ -1029,14 +1137,23 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'running'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'running'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
             new RemoteShellResult(exitCode: 0, stdout: "orbit_docs_main_oldqueue\n", stderr: '', durationMs: 1),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         $extra = issue($drift, 'process.runtime_unit_extra');
@@ -1051,13 +1168,22 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'created'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'created'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1070,13 +1196,22 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'exited'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'exited'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1089,13 +1224,22 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'paused'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'paused'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1108,13 +1252,22 @@ describe('docker runtime probe scope', function (): void {
             'runtime' => ProcessRuntime::Docker,
         ]);
         $shell = new ProcessesProbeRecordingRemoteShell([
-            new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'State' => ['Status' => 'dead'],
-                'Config' => ['Labels' => ['orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)->render($app, $process)->specHash()]],
-            ]), stderr: '', durationMs: 1),
+            new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'State' => ['Status' => 'dead'],
+                    'Config' => ['Labels' => [
+                        'orbit.process.spec_hash' => app(ProcessDockerContainerRenderer::class)
+                            ->render($app, $process)
+                            ->specHash(),
+                    ]],
+                ]),
+                stderr: '',
+                durationMs: 1,
+            ),
         ]);
 
-        $snapshot = (new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell)))->introspect($process);
+        $snapshot = new ProcessesProbe(runtimeBackendProbe: new RuntimeBackendProbe($shell))->introspect($process);
         $drift = $this->probe->diff($process, $snapshot);
 
         expect(issue($drift, 'process.runtime_unit_mismatch'))->toBeNull();
@@ -1188,7 +1341,9 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell
     /**
      * @param  list<RemoteShellResult>  $results
      */
-    public function __construct(private array $results) {}
+    public function __construct(
+        private array $results,
+    ) {}
 
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
@@ -1196,11 +1351,13 @@ final class ProcessesProbeRecordingRemoteShell implements RemoteShell
         $this->scripts[] = $script;
         $this->options[] = $options;
 
-        return array_shift($this->results) ?? new RemoteShellResult(
-            exitCode: 0,
-            stdout: '',
-            stderr: '',
-            durationMs: 1,
+        return (
+            array_shift($this->results) ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: '',
+                stderr: '',
+                durationMs: 1,
+            )
         );
     }
 }

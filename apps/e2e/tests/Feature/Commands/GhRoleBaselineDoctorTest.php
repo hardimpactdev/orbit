@@ -27,9 +27,12 @@ it('repairs gh on app-role nodes through the tool doctor', function (): void {
             $data = e2eJsonCommandData(e2eJsonCommandPayload($result->output()));
             $action = ghRoleBaselineGhAction($data, $node);
 
-            expect($result->successful())->toBeTrue($result->output().$result->errorOutput())
-                ->and($data['doctor']['healthy'])->toBeTrue()
-                ->and($action)->toMatchArray([
+            expect($result->successful())
+                ->toBeTrue($result->output().$result->errorOutput())
+                ->and($data['doctor']['healthy'])
+                ->toBeTrue()
+                ->and($action)
+                ->toMatchArray([
                     'family' => 'tool',
                     'node' => $node,
                     'key' => 'tool.capability_missing',
@@ -40,8 +43,10 @@ it('repairs gh on app-role nodes through the tool doctor', function (): void {
 
             $probe = $topology->ssh($role, 'command -v gh && gh --version | head -n 1', timeoutSeconds: 60);
 
-            expect($probe->successful())->toBeTrue($probe->output().$probe->errorOutput())
-                ->and($probe->output())->toContain('gh version');
+            expect($probe->successful())
+                ->toBeTrue($probe->output().$probe->errorOutput())
+                ->and($probe->output())
+                ->toContain('gh version');
         }
     } finally {
         $topology->cleanup();
@@ -75,47 +80,48 @@ function ghRoleBaselineTopology(): E2ETopologyHarness
 function ghRoleBaselineConvergeAppRoles(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
-$converger = app(\App\Services\Nodes\Roles\NodeRoleBaselineConverger::class);
-$allowedByNode = [
-    'app-dev-1' => ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'],
-    'app-prod-1' => ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'],
-];
+        $converger = app(\App\Services\Nodes\Roles\NodeRoleBaselineConverger::class);
+        $allowedByNode = [
+            'app-dev-1' => ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'],
+            'app-prod-1' => ['caddy', 'php-cli', 'composer', 'gh', 'laravel-installer'],
+        ];
 
-foreach ([
-    'app-dev-1' => \App\Enums\Nodes\NodeRoleName::AppDevelopment->value,
-    'app-prod-1' => \App\Enums\Nodes\NodeRoleName::AppProduction->value,
-] as $nodeName => $role) {
-    $node = \App\Models\Node::query()->where('name', $nodeName)->firstOrFail();
-    $node->forceFill([
-        'platform' => $node->platform ?: 'ubuntu_24-04',
-        'status' => 'active',
-    ])->save();
+        foreach ([
+            'app-dev-1' => \App\Enums\Nodes\NodeRoleName::AppDevelopment->value,
+            'app-prod-1' => \App\Enums\Nodes\NodeRoleName::AppProduction->value,
+        ] as $nodeName => $role) {
+            $node = \App\Models\Node::query()->where('name', $nodeName)->firstOrFail();
+            $node->forceFill([
+                'platform' => $node->platform ?: 'ubuntu_24-04',
+                'status' => 'active',
+            ])->save();
 
-    $assignment = \App\Models\NodeRoleAssignment::query()
-        ->where('node_id', $node->id)
-        ->where('role', $role)
-        ->firstOrFail();
+            $assignment = \App\Models\NodeRoleAssignment::query()
+                ->where('node_id', $node->id)
+                ->where('role', $role)
+                ->firstOrFail();
 
-    $converger->converge($node, $assignment);
+            $converger->converge($node, $assignment);
 
-    \App\Models\NodeTool::query()
-        ->where('node_id', $node->id)
-        ->whereNotIn('name', $allowedByNode[$nodeName])
-        ->delete();
+            \App\Models\NodeTool::query()
+                ->where('node_id', $node->id)
+                ->whereNotIn('name', $allowedByNode[$nodeName])
+                ->delete();
 
-    \App\Models\NodeTool::query()
-        ->where('node_id', $node->id)
-        ->where('name', 'gh')
-        ->where('expected_state', 'installed')
-        ->firstOrFail();
-}
+            \App\Models\NodeTool::query()
+                ->where('node_id', $node->id)
+                ->where('name', 'gh')
+                ->where('expected_state', 'installed')
+                ->firstOrFail();
+        }
 
-echo 'converged';
-PHP;
+        echo 'converged';
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 120,
     );
 
@@ -126,32 +132,33 @@ function ghRoleBaselineWaitForGatewayRemoteShell(E2ETopologyHarness $topology, s
 {
     $nodeName = var_export($node, true);
     $php = <<<PHP
-\$node = \App\Models\Node::query()->where('name', {$nodeName})->firstOrFail();
-\$deadline = time() + 120;
-\$last = null;
-\$ready = false;
+        \$node = \App\Models\Node::query()->where('name', {$nodeName})->firstOrFail();
+        \$deadline = time() + 120;
+        \$last = null;
+        \$ready = false;
 
-do {
-    \$last = app(\App\Contracts\RemoteShell::class)->run(\$node, 'true', ['timeout' => 20]);
+        do {
+            \$last = app(\App\Contracts\RemoteShell::class)->run(\$node, 'true', ['timeout' => 20]);
 
-    if (\$last->successful()) {
-        \$ready = true;
-        break;
-    }
+            if (\$last->successful()) {
+                \$ready = true;
+                break;
+            }
 
-    sleep(2);
-} while (time() < \$deadline);
+            sleep(2);
+        } while (time() < \$deadline);
 
-if (! \$ready) {
-    throw new \RuntimeException(\$last?->output() ?: 'gateway remote shell did not become ready');
-}
+        if (! \$ready) {
+            throw new \RuntimeException(\$last?->output() ?: 'gateway remote shell did not become ready');
+        }
 
-echo 'ready';
-PHP;
+        echo 'ready';
+        PHP;
 
     $result = $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 150,
     );
 

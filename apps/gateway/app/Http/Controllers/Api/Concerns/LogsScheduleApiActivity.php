@@ -29,13 +29,16 @@ trait LogsScheduleApiActivity
     {
         $request = request();
 
-        return array_filter([
-            'name' => $request->route('name') ?? $this->optionalActivityString($request, 'name'),
-            'app' => $this->optionalActivityString($request, 'app'),
-            'node' => $this->optionalActivityString($request, 'node'),
-            'run' => $request->query('run'),
-            'lines' => $request->query('lines'),
-        ], fn (mixed $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'name' => $request->route('name') ?? $this->optionalActivityString($request, 'name'),
+                'app' => $this->optionalActivityString($request, 'app'),
+                'node' => $this->optionalActivityString($request, 'node'),
+                'run' => $request->query('run'),
+                'lines' => $request->query('lines'),
+            ],
+            fn (mixed $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function description(): ?string

@@ -36,23 +36,30 @@ final class ProcessEditCommand extends ProcessGatewayCommand
         $runtime = $this->stringOption('runtime');
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
-            return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
-                'node' => $node,
-                'app' => $app,
-                'workspace' => $workspace,
-            ]);
+            return $this->failValidation(
+                'context',
+                'A node context cannot be combined with app or workspace context.',
+                [
+                    'node' => $node,
+                    'app' => $app,
+                    'workspace' => $workspace,
+                ],
+            );
         }
 
         if ($node === null && $app === null && $workspace === null) {
             return $this->failValidation('app', 'A node, app, or workspace context is required.');
         }
 
-        $validation = $this->validateProcessName($name)
-            ?? $this->validateEditableFields($command, $restartPolicy, $crashNotification, $runtime)
-            ?? $this->validateRestartPolicy($restartPolicy)
-            ?? $this->validateCrashNotification($crashNotification)
-            ?? $this->validateRuntime($runtime)
-            ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node);
+        $validation =
+            $this->validateProcessName($name) ?? $this->validateEditableFields(
+                $command,
+                $restartPolicy,
+                $crashNotification,
+                $runtime,
+            ) ?? $this->validateRestartPolicy($restartPolicy) ?? $this->validateCrashNotification(
+                $crashNotification,
+            ) ?? $this->validateRuntime($runtime) ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node);
 
         if ($validation !== null) {
             return $validation;
@@ -118,8 +125,12 @@ final class ProcessEditCommand extends ProcessGatewayCommand
         return self::SUCCESS;
     }
 
-    private function validateEditableFields(?string $command, ?string $restartPolicy, ?string $crashNotification, ?string $runtime): ?int
-    {
+    private function validateEditableFields(
+        ?string $command,
+        ?string $restartPolicy,
+        ?string $crashNotification,
+        ?string $runtime,
+    ): ?int {
         if ($command !== null || $restartPolicy !== null || $crashNotification !== null || $runtime !== null) {
             return null;
         }

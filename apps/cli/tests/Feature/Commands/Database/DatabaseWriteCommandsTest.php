@@ -28,7 +28,8 @@ describe('database write commands', function (): void {
         ]);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/database-connections/dlf-leden/users')
                 && $request->data() === [
                     'service' => 'mysql8',
@@ -36,13 +37,18 @@ describe('database write commands', function (): void {
                     'database' => 'dlf_leden',
                     'username' => 'dlf_leden',
                     'password' => 'super-secret',
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain("Database user 'dlf_leden' ready on service 'mysql8'.")
-            ->and($output)->toContain("Database connection 'dlf-leden' updated.")
-            ->and($output)->not->toContain('super-secret');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain("Database user 'dlf_leden' ready on service 'mysql8'.")
+            ->and($output)
+            ->toContain("Database connection 'dlf-leden' updated.")
+            ->and($output)
+            ->not->toContain('super-secret');
     });
 
     it('rejects database:add-user without required options before contacting the gateway', function (): void {
@@ -60,9 +66,12 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('password');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('password');
     });
 
     it('posts database:add payloads to the gateway without printing secrets', function (): void {
@@ -91,7 +100,8 @@ describe('database write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/database-connections')
                 && $request->data() === [
                     'slug' => 'primary-db',
@@ -102,12 +112,16 @@ describe('database write commands', function (): void {
                     'database' => 'orbit',
                     'username' => 'orbit',
                     'password' => 'super-secret',
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['connection']['slug'])->toBe('primary-db')
-            ->and($output)->not->toContain('super-secret');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['connection']['slug'])
+            ->toBe('primary-db')
+            ->and($output)
+            ->not->toContain('super-secret');
     });
 
     it('patches database:update payloads and supports clearing stored passwords', function (): void {
@@ -126,12 +140,14 @@ describe('database write commands', function (): void {
         ]);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'PATCH'
+            return (
+                $request->method() === 'PATCH'
                 && str_contains($request->url(), '/api/database-connections/primary-db')
                 && $request->data() === [
                     'slug' => 'renamed-db',
                     'clear_password' => true,
-                ];
+                ]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -149,9 +165,12 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('payload');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('payload');
     });
 
     it('attaches database connections to app targets', function (): void {
@@ -170,12 +189,14 @@ describe('database write commands', function (): void {
         ]);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/database-connections/primary-db/targets')
                 && $request->data() === [
                     'app' => 'docs',
                     'env_prefix' => 'DB',
-                ];
+                ]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -185,7 +206,12 @@ describe('database write commands', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'connection' => [
                 'slug' => 'primary-db',
-                'targets' => [['type' => 'app_instance', 'app' => 'docs', 'instance' => 'production', 'env_prefix' => 'DB']],
+                'targets' => [[
+                    'type' => 'app_instance',
+                    'app' => 'docs',
+                    'instance' => 'production',
+                    'env_prefix' => 'DB',
+                ]],
             ],
         ]));
 
@@ -198,13 +224,15 @@ describe('database write commands', function (): void {
         ]);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/database-connections/primary-db/targets')
                 && $request->data() === [
                     'app' => 'docs',
                     'instance' => 'production',
                     'env_prefix' => 'DB',
-                ];
+                ]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -229,12 +257,14 @@ describe('database write commands', function (): void {
         ]);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && str_contains($request->url(), '/api/database-connections/primary-db/targets')
                 && $request->data() === [
                     'workspace' => 'feature-docs',
                     'env_prefix' => 'REPORTING',
-                ];
+                ]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -254,9 +284,12 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('scope');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('scope');
     });
 
     it('rejects instance database targets without an app selector before contacting the gateway', function (): void {
@@ -272,12 +305,19 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('app');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('app');
     });
 
-    it('validates required database write inputs before contacting the gateway', function (string $command, array $params, string $field): void {
+    it('validates required database write inputs before contacting the gateway', function (
+        string $command,
+        array $params,
+        string $field,
+    ): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, $command, [
@@ -289,9 +329,12 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe($field);
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe($field);
     })->with([
         'add slug' => ['database:add', ['--driver' => 'pgsql'], 'slug'],
         'attach connection' => ['database:attach', ['--app' => 'docs'], 'connection'],
@@ -313,10 +356,14 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('slug')
-            ->and($output)->not->toContain('super-secret');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('slug')
+            ->and($output)
+            ->not->toContain('super-secret');
     });
 
     it('requires force for database:remove before contacting the gateway', function (): void {
@@ -331,9 +378,12 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta'])->toMatchArray([
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta'])
+            ->toMatchArray([
                 'field' => 'force',
                 'reason' => 'destructive_consent_required',
             ]);
@@ -354,9 +404,11 @@ describe('database write commands', function (): void {
         ]);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'DELETE'
+            return (
+                $request->method() === 'DELETE'
                 && str_contains($request->url(), '/api/database-connections/primary-db')
-                && $request->data() === ['force' => true];
+                && $request->data() === ['force' => true]
+            );
         });
 
         expect($exitCode)->toBe(0);
@@ -370,14 +422,19 @@ describe('database write commands', function (): void {
             ],
         ]));
 
-        $this->artisan('database:remove', ['connection' => 'primary-db'])
+        $this
+            ->artisan('database:remove', ['connection' => 'primary-db'])
             ->expectsConfirmation('Remove database connection and all target mappings?', 'yes')
             ->expectsOutputToContain('removed')
             ->assertSuccessful();
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'DELETE'
-            && str_contains($request->url(), '/api/database-connections/primary-db')
-            && $request->data() === ['force' => true]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'DELETE'
+                && str_contains($request->url(), '/api/database-connections/primary-db')
+                && $request->data() === ['force' => true]
+            ),
+        );
     });
 
     it('posts database:query payloads and emits strict JSON without requiring --json', function (): void {
@@ -405,7 +462,8 @@ describe('database write commands', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         Http::assertSent(function (Request $request): bool {
-            return $request->method() === 'POST'
+            return (
+                $request->method() === 'POST'
                 && str_contains($request->url(), '/api/database-connections/query')
                 && $request->data() === [
                     'target' => 'docs',
@@ -416,12 +474,16 @@ describe('database write commands', function (): void {
                     'limit' => '100',
                     'timeout' => '30',
                     'max_json_bytes' => '8192',
-                ];
+                ]
+            );
         });
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['rows'][0]['id'])->toBe(1)
-            ->and($output)->toStartWith('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['rows'][0]['id'])
+            ->toBe(1)
+            ->and($output)
+            ->toStartWith('{');
     });
 
     it('requires SQL for database:query before contacting the gateway', function (): void {
@@ -435,13 +497,19 @@ describe('database write commands', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('sql');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('sql');
     });
 
     it('passes through gateway errors from database writes', function (): void {
-        fakeGateway(fakeErrorEnvelope('authorization_failed', 'This node is not authorized to manage database connections.'), 403);
+        fakeGateway(
+            fakeErrorEnvelope('authorization_failed', 'This node is not authorized to manage database connections.'),
+            403,
+        );
 
         [$exitCode, $output] = runCommand($this, 'database:add', [
             'slug' => 'primary-db',
@@ -451,8 +519,7 @@ describe('database write commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('authorization_failed');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('authorization_failed');
     });
 
     it('renders a concise human success line for database:add without dumping the envelope', function (): void {
@@ -469,11 +536,14 @@ describe('database write commands', function (): void {
             '--driver' => 'pgsql',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Database connection 'primary-db' created.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('connection:')
-            ->and($output)->not->toContain('driver:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Database connection 'primary-db' created.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('connection:')->and($output)
+            ->not->toContain('driver:');
     });
 
     it('renders a concise human success line for database:update without dumping the envelope', function (): void {
@@ -489,10 +559,13 @@ describe('database write commands', function (): void {
             '--slug' => 'renamed-db',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Database connection 'renamed-db' updated.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('connection:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Database connection 'renamed-db' updated.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('connection:');
     });
 
     it('renders a concise human success line for database:remove without dumping the envelope', function (): void {
@@ -508,11 +581,14 @@ describe('database write commands', function (): void {
             '--force' => true,
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Database connection 'primary-db' removed.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('result:')
-            ->and($output)->not->toContain('action:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Database connection 'primary-db' removed.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('result:')->and($output)
+            ->not->toContain('action:');
     });
 
     it('renders a concise human success line for database:attach with target and prefix', function (): void {
@@ -529,18 +605,26 @@ describe('database write commands', function (): void {
             '--env-prefix' => 'DB',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Attached database connection 'primary-db' to app 'docs' with prefix 'DB'.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('connection:')
-            ->and($output)->not->toContain('targets:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Attached database connection 'primary-db' to app 'docs' with prefix 'DB'.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('connection:')->and($output)
+            ->not->toContain('targets:');
     });
 
     it('renders an app-instance target for database:attach', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'connection' => [
                 'slug' => 'primary-db',
-                'targets' => [['type' => 'app_instance', 'app' => 'docs', 'instance' => 'production', 'env_prefix' => 'DB']],
+                'targets' => [[
+                    'type' => 'app_instance',
+                    'app' => 'docs',
+                    'instance' => 'production',
+                    'env_prefix' => 'DB',
+                ]],
             ],
         ]));
 
@@ -551,9 +635,12 @@ describe('database write commands', function (): void {
             '--env-prefix' => 'DB',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Attached database connection 'primary-db' to app_instance 'docs:production' with prefix 'DB'.")
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Attached database connection 'primary-db' to app_instance 'docs:production' with prefix 'DB'.")
+            ->and($output)
+            ->not->toContain('{');
     });
 
     it('renders a concise human success line for database:detach with target and prefix', function (): void {
@@ -573,11 +660,14 @@ describe('database write commands', function (): void {
             '--env-prefix' => 'REPORTING',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Detached database connection 'primary-db' from workspace 'feature-docs' prefix 'REPORTING'.")
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('result:')
-            ->and($output)->not->toContain('action:');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Detached database connection 'primary-db' from workspace 'feature-docs' prefix 'REPORTING'.")
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('result:')->and($output)
+            ->not->toContain('action:');
     });
 
     it('does not leak database secrets in the human success line for database:add', function (): void {
@@ -595,8 +685,11 @@ describe('database write commands', function (): void {
             '--password' => 'super-secret',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toBe("Database connection 'primary-db' created.")
-            ->and($output)->not->toContain('super-secret');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toBe("Database connection 'primary-db' created.")
+            ->and($output)
+            ->not->toContain('super-secret');
     });
 });

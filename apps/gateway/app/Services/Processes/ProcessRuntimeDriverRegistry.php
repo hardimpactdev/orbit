@@ -65,7 +65,10 @@ final readonly class ProcessRuntimeDriverRegistry
             [
                 'process' => $process->name,
                 'runtime' => $runtime->value,
-                'allowed' => array_map(fn (ProcessRuntime $runtime): string => $runtime->value, ProcessRuntime::cases()),
+                'allowed' => array_map(
+                    fn (ProcessRuntime $runtime): string => $runtime->value,
+                    ProcessRuntime::cases(),
+                ),
                 'reason' => $runtime->nodeOwnerViolationReason(),
             ],
         );
@@ -93,7 +96,10 @@ final readonly class ProcessRuntimeDriverRegistry
             [
                 ...($process instanceof Process ? ['process' => $process->name] : []),
                 'runtime' => $runtime,
-                'allowed' => array_map(fn (ProcessRuntime $runtime): string => $runtime->value, ProcessRuntime::cases()),
+                'allowed' => array_map(
+                    fn (ProcessRuntime $runtime): string => $runtime->value,
+                    ProcessRuntime::cases(),
+                ),
             ],
         );
     }

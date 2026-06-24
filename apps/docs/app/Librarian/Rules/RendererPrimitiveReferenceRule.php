@@ -127,7 +127,11 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
             if (! array_key_exists($primitive, self::PRIMITIVE_MAP)) {
                 $findings[] = $this->finding(
                     $file,
-                    sprintf('Unknown prompt primitive "%s". Use one of: %s.', $primitive, implode(', ', array_keys(self::PRIMITIVE_MAP))),
+                    sprintf(
+                        'Unknown prompt primitive "%s". Use one of: %s.',
+                        $primitive,
+                        implode(', ', array_keys(self::PRIMITIVE_MAP)),
+                    ),
                     $promptMapping['line'] + $line,
                 );
 
@@ -140,7 +144,11 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                sprintf('Prompt primitive "%s" must link to docs/ux/commands/%s somewhere in this file.', $primitive, self::PRIMITIVE_MAP[$primitive]),
+                sprintf(
+                    'Prompt primitive "%s" must link to docs/ux/commands/%s somewhere in this file.',
+                    $primitive,
+                    self::PRIMITIVE_MAP[$primitive],
+                ),
                 $promptMapping['line'] + $line,
             );
         }
@@ -164,7 +172,10 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
             $findings[] = $this->finding(
                 $file,
-                sprintf('Renderer and input-mode docs must not reference Symfony Console method `%s`. Use the matching primitive in docs/ux/commands/.', $method),
+                sprintf(
+                    'Renderer and input-mode docs must not reference Symfony Console method `%s`. Use the matching primitive in docs/ux/commands/.',
+                    $method,
+                ),
                 $this->lineForOffset($contents, $offset),
             );
         }
@@ -197,7 +208,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
             $trimmed = trim($line);
 
             if (preg_match('/^\|\s*Primitive\s*\|\s*`?(?<name>[a-z][a-z-]*)`?\s*\|/', $line, $matches) === 1) {
-                $primitives[(string) $matches['name']] ??= $index;
+                $primitives[$matches['name']] ??= $index;
 
                 continue;
             }
@@ -223,7 +234,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
             }
 
             if (preg_match('/^`?(?<name>[a-z][a-z-]*)`?$/', $cell, $matches) === 1) {
-                $primitives[(string) $matches['name']] ??= $index;
+                $primitives[$matches['name']] ??= $index;
             }
         }
 
@@ -277,7 +288,7 @@ final readonly class RendererPrimitiveReferenceRule implements GroupedRule
 
         return [
             'text' => $matches['section'][0],
-            'line' => $this->lineForOffset($contents, $matches[0][1]),
+            'line' => $this->lineForOffset($contents, (int) $matches[0][1]),
         ];
     }
 

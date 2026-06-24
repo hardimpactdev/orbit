@@ -147,29 +147,35 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(SiteCertificateInstaller::class, OrbitSiteCertificateInstaller::class);
         $this->app->bind(UpdateAllGatewayStream::class, SdkUpdateAllGatewayStream::class);
         $this->app->bind(WorkspaceSourceDrivers::class, WorkspaceSourceDriverResolver::class);
-        $this->app->singleton(ToolDefinitionRegistry::class, fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([
-            $app->make(CaddyTool::class),
-            $app->make(DockerTool::class),
-            $app->make(VitePlusTool::class),
-            $app->make(PhpCliTool::class),
-            $app->make(GhTool::class),
-            $app->make(ComposerTool::class),
-            $app->make(DnsTool::class),
-            $app->make(PhpTool::class),
-            $app->make(MailpitTool::class),
-            $app->make(ReverbTool::class),
-            $app->make(SeaweedfsTool::class),
-            $app->make(NodeExporterTool::class),
-            $app->make(PolyscopeServerTool::class),
-            $app->make(OpenCodeServerTool::class),
-            $app->make(OpenClawTool::class),
-            $app->make(HermesTool::class),
-            $app->make(LaravelInstallerTool::class),
-            $app->make(CodexAppTool::class),
-        ]));
-        $this->app->singleton(UpdateDriverRegistry::class, fn ($app): UpdateDriverRegistry => new UpdateDriverRegistry([
-            $app->make(UnattendedUpgradesDriver::class),
-        ]));
+        $this->app->singleton(
+            ToolDefinitionRegistry::class,
+            fn ($app): ToolDefinitionRegistry => new ToolDefinitionRegistry([
+                $app->make(CaddyTool::class),
+                $app->make(DockerTool::class),
+                $app->make(VitePlusTool::class),
+                $app->make(PhpCliTool::class),
+                $app->make(GhTool::class),
+                $app->make(ComposerTool::class),
+                $app->make(DnsTool::class),
+                $app->make(PhpTool::class),
+                $app->make(MailpitTool::class),
+                $app->make(ReverbTool::class),
+                $app->make(SeaweedfsTool::class),
+                $app->make(NodeExporterTool::class),
+                $app->make(PolyscopeServerTool::class),
+                $app->make(OpenCodeServerTool::class),
+                $app->make(OpenClawTool::class),
+                $app->make(HermesTool::class),
+                $app->make(LaravelInstallerTool::class),
+                $app->make(CodexAppTool::class),
+            ]),
+        );
+        $this->app->singleton(
+            UpdateDriverRegistry::class,
+            fn ($app): UpdateDriverRegistry => new UpdateDriverRegistry([
+                $app->make(UnattendedUpgradesDriver::class),
+            ]),
+        );
 
         $this->app->bind(WgEasyVpnBackend::class, fn ($app): WgEasyVpnBackend => new WgEasyVpnBackend(
             username: (string) config('services.wg_easy.username', config('orbit.wg_easy.username', 'orbit')),

@@ -151,7 +151,11 @@ class OrbitCaddyContainer
             network: self::stringValue($config['network'] ?? null, $default->network()),
             restartPolicy: self::stringValue($config['restart_policy'] ?? null, $default->restartPolicy()),
             publishedPorts: self::stringList($config['published_ports'] ?? null, $default->publishedPorts()),
-            networkAliases: self::stringList($config['network_aliases'] ?? null, $default->networkAliases(), sort: true),
+            networkAliases: self::stringList(
+                $config['network_aliases'] ?? null,
+                $default->networkAliases(),
+                sort: true,
+            ),
             extraHosts: self::stringMap($config['extra_hosts'] ?? null, $default->extraHosts()),
             mounts: self::mountList($config['mounts'] ?? null, $default->mounts()),
         );

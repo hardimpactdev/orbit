@@ -13,7 +13,6 @@ use Spatie\Activitylog\Models\Activity;
 uses(RefreshDatabase::class);
 
 it('uses the active gateway role assignment as the local CLI actor', function (): void {
-
     $gateway = Node::factory()->create([
         'name' => 'assigned-gateway',
         'status' => 'active',
@@ -26,8 +25,7 @@ it('uses the active gateway role assignment as the local CLI actor', function ()
         'status' => 'active',
     ]);
 
-    $command = new class extends Command implements Loggable
-    {
+    $command = new class extends Command implements Loggable {
         use LogsCommandActivity;
 
         protected $name = 'activity:test';

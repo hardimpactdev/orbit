@@ -8,12 +8,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 uses(RefreshDatabase::class);
 
 it('exposes operator terminology for nodes without workload role assignments', function (): void {
-    $node = Node::factory()->operator()->create([
-        'name' => 'control-1',
-    ]);
+    $node = Node::factory()
+        ->operator()
+        ->create([
+            'name' => 'control-1',
+        ]);
 
-    expect($node->isOperator())->toBeTrue()
-        ->and($node->displayRole())->toBe('operator');
+    expect($node->isOperator())->toBeTrue()->and($node->displayRole())->toBe('operator');
 });
 
 it('uses the primary active role assignment in the display label', function (): void {
@@ -25,6 +26,5 @@ it('uses the primary active role assignment in the display label', function (): 
         'settings' => [],
     ]);
 
-    expect($node->fresh()->isOperator())->toBeFalse()
-        ->and($node->fresh()->displayRole())->toBe('gateway');
+    expect($node->fresh()->isOperator())->toBeFalse()->and($node->fresh()->displayRole())->toBe('gateway');
 });

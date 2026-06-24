@@ -29,18 +29,24 @@ describe('Operation stream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/run'
-            && $request->hasHeader('Accept', 'text/event-stream')
-            && $request->data() === [
-                'mode' => 'verify',
-                'families' => ['node'],
-                'key' => 'node.record_incomplete',
-                'self' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/run'
+                && $request->hasHeader('Accept', 'text/event-stream')
+                && $request->data() === [
+                    'mode' => 'verify',
+                    'families' => ['node'],
+                    'key' => 'node.record_incomplete',
+                    'self' => true,
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded)->toBe([
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded)
+            ->toBe([
                 'event' => 'complete',
                 'data' => $complete,
             ]);
@@ -60,14 +66,18 @@ describe('Operation stream commands', function (): void {
             '--json' => true,
         ]);
 
-        assertGatewayStreamSent(fn (FakeGatewayStreamRequest $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/doctor/fix'
-            && $request->data() === [
-                'mode' => 'restore',
-                'families' => ['app'],
-                'node' => 'app-1',
-                'dry_run' => true,
-            ]);
+        assertGatewayStreamSent(
+            fn (FakeGatewayStreamRequest $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/doctor/fix'
+                && $request->data() === [
+                    'mode' => 'restore',
+                    'families' => ['app'],
+                    'node' => 'app-1',
+                    'dry_run' => true,
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -83,9 +93,8 @@ describe('Operation stream commands', function (): void {
         Http::fake([
             'https://gateway.test/api/update/all/start' => Http::response(operationStreamUpdateAllStartEnvelope(), 200),
             'https://gateway.test/api/operations/run-1/events' => Http::response(
-                ": heartbeat\n\n"
-                ."id: 1\n"
-                .gatewayProgressFrame('complete', ['exit_code' => 0, 'data' => ['updates' => []]]),
+                ": heartbeat\n\n"."id: 1\n"
+                    .gatewayProgressFrame('complete', ['exit_code' => 0, 'data' => ['updates' => []]]),
                 200,
                 ['Content-Type' => 'text/event-stream'],
             ),
@@ -97,15 +106,24 @@ describe('Operation stream commands', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/update/all/start');
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/update/all/start'
+            ),
+        );
+        Http::assertSent(
+            fn (Request $request): bool => $request->method() === 'GET'
             && $request->url() === 'https://gateway.test/api/operations/run-1/events'
-            && $request->hasHeader('Accept', 'text/event-stream'));
+            && $request->hasHeader('Accept', 'text/event-stream'),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['event'])->toBe('complete')
-            ->and($output)->not->toContain('heartbeat');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['event'])
+            ->toBe('complete')
+            ->and($output)
+            ->not->toContain('heartbeat');
     });
 });
 
@@ -145,7 +163,13 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
      */
     public function downloadBinary(): array
     {
-        return ['successful' => true, 'exit_code' => 0, 'output' => '', 'staged_path' => '/tmp/staged-orbit', 'version' => '1.2.3'];
+        return [
+            'successful' => true,
+            'exit_code' => 0,
+            'output' => '',
+            'staged_path' => '/tmp/staged-orbit',
+            'version' => '1.2.3',
+        ];
     }
 
     /**

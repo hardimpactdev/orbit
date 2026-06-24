@@ -58,15 +58,23 @@ final class InstallMetadataStore
     {
         $metadata = $this->read();
 
-        if ($metadata !== null && ($metadata['version'] ?? null) === $version && $this->isIsoTimestamp($metadata['installed_at'] ?? null)) {
+        if (
+            $metadata !== null
+            && ($metadata['version'] ?? null) === $version
+            && $this->isIsoTimestamp($metadata['installed_at'] ?? null)
+        ) {
             return CarbonImmutable::parse($metadata['installed_at'])->toIso8601String();
         }
 
         return $this->fallbackBinaryMtime();
     }
 
-    public function write(string $version, string $binaryPath, string $installRoot, ?CarbonImmutable $installedAt = null): void
-    {
+    public function write(
+        string $version,
+        string $binaryPath,
+        string $installRoot,
+        ?CarbonImmutable $installedAt = null,
+    ): void {
         $path = $this->path();
 
         if ($path === null) {

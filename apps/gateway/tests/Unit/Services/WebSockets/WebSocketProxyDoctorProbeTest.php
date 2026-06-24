@@ -170,11 +170,17 @@ it('ws restore router_route_orphaned removes the websocket.orbit service route r
 
     $result = $probe->restore($router, $entry);
 
-    expect($result)->not->toBeNull()
-        ->and($result['key'])->toBe(WebSocketProxyDoctorProbe::RouterRouteOrphanedKey)
-        ->and($result['status'])->toBe('completed')
-        ->and($result['mode'])->toBe('fix')
-        ->and(ProxyRoute::query()->where('domain', WebSocketRouteRegistrar::ServiceDomain)->exists())->toBeFalse();
+    expect($result)
+        ->not
+        ->toBeNull()
+        ->and($result['key'])
+        ->toBe(WebSocketProxyDoctorProbe::RouterRouteOrphanedKey)
+        ->and($result['status'])
+        ->toBe('completed')
+        ->and($result['mode'])
+        ->toBe('fix')
+        ->and(ProxyRoute::query()->where('domain', WebSocketRouteRegistrar::ServiceDomain)->exists())
+        ->toBeFalse();
 })->group('websocket', 'proxy-doctor');
 
 it('ws restore returns null for unknown key', function (): void {

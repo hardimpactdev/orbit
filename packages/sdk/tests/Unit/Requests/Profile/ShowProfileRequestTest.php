@@ -48,8 +48,10 @@ it('returns a ProfileResponse DTO with profile data', function (): void {
 
     $dto = $connector->send(new ShowProfileRequest('docs'))->dto();
 
-    expect($dto)->toBeInstanceOf(ProfileResponse::class)
-        ->and($dto->data)->toBe([
+    expect($dto)
+        ->toBeInstanceOf(ProfileResponse::class)
+        ->and($dto->data)
+        ->toBe([
             'origin' => 'gateway',
             'request' => ['url' => 'https://docs.test/'],
         ]);

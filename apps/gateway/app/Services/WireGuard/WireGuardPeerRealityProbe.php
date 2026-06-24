@@ -22,7 +22,9 @@ final class WireGuardPeerRealityProbe
         if (! $result->successful()) {
             $message = trim($result->errorOutput().' '.$result->output());
 
-            throw new RuntimeException('Failed to read WireGuard peer reality: '.($message !== '' ? $message : 'unknown error'));
+            throw new RuntimeException(
+                'Failed to read WireGuard peer reality: '.($message !== '' ? $message : 'unknown error'),
+            );
         }
 
         return $this->parseAllowedIps($result->output());

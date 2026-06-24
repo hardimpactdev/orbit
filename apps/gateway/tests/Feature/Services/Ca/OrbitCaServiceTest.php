@@ -11,8 +11,10 @@ use Illuminate\Support\Facades\Process;
 
 uses(RefreshDatabase::class);
 
-function orbitCaServiceTestSeedRootFiles(string $rootCrt = "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n", string $rootKey = 'test-root-key'): void
-{
+function orbitCaServiceTestSeedRootFiles(
+    string $rootCrt = "-----BEGIN CERTIFICATE-----\ntest-root-cert\n-----END CERTIFICATE-----\n",
+    string $rootKey = 'test-root-key',
+): void {
     $caDir = orbitCaServiceTestCaDir();
 
     File::ensureDirectoryExists($caDir);
@@ -69,12 +71,14 @@ function orbitCaServiceTestSeedValidRootFixture(): void
 
 function orbitCaServiceTestCreateGatewayNode(): Node
 {
-    return Node::factory()->gateway()->create([
-        'name' => 'test-gateway',
-        'status' => 'active',
-        'host' => '10.6.0.1',
-        'orbit_path' => '/home/orbit/orbit',
-    ]);
+    return Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'test-gateway',
+            'status' => 'active',
+            'host' => '10.6.0.1',
+            'orbit_path' => '/home/orbit/orbit',
+        ]);
 }
 
 describe('OrbitCaService', function () {
@@ -131,7 +135,10 @@ describe('OrbitCaService', function () {
                 }
 
                 if (str_contains($command, 'openssl req -x509')) {
-                    File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ngenerated-root-cert-{$generationAttempt}\n-----END CERTIFICATE-----\n");
+                    File::put(
+                        "{$caDir}/root.crt",
+                        "-----BEGIN CERTIFICATE-----\ngenerated-root-cert-{$generationAttempt}\n-----END CERTIFICATE-----\n",
+                    );
 
                     return Process::result();
                 }
@@ -147,7 +154,8 @@ describe('OrbitCaService', function () {
 
             $service->ensureRootCa();
 
-            expect($commands)->toHaveCount(2)
+            expect($commands)
+                ->toHaveCount(2)
                 ->and($commands[0])
                 ->toContain('openssl genrsa')
                 ->toContain('4096')
@@ -214,8 +222,12 @@ describe('OrbitCaService', function () {
             expect(decoct(fileperms($paths['key']) & 0777))->toBe('600');
 
             $caDir = "{$dataPath}/ca";
-            $verify = (new Factory)->run(
-                sprintf('openssl verify -CAfile %s %s', escapeshellarg("{$caDir}/root.crt"), escapeshellarg($paths['cert']))
+            $verify = new Factory()->run(
+                sprintf(
+                    'openssl verify -CAfile %s %s',
+                    escapeshellarg("{$caDir}/root.crt"),
+                    escapeshellarg($paths['cert']),
+                ),
             );
             expect($verify->successful())->toBeTrue();
         });
@@ -229,8 +241,14 @@ describe('OrbitCaService', function () {
 
             $factory = new Factory;
 
-            $serial1 = $factory->run(sprintf('openssl x509 -in %s -serial -noout', escapeshellarg($paths1['cert'])))->output();
-            $serial2 = $factory->run(sprintf('openssl x509 -in %s -serial -noout', escapeshellarg($paths2['cert'])))->output();
+            $serial1 = $factory->run(sprintf(
+                'openssl x509 -in %s -serial -noout',
+                escapeshellarg($paths1['cert']),
+            ))->output();
+            $serial2 = $factory->run(sprintf(
+                'openssl x509 -in %s -serial -noout',
+                escapeshellarg($paths2['cert']),
+            ))->output();
 
             expect(trim($serial1))->toBe(trim($serial2));
         });
@@ -240,7 +258,10 @@ describe('OrbitCaService', function () {
             $paths = $service->issueLeaf('10.0.0.1');
 
             $factory = new Factory;
-            $text = $factory->run(sprintf('openssl x509 -in %s -text -noout', escapeshellarg($paths['cert'])))->output();
+            $text = $factory->run(sprintf(
+                'openssl x509 -in %s -text -noout',
+                escapeshellarg($paths['cert']),
+            ))->output();
 
             expect($text)->toContain('IP Address:10.0.0.1');
         });
@@ -250,7 +271,10 @@ describe('OrbitCaService', function () {
             $paths = $service->issueLeaf('demo.beast');
 
             $factory = new Factory;
-            $text = $factory->run(sprintf('openssl x509 -in %s -text -noout', escapeshellarg($paths['cert'])))->output();
+            $text = $factory->run(sprintf(
+                'openssl x509 -in %s -text -noout',
+                escapeshellarg($paths['cert']),
+            ))->output();
 
             expect($text)->toContain('DNS:demo.beast');
         });
@@ -266,7 +290,8 @@ describe('OrbitCaService', function () {
             expect($text)
                 ->toContain('DNS:gateway')
                 ->toContain('IP Address:10.6.0.2')
-                ->and($paths2)->toBe($paths);
+                ->and($paths2)
+                ->toBe($paths);
         });
 
         it('reissues a fresh leaf when the requested SAN set expands', function () {
@@ -279,9 +304,13 @@ describe('OrbitCaService', function () {
             $paths2 = $service->issueLeaf('gateway', ['10.6.0.2']);
             $expanded = $factory->run("openssl x509 -in {$paths2['cert']} -text -noout")->output();
 
-            expect($initial)->not->toContain('IP Address:10.6.0.2')
-                ->and($expanded)->toContain('DNS:gateway')
-                ->and($expanded)->toContain('IP Address:10.6.0.2');
+            expect($initial)
+                ->not
+                ->toContain('IP Address:10.6.0.2')
+                ->and($expanded)
+                ->toContain('DNS:gateway')
+                ->and($expanded)
+                ->toContain('IP Address:10.6.0.2');
         });
 
         it('does not treat SAN prefix matches as existing coverage', function () {
@@ -293,9 +322,12 @@ describe('OrbitCaService', function () {
             $factory = new Factory;
             $text = $factory->run("openssl x509 -in {$paths['cert']} -text -noout")->output();
 
-            expect($text)->toContain('DNS:gateway')
-                ->and($text)->toContain('IP Address:10.6.0.2')
-                ->and($text)->not->toContain('IP Address:10.6.0.20');
+            expect($text)
+                ->toContain('DNS:gateway')
+                ->and($text)
+                ->toContain('IP Address:10.6.0.2')
+                ->and($text)
+                ->not->toContain('IP Address:10.6.0.20');
         });
 
         it('refuses path-traversal filenames', function () {

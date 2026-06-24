@@ -16,7 +16,16 @@ final readonly class LocalExecutorCommandBuilder
     private const string OPTION_KEY_PATTERN = '/\A[a-z][a-z0-9-]*\z/';
 
     private const array ALLOWED_COMMAND_ROLES = [
-        'internal:executor:verify' => ['gateway', 'vpn', 'router', 'app-dev', 'app-prod', 'database', 'agent', 'ingress'],
+        'internal:executor:verify' => [
+            'gateway',
+            'vpn',
+            'router',
+            'app-dev',
+            'app-prod',
+            'database',
+            'agent',
+            'ingress',
+        ],
         'internal:wg-easy:state' => ['vpn'],
         'internal:database-query-local' => ['app-dev', 'app-prod', 'database'],
         'internal:workspace-adapter:lookup' => ['app-dev'],
@@ -35,8 +44,13 @@ final readonly class LocalExecutorCommandBuilder
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $options
      */
-    public function build(Node $targetNode, string $commandName, array $arguments, array $options, string $operationToken): string
-    {
+    public function build(
+        Node $targetNode,
+        string $commandName,
+        array $arguments,
+        array $options,
+        string $operationToken,
+    ): string {
         return $this->compose(
             targetNode: $targetNode,
             commandName: $commandName,
@@ -51,8 +65,13 @@ final readonly class LocalExecutorCommandBuilder
      * @param  array<int|string, mixed>  $arguments
      * @param  array<int|string, mixed>  $options
      */
-    public function buildAuditLine(Node $targetNode, string $commandName, array $arguments, array $options, string $operationToken): string
-    {
+    public function buildAuditLine(
+        Node $targetNode,
+        string $commandName,
+        array $arguments,
+        array $options,
+        string $operationToken,
+    ): string {
         return $this->compose(
             targetNode: $targetNode,
             commandName: $commandName,

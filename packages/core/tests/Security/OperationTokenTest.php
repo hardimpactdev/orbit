@@ -17,12 +17,18 @@ describe(OperationToken::class, function (): void {
             signature: 'c2lnbmF0dXJl',
         );
 
-        expect($token->id)->toBe('018fded1-f2f4-72c4-9c33-62978d6f26f5')
-            ->and($token->node)->toBe('app-dev')
-            ->and($token->command)->toBe('internal:workspace-adapter')
-            ->and($token->issuedAt)->toBe(1_798_105_200)
-            ->and($token->expiresAt)->toBe(1_798_105_320)
-            ->and($token->signature)->toBe('c2lnbmF0dXJl');
+        expect($token->id)
+            ->toBe('018fded1-f2f4-72c4-9c33-62978d6f26f5')
+            ->and($token->node)
+            ->toBe('app-dev')
+            ->and($token->command)
+            ->toBe('internal:workspace-adapter')
+            ->and($token->issuedAt)
+            ->toBe(1_798_105_200)
+            ->and($token->expiresAt)
+            ->toBe(1_798_105_320)
+            ->and($token->signature)
+            ->toBe('c2lnbmF0dXJl');
     });
 
     it('serializes to the same compact wire format and parses back to the same fields', function (): void {
@@ -37,12 +43,16 @@ describe(OperationToken::class, function (): void {
 
         $parsed = OperationToken::parse($token->toString());
 
-        expect($token->toString())->toBe('MDE4ZmRlZDEtZjJmNC03MmM0LTljMzMtNjI5NzhkNmYyNmY1.YXBwLWRldg.aW50ZXJuYWw6d29ya3NwYWNlLWFkYXB0ZXI.MTc5ODEwNTIwMA.MTc5ODEwNTMyMA.c2lnbmF0dXJl')
-            ->and($parsed)->toEqual($token);
+        expect($token->toString())
+            ->toBe(
+                'MDE4ZmRlZDEtZjJmNC03MmM0LTljMzMtNjI5NzhkNmYyNmY1.YXBwLWRldg.aW50ZXJuYWw6d29ya3NwYWNlLWFkYXB0ZXI.MTc5ODEwNTIwMA.MTc5ODEwNTMyMA.c2lnbmF0dXJl',
+            )
+            ->and($parsed)
+            ->toEqual($token);
     });
 
     it('serializes the base64url signature segment verbatim', function (): void {
-        $token = (new OperationTokenSigner)->sign(
+        $token = new OperationTokenSigner()->sign(
             secret: 'gateway-secret',
             id: '018fded1-f2f4-72c4-9c33-62978d6f26f5',
             node: 'app-dev',
@@ -53,8 +63,10 @@ describe(OperationToken::class, function (): void {
 
         $segments = explode('.', $token->toString());
 
-        expect($segments[5])->toBe($token->signature)
-            ->and(OperationToken::parse($token->toString())->signature)->toBe($token->signature);
+        expect($segments[5])
+            ->toBe($token->signature)
+            ->and(OperationToken::parse($token->toString())->signature)
+            ->toBe($token->signature);
     });
 
     it('rejects malformed compact strings', function (string $compact): void {
@@ -226,7 +238,7 @@ describe(OperationTokenVerifier::class, function (): void {
 
 function validOperationToken(): OperationToken
 {
-    return (new OperationTokenSigner)->sign(
+    return new OperationTokenSigner()->sign(
         secret: 'gateway-secret',
         id: '018fded1-f2f4-72c4-9c33-62978d6f26f5',
         node: 'app-dev',

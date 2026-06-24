@@ -52,11 +52,17 @@ final readonly class JsonWarningShapeRule implements GroupedRule
         $findings = [];
 
         if (str_contains($contents, 'success.data.drift[]') || str_contains($contents, 'success.data.drift')) {
-            $findings[] = $this->finding($file, 'Partial-success drift must be documented under success.meta.warnings[], not success.data.drift.');
+            $findings[] = $this->finding(
+                $file,
+                'Partial-success drift must be documented under success.meta.warnings[], not success.data.drift.',
+            );
         }
 
         if (str_contains($contents, 'success.data.handoffs[]') || str_contains($contents, 'success.data.handoffs')) {
-            $findings[] = $this->finding($file, 'Partial-success handoffs must be documented under success.meta.warnings[], not success.data.handoffs.');
+            $findings[] = $this->finding(
+                $file,
+                'Partial-success handoffs must be documented under success.meta.warnings[], not success.data.handoffs.',
+            );
         }
 
         $mentionsWarningsPath = str_contains($contents, 'success.meta.warnings');
@@ -70,7 +76,11 @@ final readonly class JsonWarningShapeRule implements GroupedRule
                 if (! is_array($warning)) {
                     $findings[] = $this->finding(
                         $file,
-                        sprintf('JSON example %d warning %d must be an object with code, family, message, and next_command.', $example->blockIndex + 1, $warningIndex + 1),
+                        sprintf(
+                            'JSON example %d warning %d must be an object with code, family, message, and next_command.',
+                            $example->blockIndex + 1,
+                            $warningIndex + 1,
+                        ),
                         $example->line,
                     );
 
@@ -84,7 +94,12 @@ final readonly class JsonWarningShapeRule implements GroupedRule
 
                     $findings[] = $this->finding(
                         $file,
-                        sprintf('JSON example %d warning %d is missing %s.', $example->blockIndex + 1, $warningIndex + 1, $field),
+                        sprintf(
+                            'JSON example %d warning %d is missing %s.',
+                            $example->blockIndex + 1,
+                            $warningIndex + 1,
+                            $field,
+                        ),
                         $example->line,
                     );
                 }
@@ -133,9 +148,11 @@ final readonly class JsonWarningShapeRule implements GroupedRule
 
     private function documentsWarningField(string $contents, string $field): bool
     {
-        return preg_match('/warnings(?:\[\])?(?:\.[a-z_]+)?[^\\n`]*`'.preg_quote($field, '/').'`/i', $contents) === 1
+        return (
+            preg_match('/warnings(?:\[\])?(?:\.[a-z_]+)?[^\\n`]*`'.preg_quote($field, '/').'`/i', $contents) === 1
             || preg_match('/`'.preg_quote($field, '/').'`\s*\|/i', $contents) === 1
-            || preg_match('/"'.preg_quote($field, '/').'"\s*:/', $contents) === 1;
+            || preg_match('/"'.preg_quote($field, '/').'"\s*:/', $contents) === 1
+        );
     }
 
     /**

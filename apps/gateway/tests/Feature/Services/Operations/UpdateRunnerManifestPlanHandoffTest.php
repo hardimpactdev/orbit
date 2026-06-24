@@ -22,8 +22,7 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay
-    {
+    app()->instance(GatewayCliArtifactRelay::class, new class extends GatewayCliArtifactRelay {
         /**
          * @return array{url: string, sha256: string, source_url: string}
          */
@@ -32,7 +31,11 @@ beforeEach(function (): void {
         {
             $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-            if (! is_array($artifact) || ! is_string($artifact['url'] ?? null) || ! is_string($artifact['sha256'] ?? null)) {
+            if (
+                ! is_array($artifact)
+                || ! is_string($artifact['url'] ?? null)
+                || ! is_string($artifact['sha256'] ?? null)
+            ) {
                 throw new RuntimeException("Missing test artifact for [{$platform}].");
             }
 
@@ -73,27 +76,35 @@ it('hands the manifest backed plan to gateway and workload update phases exactly
     $snapshot = app(UpdatePlanBuilder::class)->fromRequest($run, Request::create('/api/update/all/start', 'POST'));
     app(OperationUpdatePlanStore::class)->create($run, $snapshot);
 
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux-amd64',
-        'orbit_path' => '/opt/orbit-app-dev',
-    ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux-amd64',
+            'orbit_path' => '/opt/orbit-app-dev',
+        ]);
 
     app(UpdateRunner::class)->run($run->id);
 
     $updateScripts = array_values(array_filter(
         $remoteShell->calls,
-        fn (array $call): bool => ! str_starts_with($call['script'], 'orbit --version') && ! str_contains($call['script'], 'doctor'),
+        fn (array $call): bool => (
+            ! str_starts_with($call['script'], 'orbit --version') && ! str_contains($call['script'], 'doctor')
+        ),
     ));
 
-    expect($gatewayUpdater->gatewayImages)->toBe([
-        'ghcr.io/hardimpactdev/orbit-gateway:2.1.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
-    ])
-        ->and($gatewayUpdater->manifestSnapshots)->toBe([$manifest])
-        ->and($updateScripts)->toHaveCount(1)
+    expect($gatewayUpdater->gatewayImages)
+        ->toBe([
+            'ghcr.io/hardimpactdev/orbit-gateway:2.1.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        ])
+        ->and($gatewayUpdater->manifestSnapshots)
+        ->toBe([$manifest])
+        ->and($updateScripts)
+        ->toHaveCount(1)
         ->and($updateScripts[0]['script'])
         ->toContain('http://gateway.test/artifacts/linux-amd64')
-        ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64')
+        ->not
+        ->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.1.0/orbit-linux-amd64')
         ->toContain(str_repeat('e', 64))
         ->toContain("docker pull 'caddy:2.9-alpine'");
 

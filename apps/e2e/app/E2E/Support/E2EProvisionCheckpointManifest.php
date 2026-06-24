@@ -57,8 +57,11 @@ final readonly class E2EProvisionCheckpointManifest
      * @param  \Closure(string, string): bool  $snapshotExists
      * @return list<array{role: string, name: string, snapshot: string}>
      */
-    public static function validCheckpoints(?array $manifest, array $currentFingerprint, \Closure $snapshotExists): array
-    {
+    public static function validCheckpoints(
+        ?array $manifest,
+        array $currentFingerprint,
+        \Closure $snapshotExists,
+    ): array {
         if ($manifest === null) {
             return [];
         }
@@ -91,7 +94,10 @@ final readonly class E2EProvisionCheckpointManifest
 
             $currentRoleFingerprint = $roleFingerprints[$role] ?? null;
 
-            if (! is_string($currentRoleFingerprint) || ($checkpoint['fingerprint'] ?? null) !== $currentRoleFingerprint) {
+            if (
+                ! is_string($currentRoleFingerprint)
+                || ($checkpoint['fingerprint'] ?? null) !== $currentRoleFingerprint
+            ) {
                 continue;
             }
 

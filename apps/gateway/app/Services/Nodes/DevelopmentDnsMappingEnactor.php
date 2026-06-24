@@ -12,7 +12,9 @@ use Illuminate\Support\Facades\File;
 
 class DevelopmentDnsMappingEnactor
 {
-    public function __construct(private readonly ?string $configDir = null) {}
+    public function __construct(
+        private readonly ?string $configDir = null,
+    ) {}
 
     /**
      * @return array{
@@ -209,7 +211,7 @@ class DevelopmentDnsMappingEnactor
         }
 
         $settings = $assignment->settings ?? [];
-        $tld = is_array($settings) ? ($settings['tld'] ?? null) : null;
+        $tld = is_array($settings) ? $settings['tld'] ?? null : null;
 
         if (! is_string($tld)) {
             return null;
@@ -247,7 +249,7 @@ class DevelopmentDnsMappingEnactor
         }
 
         return [
-            'node' => (string) $node->name,
+            'node' => $node->name,
             'tld' => $tld,
             'domain' => '*.'.$tld,
             'target' => trim($node->wireguard_address),
@@ -256,7 +258,11 @@ class DevelopmentDnsMappingEnactor
 
     public function configDir(): string
     {
-        return $this->configDir ?? rtrim((string) config('orbit.paths.config_root', storage_path('app/orbit')), '/').'/node-development-dns.d';
+        return (
+            $this->configDir
+            ?? rtrim((string) config('orbit.paths.config_root', storage_path('app/orbit')), '/')
+            .'/node-development-dns.d'
+        );
     }
 
     /**

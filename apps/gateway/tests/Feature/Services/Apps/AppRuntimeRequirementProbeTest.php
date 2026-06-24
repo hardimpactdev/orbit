@@ -23,8 +23,7 @@ it('reports missing required PHP extensions with stable issue codes', function (
         ),
     ]);
 
-    app()->instance(RemoteShell::class, new class implements RemoteShell
-    {
+    app()->instance(RemoteShell::class, new class implements RemoteShell {
         public function run(Node $node, string $command, array $options = []): RemoteShellResult
         {
             return new RemoteShellResult(
@@ -38,10 +37,14 @@ it('reports missing required PHP extensions with stable issue codes', function (
 
     $issues = app(AppRuntimeRequirementProbe::class)->drift($instance);
 
-    expect($issues)->toHaveCount(1)
-        ->and($issues[0]->family)->toBe('app')
-        ->and($issues[0]->key)->toBe('app.runtime_extension_missing')
-        ->and($issues[0]->summary)->toContain('intl');
+    expect($issues)
+        ->toHaveCount(1)
+        ->and($issues[0]->family)
+        ->toBe('app')
+        ->and($issues[0]->key)
+        ->toBe('app.runtime_extension_missing')
+        ->and($issues[0]->summary)
+        ->toContain('intl');
 });
 
 it('reports unverifiable PHP extension state when the runtime cannot be queried', function (): void {
@@ -54,8 +57,7 @@ it('reports unverifiable PHP extension state when the runtime cannot be queried'
         ),
     ]);
 
-    app()->instance(RemoteShell::class, new class implements RemoteShell
-    {
+    app()->instance(RemoteShell::class, new class implements RemoteShell {
         public function run(Node $node, string $command, array $options = []): RemoteShellResult
         {
             return new RemoteShellResult(
@@ -69,6 +71,5 @@ it('reports unverifiable PHP extension state when the runtime cannot be queried'
 
     $issues = app(AppRuntimeRequirementProbe::class)->drift($instance);
 
-    expect($issues)->toHaveCount(1)
-        ->and($issues[0]->key)->toBe('app.runtime_extensions_unverifiable');
+    expect($issues)->toHaveCount(1)->and($issues[0]->key)->toBe('app.runtime_extensions_unverifiable');
 });

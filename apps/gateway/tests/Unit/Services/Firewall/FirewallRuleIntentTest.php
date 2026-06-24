@@ -87,24 +87,49 @@ describe('FirewallRuleIntent', function (): void {
             reason: 'local development',
         );
 
-        expect(FirewallRule::query()->count())->toBe(1)
-            ->and($result['data']['rule']['name'])->toBe('local-vite')
-            ->and($result['data']['rule']['node'])->toBe($node->name)
-            ->and($result['meta']['action'])->toBe('created')
-            ->and($result['meta']['backend_enacted'])->toBeTrue()
-            ->and($result['meta']['warnings'])->toBe([]);
+        expect(FirewallRule::query()->count())
+            ->toBe(1)
+            ->and($result['data']['rule']['name'])
+            ->toBe('local-vite')
+            ->and($result['data']['rule']['node'])
+            ->toBe($node->name)
+            ->and($result['meta']['action'])
+            ->toBe('created')
+            ->and($result['meta']['backend_enacted'])
+            ->toBeTrue()
+            ->and($result['meta']['warnings'])
+            ->toBe([]);
 
-        $again = app(FirewallRuleIntent::class)->store('allow', 'local-vite', 'app-1', 'incoming', '10.6.0.0/24', null, '5173', 'tcp', 'local development');
+        $again = app(FirewallRuleIntent::class)->store(
+            'allow',
+            'local-vite',
+            'app-1',
+            'incoming',
+            '10.6.0.0/24',
+            null,
+            '5173',
+            'tcp',
+            'local development',
+        );
 
-        expect(FirewallRule::query()->count())->toBe(1)
-            ->and($again['meta']['action'])->toBe('converged');
+        expect(FirewallRule::query()->count())->toBe(1)->and($again['meta']['action'])->toBe('converged');
     });
 
     it('rejects same-name different policy before mutation', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'local-vite', 'port' => '5173']);
 
-        app(FirewallRuleIntent::class)->store('allow', 'local-vite', 'app-1', 'incoming', 'any', null, '8080', 'tcp', null);
+        app(FirewallRuleIntent::class)->store(
+            'allow',
+            'local-vite',
+            'app-1',
+            'incoming',
+            'any',
+            null,
+            '8080',
+            'tcp',
+            null,
+        );
     })->throws(GatewayApiException::class, 'A different firewall rule already uses this name on the selected node.');
 
     it('authorizes non-gateway callers through node access grants', function (): void {
@@ -112,7 +137,18 @@ describe('FirewallRuleIntent', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         grantFirewallRuleIntentAccess($caller, $node);
 
-        app(FirewallRuleIntent::class)->store('deny', 'block-redis', 'app-1', 'incoming', 'any', null, '6379', 'tcp', null, $caller);
+        app(FirewallRuleIntent::class)->store(
+            'deny',
+            'block-redis',
+            'app-1',
+            'incoming',
+            'any',
+            null,
+            '6379',
+            'tcp',
+            null,
+            $caller,
+        );
 
         expect(FirewallRule::query()->where('name', 'block-redis')->exists())->toBeTrue();
     });
@@ -122,8 +158,22 @@ describe('FirewallRuleIntent', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
         grantFirewallRuleIntentAccess($caller, $node, ['firewall_rule:read']);
 
-        app(FirewallRuleIntent::class)->store('deny', 'block-redis', 'app-1', 'incoming', 'any', null, '6379', 'tcp', null, $caller);
-    })->throws(GatewayApiException::class, 'This node is not authorized to manage firewall rules for the selected node.');
+        app(FirewallRuleIntent::class)->store(
+            'deny',
+            'block-redis',
+            'app-1',
+            'incoming',
+            'any',
+            null,
+            '6379',
+            'tcp',
+            null,
+            $caller,
+        );
+    })->throws(
+        GatewayApiException::class,
+        'This node is not authorized to manage firewall rules for the selected node.',
+    );
 
     it('removes intent idempotently and cleans up the backend immediately', function (): void {
         $node = createFirewallRuleIntentAppHostNode();
@@ -132,10 +182,14 @@ describe('FirewallRuleIntent', function (): void {
         $removed = app(FirewallRuleIntent::class)->remove('local-vite', 'app-1');
         $again = app(FirewallRuleIntent::class)->remove('local-vite', 'app-1');
 
-        expect(FirewallRule::query()->count())->toBe(0)
-            ->and($removed['meta']['backend_removed'])->toBeTrue()
-            ->and($removed['meta']['warnings'])->toBe([])
-            ->and($again['data']['rule']['status'])->toBe('already_absent');
+        expect(FirewallRule::query()->count())
+            ->toBe(0)
+            ->and($removed['meta']['backend_removed'])
+            ->toBeTrue()
+            ->and($removed['meta']['warnings'])
+            ->toBe([])
+            ->and($again['data']['rule']['status'])
+            ->toBe('already_absent');
     });
 
     it('defers backend enactment failures only in the Docker E2E feature lane', function (): void {
@@ -158,9 +212,12 @@ describe('FirewallRuleIntent', function (): void {
                 reason: 'local development',
             );
 
-            expect(FirewallRule::query()->where('name', 'local-vite')->exists())->toBeTrue()
-                ->and($result['meta']['backend_enacted'])->toBeFalse()
-                ->and($result['meta']['warnings'][0]['code'])->toBe('firewall_rule.enactment_deferred');
+            expect(FirewallRule::query()->where('name', 'local-vite')->exists())
+                ->toBeTrue()
+                ->and($result['meta']['backend_enacted'])
+                ->toBeFalse()
+                ->and($result['meta']['warnings'][0]['code'])
+                ->toBe('firewall_rule.enactment_deferred');
         } finally {
             $previousProvider === false
                 ? putenv('ORBIT_E2E_TOPOLOGY_PROVIDER')
@@ -183,13 +240,33 @@ describe('FirewallRuleIntent', function (): void {
     it('blocks bootstrap policy mutations', function (): void {
         createFirewallRuleIntentAppHostNode();
 
-        app(FirewallRuleIntent::class)->store('allow', 'ssh-public', 'app-1', 'incoming', 'any', null, '22', 'tcp', null);
+        app(FirewallRuleIntent::class)->store(
+            'allow',
+            'ssh-public',
+            'app-1',
+            'incoming',
+            'any',
+            null,
+            '22',
+            'tcp',
+            null,
+        );
     })->throws(GatewayApiException::class, 'The requested rule would mutate node bootstrap policy.');
 
     it('allows firewall rules for every active Ubuntu role target', function (string $role): void {
         $node = createFirewallRuleIntentRoleNode($role, ['name' => "{$role}-node"]);
 
-        app(FirewallRuleIntent::class)->store('deny', 'block-test', $node->name, 'incoming', 'any', null, '8080', 'tcp', null);
+        app(FirewallRuleIntent::class)->store(
+            'deny',
+            'block-test',
+            $node->name,
+            'incoming',
+            'any',
+            null,
+            '8080',
+            'tcp',
+            null,
+        );
 
         expect(FirewallRule::query()->where('node_id', $node->id)->where('name', 'block-test')->exists())->toBeTrue();
     })->with([

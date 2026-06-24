@@ -107,7 +107,17 @@ final class DoctorFixController implements Loggable
         $issues = $this->issues($request);
 
         if ($this->wantsEventStream($request)) {
-            return $this->stream($streams, $runner, $progressReports, $target, $mode, $families, $issues, $key, $dryRun);
+            return $this->stream(
+                $streams,
+                $runner,
+                $progressReports,
+                $target,
+                $mode,
+                $families,
+                $issues,
+                $key,
+                $dryRun,
+            );
         }
 
         $doctor = $issues === null || $dryRun
@@ -138,7 +148,16 @@ final class DoctorFixController implements Loggable
         ?string $key,
         bool $dryRun,
     ): StreamedResponse {
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($runner, $progressReports, $target, $mode, $families, $issues, $key, $dryRun): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use (
+            $runner,
+            $progressReports,
+            $target,
+            $mode,
+            $families,
+            $issues,
+            $key,
+            $dryRun,
+        ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
 
@@ -234,8 +253,14 @@ final class DoctorFixController implements Loggable
      * @param  list<array<string, mixed>>  $issues
      * @return array<string, mixed>
      */
-    private function applySelectedIssues(DoctorReportRunner $runner, Node $target, string $mode, array $families, array $issues, ?string $key): array
-    {
+    private function applySelectedIssues(
+        DoctorReportRunner $runner,
+        Node $target,
+        string $mode,
+        array $families,
+        array $issues,
+        ?string $key,
+    ): array {
         $probe = $runner->probe($target, $families, $key);
         $actions = $runner->apply($target, $mode, $issues);
 
@@ -289,8 +314,12 @@ final class DoctorFixController implements Loggable
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
     }
 
-    private function authorizeDoctorFix(NodeAccessAuthorizer $authorizer, Node $caller, Node $target, string $mode): ?JsonResponse
-    {
+    private function authorizeDoctorFix(
+        NodeAccessAuthorizer $authorizer,
+        Node $caller,
+        Node $target,
+        string $mode,
+    ): ?JsonResponse {
         $permission = $mode === 'adopt' ? 'doctor:adopt' : 'doctor:restore';
         $result = $authorizer->authorize($caller, $target, $permission);
 
@@ -301,8 +330,12 @@ final class DoctorFixController implements Loggable
         return $this->authorizationFailed($target, $permission, $result, $mode);
     }
 
-    private function authorizationFailed(Node $target, string $permission, AuthorizationResult $result, string $mode): JsonResponse
-    {
+    private function authorizationFailed(
+        Node $target,
+        string $permission,
+        AuthorizationResult $result,
+        string $mode,
+    ): JsonResponse {
         return response()->json([
             'error' => [
                 'code' => 'authorization_failed',
@@ -328,7 +361,10 @@ final class DoctorFixController implements Loggable
             return [];
         }
 
-        return array_values(array_filter($families, static fn (mixed $family): bool => is_string($family) && $family !== ''));
+        return array_values(array_filter(
+            $families,
+            static fn (mixed $family): bool => is_string($family) && $family !== '',
+        ));
     }
 
     private function mode(Request $request): ?string
@@ -407,11 +443,14 @@ final class DoctorFixController implements Loggable
      */
     public function properties(): array
     {
-        return array_filter([
-            'mode' => $this->activityMode,
-            'key' => $this->activityKey,
-            'dry_run' => $this->activityDryRun ? true : null,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'mode' => $this->activityMode,
+                'key' => $this->activityKey,
+                'dry_run' => $this->activityDryRun ? true : null,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function activityLogProperties(): array

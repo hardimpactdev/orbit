@@ -33,11 +33,11 @@ final class DatabaseConnectionRegistry
                 fn (Builder $query): Builder => $query->where(function (Builder $nested) use ($app): void {
                     $nested->whereHas(
                         'targets',
-                        fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app->id)
+                        fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app?->id),
                     )
                         ->orWhereHas(
                             'instanceTargets.instance',
-                            fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app->id)
+                            fn (Builder $targetQuery): Builder => $targetQuery->where('app_id', $app?->id),
                         );
                 }),
             )
@@ -45,16 +45,26 @@ final class DatabaseConnectionRegistry
                 $workspace instanceof Workspace,
                 fn (Builder $query): Builder => $query->whereHas(
                     'targets',
-                    fn (Builder $targetQuery): Builder => $targetQuery->where('workspace_id', $workspace->id)
+                    fn (Builder $targetQuery): Builder => $targetQuery->where('workspace_id', $workspace?->id),
                 ),
             )
             ->when(
                 $node instanceof Node,
                 fn (Builder $query): Builder => $query->where(function (Builder $nested) use ($node): void {
-                    $nested->where('node_id', $node->id)
-                        ->orWhereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id))
-                        ->orWhereHas('targets.workspace.app', fn (Builder $workspaceQuery): Builder => $workspaceQuery->where('node_id', $node->id))
-                        ->orWhereHas('instanceTargets.instance.app', fn (Builder $appQuery): Builder => $appQuery->where('node_id', $node->id));
+                    $nested
+                        ->where('node_id', $node?->id)
+                        ->orWhereHas('targets.app', fn (Builder $appQuery): Builder => $appQuery->where(
+                            'node_id',
+                            $node?->id,
+                        ))
+                        ->orWhereHas('targets.workspace.app', fn (Builder $workspaceQuery): Builder => $workspaceQuery->where(
+                            'node_id',
+                            $node?->id,
+                        ))
+                        ->orWhereHas('instanceTargets.instance.app', fn (Builder $appQuery): Builder => $appQuery->where(
+                            'node_id',
+                            $node?->id,
+                        ));
                 }),
             )
             ->orderBy('slug')
@@ -134,7 +144,9 @@ final class DatabaseConnectionRegistry
         }
 
         $connection->fill([
-            'node_id' => array_key_exists('node_id', $attributes) ? $this->normalizeNodeId($attributes['node_id']) : $connection->node_id,
+            'node_id' => array_key_exists('node_id', $attributes)
+                ? $this->normalizeNodeId($attributes['node_id'])
+                : $connection->node_id,
             'slug' => $targetSlug,
             ...$this->attributesFromPayload($payload, $payloadAttributes),
         ]);
@@ -168,38 +180,58 @@ final class DatabaseConnectionRegistry
         return true;
     }
 
-    public function attachToApp(string $slug, App $app, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    public function attachToApp(
+        string $slug,
+        App $app,
+        string $envPrefix,
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         return $this->attach($slug, 'app', $app->id, $envPrefix);
     }
 
-    public function attachToWorkspace(string $slug, Workspace $workspace, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    public function attachToWorkspace(
+        string $slug,
+        Workspace $workspace,
+        string $envPrefix,
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         return $this->attach($slug, 'workspace', $workspace->id, $envPrefix);
     }
 
-    public function attachToAppInstance(string $slug, AppInstance $instance, string $envPrefix): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    public function attachToAppInstance(
+        string $slug,
+        AppInstance $instance,
+        string $envPrefix,
+    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         return $this->attachInstance($slug, $instance, $envPrefix);
     }
 
-    public function detachFromApp(string $slug, App $app, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    public function detachFromApp(
+        string $slug,
+        App $app,
+        string $envPrefix,
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         return $this->detach($slug, 'app', $app->id, $envPrefix);
     }
 
-    public function detachFromWorkspace(string $slug, Workspace $workspace, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    public function detachFromWorkspace(
+        string $slug,
+        Workspace $workspace,
+        string $envPrefix,
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         return $this->detach($slug, 'workspace', $workspace->id, $envPrefix);
     }
 
-    public function detachFromAppInstance(string $slug, AppInstance $instance, string $envPrefix): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    public function detachFromAppInstance(
+        string $slug,
+        AppInstance $instance,
+        string $envPrefix,
+    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         return $this->detachInstance($slug, $instance, $envPrefix);
     }
 
-    private function findConnection(string $slug, bool $withRelations = false): DatabaseConnection|DatabaseConnectionRegistryFailure
-    {
+    private function findConnection(
+        string $slug,
+        bool $withRelations = false,
+    ): DatabaseConnection|DatabaseConnectionRegistryFailure {
         $query = DatabaseConnection::query();
 
         if ($withRelations) {
@@ -218,11 +250,19 @@ final class DatabaseConnectionRegistry
     private function validateSlug(string $slug): ?DatabaseConnectionRegistryFailure
     {
         if ($slug === '') {
-            return DatabaseConnectionRegistryFailure::validation('slug', $slug, 'Database connection slug is required.');
+            return DatabaseConnectionRegistryFailure::validation(
+                'slug',
+                $slug,
+                'Database connection slug is required.',
+            );
         }
 
         if (mb_strlen($slug) > self::SLUG_MAX_LENGTH) {
-            return DatabaseConnectionRegistryFailure::validation('slug', $slug, 'Database connection slug must be at most 40 characters.');
+            return DatabaseConnectionRegistryFailure::validation(
+                'slug',
+                $slug,
+                'Database connection slug must be at most 40 characters.',
+            );
         }
 
         if (! preg_match(self::SLUG_PATTERN, $slug)) {
@@ -243,7 +283,11 @@ final class DatabaseConnectionRegistry
         } catch (InvalidArgumentException $exception) {
             $field = $attributes['driver'] ?? null ? 'driver' : 'payload';
 
-            return DatabaseConnectionRegistryFailure::validation($field, $attributes['driver'] ?? null, $exception->getMessage());
+            return DatabaseConnectionRegistryFailure::validation(
+                $field,
+                $attributes['driver'] ?? null,
+                $exception->getMessage(),
+            );
         }
     }
 
@@ -261,15 +305,25 @@ final class DatabaseConnectionRegistry
         return null;
     }
 
-    private function validatePayload(DatabaseConnectionPayload $payload, array $attributes): ?DatabaseConnectionRegistryFailure
-    {
+    private function validatePayload(
+        DatabaseConnectionPayload $payload,
+        array $attributes,
+    ): ?DatabaseConnectionRegistryFailure {
         if ($payload->driver === 'sqlite') {
             if ($this->normalizeNodeId($attributes['node_id'] ?? null) === null) {
-                return DatabaseConnectionRegistryFailure::validation('payload', $attributes, 'Sqlite database connections require node_id.');
+                return DatabaseConnectionRegistryFailure::validation(
+                    'payload',
+                    $attributes,
+                    'Sqlite database connections require node_id.',
+                );
             }
 
             if (! is_string($payload->path) || $payload->path === '') {
-                return DatabaseConnectionRegistryFailure::validation('payload', $attributes, 'Sqlite database connections require path.');
+                return DatabaseConnectionRegistryFailure::validation(
+                    'payload',
+                    $attributes,
+                    'Sqlite database connections require path.',
+                );
             }
 
             return null;
@@ -277,7 +331,11 @@ final class DatabaseConnectionRegistry
 
         foreach (['host', 'port', 'database', 'username'] as $field) {
             if ($payload->{$field} === null || $payload->{$field} === '') {
-                return DatabaseConnectionRegistryFailure::validation('payload', $attributes, sprintf('%s database connections require %s.', strtoupper($payload->driver), $field));
+                return DatabaseConnectionRegistryFailure::validation(
+                    'payload',
+                    $attributes,
+                    sprintf('%s database connections require %s.', strtoupper($payload->driver), $field),
+                );
             }
         }
 
@@ -358,8 +416,12 @@ final class DatabaseConnectionRegistry
         return $payload->credentials();
     }
 
-    private function attach(string $slug, string $ownerType, int $ownerId, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    private function attach(
+        string $slug,
+        string $ownerType,
+        int $ownerId,
+        string $envPrefix,
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         $connection = $this->findConnection($slug);
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
@@ -384,15 +446,20 @@ final class DatabaseConnectionRegistry
         ]);
     }
 
-    private function detach(string $slug, string $ownerType, int $ownerId, string $envPrefix): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    private function detach(
+        string $slug,
+        string $ownerType,
+        int $ownerId,
+        string $envPrefix,
+    ): DatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         $connection = $this->findConnection($slug);
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
             return $connection;
         }
 
-        $target = $this->targetQuery($ownerType, $ownerId, $envPrefix)
+        $target = $this
+            ->targetQuery($ownerType, $ownerId, $envPrefix)
             ->where('database_connection_id', $connection->id)
             ->first();
 
@@ -405,8 +472,11 @@ final class DatabaseConnectionRegistry
         return $target;
     }
 
-    private function attachInstance(string $slug, AppInstance $instance, string $envPrefix): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    private function attachInstance(
+        string $slug,
+        AppInstance $instance,
+        string $envPrefix,
+    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         $connection = $this->findConnection($slug);
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {
@@ -433,8 +503,11 @@ final class DatabaseConnectionRegistry
         ]);
     }
 
-    private function detachInstance(string $slug, AppInstance $instance, string $envPrefix): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure
-    {
+    private function detachInstance(
+        string $slug,
+        AppInstance $instance,
+        string $envPrefix,
+    ): AppInstanceDatabaseConnectionTarget|DatabaseConnectionRegistryFailure {
         $connection = $this->findConnection($slug);
 
         if ($connection instanceof DatabaseConnectionRegistryFailure) {

@@ -50,16 +50,26 @@ function mockIncusTopologyCurrentSnapshots(IncusHost $host, int $count): void
     // Snapshot sources for every role resolve through one batched host call.
     // Empty marker output makes each role fall back to its first candidate,
     // which is the base template/snapshot in the base artifact namespace.
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
-        ->withArgs(fn (string $command, int $timeoutSeconds): bool => str_contains($command, '__orbit_snapshot_source')
-            && str_contains($command, '/snapshots/clean-')
-            && substr_count($command, 'else') >= $count)
+        ->withArgs(
+            fn (string $command, int $timeoutSeconds): bool => (
+                str_contains($command, '__orbit_snapshot_source')
+                && str_contains($command, '/snapshots/clean-')
+                && substr_count($command, 'else') >= $count
+            ),
+        )
         ->andReturn(successfulProcessResult());
 }
 
-function makeIncusTopologyTemplateTestConfig(string $topologyCpus = '1', string $topologyMemory = '2GiB', string $incusStoragePool = '', string $baseImage = '', string $topologyRootSize = '16GiB'): E2EConfig
-{
+function makeIncusTopologyTemplateTestConfig(
+    string $topologyCpus = '1',
+    string $topologyMemory = '2GiB',
+    string $incusStoragePool = '',
+    string $baseImage = '',
+    string $topologyRootSize = '16GiB',
+): E2EConfig {
     return new E2EConfig(
         providerNames: ['incus'],
         topologyProviderNames: ['incus'],
@@ -88,17 +98,28 @@ it('maps each topology kind to expected roles', function (): void {
 
     expect($ingressKind)->not->toBeNull();
 
-    expect(IncusTopologyTemplate::rolesFor(E2ETopologyKind::Operator))->toBe(['operator'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway))->toBe(['operator', 'gateway'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdev))->toBe(['operator', 'gateway', 'dev'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))->toBe(['operator', 'gateway', 'dev', 'prod'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAgent))->toBe(['operator', 'gateway', 'agent'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))->toBe(['operator', 'gateway', 'dev', 'prod', 'ingress'])
-        ->and(IncusTopologyTemplate::rolesFor($ingressKind))->toBe(['operator', 'gateway', 'prod'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))->toBe(['operator', 'gateway', 'dev'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod'])
-        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
+    expect(IncusTopologyTemplate::rolesFor(E2ETopologyKind::Operator))
+        ->toBe(['operator'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway))
+        ->toBe(['operator', 'gateway'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdev))
+        ->toBe(['operator', 'gateway', 'dev'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprod))
+        ->toBe(['operator', 'gateway', 'dev', 'prod'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAgent))
+        ->toBe(['operator', 'gateway', 'agent'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))
+        ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))
+        ->toBe(['operator', 'gateway', 'dev', 'prod', 'ingress'])
+        ->and(IncusTopologyTemplate::rolesFor($ingressKind))
+        ->toBe(['operator', 'gateway', 'prod'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevWebsocket))
+        ->toBe(['operator', 'gateway', 'dev'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodWebsocket))
+        ->toBe(['operator', 'gateway', 'dev', 'prod'])
+        ->and(IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket))
+        ->toBe(['operator', 'gateway', 'dev', 'prod', 'agent']);
 });
 
 it('generates correct template and clone names', function (): void {
@@ -148,23 +169,27 @@ it('generates Incus worker network names that fit the Linux interface limit', fu
 
     expect($network->name)
         ->toBe('orbit-e2e-n-200')
-        ->and(strlen($network->name))->toBeLessThanOrEqual(15);
+        ->and(strlen($network->name))
+        ->toBeLessThanOrEqual(15);
 });
 
 it('opens worker network forwarding ahead of host firewall drops without enabling dnsmasq dns', function (): void {
     $config = makeIncusTopologyTemplateTestConfig();
     $host = m::mock(IncusHost::class, [$config])->makePartial();
 
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->withArgs(function (string $command, int $timeoutSeconds): bool {
-            return $timeoutSeconds === 120
+            return (
+                $timeoutSeconds === 120
                 && str_contains($command, 'raw.dnsmasq port=0')
                 && ! str_contains($command, 'dhcp-option=option:dns-server')
                 && str_contains($command, "while \$sudo_prefix iptables -D FORWARD -i 'orbit-e2e-n-1' -j ACCEPT")
                 && str_contains($command, "iptables -I FORWARD 1 -i 'orbit-e2e-n-1' -j ACCEPT")
                 && str_contains($command, "while \$sudo_prefix iptables -D FORWARD -o 'orbit-e2e-n-1' -j ACCEPT")
-                && str_contains($command, "iptables -I FORWARD 1 -o 'orbit-e2e-n-1' -j ACCEPT");
+                && str_contains($command, "iptables -I FORWARD 1 -o 'orbit-e2e-n-1' -j ACCEPT")
+            );
         })
         ->andReturn(successfulProcessResult());
 
@@ -173,16 +198,23 @@ it('opens worker network forwarding ahead of host firewall drops without enablin
 
 it('returns true when all template instances and clean snapshots exist', function (): void {
     $host = m::mock(IncusHost::class);
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->withArgs(function (string $command, int $timeoutSeconds): bool {
-            return $timeoutSeconds === 30
+            return (
+                $timeoutSeconds === 30
                 && str_contains($command, 'orbit-template-operator-base')
                 && str_contains($command, 'orbit-template-gateway-base')
                 && str_contains($command, 'orbit-template-app-dev-base')
-                && str_contains($command, '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+                && str_contains(
+                    $command,
+                    '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+                )
                 && ! str_contains($command, 'grep -q')
-                && substr_count($command, '/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base') === 3;
+                && substr_count($command, '/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+                === 3
+            );
         })
         ->andReturn(successfulProcessResult());
 
@@ -191,13 +223,22 @@ it('returns true when all template instances and clean snapshots exist', functio
 
 it('checks prepared snapshots by exact snapshot path instead of prefix matching', function (): void {
     $host = m::mock(IncusHost::class);
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->withArgs(function (string $command): bool {
-            return str_contains($command, "incus query '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' >/dev/null 2>&1")
-                && str_contains($command, "incus query '/1.0/instances/orbit-template-gateway-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' >/dev/null 2>&1")
+            return (
+                str_contains(
+                    $command,
+                    "incus query '/1.0/instances/orbit-template-operator-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' >/dev/null 2>&1",
+                )
+                && str_contains(
+                    $command,
+                    "incus query '/1.0/instances/orbit-template-gateway-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' >/dev/null 2>&1",
+                )
                 && ! str_contains($command, 'incus info \'orbit-template-operator-base\' --show-log=false')
-                && ! str_contains($command, 'grep -q');
+                && ! str_contains($command, 'grep -q')
+            );
         })
         ->andReturn(failedProcessResult());
 
@@ -217,7 +258,8 @@ it('uses artifact-set suffixes for branch-specific Incus templates and snapshots
 
 it('returns false when any template instance is missing', function (): void {
     $host = m::mock(IncusHost::class);
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
         ->andReturn(failedProcessResult());
 
@@ -232,12 +274,18 @@ it('parses ORBIT_E2E_INCUS_HOSTS correctly', function (): void {
         $config = E2EConfig::fromEnvironment();
         $pool = IncusHostPool::fromEnvironment($config);
 
-        $hosts = (new ReflectionClass($pool))->getProperty('hosts')->getValue($pool);
+        $hosts = new ReflectionClass($pool)
+            ->getProperty('hosts')
+            ->getValue($pool);
 
-        expect($hosts)->toHaveCount(3)
-            ->and($hosts[0]->config->host)->toBe('host1')
-            ->and($hosts[1]->config->host)->toBe('host2')
-            ->and($hosts[2]->config->host)->toBe('host3');
+        expect($hosts)
+            ->toHaveCount(3)
+            ->and($hosts[0]->config->host)
+            ->toBe('host1')
+            ->and($hosts[1]->config->host)
+            ->toBe('host2')
+            ->and($hosts[2]->config->host)
+            ->toBe('host3');
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_INCUS_HOSTS');
@@ -255,10 +303,11 @@ it('returns single host when ORBIT_E2E_INCUS_HOSTS is unset', function (): void 
         $config = E2EConfig::fromEnvironment();
         $pool = IncusHostPool::fromEnvironment($config);
 
-        $hosts = (new ReflectionClass($pool))->getProperty('hosts')->getValue($pool);
+        $hosts = new ReflectionClass($pool)
+            ->getProperty('hosts')
+            ->getValue($pool);
 
-        expect($hosts)->toHaveCount(1)
-            ->and($hosts[0]->config->host)->toBe($config->host);
+        expect($hosts)->toHaveCount(1)->and($hosts[0]->config->host)->toBe($config->host);
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_INCUS_HOSTS');
@@ -269,20 +318,29 @@ it('returns single host when ORBIT_E2E_INCUS_HOSTS is unset', function (): void 
 });
 
 it('uses configured incus host slots as pool candidates when explicit hosts are unset', function (): void {
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1,sidecar2:2',
-    ], function (): void {
-        $config = E2EConfig::fromEnvironment();
-        $pool = IncusHostPool::fromEnvironment($config);
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_HOST_SLOTS' => 'sidecar1:1,sidecar2:2',
+        ],
+        function (): void {
+            $config = E2EConfig::fromEnvironment();
+            $pool = IncusHostPool::fromEnvironment($config);
 
-        $hosts = (new ReflectionClass($pool))->getProperty('hosts')->getValue($pool);
+            $hosts = new ReflectionClass($pool)
+                ->getProperty('hosts')
+                ->getValue($pool);
 
-        expect($hosts)->toHaveCount(2)
-            ->and($hosts[0]->config->host)->toBe('sidecar1')
-            ->and($hosts[1]->config->host)->toBe('sidecar2');
-    });
+            expect($hosts)
+                ->toHaveCount(2)
+                ->and($hosts[0]->config->host)
+                ->toBe('sidecar1')
+                ->and($hosts[1]->config->host)
+                ->toBe('sidecar2');
+        },
+    );
 });
 
 it('returns first host with required templates and capacity', function (): void {
@@ -338,13 +396,12 @@ it('skips transient capacity checks when requested', function (): void {
     $host->shouldReceive('run')->andReturn(successfulProcessResult());
     $host->shouldNotReceive('runningE2EInstanceCount');
 
-    $availability = (new IncusHostPool([$host]))->availabilityFor(
+    $availability = new IncusHostPool([$host])->availabilityFor(
         E2ETopologyKind::OperatorGatewayAppdevAppprod,
         checkCapacity: false,
     );
 
-    expect($availability['host'])->toBe($host)
-        ->and($availability['reason'])->toBeNull();
+    expect($availability['host'])->toBe($host)->and($availability['reason'])->toBeNull();
 });
 
 it('does not fail provider availability on transient incus capacity', function (): void {
@@ -358,19 +415,26 @@ it('does not fail provider availability on transient incus capacity', function (
         return Process::result();
     });
 
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:2',
-    ], function () use (&$probedCapacity): void {
-        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
-        $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:2',
+        ],
+        function () use (&$probedCapacity): void {
+            $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+            $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
 
-        expect($availability->available)->toBeTrue()
-            ->and($availability->message)->toContain('sidecar1')
-            ->and($probedCapacity)->toBeFalse();
-    });
+            expect($availability->available)
+                ->toBeTrue()
+                ->and($availability->message)
+                ->toContain('sidecar1')
+                ->and($probedCapacity)
+                ->toBeFalse();
+        },
+    );
 });
 
 it('reports warm prepared topology availability only when warm stateful snapshots exist', function (): void {
@@ -383,57 +447,75 @@ it('reports warm prepared topology availability only when warm stateful snapshot
         return Process::result();
     });
 
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
-        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
-        'ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS' => '2',
-    ], function (): void {
-        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
-        $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+            'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
+            'ORBIT_E2E_INCUS_WARM_SNAPSHOT_SLOTS' => '2',
+        ],
+        function (): void {
+            $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+            $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
 
-        expect($availability->available)->toBeTrue()
-            ->and($availability->message)->toContain('warm prepared topology operator_gateway is available on sidecar1');
-    });
+            expect($availability->available)
+                ->toBeTrue()
+                ->and($availability->message)
+                ->toContain('warm prepared topology operator_gateway is available on sidecar1');
+        },
+    );
 });
 
 it('fails warm prepared topology availability when warm snapshots are missing', function (): void {
     Process::fake(fn () => Process::result(exitCode: 1));
 
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
-        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
-    ], function (): void {
-        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
-        $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+            'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
+        ],
+        function (): void {
+            $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+            $availability = $provider->availability(E2ETopologyKind::OperatorGateway);
 
-        expect($availability->available)->toBeFalse()
-            ->and($availability->message)->toContain('Run composer e2e:prepare-warm-topology -- --force operator_gateway');
-    });
+            expect($availability->available)
+                ->toBeFalse()
+                ->and($availability->message)
+                ->toContain('Run composer e2e:prepare-warm-topology -- --force operator_gateway');
+        },
+    );
 });
 
 it('bypasses warm snapshot acquisition for source-mounted retained Incus requests', function (): void {
-    withE2EEnvironment([
-        'ORBIT_E2E_INCUS_HOSTS',
-    ], [
-        'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
-        'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
-        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
-    ], function (): void {
-        $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
-        $method = new ReflectionMethod($provider, 'shouldAcquireWarmSnapshots');
-        $method->setAccessible(true);
+    withE2EEnvironment(
+        [
+            'ORBIT_E2E_INCUS_HOSTS',
+        ],
+        [
+            'ORBIT_E2E_INCUS_WARM_SNAPSHOTS' => '1',
+            'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:4',
+        ],
+        function (): void {
+            $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+            $method = new ReflectionMethod($provider, 'shouldAcquireWarmSnapshots');
+            $method->setAccessible(true);
 
-        expect($method->invoke($provider, new E2ETopologyAcquisitionOptions(
-            sourceMountedCheckout: true,
-        )))->toBeFalse()
-            ->and($method->invoke($provider, new E2ETopologyAcquisitionOptions))->toBeTrue();
-    });
+            expect($method->invoke($provider, new E2ETopologyAcquisitionOptions(
+                sourceMountedCheckout: true,
+            )))
+                ->toBeFalse()
+                ->and($method->invoke($provider, new E2ETopologyAcquisitionOptions))
+                ->toBeTrue();
+        },
+    );
 });
 
 it('plans stable warm topology slot names per topology and artifact set', function (): void {
@@ -442,7 +524,8 @@ it('plans stable warm topology slot names per topology and artifact set', functi
     ], function (): void {
         $runId = IncusWarmTopologyPool::runId(E2ETopologyKind::OperatorGatewayAgent, 2);
 
-        expect($runId)->toStartWith('warm-')
+        expect($runId)
+            ->toStartWith('warm-')
             ->toEndWith('-s2')
             ->and(IncusWarmTopologyPool::instanceName(E2ETopologyKind::OperatorGatewayAgent, 2, 'operator'))
             ->toBe("orbit-e2e-{$runId}-operator")
@@ -466,23 +549,28 @@ it('leases weighted incus vm capacity before acquiring a topology', function ():
     Process::fake(fn () => Process::result());
 
     try {
-        withE2EEnvironment([
-            'ORBIT_E2E_INCUS_HOSTS',
-        ], [
-            'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
-            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:1',
-            'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
-            'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
-        ], function (): void {
-            $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
+        withE2EEnvironment(
+            [
+                'ORBIT_E2E_INCUS_HOSTS',
+            ],
+            [
+                'ORBIT_E2E_INCUS_HOSTS' => 'sidecar1',
+                'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'sidecar1:1',
+                'ORBIT_E2E_LEASE_DIRECTORY' => $leaseDirectory,
+                'ORBIT_E2E_SLOT_WAIT_SECONDS' => '0',
+            ],
+            function (): void {
+                $provider = new IncusTopologyProvider(E2EConfig::fromEnvironment());
 
-            expect(fn () => $provider->acquire(
-                E2ETopologyKind::Operator,
-                'run123',
-                new E2EPhaseTimer,
-                new E2ETopologyAcquisitionOptions,
-            ))->toThrow(RuntimeException::class, 'No incus E2E capacity for 1 slots became available');
-        });
+                expect(fn () => $provider->acquire(
+                    E2ETopologyKind::Operator,
+                    'run123',
+                    new E2EPhaseTimer,
+                    new E2ETopologyAcquisitionOptions,
+                ))
+                    ->toThrow(RuntimeException::class, 'No incus E2E capacity for 1 slots became available');
+            },
+        );
     } finally {
         $heldLease->release();
         exec('rm -rf '.escapeshellarg($leaseDirectory));
@@ -499,13 +587,12 @@ it('can restrict availability checks to a leased incus host', function (): void 
     $host2->shouldReceive('run')->andReturn(successfulProcessResult());
     $host2->shouldReceive('runningE2EInstanceCount')->andReturn(0);
 
-    $availability = (new IncusHostPool([$host1, $host2]))->availabilityFor(
+    $availability = new IncusHostPool([$host1, $host2])->availabilityFor(
         E2ETopologyKind::OperatorGateway,
         hostNames: ['sidecar2'],
     );
 
-    expect($availability['host'])->toBe($host2)
-        ->and($availability['reason'])->toBeNull();
+    expect($availability['host'])->toBe($host2)->and($availability['reason'])->toBeNull();
 });
 
 it('returns null when every host with templates is at capacity', function (): void {
@@ -531,10 +618,12 @@ it('reports capacity details when every prepared Incus host is full', function (
     $host->shouldReceive('run')->andReturn(successfulProcessResult());
     $host->shouldReceive('runningE2EInstanceCount')->andReturn(4);
 
-    $availability = (new IncusHostPool([$host]))->availabilityFor(E2ETopologyKind::OperatorGateway);
+    $availability = new IncusHostPool([$host])->availabilityFor(E2ETopologyKind::OperatorGateway);
 
-    expect($availability['host'])->toBeNull()
-        ->and($availability['reason'])->toBe('beast has 0/2 free VM slots (4/4 Orbit E2E VMs running)');
+    expect($availability['host'])
+        ->toBeNull()
+        ->and($availability['reason'])
+        ->toBe('beast has 0/2 free VM slots (4/4 Orbit E2E VMs running)');
 });
 
 it('builds a batch script that copies all roles in parallel, applies limits, then starts in parallel', function (): void {
@@ -558,11 +647,15 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
             default => $role,
         };
 
-        expect($script)->toContain("incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runX-{$role}' &");
+        expect($script)->toContain(
+            "incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runX-{$role}' &",
+        );
         expect($script)->toContain("incus start 'orbit-e2e-runX-{$role}' &");
         expect($script)->toContain("incus config set 'orbit-e2e-runX-{$role}' limits.cpu='1' limits.memory='2GiB'");
         expect($script)->toContain("incus config device override 'orbit-e2e-runX-{$role}' eth0 hwaddr=");
-        expect($script)->toContain("incus config device set 'orbit-e2e-runX-{$role}' root size='16GiB' || incus config device override 'orbit-e2e-runX-{$role}' root size='16GiB'");
+        expect($script)->toContain(
+            "incus config device set 'orbit-e2e-runX-{$role}' root size='16GiB' || incus config device override 'orbit-e2e-runX-{$role}' root size='16GiB'",
+        );
     }
 
     // All copy commands appear before any start command (the dev block is
@@ -576,7 +669,10 @@ it('builds a batch script that copies all roles in parallel, applies limits, the
             'prod' => 'app-prod',
             default => $role,
         };
-        $copyPos = strpos($script, "incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'");
+        $copyPos = strpos(
+            $script,
+            "incus copy 'orbit-template-{$artifactRole}-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+        );
         expect($copyPos)->toBeLessThan($firstStartPos);
     }
 
@@ -601,7 +697,8 @@ it('attaches cloned Incus topology instances to the worker network before start'
     expect($script)
         ->toContain("incus config device set 'orbit-e2e-runNetwork-operator' eth0 network 'orbit-e2e-n-3'")
         ->toContain("incus config device add 'orbit-e2e-runNetwork-gateway' eth0 nic network='orbit-e2e-n-3' name=eth0")
-        ->and(strpos($script, "eth0 network 'orbit-e2e-n-3'"))->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runNetwork-operator'"));
+        ->and(strpos($script, "eth0 network 'orbit-e2e-n-3'"))
+        ->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runNetwork-operator'"));
 });
 
 it('falls back from branch-specific Incus snapshots to base snapshots per role', function (): void {
@@ -620,11 +717,13 @@ it('falls back from branch-specific Incus snapshots to base snapshots per role',
                     $result = m::mock(ProcessResult::class);
                     $result->shouldReceive('successful')->andReturn(true);
                     $result->shouldReceive('errorOutput')->andReturn('');
-                    $result->shouldReceive('output')->andReturn(implode("\n", [
-                        '__orbit_snapshot_source operator orbit-template-operator-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
-                        '__orbit_snapshot_source gateway orbit-template-gateway-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
-                        '__orbit_snapshot_source agent orbit-template-agent-base clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
-                    ]));
+                    $result
+                        ->shouldReceive('output')
+                        ->andReturn(implode("\n", [
+                            '__orbit_snapshot_source operator orbit-template-operator-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+                            '__orbit_snapshot_source gateway orbit-template-gateway-branch-a-b clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+                            '__orbit_snapshot_source agent orbit-template-agent-base clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+                        ]));
 
                     return $result;
                 }
@@ -641,15 +740,25 @@ it('falls back from branch-specific Incus snapshots to base snapshots per role',
         $checkedSnapshots = implode("\n", $checks);
 
         expect($script)
-            ->toContain("incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'")
-            ->toContain("incus copy 'orbit-template-gateway-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'")
-            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
-            ->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
-            ->not->toContain('orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
-            ->and($checks)->toHaveCount(1)
-            ->and($checkedSnapshots)
-            ->toContain('orbit-template-agent-branch-a-b/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b')
-            ->toContain('orbit-template-agent-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
+            ->toContain(
+                "incus copy 'orbit-template-operator-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'",
+            )
+            ->toContain(
+                "incus copy 'orbit-template-gateway-branch-a-b/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b'",
+            )
+            ->toContain(
+                "incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+            )
+            ->not->toContain(
+                'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+            )
+            ->not->toContain(
+                'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+            )->and($checks)->toHaveCount(1)->and($checkedSnapshots)->toContain(
+                'orbit-template-agent-branch-a-b/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-branch-a-b',
+            )->toContain(
+                'orbit-template-agent-base/snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+            );
     });
 });
 
@@ -665,18 +774,29 @@ it('adds an explicit storage pool to topology clone copies when configured', fun
         IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
     );
 
-    expect($script)->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runZ-operator' --storage 'orbit-e2e' &")
-        ->and($script)->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &");
+    expect($script)
+        ->toContain(
+            "incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runZ-operator' --storage 'orbit-e2e' &",
+        )
+        ->and($script)
+        ->toContain(
+            "incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base' 'orbit-e2e-runZ-gateway' --storage 'orbit-e2e' &",
+        );
 });
 
 it('adds a source mount before start for source-mounted Incus retained topologies', function (): void {
     $config = makeIncusTopologyTemplateTestConfig();
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     mockIncusTopologyCurrentSnapshots($host, 2);
-    $host->shouldReceive('run')
+    $host
+        ->shouldReceive('run')
         ->once()
-        ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
-            && $command === "test -d '/srv/orbit-source' && test -f '/srv/orbit-source/apps/cli/orbit'")
+        ->withArgs(
+            fn (string $command, int $timeoutSeconds): bool => (
+                $timeoutSeconds === 30
+                && $command === "test -d '/srv/orbit-source' && test -f '/srv/orbit-source/apps/cli/orbit'"
+            ),
+        )
         ->andReturn(successfulProcessResult());
 
     withE2EConfigEnvironment([
@@ -691,14 +811,24 @@ it('adds a source mount before start for source-mounted Incus retained topologie
         );
 
         expect($script)
-            ->toContain("if incus config device get 'orbit-e2e-runSource-operator' orbit-source path >/dev/null 2>&1; then")
-            ->toContain("  incus config device add 'orbit-e2e-runSource-operator' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true")
-            ->toContain("  incus config device add 'orbit-e2e-runSource-gateway' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true")
-            ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source source='/srv/orbit-source'")
+            ->toContain(
+                "if incus config device get 'orbit-e2e-runSource-operator' orbit-source path >/dev/null 2>&1; then",
+            )
+            ->toContain(
+                "  incus config device add 'orbit-e2e-runSource-operator' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true",
+            )
+            ->toContain(
+                "  incus config device add 'orbit-e2e-runSource-gateway' orbit-source disk source='/srv/orbit-source' path='/home/orbit/orbit' shift=true",
+            )
+            ->toContain(
+                "incus config device set 'orbit-e2e-runSource-operator' orbit-source source='/srv/orbit-source'",
+            )
             ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source path='/home/orbit/orbit'")
             ->toContain("incus config device set 'orbit-e2e-runSource-operator' orbit-source shift=true")
-            ->not->toContain('shift=true || true')
-            ->and(strpos($script, "orbit-source disk source='/srv/orbit-source'"))->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runSource-operator'"));
+            ->not
+            ->toContain('shift=true || true')
+            ->and(strpos($script, "orbit-source disk source='/srv/orbit-source'"))
+            ->toBeLessThan(strpos($script, "incus start 'orbit-e2e-runSource-operator'"));
     });
 });
 
@@ -721,22 +851,30 @@ it('requires the requested Incus roles in the prepared full snapshot', function 
     withE2ETopologyEnvironment([], function (): void {
         $config = makeIncusTopologyTemplateTestConfig(baseImage: 'orbit-base-ubuntu-26.04-runtime');
         $host = m::mock(IncusHost::class, [$config])->makePartial();
-        $host->shouldReceive('run')
+        $host
+            ->shouldReceive('run')
             ->once()
-            ->withArgs(fn (string $command, int $timeoutSeconds): bool => $timeoutSeconds === 30
-                && str_contains($command, "incus info 'orbit-template-operator-base'")
-                && str_contains($command, "incus info 'orbit-template-gateway-base'")
-                && str_contains($command, "incus info 'orbit-template-app-dev-base'")
-                && str_contains($command, "incus info 'orbit-template-app-prod-base'")
-                && str_contains($command, "incus info 'orbit-template-agent-base'")
-                && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
-                && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04-runtime'")
-                && ! str_contains($command, "snapshots/clean-operator-base'")
-                && ! str_contains($command, "snapshots/clean-operator_gateway-base'")
-                && ! str_contains($command, 'orbit-template-ingress-base'))
+            ->withArgs(
+                fn (string $command, int $timeoutSeconds): bool => (
+                    $timeoutSeconds === 30
+                    && str_contains($command, "incus info 'orbit-template-operator-base'")
+                    && str_contains($command, "incus info 'orbit-template-gateway-base'")
+                    && str_contains($command, "incus info 'orbit-template-app-dev-base'")
+                    && str_contains($command, "incus info 'orbit-template-app-prod-base'")
+                    && str_contains($command, "incus info 'orbit-template-agent-base'")
+                    && str_contains($command, 'clean-operator_gateway_app-dev_app-prod_agent_websocket-base')
+                    && ! str_contains($command, "incus image info 'orbit-base-ubuntu-26.04-runtime'")
+                    && ! str_contains($command, "snapshots/clean-operator-base'")
+                    && ! str_contains($command, "snapshots/clean-operator_gateway-base'")
+                    && ! str_contains($command, 'orbit-template-ingress-base')
+                ),
+            )
             ->andReturn(successfulProcessResult());
 
-        expect(IncusTopologyTemplate::availableOn($host, E2ETopologyKind::OperatorGatewayAppdevAppprodAgent))->toBeTrue();
+        expect(IncusTopologyTemplate::availableOn(
+            $host,
+            E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        ))->toBeTrue();
     });
 });
 
@@ -764,14 +902,20 @@ it('clones only requested Incus roles from the prepared full snapshot', function
         $checkedSnapshots = implode("\n", $snapshotChecks);
 
         expect($script)
-            ->toContain("incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
-            ->toContain("incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
-            ->toContain("incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
+            ->toContain(
+                "incus copy 'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+            )
+            ->toContain(
+                "incus copy 'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+            )
+            ->toContain(
+                "incus copy 'orbit-template-agent-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+            )
             ->not->toContain('orbit-template-app-dev-base')
             ->not->toContain('orbit-template-app-prod-base')
-            ->not->toContain("orbit-template-operator-base/clean-operator-base'")
-            ->and($checkedSnapshots)
-            ->toContain("snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'")
+            ->not->toContain("orbit-template-operator-base/clean-operator-base'")->and($checkedSnapshots)->toContain(
+                "snapshots/clean-operator_gateway_app-dev_app-prod_agent_websocket-base'",
+            )
             ->not->toContain("snapshots/clean-operator_gateway-base'")
             ->not->toContain("snapshots/clean-operator-base'");
     });
@@ -782,10 +926,13 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
 
     expect($source)
         ->toContain('prepareInstances($instances, $this->config, $sshKeyPair, $timer, $options, $kind)')
-        ->toContain('retargetTopology($instances, $config, $sshKeyPair, $kind, $options->sourceMountedCheckout, $timer)')
+        ->toContain("timer->measure('retarget', fn () => \$this->retargetTopology(")
+        ->toContain('$options->sourceMountedCheckout')
+        ->toContain("cycleTimer->measure('reset.retarget', fn () => \$this->retargetTopology(")
+        ->toContain('$sourceMountedCheckout')
         ->toContain('--public-host=%s --skip-gateway-service-install')
         ->toContain('$bootstrapArguments')
-        ->toContain('runGatewayArtisan($gateway')
+        ->toContain('runGatewayArtisan(')
         ->toContain('E2ECommand::gatewayArtisan(')
         ->toContain("'cd /home/orbit/orbit && php apps/gateway/artisan '.\$arguments")
         ->toContain('/.config/orbit')
@@ -813,15 +960,16 @@ it('prepared Incus acquisition retargets selected snapshot roles without dynamic
 it('does not use synthetic provider-interface routes for prepared gateway clones', function (): void {
     $source = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
-    expect($source)->not->toContain('ip addr add')
-        ->and($source)->not->toContain('ip route replace')
-        ->and($source)->not->toContain('DockerTopologyNetworkPlan')
-        ->and($source)->toContain("private const string GatewayWireGuardIp = '10.6.0.2'")
-        ->and($source)->toContain("private const string DevWireGuardIp = '10.6.0.4'")
-        ->and($source)->toContain("private const string AgentWireGuardIp = '10.6.0.6'")
-        ->and($source)->toContain('retargetRealWireGuard')
-        ->and($source)->toContain('orbit:internal:bake-agent-node agent-1')
-        ->and($source)->toContain('E2EWgEasyGateway');
+    expect($source)
+        ->not->toContain('ip addr add')->and($source)
+        ->not->toContain('ip route replace')->and($source)
+        ->not->toContain('DockerTopologyNetworkPlan')->and($source)->toContain(
+            "private const string GatewayWireGuardIp = '10.6.0.2'",
+        )->and($source)->toContain("private const string DevWireGuardIp = '10.6.0.4'")->and($source)->toContain(
+            "private const string AgentWireGuardIp = '10.6.0.6'",
+        )->and($source)->toContain('retargetRealWireGuard')->and($source)->toContain(
+            'orbit:internal:bake-agent-node agent-1',
+        )->and($source)->toContain('E2EWgEasyGateway');
 });
 
 it('enables stateful migration before starting clones when stateful reset is requested', function (): void {
@@ -840,11 +988,20 @@ it('enables stateful migration before starting clones when stateful reset is req
             IncusTopologyTemplate::rolesFor(E2ETopologyKind::OperatorGateway),
         );
 
-        expect($script)->toContain("incus config set 'orbit-e2e-runState-operator' migration.stateful=true")
-            ->and($script)->toContain("incus config set 'orbit-e2e-runState-gateway' migration.stateful=true")
-            ->and($script)->toContain("incus config device set 'orbit-e2e-runState-operator' root size.state='4GiB' || incus config device override 'orbit-e2e-runState-operator' root size.state='4GiB'")
-            ->and($script)->toContain("incus config device set 'orbit-e2e-runState-gateway' root size.state='4GiB' || incus config device override 'orbit-e2e-runState-gateway' root size.state='4GiB'")
-            ->and(strpos($script, 'migration.stateful=true'))->toBeLessThan(strpos($script, 'incus start'));
+        expect($script)
+            ->toContain("incus config set 'orbit-e2e-runState-operator' migration.stateful=true")
+            ->and($script)
+            ->toContain("incus config set 'orbit-e2e-runState-gateway' migration.stateful=true")
+            ->and($script)
+            ->toContain(
+                "incus config device set 'orbit-e2e-runState-operator' root size.state='4GiB' || incus config device override 'orbit-e2e-runState-operator' root size.state='4GiB'",
+            )
+            ->and($script)
+            ->toContain(
+                "incus config device set 'orbit-e2e-runState-gateway' root size.state='4GiB' || incus config device override 'orbit-e2e-runState-gateway' root size.state='4GiB'",
+            )
+            ->and(strpos($script, 'migration.stateful=true'))
+            ->toBeLessThan(strpos($script, 'incus start'));
     } finally {
         if ($previous === false) {
             putenv('ORBIT_E2E_TOPOLOGY_RESET');
@@ -867,9 +1024,14 @@ it('can explicitly build stateful-ready topology clone scripts for warm snapshot
         stateful: true,
     );
 
-    expect($script)->toContain("incus config set 'orbit-e2e-runWarm-operator' migration.stateful=true")
-        ->and($script)->toContain("incus config set 'orbit-e2e-runWarm-gateway' migration.stateful=true")
-        ->and($script)->toContain("incus config device set 'orbit-e2e-runWarm-operator' root size.state='4GiB' || incus config device override 'orbit-e2e-runWarm-operator' root size.state='4GiB'");
+    expect($script)
+        ->toContain("incus config set 'orbit-e2e-runWarm-operator' migration.stateful=true")
+        ->and($script)
+        ->toContain("incus config set 'orbit-e2e-runWarm-gateway' migration.stateful=true")
+        ->and($script)
+        ->toContain(
+            "incus config device set 'orbit-e2e-runWarm-operator' root size.state='4GiB' || incus config device override 'orbit-e2e-runWarm-operator' root size.state='4GiB'",
+        );
 });
 
 it('clones runs the batch script through the host and waits for each agent', function (): void {
@@ -877,7 +1039,8 @@ it('clones runs the batch script through the host and waits for each agent', fun
     $host = m::mock(IncusHost::class, [$config])->makePartial();
 
     $captured = null;
-    $host->shouldReceive('runWithoutMultiplexing')
+    $host
+        ->shouldReceive('runWithoutMultiplexing')
         ->once()
         ->withArgs(function (string $command) use (&$captured): bool {
             $captured = $command;
@@ -890,12 +1053,17 @@ it('clones runs the batch script through the host and waits for each agent', fun
 
     $instances = IncusTopologyTemplate::clone($host, E2ETopologyKind::OperatorGateway, 'runY');
 
-    expect($instances)->toHaveKey('operator')
+    expect($instances)
+        ->toHaveKey('operator')
         ->toHaveKey('gateway')
-        ->and($captured)->toContain('incus copy')
-        ->and($captured)->toContain("'orbit-e2e-runY-operator'")
-        ->and($captured)->toContain("'orbit-e2e-runY-gateway'")
-        ->and($captured)->toContain("incus config device override 'orbit-e2e-runY-operator' eth0 hwaddr=");
+        ->and($captured)
+        ->toContain('incus copy')
+        ->and($captured)
+        ->toContain("'orbit-e2e-runY-operator'")
+        ->and($captured)
+        ->toContain("'orbit-e2e-runY-gateway'")
+        ->and($captured)
+        ->toContain("incus config device override 'orbit-e2e-runY-operator' eth0 hwaddr=");
 });
 
 it('throws when the batch script fails, surfacing the host error output', function (): void {

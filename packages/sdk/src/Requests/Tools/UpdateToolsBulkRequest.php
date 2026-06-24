@@ -33,10 +33,13 @@ final class UpdateToolsBulkRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'app' => $this->app,
-            'node' => $this->node,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'app' => $this->app,
+                'node' => $this->node,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): ToolUpdateBulkResponse
@@ -44,9 +47,9 @@ final class UpdateToolsBulkRequest extends GatewayRequest implements HasBody
         $data = $this->unwrapData($response);
 
         return new ToolUpdateBulkResponse(
-            updated: $data['updated'] ?? [],
-            skipped: $data['skipped'] ?? [],
-            failed: $data['failed'] ?? [],
+            updated: $this->listOfStringKeyedArrays($data['updated'] ?? []),
+            skipped: $this->listOfStringKeyedArrays($data['skipped'] ?? []),
+            failed: $this->listOfStringKeyedArrays($data['failed'] ?? []),
         );
     }
 }

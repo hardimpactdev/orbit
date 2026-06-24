@@ -55,8 +55,11 @@ describe(NodeWireGuardServiceAddress::class, function (): void {
             $exception = $caught;
         }
 
-        expect($exception)->toBeInstanceOf(RuntimeException::class)
-            ->and($exception?->getMessage())->toContain('database-1')
-            ->and($exception?->getMessage())->toContain('postgres');
+        expect($exception)
+            ->toBeInstanceOf(RuntimeException::class)
+            ->and($exception?->getMessage())
+            ->toContain('database-1')
+            ->and($exception?->getMessage())
+            ->toContain('postgres');
     });
 });

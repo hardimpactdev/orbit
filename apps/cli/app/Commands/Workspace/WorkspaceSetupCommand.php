@@ -30,11 +30,15 @@ final class WorkspaceSetupCommand extends WorkspaceGatewayCommand
             return $this->failValidation('path', 'Path must be absolute.');
         }
 
-        return $this->streamProgress('/api/workspaces/setup', [
-            'name' => $this->stringArgument('name'),
-            'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
-            'path' => $path,
-            'caller_cwd' => $this->hostCwd(),
-        ], fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload));
+        return $this->streamProgress(
+            '/api/workspaces/setup',
+            [
+                'name' => $this->stringArgument('name'),
+                'app' => $this->stringOption('app') ?? $this->appFromOrbitMarker(),
+                'path' => $path,
+                'caller_cwd' => $this->hostCwd(),
+            ],
+            fn (ProgressEventType $type, array $payload): int => $this->renderProgressTerminalFrame($type, $payload),
+        );
     }
 }

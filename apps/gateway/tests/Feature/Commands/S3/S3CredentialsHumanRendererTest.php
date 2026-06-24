@@ -79,15 +79,17 @@ function s3CredHumanSeaweedfsTool(Node $storage, array $credentials = [], array 
             'backend_host' => "{$storage->name}.s3.orbit",
             'public_hosts' => ['s3.example.com'],
         ], $config),
-        'credentials' => $credentials !== [] ? $credentials : [
-            'fields' => [
-                'access_key_id' => 'TESTACCESSKEYID12345',
-                'secret_access_key' => 'test-secret-access-key-value',
-                'region' => 'orbit',
-                'endpoint' => 'https://s3.orbit',
-                'bucket_style' => 'path',
+        'credentials' => $credentials !== []
+            ? $credentials
+            : [
+                'fields' => [
+                    'access_key_id' => 'TESTACCESSKEYID12345',
+                    'secret_access_key' => 'test-secret-access-key-value',
+                    'region' => 'orbit',
+                    'endpoint' => 'https://s3.orbit',
+                    'bucket_style' => 'path',
+                ],
             ],
-        ],
     ]);
 }
 
@@ -121,9 +123,10 @@ describe('S3CredentialsHumanRenderer no progress tree', function (): void {
         $content = s3CredHumanGet($this, ['node' => 'storage-1']);
 
         // The response is a plain JSON response — never SSE/event-stream.
-        expect($content)->not->toContain('event: tree')
-            ->and($content)->not->toContain('event: step')
-            ->and($content)->not->toContain('event: complete');
+        expect($content)
+            ->not->toContain('event: tree')->and($content)
+            ->not->toContain('event: step')->and($content)
+            ->not->toContain('event: complete');
     });
 });
 
@@ -142,7 +145,8 @@ describe('S3CredentialsHumanRenderer credential fields', function (): void {
             'REMOTE_ADDR' => S3_CRED_HUMAN_CALLER_WG_IP,
         ]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'storage-1')
             ->assertJsonPath('success.data.credentials.private_endpoint', 'https://s3.orbit')
             ->assertJsonPath('success.data.credentials.region', 'orbit')
@@ -175,7 +179,8 @@ describe('S3CredentialsHumanRenderer missing credentials', function (): void {
             'REMOTE_ADDR' => S3_CRED_HUMAN_CALLER_WG_IP,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 's3.credentials_missing')
             ->assertJsonPath('error.meta.next_command', 'doctor --family=tool --restore --node=storage-1');
     });
@@ -193,7 +198,8 @@ describe('S3CredentialsHumanRenderer prerequisite failures', function (): void {
             'REMOTE_ADDR' => S3_CRED_HUMAN_CALLER_WG_IP,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'node');
     });
@@ -206,7 +212,8 @@ describe('S3CredentialsHumanRenderer prerequisite failures', function (): void {
             'REMOTE_ADDR' => S3_CRED_HUMAN_CALLER_WG_IP,
         ]);
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'router');
     });

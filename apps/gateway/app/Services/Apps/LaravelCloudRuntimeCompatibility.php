@@ -43,7 +43,7 @@ final readonly class LaravelCloudRuntimeCompatibility
     {
         $instance->loadMissing('app');
 
-        $phpVersion = (string) $instance->app->php_version;
+        $phpVersion = $instance->app->php_version;
         $versionSupported = $this->phpRuntimeCatalog->supports($phpVersion);
         $extensions = [];
 

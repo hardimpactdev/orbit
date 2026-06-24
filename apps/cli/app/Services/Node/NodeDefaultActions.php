@@ -82,7 +82,7 @@ final readonly class NodeDefaultActions
             if ($exception->hasGatewayError() && $exception->gatewayErrorCode() !== null) {
                 return [
                     'code' => (string) $exception->gatewayErrorCode(),
-                    'message' => (string) ($exception->gatewayErrorMessage() ?? $exception->getMessage()),
+                    'message' => $exception->gatewayErrorMessage() ?? $exception->getMessage(),
                     'meta' => $exception->gatewayErrorMeta(),
                 ];
             }

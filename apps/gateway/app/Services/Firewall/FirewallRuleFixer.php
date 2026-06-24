@@ -37,7 +37,9 @@ final readonly class FirewallRuleFixer
 
         $convergence = UfwFirewallRule::fromRule($rule);
 
-        $this->remoteShell->run($rule->node, $convergence->deleteCommand($convergence->expectedShape()), ['throw' => true]);
+        $this->remoteShell->run($rule->node, $convergence->deleteCommand($convergence->expectedShape()), [
+            'throw' => true,
+        ]);
         $this->remoteShell->run($rule->node, $convergence->reloadCommand(), ['throw' => false]);
     }
 

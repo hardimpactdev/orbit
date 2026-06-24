@@ -70,7 +70,7 @@ class ProcessListPayload
             ->where('process_id', $process->id)
             ->when(
                 $workspace instanceof Workspace,
-                fn (Builder $query): Builder => $query->where('workspace_id', $workspace->id),
+                fn (Builder $query): Builder => $query->where('workspace_id', $workspace?->id),
                 fn (Builder $query): Builder => $query->whereNull('workspace_id'),
             )
             ->latest('recorded_at')

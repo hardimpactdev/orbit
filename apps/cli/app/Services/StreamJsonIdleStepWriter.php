@@ -25,20 +25,20 @@ class StreamJsonIdleStepWriter
                 '/bin/sh',
                 '-c',
                 <<<'SH'
-line=$1
-interval=$2
+                    line=$1
+                    interval=$2
 
-while :; do
-    sleep "$interval"
-    printf '%s' "$line"
-done
-SH,
+                    while :; do
+                        sleep "$interval"
+                        printf '%s' "$line"
+                    done
+                    SH,
                 'orbit-stream-json-idle',
                 $line,
                 (string) max(1, $intervalSeconds),
             ],
             [
-                ['file', '/dev/null', 'r'],
+                ['file', '/dev/null',   'r'],
                 ['file', '/dev/stdout', 'w'],
                 ['file', '/dev/stderr', 'w'],
             ],
@@ -72,9 +72,11 @@ SH,
 
     private function canSpawn(): bool
     {
-        return function_exists('proc_open')
+        return (
+            function_exists('proc_open')
             && is_executable('/bin/sh')
             && file_exists('/dev/stdout')
-            && file_exists('/dev/stderr');
+            && file_exists('/dev/stderr')
+        );
     }
 }

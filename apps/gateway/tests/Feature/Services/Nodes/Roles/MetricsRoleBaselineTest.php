@@ -75,21 +75,32 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
     $grafanaManagedFiles = collect($grafanaConfig['managed_files'])->keyBy('path');
     $grafanaBindMounts = collect($grafanaConfig['bind_mounts'])->keyBy('target');
 
-    expect($processes->keys()->all())->toBe(['grafana', 'node-exporter', 'prometheus'])
-        ->and($processes['grafana']->owner_type)->toBe($node->getMorphClass())
-        ->and($processes['grafana']->runtime)->toBe(ProcessRuntime::DockerSwarm)
-        ->and($grafanaConfig['service'])->toBe('grafana')
-        ->and($grafanaConfig['endpoint']['port'])->toBe(3000)
-        ->and($grafanaConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'])->toBeString()
-        ->and($grafanaConfig['credentials']['admin_password'])->toBe(
+    expect($processes->keys()->all())
+        ->toBe(['grafana', 'node-exporter', 'prometheus'])
+        ->and($processes['grafana']->owner_type)
+        ->toBe($node->getMorphClass())
+        ->and($processes['grafana']->runtime)
+        ->toBe(ProcessRuntime::DockerSwarm)
+        ->and($grafanaConfig['service'])
+        ->toBe('grafana')
+        ->and($grafanaConfig['endpoint']['port'])
+        ->toBe(3000)
+        ->and($grafanaConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'])
+        ->toBeString()
+        ->and($grafanaConfig['credentials']['admin_password'])
+        ->toBe(
             $grafanaConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'],
         )
-        ->and($grafanaManagedFiles->keys()->all())->toContain(
+        ->and($grafanaManagedFiles->keys()->all())
+        ->toContain(
             '/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml',
             '/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml',
             '/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json',
         )
-        ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml']['content'])->toContain(
+        ->and(
+            $grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml']['content'],
+        )
+        ->toContain(
             'deleteDatasources:',
             '    orgId: 1',
             'prune: true',
@@ -98,37 +109,52 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             "url: 'http://10.6.0.55:9090'",
             '    version: 1',
         )
-        ->and($grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml']['content'])->toContain(
+        ->and(
+            $grafanaManagedFiles['/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml']['content'],
+        )
+        ->toContain(
             'path: /var/lib/grafana/dashboards',
         )
-        ->and($grafanaBindMounts['/etc/grafana/provisioning/datasources/prometheus.yml'])->toMatchArray([
+        ->and($grafanaBindMounts['/etc/grafana/provisioning/datasources/prometheus.yml'])
+        ->toMatchArray([
             'source' => '/var/lib/orbit/processes/grafana/provisioning/datasources/prometheus.yml',
             'target' => '/etc/grafana/provisioning/datasources/prometheus.yml',
             'read_only' => true,
         ])
-        ->and($grafanaBindMounts['/etc/grafana/provisioning/dashboards/orbit-node-resources.yml'])->toMatchArray([
+        ->and($grafanaBindMounts['/etc/grafana/provisioning/dashboards/orbit-node-resources.yml'])
+        ->toMatchArray([
             'source' => '/var/lib/orbit/processes/grafana/provisioning/dashboards/orbit-node-resources.yml',
             'target' => '/etc/grafana/provisioning/dashboards/orbit-node-resources.yml',
             'read_only' => true,
         ])
-        ->and($grafanaBindMounts['/var/lib/grafana/dashboards/orbit-node-resources.json'])->toMatchArray([
+        ->and($grafanaBindMounts['/var/lib/grafana/dashboards/orbit-node-resources.json'])
+        ->toMatchArray([
             'source' => '/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json',
             'target' => '/var/lib/grafana/dashboards/orbit-node-resources.json',
             'read_only' => true,
         ])
-        ->and($processes['prometheus']->runtime)->toBe(ProcessRuntime::DockerSwarm)
-        ->and($processes['prometheus']->runtime_config['service'])->toBe('prometheus')
-        ->and($processes['prometheus']->runtime_config['endpoint']['port'])->toBe(9090)
-        ->and($processes['prometheus']->runtime_config['managed_files'][0]['content'])->toContain("'10.6.0.55:9100'")
-        ->and($processes['prometheus']->runtime_config['bind_mounts'][0])->toMatchArray([
+        ->and($processes['prometheus']->runtime)
+        ->toBe(ProcessRuntime::DockerSwarm)
+        ->and($processes['prometheus']->runtime_config['service'])
+        ->toBe('prometheus')
+        ->and($processes['prometheus']->runtime_config['endpoint']['port'])
+        ->toBe(9090)
+        ->and($processes['prometheus']->runtime_config['managed_files'][0]['content'])
+        ->toContain("'10.6.0.55:9100'")
+        ->and($processes['prometheus']->runtime_config['bind_mounts'][0])
+        ->toMatchArray([
             'source' => '/var/lib/orbit/processes/prometheus/prometheus.yml',
             'target' => '/etc/prometheus/prometheus.yml',
             'read_only' => true,
         ])
-        ->and($processes['node-exporter']->runtime)->toBe(ProcessRuntime::Systemd)
-        ->and($processes['node-exporter']->tool)->toBe('node-exporter')
-        ->and($processes['node-exporter']->runtime_config['service'])->toBe('node-exporter')
-        ->and($processes['node-exporter']->runtime_config['endpoint']['port'])->toBe(9100);
+        ->and($processes['node-exporter']->runtime)
+        ->toBe(ProcessRuntime::Systemd)
+        ->and($processes['node-exporter']->tool)
+        ->toBe('node-exporter')
+        ->and($processes['node-exporter']->runtime_config['service'])
+        ->toBe('node-exporter')
+        ->and($processes['node-exporter']->runtime_config['endpoint']['port'])
+        ->toBe(9100);
 
     $grafanaDashboard = json_decode(
         $grafanaManagedFiles['/var/lib/orbit/processes/grafana/dashboards/orbit-node-resources.json']['content'],
@@ -141,8 +167,10 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ->flatMap(fn (array $panel): array => collect($panel['targets'] ?? [])->pluck('expr')->all())
         ->all();
 
-    expect($grafanaDashboard['title'])->toBe('Orbit Node Resources')
-        ->and($grafanaNodeVariable)->toMatchArray([
+    expect($grafanaDashboard['title'])
+        ->toBe('Orbit Node Resources')
+        ->and($grafanaNodeVariable)
+        ->toMatchArray([
             'label' => 'Node',
             'query' => 'label_values(up{job="orbit-node-exporter"}, node)',
             'current' => [
@@ -151,7 +179,8 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
                 'value' => 'metrics-1',
             ],
         ])
-        ->and($grafanaPanelExpressions)->toContain(
+        ->and($grafanaPanelExpressions)
+        ->toContain(
             'up{job="orbit-node-exporter",node="$node"}',
             '100 * (1 - (node_memory_MemAvailable_bytes{job="orbit-node-exporter",node="$node"} / node_memory_MemTotal_bytes{job="orbit-node-exporter",node="$node"}))',
             'sum by (node) (rate(node_network_receive_bytes_total{job="orbit-node-exporter",node="$node",device!~"lo|docker.*|br-.*|veth.*"}[5m]))',
@@ -171,10 +200,14 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
 
     $route = ProxyRoute::query()->where('domain', 'metrics.orbit')->sole();
 
-    expect($route->node_id)->toBe($router->id)
-        ->and($route->owner_type)->toBe('router')
-        ->and($route->kind)->toBe('proxy')
-        ->and($route->config)->toMatchArray([
+    expect($route->node_id)
+        ->toBe($router->id)
+        ->and($route->owner_type)
+        ->toBe('router')
+        ->and($route->kind)
+        ->toBe('proxy')
+        ->and($route->config)
+        ->toMatchArray([
             'owner_name' => 'grafana',
             'protocol' => 'http',
             'target' => [
@@ -185,7 +218,8 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
                 ['scheme' => 'http', 'host' => 'host.docker.internal', 'port' => 3000],
             ],
         ])
-        ->and($this->metricsDnsmasqReconciler->reconciles)->toBe(1);
+        ->and($this->metricsDnsmasqReconciler->reconciles)
+        ->toBe(1);
 });
 
 it('rewrites stale metrics service route intent when the metrics baseline reconverges', function (): void {
@@ -226,8 +260,10 @@ it('rewrites stale metrics service route intent when the metrics baseline reconv
 
     $route = ProxyRoute::query()->where('domain', 'metrics.orbit')->sole();
 
-    expect($route->config['target']['value'])->toBe('http://host.docker.internal:3000')
-        ->and($route->config['upstreams'][0])->toBe([
+    expect($route->config['target']['value'])
+        ->toBe('http://host.docker.internal:3000')
+        ->and($route->config['upstreams'][0])
+        ->toBe([
             'scheme' => 'http',
             'host' => 'host.docker.internal',
             'port' => 3000,
@@ -244,38 +280,50 @@ it('adds the metrics role through the role assignment service', function (): voi
 
     $assignment = app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
 
-    expect($assignment->status)->toBe(NodeRoleStatus::Active)
-        ->and(Process::query()
-            ->where('node_id', $node->id)
-            ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
-            ->count())->toBe(3);
+    expect($assignment->status)
+        ->toBe(NodeRoleStatus::Active)
+        ->and(
+            Process::query()
+                ->where('node_id', $node->id)
+                ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
+                ->count(),
+        )
+        ->toBe(3);
 });
 
 it('adds the metrics role to the debian gateway node', function (): void {
-    $node = Node::factory()->gateway()->create([
-        'name' => 'gateway',
-        'platform' => 'debian_12',
-        'wireguard_address' => '10.6.0.1',
-        'status' => NodeStatus::Active,
-    ]);
+    $node = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.1',
+            'status' => NodeStatus::Active,
+        ]);
 
     $assignment = app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
 
-    expect($assignment->status)->toBe(NodeRoleStatus::Active)
-        ->and(Process::query()
-            ->where('node_id', $node->id)
-            ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
-            ->count())->toBe(3);
+    expect($assignment->status)
+        ->toBe(NodeRoleStatus::Active)
+        ->and(
+            Process::query()
+                ->where('node_id', $node->id)
+                ->whereIn('name', ['grafana', 'node-exporter', 'prometheus'])
+                ->count(),
+        )
+        ->toBe(3);
 });
 
 it('renders metrics node processes after syncing role-derived node fields', function (): void {
-    $node = Node::factory()->gateway()->create([
-        'name' => 'gateway',
-        'platform' => 'debian_12',
-        'wireguard_address' => '10.6.0.1',
-        'status' => NodeStatus::Active,
-        'tld' => 'gateway',
-    ]);
+    $node = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.1',
+            'status' => NodeStatus::Active,
+            'tld' => 'gateway',
+        ]);
 
     app(NodeRoleAssignmentService::class)->add($node, 'metrics', []);
     $process = Process::query()
@@ -290,60 +338,75 @@ it('renders metrics node processes after syncing role-derived node fields', func
     );
     $unitContent = app(SystemdUnitRenderer::class)->render($node, $context->runtimeApp(), $process);
 
-    expect($node->refresh()->tld)->toBe('gateway')
+    expect($node->refresh()->tld)
+        ->toBe('gateway')
         ->and($this->metricsShell->scriptsForNode('gateway'))
         ->toContain(base64_encode($unitContent))
         ->not->toContain('https://gateway.gateway');
 });
 
 it('converges node exporter process intent for active workload nodes', function (): void {
-    $gateway = Node::factory()->gateway()->create([
-        'name' => 'gateway',
-        'platform' => 'debian_12',
-        'wireguard_address' => '10.6.0.1',
-        'status' => NodeStatus::Active,
-    ]);
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.1',
+            'status' => NodeStatus::Active,
+        ]);
     $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
         'role' => 'metrics',
         'status' => NodeRoleStatus::Pending,
     ]);
 
-    Node::factory()->agent()->create([
-        'name' => 'agent-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.10',
-        'status' => NodeStatus::Active,
-    ]);
-    Node::factory()->appDev()->create([
-        'name' => 'app-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.11',
-        'status' => NodeStatus::Active,
-    ]);
-    Node::factory()->appProd()->create([
-        'name' => 'main-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.12',
-        'status' => NodeStatus::Active,
-    ]);
-    Node::factory()->database()->create([
-        'name' => 'database-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.13',
-        'status' => NodeStatus::Active,
-    ]);
-    Node::factory()->ingress()->create([
-        'name' => 'ingress-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.14',
-        'status' => NodeStatus::Active,
-    ]);
-    Node::factory()->database()->create([
-        'name' => 'inactive-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.15',
-        'status' => NodeStatus::Inactive,
-    ]);
+    Node::factory()
+        ->agent()
+        ->create([
+            'name' => 'agent-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.10',
+            'status' => NodeStatus::Active,
+        ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.11',
+            'status' => NodeStatus::Active,
+        ]);
+    Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'main-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.12',
+            'status' => NodeStatus::Active,
+        ]);
+    Node::factory()
+        ->database()
+        ->create([
+            'name' => 'database-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.13',
+            'status' => NodeStatus::Active,
+        ]);
+    Node::factory()
+        ->ingress()
+        ->create([
+            'name' => 'ingress-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.14',
+            'status' => NodeStatus::Active,
+        ]);
+    Node::factory()
+        ->database()
+        ->create([
+            'name' => 'inactive-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.15',
+            'status' => NodeStatus::Inactive,
+        ]);
     Node::factory()->create([
         'name' => 'client-1',
         'platform' => 'darwin',
@@ -399,16 +462,26 @@ it('converges node exporter process intent for active workload nodes', function 
     ]);
 
     $firewallRuleNodes->each(function (FirewallRule $rule) use ($gateway): void {
-        expect($rule->direction)->toBe('incoming')
-            ->and($rule->action)->toBe('allow')
-            ->and($rule->source)->toBe($gateway->wireguard_address)
-            ->and($rule->destination)->toBeNull()
-            ->and($rule->port)->toBe('9100')
-            ->and($rule->protocol)->toBe('tcp')
-            ->and($rule->address_family)->toBe('v4')
-            ->and($rule->interface)->toBe('wireguard')
-            ->and($rule->protected)->toBeTrue()
-            ->and($rule->reason)->toBe('Allow metrics node gateway to scrape node-exporter.');
+        expect($rule->direction)
+            ->toBe('incoming')
+            ->and($rule->action)
+            ->toBe('allow')
+            ->and($rule->source)
+            ->toBe($gateway->wireguard_address)
+            ->and($rule->destination)
+            ->toBeNull()
+            ->and($rule->port)
+            ->toBe('9100')
+            ->and($rule->protocol)
+            ->toBe('tcp')
+            ->and($rule->address_family)
+            ->toBe('v4')
+            ->and($rule->interface)
+            ->toBe('wireguard')
+            ->and($rule->protected)
+            ->toBeTrue()
+            ->and($rule->reason)
+            ->toBe('Allow metrics node gateway to scrape node-exporter.');
     });
 
     $prometheus = Process::query()
@@ -434,54 +507,76 @@ it('converges node exporter process intent for active workload nodes', function 
 });
 
 it('removes workload node exporter process intent when the last metrics role is removed', function (): void {
-    $gateway = Node::factory()->gateway()->create([
-        'name' => 'gateway',
-        'platform' => 'debian_12',
-        'wireguard_address' => '10.6.0.1',
-        'status' => NodeStatus::Active,
-    ]);
+    $gateway = Node::factory()
+        ->gateway()
+        ->create([
+            'name' => 'gateway',
+            'platform' => 'debian_12',
+            'wireguard_address' => '10.6.0.1',
+            'status' => NodeStatus::Active,
+        ]);
     $assignment = NodeRoleAssignment::factory()->for($gateway)->create([
         'role' => 'metrics',
         'status' => NodeRoleStatus::Active,
     ]);
-    $workload = Node::factory()->appDev()->create([
-        'name' => 'app-1',
-        'platform' => 'ubuntu',
-        'wireguard_address' => '10.6.0.11',
-        'status' => NodeStatus::Active,
-    ]);
+    $workload = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-1',
+            'platform' => 'ubuntu',
+            'wireguard_address' => '10.6.0.11',
+            'status' => NodeStatus::Active,
+        ]);
 
     app(NodeRoleBaselineConverger::class)->converge($gateway, $assignment);
 
-    expect(Process::query()
-        ->where('name', 'node-exporter')
-        ->whereIn('node_id', [$gateway->id, $workload->id])
-        ->count())->toBe(2)
-        ->and(NodeTool::query()
+    expect(
+        Process::query()
             ->where('name', 'node-exporter')
             ->whereIn('node_id', [$gateway->id, $workload->id])
-            ->count())->toBe(2)
-        ->and(FirewallRule::query()
-            ->where('name', 'orbit-metrics-node-exporter')
-            ->where('node_id', $workload->id)
-            ->where('owner', 'metrics')
-            ->count())->toBe(1);
+            ->count(),
+    )
+        ->toBe(2)
+        ->and(
+            NodeTool::query()
+                ->where('name', 'node-exporter')
+                ->whereIn('node_id', [$gateway->id, $workload->id])
+                ->count(),
+        )
+        ->toBe(2)
+        ->and(
+            FirewallRule::query()
+                ->where('name', 'orbit-metrics-node-exporter')
+                ->where('node_id', $workload->id)
+                ->where('owner', 'metrics')
+                ->count(),
+        )
+        ->toBe(1);
 
     app(NodeRoleBaselineConverger::class)->remove($gateway, $assignment, purgeData: false);
 
-    expect(Process::query()
-        ->where('name', 'node-exporter')
-        ->whereIn('node_id', [$gateway->id, $workload->id])
-        ->exists())->toBeFalse()
-        ->and(NodeTool::query()
+    expect(
+        Process::query()
             ->where('name', 'node-exporter')
             ->whereIn('node_id', [$gateway->id, $workload->id])
-            ->exists())->toBeFalse()
-        ->and(FirewallRule::query()
-            ->where('name', 'orbit-metrics-node-exporter')
-            ->where('node_id', $workload->id)
-            ->where('owner', 'metrics')
-            ->exists())->toBeFalse();
+            ->exists(),
+    )
+        ->toBeFalse()
+        ->and(
+            NodeTool::query()
+                ->where('name', 'node-exporter')
+                ->whereIn('node_id', [$gateway->id, $workload->id])
+                ->exists(),
+        )
+        ->toBeFalse()
+        ->and(
+            FirewallRule::query()
+                ->where('name', 'orbit-metrics-node-exporter')
+                ->where('node_id', $workload->id)
+                ->where('owner', 'metrics')
+                ->exists(),
+        )
+        ->toBeFalse();
 });
 
 final class MetricsRoleBaselineRecordingShell implements RemoteShell
@@ -503,11 +598,17 @@ final class MetricsRoleBaselineRecordingShell implements RemoteShell
         }
 
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
-            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'exists' => false,
-                'hash' => null,
-                'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => false,
+                    'hash' => null,
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

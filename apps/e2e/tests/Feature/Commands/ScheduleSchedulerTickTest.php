@@ -18,7 +18,12 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
         $gatewayApiIp = $topology->lease()->gatewayApiIp();
 
         e2eRestartGatewayApi($topology, 'schedule-scheduler-tick');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
+        E2EGatewayApi::waitForGatewayApi(
+            $topology->instance('operator'),
+            $config->operatorUser,
+            $topology->lease()->sshKeyPair(),
+            gatewayIp: $gatewayApiIp,
+        );
 
         scheduleSchedulerSeedGatewayIntent($topology, $scheduleName, $scheduleKey);
 
@@ -29,10 +34,14 @@ it('dispatches app-node schedules from the gateway scheduler tick', function ():
 
         $state = scheduleSchedulerGatewayState($topology, $scheduleKey);
 
-        expect($state['run_count'])->toBe(1)
-            ->and($state['latest_status'])->toBe('completed')
-            ->and($state['latest_stdout'])->toContain('scheduler-e2e-ran')
-            ->and($state['gateway_heartbeat'])->toBeTrue();
+        expect($state['run_count'])
+            ->toBe(1)
+            ->and($state['latest_status'])
+            ->toBe('completed')
+            ->and($state['latest_stdout'])
+            ->toContain('scheduler-e2e-ran')
+            ->and($state['gateway_heartbeat'])
+            ->toBeTrue();
     } finally {
         $topology->cleanup();
     }
@@ -44,37 +53,37 @@ function scheduleSchedulerSeedGatewayIntent($topology, string $scheduleName, str
     $scheduleKeyValue = var_export($scheduleKey, true);
 
     $php = <<<PHP
-\$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
-\$app = \\App\\Models\\App::query()->updateOrCreate(
-    ['name' => 'e2e-scheduler'],
-    [
-        'node_id' => \$node->id,
-        'path' => '/home/orbit/orbit',
-        'document_root' => 'public',
-        'php_version' => '8.5',
-        'adopted' => true,
-    ],
-);
+        \$node = \\App\\Models\\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        \$app = \\App\\Models\\App::query()->updateOrCreate(
+            ['name' => 'e2e-scheduler'],
+            [
+                'node_id' => \$node->id,
+                'path' => '/home/orbit/orbit',
+                'document_root' => 'public',
+                'php_version' => '8.5',
+                'adopted' => true,
+            ],
+        );
 
-\\App\\Models\\Schedule::query()->updateOrCreate(
-    ['schedule_key' => {$scheduleKeyValue}],
-    [
-        'name' => {$scheduleNameValue},
-        'scope' => 'app',
-        'app_id' => \$app->id,
-        'node_id' => null,
-        'target_name' => \$app->name,
-        'interval' => 'every minute',
-        'timezone' => 'UTC',
-        'execution_type' => 'command',
-        'execution_value' => 'echo scheduler-e2e-ran',
-        'enabled' => true,
-        'status' => 'expected',
-    ],
-);
+        \\App\\Models\\Schedule::query()->updateOrCreate(
+            ['schedule_key' => {$scheduleKeyValue}],
+            [
+                'name' => {$scheduleNameValue},
+                'scope' => 'app',
+                'app_id' => \$app->id,
+                'node_id' => null,
+                'target_name' => \$app->name,
+                'interval' => 'every minute',
+                'timezone' => 'UTC',
+                'execution_type' => 'command',
+                'execution_value' => 'echo scheduler-e2e-ran',
+                'enabled' => true,
+                'status' => 'expected',
+            ],
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     scheduleSchedulerGatewayArtisan($topology, 'tinker --execute='.escapeshellarg($php), timeoutSeconds: 120);
 }
@@ -86,7 +95,11 @@ function scheduleSchedulerRunGatewayTick($topology): ProcessResult
 
 function scheduleSchedulerGatewayArtisan($topology, string $arguments, int $timeoutSeconds): ProcessResult
 {
-    return scheduleSchedulerGatewayCommand($topology, 'php apps/gateway/artisan '.$arguments, timeoutSeconds: $timeoutSeconds);
+    return scheduleSchedulerGatewayCommand(
+        $topology,
+        'php apps/gateway/artisan '.$arguments,
+        timeoutSeconds: $timeoutSeconds,
+    );
 }
 
 function scheduleSchedulerGatewayCommand($topology, string $command, int $timeoutSeconds): ProcessResult
@@ -109,21 +122,21 @@ function scheduleSchedulerGatewayState($topology, string $scheduleKey): array
     $scheduleKeyValue = var_export($scheduleKey, true);
 
     $php = <<<PHP
-\$run = \\App\\Models\\ScheduleRun::query()
-    ->where('schedule_key', {$scheduleKeyValue})
-    ->latest('id')
-    ->first();
-\$state = \\App\\Models\\SchedulerState::query()
-    ->whereHas('node', fn (\$query) => \$query->where('name', 'gateway'))
-    ->first();
+        \$run = \\App\\Models\\ScheduleRun::query()
+            ->where('schedule_key', {$scheduleKeyValue})
+            ->latest('id')
+            ->first();
+        \$state = \\App\\Models\\SchedulerState::query()
+            ->whereHas('node', fn (\$query) => \$query->where('name', 'gateway'))
+            ->first();
 
-echo json_encode([
-    'run_count' => \\App\\Models\\ScheduleRun::query()->where('schedule_key', {$scheduleKeyValue})->count(),
-    'latest_status' => \$run?->status,
-    'latest_stdout' => \$run?->stdout,
-    'gateway_heartbeat' => \$state?->heartbeat_at !== null,
-], JSON_THROW_ON_ERROR);
-PHP;
+        echo json_encode([
+            'run_count' => \\App\\Models\\ScheduleRun::query()->where('schedule_key', {$scheduleKeyValue})->count(),
+            'latest_status' => \$run?->status,
+            'latest_stdout' => \$run?->stdout,
+            'gateway_heartbeat' => \$state?->heartbeat_at !== null,
+        ], JSON_THROW_ON_ERROR);
+        PHP;
 
     $result = scheduleSchedulerGatewayArtisan($topology, 'tinker --execute='.escapeshellarg($php), timeoutSeconds: 120);
 

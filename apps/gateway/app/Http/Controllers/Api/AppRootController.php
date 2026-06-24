@@ -51,9 +51,13 @@ final class AppRootController implements Loggable
         return App::query()
             ->with('node')
             ->get()
-            ->filter(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}")
+            ->filter(
+                fn (App $app): bool => (
+                    $app->name === $selector
+                    || $app->domain === $selector
+                    || $app->url() === "https://{$selector}"
+                ),
+            )
             ->values()
             ->first();
     }

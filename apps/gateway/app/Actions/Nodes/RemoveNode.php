@@ -22,7 +22,7 @@ final readonly class RemoveNode
 
     public function handle(Node $node, bool $removedSelf): NodeRemoveResponse
     {
-        $name = (string) $node->name;
+        $name = $node->name;
         $warnings = [];
 
         $grantsRemoved = NodeAccess::query()

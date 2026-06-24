@@ -19,8 +19,14 @@ final readonly class ScheduleLogsPayload
     /**
      * @return array{data: array<string, mixed>, meta: array{lines: int, truncated: bool}}
      */
-    public function forSchedule(string $name, ?string $app, ?string $node, ?int $runId, int $lines, ?Node $caller = null): array
-    {
+    public function forSchedule(
+        string $name,
+        ?string $app,
+        ?string $node,
+        ?int $runId,
+        int $lines,
+        ?Node $caller = null,
+    ): array {
         $schedule = $this->schedules->find($name, $app, $node, $caller);
         $run = $this->resolveRun($schedule, $runId);
         [$stdout, $stdoutTruncated] = $this->limitLines($run->stdout ?? '', $lines);

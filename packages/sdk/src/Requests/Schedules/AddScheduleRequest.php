@@ -38,15 +38,18 @@ final class AddScheduleRequest extends GatewayRequest implements HasBody
      */
     protected function defaultBody(): array
     {
-        return array_filter([
-            'name' => $this->name,
-            'app' => $this->app,
-            'node' => $this->node,
-            'interval' => $this->interval,
-            'timezone' => $this->timezone,
-            'command' => $this->command,
-            'script' => $this->script,
-        ], fn (?string $value): bool => $value !== null && $value !== '');
+        return array_filter(
+            [
+                'name' => $this->name,
+                'app' => $this->app,
+                'node' => $this->node,
+                'interval' => $this->interval,
+                'timezone' => $this->timezone,
+                'command' => $this->command,
+                'script' => $this->script,
+            ],
+            fn (?string $value): bool => $value !== null && $value !== '',
+        );
     }
 
     public function createDtoFromResponse(Response $response): ScheduleAddResponse

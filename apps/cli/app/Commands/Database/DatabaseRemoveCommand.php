@@ -19,7 +19,11 @@ final class DatabaseRemoveCommand extends DatabaseGatewayCommand
 
     public function handle(): int
     {
-        $connection = $this->requiredArgument('connection', 'connection', 'The database connection argument is required.');
+        $connection = $this->requiredArgument(
+            'connection',
+            'connection',
+            'The database connection argument is required.',
+        );
 
         if (is_int($connection)) {
             return $connection;
@@ -56,8 +60,8 @@ final class DatabaseRemoveCommand extends DatabaseGatewayCommand
     private function removedConnectionSlug(array $response, string $fallback): string
     {
         $data = $response['success']['data'] ?? null;
-        $result = is_array($data) ? ($data['result'] ?? null) : null;
-        $slug = is_array($result) ? ($result['connection'] ?? null) : null;
+        $result = is_array($data) ? $data['result'] ?? null : null;
+        $slug = is_array($result) ? $result['connection'] ?? null : null;
 
         return is_string($slug) && $slug !== '' ? $slug : $fallback;
     }

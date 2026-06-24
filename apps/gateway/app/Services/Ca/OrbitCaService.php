@@ -34,7 +34,9 @@ readonly class OrbitCaService
         }
 
         if (File::exists($rootKey) || File::exists($rootCrt)) {
-            throw new RuntimeException("Partial Orbit root CA state found in {$caDir}; restore the missing file before continuing.");
+            throw new RuntimeException(
+                "Partial Orbit root CA state found in {$caDir}; restore the missing file before continuing.",
+            );
         }
 
         Process::run(sprintf('openssl genrsa -out %s 4096', escapeshellarg($rootKey)))->throw();
@@ -67,7 +69,12 @@ readonly class OrbitCaService
 
         $sans = array_values(array_unique([$host, ...$additionalSans]));
 
-        if (File::exists($certPath) && File::exists($keyPath) && $this->isLeafFresh($certPath) && $this->leafCoversSans($certPath, $sans)) {
+        if (
+            File::exists($certPath)
+            && File::exists($keyPath)
+            && $this->isLeafFresh($certPath)
+            && $this->leafCoversSans($certPath, $sans)
+        ) {
             return ['cert' => $certPath, 'key' => $keyPath];
         }
 

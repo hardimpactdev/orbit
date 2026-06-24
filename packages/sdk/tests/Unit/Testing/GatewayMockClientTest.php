@@ -34,8 +34,7 @@ it('wraps Saloon mocks behind the SDK testing API', function (): void {
         },
     ]);
 
-    $request = new class extends GatewayRequest implements HasBody
-    {
+    $request = new class extends GatewayRequest implements HasBody {
         use HasJsonBody;
 
         protected Method $method = Method::POST;
@@ -70,14 +69,24 @@ it('wraps Saloon mocks behind the SDK testing API', function (): void {
 
     $dto = $connector->send($request)->dto();
 
-    expect(GatewayMockClient::hasGlobal())->toBeTrue()
-        ->and($dto)->toBe(['ok' => true])
-        ->and($seenRequest)->toBeInstanceOf(GatewayPendingRequest::class)
-        ->and($seenRequest?->method())->toBe('POST')
-        ->and($seenRequest?->url())->toBe('https://10.6.0.2/api/probe')
-        ->and($seenRequest?->header('Accept'))->toBe('application/json')
-        ->and($seenRequest?->body())->toBe(['name' => 'orbit'])
-        ->and($seenRequest?->configValue('verify'))->toBe('/tmp/orbit-ca.pem')
-        ->and($seenRequest?->configValue('timeout'))->toBe(15)
-        ->and(GatewayMockClient::lastPendingRequest())->toBeInstanceOf(GatewayPendingRequest::class);
+    expect(GatewayMockClient::hasGlobal())
+        ->toBeTrue()
+        ->and($dto)
+        ->toBe(['ok' => true])
+        ->and($seenRequest)
+        ->toBeInstanceOf(GatewayPendingRequest::class)
+        ->and($seenRequest?->method())
+        ->toBe('POST')
+        ->and($seenRequest?->url())
+        ->toBe('https://10.6.0.2/api/probe')
+        ->and($seenRequest?->header('Accept'))
+        ->toBe('application/json')
+        ->and($seenRequest?->body())
+        ->toBe(['name' => 'orbit'])
+        ->and($seenRequest?->configValue('verify'))
+        ->toBe('/tmp/orbit-ca.pem')
+        ->and($seenRequest?->configValue('timeout'))
+        ->toBe(15)
+        ->and(GatewayMockClient::lastPendingRequest())
+        ->toBeInstanceOf(GatewayPendingRequest::class);
 });

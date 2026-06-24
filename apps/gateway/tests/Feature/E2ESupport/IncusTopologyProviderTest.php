@@ -27,21 +27,31 @@ it('waits for operator host-key scan reachability before checkout pinning runs',
 
     $method = new ReflectionMethod($provider, 'peerRouteTasks');
     $method->setAccessible(true);
-    $tasks = $method->invoke($provider, [
-        'operator' => new IncusInstance($host, 'operator', commandTransport: true),
-        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
-        'dev' => new IncusInstance($host, 'dev', commandTransport: true),
-    ], incusTopologyProviderTestConfig());
+    $tasks = $method->invoke(
+        $provider,
+        [
+            'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+            'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
+            'dev' => new IncusInstance($host, 'dev', commandTransport: true),
+        ],
+        incusTopologyProviderTestConfig(),
+    );
 
     $gatewayProbe = strpos($tasks['dev'], 'StrictHostKeyChecking=accept-new');
     $operatorScan = strpos($tasks['dev'], 'ssh-keyscan');
 
-    expect($tasks)->toHaveKey('dev')
-        ->and($tasks['dev'])->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
-        ->and($gatewayProbe)->toBeInt()
-        ->and($operatorScan)->toBeInt()
-        ->and($gatewayProbe)->toBeLessThan($operatorScan)
-        ->and($checkoutSource)->toContain("self::artisanCommand('orbit:internal:pin-node-host-keys --json'");
+    expect($tasks)
+        ->toHaveKey('dev')
+        ->and($tasks['dev'])
+        ->toContain('ssh-keyscan -T 5 -t ed25519,ecdsa,rsa')
+        ->and($gatewayProbe)
+        ->toBeInt()
+        ->and($operatorScan)
+        ->toBeInt()
+        ->and($gatewayProbe)
+        ->toBeLessThan($operatorScan)
+        ->and($checkoutSource)
+        ->toContain('orbit:internal:pin-node-host-keys --json');
 });
 
 it('waits for gateway host-key reachability before incus bake commands pin host keys', function (): void {
@@ -60,11 +70,21 @@ it('waits for gateway host-key reachability before incus bake commands pin host 
         'agent' => new IncusInstance($host, 'agent', commandTransport: true),
         'ingress' => new IncusInstance($host, 'ingress', commandTransport: true),
     ];
-    $tasks = $method->invoke($provider, $instances, $gateway, E2ETopologyKind::OperatorGatewayAppdevAppprodIngress, false);
+    $tasks = $method->invoke(
+        $provider,
+        $instances,
+        $gateway,
+        E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+        false,
+    );
 
     $orderings = [];
 
-    foreach (['dev' => 'orbit:internal:bake-app-node app-dev-1', 'prod' => 'orbit:internal:bake-app-node app-prod-1', 'agent' => 'orbit:internal:bake-agent-node agent-1'] as $role => $bake) {
+    foreach ([
+        'dev' => 'orbit:internal:bake-app-node app-dev-1',
+        'prod' => 'orbit:internal:bake-app-node app-prod-1',
+        'agent' => 'orbit:internal:bake-agent-node agent-1',
+    ] as $role => $bake) {
         $orderings[$role] = strpos($tasks[$role], 'ssh-keyscan') < strpos($tasks[$role], $bake);
     }
 
@@ -72,11 +92,16 @@ it('waits for gateway host-key reachability before incus bake commands pin host 
     $prodBake = strpos($tasks['prod'], 'orbit:internal:bake-app-node app-prod-1');
     $websocketBakeTask = array_filter($tasks, fn (string $task): bool => str_contains($task, 'bake-websocket-node'));
 
-    expect($orderings)->toBe(['dev' => true, 'prod' => true, 'agent' => true])
-        ->and($ingressBake)->toBeInt()
-        ->and($prodBake)->toBeInt()
-        ->and($ingressBake)->toBeLessThan($prodBake)
-        ->and($websocketBakeTask)->toBe([])
+    expect($orderings)
+        ->toBe(['dev' => true, 'prod' => true, 'agent' => true])
+        ->and($ingressBake)
+        ->toBeInt()
+        ->and($prodBake)
+        ->toBeInt()
+        ->and($ingressBake)
+        ->toBeLessThan($prodBake)
+        ->and($websocketBakeTask)
+        ->toBe([])
         ->and(strpos($source, 'retargetBakeTasks($instances, $gateway, $kind, $sourceMountedCheckout)'))
         ->toBeLessThan(strpos($source, 'seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout)'))
         ->and(strpos($source, 'seedAppdevDatabaseAndRedis($gateway, $sshKeyPair, $sourceMountedCheckout)'))
@@ -89,27 +114,38 @@ it('waits for stable gateway ssh reachability after prepared incus retargeting',
     $retarget = strpos($source, "\$timer->measure('retarget'");
     $networkReady = strpos($source, "\$timer->measure('network-ready'");
 
-    expect($source)->toContain('private function gatewaySshProbeTask')
-        ->and($source)->toContain('StrictHostKeyChecking=accept-new')
-        ->and($source)->toContain('successes=0')
-        ->and($source)->toContain('[ "$successes" -ge 3 ]')
-        ->and($source)->toContain('ConnectTimeout=10')
-        ->and($source)->toContain('ServerAliveInterval=30')
-        ->and($source)->toContain('ServerAliveCountMax=10')
-        ->and($retarget)->toBeInt()
-        ->and($networkReady)->toBeInt()
-        ->and($retarget)->toBeLessThan($networkReady);
+    expect($source)
+        ->toContain('private function gatewaySshProbeTask')
+        ->and($source)
+        ->toContain('StrictHostKeyChecking=accept-new')
+        ->and($source)
+        ->toContain('successes=0')
+        ->and($source)
+        ->toContain('[ "$successes" -ge 3 ]')
+        ->and($source)
+        ->toContain('ConnectTimeout=10')
+        ->and($source)
+        ->toContain('ServerAliveInterval=30')
+        ->and($source)
+        ->toContain('ServerAliveCountMax=10')
+        ->and($retarget)
+        ->toBeInt()
+        ->and($networkReady)
+        ->toBeInt()
+        ->and($retarget)
+        ->toBeLessThan($networkReady);
 });
 
 it('seeds the gateway ssh key into prepared incus clones and gateway self ssh', function (): void {
     $commands = [];
-    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, private array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            private array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -140,18 +176,29 @@ it('seeds the gateway ssh key into prepared incus clones and gateway self ssh', 
 
     $joined = implode("\n", $commands);
 
-    expect($joined)->toContain('cat ~/.ssh/id_ed25519.pub')
-        ->and($joined)->toContain('ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub')
-        ->and($joined)->toContain("incus exec 'gateway' -- sh -lc")
-        ->and($joined)->toContain("incus exec 'dev' -- sh -lc")
-        ->and($joined)->toContain("incus exec 'prod' -- sh -lc")
-        ->and($joined)->toContain("incus exec 'agent' -- sh -lc")
-        ->and($joined)->toContain('ssh-ed25519 gateway-key orbit-e2e-gateway')
-        ->and($joined)->toContain('/home/orbit/.ssh/authorized_keys')
-        ->and($joined)->toContain('systemctl restart ssh || systemctl restart sshd || systemctl start ssh || systemctl start sshd')
-        ->and($joined)->toContain('ss -ltn')
-        ->and($joined)->not->toContain('systemctl start ssh || systemctl start sshd || true')
-        ->and($joined)->not->toContain("incus exec 'operator' -- sh -lc");
+    expect($joined)
+        ->toContain('cat ~/.ssh/id_ed25519.pub')
+        ->and($joined)
+        ->toContain('ssh-keygen -y -f ~/.ssh/id_ed25519 > ~/.ssh/id_ed25519.pub')
+        ->and($joined)
+        ->toContain("incus exec 'gateway' -- sh -lc")
+        ->and($joined)
+        ->toContain("incus exec 'dev' -- sh -lc")
+        ->and($joined)
+        ->toContain("incus exec 'prod' -- sh -lc")
+        ->and($joined)
+        ->toContain("incus exec 'agent' -- sh -lc")
+        ->and($joined)
+        ->toContain('ssh-ed25519 gateway-key orbit-e2e-gateway')
+        ->and($joined)
+        ->toContain('/home/orbit/.ssh/authorized_keys')
+        ->and($joined)
+        ->toContain('systemctl restart ssh || systemctl restart sshd || systemctl start ssh || systemctl start sshd')
+        ->and($joined)
+        ->toContain('ss -ltn')
+        ->and($joined)
+        ->not->toContain('systemctl start ssh || systemctl start sshd || true')->and($joined)
+        ->not->toContain("incus exec 'operator' -- sh -lc");
 });
 
 it('seeds gateway ssh access before prepared incus retargeting can converge runtime remotely', function (): void {
@@ -162,39 +209,49 @@ it('seeds gateway ssh access before prepared incus retargeting can converge runt
     $resetSeed = strpos($source, "\$cycleTimer->measure('reset.gateway-ssh-access'");
     $resetRetarget = strpos($source, "\$cycleTimer->measure('reset.retarget'");
 
-    expect($initialSeed)->toBeInt()
-        ->and($initialRetarget)->toBeInt()
-        ->and($resetSeed)->toBeInt()
-        ->and($resetRetarget)->toBeInt()
+    expect($initialSeed)
+        ->toBeInt()
+        ->and($initialRetarget)
+        ->toBeInt()
+        ->and($resetSeed)
+        ->toBeInt()
+        ->and($resetRetarget)
+        ->toBeInt()
         ->and([
             'initial' => $initialSeed < $initialRetarget,
             'reset' => $resetSeed < $resetRetarget,
-        ])->toBe([
+        ])
+        ->toBe([
             'initial' => true,
             'reset' => true,
         ])
-        ->and($source)->toContain('orbit:internal:bake-websocket-node app-dev-1')
-        ->and($source)->toContain('--converge-runtime');
+        ->and($source)
+        ->toContain('orbit:internal:bake-websocket-node app-dev-1')
+        ->and($source)
+        ->toContain('--converge-runtime');
 });
 
 it('keeps prepared Incus role assignment seeding out of retarget scripts', function (): void {
     $providerSource = file_get_contents(repo_path('apps/e2e/app/E2E/Support/IncusTopologyProvider.php'));
 
-    expect($providerSource)->not->toContain("'environment' => null")
-        ->and($providerSource)->not->toContain("'role' => 'gateway',\n        'environment' => null")
-        ->and($providerSource)->not->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate')
-        ->and($providerSource)->toContain('writeOperatorCliConfig($operator, $config, $sshKeyPair');
+    expect($providerSource)
+        ->not->toContain("'environment' => null")->and($providerSource)
+        ->not->toContain("'role' => 'gateway',\n        'environment' => null")->and($providerSource)
+        ->not->toContain('\\\\App\\\\Models\\\\NodeRoleAssignment::query()->updateOrCreate')->and(
+            $providerSource,
+        )->toContain('writeOperatorCliConfig($operator, $config, $sshKeyPair');
 });
 
 it('retargets artifact-backed Incus gateway nodes through the gateway image instead of a source checkout', function (): void {
     $commands = [];
-    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, private array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            private array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -215,10 +272,17 @@ it('retargets artifact-backed Incus gateway nodes through the gateway image inst
     $method = new ReflectionMethod($provider, 'retargetTopology');
     $method->setAccessible(true);
 
-    $method->invoke($provider, [
-        'operator' => new IncusInstance($host, 'operator', commandTransport: true),
-        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
-    ], incusTopologyProviderTestConfig(), new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'), E2ETopologyKind::OperatorGateway, false);
+    $method->invoke(
+        $provider,
+        [
+            'operator' => new IncusInstance($host, 'operator', commandTransport: true),
+            'gateway' => new IncusInstance($host, 'gateway', commandTransport: true),
+        ],
+        incusTopologyProviderTestConfig(),
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        E2ETopologyKind::OperatorGateway,
+        false,
+    );
 
     $commandOutput = implode("\n", $commands);
 
@@ -234,13 +298,14 @@ it('retargets artifact-backed Incus gateway nodes through the gateway image inst
 
 it('prepares gateway state before source-mounted incus retarget bootstrap', function (): void {
     $commands = [];
-    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost
-    {
+    $host = new class(incusTopologyProviderTestConfig(), $commands) extends IncusHost {
         /**
          * @param  array<int, string>  $commands
          */
-        public function __construct(E2EConfig $config, private array &$commands)
-        {
+        public function __construct(
+            E2EConfig $config,
+            private array &$commands,
+        ) {
             parent::__construct($config);
         }
 
@@ -250,7 +315,9 @@ it('prepares gateway state before source-mounted incus retarget bootstrap', func
             $this->commands[] = $command;
 
             if (str_contains($command, 'incus query')) {
-                return incusTopologyProviderTestProcessResult('{"network":{"eth0":{"addresses":[{"family":"inet","scope":"global","address":"10.231.7.84"}]}}}');
+                return incusTopologyProviderTestProcessResult(
+                    '{"network":{"eth0":{"addresses":[{"family":"inet","scope":"global","address":"10.231.7.84"}]}}}',
+                );
             }
 
             return incusTopologyProviderTestProcessResult();
@@ -261,27 +328,47 @@ it('prepares gateway state before source-mounted incus retarget bootstrap', func
     $method = new ReflectionMethod($provider, 'retargetTopology');
     $method->setAccessible(true);
 
-    $method->invoke($provider, [
-        'operator' => new IncusInstance($host, 'operator', commandTransport: true, sourceMountedCheckout: true),
-        'gateway' => new IncusInstance($host, 'gateway', commandTransport: true, sourceMountedCheckout: true),
-    ], incusTopologyProviderTestConfig(), new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'), E2ETopologyKind::OperatorGateway, true);
+    $method->invoke(
+        $provider,
+        [
+            'operator' => new IncusInstance($host, 'operator', commandTransport: true, sourceMountedCheckout: true),
+            'gateway' => new IncusInstance($host, 'gateway', commandTransport: true, sourceMountedCheckout: true),
+        ],
+        incusTopologyProviderTestConfig(),
+        new SshKeyPair('/tmp/id_ed25519', '/tmp/id_ed25519.pub'),
+        E2ETopologyKind::OperatorGateway,
+        true,
+    );
 
     $commandOutput = implode("\n", $commands);
     $stateBootstrap = strpos($commandOutput, '/home/orbit/.config/orbit/gateway.sqlite');
     $migration = strpos($commandOutput, 'php apps/gateway/artisan migrate --force --no-interaction --ansi');
-    $gatewayBootstrap = strpos($commandOutput, 'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway');
+    $gatewayBootstrap = strpos(
+        $commandOutput,
+        'php apps/gateway/artisan orbit:internal:bootstrap-gateway-local gateway',
+    );
 
-    expect($stateBootstrap)->toBeInt()
-        ->and($migration)->toBeInt()
-        ->and($gatewayBootstrap)->toBeInt()
-        ->and($stateBootstrap)->toBeLessThan($gatewayBootstrap)
-        ->and($migration)->toBeLessThan($gatewayBootstrap)
-        ->and($commandOutput)->toContain('ORBIT_CONFIG_ROOT')
-        ->and($commandOutput)->toContain('/home/orbit/.config/orbit/gateway.sqlite')
-        ->and($commandOutput)->toContain('/home/operator/.config/orbit/config.json')
-        ->and($commandOutput)->toContain('"active_gateway":"default"')
-        ->and($commandOutput)->not->toContain('LocalGatewaySettings::current')
-        ->and($commandOutput)->not->toContain('/home/operator/orbit/apps/cli')
+    expect($stateBootstrap)
+        ->toBeInt()
+        ->and($migration)
+        ->toBeInt()
+        ->and($gatewayBootstrap)
+        ->toBeInt()
+        ->and($stateBootstrap)
+        ->toBeLessThan($gatewayBootstrap)
+        ->and($migration)
+        ->toBeLessThan($gatewayBootstrap)
+        ->and($commandOutput)
+        ->toContain('ORBIT_CONFIG_ROOT')
+        ->and($commandOutput)
+        ->toContain('/home/orbit/.config/orbit/gateway.sqlite')
+        ->and($commandOutput)
+        ->toContain('/home/operator/.config/orbit/config.json')
+        ->and($commandOutput)
+        ->toContain('"active_gateway":"default"')
+        ->and($commandOutput)
+        ->not->toContain('LocalGatewaySettings::current')->and($commandOutput)
+        ->not->toContain('/home/operator/orbit/apps/cli')
         ->not->toContain('/home/orbit/orbit/apps/gateway/database/database.sqlite');
 });
 
@@ -310,8 +397,11 @@ function incusTopologyProviderTestConfig(): E2EConfig
     );
 }
 
-function incusTopologyProviderTestProcessResult(string $output = '', int $exitCode = 0, string $errorOutput = ''): ProcessResult
-{
+function incusTopologyProviderTestProcessResult(
+    string $output = '',
+    int $exitCode = 0,
+    string $errorOutput = '',
+): ProcessResult {
     $result = m::mock(ProcessResult::class);
     $result->shouldReceive('successful')->andReturn($exitCode === 0);
     $result->shouldReceive('output')->andReturn($output);

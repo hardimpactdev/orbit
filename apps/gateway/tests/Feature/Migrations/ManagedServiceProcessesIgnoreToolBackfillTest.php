@@ -20,8 +20,10 @@ it('does not rely on removed tool backfills for managed service processes', func
         processName: 'redis',
     );
 
-    expect(class_exists('App\\Services\\Tools\\ManagedServiceToolProcessBackfill', false))->toBeFalse()
-        ->and($descriptor->runtimeConfig)->toMatchArray([
+    expect(class_exists('App\\Services\\Tools\\ManagedServiceToolProcessBackfill', false))
+        ->toBeFalse()
+        ->and($descriptor->runtimeConfig)
+        ->toMatchArray([
             'service' => 'redis',
             'version' => '7.2',
             'image' => 'redis:7.2',

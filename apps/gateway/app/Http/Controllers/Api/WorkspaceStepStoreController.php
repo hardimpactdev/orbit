@@ -90,7 +90,7 @@ final class WorkspaceStepStoreController implements Loggable
 
         $app = $appSlug !== null
             ? $this->resolveAppBySlug($appSlug)
-            : $this->resolveAppByPath((string) $path);
+            : $this->resolveAppByPath($path);
 
         if (! $app instanceof App) {
             return $this->appNotFound($appSlug ?? (string) $path);
@@ -181,7 +181,8 @@ final class WorkspaceStepStoreController implements Loggable
                 $workspacePath = rtrim($workspace->path, '/');
 
                 return $normalizedPath === $workspacePath || str_starts_with($normalizedPath, "{$workspacePath}/");
-            })?->app;
+            })
+            ?->app;
     }
 
     private function anchorStep(App $app, WorkspaceLifecyclePhase $phase, ?int $stepId): ?WorkspaceStep

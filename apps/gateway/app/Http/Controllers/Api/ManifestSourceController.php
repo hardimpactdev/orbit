@@ -83,10 +83,13 @@ final class ManifestSourceController implements Loggable
      */
     public function properties(): array
     {
-        return array_filter([
-            'action' => $this->activityAction,
-            'manifest_url' => $this->activityUrl,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'action' => $this->activityAction,
+                'manifest_url' => $this->activityUrl,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function description(): ?string

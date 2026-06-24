@@ -24,14 +24,16 @@ describe('GET /api/ca/root', function (): void {
     });
 
     it('returns success envelope with root_ca PEM', function (): void {
-        Node::factory()->gateway()->create([
-            'name' => 'gateway-1',
-            'host' => '10.6.0.2',
-            'wireguard_address' => '10.6.0.2',
-            'orbit_path' => '/home/orbit/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-        ]);
+        Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'gateway-1',
+                'host' => '10.6.0.2',
+                'wireguard_address' => '10.6.0.2',
+                'orbit_path' => '/home/orbit/orbit',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+            ]);
 
         $pem = "-----BEGIN CERTIFICATE-----\nTESTPEM\n-----END CERTIFICATE-----\n";
         $caDir = "{$this->tempConfigRoot}/ca";
@@ -40,7 +42,8 @@ describe('GET /api/ca/root', function (): void {
 
         $response = $this->getJson('/api/ca/root');
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertExactJson([
                 'success' => [
                     'data' => [
@@ -51,18 +54,21 @@ describe('GET /api/ca/root', function (): void {
     });
 
     it('returns error envelope when CA is not bootstrapped', function (): void {
-        Node::factory()->gateway()->create([
-            'name' => 'gateway-1',
-            'host' => '10.6.0.2',
-            'wireguard_address' => '10.6.0.2',
-            'orbit_path' => '/home/orbit/orbit',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-        ]);
+        Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'gateway-1',
+                'host' => '10.6.0.2',
+                'wireguard_address' => '10.6.0.2',
+                'orbit_path' => '/home/orbit/orbit',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+            ]);
 
         $response = $this->getJson('/api/ca/root');
 
-        $response->assertStatus(503)
+        $response
+            ->assertStatus(503)
             ->assertJson([
                 'error' => [
                     'code' => 'gateway_unavailable',

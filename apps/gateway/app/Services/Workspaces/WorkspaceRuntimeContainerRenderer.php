@@ -33,7 +33,9 @@ final readonly class WorkspaceRuntimeContainerRenderer
         $app = $workspace->app;
 
         if (! $app instanceof App) {
-            throw new InvalidArgumentException("Workspace '{$workspace->name}' has no owning app; cannot render runtime container.");
+            throw new InvalidArgumentException(
+                "Workspace '{$workspace->name}' has no owning app; cannot render runtime container.",
+            );
         }
 
         $runtime = $app->runtimeKind();
@@ -47,14 +49,18 @@ final readonly class WorkspaceRuntimeContainerRenderer
         $phpVersion = $workspace->effectivePhpVersion();
 
         if (! is_string($phpVersion) || trim($phpVersion) === '') {
-            throw new InvalidArgumentException("Workspace '{$workspace->name}' has no resolvable PHP version; cannot render runtime container.");
+            throw new InvalidArgumentException(
+                "Workspace '{$workspace->name}' has no resolvable PHP version; cannot render runtime container.",
+            );
         }
 
         $policy = $this->phpRuntimePolicy->forVersion($phpVersion, $preloadPath);
-        $sourcePath = rtrim((string) $workspace->path, '/');
+        $sourcePath = rtrim($workspace->path, '/');
 
         if ($sourcePath === '') {
-            throw new InvalidArgumentException("Workspace '{$workspace->name}' has no source path; cannot render runtime container.");
+            throw new InvalidArgumentException(
+                "Workspace '{$workspace->name}' has no source path; cannot render runtime container.",
+            );
         }
 
         $mounts = [
@@ -84,7 +90,10 @@ final readonly class WorkspaceRuntimeContainerRenderer
         }
 
         if ($this->innerTlsPolicy->appliesToWorkspace($workspace) && $app->node !== null) {
-            foreach ($this->innerTlsPolicy->runtimeTlsMounts($app->node, $this->innerTlsPolicy->workspaceRouteDomain($workspace)) as $mount) {
+            foreach ($this->innerTlsPolicy->runtimeTlsMounts(
+                $app->node,
+                $this->innerTlsPolicy->workspaceRouteDomain($workspace),
+            ) as $mount) {
                 $mounts[] = $mount;
             }
         }
@@ -109,7 +118,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function containerName(Workspace $workspace): string
     {
         $workspace->loadMissing('app');
-        $appSlug = $workspace->app->name;
+        $appSlug = $workspace->app?->name;
 
         return "orbit-ws-{$appSlug}-{$workspace->name}";
     }
@@ -122,7 +131,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
     public function runtimeConfigPath(Workspace $workspace): string
     {
         $workspace->loadMissing('app');
-        $appSlug = $workspace->app->name;
+        $appSlug = $workspace->app?->name;
 
         return "/etc/orbit/workspaces/{$appSlug}-{$workspace->name}.ini";
     }
@@ -152,7 +161,10 @@ final readonly class WorkspaceRuntimeContainerRenderer
         ];
 
         if ($this->innerTlsPolicy->appliesToWorkspace($workspace)) {
-            $environment = array_merge($environment, $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->workspaceRouteDomain($workspace)));
+            $environment = array_merge(
+                $environment,
+                $this->innerTlsPolicy->runtimeTlsEnvironment($this->innerTlsPolicy->workspaceRouteDomain($workspace)),
+            );
         } else {
             $environment['SERVER_NAME'] = ':80';
         }
@@ -168,7 +180,7 @@ final readonly class WorkspaceRuntimeContainerRenderer
 
     public function documentRootInContainer(App $app): string
     {
-        $documentRoot = trim((string) $app->document_root, '/');
+        $documentRoot = trim($app->document_root, '/');
 
         if ($documentRoot === '' || $documentRoot === '.') {
             return WorkspaceRuntimeContainer::SourceTarget;

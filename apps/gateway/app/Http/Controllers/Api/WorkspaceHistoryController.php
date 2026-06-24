@@ -48,8 +48,12 @@ final readonly class WorkspaceHistoryController implements Loggable
         return $this->showHistory(null, $path, $request, $payload);
     }
 
-    private function showHistory(?string $name, ?string $path, Request $request, WorkspaceHistoryPayload $payload): JsonResponse
-    {
+    private function showHistory(
+        ?string $name,
+        ?string $path,
+        Request $request,
+        WorkspaceHistoryPayload $payload,
+    ): JsonResponse {
         /** @var mixed $caller */
         $caller = $request->user();
 
@@ -132,7 +136,11 @@ final readonly class WorkspaceHistoryController implements Loggable
 
         if ($limitValue !== null) {
             if (! ctype_digit($limitValue) || (int) $limitValue < 1) {
-                return $this->validationFailed('limit', $limitValue, 'Invalid value for --limit: must be a positive integer.');
+                return $this->validationFailed(
+                    'limit',
+                    $limitValue,
+                    'Invalid value for --limit: must be a positive integer.',
+                );
             }
 
             $limit = (int) $limitValue;
@@ -174,7 +182,11 @@ final readonly class WorkspaceHistoryController implements Loggable
         try {
             return Carbon::parse($value);
         } catch (Throwable) {
-            return $this->validationFailed($field, $value, "Invalid value for --{$field}: must be an ISO 8601 datetime.");
+            return $this->validationFailed(
+                $field,
+                $value,
+                "Invalid value for --{$field}: must be an ISO 8601 datetime.",
+            );
         }
     }
 
@@ -209,13 +221,27 @@ final readonly class WorkspaceHistoryController implements Loggable
     /**
      * @param  list<int>  $visibleNodeIds
      */
-    private function matchingWorkspaceByName(Node $caller, array $visibleNodeIds, string $name, ?string $app): Workspace|JsonResponse|null
-    {
+    private function matchingWorkspaceByName(
+        Node $caller,
+        array $visibleNodeIds,
+        string $name,
+        ?string $app,
+    ): Workspace|JsonResponse|null {
         $matches = Workspace::query()
             ->with(['app.node'])
             ->where('name', $name)
-            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
-            ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when(
+                ! $this->callerIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                    'node_id',
+                    $visibleNodeIds,
+                )),
+            )
+            ->when($app
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
+                'name',
+                $app,
+            )))
             ->get();
 
         if ($app === null && $matches->count() > 1) {
@@ -225,7 +251,11 @@ final readonly class WorkspaceHistoryController implements Loggable
                     'message' => "Ambiguous workspace: {$name}. Specify --app.",
                     'meta' => [
                         'name' => $name,
-                        'apps' => $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
+                        'apps' => $matches
+                            ->map(fn (Workspace $workspace): ?string => $workspace->app?->name)
+                            ->filter()
+                            ->values()
+                            ->all(),
                     ],
                 ],
             ], 400);
@@ -243,7 +273,13 @@ final readonly class WorkspaceHistoryController implements Loggable
 
         return Workspace::query()
             ->with(['app.node'])
-            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(
+                ! $this->callerIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                    'node_id',
+                    $visibleNodeIds,
+                )),
+            )
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim($workspace->path, '/');
@@ -256,7 +292,7 @@ final readonly class WorkspaceHistoryController implements Loggable
     {
         $value = $request->query($key);
 
-        return is_scalar($value) && trim((string) $value) !== '' ? trim((string) $value) : null;
+        return is_scalar($value) && trim($value) !== '' ? trim($value) : null;
     }
 
     private function callerIsGateway(Node $caller): bool

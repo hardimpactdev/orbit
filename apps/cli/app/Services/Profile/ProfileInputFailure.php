@@ -17,8 +17,10 @@ final readonly class ProfileInputFailure
 
     public function isMissingTarget(): bool
     {
-        return $this->code === 'validation_failed'
+        return (
+            $this->code === 'validation_failed'
             && ($this->meta['field'] ?? null) === 'target'
-            && ($this->meta['reason'] ?? null) === 'missing_required_input';
+            && ($this->meta['reason'] ?? null) === 'missing_required_input'
+        );
     }
 }

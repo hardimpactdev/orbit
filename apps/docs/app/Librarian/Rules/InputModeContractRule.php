@@ -63,16 +63,27 @@ final readonly class InputModeContractRule implements GroupedRule
         }
 
         if (! is_file($interactiveFile)) {
-            $findings[] = $this->finding($canonicalFile, 'Commands with split input-mode contracts must include 5.1 interactive input mode.');
+            $findings[] = $this->finding(
+                $canonicalFile,
+                'Commands with split input-mode contracts must include 5.1 interactive input mode.',
+            );
         }
 
         if (! is_file($nonInteractiveFile)) {
-            $findings[] = $this->finding($canonicalFile, 'Commands with split input-mode contracts must include 5.2 non-interactive input mode.');
+            $findings[] = $this->finding(
+                $canonicalFile,
+                'Commands with split input-mode contracts must include 5.2 non-interactive input mode.',
+            );
         }
 
         array_push(
             $findings,
-            ...$this->checkCanonicalLinks($canonicalFile, $canonicalContents, basename($interactiveFile), basename($nonInteractiveFile)),
+            ...$this->checkCanonicalLinks(
+                $canonicalFile,
+                $canonicalContents,
+                basename($interactiveFile),
+                basename($nonInteractiveFile),
+            ),
         );
 
         if (is_file($interactiveFile)) {
@@ -126,7 +137,10 @@ final readonly class InputModeContractRule implements GroupedRule
             }
 
             return [
-                $this->finding($file, 'Canonical Input Contract sections should link the shared Invocation Model without repeating generic input-mode or `--json` behavior.'),
+                $this->finding(
+                    $file,
+                    'Canonical Input Contract sections should link the shared Invocation Model without repeating generic input-mode or `--json` behavior.',
+                ),
             ];
         }
 
@@ -149,23 +163,36 @@ final readonly class InputModeContractRule implements GroupedRule
         }
 
         return [
-            $this->finding($file, 'Omit the Input Mode Contracts section entirely when no split input-mode files exist; the shared Invocation Model applies.'),
+            $this->finding(
+                $file,
+                'Omit the Input Mode Contracts section entirely when no split input-mode files exist; the shared Invocation Model applies.',
+            ),
         ];
     }
 
     /**
      * @return list<Finding>
      */
-    private function checkCanonicalLinks(string $file, string $contents, string $interactiveFileName, string $nonInteractiveFileName): array
-    {
+    private function checkCanonicalLinks(
+        string $file,
+        string $contents,
+        string $interactiveFileName,
+        string $nonInteractiveFileName,
+    ): array {
         $findings = [];
 
         if (! str_contains($contents, $interactiveFileName)) {
-            $findings[] = $this->finding($file, "Canonical contract must link {$interactiveFileName} when split input-mode files are used.");
+            $findings[] = $this->finding(
+                $file,
+                "Canonical contract must link {$interactiveFileName} when split input-mode files are used.",
+            );
         }
 
         if (! str_contains($contents, $nonInteractiveFileName)) {
-            $findings[] = $this->finding($file, "Canonical contract must link {$nonInteractiveFileName} when split input-mode files are used.");
+            $findings[] = $this->finding(
+                $file,
+                "Canonical contract must link {$nonInteractiveFileName} when split input-mode files are used.",
+            );
         }
 
         return $findings;
@@ -181,15 +208,24 @@ final readonly class InputModeContractRule implements GroupedRule
         $findings = [];
 
         if (! str_contains($contents, '**Input mode:** Interactive.')) {
-            $findings[] = $this->finding($file, 'Interactive input-mode files must declare "**Input mode:** Interactive.".');
+            $findings[] = $this->finding(
+                $file,
+                'Interactive input-mode files must declare "**Input mode:** Interactive.".',
+            );
         }
 
         if (! str_contains($lowerContents, 'tty') || ! $this->statesJsonAbsent($lowerContents)) {
-            $findings[] = $this->finding($file, 'Interactive input-mode files must state that they apply only with a TTY and without `--json`.');
+            $findings[] = $this->finding(
+                $file,
+                'Interactive input-mode files must state that they apply only with a TTY and without `--json`.',
+            );
         }
 
         if (! $this->documentsPromptBehavior($contents)) {
-            $findings[] = $this->finding($file, 'Interactive input-mode files must document prompt behavior or explicitly state why no prompts render.');
+            $findings[] = $this->finding(
+                $file,
+                'Interactive input-mode files must document prompt behavior or explicitly state why no prompts render.',
+            );
         }
 
         if (! str_contains($contents, "\n## Test Mapping")) {
@@ -209,11 +245,17 @@ final readonly class InputModeContractRule implements GroupedRule
         $findings = [];
 
         if (! str_contains($contents, '**Input mode:** Non-interactive.')) {
-            $findings[] = $this->finding($file, 'Non-interactive input-mode files must declare "**Input mode:** Non-interactive.".');
+            $findings[] = $this->finding(
+                $file,
+                'Non-interactive input-mode files must declare "**Input mode:** Non-interactive.".',
+            );
         }
 
         if (! $this->statesNonInteractiveSelection($lowerContents)) {
-            $findings[] = $this->finding($file, 'Non-interactive input-mode files must state that they apply without a TTY or when `--json` is present.');
+            $findings[] = $this->finding(
+                $file,
+                'Non-interactive input-mode files must state that they apply without a TTY or when `--json` is present.',
+            );
         }
 
         if (! $this->statesJsonForcesNonInteractive($lowerContents)) {
@@ -221,7 +263,10 @@ final readonly class InputModeContractRule implements GroupedRule
         }
 
         if (! $this->statesNoPrompts($lowerContents)) {
-            $findings[] = $this->finding($file, 'Non-interactive input-mode files must state that prompts are never rendered.');
+            $findings[] = $this->finding(
+                $file,
+                'Non-interactive input-mode files must state that prompts are never rendered.',
+            );
         }
 
         if (! str_contains($contents, "\n## Test Mapping")) {
@@ -235,56 +280,66 @@ final readonly class InputModeContractRule implements GroupedRule
     {
         $normalizedContents = $this->normalizeWhitespace($lowerContents);
 
-        return str_contains($normalizedContents, '--json')
+        return (
+            str_contains($normalizedContents, '--json')
             && (
                 str_contains($normalizedContents, 'not present')
                 || str_contains($normalizedContents, 'not supplied')
                 || str_contains($normalizedContents, 'without `--json`')
                 || str_contains($normalizedContents, 'without --json')
-            );
+            )
+        );
     }
 
     private function documentsPromptBehavior(string $contents): bool
     {
         $lowerContents = strtolower($contents);
 
-        return preg_match('/^## Prompt/sm', $contents) === 1
+        return (
+            preg_match('/^## Prompt/sm', $contents) === 1
             || str_contains($lowerContents, 'does not render prompts')
             || str_contains($lowerContents, 'do not prompt')
-            || str_contains($lowerContents, 'no prompt');
+            || str_contains($lowerContents, 'no prompt')
+        );
     }
 
     private function statesNonInteractiveSelection(string $lowerContents): bool
     {
         $normalizedContents = $this->normalizeWhitespace($lowerContents);
 
-        return str_contains($normalizedContents, '--json')
+        return (
+            str_contains($normalizedContents, '--json')
             && (
                 str_contains($normalizedContents, 'without a tty')
                 || str_contains($normalizedContents, 'not attached to a tty')
                 || str_contains($normalizedContents, 'non-tty')
-            );
+            )
+        );
     }
 
     private function statesJsonForcesNonInteractive(string $lowerContents): bool
     {
         $normalizedContents = $this->normalizeWhitespace($lowerContents);
 
-        return str_contains($normalizedContents, '--json')
+        return (
+            str_contains($normalizedContents, '--json')
             && str_contains($normalizedContents, 'force')
-            && str_contains($normalizedContents, 'non-interactive');
+            && str_contains($normalizedContents, 'non-interactive')
+        );
     }
 
     private function statesNoPrompts(string $lowerContents): bool
     {
         $normalizedContents = $this->normalizeWhitespace($lowerContents);
 
-        return str_contains($normalizedContents, 'never render prompts')
+        return (
+            str_contains($normalizedContents, 'never render prompts')
             || str_contains($normalizedContents, 'without prompts')
             || str_contains($normalizedContents, 'no prompts')
             || str_contains($normalizedContents, 'no fallback prompts')
             || str_contains($normalizedContents, 'never block on user input')
-            || str_contains($normalizedContents, 'never wait for user input');
+            || str_contains($normalizedContents, 'never wait for user input')
+        );
     }
 
     private function normalizeWhitespace(string $contents): string
@@ -294,7 +349,9 @@ final readonly class InputModeContractRule implements GroupedRule
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 

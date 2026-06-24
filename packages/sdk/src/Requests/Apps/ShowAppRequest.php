@@ -30,8 +30,8 @@ final class ShowAppRequest extends GatewayRequest
         $details = $data['details'] ?? [];
 
         return new AppShowResponse(
-            app: is_array($app) ? $app : [],
-            details: is_array($details) ? $details : [],
+            app: $this->stringKeyedArray($app),
+            details: $this->stringKeyedArray($details),
         );
     }
 }

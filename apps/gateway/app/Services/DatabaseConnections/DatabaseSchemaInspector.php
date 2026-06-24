@@ -20,9 +20,11 @@ final readonly class DatabaseSchemaInspector
         $payload = $this->payload($connection);
 
         return $this->runner->run($payload, match ($payload->driver) {
-            'sqlite' => "select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name",
+            'sqlite'
+                => "select name from sqlite_master where type = 'table' and name not like 'sqlite_%' order by name",
             'mysql' => 'show tables',
-            'pgsql' => "select table_name from information_schema.tables where table_schema = 'public' order by table_name",
+            'pgsql'
+                => "select table_name from information_schema.tables where table_schema = 'public' order by table_name",
             default => 'select 1',
         });
     }
@@ -34,12 +36,19 @@ final readonly class DatabaseSchemaInspector
     {
         $payload = $this->payload($connection);
 
-        return $this->runner->run($payload, match ($payload->driver) {
-            'sqlite' => "select name, sql from sqlite_master where type in ('table', 'view') and name not like 'sqlite_%' order by name",
-            'mysql' => 'select table_name, table_type from information_schema.tables where table_schema = database() order by table_name',
-            'pgsql' => "select table_name, table_type from information_schema.tables where table_schema = 'public' order by table_name",
-            default => 'select 1',
-        }, ['full' => true]);
+        return $this->runner->run(
+            $payload,
+            match ($payload->driver) {
+                'sqlite'
+                    => "select name, sql from sqlite_master where type in ('table', 'view') and name not like 'sqlite_%' order by name",
+                'mysql'
+                    => 'select table_name, table_type from information_schema.tables where table_schema = database() order by table_name',
+                'pgsql'
+                    => "select table_name, table_type from information_schema.tables where table_schema = 'public' order by table_name",
+                default => 'select 1',
+            },
+            ['full' => true],
+        );
     }
 
     /**
@@ -49,15 +58,19 @@ final readonly class DatabaseSchemaInspector
     {
         $payload = $this->payload($connection);
 
-        return $this->runner->run($payload, match ($payload->driver) {
-            'sqlite' => sprintf('pragma table_info(%s)', $this->sqliteIdentifier($table)),
-            'mysql' => sprintf('describe `%s`', str_replace('`', '``', $table)),
-            'pgsql' => sprintf(
-                "select column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = '%s' order by ordinal_position",
-                str_replace("'", "''", $table),
-            ),
-            default => 'select 1',
-        }, ['full' => true]);
+        return $this->runner->run(
+            $payload,
+            match ($payload->driver) {
+                'sqlite' => sprintf('pragma table_info(%s)', $this->sqliteIdentifier($table)),
+                'mysql' => sprintf('describe `%s`', str_replace('`', '``', $table)),
+                'pgsql' => sprintf(
+                    "select column_name, data_type, is_nullable, column_default from information_schema.columns where table_schema = 'public' and table_name = '%s' order by ordinal_position",
+                    str_replace("'", "''", $table),
+                ),
+                default => 'select 1',
+            },
+            ['full' => true],
+        );
     }
 
     private function payload(DatabaseConnection|DatabaseConnectionPayload|array $connection): DatabaseConnectionPayload

@@ -28,6 +28,5 @@ it('has firewall rule ownership and network-scope columns', function (): void {
 });
 
 it('documents provisioning as a transient node status', function (): void {
-    expect(NodeStatus::Provisioning->value)->toBe('provisioning')
-        ->and(NodeStatus::Active->value)->toBe('active');
+    expect(NodeStatus::Provisioning->value)->toBe('provisioning')->and(NodeStatus::Active->value)->toBe('active');
 });

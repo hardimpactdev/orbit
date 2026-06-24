@@ -57,10 +57,12 @@ final class FakeFetchGatewayRootCa implements FetchesGatewayRootCa
             throw $this->throws;
         }
 
-        return $this->result ?? new RootCaFetchResult(
-            ADD_FAKE_PEM,
-            hash('sha256', ADD_FAKE_PEM),
-            "https://{$gatewayIp}/api/ca/root",
+        return (
+            $this->result ?? new RootCaFetchResult(
+                ADD_FAKE_PEM,
+                hash('sha256', ADD_FAKE_PEM),
+                "https://{$gatewayIp}/api/ca/root",
+            )
         );
     }
 }
@@ -72,16 +74,18 @@ final class FakeVerifyGatewayIdentity implements VerifiesGatewayIdentity
 
     public function handle(string $gatewayIp, string $pemPath): array
     {
-        return $this->result ?? [
-            'gateway_name' => 'gateway-1',
-            'gateway_ip' => $gatewayIp,
-            'gateway_status' => 'active',
-            'gateway_platform' => 'linux',
-            'local_node_name' => 'client-1',
-            'local_node_status' => 'active',
-            'local_node_platform' => 'darwin',
-            'local_node_wg_ip' => '10.6.0.5',
-        ];
+        return (
+            $this->result ?? [
+                'gateway_name' => 'gateway-1',
+                'gateway_ip' => $gatewayIp,
+                'gateway_status' => 'active',
+                'gateway_platform' => 'linux',
+                'local_node_name' => 'client-1',
+                'local_node_status' => 'active',
+                'local_node_platform' => 'darwin',
+                'local_node_wg_ip' => '10.6.0.5',
+            ]
+        );
     }
 }
 
@@ -179,10 +183,14 @@ describe('gateway:add', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('gateway_ip')
-            ->and($decoded['error']['meta']['reason'])->toBe('missing');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('gateway_ip')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('missing');
     });
 
     it('returns validation_failed for an invalid WireGuard IP', function (): void {
@@ -194,9 +202,12 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['reason'])->toBe('invalid_ip');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('invalid_ip');
     });
 
     it('returns gateway_unavailable when CA fetch fails with connection error', function (): void {
@@ -209,8 +220,7 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
     });
 
     it('returns node.gateway_api_error when CA is invalid PEM', function (): void {
@@ -223,8 +233,7 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.gateway_api_error');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.gateway_api_error');
     });
 
     it('returns node.unsupported_platform when trust store is not supported', function (): void {
@@ -237,8 +246,7 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.unsupported_platform');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.unsupported_platform');
 
         cleanupAdd($tempDir);
     });
@@ -257,8 +265,7 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.identity_unknown');
+        expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.identity_unknown');
 
         cleanupAdd($tempDir);
     });
@@ -272,12 +279,18 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('added')
-            ->and($decoded['success']['data']['gateway']['name'])->toBe('gateway-1')
-            ->and($decoded['success']['data']['local_node']['name'])->toBe('client-1')
-            ->and($decoded['success']['data']['local_onboarding']['gateway_trust'])->toBe('trusted')
-            ->and($decoded['success']['data']['local_onboarding']['gateway_config'])->toBe('stored');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['result']['action'])
+            ->toBe('added')
+            ->and($decoded['success']['data']['gateway']['name'])
+            ->toBe('gateway-1')
+            ->and($decoded['success']['data']['local_node']['name'])
+            ->toBe('client-1')
+            ->and($decoded['success']['data']['local_onboarding']['gateway_trust'])
+            ->toBe('trusted')
+            ->and($decoded['success']['data']['local_onboarding']['gateway_config'])
+            ->toBe('stored');
 
         cleanupAdd($tempDir);
     });
@@ -305,12 +318,18 @@ describe('gateway:add', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $config = $store->read();
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('added')
-            ->and($config['active_gateway'])->toBe('incus-dev')
-            ->and($config['gateways']['default']['wireguard_ip'])->toBe('10.6.0.9')
-            ->and($config['gateways']['incus-dev']['wireguard_ip'])->toBe('10.6.0.2')
-            ->and($config['gateways']['incus-dev']['ca_pem_path'])->toContain('/gateways/incus-dev/ca.pem');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['result']['action'])
+            ->toBe('added')
+            ->and($config['active_gateway'])
+            ->toBe('incus-dev')
+            ->and($config['gateways']['default']['wireguard_ip'])
+            ->toBe('10.6.0.9')
+            ->and($config['gateways']['incus-dev']['wireguard_ip'])
+            ->toBe('10.6.0.2')
+            ->and($config['gateways']['incus-dev']['ca_pem_path'])
+            ->toContain('/gateways/incus-dev/ca.pem');
 
         cleanupAdd($tempDir);
     });
@@ -325,10 +344,14 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('name')
-            ->and($decoded['error']['meta']['reason'])->toBe('invalid_name');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('name')
+            ->and($decoded['error']['meta']['reason'])
+            ->toBe('invalid_name');
 
         cleanupAdd($tempDir);
     });
@@ -342,9 +365,12 @@ describe('gateway:add', function (): void {
         ]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('converged')
-            ->and($decoded['success']['data']['local_onboarding']['gateway_trust'])->toBe('already_trusted');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['result']['action'])
+            ->toBe('converged')
+            ->and($decoded['success']['data']['local_onboarding']['gateway_trust'])
+            ->toBe('already_trusted');
 
         cleanupAdd($tempDir);
     });
@@ -356,8 +382,7 @@ describe('gateway:add', function (): void {
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['--json' => true]);
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['result']['action'])->toBe('added');
+        expect($exitCode)->toBe(0)->and($decoded['success']['data']['result']['action'])->toBe('added');
 
         cleanupAdd($tempDir);
     });
@@ -367,15 +392,22 @@ describe('gateway:add', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '10.6.0.2']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Joining Gateway')
-            ->and($output)->toContain('Store local config')
-            ->and($output)->toContain("Joined gateway 'gateway-1'")
-            ->and($output)->toContain('Local node: client-1')
-            ->and($output)->toContain('Action: added')
-            ->and($output)->not->toContain('result:')
-            ->and($output)->not->toContain('local_onboarding')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Joining Gateway')
+            ->and($output)
+            ->toContain('Store local config')
+            ->and($output)
+            ->toContain("Joined gateway 'gateway-1'")
+            ->and($output)
+            ->toContain('Local node: client-1')
+            ->and($output)
+            ->toContain('Action: added')
+            ->and($output)
+            ->not->toContain('result:')->and($output)
+            ->not->toContain('local_onboarding')->and($output)
+            ->not->toContain('{');
 
         cleanupAdd($tempDir);
     });
@@ -385,10 +417,14 @@ describe('gateway:add', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '10.6.0.2']);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('Joining Gateway')
-            ->and($output)->toContain('Action: converged')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Joining Gateway')
+            ->and($output)
+            ->toContain('Action: converged')
+            ->and($output)
+            ->not->toContain('{');
 
         cleanupAdd($tempDir);
     });
@@ -398,10 +434,13 @@ describe('gateway:add', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '192.168.1.1']);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Gateway IP must be a valid Orbit WireGuard address.')
-            ->and($output)->not->toContain('"error"')
-            ->and($output)->not->toContain('{');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Gateway IP must be a valid Orbit WireGuard address.')
+            ->and($output)
+            ->not->toContain('"error"')->and($output)
+            ->not->toContain('{');
     });
 
     it('renders gateway:add gateway-unavailable failures as prose in human mode', function (): void {
@@ -410,9 +449,12 @@ describe('gateway:add', function (): void {
 
         [$exitCode, $output] = runCommand($this, 'gateway:add', ['gateway_ip' => '10.6.0.2']);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain('Could not fetch the gateway CA from 10.6.0.2.')
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('Could not fetch the gateway CA from 10.6.0.2.')
+            ->and($output)
+            ->not->toContain('"error"');
 
         cleanupAdd($tempDir);
     });

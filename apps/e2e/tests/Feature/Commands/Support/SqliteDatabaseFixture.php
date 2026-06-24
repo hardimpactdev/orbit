@@ -7,8 +7,12 @@ use App\E2E\Support\E2ETopologyHarness;
 /**
  * @param  list<string>  $statements
  */
-function e2eCreateSqliteDatabaseFixture(E2ETopologyHarness $topology, string $role, string $targetPath, array $statements): void
-{
+function e2eCreateSqliteDatabaseFixture(
+    E2ETopologyHarness $topology,
+    string $role,
+    string $targetPath,
+    array $statements,
+): void {
     $localPath = tempnam(sys_get_temp_dir(), 'orbit-e2e-sqlite-');
 
     if (! is_string($localPath)) {

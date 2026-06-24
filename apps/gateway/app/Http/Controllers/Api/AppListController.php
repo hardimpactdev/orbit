@@ -39,11 +39,18 @@ final readonly class AppListController implements Loggable
         $node = $request->query('node');
         $environment = $request->query('environment');
 
-        if (is_string($environment) && $environment !== '' && ! in_array($environment, self::VALID_ENVIRONMENTS, true)) {
+        if (
+            is_string($environment)
+            && $environment !== ''
+            && ! in_array($environment, self::VALID_ENVIRONMENTS, true)
+        ) {
             return response()->json([
                 'error' => [
                     'code' => 'validation_failed',
-                    'message' => "Invalid value for environment: '{$environment}'. Allowed values: ".implode(', ', self::VALID_ENVIRONMENTS).'.',
+                    'message' =>
+                        "Invalid value for environment: '{$environment}'. Allowed values: "
+                            .implode(', ', self::VALID_ENVIRONMENTS)
+                            .'.',
                     'meta' => [
                         'field' => 'environment',
                         'value' => $environment,
@@ -139,21 +146,33 @@ final readonly class AppListController implements Loggable
      * @param  list<int>  $visibleNodeIds
      * @return Collection<int, App>
      */
-    private function fetchApps(bool $callerIsGateway, array $visibleNodeIds, ?string $node, ?string $environment): Collection
-    {
+    private function fetchApps(
+        bool $callerIsGateway,
+        array $visibleNodeIds,
+        ?string $node,
+        ?string $environment,
+    ): Collection {
         return App::query()
             ->with(['node', 'workspaces'])
             ->when(! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
-            ->when($node !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where('name', $node)))
+            ->when($node
+            !== null, fn (Builder $query): Builder => $query->whereHas('node', fn (Builder $query): Builder => $query->where(
+                'name',
+                $node,
+            )))
             ->when($environment !== null, fn (Builder $query): Builder => $query->where('environment', $environment))
             ->get()
-            ->sort(fn (App $first, App $second): int => [
-                mb_strtolower((string) $first->node?->name),
-                mb_strtolower($first->name),
-            ] <=> [
-                mb_strtolower((string) $second->node?->name),
-                mb_strtolower($second->name),
-            ])
+            ->sort(
+                fn (App $first, App $second): int => (
+                    [
+                        mb_strtolower((string) $first->node?->name),
+                        mb_strtolower($first->name),
+                    ] <=> [
+                        mb_strtolower((string) $second->node?->name),
+                        mb_strtolower($second->name),
+                    ]
+                ),
+            )
             ->values();
     }
 
@@ -178,7 +197,8 @@ final readonly class AppListController implements Loggable
     {
         $appHost = parse_url($app->url(), PHP_URL_HOST);
 
-        return $app->workspaces
+        return $app
+            ->workspaces
             ->sortBy(fn (Workspace $workspace): string => mb_strtolower($workspace->name))
             ->map(fn (Workspace $workspace): array => [
                 'name' => $workspace->name,

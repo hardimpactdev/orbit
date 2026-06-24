@@ -31,11 +31,14 @@ final class MetricsEnableCommand extends GatewayCommand
         }
 
         try {
-            $response = $this->gateway()->withMinimumTimeout(self::GatewayTimeoutSeconds)->post('/api/nodes/'.rawurlencode($node).'/roles', [
-                'role' => 'metrics',
-                'settings' => [],
-                'reconverge_existing' => true,
-            ]);
+            $response = $this
+                ->gateway()
+                ->withMinimumTimeout(self::GatewayTimeoutSeconds)
+                ->post('/api/nodes/'.rawurlencode($node).'/roles', [
+                    'role' => 'metrics',
+                    'settings' => [],
+                    'reconverge_existing' => true,
+                ]);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -56,7 +59,9 @@ final class MetricsEnableCommand extends GatewayCommand
         $assignment = is_array($data['assignment'] ?? null) ? $data['assignment'] : [];
         $targetNode = is_string($data['node'] ?? null) && $data['node'] !== '' ? $data['node'] : $node;
         $role = is_string($assignment['role'] ?? null) && $assignment['role'] !== '' ? $assignment['role'] : 'metrics';
-        $status = is_string($assignment['status'] ?? null) && $assignment['status'] !== '' ? $assignment['status'] : 'unknown';
+        $status = is_string($assignment['status'] ?? null) && $assignment['status'] !== ''
+            ? $assignment['status']
+            : 'unknown';
 
         $this->line("Metrics role enabled on '{$targetNode}'");
         $this->line("Role: {$role}");

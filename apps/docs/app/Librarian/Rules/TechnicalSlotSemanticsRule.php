@@ -62,7 +62,7 @@ final readonly class TechnicalSlotSemanticsRule implements GroupedRule
                 continue;
             }
 
-            $slot = (string) $matches['slot'];
+            $slot = $matches['slot'];
             $suffix = self::RESERVED_SLOT_SUFFIXES["slot:{$slot}"] ?? null;
 
             if ($suffix === null) {

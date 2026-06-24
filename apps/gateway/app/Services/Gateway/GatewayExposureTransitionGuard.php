@@ -39,6 +39,9 @@ final readonly class GatewayExposureTransitionGuard
 
         $message = trim($result->errorOutput().' '.$result->output());
 
-        throw new RuntimeException("Failed to inspect {$port} before gateway exposure transition: ".($message !== '' ? $message : 'unknown error'));
+        throw new RuntimeException(
+            "Failed to inspect {$port} before gateway exposure transition: "
+            .($message !== '' ? $message : 'unknown error'),
+        );
     }
 }

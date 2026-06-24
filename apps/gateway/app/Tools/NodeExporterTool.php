@@ -29,42 +29,42 @@ final class NodeExporterTool extends BaseTool
     public function installScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit install node-exporter
-set -euo pipefail
+            #!/usr/bin/env bash
+            # orbit install node-exporter
+            set -euo pipefail
 
-case "$(uname -s)" in
-    Linux) ;;
-    *) echo "node-exporter: unsupported os" >&2; exit 64 ;;
-esac
+            case "$(uname -s)" in
+                Linux) ;;
+                *) echo "node-exporter: unsupported os" >&2; exit 64 ;;
+            esac
 
-case "$(uname -m)" in
-    x86_64|amd64) node_exporter_arch=amd64 ;;
-    aarch64|arm64) node_exporter_arch=arm64 ;;
-    *) echo "node-exporter: unsupported arch $(uname -m)" >&2; exit 64 ;;
-esac
+            case "$(uname -m)" in
+                x86_64|amd64) node_exporter_arch=amd64 ;;
+                aarch64|arm64) node_exporter_arch=arm64 ;;
+                *) echo "node-exporter: unsupported arch $(uname -m)" >&2; exit 64 ;;
+            esac
 
-tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+            tmp_dir="$(mktemp -d)"
+            trap 'rm -rf "$tmp_dir"' EXIT
 
-node_exporter_url="https://github.com/prometheus/node_exporter/releases/download/v1.11.1/node_exporter-1.11.1.linux-${node_exporter_arch}.tar.gz"
-curl -fsSL "$node_exporter_url" -o "$tmp_dir/node_exporter.tar.gz"
-tar -xzf "$tmp_dir/node_exporter.tar.gz" -C "$tmp_dir"
+            node_exporter_url="https://github.com/prometheus/node_exporter/releases/download/v1.11.1/node_exporter-1.11.1.linux-${node_exporter_arch}.tar.gz"
+            curl -fsSL "$node_exporter_url" -o "$tmp_dir/node_exporter.tar.gz"
+            tar -xzf "$tmp_dir/node_exporter.tar.gz" -C "$tmp_dir"
 
-sudo install -m 0755 "$tmp_dir/node_exporter-1.11.1.linux-${node_exporter_arch}/node_exporter" /usr/local/bin/node_exporter
-/usr/local/bin/node_exporter --version >/dev/null
-BASH;
+            sudo install -m 0755 "$tmp_dir/node_exporter-1.11.1.linux-${node_exporter_arch}/node_exporter" /usr/local/bin/node_exporter
+            /usr/local/bin/node_exporter --version >/dev/null
+            BASH;
     }
 
     #[\Override]
     public function removeScript(array $config = []): string
     {
         return <<<'BASH'
-#!/usr/bin/env bash
-# orbit remove node-exporter
-set -e
-sudo rm -f /usr/local/bin/node_exporter
-BASH;
+            #!/usr/bin/env bash
+            # orbit remove node-exporter
+            set -e
+            sudo rm -f /usr/local/bin/node_exporter
+            BASH;
     }
 
     #[\Override]

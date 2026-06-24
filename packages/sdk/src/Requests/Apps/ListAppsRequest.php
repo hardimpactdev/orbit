@@ -29,10 +29,13 @@ final class ListAppsRequest extends GatewayRequest
      */
     protected function defaultQuery(): array
     {
-        return array_filter([
-            'node' => $this->node,
-            'environment' => $this->environment,
-        ], static fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'node' => $this->node,
+                'environment' => $this->environment,
+            ],
+            static fn (mixed $value): bool => $value !== null,
+        );
     }
 
     public function createDtoFromResponse(Response $response): AppListResponse
@@ -41,7 +44,7 @@ final class ListAppsRequest extends GatewayRequest
         $apps = $data['apps'] ?? [];
 
         return new AppListResponse(
-            apps: is_array($apps) ? array_values($apps) : [],
+            apps: $this->listOfStringKeyedArrays($apps),
         );
     }
 }

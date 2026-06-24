@@ -40,25 +40,35 @@ it('resolves OpenCode workspace paths through the local executor lookup command'
         durationMs: 1,
     ));
 
-    $resolution = (new CoreAgentIdeWorkspacePathResolver(coreAgentIdeWorkspacePathResolverExecutor($transport)))
+    $resolution = new CoreAgentIdeWorkspacePathResolver(coreAgentIdeWorkspacePathResolverExecutor($transport))
         ->resolve('opencode', $app, '/tmp/opencode/docs-worktree');
 
-    expect($resolution?->appSlug)->toBe('docs')
-        ->and($resolution?->workspaceName)->toBe('docs-worktree')
-        ->and($transport->calls)->toHaveCount(1);
+    expect($resolution?->appSlug)
+        ->toBe('docs')
+        ->and($resolution?->workspaceName)
+        ->toBe('docs-worktree')
+        ->and($transport->calls)
+        ->toHaveCount(1);
 
     $script = $transport->calls[0]['script'];
 
-    expect($script)->toContain('internal:workspace-adapter:lookup')
-        ->and($script)->toContain("--adapter='opencode'")
-        ->and($script)->toContain("--lookup='workspace'")
-        ->and($script)->toContain("--workspace-path='/tmp/opencode/docs-worktree'")
-        ->and($script)->toContain("--app-path='/srv/docs'")
-        ->and($script)->toContain('--operation-token=')
-        ->and($script)->not->toContain('python3')
-        ->and($script)->not->toContain('python -c')
-        ->and($script)->not->toContain('sqlite3')
-        ->and($script)->not->toContain('php -r');
+    expect($script)
+        ->toContain('internal:workspace-adapter:lookup')
+        ->and($script)
+        ->toContain("--adapter='opencode'")
+        ->and($script)
+        ->toContain("--lookup='workspace'")
+        ->and($script)
+        ->toContain("--workspace-path='/tmp/opencode/docs-worktree'")
+        ->and($script)
+        ->toContain("--app-path='/srv/docs'")
+        ->and($script)
+        ->toContain('--operation-token=')
+        ->and($script)
+        ->not->toContain('python3')->and($script)
+        ->not->toContain('python -c')->and($script)
+        ->not->toContain('sqlite3')->and($script)
+        ->not->toContain('php -r');
 });
 
 it('resolves Polyscope workspace paths through the local executor lookup command', function (): void {
@@ -80,25 +90,35 @@ it('resolves Polyscope workspace paths through the local executor lookup command
         durationMs: 1,
     ));
 
-    $resolution = (new CoreAgentIdeWorkspacePathResolver(coreAgentIdeWorkspacePathResolverExecutor($transport)))
+    $resolution = new CoreAgentIdeWorkspacePathResolver(coreAgentIdeWorkspacePathResolverExecutor($transport))
         ->resolve('polyscope', $app, '/srv/docs/.worktrees/feature-docs');
 
-    expect($resolution?->appSlug)->toBe('docs')
-        ->and($resolution?->workspaceName)->toBe('feature-docs')
-        ->and($transport->calls)->toHaveCount(1);
+    expect($resolution?->appSlug)
+        ->toBe('docs')
+        ->and($resolution?->workspaceName)
+        ->toBe('feature-docs')
+        ->and($transport->calls)
+        ->toHaveCount(1);
 
     $script = $transport->calls[0]['script'];
 
-    expect($script)->toContain('internal:workspace-adapter:lookup')
-        ->and($script)->toContain("--adapter='polyscope'")
-        ->and($script)->toContain("--lookup='workspace'")
-        ->and($script)->toContain("--workspace-path='/srv/docs/.worktrees/feature-docs'")
-        ->and($script)->toContain("--app-path='/srv/docs'")
-        ->and($script)->toContain('--operation-token=')
-        ->and($script)->not->toContain('python3')
-        ->and($script)->not->toContain('python -c')
-        ->and($script)->not->toContain('sqlite3')
-        ->and($script)->not->toContain('php -r');
+    expect($script)
+        ->toContain('internal:workspace-adapter:lookup')
+        ->and($script)
+        ->toContain("--adapter='polyscope'")
+        ->and($script)
+        ->toContain("--lookup='workspace'")
+        ->and($script)
+        ->toContain("--workspace-path='/srv/docs/.worktrees/feature-docs'")
+        ->and($script)
+        ->toContain("--app-path='/srv/docs'")
+        ->and($script)
+        ->toContain('--operation-token=')
+        ->and($script)
+        ->not->toContain('python3')->and($script)
+        ->not->toContain('python -c')->and($script)
+        ->not->toContain('sqlite3')->and($script)
+        ->not->toContain('php -r');
 });
 
 function coreAgentIdeWorkspacePathResolverExecutor(CoreAgentIdeWorkspacePathResolverTransport $transport): RemoteLocalExecutor

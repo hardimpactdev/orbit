@@ -143,7 +143,9 @@ class ProcessDockerContainer
     public function publishedPorts(): array
     {
         return array_map(
-            static fn (array $port): string => "{$port['published']}:{$port['target']}".($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}"),
+            static fn (array $port): string => (
+                "{$port['published']}:{$port['target']}".($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}")
+            ),
             $this->ports,
         );
     }
@@ -241,7 +243,7 @@ class ProcessDockerContainer
             return [
                 'source' => $source,
                 'target' => $target,
-                'read_only' => (bool) ($mount['read_only'] ?? false),
+                'read_only' => $mount['read_only'] ?? false,
             ];
         }, $mounts);
     }
@@ -257,13 +259,15 @@ class ProcessDockerContainer
             $target = trim($volume['target']);
 
             if ($source === '' || $target === '') {
-                throw new InvalidArgumentException('Process docker container volumes require source or name and target paths.');
+                throw new InvalidArgumentException(
+                    'Process docker container volumes require source or name and target paths.',
+                );
             }
 
             return [
                 'source' => $source,
                 'target' => $target,
-                'read_only' => (bool) ($volume['read_only'] ?? false),
+                'read_only' => $volume['read_only'] ?? false,
             ];
         }, $volumes);
     }
@@ -293,10 +297,12 @@ class ProcessDockerContainer
         return array_map(function (array $port): array {
             $published = $port['published'];
             $target = $port['target'];
-            $protocol = trim((string) ($port['protocol'] ?? 'tcp'));
+            $protocol = trim($port['protocol'] ?? 'tcp');
 
             if ($published < 1 || $published > 65535 || $target < 1 || $target > 65535) {
-                throw new InvalidArgumentException('Process docker container ports require valid published and target ports.');
+                throw new InvalidArgumentException(
+                    'Process docker container ports require valid published and target ports.',
+                );
             }
 
             if (! in_array($protocol, ['tcp', 'udp'], true)) {

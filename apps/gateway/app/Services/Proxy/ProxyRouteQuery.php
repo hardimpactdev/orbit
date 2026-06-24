@@ -62,19 +62,26 @@ class ProxyRouteQuery
         /** @var \Illuminate\Database\Eloquent\Collection<int, ProxyRoute> $proxyRoutes */
         $proxyRoutes = ProxyRoute::query()
             ->with(['node', 'app', 'workspace'])
-            ->when($caller instanceof Node && ! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds))
+            ->when($caller instanceof Node && ! $callerIsGateway, fn (Builder $query): Builder => $query->whereIn(
+                'node_id',
+                $visibleNodeIds,
+            ))
             ->when($nodeId !== null, fn (Builder $query): Builder => $query->where('node_id', $nodeId))
             ->when($filter !== 'all', fn (Builder $query): Builder => $this->applyFilter($query, $filter))
             ->get();
 
         $routes = $proxyRoutes
-            ->sort(fn (ProxyRoute $first, ProxyRoute $second): int => [
-                mb_strtolower($first->node->name),
-                mb_strtolower($first->domain),
-            ] <=> [
-                mb_strtolower($second->node->name),
-                mb_strtolower($second->domain),
-            ])
+            ->sort(
+                fn (ProxyRoute $first, ProxyRoute $second): int => (
+                    [
+                        mb_strtolower($first->node->name),
+                        mb_strtolower($first->domain),
+                    ] <=> [
+                        mb_strtolower($second->node->name),
+                        mb_strtolower($second->domain),
+                    ]
+                ),
+            )
             ->values()
             ->map(fn (ProxyRoute $route): array => $this->toRouteEntity($route))
             ->all();
@@ -301,7 +308,10 @@ class ProxyRouteQuery
      */
     private function trustedByGatewayCa(array $config, string $managedBy): bool
     {
-        $value = $this->nestedConfig($config, 'tls.trusted_by_gateway_ca') ?? $this->nestedConfig($config, 'trusted_by_gateway_ca');
+        $value = $this->nestedConfig($config, 'tls.trusted_by_gateway_ca') ?? $this->nestedConfig(
+            $config,
+            'trusted_by_gateway_ca',
+        );
 
         return is_bool($value) ? $value : $managedBy === 'orbit';
     }

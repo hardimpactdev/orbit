@@ -22,7 +22,11 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
 
     public function handle(): int
     {
-        $connection = $this->requiredArgument('connection', 'connection', 'The database connection argument is required.');
+        $connection = $this->requiredArgument(
+            'connection',
+            'connection',
+            'The database connection argument is required.',
+        );
 
         if (is_int($connection)) {
             return $connection;
@@ -35,7 +39,10 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
         }
 
         try {
-            $response = $this->gatewayDelete('/api/database-connections/'.rawurlencode($connection).'/targets', $payload);
+            $response = $this->gatewayDelete(
+                '/api/database-connections/'.rawurlencode($connection).'/targets',
+                $payload,
+            );
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -48,7 +55,7 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
         $slug = $this->resultString($result, 'connection') ?? $connection;
         $targetType = $this->resultString($result, 'target_type') ?? $this->humanTargetType();
         $target = $this->resultString($result, 'target') ?? $this->humanTarget();
-        $envPrefix = $this->resultString($result, 'env_prefix') ?? ($this->stringOption('env-prefix') ?? 'DB');
+        $envPrefix = $this->resultString($result, 'env_prefix') ?? $this->stringOption('env-prefix') ?? 'DB';
 
         $this->line("Detached database connection '{$slug}' from {$targetType} '{$target}' prefix '{$envPrefix}'.");
 
@@ -62,7 +69,7 @@ final class DatabaseDetachCommand extends DatabaseGatewayCommand
     private function detachResult(array $response): array
     {
         $data = $response['success']['data'] ?? null;
-        $result = is_array($data) ? ($data['result'] ?? null) : null;
+        $result = is_array($data) ? $data['result'] ?? null : null;
 
         return is_array($result) ? $result : [];
     }

@@ -14,24 +14,36 @@ uses(TestCase::class);
 uses(RefreshDatabase::class);
 
 describe('ProxyRouteRenderer', function (): void {
-    it('renders custom upstream routes as Caddy sites with Orbit TLS paths and normalizes host loopback for container reachability', function (): void {
-        $node = createTestAppHostNode();
-        $route = ProxyRoute::factory()->create([
-            'node_id' => $node->id,
-            'domain' => 'vite.docs.test',
-            'owner_type' => 'custom',
-            'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'], 'upstream' => 'http://127.0.0.1:5173'],
-        ]);
+    it(
+        'renders custom upstream routes as Caddy sites with Orbit TLS paths and normalizes host loopback for container reachability',
+        function (): void {
+            $node = createTestAppHostNode();
+            $route = ProxyRoute::factory()->create([
+                'node_id' => $node->id,
+                'domain' => 'vite.docs.test',
+                'owner_type' => 'custom',
+                'kind' => 'proxy',
+                'config' => [
+                    'target' => ['type' => 'upstream', 'value' => 'http://127.0.0.1:5173'],
+                    'upstream' => 'http://127.0.0.1:5173',
+                ],
+            ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+            $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('vite.docs.test {')
-            ->and($content)->toContain('tls /etc/orbit/certs/vite.docs.test.crt /etc/orbit/certs/vite.docs.test.key')
-            ->and($content)->toContain('reverse_proxy http://host.docker.internal:5173')
-            ->and($content)->not->toContain('127.0.0.1')
-            ->and((new ProxyRouteRenderer)->sourceHash($route))->toBe(hash('sha256', $content));
-    });
+            expect($content)
+                ->toContain('vite.docs.test {')
+                ->and($content)
+                ->toContain('tls /etc/orbit/certs/vite.docs.test.crt /etc/orbit/certs/vite.docs.test.key')
+                ->and($content)
+                ->toContain('reverse_proxy http://host.docker.internal:5173')
+                ->and($content)
+                ->not
+                ->toContain('127.0.0.1')
+                ->and(new ProxyRouteRenderer()->sourceHash($route))
+                ->toBe(hash('sha256', $content));
+        },
+    );
 
     it('normalizes localhost upstreams to the orbit-caddy host gateway hostname', function (): void {
         $node = createTestAppHostNode();
@@ -40,10 +52,13 @@ describe('ProxyRouteRenderer', function (): void {
             'domain' => 'mail.docs.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://localhost:8025'], 'upstream' => 'http://localhost:8025'],
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://localhost:8025'],
+                'upstream' => 'http://localhost:8025',
+            ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
         expect($content)
             ->toContain('reverse_proxy http://host.docker.internal:8025')
@@ -52,9 +67,12 @@ describe('ProxyRouteRenderer', function (): void {
     });
 
     it('leaves non-loopback upstreams untouched', function (): void {
-        expect(ProxyRouteRenderer::normalizeHostLoopback('http://10.6.0.21:80'))->toBe('http://10.6.0.21:80')
-            ->and(ProxyRouteRenderer::normalizeHostLoopback('https://example.com:443/api'))->toBe('https://example.com:443/api')
-            ->and(ProxyRouteRenderer::normalizeHostLoopback('http://127.0.0.1.example.com:80'))->toBe('http://127.0.0.1.example.com:80');
+        expect(ProxyRouteRenderer::normalizeHostLoopback('http://10.6.0.21:80'))
+            ->toBe('http://10.6.0.21:80')
+            ->and(ProxyRouteRenderer::normalizeHostLoopback('https://example.com:443/api'))
+            ->toBe('https://example.com:443/api')
+            ->and(ProxyRouteRenderer::normalizeHostLoopback('http://127.0.0.1.example.com:80'))
+            ->toBe('http://127.0.0.1.example.com:80');
     });
 
     it('can render a custom route to a private Mailpit container upstream', function (): void {
@@ -64,14 +82,20 @@ describe('ProxyRouteRenderer', function (): void {
             'domain' => 'mailpit.test',
             'owner_type' => 'custom',
             'kind' => 'proxy',
-            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://mailpit:8025'], 'upstream' => 'http://mailpit:8025'],
+            'config' => [
+                'target' => ['type' => 'upstream', 'value' => 'http://mailpit:8025'],
+                'upstream' => 'http://mailpit:8025',
+            ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('mailpit.test {')
-            ->and($content)->toContain('reverse_proxy http://mailpit:8025')
-            ->and($content)->not->toContain('host.docker.internal');
+        expect($content)
+            ->toContain('mailpit.test {')
+            ->and($content)
+            ->toContain('reverse_proxy http://mailpit:8025')
+            ->and($content)
+            ->not->toContain('host.docker.internal');
     });
 
     it('renders custom redirect routes with redirect codes', function (): void {
@@ -84,10 +108,9 @@ describe('ProxyRouteRenderer', function (): void {
             'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 301],
         ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('old.docs.test {')
-            ->and($content)->toContain('redir https://docs.test{uri} 301');
+        expect($content)->toContain('old.docs.test {')->and($content)->toContain('redir https://docs.test{uri} 301');
     });
 
     it('renders custom redirect routes marked for ACME without Orbit internal TLS paths', function (): void {
@@ -104,7 +127,7 @@ describe('ProxyRouteRenderer', function (): void {
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
         expect($content)
             ->toContain("tls {\n        issuer acme\n    }")
@@ -122,7 +145,7 @@ describe('ProxyRouteRenderer', function (): void {
             'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => '302'],
         ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
         expect($content)->toContain('redir https://docs.test{uri} 302');
     });
@@ -137,7 +160,7 @@ describe('ProxyRouteRenderer', function (): void {
             'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 'abc'],
         ]);
 
-        (new ProxyRouteRenderer)->render($route);
+        new ProxyRouteRenderer()->render($route);
     })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has an invalid redirect code.");
 
     it('rejects redirect codes outside the 3xx range', function (): void {
@@ -150,7 +173,7 @@ describe('ProxyRouteRenderer', function (): void {
             'config' => ['target' => ['type' => 'redirect', 'value' => 'https://docs.test'], 'code' => 200],
         ]);
 
-        (new ProxyRouteRenderer)->render($route);
+        new ProxyRouteRenderer()->render($route);
     })->throws(RuntimeException::class, "Proxy route 'old.docs.test' has an invalid redirect code.");
 
     it('renders ingress routes through the router upstream with public ACME TLS and forwarded headers', function (): void {
@@ -187,23 +210,23 @@ describe('ProxyRouteRenderer', function (): void {
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderIngress($route);
+        $content = new ProxyRouteRenderer()->renderIngress($route);
 
         expect($content)->toBe(<<<'CADDY'
-example.com {
-    tls {
-        issuer acme
-    }
-    encode gzip
+            example.com {
+                tls {
+                    issuer acme
+                }
+                encode gzip
 
-    reverse_proxy http://10.6.0.2:80 {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
+                reverse_proxy http://10.6.0.2:80 {
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {scheme}
+                }
+            }
 
-CADDY);
+            CADDY);
         expect($content)->not->toContain('/home/orbit/.config/orbit/certs/example.com.crt');
     });
 
@@ -231,21 +254,21 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+        $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
         expect($content)->toBe(<<<'CADDY'
-http://example.com {
-    encode gzip
+            http://example.com {
+                encode gzip
 
-    reverse_proxy http://10.6.0.21:80 {
-        lb_policy first
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-    }
-}
+                reverse_proxy http://10.6.0.21:80 {
+                    lb_policy first
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                }
+            }
 
-CADDY);
+            CADDY);
     });
 
     it('keeps router routes pointed at app-role backend routes instead of app runtime containers', function (): void {
@@ -283,10 +306,12 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+        $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
-        expect($content)->toContain('reverse_proxy http://10.6.0.21:8081')
-            ->and($content)->not->toContain('orbit-app-example');
+        expect($content)
+            ->toContain('reverse_proxy http://10.6.0.21:8081')
+            ->and($content)
+            ->not->toContain('orbit-app-example');
     });
 
     it('renders websocket service router routes with long lived upgrade settings', function (): void {
@@ -323,28 +348,30 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+        $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
-        expect($content)->toBe(<<<'CADDY'
-websocket.orbit {
-    tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key
-    reverse_proxy https://10.6.0.44:8080 {
-        lb_policy first
-        flush_interval -1
-        stream_close_delay 5m
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-        transport http {
-            tls_trust_pool file /etc/orbit/ca/root.crt
-        }
-    }
-}
+        expect($content)
+            ->toBe(<<<'CADDY'
+                websocket.orbit {
+                    tls /etc/orbit/certs/websocket.orbit.crt /etc/orbit/certs/websocket.orbit.key
+                    reverse_proxy https://10.6.0.44:8080 {
+                        lb_policy first
+                        flush_interval -1
+                        stream_close_delay 5m
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                        transport http {
+                            tls_trust_pool file /etc/orbit/ca/root.crt
+                        }
+                    }
+                }
 
-CADDY)
-            ->and($content)->not->toContain('encode gzip')
-            ->and($content)->not->toContain('request_buffers')
-            ->and($content)->not->toContain('response_buffers');
+                CADDY)
+            ->and($content)
+            ->not->toContain('encode gzip')->and($content)
+            ->not->toContain('request_buffers')->and($content)
+            ->not->toContain('response_buffers');
     });
 
     it('renders app websocket public ingress and router routes with long lived upgrade settings', function (): void {
@@ -387,38 +414,38 @@ CADDY)
         $renderer = new ProxyRouteRenderer;
 
         expect($renderer->renderIngress($route))->toBe(<<<'CADDY'
-ws.docs.test {
-    tls {
-        issuer acme
-    }
+            ws.docs.test {
+                tls {
+                    issuer acme
+                }
 
-    reverse_proxy http://10.6.0.2:80 {
-        flush_interval -1
-        stream_close_delay 5m
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
+                reverse_proxy http://10.6.0.2:80 {
+                    flush_interval -1
+                    stream_close_delay 5m
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {scheme}
+                }
+            }
 
-CADDY);
+            CADDY);
 
         expect($renderer->renderRouterRoute($route))->toBe(<<<'CADDY'
-http://ws.docs.test {
-    reverse_proxy https://10.6.0.44:8080 {
-        lb_policy first
-        flush_interval -1
-        stream_close_delay 5m
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-        transport http {
-            tls_trust_pool file /etc/orbit/ca/root.crt
-        }
-    }
-}
+            http://ws.docs.test {
+                reverse_proxy https://10.6.0.44:8080 {
+                    lb_policy first
+                    flush_interval -1
+                    stream_close_delay 5m
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                    transport http {
+                        tls_trust_pool file /etc/orbit/ca/root.crt
+                    }
+                }
+            }
 
-CADDY);
+            CADDY);
     });
 
     it('renders app analytics public ingress and router routes as tracking-only proxies preserving forwarding identity', function (): void {
@@ -458,40 +485,40 @@ CADDY);
         $renderer = new ProxyRouteRenderer;
 
         expect($renderer->renderIngress($route))->toBe(<<<'CADDY'
-analytics.docs.test {
-    tls {
-        issuer acme
-    }
-    encode gzip
+            analytics.docs.test {
+                tls {
+                    issuer acme
+                }
+                encode gzip
 
-    @plausible_tracking path /js/* /api/event
-    reverse_proxy @plausible_tracking http://10.6.0.2:80 {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-        header_up X-Forwarded-For {remote_host}
-    }
-    respond 404
-}
+                @plausible_tracking path /js/* /api/event
+                reverse_proxy @plausible_tracking http://10.6.0.2:80 {
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {scheme}
+                    header_up X-Forwarded-For {remote_host}
+                }
+                respond 404
+            }
 
-CADDY);
+            CADDY);
 
         expect($renderer->renderRouterRoute($route))->toBe(<<<'CADDY'
-http://analytics.docs.test {
-    encode gzip
+            http://analytics.docs.test {
+                encode gzip
 
-    @plausible_tracking path /js/* /api/event
-    reverse_proxy @plausible_tracking http://10.6.0.50:8000 {
-        lb_policy first
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-        header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
-    }
-    respond 404
-}
+                @plausible_tracking path /js/* /api/event
+                reverse_proxy @plausible_tracking http://10.6.0.50:8000 {
+                    lb_policy first
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                    header_up X-Forwarded-For {http.request.header.X-Forwarded-For}
+                }
+                respond 404
+            }
 
-CADDY);
+            CADDY);
     });
 
     it('renders the private analytics service route without tracking-only path restrictions', function (): void {
@@ -524,9 +551,10 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderRouterRoute($route);
+        $content = new ProxyRouteRenderer()->renderRouterRoute($route);
 
-        expect($content)->toContain('analytics.orbit {')
+        expect($content)
+            ->toContain('analytics.orbit {')
             ->toContain('reverse_proxy http://10.6.0.50:8000')
             ->toContain('header_up X-Forwarded-For {http.request.header.X-Forwarded-For}')
             ->not->toContain('@plausible_tracking')
@@ -557,7 +585,7 @@ CADDY);
             ],
         ]);
 
-        (new ProxyRouteRenderer)->renderRouterRoute($route);
+        new ProxyRouteRenderer()->renderRouterRoute($route);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid bind address.");
 
     it('rejects ingress routes with invalid router upstream urls', function (): void {
@@ -581,7 +609,7 @@ CADDY);
             ],
         ]);
 
-        (new ProxyRouteRenderer)->renderIngress($route);
+        new ProxyRouteRenderer()->renderIngress($route);
     })->throws(RuntimeException::class, 'Proxy route router upstream requires a valid http or https url.');
 
     it('ignores persisted internal tls paths on public ingress routes', function (): void {
@@ -605,7 +633,7 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderIngress($route);
+        $content = new ProxyRouteRenderer()->renderIngress($route);
 
         expect($content)
             ->toContain("tls {\n        issuer acme\n    }")
@@ -641,34 +669,37 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
         expect($content)->toBe(<<<'CADDY'
-http://example.com:8081 {
-    encode gzip
+            http://example.com:8081 {
+                encode gzip
 
-    import security_headers
-    import profiling_headers
-    import path_blocking_public_root
-    import security_txt
-    import cache_headers
+                import security_headers
+                import profiling_headers
+                import path_blocking_public_root
+                import security_txt
+                import cache_headers
 
-    reverse_proxy http://orbit-app-example:8080 {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-    }
-}
+                reverse_proxy http://orbit-app-example:8080 {
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                }
+            }
 
-CADDY);
+            CADDY);
     });
 
     it('renders private backend routes for static apps as file_server only without PHP', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->static()->create([
-            'name' => 'marketing',
-            'document_root' => 'public',
-        ]);
+        $app = App::factory()
+            ->for($appNode, 'node')
+            ->static()
+            ->create([
+                'name' => 'marketing',
+                'document_root' => 'public',
+            ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'app_id' => $app->id,
@@ -691,12 +722,15 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
-        expect($content)->toContain('file_server')
-            ->and($content)->toContain('root * /home/orbit/sites/marketing/current/public')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('reverse_proxy');
+        expect($content)
+            ->toContain('file_server')
+            ->and($content)
+            ->toContain('root * /home/orbit/sites/marketing/current/public')
+            ->and($content)
+            ->not->toContain('php_fastcgi')->and($content)
+            ->not->toContain('reverse_proxy');
     });
 
     it('rejects private backend routes with invalid bind addresses', function (): void {
@@ -721,15 +755,18 @@ CADDY);
             ],
         ]);
 
-        (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid bind address.");
 
     it('rejects static-app private backend routes with unsafe document root paths', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->static()->create([
-            'name' => 'example',
-            'document_root' => 'public',
-        ]);
+        $app = App::factory()
+            ->for($appNode, 'node')
+            ->static()
+            ->create([
+                'name' => 'example',
+                'document_root' => 'public',
+            ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'app_id' => $app->id,
@@ -752,7 +789,7 @@ CADDY);
             ],
         ]);
 
-        (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' backend artifact has an invalid document root.");
 
     it('rejects PHP-app private backend routes with unsafe runtime container upstream values', function (): void {
@@ -783,43 +820,51 @@ CADDY);
             ],
         ]);
 
-        (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
     })->throws(RuntimeException::class, "Proxy route 'example.com' has an invalid runtime container upstream.");
 
-    it('derives a FrankenPHP runtime upstream from the app identity for a legacy app route persisted with only php_socket (no runtime_upstream) and never emits php_fastcgi', function (): void {
-        $node = createTestAppHostNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+    it(
+        'derives a FrankenPHP runtime upstream from the app identity for a legacy app route persisted with only php_socket (no runtime_upstream) and never emits php_fastcgi',
+        function (): void {
+            $node = createTestAppHostNode();
+            $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
 
-        $route = ProxyRoute::factory()
-            ->for($node, 'node')
-            ->for($app, 'app')
-            ->create([
-                'domain' => 'legacy-docs.test',
-                'owner_type' => 'app',
-                'kind' => 'app',
-                'config' => [
-                    'document_root' => '/home/orbit/apps/legacy-docs/public',
-                    // Legacy origin/main config: only php_socket, no runtime_upstream.
-                    'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
-                    'tls' => [
-                        'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
-                        'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+            $route = ProxyRoute::factory()
+                ->for($node, 'node')
+                ->for($app, 'app')
+                ->create([
+                    'domain' => 'legacy-docs.test',
+                    'owner_type' => 'app',
+                    'kind' => 'app',
+                    'config' => [
+                        'document_root' => '/home/orbit/apps/legacy-docs/public',
+                        // Legacy origin/main config: only php_socket, no runtime_upstream.
+                        'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                        'tls' => [
+                            'cert_path' => '/etc/orbit/certs/legacy-docs.test.crt',
+                            'key_path' => '/etc/orbit/certs/legacy-docs.test.key',
+                        ],
                     ],
-                ],
-            ]);
+                ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+            $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('legacy-docs.test {')
-            // Renderer must derive runtime_upstream from the app identity
-            // so legacy routes do not throw before ProxyRouteFixer can repair.
-            ->and($content)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
-            ->and($content)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-            // App routes never revert to php_fastcgi under the Docker-first model.
-            ->and($content)->not->toContain('php_fastcgi')
-            // file_server is reserved for static apps.
-            ->and($content)->not->toContain('file_server');
-    });
+            expect($content)
+                ->toContain('legacy-docs.test {')
+                // Renderer must derive runtime_upstream from the app identity
+                // so legacy routes do not throw before ProxyRouteFixer can repair.
+                ->and($content)
+                ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+                ->and($content)
+                ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+                // App routes never revert to php_fastcgi under the Docker-first model.
+                ->and($content)
+                ->not->toContain('php_fastcgi')
+                // file_server is reserved for static apps.
+                ->and($content)
+                ->not->toContain('file_server');
+        },
+    );
 
     it('derives a FrankenPHP runtime upstream from the app identity for a legacy private backend artifact (no runtime_upstream)', function (): void {
         $appNode = createTestAppHostNode(['wireguard_address' => '10.6.0.21']);
@@ -846,11 +891,13 @@ CADDY);
                 ],
             ]);
 
-        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
-        expect($content)->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('file_server');
+        expect($content)
+            ->toContain('reverse_proxy http://orbit-app-legacy-docs:8080')
+            ->and($content)
+            ->not->toContain('php_fastcgi')->and($content)
+            ->not->toContain('file_server');
     });
 
     it('still renders static app routes with file_server even when the persisted config carries a legacy php_socket', function (): void {
@@ -874,11 +921,13 @@ CADDY);
                 ],
             ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('file_server')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('reverse_proxy');
+        expect($content)
+            ->toContain('file_server')
+            ->and($content)
+            ->not->toContain('php_fastcgi')->and($content)
+            ->not->toContain('reverse_proxy');
     });
 
     it('renders app-dev PHP routes through HTTPS runtime upstreams with gateway CA transport', function (): void {
@@ -910,14 +959,19 @@ CADDY);
                 ],
             ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('docs.test {')
-            ->and($content)->toContain('reverse_proxy https://orbit-app-docs:8443')
-            ->and($content)->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-            ->and($content)->toContain('tls_server_name docs.test')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('file_server');
+        expect($content)
+            ->toContain('docs.test {')
+            ->and($content)
+            ->toContain('reverse_proxy https://orbit-app-docs:8443')
+            ->and($content)
+            ->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
+            ->and($content)
+            ->toContain('tls_server_name docs.test')
+            ->and($content)
+            ->not->toContain('php_fastcgi')->and($content)
+            ->not->toContain('file_server');
     });
 
     it('renders workspace PHP routes as reverse_proxy to the FrankenPHP runtime container', function (): void {
@@ -944,46 +998,55 @@ CADDY);
                 ],
             ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('feature-a.docs.test {')
-            ->and($content)->toContain('reverse_proxy http://orbit-ws-docs-feature-a')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('file_server');
+        expect($content)
+            ->toContain('feature-a.docs.test {')
+            ->and($content)
+            ->toContain('reverse_proxy http://orbit-ws-docs-feature-a')
+            ->and($content)
+            ->not->toContain('php_fastcgi')->and($content)
+            ->not->toContain('file_server');
     });
 
-    it('derives a FrankenPHP runtime upstream from the workspace identity for a legacy workspace route persisted with only php_socket', function (): void {
-        $node = createTestAppHostNode();
-        $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
-        $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
+    it(
+        'derives a FrankenPHP runtime upstream from the workspace identity for a legacy workspace route persisted with only php_socket',
+        function (): void {
+            $node = createTestAppHostNode();
+            $app = App::factory()->for($node, 'node')->create(['name' => 'legacy-docs']);
+            $workspace = Workspace::factory()->for($app, 'app')->create(['name' => 'feature-a']);
 
-        $route = ProxyRoute::factory()
-            ->for($node, 'node')
-            ->for($app, 'app')
-            ->for($workspace, 'workspace')
-            ->create([
-                'domain' => 'feature-a.legacy-docs.test',
-                'owner_type' => 'workspace',
-                'kind' => 'workspace',
-                'config' => [
-                    'document_root' => '/home/orbit/apps/legacy-docs/.worktrees/feature-a/public',
-                    // Legacy origin/main config: only php_socket, no runtime_upstream.
-                    'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
-                    'tls' => [
-                        'cert_path' => '/etc/orbit/certs/feature-a.legacy-docs.test.crt',
-                        'key_path' => '/etc/orbit/certs/feature-a.legacy-docs.test.key',
+            $route = ProxyRoute::factory()
+                ->for($node, 'node')
+                ->for($app, 'app')
+                ->for($workspace, 'workspace')
+                ->create([
+                    'domain' => 'feature-a.legacy-docs.test',
+                    'owner_type' => 'workspace',
+                    'kind' => 'workspace',
+                    'config' => [
+                        'document_root' => '/home/orbit/apps/legacy-docs/.worktrees/feature-a/public',
+                        // Legacy origin/main config: only php_socket, no runtime_upstream.
+                        'php_socket' => '/var/run/php/orbit-legacy-docs.sock',
+                        'tls' => [
+                            'cert_path' => '/etc/orbit/certs/feature-a.legacy-docs.test.crt',
+                            'key_path' => '/etc/orbit/certs/feature-a.legacy-docs.test.key',
+                        ],
                     ],
-                ],
-            ]);
+                ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+            $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toContain('feature-a.legacy-docs.test {')
-            ->and($content)->toContain('reverse_proxy http://orbit-ws-legacy-docs-feature-a')
-            ->and($content)->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('file_server');
-    });
+            expect($content)
+                ->toContain('feature-a.legacy-docs.test {')
+                ->and($content)
+                ->toContain('reverse_proxy http://orbit-ws-legacy-docs-feature-a')
+                ->and($content)
+                ->not->toContain('tls_trust_pool file /etc/orbit/ca/root.crt')->and($content)
+                ->not->toContain('php_fastcgi')->and($content)
+                ->not->toContain('file_server');
+        },
+    );
 
     it('renders private backend routes for PHP workspaces as HTTP reverse proxies to the FrankenPHP runtime container', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
@@ -1013,34 +1076,37 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
         expect($content)->toBe(<<<'CADDY'
-http://feature-a.example.com:8081 {
-    encode gzip
+            http://feature-a.example.com:8081 {
+                encode gzip
 
-    import security_headers
-    import profiling_headers
-    import path_blocking_public_root
-    import security_txt
-    import cache_headers
+                import security_headers
+                import profiling_headers
+                import path_blocking_public_root
+                import security_txt
+                import cache_headers
 
-    reverse_proxy http://orbit-ws-example-feature-a {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
-    }
-}
+                reverse_proxy http://orbit-ws-example-feature-a {
+                    header_up Host {host}
+                    header_up X-Forwarded-Host {host}
+                    header_up X-Forwarded-Proto {http.request.header.X-Forwarded-Proto}
+                }
+            }
 
-CADDY);
+            CADDY);
     });
 
     it('renders private backend routes for static workspaces as file_server only', function (): void {
         $appNode = Node::factory()->create(['name' => 'web-1']);
-        $app = App::factory()->for($appNode, 'node')->static()->create([
-            'name' => 'marketing',
-            'document_root' => 'public',
-        ]);
+        $app = App::factory()
+            ->for($appNode, 'node')
+            ->static()
+            ->create([
+                'name' => 'marketing',
+                'document_root' => 'public',
+            ]);
         $route = ProxyRoute::factory()->create([
             'node_id' => $appNode->id,
             'app_id' => $app->id,
@@ -1063,12 +1129,15 @@ CADDY);
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
+        $content = new ProxyRouteRenderer()->renderPrivateBackend($route, $route->config['backend_artifacts'][0]);
 
-        expect($content)->toContain('file_server')
-            ->and($content)->toContain('root * /home/orbit/sites/marketing/.worktrees/feature-a/public')
-            ->and($content)->not->toContain('php_fastcgi')
-            ->and($content)->not->toContain('reverse_proxy');
+        expect($content)
+            ->toContain('file_server')
+            ->and($content)
+            ->toContain('root * /home/orbit/sites/marketing/.worktrees/feature-a/public')
+            ->and($content)
+            ->not->toContain('php_fastcgi')->and($content)
+            ->not->toContain('reverse_proxy');
     });
 });
 
@@ -1093,23 +1162,25 @@ describe('s3 upload-safe proxy rendering', function (): void {
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->render($route);
+        $content = new ProxyRouteRenderer()->render($route);
 
-        expect($content)->toBe(<<<'CADDY'
-s3.orbit {
-    tls /etc/orbit/certs/s3.orbit.crt /etc/orbit/certs/s3.orbit.key
-    reverse_proxy http://storage-1.s3.orbit:8333 {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
+        expect($content)
+            ->toBe(<<<'CADDY'
+                s3.orbit {
+                    tls /etc/orbit/certs/s3.orbit.crt /etc/orbit/certs/s3.orbit.key
+                    reverse_proxy http://storage-1.s3.orbit:8333 {
+                        flush_interval -1
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                    }
+                }
 
-CADDY)
-            ->and($content)->not->toContain('encode gzip')
-            ->and($content)->not->toContain('request_buffers')
-            ->and($content)->not->toContain('stream_close_delay');
+                CADDY)
+            ->and($content)
+            ->not->toContain('encode gzip')->and($content)
+            ->not->toContain('request_buffers')->and($content)
+            ->not->toContain('stream_close_delay');
     });
 
     it('renders the public s3 ingress route with upload-safe streaming and preserves Host and X-Forwarded-Proto headers', function (): void {
@@ -1139,26 +1210,28 @@ CADDY)
             ],
         ]);
 
-        $content = (new ProxyRouteRenderer)->renderIngress($route);
+        $content = new ProxyRouteRenderer()->renderIngress($route);
 
-        expect($content)->toBe(<<<'CADDY'
-s3.example.com {
-    tls {
-        issuer acme
-    }
+        expect($content)
+            ->toBe(<<<'CADDY'
+                s3.example.com {
+                    tls {
+                        issuer acme
+                    }
 
-    reverse_proxy http://10.6.0.1:80 {
-        flush_interval -1
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-    }
-}
+                    reverse_proxy http://10.6.0.1:80 {
+                        flush_interval -1
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                    }
+                }
 
-CADDY)
-            ->and($content)->not->toContain('encode gzip')
-            ->and($content)->not->toContain('request_buffers')
-            ->and($content)->not->toContain('stream_close_delay');
+                CADDY)
+            ->and($content)
+            ->not->toContain('encode gzip')->and($content)
+            ->not->toContain('request_buffers')->and($content)
+            ->not->toContain('stream_close_delay');
     });
 
     it('s3 service route source hash is stable and reflects upload-safe streaming directives', function (): void {
@@ -1182,7 +1255,6 @@ CADDY)
         $content = $renderer->render($route);
         $hash = $renderer->sourceHash($route);
 
-        expect($hash)->toBe(hash('sha256', $content))
-            ->and($content)->toContain('flush_interval -1');
+        expect($hash)->toBe(hash('sha256', $content))->and($content)->toContain('flush_interval -1');
     });
 });

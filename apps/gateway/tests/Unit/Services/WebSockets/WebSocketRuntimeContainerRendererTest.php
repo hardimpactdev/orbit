@@ -40,16 +40,20 @@ function websocketRuntimeNode(array $overrides = []): Node
 
 function websocketRuntimeRedisNode(array $overrides = []): Node
 {
-    $node = Node::factory()->database()->create(array_merge([
-        'name' => 'redis-1',
-        'wireguard_address' => '10.6.0.3',
-        'status' => NodeStatus::Active,
-    ], $overrides));
+    $node = Node::factory()
+        ->database()
+        ->create(array_merge([
+            'name' => 'redis-1',
+            'wireguard_address' => '10.6.0.3',
+            'status' => NodeStatus::Active,
+        ], $overrides));
 
-    Process::factory()->forOwner($node)->create([
-        'name' => 'redis',
-        'runtime_config' => ['service' => 'redis'],
-    ]);
+    Process::factory()
+        ->forOwner($node)
+        ->create([
+            'name' => 'redis',
+            'runtime_config' => ['service' => 'redis'],
+        ]);
 
     return $node;
 }
@@ -62,7 +66,7 @@ function websocketRuntimeSettings(?Node $redisNode = null): WebSocketRoleSetting
 it('uses the websocket node WireGuard address as the backend identity', function (): void {
     $node = websocketRuntimeNode(['wireguard_address' => '10.6.0.44']);
 
-    expect((new WebSocketBackendName)->forNode($node))->toBe('10.6.0.44');
+    expect(new WebSocketBackendName()->forNode($node))->toBe('10.6.0.44');
 });
 
 it('renders Reverb env with a private WireGuard bind and Redis service config', function (): void {
@@ -112,29 +116,42 @@ it('renders a deterministic WebSocket runtime container', function (): void {
 
     $container = websocketRuntimeRenderer()->render($node, websocketRuntimeSettings($redisNode));
 
-    expect($container)->toBeInstanceOf(WebSocketRuntimeContainer::class)
-        ->and($container->name())->toBe('orbit-websocket-app-dev-1')
-        ->and($container->image())->toBe('orbit-reverb:current')
-        ->and($container->network())->toBe('orbit-network')
-        ->and($container->restartPolicy())->toBe('unless-stopped')
-        ->and($container->backendName())->toBe('10.6.0.44')
-        ->and($container->redisNodeId())->toBe($redisNode->id)
-        ->and($container->workingDirectory())->toBe('/app')
-        ->and($container->command())->toBe('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
-        ->and($container->networkAliases())->toBe([
+    expect($container)
+        ->toBeInstanceOf(WebSocketRuntimeContainer::class)
+        ->and($container->name())
+        ->toBe('orbit-websocket-app-dev-1')
+        ->and($container->image())
+        ->toBe('orbit-reverb:current')
+        ->and($container->network())
+        ->toBe('orbit-network')
+        ->and($container->restartPolicy())
+        ->toBe('unless-stopped')
+        ->and($container->backendName())
+        ->toBe('10.6.0.44')
+        ->and($container->redisNodeId())
+        ->toBe($redisNode->id)
+        ->and($container->workingDirectory())
+        ->toBe('/app')
+        ->and($container->command())
+        ->toBe('php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44')
+        ->and($container->networkAliases())
+        ->toBe([
             'orbit-websocket-app-dev-1',
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/opt/orbit/websocket/current',
             'target' => '/app',
             'read_only' => false,
         ])
-        ->and($container->mounts())->toContain([
+        ->and($container->mounts())
+        ->toContain([
             'source' => '/etc/orbit',
             'target' => '/etc/orbit',
             'read_only' => true,
         ])
-        ->and($container->environment())->toMatchArray([
+        ->and($container->environment())
+        ->toMatchArray([
             'REVERB_SERVER_HOST' => '10.6.0.44',
             'REVERB_HOST' => 'websocket.orbit',
             'REVERB_TLS_CERT' => '/etc/orbit/certs/10.6.0.44.crt',
@@ -174,9 +191,12 @@ it('scopes the runtime container to the websocket node inside Docker E2E', funct
 
         $container = websocketRuntimeRenderer()->render($node, websocketRuntimeSettings());
 
-        expect($container->name())->toBe('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
-            ->and($container->networkAliases())->toContain('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
-            ->and($container->network())->toBe('orbit-e2e-run-123');
+        expect($container->name())
+            ->toBe('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
+            ->and($container->networkAliases())
+            ->toContain('orbit-e2e-run-123-dev-orbit-websocket-app-dev-1')
+            ->and($container->network())
+            ->toBe('orbit-e2e-run-123');
     } finally {
         if ($previousNetwork === false) {
             putenv('ORBIT_E2E_DOCKER_NETWORK');
@@ -198,12 +218,14 @@ it('exposes labels with the spec hash and websocket backend identity', function 
         websocketRuntimeSettings(),
     );
 
-    expect($container->labels())->toMatchArray([
-        'orbit.managed' => 'true',
-        'orbit.container.kind' => 'websocket-runtime',
-        'orbit.websocket.backend' => '10.6.0.44',
-    ])
-        ->and($container->labels()[WebSocketRuntimeContainer::SpecHashLabel] ?? null)->toBe($container->specHash());
+    expect($container->labels())
+        ->toMatchArray([
+            'orbit.managed' => 'true',
+            'orbit.container.kind' => 'websocket-runtime',
+            'orbit.websocket.backend' => '10.6.0.44',
+        ])
+        ->and($container->labels()[WebSocketRuntimeContainer::SpecHashLabel] ?? null)
+        ->toBe($container->specHash());
 });
 
 it('renders docker run with the private Reverb bind environment and shell command', function (): void {
@@ -212,26 +234,36 @@ it('renders docker run with the private Reverb bind environment and shell comman
         websocketRuntimeSettings(),
     );
 
-    $command = (new DockerCommandBuilder)->runDetached($container);
+    $command = new DockerCommandBuilder()->runDetached($container);
 
-    expect($command)->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
-        ->and($command)->toContain("--entrypoint 'sh'")
-        ->and($command)->toContain("'-lc' 'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44'")
-        ->and($command)->not->toContain('.websocket.orbit')
-        ->and($command)->not->toContain('0.0.0.0');
+    expect($command)
+        ->toContain("--env 'REVERB_SERVER_HOST=10.6.0.44'")
+        ->and($command)
+        ->toContain("--entrypoint 'sh'")
+        ->and($command)
+        ->toContain("'-lc' 'php artisan reverb:start --host=10.6.0.44 --port=8080 --hostname=10.6.0.44'")
+        ->and($command)
+        ->not->toContain('.websocket.orbit')->and($command)
+        ->not->toContain('0.0.0.0');
 });
 
 it('changes the spec hash when the selected Redis node changes', function (): void {
     $node = websocketRuntimeNode();
 
-    $redisOne = websocketRuntimeRenderer()->render($node, websocketRuntimeSettings(websocketRuntimeRedisNode([
-        'name' => 'redis-1',
-        'wireguard_address' => '10.6.0.3',
-    ])));
-    $redisTwo = websocketRuntimeRenderer()->render($node, websocketRuntimeSettings(websocketRuntimeRedisNode([
-        'name' => 'redis-2',
-        'wireguard_address' => '10.6.0.4',
-    ])));
+    $redisOne = websocketRuntimeRenderer()->render(
+        $node,
+        websocketRuntimeSettings(websocketRuntimeRedisNode([
+            'name' => 'redis-1',
+            'wireguard_address' => '10.6.0.3',
+        ])),
+    );
+    $redisTwo = websocketRuntimeRenderer()->render(
+        $node,
+        websocketRuntimeSettings(websocketRuntimeRedisNode([
+            'name' => 'redis-2',
+            'wireguard_address' => '10.6.0.4',
+        ])),
+    );
 
     expect($redisOne->specHash())->not->toBe($redisTwo->specHash());
 });
@@ -240,14 +272,20 @@ it('throws when the websocket node has no WireGuard address', function (): void 
     $node = websocketRuntimeNode(['wireguard_address' => null]);
 
     expect(fn () => websocketRuntimeRenderer()->env($node, websocketRuntimeSettings()))
-        ->toThrow(RuntimeException::class, 'The websocket role requires a WireGuard address before runtime config can be rendered.');
+        ->toThrow(
+            RuntimeException::class,
+            'The websocket role requires a WireGuard address before runtime config can be rendered.',
+        );
 });
 
 it('throws when the configured Redis node is unavailable', function (): void {
     $node = websocketRuntimeNode();
 
     expect(fn () => websocketRuntimeRenderer()->env($node, new WebSocketRoleSettings(redisNodeId: 1234)))
-        ->toThrow(RuntimeException::class, 'The websocket role requires an active Redis node before runtime config can be rendered.');
+        ->toThrow(
+            RuntimeException::class,
+            'The websocket role requires an active Redis node before runtime config can be rendered.',
+        );
 });
 
 it('throws when the configured Redis node has no WireGuard address', function (): void {
@@ -262,7 +300,10 @@ it('throws when the configured Redis node has no WireGuard address', function ()
         $exception = $caught;
     }
 
-    expect($exception)->toBeInstanceOf(RuntimeException::class)
-        ->and($exception?->getMessage())->toContain('redis-1')
-        ->and($exception?->getMessage())->toContain('redis');
+    expect($exception)
+        ->toBeInstanceOf(RuntimeException::class)
+        ->and($exception?->getMessage())
+        ->toContain('redis-1')
+        ->and($exception?->getMessage())
+        ->toContain('redis');
 });

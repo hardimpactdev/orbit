@@ -16,23 +16,38 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
-    config()->set('orbit.updates.release_manifest_url', 'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json');
+    config()->set(
+        'orbit.updates.release_manifest_url',
+        'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json',
+    );
 });
 
 it('downloads validates and exposes a release manifest from the configured GitHub release asset', function (): void {
     Http::fake([
-        'github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifestResolverFixture(), 200),
+        'github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(
+            releaseManifestResolverFixture(),
+            200,
+        ),
     ]);
 
     $manifest = app(ReleaseManifestResolver::class)->resolve();
 
-    expect($manifest->schemaVersion)->toBe(1)
-        ->and($manifest->version)->toBe('1.2.3')
-        ->and($manifest->source)->toBe('github-release')
-        ->and($manifest->gatewayImage)->toBe('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
-        ->and($manifest->cliArtifacts['linux-amd64']['sha256'])->toBe(str_repeat('b', 64))
-        ->and($manifest->roleImages['orbit-websocket'])->toBe('hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
-        ->and($manifest->snapshot())->toBe(releaseManifestResolverFixture());
+    expect($manifest->schemaVersion)
+        ->toBe(1)
+        ->and($manifest->version)
+        ->toBe('1.2.3')
+        ->and($manifest->source)
+        ->toBe('github-release')
+        ->and($manifest->gatewayImage)
+        ->toBe(
+            'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        )
+        ->and($manifest->cliArtifacts['linux-amd64']['sha256'])
+        ->toBe(str_repeat('b', 64))
+        ->and($manifest->roleImages['orbit-websocket'])
+        ->toBe('hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')
+        ->and($manifest->snapshot())
+        ->toBe(releaseManifestResolverFixture());
 });
 
 it('reads validates and exposes a release manifest from a file url', function (): void {
@@ -47,7 +62,10 @@ it('reads validates and exposes a release manifest from a file url', function ()
     try {
         $manifest = app(ReleaseManifestResolver::class)->resolve();
 
-        expect($manifest->gatewayImage)->toBe('ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+        expect($manifest->gatewayImage)
+            ->toBe(
+                'ghcr.io/hardimpactdev/orbit-gateway:1.2.3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            );
     } finally {
         File::deleteDirectory($root);
     }
@@ -67,13 +85,19 @@ it('accepts topology candidate manifests with a build identity', function (): vo
         ]), 200),
     ]);
 
-    config()->set('orbit.updates.release_manifest_url', 'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-release-manifest.json');
+    config()->set(
+        'orbit.updates.release_manifest_url',
+        'https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-release-manifest.json',
+    );
 
     $manifest = app(ReleaseManifestResolver::class)->resolve();
 
-    expect($manifest->source)->toBe('topology-candidate')
-        ->and($manifest->snapshot()['build_id'])->toBe('2026-06-21T120000Z-abc123')
-        ->and($manifest->cliArtifacts['linux-amd64']['url'])->toBe('https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-linux-x64');
+    expect($manifest->source)
+        ->toBe('topology-candidate')
+        ->and($manifest->snapshot()['build_id'])
+        ->toBe('2026-06-21T120000Z-abc123')
+        ->and($manifest->cliArtifacts['linux-amd64']['url'])
+        ->toBe('https://artifacts.orbit/releases/candidates/2026-06-21T120000Z-abc123/orbit-linux-x64');
 });
 
 it('prefers the persisted custom manifest URL over the configured default', function (): void {
@@ -96,13 +120,18 @@ it('prefers the persisted custom manifest URL over the configured default', func
 
     Http::assertSentCount(1);
 
-    expect($manifest->source)->toBe('topology-candidate')
-        ->and($manifest->snapshot()['build_id'])->toBe('20260622T100000Z-abc123');
+    expect($manifest->source)
+        ->toBe('topology-candidate')
+        ->and($manifest->snapshot()['build_id'])
+        ->toBe('20260622T100000Z-abc123');
 });
 
 it('rejects malformed manifest json', function (): void {
     Http::fake([
-        'github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response('{nope', 200),
+        'github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(
+            '{nope',
+            200,
+        ),
     ]);
 
     expect(fn () => app(ReleaseManifestResolver::class)->resolve())
@@ -168,12 +197,20 @@ it('feeds the manifest resolver snapshot into the immutable update plan builder'
     $request = Request::create('/api/update/all/start', 'POST');
     $snapshot = app(UpdatePlanBuilder::class)->fromRequest(releaseManifestResolverRun(), $request);
 
-    expect($snapshot->targetVersion)->toBe('2.0.0')
-        ->and($snapshot->gatewayImage)->toBe('ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee')
-        ->and($snapshot->manifestSource)->toBe('github-release')
-        ->and($snapshot->manifestVersion)->toBe('2.0.0')
-        ->and($snapshot->manifestSnapshot['schema_version'])->toBe(1)
-        ->and($snapshot->cliArtifacts['linux-amd64']['url'])->toBe('https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64');
+    expect($snapshot->targetVersion)
+        ->toBe('2.0.0')
+        ->and($snapshot->gatewayImage)
+        ->toBe(
+            'ghcr.io/hardimpactdev/orbit-gateway:2.0.0@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+        )
+        ->and($snapshot->manifestSource)
+        ->toBe('github-release')
+        ->and($snapshot->manifestVersion)
+        ->toBe('2.0.0')
+        ->and($snapshot->manifestSnapshot['schema_version'])
+        ->toBe(1)
+        ->and($snapshot->cliArtifacts['linux-amd64']['url'])
+        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64');
 });
 
 function releaseManifestResolverRun(): OperationRun

@@ -34,7 +34,7 @@ class EnableVpnClientRequest extends GatewayRequest
         $data = $this->unwrapData($response);
 
         return new VpnClientResponse(
-            client: is_array($data['client'] ?? null) ? $data['client'] : [],
+            client: $this->stringKeyedArray($data['client'] ?? []),
             meta: $this->unwrapMeta($response),
         );
     }

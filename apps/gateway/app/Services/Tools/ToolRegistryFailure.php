@@ -71,8 +71,12 @@ final readonly class ToolRegistryFailure
     /**
      * @param  list<string>  $supportedOperatingSystems
      */
-    public static function unsupportedOnNode(string $tool, string $node, ?string $platform, array $supportedOperatingSystems): self
-    {
+    public static function unsupportedOnNode(
+        string $tool,
+        string $node,
+        ?string $platform,
+        array $supportedOperatingSystems,
+    ): self {
         return new self(
             code: 'tool.unsupported_on_node',
             message: "Tool '{$tool}' does not support node '{$node}' platform.",
@@ -85,8 +89,13 @@ final readonly class ToolRegistryFailure
         );
     }
 
-    public static function remoteActionFailed(string $tool, string $node, string $action, int $exitCode, string $stderr): self
-    {
+    public static function remoteActionFailed(
+        string $tool,
+        string $node,
+        string $action,
+        int $exitCode,
+        string $stderr,
+    ): self {
         return new self(
             code: 'tool.remote_action_failed',
             message: "Tool '{$tool}' {$action} failed on node '{$node}'.",

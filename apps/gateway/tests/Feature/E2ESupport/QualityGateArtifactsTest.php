@@ -54,7 +54,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
             ],
         ]);
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -74,8 +74,10 @@ it('runs a wrapped quality gate command and writes timing evidence', function ()
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toContain('wrapped-ok');
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('wrapped-ok');
 
         $artifacts = glob("{$artifactDir}/e2e-docker-*.json") ?: [];
 
@@ -91,12 +93,16 @@ it('runs a wrapped quality gate command and writes timing evidence', function ()
                 'mode' => 'check',
                 'exit_code' => 0,
             ])
-            ->and(is_numeric($artifact['duration_seconds']))->toBeTrue()
-            ->and($artifact['git']['branch'])->toBeString()
-            ->and($artifact['git']['commit'])->toBeString()
-            ->and($artifact)->not->toHaveKey('timing_summary');
+            ->and(is_numeric($artifact['duration_seconds']))
+            ->toBeTrue()
+            ->and($artifact['git']['branch'])
+            ->toBeString()
+            ->and($artifact['git']['commit'])
+            ->toBeString()
+            ->and($artifact)
+            ->not->toHaveKey('timing_summary');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -116,8 +122,10 @@ it('captures e2e timing summaries from wrapped command stderr', function (): voi
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toContain('wrapped-out')
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('wrapped-out')
             ->and($process->getErrorOutput())
             ->toContain('[orbit-e2e] docker start gateway 1.200s')
             ->toContain('[orbit-e2e] docker start gateway 2.400s')
@@ -136,16 +144,22 @@ it('captures e2e timing summaries from wrapped command stderr', function (): voi
                     'docker/start.gateway n=2 p50=1.2 p95=2.4',
                 ],
             ])
-            ->and($artifact['timing_summary']['raw_path'])->toStartWith('e2e-timings/e2e-docker-')
-            ->and($artifact['timing_summary']['summary_path'])->toStartWith('e2e-timings/e2e-docker-');
+            ->and($artifact['timing_summary']['raw_path'])
+            ->toStartWith('e2e-timings/e2e-docker-')
+            ->and($artifact['timing_summary']['summary_path'])
+            ->toStartWith('e2e-timings/e2e-docker-');
 
         $rawPath = "{$artifactDir}/{$artifact['timing_summary']['raw_path']}";
         $summaryPath = "{$artifactDir}/{$artifact['timing_summary']['summary_path']}";
 
-        expect($rawPath)->toBeFile()
-            ->and($summaryPath)->toBeFile()
-            ->and(file_get_contents($rawPath))->toContain('[orbit-e2e] docker start gateway 1.200s')
-            ->and(file_get_contents($summaryPath))->toContain('docker/start.gateway n=2 p50=1.2 p95=2.4');
+        expect($rawPath)
+            ->toBeFile()
+            ->and($summaryPath)
+            ->toBeFile()
+            ->and(file_get_contents($rawPath))
+            ->toContain('[orbit-e2e] docker start gateway 1.200s')
+            ->and(file_get_contents($summaryPath))
+            ->toContain('docker/start.gateway n=2 p50=1.2 p95=2.4');
 
         $analyzer = new Process([
             PHP_BINARY,
@@ -155,12 +169,13 @@ it('captures e2e timing summaries from wrapped command stderr', function (): voi
         ], repo_path());
         $analyzer->run();
 
-        expect($analyzer->getExitCode())->toBe(0, $analyzer->getErrorOutput())
+        expect($analyzer->getExitCode())
+            ->toBe(0, $analyzer->getErrorOutput())
             ->and($analyzer->getOutput())
             ->toContain('timing summary: e2e-timings/e2e-docker-')
             ->toContain('timing phase: docker/start.gateway n=2 p50=1.2 p95=2.4');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -196,25 +211,33 @@ it('writes e2e compatibility metadata and surfaces it during analysis', function
             ],
         ], JSON_THROW_ON_ERROR);
 
-        $process = new Process([
-            repo_path('bin/quality-gate-run'),
-            '--gate=e2e',
-            '--command=composer test:e2e',
-            "--artifact-dir={$artifactDir}",
-            '--',
-            PHP_BINARY,
-            '-r',
-            'fwrite(STDOUT, "Tests:    3 passed (12 assertions)\n"); file_put_contents(getenv("ORBIT_E2E_PLAN_METADATA_FILE"), "[orbit-e2e-plan] ".getenv("ORBIT_TEST_DOCKER_PLAN_METADATA")."\n", FILE_APPEND); file_put_contents(getenv("ORBIT_E2E_PLAN_METADATA_FILE"), "[orbit-e2e-plan] ".getenv("ORBIT_TEST_INCUS_PLAN_METADATA")."\n", FILE_APPEND); fwrite(STDERR, "[orbit-e2e] docker start gateway 1.200s\n");',
-        ], repo_path(), [
-            'ORBIT_TEST_DOCKER_PLAN_METADATA' => $dockerPlanMetadata,
-            'ORBIT_TEST_INCUS_PLAN_METADATA' => $incusPlanMetadata,
-        ]);
+        $process = new Process(
+            [
+                repo_path('bin/quality-gate-run'),
+                '--gate=e2e',
+                '--command=composer test:e2e',
+                "--artifact-dir={$artifactDir}",
+                '--',
+                PHP_BINARY,
+                '-r',
+                'fwrite(STDOUT, "Tests:    3 passed (12 assertions)\n"); file_put_contents(getenv("ORBIT_E2E_PLAN_METADATA_FILE"), "[orbit-e2e-plan] ".getenv("ORBIT_TEST_DOCKER_PLAN_METADATA")."\n", FILE_APPEND); file_put_contents(getenv("ORBIT_E2E_PLAN_METADATA_FILE"), "[orbit-e2e-plan] ".getenv("ORBIT_TEST_INCUS_PLAN_METADATA")."\n", FILE_APPEND); fwrite(STDERR, "[orbit-e2e] docker start gateway 1.200s\n");',
+            ],
+            repo_path(),
+            [
+                'ORBIT_TEST_DOCKER_PLAN_METADATA' => $dockerPlanMetadata,
+                'ORBIT_TEST_INCUS_PLAN_METADATA' => $incusPlanMetadata,
+            ],
+        );
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toContain('Tests:    3 passed (12 assertions)')
-            ->and($process->getErrorOutput())->toContain('[orbit-e2e] docker start gateway 1.200s')
-            ->and($process->getErrorOutput())->not->toContain('[orbit-e2e-plan]');
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('Tests:    3 passed (12 assertions)')
+            ->and($process->getErrorOutput())
+            ->toContain('[orbit-e2e] docker start gateway 1.200s')
+            ->and($process->getErrorOutput())
+            ->not->toContain('[orbit-e2e-plan]');
 
         $artifacts = glob("{$artifactDir}/e2e-*.json") ?: [];
 
@@ -222,41 +245,44 @@ it('writes e2e compatibility metadata and surfaces it during analysis', function
 
         $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($artifact['e2e_context'])->toMatchArray([
-            'plans' => [
-                [
-                    'schema_version' => 1,
-                    'lane' => 'docker',
-                    'provider' => 'docker',
-                    'lane_execution_mode' => 'parallel',
-                    'test_execution_mode' => 'parallel',
-                    'command_processes' => 2,
-                    'test_file_count' => 3,
-                    'environment' => [
-                        'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '2',
-                        'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2,sidecar2:2',
-                        'ORBIT_E2E_PARALLEL_PROCESSES' => '2',
+        expect($artifact['e2e_context'])
+            ->toMatchArray([
+                'plans' => [
+                    [
+                        'schema_version' => 1,
+                        'lane' => 'docker',
+                        'provider' => 'docker',
+                        'lane_execution_mode' => 'parallel',
+                        'test_execution_mode' => 'parallel',
+                        'command_processes' => 2,
+                        'test_file_count' => 3,
+                        'environment' => [
+                            'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '2',
+                            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:2,sidecar2:2',
+                            'ORBIT_E2E_PARALLEL_PROCESSES' => '2',
+                        ],
+                    ],
+                    [
+                        'schema_version' => 1,
+                        'lane' => 'incus',
+                        'provider' => 'incus',
+                        'lane_execution_mode' => 'parallel',
+                        'test_execution_mode' => 'parallel',
+                        'command_processes' => 1,
+                        'test_file_count' => 2,
+                        'environment' => [
+                            'ORBIT_E2E_INCUS_HOSTS' => 'beast',
+                            'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:8',
+                        ],
                     ],
                 ],
-                [
-                    'schema_version' => 1,
-                    'lane' => 'incus',
-                    'provider' => 'incus',
-                    'lane_execution_mode' => 'parallel',
-                    'test_execution_mode' => 'parallel',
-                    'command_processes' => 1,
-                    'test_file_count' => 2,
-                    'environment' => [
-                        'ORBIT_E2E_INCUS_HOSTS' => 'beast',
-                        'ORBIT_E2E_INCUS_HOST_VM_CAPS' => 'beast:8',
-                    ],
-                ],
-            ],
-        ])->and($artifact['test_summary'])->toMatchArray([
-            'assertions' => 12,
-            'status' => 'passed',
-            'tests' => 3,
-        ]);
+            ])
+            ->and($artifact['test_summary'])
+            ->toMatchArray([
+                'assertions' => 12,
+                'status' => 'passed',
+                'tests' => 3,
+            ]);
 
         $analyzer = new Process([
             PHP_BINARY,
@@ -266,17 +292,24 @@ it('writes e2e compatibility metadata and surfaces it during analysis', function
         ], repo_path());
         $analyzer->run();
 
-        expect($analyzer->getExitCode())->toBe(0, $analyzer->getErrorOutput())
+        expect($analyzer->getExitCode())
+            ->toBe(0, $analyzer->getErrorOutput())
             ->and($analyzer->getOutput())
-            ->toContain('e2e plan: lane=docker provider=docker lane_mode=parallel test_mode=parallel command_processes=2 test_files=3')
-            ->toContain('e2e plan env: ORBIT_E2E_PARALLEL_PROCESSES=2 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:2,sidecar2:2 ORBIT_E2E_DOCKER_MIN_PROCESSES=2')
-            ->toContain('e2e plan: lane=incus provider=incus lane_mode=parallel test_mode=parallel command_processes=1 test_files=2')
+            ->toContain(
+                'e2e plan: lane=docker provider=docker lane_mode=parallel test_mode=parallel command_processes=2 test_files=3',
+            )
+            ->toContain(
+                'e2e plan env: ORBIT_E2E_PARALLEL_PROCESSES=2 ORBIT_E2E_DOCKER_TEST_RUNNERS=sidecar1:2,sidecar2:2 ORBIT_E2E_DOCKER_MIN_PROCESSES=2',
+            )
+            ->toContain(
+                'e2e plan: lane=incus provider=incus lane_mode=parallel test_mode=parallel command_processes=1 test_files=2',
+            )
             ->toContain('e2e plan env: ORBIT_E2E_INCUS_HOSTS=beast ORBIT_E2E_INCUS_HOST_VM_CAPS=beast:8')
             ->toContain('test summary: 3 tests, 12 assertions, passed')
             ->toContain('timing phase: docker/start.gateway n=1 p50=1.2 p95=1.2')
             ->not->toContain('effective_parallelism');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -294,18 +327,22 @@ it('falls back to streamed e2e plan metadata when the metadata file is empty', f
             'test_file_count' => 3,
         ], JSON_THROW_ON_ERROR);
 
-        $process = new Process([
-            repo_path('bin/quality-gate-run'),
-            '--gate=e2e-docker',
-            '--command=composer test:e2e:docker',
-            "--artifact-dir={$artifactDir}",
-            '--',
-            PHP_BINARY,
-            '-r',
-            'fwrite(STDOUT, "Tests:    1 passed (2 assertions)\n"); fwrite(STDERR, "[orbit-e2e-plan] ".getenv("ORBIT_TEST_PLAN_METADATA")."\n");',
-        ], repo_path(), [
-            'ORBIT_TEST_PLAN_METADATA' => $planMetadata,
-        ]);
+        $process = new Process(
+            [
+                repo_path('bin/quality-gate-run'),
+                '--gate=e2e-docker',
+                '--command=composer test:e2e:docker',
+                "--artifact-dir={$artifactDir}",
+                '--',
+                PHP_BINARY,
+                '-r',
+                'fwrite(STDOUT, "Tests:    1 passed (2 assertions)\n"); fwrite(STDERR, "[orbit-e2e-plan] ".getenv("ORBIT_TEST_PLAN_METADATA")."\n");',
+            ],
+            repo_path(),
+            [
+                'ORBIT_TEST_PLAN_METADATA' => $planMetadata,
+            ],
+        );
         $process->run();
 
         expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
@@ -330,7 +367,7 @@ it('falls back to streamed e2e plan metadata when the metadata file is empty', f
             ],
         ]);
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -364,7 +401,7 @@ it('preserves the wrapped quality gate command exit code', function (): void {
             'exit_code' => 7,
         ]);
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -375,8 +412,7 @@ it('rejects quality gate wrapper options that are missing values', function (): 
     ], repo_path());
     $process->run();
 
-    expect($process->getExitCode())->toBe(1)
-        ->and($process->getErrorOutput())->toContain('Missing value for --gate.');
+    expect($process->getExitCode())->toBe(1)->and($process->getErrorOutput())->toContain('Missing value for --gate.');
 });
 
 it('reports missing quality-check evidence when no artifacts exist', function (): void {
@@ -391,12 +427,13 @@ it('reports missing quality-check evidence when no artifacts exist', function ()
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('missing evidence')
             ->toContain('quality-check');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -426,14 +463,15 @@ it('summarizes recent quality gate artifacts without rerunning gates', function 
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('quality-check')
             ->toContain('330')
             ->toContain('abc123')
             ->not->toContain('quality-check.sh');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -471,12 +509,13 @@ it('uses warning_threshold_percent from baseline metadata to determine timing wa
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('baseline: gate [quality-check] duration 140.0s is within local baseline 100.0s')
             ->not->toContain('warning: gate [quality-check]');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -513,12 +552,13 @@ it('defaults to a 25 percent warning threshold for legacy baseline files with on
         ], repo_path());
         $withinProcess->run();
 
-        expect($withinProcess->getExitCode())->toBe(0, $withinProcess->getErrorOutput())
+        expect($withinProcess->getExitCode())
+            ->toBe(0, $withinProcess->getErrorOutput())
             ->and($withinProcess->getOutput())
             ->toContain('baseline: gate [quality-check] duration 120.0s is within local baseline 100.0s')
             ->not->toContain('warning: gate [quality-check]');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-threshold-legacy-warn-'.bin2hex(random_bytes(6));
@@ -553,12 +593,13 @@ it('defaults to a 25 percent warning threshold for legacy baseline files with on
         ], repo_path());
         $warningProcess->run();
 
-        expect($warningProcess->getExitCode())->toBe(0, $warningProcess->getErrorOutput())
+        expect($warningProcess->getExitCode())
+            ->toBe(0, $warningProcess->getErrorOutput())
             ->and($warningProcess->getOutput())
             ->toContain('warning: gate [quality-check] duration 130.0s exceeds local baseline 100.0s (warning-only)')
             ->toContain('.agents/skills/quality-gate-triage/SKILL.md');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -595,7 +636,8 @@ it('emits warning-only baseline observations when a run exceeds the local baseli
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('warning')
             ->toContain('baseline')
@@ -603,7 +645,7 @@ it('emits warning-only baseline observations when a run exceeds the local baseli
             ->toContain('100')
             ->toContain('.agents/skills/quality-gate-triage/SKILL.md');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -640,14 +682,15 @@ it('keeps final-check exit code zero when only timing baseline warnings are pres
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('warning: gate [quality-check] duration 330.0s exceeds local baseline 100.0s (warning-only)')
             ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
             ->toContain('Final check did not rerun quality-check or E2E lanes')
             ->not->toContain('latest gate [quality-check] exited with code');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -663,7 +706,8 @@ it('final-check skips timing analysis when no quality gate artifacts exist', fun
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('Quality gate final check')
             ->toContain('Timing evidence: missing')
@@ -671,7 +715,7 @@ it('final-check skips timing analysis when no quality gate artifacts exist', fun
             ->toContain('Final check did not rerun quality-check or E2E lanes')
             ->not->toContain('recent run:');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -700,14 +744,16 @@ it('final-check discovers existing e2e gate artifacts when no explicit gate is p
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('recent run: gate=e2e-docker')
             ->not->toContain('missing evidence: no artifact found for gate [quality-check]')
-            ->not->toContain('missing evidence: no artifact found for gate [e2e-incus]')
-            ->toContain('Final check did not rerun quality-check or E2E lanes');
+            ->not->toContain('missing evidence: no artifact found for gate [e2e-incus]')->toContain(
+                'Final check did not rerun quality-check or E2E lanes',
+            );
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -739,14 +785,19 @@ it('final-check warns when latest timing evidence was captured for a different c
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
-            ->toContain("missing evidence: latest [e2e-docker] artifact commit {$staleCommit} does not match current HEAD")
+            ->toContain(
+                "missing evidence: latest [e2e-docker] artifact commit {$staleCommit} does not match current HEAD",
+            )
             ->toContain('Final-check warnings:')
-            ->toContain("- missing evidence: latest [e2e-docker] artifact commit {$staleCommit} does not match current HEAD")
+            ->toContain(
+                "- missing evidence: latest [e2e-docker] artifact commit {$staleCommit} does not match current HEAD",
+            )
             ->toContain('Final check did not rerun quality-check or E2E lanes');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -783,7 +834,8 @@ it('final-check surfaces analyzer warnings without rerunning quality gates', fun
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('Analyzer report:')
             ->toContain('recent run: gate=quality-check')
@@ -792,17 +844,23 @@ it('final-check surfaces analyzer warnings without rerunning quality gates', fun
             ->toContain('latest gate [quality-check] exited with code 1')
             ->toContain('Final check did not rerun quality-check or E2E lanes');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
 it('keeps final-check wired as an evidence-only composer script', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
     $script = (string) file_get_contents(repo_path('bin/quality-gate-final-check'));
     $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
 
-    expect($composer['scripts'])->toHaveKey('quality-gate:final-check')
-        ->and($composer['scripts']['quality-gate:final-check'])->toBe([
+    expect($composer['scripts'])
+        ->toHaveKey('quality-gate:final-check')
+        ->and($composer['scripts']['quality-gate:final-check'])
+        ->toBe([
             'bin/quality-gate-final-check',
         ])
         ->and($script)
@@ -811,21 +869,25 @@ it('keeps final-check wired as an evidence-only composer script', function (): v
         ->not->toContain('vendor/bin/pest')
         ->not->toContain('bin/orbit-gateway-pest')
         ->not->toContain('bin/orbit-e2e-artisan')
-        ->not->toContain('test:e2e')
-        ->and($implementingFeaturesSkill)
-        ->toContain('composer quality-gate:final-check')
-        ->toContain('must not rerun Pest')
-        ->toContain('timing analysis was skipped')
-        ->toContain('first narrow diff')
-        ->toContain('broad discovery without a first diff');
+        ->not->toContain('test:e2e')->and($implementingFeaturesSkill)->toContain(
+            'composer quality-gate:final-check',
+        )->toContain('must not rerun Pest')->toContain('timing analysis was skipped')->toContain(
+            'first narrow diff',
+        )->toContain('broad discovery without a first diff');
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
     $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
 
-    expect($composer['scripts'])->toHaveKey('quality-gate:analyze')
-        ->and($composer['scripts']['quality-gate:analyze'])->toBe([
+    expect($composer['scripts'])
+        ->toHaveKey('quality-gate:analyze')
+        ->and($composer['scripts']['quality-gate:analyze'])
+        ->toBe([
             'bin/quality-gate-analyze',
         ])
         ->and($script)
@@ -835,10 +897,16 @@ it('keeps quality-check artifact capture wired into the aggregate gate script', 
 });
 
 it('keeps source-prepared e2e artifact capture out of provider provision scripts', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
 
-    expect(repo_path('bin/quality-gate-run'))->toBeFile()
-        ->and(is_executable(repo_path('bin/quality-gate-run')))->toBeTrue()
+    expect(repo_path('bin/quality-gate-run'))
+        ->toBeFile()
+        ->and(is_executable(repo_path('bin/quality-gate-run')))
+        ->toBeTrue()
         ->and($composer['scripts']['test:e2e'][1])
         ->toContain('bin/quality-gate-run')
         ->toContain('--gate=e2e')
@@ -855,10 +923,8 @@ it('keeps source-prepared e2e artifact capture out of provider provision scripts
         ->toContain('--gate=e2e-incus')
         ->toContain('ORBIT_E2E_LANES=incus')
         ->and(implode("\n", $composer['scripts']['test:e2e:provision']))
-        ->not->toContain('quality-gate-run')
-        ->and(implode("\n", $composer['scripts']['test:e2e:provision:docker']))
-        ->not->toContain('quality-gate-run')
-        ->and(implode("\n", $composer['scripts']['test:e2e:provision:incus']))
+        ->not->toContain('quality-gate-run')->and(implode("\n", $composer['scripts']['test:e2e:provision:docker']))
+        ->not->toContain('quality-gate-run')->and(implode("\n", $composer['scripts']['test:e2e:provision:incus']))
         ->not->toContain('quality-gate-run');
 });
 
@@ -996,7 +1062,7 @@ it('promotes the latest successful quality-check artifact into a local baseline 
 
         expect($baseline)->not->toHaveKey('best_subgate_durations');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -1025,9 +1091,12 @@ it('refuses to capture a baseline from a failed latest quality-check artifact un
         ], repo_path());
         $refuseProcess->run();
 
-        expect($refuseProcess->getExitCode())->toBe(1, $refuseProcess->getErrorOutput())
-            ->and($refuseProcess->getErrorOutput())->toContain('exit_code')
-            ->and("{$artifactDir}/baselines/quality-check.json")->not->toBeFile();
+        expect($refuseProcess->getExitCode())
+            ->toBe(1, $refuseProcess->getErrorOutput())
+            ->and($refuseProcess->getErrorOutput())
+            ->toContain('exit_code')
+            ->and("{$artifactDir}/baselines/quality-check.json")
+            ->not->toBeFile();
 
         $forceProcess = new Process([
             PHP_BINARY,
@@ -1037,10 +1106,12 @@ it('refuses to capture a baseline from a failed latest quality-check artifact un
         ], repo_path());
         $forceProcess->run();
 
-        expect($forceProcess->getExitCode())->toBe(0, $forceProcess->getErrorOutput())
-            ->and("{$artifactDir}/baselines/quality-check.json")->toBeFile();
+        expect($forceProcess->getExitCode())
+            ->toBe(0, $forceProcess->getErrorOutput())
+            ->and("{$artifactDir}/baselines/quality-check.json")
+            ->toBeFile();
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -1075,15 +1146,18 @@ it('writes per-subgate duration data into quality-check artifacts', function ():
 
         $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
 
-        expect($artifact['subgates'])->toMatchArray([
-            'docs_lint' => 0,
-            'gateway_pest' => 0,
-        ])->and($artifact['subgate_durations'])->toMatchArray([
-            'docs_lint' => 12.0,
-            'gateway_pest' => 245.5,
-        ]);
+        expect($artifact['subgates'])
+            ->toMatchArray([
+                'docs_lint' => 0,
+                'gateway_pest' => 0,
+            ])
+            ->and($artifact['subgate_durations'])
+            ->toMatchArray([
+                'docs_lint' => 12.0,
+                'gateway_pest' => 245.5,
+            ]);
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -1117,7 +1191,12 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
         'exit_code' => 0,
         'git' => ['branch' => 'main', 'commit' => 'profiling123'],
         'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
-        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0, 'cli_pest' => 999.9, 'core_rector' => 0.5],
+        'subgate_durations' => [
+            'gateway_pest' => 245.5,
+            'docs_lint' => 12.0,
+            'cli_pest' => 999.9,
+            'core_rector' => 0.5,
+        ],
     ], JSON_THROW_ON_ERROR));
 
     try {
@@ -1128,7 +1207,8 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('gateway_pest')
             ->toContain('245.5')
@@ -1137,14 +1217,16 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
             ->toContain('subgate duration: gateway_pest=245.5s')
             ->toContain('subgate duration: docs_lint=12.0s')
             ->toContain('subgate duration: core_rector=0.5s')
-            ->toContain('warning: subgate [quality-check:gateway_pest] duration 245.5s exceeds local baseline 180.0s (warning-only)')
+            ->toContain(
+                'warning: subgate [quality-check:gateway_pest] duration 245.5s exceeds local baseline 180.0s (warning-only)',
+            )
             ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
             ->not->toContain('warning: subgate [quality-check:cli_pest]')
             ->not->toContain('warning: subgate [quality-check:core_rector]')
             ->not->toContain('best subgate duration')
             ->not->toContain('best_subgate_durations');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -1204,25 +1286,34 @@ it('surfaces slow e2e timing phases from analyzer output', function (): void {
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
             ->and($process->getOutput())
             ->toContain('timing phase: acquire/incus.source-sync n=12 p50=3.6 p95=27.9')
-            ->toContain('warning: timing phase [e2e-incus:acquire/incus.source-sync] p95 27.9s exceeds local baseline 4.0s (warning-only)')
+            ->toContain(
+                'warning: timing phase [e2e-incus:acquire/incus.source-sync] p95 27.9s exceeds local baseline 4.0s (warning-only)',
+            )
             ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
             ->not->toContain('warning: timing phase [e2e-incus:checkout/checkout.gateway.checkout.vendor]')
             ->not->toContain('warning: timing phase [e2e-incus:tiny/phase]');
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
 it('keeps baseline capture wired as a composer script', function (): void {
-    $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
     $script = (string) file_get_contents(repo_path('bin/quality-gate-baseline-capture'));
     $analyzerScript = (string) file_get_contents(repo_path('bin/quality-gate-analyze'));
 
-    expect($composer['scripts'])->toHaveKey('quality-gate:baseline-capture')
-        ->and($composer['scripts']['quality-gate:baseline-capture'])->toBe([
+    expect($composer['scripts'])
+        ->toHaveKey('quality-gate:baseline-capture')
+        ->and($composer['scripts']['quality-gate:baseline-capture'])
+        ->toBe([
             'bin/quality-gate-baseline-capture',
         ])
         ->and($script)
@@ -1232,8 +1323,7 @@ it('keeps baseline capture wired as a composer script', function (): void {
         ->not->toContain('vendor/bin/pest')
         ->not->toContain('bin/orbit-gateway-pest')
         ->not->toContain('test:e2e')
-        ->not->toContain('best_subgate_durations')
-        ->and($analyzerScript)
+        ->not->toContain('best_subgate_durations')->and($analyzerScript)
         ->not->toContain('best_subgate_durations');
 });
 
@@ -1298,7 +1388,7 @@ it('promotes e2e timing phases into provider baseline files', function (): void 
             ],
         ]);
     } finally {
-        (new Process(['rm', '-rf', $artifactDir]))->run();
+        new Process(['rm', '-rf', $artifactDir])->run();
     }
 });
 
@@ -1312,7 +1402,8 @@ it('documents quality gate baseline capture and subgate profiling', function ():
         ->toContain('latest quality-gate artifact')
         ->toContain('subgate_durations')
         ->toContain('timing_phases')
-        ->not->toContain('best_subgate_durations')
+        ->not
+        ->toContain('best_subgate_durations')
         ->toContain('warning_threshold_percent');
 });
 
@@ -1338,14 +1429,22 @@ it('seeds prepared worktree quality gate baselines without overwriting local fil
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and("{$targetBaselineDir}/quality-check.json")->toBeFile()
-            ->and("{$targetBaselineDir}/e2e-docker.json")->toBeFile()
-            ->and(is_link("{$targetBaselineDir}/quality-check.json"))->toBeFalse()
-            ->and(is_link("{$targetBaselineDir}/e2e-docker.json"))->toBeFalse()
-            ->and(file_get_contents("{$targetBaselineDir}/quality-check.json"))->toBe('{"gate":"quality-check","duration_seconds":18}')
-            ->and(file_get_contents("{$targetBaselineDir}/e2e-docker.json"))->toBe('{"gate":"e2e-docker","duration_seconds":217}')
-            ->and(file_get_contents("{$targetBaselineDir}/e2e-incus.json"))->toBe('{"gate":"e2e-incus","duration_seconds":999}');
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and("{$targetBaselineDir}/quality-check.json")
+            ->toBeFile()
+            ->and("{$targetBaselineDir}/e2e-docker.json")
+            ->toBeFile()
+            ->and(is_link("{$targetBaselineDir}/quality-check.json"))
+            ->toBeFalse()
+            ->and(is_link("{$targetBaselineDir}/e2e-docker.json"))
+            ->toBeFalse()
+            ->and(file_get_contents("{$targetBaselineDir}/quality-check.json"))
+            ->toBe('{"gate":"quality-check","duration_seconds":18}')
+            ->and(file_get_contents("{$targetBaselineDir}/e2e-docker.json"))
+            ->toBe('{"gate":"e2e-docker","duration_seconds":217}')
+            ->and(file_get_contents("{$targetBaselineDir}/e2e-incus.json"))
+            ->toBe('{"gate":"e2e-incus","duration_seconds":999}');
 
         $seeder = (string) file_get_contents(repo_path('bin/quality-gate-seed-baselines'));
 
@@ -1360,7 +1459,7 @@ it('seeds prepared worktree quality gate baselines without overwriting local fil
         expect((string) file_get_contents(repo_path('bin/orbit-prepare-worktree')))
             ->toContain('quality-gate-seed-baselines');
     } finally {
-        (new Process(['rm', '-rf', $sourceCheckout, $targetCheckout]))->run();
+        new Process(['rm', '-rf', $sourceCheckout, $targetCheckout])->run();
     }
 });
 
@@ -1379,11 +1478,14 @@ it('skips prepared worktree quality gate baseline seeding when the source baseli
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toContain('no source baselines')
-            ->and("{$targetCheckout}/.orbit/quality-gates/baselines")->not->toBeDirectory();
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('no source baselines')
+            ->and("{$targetCheckout}/.orbit/quality-gates/baselines")
+            ->not->toBeDirectory();
     } finally {
-        (new Process(['rm', '-rf', $sourceCheckout, $targetCheckout]))->run();
+        new Process(['rm', '-rf', $sourceCheckout, $targetCheckout])->run();
     }
 });
 
@@ -1402,10 +1504,13 @@ it('skips prepared worktree quality gate baseline seeding when the source checko
         ], repo_path());
         $process->run();
 
-        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
-            ->and($process->getOutput())->toContain('source missing')
-            ->and("{$targetCheckout}/.orbit/quality-gates/baselines")->not->toBeDirectory();
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('source missing')
+            ->and("{$targetCheckout}/.orbit/quality-gates/baselines")
+            ->not->toBeDirectory();
     } finally {
-        (new Process(['rm', '-rf', $sourceCheckout, $targetCheckout]))->run();
+        new Process(['rm', '-rf', $sourceCheckout, $targetCheckout])->run();
     }
 });

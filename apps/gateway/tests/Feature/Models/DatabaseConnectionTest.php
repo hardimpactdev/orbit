@@ -29,10 +29,10 @@ describe('DatabaseConnection models', function (): void {
             ->value('credentials');
         $jsonCredentials = json_encode(['password' => 'secret'], JSON_THROW_ON_ERROR);
 
-        expect($storedCredentials)->toBeString()
-            ->not->toBe('secret')
-            ->and($storedCredentials)->not->toBe($jsonCredentials)
-            ->and($connection->fresh()->credentials)->toBe(['password' => 'secret']);
+        expect($storedCredentials)
+            ->toBeString()
+            ->not->toBe('secret')->and($storedCredentials)
+            ->not->toBe($jsonCredentials)->and($connection->fresh()->credentials)->toBe(['password' => 'secret']);
     });
 
     it('relates an app target to its connection and owning app', function (): void {
@@ -44,9 +44,12 @@ describe('DatabaseConnection models', function (): void {
             ->forApp($app)
             ->create(['env_prefix' => 'DB']);
 
-        expect($target->connection->is($connection))->toBeTrue()
-            ->and($target->app->is($app))->toBeTrue()
-            ->and($target->workspace)->toBeNull();
+        expect($target->connection->is($connection))
+            ->toBeTrue()
+            ->and($target->app->is($app))
+            ->toBeTrue()
+            ->and($target->workspace)
+            ->toBeNull();
     });
 
     it('relates a workspace target to its connection and owning workspace', function (): void {
@@ -58,9 +61,12 @@ describe('DatabaseConnection models', function (): void {
             ->forWorkspace($workspace)
             ->create(['env_prefix' => 'DB']);
 
-        expect($target->connection->is($connection))->toBeTrue()
-            ->and($target->workspace->is($workspace))->toBeTrue()
-            ->and($target->app)->toBeNull();
+        expect($target->connection->is($connection))
+            ->toBeTrue()
+            ->and($target->workspace->is($workspace))
+            ->toBeTrue()
+            ->and($target->app)
+            ->toBeNull();
     });
 
     it('maps app database connections through its target rows', function (): void {
@@ -69,10 +75,15 @@ describe('DatabaseConnection models', function (): void {
         $analytics = DatabaseConnection::factory()->create(['slug' => 'app-analytics']);
 
         DatabaseConnectionTarget::factory()->for($primary, 'connection')->forApp($app)->create(['env_prefix' => 'DB']);
-        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->forApp($app)->create(['env_prefix' => 'ANALYTICS_DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($analytics, 'connection')
+            ->forApp($app)
+            ->create(['env_prefix' => 'ANALYTICS_DB']);
 
-        expect($app->databaseConnectionTargets)->toHaveCount(2)
-            ->and($app->databaseConnections->modelKeys())->toEqualCanonicalizing([$primary->id, $analytics->id]);
+        expect($app->databaseConnectionTargets)
+            ->toHaveCount(2)
+            ->and($app->databaseConnections->modelKeys())
+            ->toEqualCanonicalizing([$primary->id, $analytics->id]);
     });
 
     it('maps workspace database connections through its target rows', function (): void {
@@ -80,11 +91,19 @@ describe('DatabaseConnection models', function (): void {
         $primary = DatabaseConnection::factory()->create(['slug' => 'workspace-primary']);
         $analytics = DatabaseConnection::factory()->create(['slug' => 'workspace-analytics']);
 
-        DatabaseConnectionTarget::factory()->for($primary, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'DB']);
-        DatabaseConnectionTarget::factory()->for($analytics, 'connection')->forWorkspace($workspace)->create(['env_prefix' => 'ANALYTICS_DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($primary, 'connection')
+            ->forWorkspace($workspace)
+            ->create(['env_prefix' => 'DB']);
+        DatabaseConnectionTarget::factory()
+            ->for($analytics, 'connection')
+            ->forWorkspace($workspace)
+            ->create(['env_prefix' => 'ANALYTICS_DB']);
 
-        expect($workspace->databaseConnectionTargets)->toHaveCount(2)
-            ->and($workspace->databaseConnections->modelKeys())->toEqualCanonicalizing([$primary->id, $analytics->id]);
+        expect($workspace->databaseConnectionTargets)
+            ->toHaveCount(2)
+            ->and($workspace->databaseConnections->modelKeys())
+            ->toEqualCanonicalizing([$primary->id, $analytics->id]);
     });
 
     it('keeps slugs globally unique', function (): void {
@@ -93,6 +112,7 @@ describe('DatabaseConnection models', function (): void {
         expect(fn () => DatabaseConnection::create([
             'slug' => 'shared-slug',
             'driver' => 'mysql',
-        ]))->toThrow(QueryException::class);
+        ]))
+            ->toThrow(QueryException::class);
     });
 });

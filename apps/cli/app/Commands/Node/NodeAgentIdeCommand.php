@@ -28,7 +28,9 @@ final class NodeAgentIdeCommand extends GatewayCommand
         }
 
         if ($agentIde === null) {
-            return $this->renderFailure('validation_failed', 'Agent IDE adapter is required.', ['field' => 'agent_ide']);
+            return $this->renderFailure('validation_failed', 'Agent IDE adapter is required.', [
+                'field' => 'agent_ide',
+            ]);
         }
 
         try {

@@ -16,43 +16,65 @@ const NODE_MANAGE_CALLER_WG_IP = '10.44.0.24';
 
 describe('node self management API', function (): void {
     it('returns the gateway management SSH public key for active roleless callers', function (): void {
-        Node::factory()->operator()->create([
-            'name' => 'mini',
-            'host' => NODE_MANAGE_CALLER_WG_IP,
-            'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
-            'status' => 'active',
-        ]);
+        Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'mini',
+                'host' => NODE_MANAGE_CALLER_WG_IP,
+                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
+                'status' => 'active',
+            ]);
 
         Process::fake([
             '*' => Process::result(output: "ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway\n"),
         ]);
 
-        $response = $this->call('GET', '/api/nodes/self/manage-key', [], [], [], [
-            'REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP,
-        ]);
+        $response = $this->call(
+            'GET',
+            '/api/nodes/self/manage-key',
+            [],
+            [],
+            [],
+            [
+                'REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP,
+            ],
+        );
 
         $response->assertOk()
-            ->assertJsonPath('success.data.management_ssh_key.public_key', 'ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway');
+            ->assertJsonPath(
+                'success.data.management_ssh_key.public_key',
+                'ssh-ed25519 AAAAC3NzaGatewayKey orbit-gateway',
+            );
     });
 
     it('persists user and platform, pins by WireGuard address, and verifies SSH reachability', function (): void {
-        $node = Node::factory()->operator()->create([
-            'name' => 'mini',
-            'host' => NODE_MANAGE_CALLER_WG_IP,
-            'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
-            'status' => 'active',
-        ]);
+        $node = Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'mini',
+                'host' => NODE_MANAGE_CALLER_WG_IP,
+                'wireguard_address' => NODE_MANAGE_CALLER_WG_IP,
+                'status' => 'active',
+            ]);
         $shell = new NodeManageRecordingShell;
         $pinner = new NodeManageRecordingHostKeyPinner;
         app()->instance(RemoteShell::class, $shell);
         app()->instance(SshHostKeyPinner::class, $pinner);
 
-        $response = $this->call('POST', '/api/nodes/self/manage', [
-            'user' => 'nicky',
-            'platform' => 'macos_15-5',
-        ], [], [], ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/nodes/self/manage',
+            [
+                'user' => 'nicky',
+                'platform' => 'macos_15-5',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.management.node', 'mini')
             ->assertJsonPath('success.data.management.user', 'nicky')
             ->assertJsonPath('success.data.management.platform', 'macos_15-5')
@@ -63,10 +85,9 @@ describe('node self management API', function (): void {
         expect($node->fresh())
             ->user->toBe('nicky')
             ->platform->toBe('macos_15-5')
-            ->host_key_fingerprint->toBe('SHA256:test')
-            ->and($pinner->hosts)->toBe([NODE_MANAGE_CALLER_WG_IP])
-            ->and($shell->nodes)->toBe(['mini'])
-            ->and($shell->scripts[0] ?? '')->toContain('true');
+            ->host_key_fingerprint->toBe('SHA256:test')->and($pinner->hosts)->toBe([
+                NODE_MANAGE_CALLER_WG_IP,
+            ])->and($shell->nodes)->toBe(['mini'])->and($shell->scripts[0] ?? '')->toContain('true');
     });
 
     it('rejects role-bearing callers before management side effects', function (): void {
@@ -79,17 +100,23 @@ describe('node self management API', function (): void {
         $shell = new NodeManageRecordingShell;
         app()->instance(RemoteShell::class, $shell);
 
-        $response = $this->call('POST', '/api/nodes/self/manage', [
-            'user' => 'orbit',
-            'platform' => 'ubuntu_24-04',
-        ], [], [], ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/nodes/self/manage',
+            [
+                'user' => 'orbit',
+                'platform' => 'ubuntu_24-04',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => NODE_MANAGE_CALLER_WG_IP],
+        );
 
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'node.not_operator');
 
         expect($shell->scripts)->toBe([]);
     });
-
 });
 
 final class NodeManageRecordingShell implements RemoteShell

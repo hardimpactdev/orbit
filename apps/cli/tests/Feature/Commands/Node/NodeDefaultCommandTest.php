@@ -27,9 +27,12 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['action'])->toBe('show')
-                ->and($decoded['success']['data']['default_node'])->toBeNull();
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['action'])
+                ->toBe('show')
+                ->and($decoded['success']['data']['default_node'])
+                ->toBeNull();
         });
 
         it('returns stored default when one is set', function (): void {
@@ -39,11 +42,16 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['action'])->toBe('show')
-                ->and($decoded['success']['data']['default_node']['name'])->toBe('app-1')
-                ->and($decoded['success']['data']['default_node']['role'])->toBe('app-dev')
-                ->and($decoded['success']['data']['default_node'])->not->toHaveKey('environment');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['action'])
+                ->toBe('show')
+                ->and($decoded['success']['data']['default_node']['name'])
+                ->toBe('app-1')
+                ->and($decoded['success']['data']['default_node']['role'])
+                ->toBe('app-dev')
+                ->and($decoded['success']['data']['default_node'])
+                ->not->toHaveKey('environment');
         });
 
         it('does not call the gateway for show', function (): void {
@@ -67,12 +75,19 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['action'])->toBe('set')
-                ->and($decoded['success']['data']['default_node']['name'])->toBe('app-1')
-                ->and($decoded['success']['data']['default_node']['role'])->toBe('app-dev')
-                ->and($decoded['success']['data']['default_node'])->not->toHaveKey('environment')
-                ->and($this->store->defaultNode())->toBe('app-1');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['action'])
+                ->toBe('set')
+                ->and($decoded['success']['data']['default_node']['name'])
+                ->toBe('app-1')
+                ->and($decoded['success']['data']['default_node']['role'])
+                ->toBe('app-dev')
+                ->and($decoded['success']['data']['default_node'])
+                ->not
+                ->toHaveKey('environment')
+                ->and($this->store->defaultNode())
+                ->toBe('app-1');
         });
 
         it('returns node.not_found when node is not in the visible list', function (): void {
@@ -86,10 +101,14 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('node.not_found')
-                ->and($decoded['error']['meta']['name'])->toBe('app-unknown')
-                ->and($this->store->defaultNode())->toBeNull();
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('node.not_found')
+                ->and($decoded['error']['meta']['name'])
+                ->toBe('app-unknown')
+                ->and($this->store->defaultNode())
+                ->toBeNull();
         });
 
         it('returns node.not_found when node has wrong role', function (): void {
@@ -104,8 +123,7 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('node.not_found');
+            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('node.not_found');
         });
 
         it('returns gateway_unavailable when gateway is down', function (): void {
@@ -115,8 +133,7 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('gateway_unavailable');
+            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
         });
 
         it('returns gateway_unreachable_wireguard on WireGuard timeout', function (): void {
@@ -126,8 +143,7 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
+            expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unreachable_wireguard');
         });
 
         it('does not mutate gateway node configuration', function (): void {
@@ -142,9 +158,13 @@ describe('node:default', function (): void {
             expect($exitCode)->toBe(0);
 
             Http::assertSentCount(1);
-            Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-                && str_contains($request->url(), '/api/nodes')
-                && str_contains($request->url(), 'role=app-dev'));
+            Http::assertSent(
+                fn (Request $request): bool => (
+                    $request->method() === 'GET'
+                    && str_contains($request->url(), '/api/nodes')
+                    && str_contains($request->url(), 'role=app-dev')
+                ),
+            );
         });
 
         it('stores the name locally without gateway mutation', function (): void {
@@ -156,8 +176,7 @@ describe('node:default', function (): void {
 
             [$exitCode] = runCommand($this, 'node:default', ['name' => 'app-1', '--json' => true]);
 
-            expect($exitCode)->toBe(0)
-                ->and($this->store->defaultNode())->toBe('app-1');
+            expect($exitCode)->toBe(0)->and($this->store->defaultNode())->toBe('app-1');
         });
     });
 
@@ -169,11 +188,16 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['action'])->toBe('clear')
-                ->and($decoded['success']['data']['default_node'])->toBeNull()
-                ->and($decoded['success']['meta']['was_set'])->toBeTrue()
-                ->and($this->store->defaultNode())->toBeNull();
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['action'])
+                ->toBe('clear')
+                ->and($decoded['success']['data']['default_node'])
+                ->toBeNull()
+                ->and($decoded['success']['meta']['was_set'])
+                ->toBeTrue()
+                ->and($this->store->defaultNode())
+                ->toBeNull();
         });
 
         it('is idempotent when no default is set and reports was_set false', function (): void {
@@ -181,10 +205,14 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(0)
-                ->and($decoded['success']['data']['action'])->toBe('clear')
-                ->and($decoded['success']['data']['default_node'])->toBeNull()
-                ->and($decoded['success']['meta']['was_set'])->toBeFalse();
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data']['action'])
+                ->toBe('clear')
+                ->and($decoded['success']['data']['default_node'])
+                ->toBeNull()
+                ->and($decoded['success']['meta']['was_set'])
+                ->toBeFalse();
         });
 
         it('does not require gateway reachability for clear', function (): void {
@@ -203,19 +231,26 @@ describe('node:default', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'node:default', []);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Default development node: app-1')
-                ->and($output)->not->toContain('action:')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Default development node: app-1')
+                ->and($output)
+                ->not->toContain('action:')->and($output)
+                ->not->toContain('{');
         });
 
         it('renders show with no default as empty-state prose with guidance', function (): void {
             [$exitCode, $output] = runCommand($this, 'node:default', []);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('No default development node is set.')
-                ->and($output)->toContain('Run `orbit node:default <name>` to set one.')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('No default development node is set.')
+                ->and($output)
+                ->toContain('Run `orbit node:default <name>` to set one.')
+                ->and($output)
+                ->not->toContain('{');
         });
 
         it('renders set through a progress tree with a success footer', function (): void {
@@ -227,13 +262,17 @@ describe('node:default', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'node:default', ['name' => 'app-1']);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Setting Default Node')
-                ->and($output)->toContain('Store local default')
-                ->and($output)->toContain('Default development node set to app-1.')
-                ->and($output)->not->toContain('action:')
-                ->and($output)->not->toContain('{')
-                ->and($this->store->defaultNode())->toBe('app-1');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Setting Default Node')
+                ->and($output)
+                ->toContain('Store local default')
+                ->and($output)
+                ->toContain('Default development node set to app-1.')
+                ->and($output)
+                ->not->toContain('action:')->and($output)
+                ->not->toContain('{')->and($this->store->defaultNode())->toBe('app-1');
         });
 
         it('renders set node-not-found failures as a failed tree footer', function (): void {
@@ -245,10 +284,13 @@ describe('node:default', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'node:default', ['name' => 'app-unknown']);
 
-            expect($exitCode)->toBe(1)
-                ->and($output)->toContain("Node 'app-unknown' not found or not visible.")
-                ->and($output)->not->toContain('"error"')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($output)
+                ->toContain("Node 'app-unknown' not found or not visible.")
+                ->and($output)
+                ->not->toContain('"error"')->and($output)
+                ->not->toContain('{');
         });
 
         it('renders set gateway-unavailable failures as prose', function (): void {
@@ -256,9 +298,12 @@ describe('node:default', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'node:default', ['name' => 'app-1']);
 
-            expect($exitCode)->toBe(1)
-                ->and($output)->toContain('Gateway connection is required to set a default node.')
-                ->and($output)->not->toContain('"error"');
+            expect($exitCode)
+                ->toBe(1)
+                ->and($output)
+                ->toContain('Gateway connection is required to set a default node.')
+                ->and($output)
+                ->not->toContain('"error"');
         });
 
         it('renders clear with an existing default as prose', function (): void {
@@ -266,18 +311,24 @@ describe('node:default', function (): void {
 
             [$exitCode, $output] = runCommand($this, 'node:default', ['--clear' => true]);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('Default development node cleared.')
-                ->and($output)->not->toContain('action:')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('Default development node cleared.')
+                ->and($output)
+                ->not->toContain('action:')->and($output)
+                ->not->toContain('{');
         });
 
         it('renders clear with no existing default as no-op prose', function (): void {
             [$exitCode, $output] = runCommand($this, 'node:default', ['--clear' => true]);
 
-            expect($exitCode)->toBe(0)
-                ->and($output)->toContain('No default development node was set.')
-                ->and($output)->not->toContain('{');
+            expect($exitCode)
+                ->toBe(0)
+                ->and($output)
+                ->toContain('No default development node was set.')
+                ->and($output)
+                ->not->toContain('{');
         });
     });
 
@@ -291,9 +342,12 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($exitCode)->toBe(1)
-                ->and($decoded['error']['code'])->toBe('validation_failed')
-                ->and($decoded['error']['meta']['fields'])->toBe(['name', 'clear']);
+            expect($exitCode)
+                ->toBe(1)
+                ->and($decoded['error']['code'])
+                ->toBe('validation_failed')
+                ->and($decoded['error']['meta']['fields'])
+                ->toBe(['name', 'clear']);
         });
     });
 
@@ -305,10 +359,14 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($decoded)->toHaveKey('success')
-                ->and($decoded['success'])->toHaveKey('data')
-                ->and($decoded['success']['data'])->toHaveKey('action')
-                ->and($decoded['success']['data'])->toHaveKey('default_node');
+            expect($decoded)
+                ->toHaveKey('success')
+                ->and($decoded['success'])
+                ->toHaveKey('data')
+                ->and($decoded['success']['data'])
+                ->toHaveKey('action')
+                ->and($decoded['success']['data'])
+                ->toHaveKey('default_node');
         });
 
         it('show empty state produces default_node null', function (): void {
@@ -338,10 +396,14 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($decoded)->toHaveKey('error')
-                ->and($decoded['error'])->toHaveKey('code')
-                ->and($decoded['error'])->toHaveKey('message')
-                ->and($decoded['error'])->toHaveKey('meta');
+            expect($decoded)
+                ->toHaveKey('error')
+                ->and($decoded['error'])
+                ->toHaveKey('code')
+                ->and($decoded['error'])
+                ->toHaveKey('message')
+                ->and($decoded['error'])
+                ->toHaveKey('meta');
         });
 
         it('set success contains the canonical role without legacy environment', function (): void {
@@ -355,8 +417,10 @@ describe('node:default', function (): void {
 
             $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-            expect($decoded['success']['data']['default_node']['role'])->toBe('app-dev')
-                ->and($decoded['success']['data']['default_node'])->not->toHaveKey('environment');
+            expect($decoded['success']['data']['default_node']['role'])
+                ->toBe('app-dev')
+                ->and($decoded['success']['data']['default_node'])
+                ->not->toHaveKey('environment');
         });
     });
 });

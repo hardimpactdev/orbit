@@ -43,11 +43,21 @@ final class ToolUpdateController implements Loggable
 
         $isAgentSelfWithPermission = $this->isAgentSelfWithUpdatePermission($caller);
 
-        if (! $this->nodeRoleAssignments()->nodeIsGateway($caller) && $visibleNodeIds === [] && ! $isAgentSelfWithPermission) {
+        if (
+            ! $this->nodeRoleAssignments()->nodeIsGateway($caller)
+            && $visibleNodeIds === []
+            && ! $isAgentSelfWithPermission
+        ) {
             return $this->authorizationFailed('This node is not authorized to manage tools.');
         }
 
-        $target = $this->authorizedToolTarget($request, $caller, $visibleNodeIds, allowAnyActiveNode: true, tool: $tool);
+        $target = $this->authorizedToolTarget(
+            $request,
+            $caller,
+            $visibleNodeIds,
+            allowAnyActiveNode: true,
+            tool: $tool,
+        );
 
         if ($target instanceof JsonResponse) {
             $agentSelfBypass = $this->agentSelfUpdateBypass($request, $caller, $tool);
@@ -106,13 +116,25 @@ final class ToolUpdateController implements Loggable
         $result = $authorizer->authorizeAgentSelfAction($caller, $tool, 'update');
 
         if (! $result['authorized']) {
-            return $this->toolTargetAuthorizationFailed($result['reason'] ?? 'Agent self is not authorized to perform this action.');
+            return $this->toolTargetAuthorizationFailed(
+                $result['reason'] ?? 'Agent self is not authorized to perform this action.',
+            );
         }
 
         $version = $this->requestString($request, 'version');
         $instance = $this->requestString($request, 'instance');
 
-        return $this->executeUpdate($request, $tool, app(ToolUpdater::class), app(ProgressEventStreamResponseFactory::class), $caller, $caller->name, null, $version, $instance);
+        return $this->executeUpdate(
+            $request,
+            $tool,
+            app(ToolUpdater::class),
+            app(ProgressEventStreamResponseFactory::class),
+            $caller,
+            $caller->name,
+            null,
+            $version,
+            $instance,
+        );
     }
 
     private function executeUpdate(
@@ -126,7 +148,6 @@ final class ToolUpdateController implements Loggable
         ?string $version,
         ?string $instance,
     ): JsonResponse|StreamedResponse {
-
         $operation = fn (): array|ToolRegistryFailure => $updater->update(
             tool: $tool,
             node: $node,

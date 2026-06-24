@@ -41,17 +41,24 @@ final class NodeManageCommand extends GatewayCommand
         $publicKey = $this->publicKey($keyResponse);
 
         if ($publicKey === null) {
-            return $this->renderFailure('node.management_key_unavailable', 'Gateway management SSH public key was not returned.');
+            return $this->renderFailure(
+                'node.management_key_unavailable',
+                'Gateway management SSH public key was not returned.',
+            );
         }
 
         $targetUser = $this->targetUser();
         $currentUser = $this->currentUser();
 
         if ($targetUser !== $currentUser) {
-            return $this->renderFailure('validation_failed', '--user must match the current local user for node:manage.', [
-                'field' => 'user',
-                'current_user' => $currentUser,
-            ]);
+            return $this->renderFailure(
+                'validation_failed',
+                '--user must match the current local user for node:manage.',
+                [
+                    'field' => 'user',
+                    'current_user' => $currentUser,
+                ],
+            );
         }
 
         try {
@@ -102,9 +109,9 @@ final class NodeManageCommand extends GatewayCommand
      */
     private function publicKey(array $response): ?string
     {
-        $key = $response['success']['data']['management_ssh_key']['public_key']
-            ?? $response['success']['data']['public_key']
-            ?? null;
+        $key =
+            $response['success']['data']['management_ssh_key']['public_key'] ?? $response['success']['data']['public_key']
+                ?? null;
 
         return is_string($key) && trim($key) !== '' ? trim($key) : null;
     }

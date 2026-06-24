@@ -17,7 +17,6 @@ function roleSelfGrantNode(): Node
 {
     return Node::factory()->create([
         'platform' => 'ubuntu',
-
     ]);
 }
 
@@ -49,8 +48,7 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         $permissions = app(RoleSelfGrantMaterializer::class)->effectiveSelfPermissions($node);
 
-        expect($permissions)->toBe(['workspace:setup'])
-            ->and(roleSelfGrant($node))->toBeNull();
+        expect($permissions)->toBe(['workspace:setup'])->and(roleSelfGrant($node))->toBeNull();
     });
 
     it('materializes the union of active role self presets', function (): void {
@@ -62,15 +60,19 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         $grant = roleSelfGrant($node);
 
-        expect($grant)->not->toBeNull()
-            ->and($grant->permissions)->toBe([
+        expect($grant)
+            ->not
+            ->toBeNull()
+            ->and($grant->permissions)
+            ->toBe([
                 'doctor:verify',
                 'node:read',
                 'tool:read',
                 'tool:update:agent-tools',
                 'workspace:setup',
             ])
-            ->and($grant->custom_permissions)->toBe([]);
+            ->and($grant->custom_permissions)
+            ->toBe([]);
     });
 
     it('keeps overlapping role-derived permissions until the last source role is removed', function (): void {
@@ -104,14 +106,18 @@ describe('RoleSelfGrantMaterializer', function (): void {
 
         app(RoleSelfGrantMaterializer::class)->materializeOnRoleApplied($node, NodeRoleName::AppDevelopment);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['tool:read', 'workspace:setup'])
-            ->and(roleSelfGrant($node)?->custom_permissions)->toBe(['tool:read']);
+        expect(roleSelfGrant($node)?->permissions)
+            ->toBe(['tool:read', 'workspace:setup'])
+            ->and(roleSelfGrant($node)?->custom_permissions)
+            ->toBe(['tool:read']);
 
         $assignment->delete();
         app(RoleSelfGrantMaterializer::class)->reconcileOnRoleRemoved($node, NodeRoleName::AppDevelopment);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['tool:read'])
-            ->and(roleSelfGrant($node)?->custom_permissions)->toBe(['tool:read']);
+        expect(roleSelfGrant($node)?->permissions)
+            ->toBe(['tool:read'])
+            ->and(roleSelfGrant($node)?->custom_permissions)
+            ->toBe(['tool:read']);
     });
 
     it('supports node new custom self-grant override before later rematerialization', function (): void {
@@ -122,18 +128,22 @@ describe('RoleSelfGrantMaterializer', function (): void {
         $materializer->materializeOnRoleApplied($node, NodeRoleName::Agent);
         $materializer->replaceCustomSelfPermissions($node, ['node:read', 'tool:read']);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe(['node:read', 'tool:read'])
-            ->and(roleSelfGrant($node)?->custom_permissions)->toBe(['node:read', 'tool:read']);
+        expect(roleSelfGrant($node)?->permissions)
+            ->toBe(['node:read', 'tool:read'])
+            ->and(roleSelfGrant($node)?->custom_permissions)
+            ->toBe(['node:read', 'tool:read']);
 
         $materializer->materializeOnRoleApplied($node, NodeRoleName::Agent);
 
-        expect(roleSelfGrant($node)?->permissions)->toBe([
-            'doctor:verify',
-            'node:read',
-            'tool:read',
-            'tool:update:agent-tools',
-        ])
-            ->and(roleSelfGrant($node)?->custom_permissions)->toBe(['node:read', 'tool:read']);
+        expect(roleSelfGrant($node)?->permissions)
+            ->toBe([
+                'doctor:verify',
+                'node:read',
+                'tool:read',
+                'tool:update:agent-tools',
+            ])
+            ->and(roleSelfGrant($node)?->custom_permissions)
+            ->toBe(['node:read', 'tool:read']);
     });
 
     it('restores active role-derived permissions after attempted removal', function (): void {

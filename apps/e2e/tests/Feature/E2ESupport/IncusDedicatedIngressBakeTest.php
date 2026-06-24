@@ -45,10 +45,14 @@ it('bakes dedicated ingress before app production references it', function (): v
 
     $script = $commands[0];
 
-    expect($script)->toContain('orbit:internal:bake-ingress-node')
-        ->and($script)->toContain('orbit:internal:bake-app-node')
-        ->and(strpos($script, 'wait "$PID_BAKE_INGRESS"'))->toBeLessThan(strpos($script, 'PID_BAKE_PROD=$!'))
-        ->and(strpos($script, 'PID_BAKE_PROD=$!'))->toBeLessThan(strpos($script, 'wait "$PID_BAKE_PROD"'));
+    expect($script)
+        ->toContain('orbit:internal:bake-ingress-node')
+        ->and($script)
+        ->toContain('orbit:internal:bake-app-node')
+        ->and(strpos($script, 'wait "$PID_BAKE_INGRESS"'))
+        ->toBeLessThan(strpos($script, 'PID_BAKE_PROD=$!'))
+        ->and(strpos($script, 'PID_BAKE_PROD=$!'))
+        ->toBeLessThan(strpos($script, 'wait "$PID_BAKE_PROD"'));
 });
 
 it('refreshes the reused gateway checkout before dedicated ingress baking', function (): void {
@@ -104,9 +108,9 @@ it('refreshes the reused gateway checkout before dedicated ingress baking', func
     $overlayPosition = strpos($commandOutput, "incus file push -r -p '/tmp/orbit-e2e-bundle-test'");
     $bakePosition = strpos($commandOutput, '/tmp/orbit-e2e-prepared-dedicated-ingress-bake.sh');
 
-    expect($overlayPosition)->not->toBeFalse()
-        ->and($bakePosition)->not->toBeFalse()
-        ->and($overlayPosition)->toBeLessThan($bakePosition);
+    expect($overlayPosition)
+        ->not->toBeFalse()->and($bakePosition)
+        ->not->toBeFalse()->and($overlayPosition)->toBeLessThan($bakePosition);
 });
 
 it('does not push an empty source bundle for artifact backed dedicated ingress builds', function (): void {
@@ -181,12 +185,14 @@ it('limits reusable base snapshot deletion to the target topology chain', functi
         E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
     );
 
-    expect($deleted)->toBe([
-        'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
-        'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
-        'orbit-template-app-dev-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
-        'orbit-template-app-prod-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
-    ])->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
+    expect($deleted)
+        ->toBe([
+            'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
+            'orbit-template-gateway-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
+            'orbit-template-app-dev-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
+            'orbit-template-app-prod-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
+        ])
+        ->not->toContain('orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base');
 });
 
 it('skips early operator and gateway stages for artifact backed dedicated ingress builds', function (): void {

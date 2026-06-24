@@ -122,8 +122,9 @@ final class VirtualTerminalScreen
     {
         return array_values(array_filter(
             $this->progressRows(),
-            static fn (array $row): bool => str_contains((string) $row['text'], $label)
-                && str_contains((string) $row['text'], $message),
+            static fn (array $row): bool => (
+                str_contains((string) $row['text'], $label) && str_contains((string) $row['text'], $message)
+            ),
         ));
     }
 
@@ -152,9 +153,11 @@ final class VirtualTerminalScreen
             'spinner' => $row['spinner'],
         ];
 
-        if ($lastObservation !== null
+        if (
+            $lastObservation !== null
             && $lastObservation['row'] === $observation['row']
-            && $lastObservation['spinner'] === $observation['spinner']) {
+            && $lastObservation['spinner'] === $observation['spinner']
+        ) {
             return [];
         }
 
@@ -193,7 +196,7 @@ final class VirtualTerminalScreen
 
     private function consumeEscapeSequence(string $chunk, int $index, int $length): int
     {
-        if ($index + 1 >= $length) {
+        if (($index + 1) >= $length) {
             return $length;
         }
 
@@ -220,7 +223,7 @@ final class VirtualTerminalScreen
                 continue;
             }
 
-            if (($character >= '0' && $character <= '9') || $character === ';') {
+            if ($character >= '0' && $character <= '9' || $character === ';') {
                 $sequence .= $character;
 
                 continue;
@@ -277,9 +280,11 @@ final class VirtualTerminalScreen
                 continue;
             }
 
-            if ($parameter === 38
+            if (
+                $parameter === 38
                 && ($parameters[$index + 1] ?? null) === 5
-                && ($parameters[$index + 2] ?? null) === 242) {
+                && ($parameters[$index + 2] ?? null) === 242
+            ) {
                 $this->currentColor = self::COLOR_DIM;
                 $index += 2;
             }
@@ -288,7 +293,7 @@ final class VirtualTerminalScreen
 
     private function firstParameter(string $sequence): int
     {
-        $first = explode(';', $sequence)[0] ?? '';
+        $first = explode(';', $sequence)[0];
 
         return $first === '' ? 1 : max(1, (int) $first);
     }

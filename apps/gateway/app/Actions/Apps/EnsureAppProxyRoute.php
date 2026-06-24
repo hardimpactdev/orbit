@@ -108,7 +108,11 @@ final readonly class EnsureAppProxyRoute
             ]));
 
             $this->ensureGlobalCaddyfile($routerNode);
-            $routerResult = $this->remoteShell->run($routerNode, $this->renderInstallScript($routerNode, $domain, $routerContent));
+            $routerResult = $this->remoteShell->run($routerNode, $this->renderInstallScript(
+                $routerNode,
+                $domain,
+                $routerContent,
+            ));
 
             if (! $routerResult->successful()) {
                 return [[
@@ -138,7 +142,10 @@ final readonly class EnsureAppProxyRoute
 
             $this->ensureGlobalCaddyfile($app->node);
             $this->ensureRuntimeTrustPool($app->node, $config);
-            $backendResult = $this->remoteShell->run($app->node, $this->renderInstallScript($app->node, $domain, $backendContent, backend: true));
+            $backendResult = $this->remoteShell->run(
+                $app->node,
+                $this->renderInstallScript($app->node, $domain, $backendContent, backend: true),
+            );
 
             if (! $backendResult->successful()) {
                 return [[
@@ -194,41 +201,41 @@ final readonly class EnsureAppProxyRoute
             $transport = $this->runtimeUpstreamTransportDirectives($config);
 
             return <<<CADDY
-{$domain} {
-    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-    encode gzip
+                {$domain} {
+                    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
+                    encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
+                    import security_headers
+                    import profiling_headers
+                    {$pathBlocking}
+                    import security_txt
+                    import cache_headers
 
-    reverse_proxy {$upstream} {
-        header_up Host {host}
-        header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-Proto {scheme}
-{$transport}    }
-}
+                    reverse_proxy {$upstream} {
+                        header_up Host {host}
+                        header_up X-Forwarded-Host {host}
+                        header_up X-Forwarded-Proto {scheme}
+                {$transport}    }
+                }
 
-CADDY;
+                CADDY;
         }
 
         return <<<CADDY
-{$domain} {
-    tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
-    root * {$config['document_root']}
-    encode gzip
+            {$domain} {
+                tls {$config['tls']['cert_path']} {$config['tls']['key_path']}
+                root * {$config['document_root']}
+                encode gzip
 
-    import security_headers
-    import profiling_headers
-    {$pathBlocking}
-    import security_txt
-    import cache_headers
-    file_server
-}
+                import security_headers
+                import profiling_headers
+                {$pathBlocking}
+                import security_txt
+                import cache_headers
+                file_server
+            }
 
-CADDY;
+            CADDY;
     }
 
     private function renderInstallScript(Node $node, string $domain, string $content, bool $backend = false): string
@@ -236,15 +243,15 @@ CADDY;
         $suffix = $backend ? '.backend' : '';
         $sitePath = "/etc/caddy/sites/{$domain}{$suffix}.caddy";
         $caddyToolConfig = $this->caddyToolConfig($node);
-        $caddyUpdateScript = $caddyToolConfig === null ? '' : (new CaddyTool)->updateScript($caddyToolConfig);
+        $caddyUpdateScript = $caddyToolConfig === null ? '' : new CaddyTool()->updateScript($caddyToolConfig);
 
         return sprintf(
             <<<'SH'
-sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-%s
-%s
-SH,
+                sudo install -d -m 0755 /etc/caddy /etc/caddy/sites
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                %s
+                %s
+                SH,
             escapeshellarg(base64_encode($content)),
             escapeshellarg($sitePath),
             $caddyUpdateScript,
@@ -321,7 +328,7 @@ SH,
             return $app->domain;
         }
 
-        $tld = is_string($app->node?->tld) ? trim($app->node->tld, '.') : '';
+        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
 
         if ($tld === '') {
             return $app->name;
@@ -361,9 +368,9 @@ SH,
         $routerNode = $this->ingressResolver->router();
         $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($ingressNode, $domain);
         $backendArtifact = [
-            'node_id' => $app->node->id,
+            'node_id' => $app->node?->id,
             'domain' => $domain,
-            'bind' => $app->node->wireguard_address,
+            'bind' => $app->node?->wireguard_address,
             'document_root' => $app->documentRootPath(),
             'runtime_upstream' => $runtimeUpstream,
             'php_socket' => null,
@@ -378,8 +385,8 @@ SH,
             ],
             'router_backend_pool' => [
                 [
-                    'node_id' => $app->node->id,
-                    'node' => $app->node->name,
+                    'node_id' => $app->node?->id,
+                    'node' => $app->node?->name,
                     'url' => $this->ingressResolver->backendUrl($app->node),
                 ],
             ],

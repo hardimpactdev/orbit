@@ -46,9 +46,21 @@ final class GatewayMockClient
         $mapped = [];
 
         foreach ($responses as $key => $response) {
-            $mapped[$key] = is_callable($response)
-                ? static fn (PendingRequest $pendingRequest): GatewayMockResponse => $response(new GatewayPendingRequest($pendingRequest))
-                : $response;
+            if (is_callable($response)) {
+                $mapped[$key] = static function (PendingRequest $pendingRequest) use ($response): GatewayMockResponse {
+                    $mockResponse = $response(new GatewayPendingRequest($pendingRequest));
+
+                    if (! $mockResponse instanceof GatewayMockResponse) {
+                        throw new \UnexpectedValueException('Gateway mock callback must return a GatewayMockResponse.');
+                    }
+
+                    return $mockResponse;
+                };
+
+                continue;
+            }
+
+            $mapped[$key] = $response;
         }
 
         return $mapped;

@@ -37,8 +37,11 @@ final class AppWebSocketController implements Loggable
     private array $activityPublicHosts = [];
 
     #[RequiresPermission('app:write', servingNode: ServingNode::AppOwning)]
-    public function enable(EnableAppWebSocketApiRequest $request, string $app, WebSocketBindingService $service): JsonResponse
-    {
+    public function enable(
+        EnableAppWebSocketApiRequest $request,
+        string $app,
+        WebSocketBindingService $service,
+    ): JsonResponse {
         $this->activityTargetName = $app;
         $this->activityEffect = ActivityLogType::Write;
         $this->activityType = 'api:POST /apps/{app}/websocket/enable';
@@ -173,10 +176,14 @@ final class AppWebSocketController implements Loggable
         return App::query()
             ->with('node')
             ->get()
-            ->filter(fn (App $app): bool => $app->name === $selector
-                || $app->domain === $selector
-                || $app->url() === "https://{$selector}"
-                || $app->url() === $selector)
+            ->filter(
+                fn (App $app): bool => (
+                    $app->name === $selector
+                    || $app->domain === $selector
+                    || $app->url() === "https://{$selector}"
+                    || $app->url() === $selector
+                ),
+            )
             ->values()
             ->first();
     }

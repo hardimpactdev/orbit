@@ -35,8 +35,12 @@ trait StreamsGatewayProgress
      * @param  array<string, mixed>  $payload
      * @param  callable(ProgressEventType, array<string, mixed>): int  $onFinalFrame
      */
-    protected function streamProgress(string $path, array $payload, callable $onFinalFrame, string $method = 'post'): int
-    {
+    protected function streamProgress(
+        string $path,
+        array $payload,
+        callable $onFinalFrame,
+        string $method = 'post',
+    ): int {
         $client = app(GatewayStreamClient::class);
         $wantsJson = $this->wantsJson();
         $wantsStreamJson = $this->wantsStreamingJson();
@@ -57,7 +61,13 @@ trait StreamsGatewayProgress
             $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, $wantsStreamJson, &$finalType, &$finalPayload, &$streamStarted): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use (
+                    $wantsJson,
+                    $wantsStreamJson,
+                    &$finalType,
+                    &$finalPayload,
+                    &$streamStarted,
+                ): void {
                     $streamStarted = true;
 
                     if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
@@ -155,7 +165,11 @@ trait StreamsGatewayProgress
             $client->streamEvents(
                 path: $path,
                 payload: $payload,
-                onEvent: function (ProgressEventType $type, array $eventPayload) use ($wantsJson, &$finalType, &$finalPayload): void {
+                onEvent: function (ProgressEventType $type, array $eventPayload) use (
+                    $wantsJson,
+                    &$finalType,
+                    &$finalPayload,
+                ): void {
                     if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
                         $finalType = $type;
                         $finalPayload = $eventPayload;
@@ -285,12 +299,15 @@ trait StreamsGatewayProgress
     {
         if ($exception->hasGatewayError()) {
             return $this->renderStreamJsonErrorFrame([
-                'data' => array_filter([
-                    'code' => $exception->gatewayErrorCode() ?? $exception->cliFailureCode(),
-                    'message' => $exception->gatewayErrorMessage() ?? $exception->getMessage(),
-                    'meta' => $exception->gatewayErrorMeta(),
-                    'data' => $exception->gatewayErrorData(),
-                ], fn (mixed $value): bool => $value !== []),
+                'data' => array_filter(
+                    [
+                        'code' => $exception->gatewayErrorCode() ?? $exception->cliFailureCode(),
+                        'message' => $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                        'meta' => $exception->gatewayErrorMeta(),
+                        'data' => $exception->gatewayErrorData(),
+                    ],
+                    fn (mixed $value): bool => $value !== [],
+                ),
             ]);
         }
 
@@ -354,8 +371,11 @@ trait StreamsGatewayProgress
         }
 
         $errorPayload = [
-            'code' => $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error',
-            'message' => $this->frameString($data, 'message') ?? $this->frameString($payload, 'message') ?? 'Gateway progress stream failed.',
+            'code' =>
+                $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error',
+            'message' =>
+                $this->frameString($data, 'message') ?? $this->frameString($payload, 'message')
+                    ?? 'Gateway progress stream failed.',
             'meta' => $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [],
         ];
 
@@ -374,9 +394,8 @@ trait StreamsGatewayProgress
     private function renderProgressFrame(ProgressEventType $type, array $eventPayload): void
     {
         if ($type === ProgressEventType::Tree) {
-            $title = $this->frameString($eventPayload, 'title')
-                ?? $this->frameString($eventPayload, 'name')
-                ?? 'Working';
+            $title =
+                $this->frameString($eventPayload, 'title') ?? $this->frameString($eventPayload, 'name') ?? 'Working';
 
             $steps = is_array($eventPayload['steps'] ?? null) ? $eventPayload['steps'] : [];
 
@@ -408,7 +427,9 @@ trait StreamsGatewayProgress
     {
         $data = $this->frameData($payload);
         $code = $this->frameString($data, 'code') ?? $this->frameString($payload, 'code') ?? 'gateway_stream_error';
-        $message = $this->frameString($data, 'message') ?? $this->frameString($payload, 'message') ?? 'Gateway progress stream failed.';
+        $message =
+            $this->frameString($data, 'message') ?? $this->frameString($payload, 'message')
+                ?? 'Gateway progress stream failed.';
         $meta = $this->frameArray($data, 'meta') ?? $this->frameArray($payload, 'meta') ?? [];
 
         if ($this->progressTree?->isStarted()) {

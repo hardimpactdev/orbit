@@ -11,16 +11,18 @@ uses(RefreshDatabase::class);
 it('keeps node tools scoped to installed capabilities, not service runtime instances', function (): void {
     $columns = Schema::getColumnListing('node_tools');
 
-    expect($columns)->toContain(
-        'id',
-        'node_id',
-        'name',
-        'expected_state',
-        'expected_version',
-        'config',
-        'credentials',
-    )
-        ->and($columns)->not->toContain(
+    expect($columns)
+        ->toContain(
+            'id',
+            'node_id',
+            'name',
+            'expected_state',
+            'expected_version',
+            'config',
+            'credentials',
+        )
+        ->and($columns)
+        ->not->toContain(
             'instance_key',
             'version_family',
             'runtime',
@@ -44,15 +46,17 @@ it('does not default node tool runtime or instance state on models', function ()
         'expected_state' => 'installed',
     ]);
 
-    expect($tool->getFillable())->toBe([
-        'node_id',
-        'name',
-        'expected_state',
-        'expected_version',
-        'config',
-        'credentials',
-    ])
-        ->and($tool->getAttributes())->not->toHaveKeys([
+    expect($tool->getFillable())
+        ->toBe([
+            'node_id',
+            'name',
+            'expected_state',
+            'expected_version',
+            'config',
+            'credentials',
+        ])
+        ->and($tool->getAttributes())
+        ->not->toHaveKeys([
             'instance_key',
             'version_family',
             'runtime',

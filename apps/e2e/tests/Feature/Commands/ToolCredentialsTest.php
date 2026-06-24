@@ -24,8 +24,10 @@ it('reads configured and generated tool credentials from gateway intent', functi
         );
         $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['credentials'])->toMatchArray([
+        expect($result->successful())
+            ->toBeTrue()
+            ->and($payload['success']['data']['credentials'])
+            ->toMatchArray([
                 'tool' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'fields' => [
@@ -46,10 +48,16 @@ it('reads configured and generated tool credentials from gateway intent', functi
             ),
             timeoutSeconds: 180,
         );
-        $generatedPayload = json_decode(trim($generatedResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $generatedPayload = json_decode(
+            trim($generatedResult->output()),
+            associative: true,
+            flags: JSON_THROW_ON_ERROR,
+        );
 
-        expect($generatedResult->successful())->toBeTrue()
-            ->and($generatedPayload['success']['data']['credentials'])->toMatchArray([
+        expect($generatedResult->successful())
+            ->toBeTrue()
+            ->and($generatedPayload['success']['data']['credentials'])
+            ->toMatchArray([
                 'tool' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'fields' => [
@@ -68,31 +76,32 @@ it('reads configured and generated tool credentials from gateway intent', functi
 function toolCredentialsSeedGatewayIntent(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'opencode-server'],
-    [
-        'expected_state' => 'running',
-        'expected_version' => null,
-        'config' => null,
-        'credentials' => [
-            'fields' => [
-                'host' => '127.0.0.1',
-                'port' => 4096,
-                'username' => 'orbit',
-                'password' => 'secret123',
+        \App\Models\NodeTool::query()->updateOrCreate(
+            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            [
+                'expected_state' => 'running',
+                'expected_version' => null,
+                'config' => null,
+                'credentials' => [
+                    'fields' => [
+                        'host' => '127.0.0.1',
+                        'port' => 4096,
+                        'username' => 'orbit',
+                        'password' => 'secret123',
+                    ],
+                ],
             ],
-        ],
-    ],
-);
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }
@@ -100,32 +109,33 @@ PHP;
 function toolCredentialsSeedOpencodeServerGatewayIntent(E2ETopologyHarness $topology): void
 {
     $php = <<<'PHP'
-$node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
+        $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
 
-\App\Models\NodeTool::query()->updateOrCreate(
-    ['node_id' => $node->id, 'name' => 'opencode-server'],
-    [
-        'expected_state' => 'running',
-        'expected_version' => null,
-        'config' => null,
-        'credentials' => [
-            'fields' => [
-                'host' => '127.0.0.1',
-                'port' => 4096,
-                'url' => 'https://opencode.app-dev-1.test',
-                'username' => 'orbit',
-                'password' => 'generated-secret',
+        \App\Models\NodeTool::query()->updateOrCreate(
+            ['node_id' => $node->id, 'name' => 'opencode-server'],
+            [
+                'expected_state' => 'running',
+                'expected_version' => null,
+                'config' => null,
+                'credentials' => [
+                    'fields' => [
+                        'host' => '127.0.0.1',
+                        'port' => 4096,
+                        'url' => 'https://opencode.app-dev-1.test',
+                        'username' => 'orbit',
+                        'password' => 'generated-secret',
+                    ],
+                ],
             ],
-        ],
-    ],
-);
+        );
 
-echo 'seeded';
-PHP;
+        echo 'seeded';
+        PHP;
 
     $topology->ssh(
         'gateway',
-        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='.escapeshellarg($php),
+        'cd '.escapeshellarg($topology->checkout('gateway')).' && php apps/gateway/artisan tinker --execute='
+            .escapeshellarg($php),
         timeoutSeconds: 120,
     );
 }

@@ -140,7 +140,9 @@ final class PhpListCommand extends GatewayCommand
 
         $labels = array_values(array_filter(
             array_map(
-                fn (mixed $version): ?string => is_scalar($version) && (string) $version !== '' ? (string) $version : null,
+                fn (mixed $version): ?string => is_scalar($version) && (string) $version !== ''
+                    ? (string) $version
+                    : null,
                 $versions,
             ),
             fn (?string $version): bool => $version !== null,

@@ -3,33 +3,32 @@
 declare(strict_types=1);
 
 return [
-
     /*
-    |--------------------------------------------------------------------------
-    | Boost Master Switch
-    |--------------------------------------------------------------------------
-    */
+     |--------------------------------------------------------------------------
+     | Boost Master Switch
+     |--------------------------------------------------------------------------
+     */
 
     'enabled' => env('BOOST_ENABLED', true),
 
     /*
-    |--------------------------------------------------------------------------
-    | Boost Browser Logs Watcher
-    |--------------------------------------------------------------------------
-    */
+     |--------------------------------------------------------------------------
+     | Boost Browser Logs Watcher
+     |--------------------------------------------------------------------------
+     */
 
     'browser_logs_watcher' => env('BOOST_BROWSER_LOGS_WATCHER', true),
 
     /*
-    |--------------------------------------------------------------------------
-    | Boost Executables Paths
-    |--------------------------------------------------------------------------
-    |
-    | Orbit installs Boost in apps/gateway but keeps generated agent artifacts
-    | at the monorepo root. current_directory makes MCP launches run from the
-    | repository root instead of the gateway app directory.
-    |
-    */
+     |--------------------------------------------------------------------------
+     | Boost Executables Paths
+     |--------------------------------------------------------------------------
+     |
+     | Orbit installs Boost in apps/gateway but keeps generated agent artifacts
+     | at the monorepo root. current_directory makes MCP launches run from the
+     | repository root instead of the gateway app directory.
+     |
+     */
 
     'executable_paths' => [
         'php' => env('BOOST_PHP_EXECUTABLE_PATH'),
@@ -40,14 +39,14 @@ return [
     ],
 
     /*
-    |--------------------------------------------------------------------------
-    | Agent Artifact Paths
-    |--------------------------------------------------------------------------
-    |
-    | Override Boost defaults so guidelines, MCP configs, and skills land at
-    | the monorepo root rather than under apps/gateway.
-    |
-    */
+     |--------------------------------------------------------------------------
+     | Agent Artifact Paths
+     |--------------------------------------------------------------------------
+     |
+     | Override Boost defaults so guidelines, MCP configs, and skills land at
+     | the monorepo root rather than under apps/gateway.
+     |
+     */
 
     'agents' => [
         'codex' => [
@@ -61,5 +60,4 @@ return [
             'skills_path' => '../../.agents/skills',
         ],
     ],
-
 ];

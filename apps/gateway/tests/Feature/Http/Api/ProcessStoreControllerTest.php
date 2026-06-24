@@ -60,15 +60,23 @@ describe('ProcessStoreController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'vite',
-            'command' => 'npm run dev',
-            'restart_policy' => 'on_failure',
-            'crash_notification' => 'agent_ide',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'restart_policy' => 'on_failure',
+                'crash_notification' => 'agent_ide',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'vite')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
             ->assertJsonPath('success.data.runtime_units.0.name', 'orbit_docs_main_vite')
@@ -90,14 +98,22 @@ describe('ProcessStoreController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'workspace' => 'feature-docs',
-            'name' => 'horizon',
-            'command' => 'php artisan horizon',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+                'name' => 'horizon',
+                'command' => 'php artisan horizon',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'horizon')
             ->assertJsonPath('success.data.process.workspace', 'feature-docs')
             ->assertJsonPath('success.data.process.runtime', 'systemd')
@@ -105,9 +121,12 @@ describe('ProcessStoreController', function (): void {
 
         $process = Process::query()->where('name', 'horizon')->firstOrFail();
 
-        expect($process->owner_type)->toBe($workspace->getMorphClass())
-            ->and($process->owner_id)->toBe($workspace->id)
-            ->and($process->runtime)->toBe(ProcessRuntime::Systemd);
+        expect($process->owner_type)
+            ->toBe($workspace->getMorphClass())
+            ->and($process->owner_id)
+            ->toBe($workspace->id)
+            ->and($process->runtime)
+            ->toBe(ProcessRuntime::Systemd);
     });
 
     it('rejects unauthorized callers before writing intent', function (): void {
@@ -116,13 +135,21 @@ describe('ProcessStoreController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'vite',
-            'command' => 'npm run dev',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:add');
@@ -135,13 +162,21 @@ describe('ProcessStoreController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $caller->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'vite',
-            'command' => 'npm run dev',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'process:add');
@@ -151,9 +186,17 @@ describe('ProcessStoreController', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
-        $response = $this->call('POST', '/api/processes', $payload, [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            $payload,
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', $field);
 
@@ -162,7 +205,10 @@ describe('ProcessStoreController', function (): void {
         'missing app' => [['name' => 'vite', 'command' => 'npm run dev'], 'app'],
         'missing name' => [['app' => 'docs', 'command' => 'npm run dev'], 'name'],
         'missing command' => [['app' => 'docs', 'name' => 'vite'], 'command'],
-        'invalid restart' => [['app' => 'docs', 'name' => 'vite', 'command' => 'npm run dev', 'restart_policy' => 'sometimes'], 'restart_policy'],
+        'invalid restart' => [
+            ['app' => 'docs', 'name' => 'vite', 'command' => 'npm run dev', 'restart_policy' => 'sometimes'],
+            'restart_policy',
+        ],
     ]);
 
     it('persists and returns an explicit systemd runtime when supplied', function (): void {
@@ -173,12 +219,19 @@ describe('ProcessStoreController', function (): void {
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'legacy',
-            'command' => './legacy.sh',
-            'runtime' => 'systemd',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'legacy',
+                'command' => './legacy.sh',
+                'runtime' => 'systemd',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
         $response->assertOk()
             ->assertJsonPath('success.data.process.runtime', 'systemd');
@@ -192,14 +245,22 @@ describe('ProcessStoreController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'legacy',
-            'command' => './legacy.sh',
-            'runtime' => 'supervisor',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'legacy',
+                'command' => './legacy.sh',
+                'runtime' => 'supervisor',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'supervisor')
@@ -214,14 +275,22 @@ describe('ProcessStoreController', function (): void {
         App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'queue',
-            'command' => 'php artisan queue:work',
-            'runtime' => 'podman',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'queue',
+                'command' => 'php artisan queue:work',
+                'runtime' => 'podman',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
@@ -237,21 +306,28 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'mysql8',
-            'command' => 'mysqld',
-            'runtime' => 'docker-swarm',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'mysql8',
+                'command' => 'mysqld',
+                'runtime' => 'docker-swarm',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker-swarm')
             ->assertJsonPath('error.meta.reason', 'docker_swarm_requires_node_owned_process');
 
-        expect(Process::query()->where('name', 'mysql8')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'mysql8')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects docker for app scoped host-command process creation before runtime side effects', function (): void {
@@ -261,21 +337,28 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'queue',
-            'command' => 'php artisan queue:work',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'queue',
+                'command' => 'php artisan queue:work',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker')
             ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
 
-        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects docker for workspace scoped host-command process creation before runtime side effects', function (): void {
@@ -286,22 +369,29 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'workspace' => 'feature-docs',
-            'name' => 'queue',
-            'command' => 'php artisan queue:work',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'workspace' => 'feature-docs',
+                'name' => 'queue',
+                'command' => 'php artisan queue:work',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker')
             ->assertJsonPath('error.meta.reason', 'docker_runtime_requires_service_or_managed_process');
 
-        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'queue')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('creates node owned systemd process intent with an optional tool dependency', function (): void {
@@ -312,15 +402,23 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'app-1',
-            'name' => 'opencode-server',
-            'command' => 'opencode serve --hostname 0.0.0.0',
-            'runtime' => 'systemd',
-            'tool' => 'opencode',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'app-1',
+                'name' => 'opencode-server',
+                'command' => 'opencode serve --hostname 0.0.0.0',
+                'runtime' => 'systemd',
+                'tool' => 'opencode',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'opencode-server')
             ->assertJsonPath('success.data.process.node', 'app-1')
             ->assertJsonPath('success.data.process.tool', 'opencode')
@@ -329,12 +427,18 @@ describe('ProcessStoreController', function (): void {
 
         $process = Process::query()->where('name', 'opencode-server')->firstOrFail();
 
-        expect($process->owner_type)->toBe($node->getMorphClass())
-            ->and($process->owner_id)->toBe($node->id)
-            ->and($process->node_id)->toBe($node->id)
-            ->and($process->tool)->toBe('opencode')
-            ->and($process->runtime)->toBe(ProcessRuntime::Systemd)
-            ->and($remoteShell->scripts[1])->toContain("sudo systemctl enable 'opencode-server.service'");
+        expect($process->owner_type)
+            ->toBe($node->getMorphClass())
+            ->and($process->owner_id)
+            ->toBe($node->id)
+            ->and($process->node_id)
+            ->toBe($node->id)
+            ->and($process->tool)
+            ->toBe('opencode')
+            ->and($process->runtime)
+            ->toBe(ProcessRuntime::Systemd)
+            ->and($remoteShell->scripts[1])
+            ->toContain("sudo systemctl enable 'opencode-server.service'");
     });
 
     it('creates node owned Mailpit managed service processes with SMTP published and UI private', function (): void {
@@ -350,14 +454,22 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mailpit',
-            'service' => 'mailpit',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mailpit',
+                'service' => 'mailpit',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'mailpit')
             ->assertJsonPath('success.data.process.node', 'beast')
             ->assertJsonPath('success.data.process.tool', null)
@@ -366,21 +478,28 @@ describe('ProcessStoreController', function (): void {
 
         $process = Process::query()->where('name', 'mailpit')->firstOrFail();
 
-        expect($process->owner_type)->toBe($node->getMorphClass())
-            ->and($process->owner_id)->toBe($node->id)
-            ->and($process->tool)->toBeNull()
-            ->and($process->runtime)->toBe(ProcessRuntime::Docker)
-            ->and($process->runtime_config)->toMatchArray([
+        expect($process->owner_type)
+            ->toBe($node->getMorphClass())
+            ->and($process->owner_id)
+            ->toBe($node->id)
+            ->and($process->tool)
+            ->toBeNull()
+            ->and($process->runtime)
+            ->toBe(ProcessRuntime::Docker)
+            ->and($process->runtime_config)
+            ->toMatchArray([
                 'service' => 'mailpit',
                 'version_family' => 'latest',
                 'version' => 'latest',
             ])
-            ->and($process->runtime_config['endpoint'])->toMatchArray([
+            ->and($process->runtime_config['endpoint'])
+            ->toMatchArray([
                 'name' => 'smtp',
                 'host' => '10.6.0.7',
                 'port' => 1025,
             ])
-            ->and($process->runtime_config['endpoints'])->toBe([
+            ->and($process->runtime_config['endpoints'])
+            ->toBe([
                 [
                     'name' => 'smtp',
                     'kind' => 'tcp',
@@ -388,12 +507,16 @@ describe('ProcessStoreController', function (): void {
                     'port' => 1025,
                 ],
             ])
-            ->and($process->runtime_config['labels']['orbit.process.service'])->toBe('mailpit')
-            ->and($process->command)->toBe('/mailpit');
+            ->and($process->runtime_config['labels']['orbit.process.service'])
+            ->toBe('mailpit')
+            ->and($process->command)
+            ->toBe('/mailpit');
 
-        $create = collect($remoteShell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+        $create = collect($remoteShell->scripts)
+            ->first(fn (string $script): bool => str_contains($script, 'docker create'));
 
-        expect($create)->toBeString()
+        expect($create)
+            ->toBeString()
             ->toContain("--publish '1025:1025'")
             ->not->toContain('8025:8025');
     });
@@ -415,29 +538,39 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mailpit',
-            'service' => 'mailpit',
-            'runtime' => 'docker',
-            'replace_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mailpit',
+                'service' => 'mailpit',
+                'runtime' => 'docker',
+                'replace_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'mailpit')
             ->assertJsonPath('success.data.replaced_containers', ['dngdmt-mailpit-1', 'orbit-mailpit']);
 
-        $removeDngdmt = collect($remoteShell->scripts)->search(fn (string $script): bool => str_contains($script, "docker rm -f 'dngdmt-mailpit-1'"));
-        $removeOrbit = collect($remoteShell->scripts)->search(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-mailpit'"));
-        $create = collect($remoteShell->scripts)->search(fn (string $script): bool => str_contains($script, 'docker create'));
+        $removeDngdmt = collect($remoteShell->scripts)
+            ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'dngdmt-mailpit-1'"));
+        $removeOrbit = collect($remoteShell->scripts)
+            ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-mailpit'"));
+        $create = collect($remoteShell->scripts)
+            ->search(fn (string $script): bool => str_contains($script, 'docker create'));
 
-        expect($removeDngdmt)->not->toBeFalse()
-            ->and($removeOrbit)->not->toBeFalse()
-            ->and($create)->not->toBeFalse()
-            ->and($removeDngdmt)->toBeLessThan($create)
-            ->and($removeOrbit)->toBeLessThan($create);
+        expect($removeDngdmt)
+            ->not->toBeFalse()->and($removeOrbit)
+            ->not->toBeFalse()->and($create)
+            ->not->toBeFalse()->and($removeDngdmt)->toBeLessThan($create)->and($removeOrbit)->toBeLessThan($create);
     });
 
     it('requires destructive consent before replacing containers', function (): void {
@@ -449,21 +582,28 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mailpit',
-            'service' => 'mailpit',
-            'runtime' => 'docker',
-            'replace_containers' => ['dngdmt-mailpit-1'],
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mailpit',
+                'service' => 'mailpit',
+                'runtime' => 'docker',
+                'replace_containers' => ['dngdmt-mailpit-1'],
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force')
             ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
 
-        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('does not write process configuration when replacement container removal fails', function (): void {
@@ -478,22 +618,33 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mailpit',
-            'service' => 'mailpit',
-            'runtime' => 'docker',
-            'replace_containers' => ['dngdmt-mailpit-1'],
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mailpit',
+                'service' => 'mailpit',
+                'runtime' => 'docker',
+                'replace_containers' => ['dngdmt-mailpit-1'],
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'process.replace_container_failed')
             ->assertJsonPath('error.meta.container', 'dngdmt-mailpit-1');
 
-        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker create')))->toBeFalse();
+        expect(Process::query()->where('name', 'mailpit')->exists())
+            ->toBeFalse()
+            ->and(collect($remoteShell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, 'docker create')))
+            ->toBeFalse();
     });
 
     it('rejects replacement containers outside node owned Docker managed services', function (): void {
@@ -505,23 +656,30 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mailpit',
-            'service' => 'mailpit',
-            'runtime' => 'docker-swarm',
-            'replace_containers' => ['dngdmt-mailpit-1'],
-            'destructive_consent' => true,
-            'destructive_consent_source' => 'force',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mailpit',
+                'service' => 'mailpit',
+                'runtime' => 'docker-swarm',
+                'replace_containers' => ['dngdmt-mailpit-1'],
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'replace_containers')
             ->assertJsonPath('error.meta.reason', 'replace_container_requires_node_docker_service');
 
-        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('creates node owned MySQL managed service processes without tool rows', function (): void {
@@ -537,16 +695,24 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'database-1',
-            'name' => 'mysql8',
-            'service' => 'mysql',
-            'version' => '8',
-            'runtime' => 'docker-swarm',
-            'restart_policy' => 'on_failure',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'database-1',
+                'name' => 'mysql8',
+                'service' => 'mysql',
+                'version' => '8',
+                'runtime' => 'docker-swarm',
+                'restart_policy' => 'on_failure',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'mysql8')
             ->assertJsonPath('success.data.process.node', 'database-1')
             ->assertJsonPath('success.data.process.tool', null)
@@ -555,21 +721,32 @@ describe('ProcessStoreController', function (): void {
 
         $process = Process::query()->where('name', 'mysql8')->firstOrFail();
 
-        expect($process->owner_type)->toBe($node->getMorphClass())
-            ->and($process->owner_id)->toBe($node->id)
-            ->and($process->tool)->toBeNull()
-            ->and($process->runtime)->toBe(ProcessRuntime::DockerSwarm)
-            ->and($process->runtime_config)->toMatchArray([
+        expect($process->owner_type)
+            ->toBe($node->getMorphClass())
+            ->and($process->owner_id)
+            ->toBe($node->id)
+            ->and($process->tool)
+            ->toBeNull()
+            ->and($process->runtime)
+            ->toBe(ProcessRuntime::DockerSwarm)
+            ->and($process->runtime_config)
+            ->toMatchArray([
                 'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
             ])
-            ->and($process->runtime_config['endpoint']['host'])->toBe('10.6.0.44')
-            ->and($process->runtime_config['endpoint']['port'])->toBe(3308)
-            ->and($process->runtime_config['labels']['orbit.process.service'])->toBe('mysql')
-            ->and($process->runtime_config['labels']['orbit.process.version_family'])->toBe('8')
-            ->and($remoteShell->scripts[0])->toContain('docker service create')
-            ->and($remoteShell->scripts[0])->toContain("--label 'orbit.process.service=mysql'");
+            ->and($process->runtime_config['endpoint']['host'])
+            ->toBe('10.6.0.44')
+            ->and($process->runtime_config['endpoint']['port'])
+            ->toBe(3308)
+            ->and($process->runtime_config['labels']['orbit.process.service'])
+            ->toBe('mysql')
+            ->and($process->runtime_config['labels']['orbit.process.version_family'])
+            ->toBe('8')
+            ->and($remoteShell->scripts[0])
+            ->toContain('docker service create')
+            ->and($remoteShell->scripts[0])
+            ->toContain("--label 'orbit.process.service=mysql'");
     });
 
     it('lets MySQL 8 and MySQL 9 managed services coexist on one node', function (): void {
@@ -588,41 +765,67 @@ describe('ProcessStoreController', function (): void {
         ]));
 
         foreach ([['mysql8', '8'], ['mysql9', '9']] as [$name, $version]) {
-            $this->call('POST', '/api/processes', [
-                'node' => 'database-1',
-                'name' => $name,
-                'service' => 'mysql',
-                'version' => $version,
-                'runtime' => 'docker',
-            ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP])->assertOk();
+            $this->call(
+                'POST',
+                '/api/processes',
+                [
+                    'node' => 'database-1',
+                    'name' => $name,
+                    'service' => 'mysql',
+                    'version' => $version,
+                    'runtime' => 'docker',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+            )->assertOk();
         }
 
         $mysql8 = Process::query()->where('name', 'mysql8')->firstOrFail();
         $mysql9 = Process::query()->where('name', 'mysql9')->firstOrFail();
 
-        expect($mysql8->owner_id)->toBe($node->id)
-            ->and($mysql9->owner_id)->toBe($node->id)
-            ->and($mysql8->runtime_config['endpoint']['port'])->toBe(3308)
-            ->and($mysql9->runtime_config['endpoint']['port'])->toBe(3309)
-            ->and($mysql8->runtime_config['spec_hash'])->not->toBe($mysql9->runtime_config['spec_hash']);
+        expect($mysql8->owner_id)
+            ->toBe($node->id)
+            ->and($mysql9->owner_id)
+            ->toBe($node->id)
+            ->and($mysql8->runtime_config['endpoint']['port'])
+            ->toBe(3308)
+            ->and($mysql9->runtime_config['endpoint']['port'])
+            ->toBe(3309)
+            ->and($mysql8->runtime_config['spec_hash'])
+            ->not->toBe($mysql9->runtime_config['spec_hash']);
     });
 
-    it('rejects invalid managed service input before runtime side effects', function (array $payload, string $field, string $reason): void {
+    it('rejects invalid managed service input before runtime side effects', function (
+        array $payload,
+        string $field,
+        string $reason,
+    ): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode(['name' => 'database-1']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', $payload, [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            $payload,
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', $field)
             ->assertJsonPath('error.meta.reason', $reason);
 
-        expect(Process::query()->whereIn('name', ['redis', 'mysql8'])->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->whereIn('name', ['redis', 'mysql8'])->exists())
+            ->toBeFalse()
+            ->and($remoteShell->scripts)
+            ->toBe([]);
     })->with([
         'app owner' => [
             [
@@ -699,34 +902,43 @@ describe('ProcessStoreController', function (): void {
             'name' => 'database-1',
             'wireguard_address' => '10.6.0.44',
         ]);
-        Process::factory()->forOwner($node)->create([
-            'name' => 'existing-redis',
-            'runtime' => ProcessRuntime::Docker,
-            'runtime_config' => [
-                'endpoints' => [
-                    ['name' => 'existing-redis', 'kind' => 'tcp', 'host' => '10.6.0.44', 'port' => 6379],
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'existing-redis',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'endpoints' => [
+                        ['name' => 'existing-redis', 'kind' => 'tcp', 'host' => '10.6.0.44', 'port' => 6379],
+                    ],
                 ],
-            ],
-        ]);
+            ]);
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'database-1',
-            'name' => 'redis',
-            'service' => 'redis',
-            'version' => '7',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'database-1',
+                'name' => 'redis',
+                'service' => 'redis',
+                'version' => '7',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'endpoint_conflict')
             ->assertJsonPath('error.meta.existing_process', 'existing-redis')
             ->assertJsonPath('error.meta.port', 6379);
 
-        expect(Process::query()->where('name', 'redis')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'redis')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('returns duplicate process conflicts', function (): void {
@@ -736,11 +948,18 @@ describe('ProcessStoreController', function (): void {
         Process::factory()->forOwner($app)->create(['name' => 'vite']);
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([]));
 
-        $response = $this->call('POST', '/api/processes', [
-            'app' => 'docs',
-            'name' => 'vite',
-            'command' => 'npm run dev',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'app' => 'docs',
+                'name' => 'vite',
+                'command' => 'npm run dev',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
         $response->assertStatus(409)
             ->assertJsonPath('error.code', 'process.name_collision');
@@ -759,15 +978,23 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mysql8',
-            'service' => 'mysql',
-            'version' => '8.3',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mysql8',
+                'service' => 'mysql',
+                'version' => '8.3',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.process.name', 'mysql8')
             ->assertJsonPath('success.data.process.node', 'beast')
             ->assertJsonPath('success.data.process.tool', null)
@@ -776,21 +1003,34 @@ describe('ProcessStoreController', function (): void {
 
         $process = Process::query()->where('name', 'mysql8')->firstOrFail();
 
-        expect($process->owner_type)->toBe($node->getMorphClass())
-            ->and($process->owner_id)->toBe($node->id)
-            ->and($process->tool)->toBeNull()
-            ->and($process->runtime)->toBe(ProcessRuntime::Docker)
-            ->and($process->runtime_config['service'])->toBe('mysql')
-            ->and($process->runtime_config['version'])->toBe('8.3')
-            ->and($process->runtime_config['image'])->toBe('mysql:8.3')
-            ->and($process->runtime_config['command_mode'])->toBe('image_entrypoint')
-            ->and($process->runtime_config['ports'][0])->toBe([
+        expect($process->owner_type)
+            ->toBe($node->getMorphClass())
+            ->and($process->owner_id)
+            ->toBe($node->id)
+            ->and($process->tool)
+            ->toBeNull()
+            ->and($process->runtime)
+            ->toBe(ProcessRuntime::Docker)
+            ->and($process->runtime_config['service'])
+            ->toBe('mysql')
+            ->and($process->runtime_config['version'])
+            ->toBe('8.3')
+            ->and($process->runtime_config['image'])
+            ->toBe('mysql:8.3')
+            ->and($process->runtime_config['command_mode'])
+            ->toBe('image_entrypoint')
+            ->and($process->runtime_config['ports'][0])
+            ->toBe([
                 'published' => 3308,
                 'target' => 3306,
                 'protocol' => 'tcp',
             ])
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "--publish '3308:3306'")))->toBeTrue()
-            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))->toBeTrue();
+            ->and(collect($remoteShell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "--publish '3308:3306'")))
+            ->toBeTrue()
+            ->and(collect($remoteShell->scripts)
+                ->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))
+            ->toBeTrue();
     });
 
     it('accepts an explicit image override for docker managed service processes', function (): void {
@@ -806,14 +1046,21 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mysql8',
-            'service' => 'mysql',
-            'version' => '8.3',
-            'runtime' => 'docker',
-            'image' => 'docker.io/library/mysql:8.3',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mysql8',
+                'service' => 'mysql',
+                'version' => '8.3',
+                'runtime' => 'docker',
+                'image' => 'docker.io/library/mysql:8.3',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 
@@ -834,18 +1081,26 @@ describe('ProcessStoreController', function (): void {
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mysql8',
-            'service' => 'mysql',
-            'version' => '8.3',
-            'runtime' => 'docker',
-            'no_start' => true,
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mysql8',
+                'service' => 'mysql',
+                'version' => '8.3',
+                'runtime' => 'docker',
+                'no_start' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 
-        expect(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))->toBeFalse();
+        expect(collect($remoteShell->scripts)
+            ->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))->toBeFalse();
     });
 
     it('does not infer managed service from process name alone', function (): void {
@@ -854,18 +1109,25 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'mysql8',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'mysql8',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'command');
 
-        expect(Process::query()->where('name', 'mysql8')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'mysql8')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 
     it('rejects service versions without service before runtime side effects', function (): void {
@@ -874,21 +1136,28 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([]);
         app()->instance(RemoteShell::class, $remoteShell);
 
-        $response = $this->call('POST', '/api/processes', [
-            'node' => 'beast',
-            'name' => 'worker',
-            'command' => 'php artisan queue:work',
-            'version' => '8.3',
-            'runtime' => 'docker',
-        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+        $response = $this->call(
+            'POST',
+            '/api/processes',
+            [
+                'node' => 'beast',
+                'name' => 'worker',
+                'command' => 'php artisan queue:work',
+                'version' => '8.3',
+                'runtime' => 'docker',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP],
+        );
 
-        $response->assertStatus(422)
+        $response
+            ->assertStatus(422)
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'version')
             ->assertJsonPath('error.meta.reason', 'process_service_version_requires_service');
 
-        expect(Process::query()->where('name', 'worker')->exists())->toBeFalse()
-            ->and($remoteShell->scripts)->toBe([]);
+        expect(Process::query()->where('name', 'worker')->exists())->toBeFalse()->and($remoteShell->scripts)->toBe([]);
     });
 });
 
@@ -907,11 +1176,17 @@ final class ProcessStoreRemoteShell implements RemoteShell
         $this->scripts[] = $script;
 
         if (str_contains($script, 'sudo systemctl is-enabled "$service"')) {
-            return new RemoteShellResult(exitCode: 0, stdout: json_encode([
-                'exists' => false,
-                'hash' => null,
-                'enabled' => false,
-            ], JSON_THROW_ON_ERROR)."\n", stderr: '', durationMs: 1);
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: json_encode([
+                    'exists' => false,
+                    'hash' => null,
+                    'enabled' => false,
+                ], JSON_THROW_ON_ERROR)
+                    ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
         }
 
         return array_shift($this->results) ?? new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);

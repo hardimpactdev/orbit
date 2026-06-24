@@ -61,7 +61,11 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
                 $upstream = "http://orbit-app-{$app->name}:".AppRuntimeContainerRenderer::InternalPort;
                 $configChanged = false;
 
-                if (! isset($config['runtime_upstream']) || ! is_string($config['runtime_upstream']) || $config['runtime_upstream'] === '') {
+                if (
+                    ! isset($config['runtime_upstream'])
+                    || ! is_string($config['runtime_upstream'])
+                    || $config['runtime_upstream'] === ''
+                ) {
                     $config['runtime_upstream'] = $upstream;
                     $configChanged = true;
                 }
@@ -77,7 +81,11 @@ final readonly class AppProxyRouteRuntimeUpstreamBackfill
                             continue;
                         }
 
-                        if (! isset($artifact['runtime_upstream']) || ! is_string($artifact['runtime_upstream']) || $artifact['runtime_upstream'] === '') {
+                        if (
+                            ! isset($artifact['runtime_upstream'])
+                            || ! is_string($artifact['runtime_upstream'])
+                            || $artifact['runtime_upstream'] === ''
+                        ) {
                             $config['backend_artifacts'][$index]['runtime_upstream'] = $upstream;
                             $configChanged = true;
                         }

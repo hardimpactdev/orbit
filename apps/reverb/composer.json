@@ -17,5 +17,16 @@
         "sort-packages": true
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "require-dev": {
+        "carthage-software/mago": "^1.40.1"
+    },
+    "scripts": {
+        "analyse": "../gateway/vendor/bin/mago --workspace . analyze bootstrap config routes --reporting-format=medium",
+        "format": "../gateway/vendor/bin/mago --workspace . format",
+        "mago:analyze": "../gateway/vendor/bin/mago --workspace . analyze bootstrap config routes --reporting-format=medium",
+        "mago:lint": "../gateway/vendor/bin/mago --workspace . lint --reporting-format=medium",
+        "mago:format": "../gateway/vendor/bin/mago --workspace . format",
+        "mago:format:check": "../gateway/vendor/bin/mago --workspace . format --check"
+    }
 }

@@ -71,9 +71,9 @@ final readonly class MarkdownLinkIntegrityRule implements GroupedRule
      */
     private function relativeLinks(string $contents): array
     {
-        preg_match_all('/(?<!!)\[[^\]]+\]\((?<target>[^)]+)\)/', $this->stripCode($contents), $matches);
+        preg_match_all('/(?<!!)\[[^\]]+\]\((?<target>[^)]+)\)/', $this->stripCode($contents), $matches, PREG_SET_ORDER);
 
-        return $matches['target'];
+        return array_values(array_filter(array_column($matches, 'target'), is_string(...)));
     }
 
     private function stripCode(string $contents): string
@@ -122,6 +122,6 @@ final readonly class MarkdownLinkIntegrityRule implements GroupedRule
             $segments[] = $segment;
         }
 
-        return '/'.implode('/', $segments);
+        return '/'.implode('/', array_values(array_filter($segments, is_scalar(...))));
     }
 }

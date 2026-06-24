@@ -45,8 +45,20 @@ final readonly class AgentToolAuthorizer
         return match ($action) {
             'install' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:install', 'install'),
             'remove' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:remove', 'remove'),
-            'reconfigure' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:reconfigure', 'reconfigure'),
-            'credentials' => $this->authorizeAgentSelfWithPermission($caller, $tool, $category, 'tool:credentials', 'read tool credentials'),
+            'reconfigure' => $this->authorizeAgentSelfWithPermission(
+                $caller,
+                $tool,
+                $category,
+                'tool:reconfigure',
+                'reconfigure',
+            ),
+            'credentials' => $this->authorizeAgentSelfWithPermission(
+                $caller,
+                $tool,
+                $category,
+                'tool:credentials',
+                'read tool credentials',
+            ),
             'update' => $this->authorizeAgentSelfUpdate($caller, $tool, $category),
             default => [
                 'authorized' => false,
@@ -58,8 +70,13 @@ final readonly class AgentToolAuthorizer
     /**
      * @return array{authorized: bool, reason?: string}
      */
-    private function authorizeAgentSelfWithPermission(Node $caller, string $tool, ?string $category, string $permission, string $actionLabel): array
-    {
+    private function authorizeAgentSelfWithPermission(
+        Node $caller,
+        string $tool,
+        ?string $category,
+        string $permission,
+        string $actionLabel,
+    ): array {
         if ($category !== 'agent') {
             return [
                 'authorized' => false,

@@ -12,41 +12,45 @@ final class StreamedStepProcessTicker
     /**
      * @param  list<string>  $frames
      */
-    public function start(array $frames, int $intervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS): bool
-    {
+    public function start(
+        array $frames,
+        int $intervalMicroseconds = ForkedFrameTicker::DEFAULT_INTERVAL_MICROSECONDS,
+    ): bool {
         $this->stop();
 
         if ($frames === [] || ! $this->canSpawn()) {
             return false;
         }
 
+        $pipes = [];
+
         $process = proc_open(
             [
                 '/bin/sh',
                 '-c',
                 <<<'SH'
-parent=$1
-interval=$2
-frame_one=$3
-frame_two=$4
-current=0
+                    parent=$1
+                    interval=$2
+                    frame_one=$3
+                    frame_two=$4
+                    current=0
 
-while kill -0 "$parent" 2>/dev/null; do
-    sleep "$interval" || exit 0
+                    while kill -0 "$parent" 2>/dev/null; do
+                        sleep "$interval" || exit 0
 
-    if ! kill -0 "$parent" 2>/dev/null; then
-        exit 0
-    fi
+                        if ! kill -0 "$parent" 2>/dev/null; then
+                            exit 0
+                        fi
 
-    if [ "$current" = 0 ]; then
-        printf '%s' "$frame_one" || exit 0
-        current=1
-    else
-        printf '%s' "$frame_two" || exit 0
-        current=0
-    fi
-done
-SH,
+                        if [ "$current" = 0 ]; then
+                            printf '%s' "$frame_one" || exit 0
+                            current=1
+                        else
+                            printf '%s' "$frame_two" || exit 0
+                            current=0
+                        fi
+                    done
+                    SH,
                 'orbit-streamed-step-ticker',
                 (string) getmypid(),
                 $this->sleepInterval($intervalMicroseconds),
@@ -54,7 +58,7 @@ SH,
                 $frames[1] ?? $frames[0],
             ],
             [
-                ['file', '/dev/null', 'r'],
+                ['file', '/dev/null',   'r'],
                 ['file', '/dev/stdout', 'w'],
                 ['file', '/dev/stderr', 'w'],
             ],
@@ -90,10 +94,12 @@ SH,
 
     private function canSpawn(): bool
     {
-        return function_exists('proc_open')
+        return (
+            function_exists('proc_open')
             && is_executable('/bin/sh')
             && file_exists('/dev/stdout')
-            && file_exists('/dev/stderr');
+            && file_exists('/dev/stderr')
+        );
     }
 
     private function sleepInterval(int $intervalMicroseconds): string

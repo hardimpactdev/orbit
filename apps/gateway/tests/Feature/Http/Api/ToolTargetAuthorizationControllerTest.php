@@ -18,7 +18,8 @@ function createToolTargetAuthCaller(): Node
     return Node::factory()->create([
         'name' => 'caller',
         'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-        'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
+    ]);
 }
 
 /**
@@ -31,11 +32,16 @@ function grantToolTargetAuthAccess(Node $caller, Node $appNode, array $permissio
         'serving_node_id' => $appNode->id,
         'permissions' => json_encode($permissions),
         'created_at' => now(),
-        'updated_at' => now()]);
+        'updated_at' => now(),
+    ]);
 }
 
 describe('tool API target authorization', function (): void {
-    it('rejects hidden target selectors before tool side effects', function (string $method, string $uri, array $parameters): void {
+    it('rejects hidden target selectors before tool side effects', function (
+        string $method,
+        string $uri,
+        array $parameters,
+    ): void {
         $caller = createToolTargetAuthCaller();
         $visibleNode = createTestAppHostNode(['name' => 'visible-node', 'status' => 'active']);
         $hiddenNode = createTestAppHostNode(['name' => 'hidden-node', 'status' => 'active']);
@@ -48,7 +54,10 @@ describe('tool API target authorization', function (): void {
             'config' => ['compose_path' => '/opt/orbit/docker-compose.yml'],
             'credentials' => [
                 'fields' => [
-                    'password' => 'secret']]]);
+                    'password' => 'secret',
+                ],
+            ],
+        ]);
 
         $shell = new ToolTargetAuthorizationRecordingShell;
         app()->instance(RemoteShell::class, $shell);
@@ -64,7 +73,8 @@ describe('tool API target authorization', function (): void {
         'update' => ['POST', '/api/tools/composer/update', ['node' => 'hidden-node']],
         'credentials' => ['GET', '/api/tools/openclaw/credentials', ['node' => 'hidden-node']],
         'remove' => ['DELETE', '/api/tools/composer', ['node' => 'hidden-node', 'destructive_consent' => true]],
-        'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']]]);
+        'reconfigure' => ['POST', '/api/tools/polyscope-server/reconfigure', ['node' => 'hidden-node']],
+    ]);
 
     it('uses the only visible target when no selector is supplied', function (): void {
         $caller = createToolTargetAuthCaller();
@@ -77,17 +87,31 @@ describe('tool API target authorization', function (): void {
             'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
-                    'password' => 'visible-secret']]]);
+                    'password' => 'visible-secret',
+                ],
+            ],
+        ]);
         NodeTool::factory()->create([
             'node_id' => $hiddenNode->id,
             'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
-                    'password' => 'hidden-secret']]]);
+                    'password' => 'hidden-secret',
+                ],
+            ],
+        ]);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials', [], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials',
+            [],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'visible-node')
             ->assertJsonPath('success.data.credentials.fields.password', 'visible-secret');
     });
@@ -96,7 +120,8 @@ describe('tool API target authorization', function (): void {
         $caller = createTestAppHostNode([
             'name' => 'caller',
             'host' => TOOL_TARGET_AUTH_CALLER_WG_IP,
-            'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+            'wireguard_address' => TOOL_TARGET_AUTH_CALLER_WG_IP,
+        ]);
 
         grantToolTargetAuthAccess($caller, $caller);
 
@@ -105,12 +130,24 @@ describe('tool API target authorization', function (): void {
             'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
-                    'password' => 'self-secret']]]);
+                    'password' => 'self-secret',
+                ],
+            ],
+        ]);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
-            'node' => 'caller'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials',
+            [
+                'node' => 'caller',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'caller')
             ->assertJsonPath('success.data.credentials.fields.password', 'self-secret');
 
@@ -119,11 +156,13 @@ describe('tool API target authorization', function (): void {
 
     it('allows explicit active visible roleless nodes when the selected tool supports the node OS', function (): void {
         $caller = createToolTargetAuthCaller();
-        $operatorNode = Node::factory()->operator()->create([
-            'name' => 'mini',
-            'status' => 'active',
-            'platform' => 'ubuntu_24-04',
-        ]);
+        $operatorNode = Node::factory()
+            ->operator()
+            ->create([
+                'name' => 'mini',
+                'status' => 'active',
+                'platform' => 'ubuntu_24-04',
+            ]);
         grantToolTargetAuthAccess($caller, $operatorNode);
 
         NodeTool::factory()->create([
@@ -136,11 +175,19 @@ describe('tool API target authorization', function (): void {
             ],
         ]);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
-            'node' => 'mini',
-        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials',
+            [
+                'node' => 'mini',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.credentials.node', 'mini')
             ->assertJsonPath('success.data.credentials.fields.password', 'operator-secret');
     });
@@ -164,11 +211,19 @@ describe('tool API target authorization', function (): void {
             ],
         ]);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
-            'node' => 'gateway-1',
-        ], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials',
+            [
+                'node' => 'gateway-1',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.reason', 'gateway_not_tool_eligible');
     });
@@ -183,10 +238,21 @@ describe('tool API target authorization', function (): void {
             'name' => 'openclaw',
             'credentials' => [
                 'fields' => [
-                    'password' => 'visible-secret']]]);
+                    'password' => 'visible-secret',
+                ],
+            ],
+        ]);
 
-        $response = $this->call('GET', '/api/tools/openclaw/credentials', [
-            'node' => 'visible-node'], [], [], ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP]);
+        $response = $this->call(
+            'GET',
+            '/api/tools/openclaw/credentials',
+            [
+                'node' => 'visible-node',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
+        );
 
         $response->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed');
@@ -207,21 +273,30 @@ describe('tool API target authorization', function (): void {
             [],
             [
                 'HTTP_ACCEPT' => 'text/event-stream',
-                'REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP],
+                'REMOTE_ADDR' => TOOL_TARGET_AUTH_CALLER_WG_IP,
+            ],
         );
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
         $content = $response->streamedContent();
 
-        expect($content)->toContain('event: tree')
-            ->and($content)->toContain('"title":"Installing Tool"')
-            ->and($content)->toContain('"key":"resolve-target"')
-            ->and($content)->toContain('"key":"read-intent"')
-            ->and($content)->toContain('"key":"run-action"')
-            ->and($content)->toContain('event: complete')
-            ->and($content)->toContain('"name":"composer"')
-            ->and($content)->not->toContain('/stream');
+        expect($content)
+            ->toContain('event: tree')
+            ->and($content)
+            ->toContain('"title":"Installing Tool"')
+            ->and($content)
+            ->toContain('"key":"resolve-target"')
+            ->and($content)
+            ->toContain('"key":"read-intent"')
+            ->and($content)
+            ->toContain('"key":"run-action"')
+            ->and($content)
+            ->toContain('event: complete')
+            ->and($content)
+            ->toContain('"name":"composer"')
+            ->and($content)
+            ->not->toContain('/stream');
     });
 });
 

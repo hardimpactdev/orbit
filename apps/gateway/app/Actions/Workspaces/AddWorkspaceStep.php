@@ -19,7 +19,14 @@ final readonly class AddWorkspaceStep
         ?int $beforeStepId = null,
         ?int $afterStepId = null,
     ): WorkspaceStep {
-        return DB::transaction(function () use ($appId, $phase, $command, $timeoutSeconds, $beforeStepId, $afterStepId): WorkspaceStep {
+        return DB::transaction(function () use (
+            $appId,
+            $phase,
+            $command,
+            $timeoutSeconds,
+            $beforeStepId,
+            $afterStepId,
+        ): WorkspaceStep {
             $phaseSteps = WorkspaceStep::query()
                 ->where('app_id', $appId)
                 ->where('phase', $phase);

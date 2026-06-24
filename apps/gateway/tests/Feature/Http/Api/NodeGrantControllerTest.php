@@ -130,7 +130,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -142,10 +143,12 @@ describe('NodeGrantController', function (): void {
                 ],
             ]);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('logs activity for a successful grant write', function (): void {
@@ -201,10 +204,12 @@ describe('NodeGrantController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.already_granted', false);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('creates a grant directly for a caller with an assigned gateway role', function (): void {
@@ -228,10 +233,12 @@ describe('NodeGrantController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.already_granted', false);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('returns idempotent success when the grant already exists', function (): void {
@@ -261,14 +268,18 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'granted')
             ->assertJsonPath('success.data.already_granted', true);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->count())->toBe(1);
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->count(),
+        )
+            ->toBe(1);
     });
 
     it('rejects unauthenticated requests', function (): void {
@@ -277,7 +288,8 @@ describe('NodeGrantController', function (): void {
             'serving_node' => 'app-1',
         ]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.message', 'Peer identity unknown.')
             ->assertJsonPath('error.meta', []);
@@ -301,7 +313,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:grant')
@@ -332,15 +345,18 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'node:grant')
             ->assertJsonPath('error.meta.serving_node', 'gateway-1');
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeFalse();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeFalse();
     });
 
     it('allows database assigned callers with node grant permission', function (): void {
@@ -366,10 +382,12 @@ describe('NodeGrantController', function (): void {
         $response->assertOk()
             ->assertJsonPath('success.data.already_granted', false);
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('rejects callers without gateway grant before mutation', function (): void {
@@ -390,7 +408,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
             ->assertJsonPath('error.meta.missing_permission', 'node:grant')
@@ -425,10 +444,12 @@ describe('NodeGrantController', function (): void {
 
         $response->assertOk();
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('authorizes control callers through any active gateway they can access', function (): void {
@@ -462,10 +483,12 @@ describe('NodeGrantController', function (): void {
 
         $response->assertOk();
 
-        expect(DB::table('node_access')
-            ->where('consumer_node_id', $consumingId)
-            ->where('serving_node_id', $servingId)
-            ->exists())->toBeTrue();
+        expect(
+            DB::table('node_access')
+                ->where('consumer_node_id', $consumingId)
+                ->where('serving_node_id', $servingId)
+                ->exists(),
+        )->toBeTrue();
     });
 
     it('rejects missing consuming node input', function (): void {
@@ -477,7 +500,8 @@ describe('NodeGrantController', function (): void {
             'serving_node' => 'app-1',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Consuming node is required.')
             ->assertJsonPath('error.meta.field', 'consuming_node');
@@ -492,7 +516,8 @@ describe('NodeGrantController', function (): void {
             'consuming_node' => 'control-1',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.message', 'Serving node is required.')
             ->assertJsonPath('error.meta.field', 'serving_node');
@@ -510,7 +535,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'node.not_found')
             ->assertJsonPath('error.message', "Consuming node 'missing-control' not found.")
             ->assertJsonPath('error.meta.field', 'consuming_node')
@@ -537,7 +563,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJsonPath('error.code', 'node.not_found')
             ->assertJsonPath('error.message', "Serving node 'app-1' not found.")
             ->assertJsonPath('error.meta.field', 'serving_node')
@@ -559,7 +586,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'granted')
             ->assertJsonPath('success.data.already_granted', false);
 
@@ -583,7 +611,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'granted')
             ->assertJsonPath('success.data.already_granted', false);
 
@@ -593,7 +622,14 @@ describe('NodeGrantController', function (): void {
             ->first();
 
         expect($grant)->not->toBeNull();
-        expect($grant->permissions)->toBe(['app:read', 'database:read', 'doctor:verify', 'firewall_rule:read', 'node:read', 'tool:read']);
+        expect($grant->permissions)->toBe([
+            'app:read',
+            'database:read',
+            'doctor:verify',
+            'firewall_rule:read',
+            'node:read',
+            'tool:read',
+        ]);
     });
 
     it('requires force for gateway-admin grants', function (): void {
@@ -615,7 +651,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'gateway-admin',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'force');
     });
@@ -677,7 +714,8 @@ describe('NodeGrantController', function (): void {
             'preset' => 'operator',
         ], ['REMOTE_ADDR' => GRANT_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'granted')
             ->assertJsonPath('success.data.already_granted', true)
             ->assertJsonMissingPath('success.meta');

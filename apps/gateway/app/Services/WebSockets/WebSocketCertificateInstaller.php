@@ -36,17 +36,21 @@ class WebSocketCertificateInstaller
         $local = $this->ca->issueLeaf($backendName, [$wireGuardAddress]);
         $remote = $this->pathsForBackend($backendName);
 
-        $this->remoteShell->run($node, $this->installScript(
-            certPath: $remote['cert'],
-            cert: File::get($local['cert']),
-            keyPath: $remote['key'],
-            key: File::get($local['key']),
-        ), [
-            'throw' => true,
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
+        $this->remoteShell->run(
+            $node,
+            $this->installScript(
+                certPath: $remote['cert'],
+                cert: File::get($local['cert']),
+                keyPath: $remote['key'],
+                key: File::get($local['key']),
+            ),
+            [
+                'throw' => true,
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'websocket-certificate-install',
+                ],
             ],
-        ]);
+        );
 
         return $remote;
     }
@@ -85,13 +89,13 @@ class WebSocketCertificateInstaller
     {
         return sprintf(
             <<<'SH'
-set -e
-sudo install -d -m 0755 %s
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0644 %s
-sudo chmod 0600 %s
-SH,
+                set -e
+                sudo install -d -m 0755 %s
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                sudo chmod 0644 %s
+                sudo chmod 0600 %s
+                SH,
             escapeshellarg(dirname($certPath)),
             escapeshellarg(base64_encode($cert)),
             escapeshellarg($certPath),

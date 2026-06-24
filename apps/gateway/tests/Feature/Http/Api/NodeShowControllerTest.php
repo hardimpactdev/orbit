@@ -98,7 +98,8 @@ describe('NodeShowController', function (): void {
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -149,7 +150,8 @@ describe('NodeShowController', function (): void {
 
         $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node.roles.1.role', 'vpn')
             ->assertJsonPath('success.data.node.roles.1.settings.public_endpoint', 'vpn.example.test')
             ->assertJsonPath('success.data.node.roles.1.settings.wireguard_cidr', '10.44.0.0/24')
@@ -184,7 +186,8 @@ describe('NodeShowController', function (): void {
     it('returns 404 for non-existent node', function (): void {
         $response = getApiNodeJson('/api/nodes/non-existent', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertNotFound()
+        $response
+            ->assertNotFound()
             ->assertJson([
                 'error' => [
                     'code' => 'node.not_found',
@@ -268,7 +271,8 @@ describe('NodeShowController', function (): void {
 
         $response = getApiNodeJson('/api/nodes/gateway-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJson([
                 'success' => [
                     'data' => [
@@ -310,7 +314,8 @@ describe('NodeShowController', function (): void {
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node.agent_ide.adapter', 'polyscope')
             ->assertJsonPath('success.data.node.agent_ide.source', 'node');
     });
@@ -361,7 +366,8 @@ describe('NodeShowController', function (): void {
 
         $response = getApiNodeJson('/api/nodes/app-1', ['REMOTE_ADDR' => SHOW_CALLER_WG_IP]);
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.node.grants.consuming_nodes', [
                 ['name' => 'control-1', 'permissions' => ['node:read']],
                 ['name' => 'control-2', 'permissions' => ['tool:read']],
@@ -380,7 +386,8 @@ describe('NodeShowController', function (): void {
 
         $response = getApiNodeJson('/api/nodes/existing-app');
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJson([
                 'error' => [
                     'code' => 'authorization_failed',

@@ -19,8 +19,13 @@ class WorkspaceHistoryPayload
      *     pagination: array<string, mixed>
      * }
      */
-    public function forWorkspace(Workspace $workspace, int $limit, ?Carbon $since, ?Carbon $until, bool $limitCapped): array
-    {
+    public function forWorkspace(
+        Workspace $workspace,
+        int $limit,
+        ?Carbon $since,
+        ?Carbon $until,
+        bool $limitCapped,
+    ): array {
         $query = WorkspaceRun::query()
             ->with(['workspace.app', 'runSteps'])
             ->where('workspace_id', $workspace->id)

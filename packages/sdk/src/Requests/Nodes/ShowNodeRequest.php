@@ -29,7 +29,7 @@ final class ShowNodeRequest extends GatewayRequest
         $node = $data['node'] ?? [];
 
         return new NodeShowResponse(
-            node: is_array($node) ? $node : [],
+            node: $this->stringKeyedArray($node),
         );
     }
 }

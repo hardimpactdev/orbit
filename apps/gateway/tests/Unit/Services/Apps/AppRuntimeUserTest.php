@@ -70,6 +70,8 @@ it('exposes container users for production apps only', function (): void {
 
     $resolver = app(AppRuntimeUser::class);
 
-    expect($resolver->containerUserForApp($productionApp))->toBe('docs')
-        ->and($resolver->containerUserForApp($developmentApp))->toBeNull();
+    expect($resolver->containerUserForApp($productionApp))
+        ->toBe('docs')
+        ->and($resolver->containerUserForApp($developmentApp))
+        ->toBeNull();
 });

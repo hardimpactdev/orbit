@@ -184,13 +184,15 @@ class WorkspaceRuntimeContainer
             $target = trim($mount['target']);
 
             if ($source === '' || $target === '') {
-                throw new InvalidArgumentException('Workspace runtime container mounts require source and target paths.');
+                throw new InvalidArgumentException(
+                    'Workspace runtime container mounts require source and target paths.',
+                );
             }
 
             return [
                 'source' => $source,
                 'target' => $target,
-                'read_only' => (bool) ($mount['read_only'] ?? false),
+                'read_only' => $mount['read_only'] ?? false,
             ];
         }, $mounts);
     }

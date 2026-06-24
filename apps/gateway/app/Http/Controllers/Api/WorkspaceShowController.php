@@ -93,7 +93,11 @@ final readonly class WorkspaceShowController implements Loggable
                     'message' => "Workspace name '{$name}' is ambiguous.",
                     'meta' => [
                         'name' => $name,
-                        'apps' => $matches->map(fn (Workspace $workspace): ?string => $workspace->app?->name)->filter()->values()->all(),
+                        'apps' => $matches
+                            ->map(fn (Workspace $workspace): ?string => $workspace->app?->name)
+                            ->filter()
+                            ->values()
+                            ->all(),
                     ],
                 ],
             ], 400);
@@ -199,8 +203,18 @@ final readonly class WorkspaceShowController implements Loggable
         return Workspace::query()
             ->with(['app.node', 'app.processes'])
             ->where('name', $name)
-            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
-            ->when($app !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where('name', $app)))
+            ->when(
+                ! $this->callerIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                    'node_id',
+                    $visibleNodeIds,
+                )),
+            )
+            ->when($app
+            !== null, fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->where(
+                'name',
+                $app,
+            )))
             ->get();
     }
 
@@ -213,7 +227,13 @@ final readonly class WorkspaceShowController implements Loggable
 
         return Workspace::query()
             ->with(['app.node', 'app.processes'])
-            ->when(! $this->callerIsGateway($caller), fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn('node_id', $visibleNodeIds)))
+            ->when(
+                ! $this->callerIsGateway($caller),
+                fn (Builder $query): Builder => $query->whereHas('app', fn (Builder $query): Builder => $query->whereIn(
+                    'node_id',
+                    $visibleNodeIds,
+                )),
+            )
             ->get()
             ->first(function (Workspace $workspace) use ($normalizedPath): bool {
                 $workspacePath = rtrim($workspace->path, '/');

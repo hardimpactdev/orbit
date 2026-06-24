@@ -171,8 +171,14 @@ final readonly class CreateWorkspace
      *     meta: array<string, mixed>,
      * }
      */
-    public function result(Workspace $workspace, App $app, Node $node, string $base, array $httpProbe, array $warnings): array
-    {
+    public function result(
+        Workspace $workspace,
+        App $app,
+        Node $node,
+        string $base,
+        array $httpProbe,
+        array $warnings,
+    ): array {
         $workspace->refresh();
         $workspace->setRelation('app', $app);
 

@@ -21,15 +21,20 @@ it('keeps service runtime configuration in managed service processes instead of 
         processName: 'mysql8',
     );
 
-    expect(app(ToolCatalog::class)->supports('mysql'))->toBeFalse()
-        ->and($descriptor->runtimeConfig)->toMatchArray([
+    expect(app(ToolCatalog::class)->supports('mysql'))
+        ->toBeFalse()
+        ->and($descriptor->runtimeConfig)
+        ->toMatchArray([
             'service' => 'mysql',
             'version_family' => '8',
             'version' => '8.4',
             'service_name' => 'orbit-mysql8',
         ])
-        ->and($descriptor->runtimeConfig['labels']['orbit.process.service'])->toBe('mysql')
-        ->and($descriptor->runtimeConfig['labels']['orbit.process.version_family'])->toBe('8')
-        ->and($descriptor->runtimeConfig['labels'])->not->toHaveKey('orbit.tool')
-        ->and($descriptor->runtimeConfig['labels'])->not->toHaveKey('orbit.tool_instance');
+        ->and($descriptor->runtimeConfig['labels']['orbit.process.service'])
+        ->toBe('mysql')
+        ->and($descriptor->runtimeConfig['labels']['orbit.process.version_family'])
+        ->toBe('8')
+        ->and($descriptor->runtimeConfig['labels'])
+        ->not->toHaveKey('orbit.tool')->and($descriptor->runtimeConfig['labels'])
+        ->not->toHaveKey('orbit.tool_instance');
 });

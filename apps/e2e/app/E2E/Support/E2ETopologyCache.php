@@ -18,15 +18,18 @@ final class E2ETopologyCache
     {
         $value = getenv('ORBIT_E2E_TOPOLOGY_CACHE');
 
-        return is_string($value)
-            && in_array(strtolower($value), ['1', 'true', 'yes', 'process'], true);
+        return is_string($value) && in_array(strtolower($value), ['1', 'true', 'yes', 'process'], true);
     }
 
     /**
      * @param  array<string, string>|null  $sshUsers
      */
-    public static function acquire(E2ETopologyKind $kind, ?array $sshUsers = null, bool $withGatewayApi = false, bool $sourceMountedCheckout = false): E2ETopologyHarness
-    {
+    public static function acquire(
+        E2ETopologyKind $kind,
+        ?array $sshUsers = null,
+        bool $withGatewayApi = false,
+        bool $sourceMountedCheckout = false,
+    ): E2ETopologyHarness {
         self::registerShutdown();
 
         $factory = E2ETopologyFactory::fromEnvironment();
@@ -99,14 +102,24 @@ final class E2ETopologyCache
     /**
      * @param  array<string, string>|null  $sshUsers
      */
-    private static function key(E2ETopologyKind $kind, ?array $sshUsers, bool $withGatewayApi, bool $sourceMountedCheckout): string
-    {
+    private static function key(
+        E2ETopologyKind $kind,
+        ?array $sshUsers,
+        bool $withGatewayApi,
+        bool $sourceMountedCheckout,
+    ): string {
         $sshUsers ??= [];
         ksort($sshUsers);
 
         $sourceMode = $sourceMountedCheckout ? 'source-mounted' : 'prepared';
 
-        return $kind->value.':'.($withGatewayApi ? 'gateway-api' : 'no-gateway-api').":{$sourceMode}:".sha1(json_encode($sshUsers, JSON_THROW_ON_ERROR));
+        return (
+            $kind->value
+            .':'
+            .($withGatewayApi ? 'gateway-api' : 'no-gateway-api')
+            .":{$sourceMode}:"
+            .sha1(json_encode($sshUsers, JSON_THROW_ON_ERROR))
+        );
     }
 
     private static function evictUntilRoomFor(string $key): void

@@ -310,27 +310,29 @@ it('hides CLI-owned public product commands from the gateway command list', func
 it('shows gateway service and maintenance commands in the command list', function (): void {
     $visible = gatewayVisibleCommandNames(gatewayCommandList());
 
-    expect($visible)->toContain(
-        'migrate',
-        'migrate:status',
-        'queue:work',
-        'cache:clear',
-        'db:show',
-        'make:model',
-        'schedule:work',
-        'tinker',
-        'docs',
-        'librarian:lint',
-        'orbit-scheduler',
-        'orbit:internal:bake-app-node',
-        'orbit:internal:bootstrap-gateway-local',
-        'orbit:internal:node-register',
-    )->not->toContain(
-        'boost:install',
-        'mcp:start',
-        'pail',
-        'roster:scan',
-    );
+    expect($visible)
+        ->toContain(
+            'migrate',
+            'migrate:status',
+            'queue:work',
+            'cache:clear',
+            'db:show',
+            'make:model',
+            'schedule:work',
+            'tinker',
+            'docs',
+            'librarian:lint',
+            'orbit-scheduler',
+            'orbit:internal:bake-app-node',
+            'orbit:internal:bootstrap-gateway-local',
+            'orbit:internal:node-register',
+        )
+        ->not->toContain(
+            'boost:install',
+            'mcp:start',
+            'pail',
+            'roster:scan',
+        );
 });
 
 it('classifies every invokable non-allowed gateway command in the inventory', function (): void {
@@ -379,10 +381,12 @@ it('classifies every invokable non-allowed gateway command in the inventory', fu
 
     expect(array_keys($inventoryRows))->toContain('orbit:internal:node-register');
 
-    expect(array_keys($inventoryRows))->not->toContain(
-        ...gatewayRemovedResourceCommandNames(),
-        ...gatewayRemovedInfraToolCommandNames(),
-    );
+    expect(array_keys($inventoryRows))
+        ->not
+        ->toContain(
+            ...gatewayRemovedResourceCommandNames(),
+            ...gatewayRemovedInfraToolCommandNames(),
+        );
 });
 
 it('keeps hidden framework commands directly invocable', function (): void {

@@ -35,31 +35,48 @@ final readonly class AddDatabaseUser
         $processes = $query->get();
 
         if ($processes->isEmpty()) {
-            return DatabaseConnectionRegistryFailure::validation('service', $service, "Managed MySQL process '{$service}' was not found.", [
-                'service' => $service,
-                'node' => $node?->name,
-            ]);
+            return DatabaseConnectionRegistryFailure::validation(
+                'service',
+                $service,
+                "Managed MySQL process '{$service}' was not found.",
+                [
+                    'service' => $service,
+                    'node' => $node?->name,
+                ],
+            );
         }
 
         if ($processes->count() > 1) {
-            return DatabaseConnectionRegistryFailure::validation('service', $service, "Managed MySQL process '{$service}' exists on multiple nodes. Use --node.", [
-                'service' => $service,
-                'nodes' => $processes
-                    ->map(fn (Process $process): ?string => $process->node?->name)
-                    ->filter()
-                    ->values()
-                    ->all(),
-            ]);
+            return DatabaseConnectionRegistryFailure::validation(
+                'service',
+                $service,
+                "Managed MySQL process '{$service}' exists on multiple nodes. Use --node.",
+                [
+                    'service' => $service,
+                    'nodes' => $processes
+                        ->map(fn (Process $process): ?string => $process->node?->name)
+                        ->filter()
+                        ->values()
+                        ->all(),
+                ],
+            );
         }
 
         return $processes->first();
     }
 
-    public function handle(Process $process, string $connection, string $database, string $username, string $password): DatabaseConnection|DatabaseConnectionRegistryFailure
-    {
-        $validation = $this->validateProcess($process)
-            ?? $this->validateIdentifier('database', $database)
-            ?? $this->validateIdentifier('username', $username);
+    public function handle(
+        Process $process,
+        string $connection,
+        string $database,
+        string $username,
+        string $password,
+    ): DatabaseConnection|DatabaseConnectionRegistryFailure {
+        $validation =
+            $this->validateProcess($process) ?? $this->validateIdentifier(
+                'database',
+                $database,
+            ) ?? $this->validateIdentifier('username', $username);
 
         if ($validation instanceof DatabaseConnectionRegistryFailure) {
             return $validation;
@@ -89,7 +106,10 @@ final readonly class AddDatabaseUser
 
         $existing = $this->registry->show($connection);
 
-        if ($existing instanceof DatabaseConnectionRegistryFailure && $existing->code === 'database_connection.not_found') {
+        if (
+            $existing instanceof DatabaseConnectionRegistryFailure
+            && $existing->code === 'database_connection.not_found'
+        ) {
             return $this->registry->create($connection, $payload);
         }
 
@@ -105,23 +125,38 @@ final readonly class AddDatabaseUser
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
 
         if (($config['service'] ?? null) !== 'mysql') {
-            return DatabaseConnectionRegistryFailure::validation('service', $process->name, "Process '{$process->name}' is not a managed MySQL process.", [
-                'service' => $config['service'] ?? null,
-                'process' => $process->name,
-            ]);
+            return DatabaseConnectionRegistryFailure::validation(
+                'service',
+                $process->name,
+                "Process '{$process->name}' is not a managed MySQL process.",
+                [
+                    'service' => $config['service'] ?? null,
+                    'process' => $process->name,
+                ],
+            );
         }
 
         if ($process->runtime !== ProcessRuntime::Docker) {
-            return DatabaseConnectionRegistryFailure::validation('runtime', $process->runtime->value, 'database:add-user currently supports Docker managed MySQL processes only.', [
-                'service' => $process->name,
-                'runtime' => $process->runtime->value,
-            ]);
+            return DatabaseConnectionRegistryFailure::validation(
+                'runtime',
+                $process->runtime->value,
+                'database:add-user currently supports Docker managed MySQL processes only.',
+                [
+                    'service' => $process->name,
+                    'runtime' => $process->runtime->value,
+                ],
+            );
         }
 
         if (! $process->node instanceof Node) {
-            return DatabaseConnectionRegistryFailure::validation('node', null, "Process '{$process->name}' has no serving node.", [
-                'service' => $process->name,
-            ]);
+            return DatabaseConnectionRegistryFailure::validation(
+                'node',
+                null,
+                "Process '{$process->name}' has no serving node.",
+                [
+                    'service' => $process->name,
+                ],
+            );
         }
 
         return null;
@@ -133,9 +168,14 @@ final readonly class AddDatabaseUser
             return null;
         }
 
-        return DatabaseConnectionRegistryFailure::validation($field, $value, "MySQL {$field} must use only letters, digits, and underscores, and be at most 64 characters.", [
-            'field' => $field,
-        ]);
+        return DatabaseConnectionRegistryFailure::validation(
+            $field,
+            $value,
+            "MySQL {$field} must use only letters, digits, and underscores, and be at most 64 characters.",
+            [
+                'field' => $field,
+            ],
+        );
     }
 
     /**
@@ -148,10 +188,15 @@ final readonly class AddDatabaseUser
         $host = $endpoint['host'] ?? null;
         $port = $endpoint['port'] ?? null;
 
-        if (! is_string($host) || trim($host) === '' || (! is_int($port) && ! is_numeric($port))) {
-            return DatabaseConnectionRegistryFailure::validation('service', $process->name, "Managed MySQL process '{$process->name}' is missing endpoint metadata.", [
-                'service' => $process->name,
-            ]);
+        if (! is_string($host) || trim($host) === '' || ! is_int($port) && ! is_numeric($port)) {
+            return DatabaseConnectionRegistryFailure::validation(
+                'service',
+                $process->name,
+                "Managed MySQL process '{$process->name}' is missing endpoint metadata.",
+                [
+                    'service' => $process->name,
+                ],
+            );
         }
 
         return [
@@ -160,14 +205,23 @@ final readonly class AddDatabaseUser
         ];
     }
 
-    private function converge(Process $process, string $database, string $username, string $password): ?DatabaseConnectionRegistryFailure
-    {
+    private function converge(
+        Process $process,
+        string $database,
+        string $username,
+        string $password,
+    ): ?DatabaseConnectionRegistryFailure {
         $node = $process->node;
 
         if (! $node instanceof Node) {
-            return DatabaseConnectionRegistryFailure::validation('node', null, "Process '{$process->name}' has no serving node.", [
-                'service' => $process->name,
-            ]);
+            return DatabaseConnectionRegistryFailure::validation(
+                'node',
+                null,
+                "Process '{$process->name}' has no serving node.",
+                [
+                    'service' => $process->name,
+                ],
+            );
         }
 
         $container = $this->containerName($process);
@@ -190,11 +244,16 @@ final readonly class AddDatabaseUser
             return null;
         }
 
-        return DatabaseConnectionRegistryFailure::validation('service', $process->name, "Could not add MySQL user '{$username}' on managed process '{$process->name}'.", [
-            'service' => $process->name,
-            'exit_code' => $result->exitCode,
-            'stderr' => trim($result->stderr),
-        ]);
+        return DatabaseConnectionRegistryFailure::validation(
+            'service',
+            $process->name,
+            "Could not add MySQL user '{$username}' on managed process '{$process->name}'.",
+            [
+                'service' => $process->name,
+                'exit_code' => $result->exitCode,
+                'stderr' => trim($result->stderr),
+            ],
+        );
     }
 
     private function containerName(Process $process): string|DatabaseConnectionRegistryFailure
@@ -205,37 +264,42 @@ final readonly class AddDatabaseUser
             return $name;
         }
 
-        return DatabaseConnectionRegistryFailure::validation('service', $process->name, "Managed MySQL process '{$process->name}' cannot be used as a Docker container name.", [
-            'service' => $process->name,
-        ]);
+        return DatabaseConnectionRegistryFailure::validation(
+            'service',
+            $process->name,
+            "Managed MySQL process '{$process->name}' cannot be used as a Docker container name.",
+            [
+                'service' => $process->name,
+            ],
+        );
     }
 
     private function convergenceScript(string $container): string
     {
         return sprintf(
             <<<'SH'
-container=%s
-if ! docker inspect "$container" >/dev/null 2>&1; then
-  echo "Managed MySQL container '$container' was not found." >&2
-  exit 67
-fi
+                container=%s
+                if ! docker inspect "$container" >/dev/null 2>&1; then
+                  echo "Managed MySQL container '$container' was not found." >&2
+                  exit 67
+                fi
 
-ready=0
-for attempt in $(seq 1 30); do
-  if docker exec "$container" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin ping -uroot --silent' >/dev/null 2>&1; then
-    ready=1
-    break
-  fi
-  sleep 2
-done
+                ready=0
+                for attempt in $(seq 1 30); do
+                  if docker exec "$container" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysqladmin ping -uroot --silent' >/dev/null 2>&1; then
+                    ready=1
+                    break
+                  fi
+                  sleep 2
+                done
 
-if [ "$ready" != 1 ]; then
-  echo "Managed MySQL container '$container' did not become ready." >&2
-  exit 68
-fi
+                if [ "$ready" != 1 ]; then
+                  echo "Managed MySQL container '$container' did not become ready." >&2
+                  exit 68
+                fi
 
-docker exec -i "$container" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot'
-SH,
+                docker exec -i "$container" sh -lc 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot'
+                SH,
             escapeshellarg($container),
         );
     }
@@ -243,8 +307,14 @@ SH,
     private function sql(string $database, string $username, string $password): string
     {
         return implode(PHP_EOL, [
-            'CREATE DATABASE IF NOT EXISTS '.$this->identifier($database).' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
-            'CREATE USER IF NOT EXISTS '.$this->stringLiteral($username)."@'%' IDENTIFIED BY ".$this->stringLiteral($password).';',
+            'CREATE DATABASE IF NOT EXISTS '
+                .$this->identifier($database)
+                .' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;',
+            'CREATE USER IF NOT EXISTS '
+                .$this->stringLiteral($username)
+                ."@'%' IDENTIFIED BY "
+                .$this->stringLiteral($password)
+                .';',
             'ALTER USER '.$this->stringLiteral($username)."@'%' IDENTIFIED BY ".$this->stringLiteral($password).';',
             'GRANT ALL PRIVILEGES ON '.$this->identifier($database).'.* TO '.$this->stringLiteral($username)."@'%';",
             'FLUSH PRIVILEGES;',

@@ -72,19 +72,34 @@ describe('node:manage', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
         $authorizedKeys = file_get_contents("{$home}/.ssh/authorized_keys");
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/me');
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
-            && $request->url() === 'https://gateway.test/api/nodes/self/manage-key');
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/nodes/self/manage'
-            && $request['user'] === 'nicky'
-            && is_string($request['platform'])
-            && $request['platform'] !== '');
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/me'
+            ),
+        );
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'GET'
+                && $request->url() === 'https://gateway.test/api/nodes/self/manage-key'
+            ),
+        );
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/nodes/self/manage'
+                && $request['user'] === 'nicky'
+                && is_string($request['platform'])
+                && $request['platform'] !== ''
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($authorizedKeys)->toContain($publicKey)
-            ->and($decoded['success']['data']['management']['node'])->toBe('mini');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($authorizedKeys)
+            ->toContain($publicKey)
+            ->and($decoded['success']['data']['management']['node'])
+            ->toBe('mini');
     });
 
     it('rejects a selected ssh user that differs from the current local user', function (): void {
@@ -142,10 +157,14 @@ describe('node:manage', function (): void {
 
         Http::assertSentCount(2);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('user')
-            ->and(file_exists("{$home}/.ssh/authorized_keys"))->toBeFalse();
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('user')
+            ->and(file_exists("{$home}/.ssh/authorized_keys"))
+            ->toBeFalse();
     });
 
     it('rejects role-bearing identities before local authorized key writes', function (): void {
@@ -187,8 +206,11 @@ describe('node:manage', function (): void {
 
         Http::assertSentCount(1);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('node.not_operator')
-            ->and(file_exists("{$home}/.ssh/authorized_keys"))->toBeFalse();
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('node.not_operator')
+            ->and(file_exists("{$home}/.ssh/authorized_keys"))
+            ->toBeFalse();
     });
 });

@@ -51,10 +51,14 @@ describe(RemoteLocalExecutor::class, function (): void {
             ],
         );
 
-        expect($result)->toBe($transportResult)
-            ->and($transport->calls)->toHaveCount(1)
-            ->and($transport->calls[0]['node']->is($node))->toBeTrue()
-            ->and($transport->calls[0]['options'])->toBe([
+        expect($result)
+            ->toBe($transportResult)
+            ->and($transport->calls)
+            ->toHaveCount(1)
+            ->and($transport->calls[0]['node']->is($node))
+            ->toBeTrue()
+            ->and($transport->calls[0]['options'])
+            ->toBe([
                 'timeout' => 45,
                 'metadata' => [
                     'ORBIT_OPERATION_ID' => $operationId,
@@ -66,7 +70,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $script = $transport->calls[0]['script'];
         $compactToken = remoteLocalExecutorTokenFromScript($script);
         $token = OperationToken::parse($compactToken);
-        $auditLine = (new LocalExecutorCommandBuilder)->buildAuditLine(
+        $auditLine = new LocalExecutorCommandBuilder()->buildAuditLine(
             targetNode: $node,
             commandName: 'internal:workspace-adapter:lookup',
             arguments: ['lookup', 'polyscope'],
@@ -78,44 +82,61 @@ describe(RemoteLocalExecutor::class, function (): void {
             operationToken: $compactToken,
         );
 
-        expect($script)->toBe((new LocalExecutorCommandBuilder)->build(
-            targetNode: $node,
-            commandName: 'internal:workspace-adapter:lookup',
-            arguments: ['lookup', 'polyscope'],
-            options: [
-                'state-path' => "/home/orbit/.polyscope/state's.db",
-                'enabled' => true,
-                'attempts' => 3,
-            ],
-            operationToken: $compactToken,
-        ))
-            ->and($script)->not->toContain('docker exec')
-            ->and(substr_count($script, '--operation-token='))->toBe(1)
-            ->and(substr_count($script, $compactToken))->toBe(1)
-            ->and($token->id)->toBe($operationId)
-            ->and($token->node)->toBe($node->name)
-            ->and($token->command)->toBe('internal:workspace-adapter:lookup')
-            ->and($token->issuedAt)->toBe(1_798_105_200)
-            ->and($token->expiresAt)->toBe(1_798_105_320)
-            ->and((new OperationTokenVerifier(new OperationTokenSigner))->verify(
+        expect($script)
+            ->toBe(new LocalExecutorCommandBuilder()->build(
+                targetNode: $node,
+                commandName: 'internal:workspace-adapter:lookup',
+                arguments: ['lookup', 'polyscope'],
+                options: [
+                    'state-path' => "/home/orbit/.polyscope/state's.db",
+                    'enabled' => true,
+                    'attempts' => 3,
+                ],
+                operationToken: $compactToken,
+            ))
+            ->and($script)
+            ->not
+            ->toContain('docker exec')
+            ->and(substr_count($script, '--operation-token='))
+            ->toBe(1)
+            ->and(substr_count($script, $compactToken))
+            ->toBe(1)
+            ->and($token->id)
+            ->toBe($operationId)
+            ->and($token->node)
+            ->toBe($node->name)
+            ->and($token->command)
+            ->toBe('internal:workspace-adapter:lookup')
+            ->and($token->issuedAt)
+            ->toBe(1_798_105_200)
+            ->and($token->expiresAt)
+            ->toBe(1_798_105_320)
+            ->and(new OperationTokenVerifier(new OperationTokenSigner)->verify(
                 secret: 'gateway-secret',
                 token: $token,
                 expectedNode: $node->name,
                 expectedCommand: 'internal:workspace-adapter:lookup',
                 now: 1_798_105_200,
-            ))->toBeTrue();
+            ))
+            ->toBeTrue();
 
         $activities = remoteLocalExecutorActivityRows();
         [$started, $completed] = $activities;
         $startedProperties = remoteLocalExecutorActivityProperties($started);
         $completedProperties = remoteLocalExecutorActivityProperties($completed);
 
-        expect($activities)->toHaveCount(2)
-            ->and($started->event)->toBe('local_executor.dispatching')
-            ->and($started->description)->toBe('Local executor operation dispatching')
-            ->and($started->subject_type)->toBe($node->getMorphClass())
-            ->and((int) $started->subject_id)->toBe($node->getKey())
-            ->and($startedProperties)->toMatchArray([
+        expect($activities)
+            ->toHaveCount(2)
+            ->and($started->event)
+            ->toBe('local_executor.dispatching')
+            ->and($started->description)
+            ->toBe('Local executor operation dispatching')
+            ->and($started->subject_type)
+            ->toBe($node->getMorphClass())
+            ->and((int) $started->subject_id)
+            ->toBe($node->getKey())
+            ->and($startedProperties)
+            ->toMatchArray([
                 'type' => 'write',
                 'lane' => 'local-executor',
                 'status' => 'dispatching',
@@ -131,9 +152,12 @@ describe(RemoteLocalExecutor::class, function (): void {
                 ],
                 'command_line' => $auditLine,
             ])
-            ->and($completed->event)->toBe('local_executor.completed')
-            ->and($completed->description)->toBe('Local executor operation succeeded')
-            ->and($completedProperties)->toMatchArray([
+            ->and($completed->event)
+            ->toBe('local_executor.completed')
+            ->and($completed->description)
+            ->toBe('Local executor operation succeeded')
+            ->and($completedProperties)
+            ->toMatchArray([
                 'type' => 'write',
                 'lane' => 'local-executor',
                 'status' => 'succeeded',
@@ -145,7 +169,8 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'stdout_summary' => "{\"ok\":true}\n",
                 'stderr_summary' => '',
             ])
-            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($compactToken);
+            ->and(remoteLocalExecutorActivityLogBlob())
+            ->not->toContain($compactToken);
     });
 
     it('supports command-name-only run calls for the RemoteShell interface method', function (): void {
@@ -157,9 +182,12 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $result = $executor->run($node, 'internal:executor:verify', ['timeout' => 10]);
 
-        expect($result->stdout)->toBe("verified\n")
-            ->and($transport->calls)->toHaveCount(1)
-            ->and($transport->calls[0]['options'])->toBe([
+        expect($result->stdout)
+            ->toBe("verified\n")
+            ->and($transport->calls)
+            ->toHaveCount(1)
+            ->and($transport->calls[0]['options'])
+            ->toBe([
                 'timeout' => 10,
                 'environment' => remoteLocalExecutorEnvironment(),
             ]);
@@ -167,7 +195,7 @@ describe(RemoteLocalExecutor::class, function (): void {
         $script = $transport->calls[0]['script'];
         $compactToken = remoteLocalExecutorTokenFromScript($script);
 
-        expect($script)->toBe((new LocalExecutorCommandBuilder)->build(
+        expect($script)->toBe(new LocalExecutorCommandBuilder()->build(
             targetNode: $node,
             commandName: 'internal:executor:verify',
             arguments: [],
@@ -187,9 +215,11 @@ describe(RemoteLocalExecutor::class, function (): void {
             commandName: 'internal:executor:verify',
         );
 
-        expect($transport->calls[0]['options']['environment'] ?? null)->toBe(remoteLocalExecutorEnvironment())
-            ->and($transport->calls[0]['script'])->not->toContain('gateway-secret')
-            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('gateway-secret');
+        expect($transport->calls[0]['options']['environment'] ?? null)
+            ->toBe(remoteLocalExecutorEnvironment())
+            ->and($transport->calls[0]['script'])
+            ->not->toContain('gateway-secret')->and(remoteLocalExecutorActivityLogBlob())
+            ->not->toContain('gateway-secret');
     });
 
     it('rejects long-running local executor dispatch through start before minting a token', function (): void {
@@ -204,10 +234,10 @@ describe(RemoteLocalExecutor::class, function (): void {
             node: remoteLocalExecutorNode(),
             script: 'internal:executor:verify',
             options: [],
-        ))->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
+        ))
+            ->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
 
-        expect($transport->calls)->toBeEmpty()
-            ->and(remoteLocalExecutorActivityRows())->toBeEmpty();
+        expect($transport->calls)->toBeEmpty()->and(remoteLocalExecutorActivityRows())->toBeEmpty();
     });
 
     it('rejects long-running local executor dispatch through startInternal before minting a token', function (): void {
@@ -223,10 +253,10 @@ describe(RemoteLocalExecutor::class, function (): void {
             commandName: 'internal:executor:verify',
             arguments: [],
             commandOptions: [],
-        ))->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
+        ))
+            ->toThrow(RuntimeException::class, remoteLocalExecutorStartUnsupportedMessage());
 
-        expect($transport->calls)->toBeEmpty()
-            ->and(remoteLocalExecutorActivityRows())->toBeEmpty();
+        expect($transport->calls)->toBeEmpty()->and(remoteLocalExecutorActivityRows())->toBeEmpty();
     });
 
     it('surfaces builder failures without dispatching to transport', function (): void {
@@ -242,10 +272,10 @@ describe(RemoteLocalExecutor::class, function (): void {
             commandName: 'executor:verify',
             arguments: [],
             commandOptions: [],
-        ))->toThrow(LocalExecutorCommandBuilderException::class);
+        ))
+            ->toThrow(LocalExecutorCommandBuilderException::class);
 
-        expect($transport->calls)->toBeEmpty()
-            ->and(remoteLocalExecutorActivityRows())->toBeEmpty();
+        expect($transport->calls)->toBeEmpty()->and(remoteLocalExecutorActivityRows())->toBeEmpty();
     });
 
     it('surfaces operation token factory failures without dispatching to transport', function (): void {
@@ -268,10 +298,10 @@ describe(RemoteLocalExecutor::class, function (): void {
             commandName: 'internal:executor:verify',
             arguments: [],
             commandOptions: [],
-        ))->toThrow(RuntimeException::class, 'Operation token signing secret is required.');
+        ))
+            ->toThrow(RuntimeException::class, 'Operation token signing secret is required.');
 
-        expect($transport->calls)->toBeEmpty()
-            ->and(remoteLocalExecutorActivityRows())->toBeEmpty();
+        expect($transport->calls)->toBeEmpty()->and(remoteLocalExecutorActivityRows())->toBeEmpty();
     });
 
     it('records failed transport results with redacted output summaries', function (): void {
@@ -299,8 +329,10 @@ describe(RemoteLocalExecutor::class, function (): void {
         $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($result->exitCode)->toBe(13)
-            ->and($completedProperties)->toMatchArray([
+        expect($result->exitCode)
+            ->toBe(13)
+            ->and($completedProperties)
+            ->toMatchArray([
                 'lane' => 'local-executor',
                 'status' => 'failed',
                 'command' => 'internal:executor:verify',
@@ -308,7 +340,8 @@ describe(RemoteLocalExecutor::class, function (): void {
                 'stdout_summary' => "stdout echoed --operation-token=<redacted>\n",
                 'stderr_summary' => "stderr echoed --operation-token=<redacted>\n",
             ])
-            ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
+            ->and(remoteLocalExecutorActivityLogBlob())
+            ->not->toContain($token);
     });
 
     it('records thrown transport failures and rethrows token-redacted shell failures', function (): void {
@@ -344,20 +377,20 @@ describe(RemoteLocalExecutor::class, function (): void {
             $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-            expect($exception->getMessage())->not->toContain($token)
-                ->and($exception->script)->not->toContain($token)
-                ->and($exception->result->stdout)->not->toContain($token)
-                ->and($exception->result->stderr)->not->toContain($token)
-                ->and($exception->getTraceAsString())->not->toContain($token)
-                ->and($completedProperties)->toMatchArray([
+            expect($exception->getMessage())
+                ->not->toContain($token)->and($exception->script)
+                ->not->toContain($token)->and($exception->result->stdout)
+                ->not->toContain($token)->and($exception->result->stderr)
+                ->not->toContain($token)->and($exception->getTraceAsString())
+                ->not->toContain($token)->and($completedProperties)->toMatchArray([
                     'lane' => 'local-executor',
                     'status' => 'failed',
                     'command' => 'internal:executor:verify',
                     'exit_code' => 19,
                     'stdout_summary' => "stdout leak <redacted>\n",
                     'stderr_summary' => "stderr leak --operation-token=<redacted>\n",
-                ])
-                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
+                ])->and(remoteLocalExecutorActivityLogBlob())
+                ->not->toContain($token);
         }
     });
 
@@ -384,26 +417,30 @@ describe(RemoteLocalExecutor::class, function (): void {
             $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-            expect($exception)->not->toBeInstanceOf(RemoteShellFailed::class)
-                ->and($exception->getPrevious())->toBeNull()
-                ->and($exception->getMessage())->toBe('Remote local executor transport failed: transport leaked --operation-token=<redacted>')
-                ->and($exception->getMessage())->not->toContain($token)
-                ->and($exception->getTraceAsString())->not->toContain($token)
-                ->and($completedProperties)->toMatchArray([
+            expect($exception)
+                ->not->toBeInstanceOf(RemoteShellFailed::class)->and($exception->getPrevious())->toBeNull()->and(
+                    $exception->getMessage(),
+                )->toBe('Remote local executor transport failed: transport leaked --operation-token=<redacted>')->and(
+                    $exception->getMessage(),
+                )
+                ->not->toContain($token)->and($exception->getTraceAsString())
+                ->not->toContain($token)->and($completedProperties)->toMatchArray([
                     'lane' => 'local-executor',
                     'status' => 'failed',
                     'command' => 'internal:executor:verify',
                     'exit_code' => null,
                     'exception_class' => RuntimeException::class,
                     'exception_message' => 'transport leaked --operation-token=<redacted>',
-                ])
-                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
+                ])->and(remoteLocalExecutorActivityLogBlob())
+                ->not->toContain($token);
         }
     });
 
     it('wraps generic transport failures with clean messages so traces cannot retain token-bearing method arguments', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
-            static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException('transport disconnected'),
+            static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException(
+                'transport disconnected',
+            ),
         );
         $executor = remoteLocalExecutor($transport);
 
@@ -420,24 +457,27 @@ describe(RemoteLocalExecutor::class, function (): void {
             $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-            expect($exception)->not->toBeInstanceOf(RemoteShellFailed::class)
-                ->and($exception->getPrevious())->toBeNull()
-                ->and($exception->getMessage())->toBe('Remote local executor transport failed: transport disconnected')
-                ->and($exception->getMessage())->not->toContain($token)
-                ->and($exception->getTraceAsString())->not->toContain($token)
-                ->and($completedProperties)->toMatchArray([
+            expect($exception)
+                ->not->toBeInstanceOf(RemoteShellFailed::class)->and($exception->getPrevious())->toBeNull()->and(
+                    $exception->getMessage(),
+                )->toBe('Remote local executor transport failed: transport disconnected')->and($exception->getMessage())
+                ->not->toContain($token)->and($exception->getTraceAsString())
+                ->not->toContain($token)->and($completedProperties)->toMatchArray([
                     'lane' => 'local-executor',
                     'status' => 'failed',
                     'command' => 'internal:executor:verify',
                     'exit_code' => null,
                     'exception_class' => RuntimeException::class,
                     'exception_message' => 'transport disconnected',
-                ])
-                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain($token);
+                ])->and(remoteLocalExecutorActivityLogBlob())
+                ->not->toContain($token);
         }
     });
 
-    it('redacts operation-token output variant :dataset from any operation before storing summaries', function (Closure $output, string $expected): void {
+    it('redacts operation-token output variant :dataset from any operation before storing summaries', function (
+        Closure $output,
+        string $expected,
+    ): void {
         $otherOperationToken = 'external-operation-token-402';
         $transport = new RemoteLocalExecutorRecordingTransport(
             static fn (Node $node, string $script, array $options): RemoteShellResult => new RemoteShellResult(
@@ -458,8 +498,11 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($completedProperties['stdout_summary'])->not->toContain($otherOperationToken)
-            ->and($completedProperties['stdout_summary'])->toBe($expected);
+        expect($completedProperties['stdout_summary'])
+            ->not
+            ->toContain($otherOperationToken)
+            ->and($completedProperties['stdout_summary'])
+            ->toBe($expected);
     })->with([
         'no spaces around equals' => [
             static fn (string $token): string => "--operation-token={$token}",
@@ -520,9 +563,13 @@ describe(RemoteLocalExecutor::class, function (): void {
         $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
         $logBlob = remoteLocalExecutorActivityLogBlob();
 
-        expect($logBlob)->not->toContain($token)
-            ->and($logBlob)->toContain('--operation-token=<redacted>')
-            ->and($logBlob)->toContain('raw token <redacted>');
+        expect($logBlob)
+            ->not
+            ->toContain($token)
+            ->and($logBlob)
+            ->toContain('--operation-token=<redacted>')
+            ->and($logBlob)
+            ->toContain('raw token <redacted>');
     });
 
     it('scrubs output before truncating when the operation token crosses the summary boundary', function (): void {
@@ -550,9 +597,13 @@ describe(RemoteLocalExecutor::class, function (): void {
         $token = remoteLocalExecutorTokenFromScript($transport->calls[0]['script']);
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($completedProperties['stdout_summary'])->not->toContain($token)
-            ->and($completedProperties['stdout_summary'])->toContain('<redacted>')
-            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))->toBeTrue();
+        expect($completedProperties['stdout_summary'])
+            ->not
+            ->toContain($token)
+            ->and($completedProperties['stdout_summary'])
+            ->toContain('<redacted>')
+            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))
+            ->toBeTrue();
     });
 
     it('truncates long stdout and stderr summaries in completed records', function (): void {
@@ -575,13 +626,21 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect(strlen($completedProperties['stdout_summary']))->toBe(4_107)
-            ->and(strlen($completedProperties['stderr_summary']))->toBe(4_107)
-            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))->toBeTrue()
-            ->and(str_ends_with($completedProperties['stderr_summary'], '[truncated]'))->toBeTrue();
+        expect(strlen($completedProperties['stdout_summary']))
+            ->toBe(4_107)
+            ->and(strlen($completedProperties['stderr_summary']))
+            ->toBe(4_107)
+            ->and(str_ends_with($completedProperties['stdout_summary'], '[truncated]'))
+            ->toBeTrue()
+            ->and(str_ends_with($completedProperties['stderr_summary'], '[truncated]'))
+            ->toBeTrue();
     });
 
-    it('suppresses requested output summaries and strips redaction flags before dispatch :dataset', function (array $transportOptions, string $expectedStdoutSummary, string $expectedStderrSummary): void {
+    it('suppresses requested output summaries and strips redaction flags before dispatch :dataset', function (
+        array $transportOptions,
+        string $expectedStdoutSummary,
+        string $expectedStderrSummary,
+    ): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
             new RemoteShellResult(
                 exitCode: 0,
@@ -606,9 +665,13 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-        expect($transport->calls[0]['options'])->not->toHaveKeys(['redact_stdout', 'redact_stderr'])
-            ->and($completedProperties['stdout_summary'])->toBe($expectedStdoutSummary)
-            ->and($completedProperties['stderr_summary'])->toBe($expectedStderrSummary);
+        expect($transport->calls[0]['options'])
+            ->not
+            ->toHaveKeys(['redact_stdout', 'redact_stderr'])
+            ->and($completedProperties['stdout_summary'])
+            ->toBe($expectedStdoutSummary)
+            ->and($completedProperties['stderr_summary'])
+            ->toBe($expectedStderrSummary);
     })->with([
         'no redaction flags' => [
             ['timeout' => 30],
@@ -661,31 +724,42 @@ describe(RemoteLocalExecutor::class, function (): void {
         $script = $transport->calls[0]['script'];
         $dispatchProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[0]);
 
-        expect($script)->toContain("--password-hash='{$passwordHash}'")
-            ->and($script)->toContain("--private-key='{$privateKey}'")
-            ->and($script)->toContain("--pre-shared-key='{$preSharedKey}'")
-            ->and($transport->calls[0]['options'])->toBe([
+        expect($script)
+            ->toContain("--password-hash='{$passwordHash}'")
+            ->and($script)
+            ->toContain("--private-key='{$privateKey}'")
+            ->and($script)
+            ->toContain("--pre-shared-key='{$preSharedKey}'")
+            ->and($transport->calls[0]['options'])
+            ->toBe([
                 'timeout' => 30,
                 'environment' => remoteLocalExecutorEnvironment(),
             ])
-            ->and($dispatchProperties['command_options'])->toMatchArray([
+            ->and($dispatchProperties['command_options'])
+            ->toMatchArray([
                 'action' => 'upsert-peer',
                 'password-hash' => '<redacted>',
                 'private-key' => '<redacted>',
                 'public-key' => 'peer-public-key-probe',
                 'pre-shared-key' => '<redacted>',
             ])
-            ->and($dispatchProperties['command_line'])->toContain('--password-hash=<redacted>')
-            ->and($dispatchProperties['command_line'])->toContain('--private-key=<redacted>')
-            ->and($dispatchProperties['command_line'])->toContain('--pre-shared-key=<redacted>')
-            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))->not->toContain($passwordHash)
-            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))->not->toContain($privateKey)
-            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))->not->toContain($preSharedKey);
+            ->and($dispatchProperties['command_line'])
+            ->toContain('--password-hash=<redacted>')
+            ->and($dispatchProperties['command_line'])
+            ->toContain('--private-key=<redacted>')
+            ->and($dispatchProperties['command_line'])
+            ->toContain('--pre-shared-key=<redacted>')
+            ->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))
+            ->not->toContain($passwordHash)->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))
+            ->not->toContain($privateKey)->and(json_encode($dispatchProperties, JSON_THROW_ON_ERROR))
+            ->not->toContain($preSharedKey);
     });
 
     it('suppresses generic transport exception messages when output redaction is requested', function (): void {
         $transport = new RemoteLocalExecutorRecordingTransport(
-            static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException('transport leaked api_token=poly-token-secret'),
+            static fn (Node $node, string $script, array $options): RemoteShellResult => throw new RuntimeException(
+                'transport leaked api_token=poly-token-secret',
+            ),
         );
         $executor = remoteLocalExecutor($transport);
 
@@ -706,9 +780,12 @@ describe(RemoteLocalExecutor::class, function (): void {
         } catch (RuntimeException $exception) {
             $completedProperties = remoteLocalExecutorActivityProperties(remoteLocalExecutorActivityRows()[1]);
 
-            expect($exception->getMessage())->toBe('Remote local executor transport failed: <suppressed>')
-                ->and($completedProperties['exception_message'])->toBe('<suppressed>')
-                ->and(remoteLocalExecutorActivityLogBlob())->not->toContain('poly-token-secret');
+            expect($exception->getMessage())
+                ->toBe('Remote local executor transport failed: <suppressed>')
+                ->and($completedProperties['exception_message'])
+                ->toBe('<suppressed>')
+                ->and(remoteLocalExecutorActivityLogBlob())
+                ->not->toContain('poly-token-secret');
         }
     });
 
@@ -731,14 +808,18 @@ describe(RemoteLocalExecutor::class, function (): void {
         expect($rows)->toHaveCount(1);
 
         $row = $rows->first();
-        expect($row->status)->toBe('succeeded')
-            ->and($row->internal_command)->toBe('internal:workspace-adapter:lookup')
-            ->and($row->lane)->toBe('local')
-            ->and((int) $row->target_node_id)->toBe($node->id)
-            ->and($row->started_at)->not->toBeNull()
-            ->and($row->finished_at)->not->toBeNull()
-            ->and((int) $row->exit_code)->toBe(0)
-            ->and($row->id)->not->toBe($operationId);
+        expect($row->status)
+            ->toBe('succeeded')
+            ->and($row->internal_command)
+            ->toBe('internal:workspace-adapter:lookup')
+            ->and($row->lane)
+            ->toBe('local')
+            ->and((int) $row->target_node_id)
+            ->toBe($node->id)
+            ->and($row->started_at)
+            ->not->toBeNull()->and($row->finished_at)
+            ->not->toBeNull()->and((int) $row->exit_code)->toBe(0)->and($row->id)
+            ->not->toBe($operationId);
     });
 
     it('records an operation_runs row as failed with the redacted exit code on RemoteShellFailed', function (): void {
@@ -750,7 +831,12 @@ describe(RemoteLocalExecutor::class, function (): void {
                 throw new RemoteShellFailed(
                     node: $node,
                     script: $script,
-                    result: new RemoteShellResult(exitCode: 13, stdout: "leak --operation-token={$token}", stderr: '', durationMs: 11),
+                    result: new RemoteShellResult(
+                        exitCode: 13,
+                        stdout: "leak --operation-token={$token}",
+                        stderr: '',
+                        durationMs: 11,
+                    ),
                 );
             },
         );
@@ -769,11 +855,11 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
 
-        expect($row)->not->toBeNull()
-            ->and($row->status)->toBe('failed')
-            ->and((int) $row->exit_code)->toBe(13)
-            ->and($row->stdout_summary)->toBe('leak --operation-token=<redacted>')
-            ->and($row->stdout_summary)->not->toContain('operation-token=eyJ');
+        expect($row)
+            ->not->toBeNull()->and($row->status)->toBe('failed')->and((int) $row->exit_code)->toBe(
+                13,
+            )->and($row->stdout_summary)->toBe('leak --operation-token=<redacted>')->and($row->stdout_summary)
+            ->not->toContain('operation-token=eyJ');
 
         $error = json_decode((string) $row->error, true, flags: JSON_THROW_ON_ERROR);
         expect($error['code'])->toBe('remote_shell_failed');
@@ -801,13 +887,16 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $row = DB::table('operation_runs')->where('operation_id', $operationId)->first();
 
-        expect($row)->not->toBeNull()
-            ->and($row->status)->toBe('failed')
-            ->and($row->exit_code)->toBeNull();
+        expect($row)
+            ->not
+            ->toBeNull()
+            ->and($row->status)
+            ->toBe('failed')
+            ->and($row->exit_code)
+            ->toBeNull();
 
         $error = json_decode((string) $row->error, true, flags: JSON_THROW_ON_ERROR);
-        expect($error['code'])->toBe('transport_failed')
-            ->and($error['message'])->toContain('transport boom');
+        expect($error['code'])->toBe('transport_failed')->and($error['message'])->toContain('transport boom');
     });
 
     it('re-mints the same operation_id across two attempts and writes two operation_runs rows with distinct ids', function (): void {
@@ -831,10 +920,15 @@ describe(RemoteLocalExecutor::class, function (): void {
 
         $rows = DB::table('operation_runs')->where('operation_id', $operationId)->orderBy('created_at')->get();
 
-        expect($rows)->toHaveCount(2)
-            ->and($rows[0]->id)->not->toBe($rows[1]->id)
-            ->and($rows[0]->status)->toBe('succeeded')
-            ->and($rows[1]->status)->toBe('succeeded');
+        expect($rows)
+            ->toHaveCount(2)
+            ->and($rows[0]->id)
+            ->not
+            ->toBe($rows[1]->id)
+            ->and($rows[0]->status)
+            ->toBe('succeeded')
+            ->and($rows[1]->status)
+            ->toBe('succeeded');
     });
 
     it('keeps activity_log properties JSON free of raw operation_token substrings even after recording operation_runs', function (): void {
@@ -862,8 +956,11 @@ describe(RemoteLocalExecutor::class, function (): void {
         $blob = remoteLocalExecutorActivityLogBlob();
 
         // No raw `--operation-token=<jwt-shaped>` substring (jwt header bytes "eyJ") should leak into activity rows.
-        expect($blob)->not->toContain('--operation-token=eyJ')
-            ->and($blob)->toContain('--operation-token=<redacted>');
+        expect($blob)
+            ->not
+            ->toContain('--operation-token=eyJ')
+            ->and($blob)
+            ->toContain('--operation-token=<redacted>');
     });
 
     it('keeps default executor bindings while making the local executor explicitly resolvable', function (): void {
@@ -892,8 +989,10 @@ describe(RemoteLocalExecutor::class, function (): void {
     });
 });
 
-function remoteLocalExecutor(RemoteLocalExecutorRecordingTransport $transport, ?OperationTokenFactory $operationTokens = null): RemoteLocalExecutor
-{
+function remoteLocalExecutor(
+    RemoteLocalExecutorRecordingTransport $transport,
+    ?OperationTokenFactory $operationTokens = null,
+): RemoteLocalExecutor {
     return new RemoteLocalExecutor(
         transport: $transport,
         commands: new LocalExecutorCommandBuilder,

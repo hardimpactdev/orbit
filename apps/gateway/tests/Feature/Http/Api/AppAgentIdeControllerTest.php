@@ -89,10 +89,12 @@ if (! class_exists('AppAgentIdeControllerRemoteShell')) {
 describe('AppAgentIdeController', function (): void {
     it('sets an app agent IDE default for an authorized control caller', function (): void {
         $caller = createAppAgentIdeCallerNode();
-        $appNode = Node::factory()->appDev()->create([
-            'name' => 'app-1',
-            'agent_ide_config' => ['adapter' => 'polyscope'],
-        ]);
+        $appNode = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'app-1',
+                'agent_ide_config' => ['adapter' => 'polyscope'],
+            ]);
         grantAppAgentIdeAccess($caller, $appNode);
 
         App::factory()->create([
@@ -100,11 +102,16 @@ describe('AppAgentIdeController', function (): void {
             'node_id' => $appNode->id,
         ]);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.app.name', 'docs')
             ->assertJsonPath('success.data.agent_ide.adapter', 'opencode')
             ->assertJsonPath('success.data.agent_ide.source', 'app')
@@ -117,10 +124,12 @@ describe('AppAgentIdeController', function (): void {
 
     it('clears an app override with inherit and reports the node effective adapter', function (): void {
         createAppAgentIdeCallerNode(role: 'gateway');
-        $appNode = Node::factory()->appDev()->create([
-            'name' => 'app-1',
-            'agent_ide_config' => ['adapter' => 'polyscope'],
-        ]);
+        $appNode = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'app-1',
+                'agent_ide_config' => ['adapter' => 'polyscope'],
+            ]);
 
         App::factory()->create([
             'name' => 'docs',
@@ -128,11 +137,16 @@ describe('AppAgentIdeController', function (): void {
             'agent_ide_config' => ['adapter' => 'opencode'],
         ]);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
-            'agent_ide' => 'inherit',
-        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            [
+                'agent_ide' => 'inherit',
+            ],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.agent_ide.adapter', null)
             ->assertJsonPath('success.data.agent_ide.source', 'node')
             ->assertJsonPath('success.data.agent_ide.effective_adapter', 'polyscope');
@@ -142,9 +156,11 @@ describe('AppAgentIdeController', function (): void {
 
     it('logs activity for a successful app agent IDE write', function (): void {
         $caller = createAppAgentIdeCallerNode();
-        $appNode = Node::factory()->appDev()->create([
-            'name' => 'app-1',
-        ]);
+        $appNode = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'app-1',
+            ]);
         grantAppAgentIdeAccess($caller, $appNode);
 
         $app = App::factory()->create([
@@ -152,9 +168,13 @@ describe('AppAgentIdeController', function (): void {
             'node_id' => $appNode->id,
         ]);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
 
         $response->assertOk();
 
@@ -173,9 +193,11 @@ describe('AppAgentIdeController', function (): void {
 
     it('rejects callers without app:agent before mutation', function (): void {
         $caller = createAppAgentIdeCallerNode();
-        $appNode = Node::factory()->appDev()->create([
-            'name' => 'app-1',
-        ]);
+        $appNode = Node::factory()
+            ->appDev()
+            ->create([
+                'name' => 'app-1',
+            ]);
         grantAppAgentIdeAccess($caller, $appNode, ['app:read']);
 
         App::factory()->create([
@@ -183,11 +205,16 @@ describe('AppAgentIdeController', function (): void {
             'node_id' => $appNode->id,
         ]);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
-            'agent_ide' => 'opencode',
-        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            [
+                'agent_ide' => 'opencode',
+            ],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertForbidden()
+        $response
+            ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.missing_permission', 'app:agent')
             ->assertJsonPath('error.meta.serving_node', 'app-1');
@@ -195,15 +222,22 @@ describe('AppAgentIdeController', function (): void {
         expect(App::query()->where('name', 'docs')->value('agent_ide_config'))->toBeNull();
     });
 
-    it('returns validation errors for missing and unsupported adapters', function (array $data, string $code, string $field): void {
+    it('returns validation errors for missing and unsupported adapters', function (
+        array $data,
+        string $code,
+        string $field,
+    ): void {
         createAppAgentIdeCallerNode(role: 'gateway');
         App::factory()->create([
             'name' => 'docs',
         ]);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', $data, ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', $data, [
+            'REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP,
+        ]);
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', $code)
             ->assertJsonPath("error.meta.{$field}", $data['agent_ide'] ?? 'agent_ide');
     })->with([
@@ -226,11 +260,16 @@ describe('AppAgentIdeController', function (): void {
 
         app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
-            'agent_ide' => 'polyscope',
-        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            [
+                'agent_ide' => 'polyscope',
+            ],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertUnprocessable()
+        $response
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'workspace_cleanup_consent_required')
             ->assertJsonPath('error.meta.previous_adapter', 'opencode')
             ->assertJsonPath('error.meta.stale_workspaces', ['stale-ws']);
@@ -253,12 +292,17 @@ describe('AppAgentIdeController', function (): void {
 
         app()->instance(AgentIdeMessageAdapter::class, new PruneAppActionTestAdapter);
 
-        $response = postAppAgentIdeJson('/api/apps/docs/agent-ide', [
-            'agent_ide' => 'polyscope',
-            'force' => true,
-        ], ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP]);
+        $response = postAppAgentIdeJson(
+            '/api/apps/docs/agent-ide',
+            [
+                'agent_ide' => 'polyscope',
+                'force' => true,
+            ],
+            ['REMOTE_ADDR' => APP_AGENT_IDE_CALLER_WG_IP],
+        );
 
-        $response->assertOk()
+        $response
+            ->assertOk()
             ->assertJsonPath('success.data.action', 'set')
             ->assertJsonPath('success.data.previous_adapter', 'opencode')
             ->assertJsonPath('success.data.cleanup.workspaces_removed', ['stale-ws']);

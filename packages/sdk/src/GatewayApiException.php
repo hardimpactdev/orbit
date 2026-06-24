@@ -11,6 +11,7 @@ final class GatewayApiException extends RuntimeException
 {
     /**
      * @param  array<string, mixed>  $errorMeta
+     * @param  array<string, mixed>  $errorData
      */
     public function __construct(
         string $message,

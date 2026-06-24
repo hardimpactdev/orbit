@@ -259,7 +259,7 @@ final readonly class ToolInstaller
             );
         }
 
-        $existingOwner = is_array($existing->config) ? ($existing->config['owner_name'] ?? null) : null;
+        $existingOwner = is_array($existing->config) ? $existing->config['owner_name'] ?? null : null;
 
         if ($existingOwner !== $tool) {
             return ToolRegistryFailure::validation(
@@ -296,7 +296,7 @@ final readonly class ToolInstaller
                 );
             }
 
-            $existingOwner = is_array($existing->config) ? ($existing->config['owner_name'] ?? null) : null;
+            $existingOwner = is_array($existing->config) ? $existing->config['owner_name'] ?? null : null;
 
             if ($existingOwner !== $tool) {
                 return ToolRegistryFailure::validation(
@@ -342,8 +342,12 @@ final readonly class ToolInstaller
      * @param  array<string, mixed>  $config
      * @param  callable(array<string, mixed>): string  $scriptFactory
      */
-    private function runToolScriptWithGitHubAuth(Node $node, string $tool, array $config, callable $scriptFactory): RemoteShellResult
-    {
+    private function runToolScriptWithGitHubAuth(
+        Node $node,
+        string $tool,
+        array $config,
+        callable $scriptFactory,
+    ): RemoteShellResult {
         $token = $this->githubTokenForTool($tool);
 
         if ($token === null) {
@@ -416,7 +420,8 @@ final readonly class ToolInstaller
      */
     private function gatewayNodeIds(): array
     {
-        return $this->nodeRoleAssignments->activeGatewayNodeQuery()
+        return $this->nodeRoleAssignments
+            ->activeGatewayNodeQuery()
             ->pluck('id')
             ->map(fn (mixed $nodeId): int => (int) $nodeId)
             ->all();

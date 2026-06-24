@@ -9,8 +9,8 @@ use RuntimeException;
 use Symfony\Component\Process\Process;
 
 /**
- * Reads the live public Orbit CLI command surface from `apps/cli/orbit
- * list --format=json` so docs rules can compare command docs against the
+ * Reads the live public Orbit CLI command surface from
+ * `apps/cli/orbit list --format=json` so docs rules can compare command docs against the
  * commands that actually exist.
  */
 final class LiveCliSurface implements CliSurface
@@ -61,7 +61,10 @@ final class LiveCliSurface implements CliSurface
         try {
             $payload = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
         } catch (JsonException $exception) {
-            throw new RuntimeException('Unable to decode the Orbit CLI command surface from `list --format=json`.', previous: $exception);
+            throw new RuntimeException(
+                'Unable to decode the Orbit CLI command surface from `list --format=json`.',
+                previous: $exception,
+            );
         }
 
         $commands = [];

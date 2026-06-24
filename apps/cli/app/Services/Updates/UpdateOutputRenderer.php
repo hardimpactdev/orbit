@@ -33,7 +33,8 @@ final readonly class UpdateOutputRenderer
         return match ($result->status) {
             LocalUpdateResult::STATUS_COMPLETED => $this->finishHumanSuccess($progress, $result),
             LocalUpdateResult::STATUS_SKIPPED_ALREADY,
-            LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND => $this->finishHumanSkip($progress, $result),
+            LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND,
+                => $this->finishHumanSkip($progress, $result),
             LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE => $this->finishHumanCheckoutUnavailable($progress),
             default => $this->finishHumanFailure($progress, $result),
         };
@@ -75,7 +76,8 @@ final readonly class UpdateOutputRenderer
         return match ($result->status) {
             LocalUpdateResult::STATUS_COMPLETED,
             LocalUpdateResult::STATUS_SKIPPED_ALREADY,
-            LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND => $this->writeJson($output, UpdateEnvelopeBuilder::success($result), 0),
+            LocalUpdateResult::STATUS_SKIPPED_GATEWAY_BEHIND,
+                => $this->writeJson($output, UpdateEnvelopeBuilder::success($result), 0),
             LocalUpdateResult::STATUS_CHECKOUT_UNAVAILABLE => $this->writeJson(
                 $output,
                 UpdateEnvelopeBuilder::failure(

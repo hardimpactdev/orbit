@@ -8,8 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration
-{
+return new class extends Migration {
     /**
      * Run the migrations.
      */
@@ -52,7 +51,10 @@ return new class extends Migration
                             'domain' => $app->domain,
                         ],
                     ], JSON_THROW_ON_ERROR),
-                    'runtime_requirements' => json_encode((new AppInstanceRuntimeRequirementsData)->toArray(), JSON_THROW_ON_ERROR),
+                    'runtime_requirements' => json_encode(
+                        new AppInstanceRuntimeRequirementsData()->toArray(),
+                        JSON_THROW_ON_ERROR,
+                    ),
                     'latest_deployment_status' => $app->latest_deployment_status ?? null,
                     'latest_deployment_run_id' => $app->latest_deployment_run_id ?? null,
                     'created_at' => $app->created_at,

@@ -29,15 +29,27 @@ final readonly class JsonRendererEnvelopeRule implements GroupedRule
             $section = $this->section($contents, 'Envelope');
 
             if ($section === '') {
-                $findings[] = $this->finding($file, 'JSON renderer files must include "## Envelope" with a link to the shared JSON Envelope contract.');
+                $findings[] = $this->finding(
+                    $file,
+                    'JSON renderer files must include "## Envelope" with a link to the shared JSON Envelope contract.',
+                );
             } elseif (! str_contains($section, 'README.md#json-envelope')) {
-                $findings[] = $this->finding($file, 'JSON renderer Envelope sections must link the shared JSON Envelope contract.');
+                $findings[] = $this->finding(
+                    $file,
+                    'JSON renderer Envelope sections must link the shared JSON Envelope contract.',
+                );
             } elseif ($this->repeatsSharedEnvelopeProse($section)) {
-                $findings[] = $this->finding($file, 'JSON renderer Envelope sections must not repeat the generic shared success/error envelope prose.');
+                $findings[] = $this->finding(
+                    $file,
+                    'JSON renderer Envelope sections must not repeat the generic shared success/error envelope prose.',
+                );
             }
 
             if (! str_contains($contents, 'success') || ! str_contains($contents, 'error')) {
-                $findings[] = $this->finding($file, 'JSON renderer files must document the top-level success and error envelopes.');
+                $findings[] = $this->finding(
+                    $file,
+                    'JSON renderer files must document the top-level success and error envelopes.',
+                );
             }
         }
 
@@ -68,7 +80,9 @@ final readonly class JsonRendererEnvelopeRule implements GroupedRule
 
     private function section(string $contents, string $heading): string
     {
-        if (preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1) {
+        if (
+            preg_match('/^## '.preg_quote($heading, '/').'\s*$(?<section>.*?)(?:^## |\z)/ms', $contents, $matches) === 1
+        ) {
             return $matches['section'];
         }
 
@@ -77,9 +91,11 @@ final readonly class JsonRendererEnvelopeRule implements GroupedRule
 
     private function repeatsSharedEnvelopeProse(string $section): bool
     {
-        return str_contains($section, 'All JSON responses use the standard command envelope')
+        return (
+            str_contains($section, 'All JSON responses use the standard command envelope')
             || str_contains($section, 'JSON output uses exactly one top-level envelope')
-            || str_contains($section, 'Top-level `success` and `error` are mutually exclusive');
+            || str_contains($section, 'Top-level `success` and `error` are mutually exclusive')
+        );
     }
 
     private function finding(string $file, string $message): Finding

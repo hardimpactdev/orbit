@@ -38,16 +38,20 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    $appDev = Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'ubuntu_24-04',
-        'orbit_path' => '/opt/orbit-app-dev',
-    ]);
-    $appProd = Node::factory()->appProd()->create([
-        'name' => 'app-prod-1',
-        'platform' => 'ubuntu',
-        'orbit_path' => '/opt/orbit-app-prod',
-    ]);
+    $appDev = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'ubuntu_24-04',
+            'orbit_path' => '/opt/orbit-app-dev',
+        ]);
+    $appProd = Node::factory()
+        ->appProd()
+        ->create([
+            'name' => 'app-prod-1',
+            'platform' => 'ubuntu',
+            'orbit_path' => '/opt/orbit-app-prod',
+        ]);
     NodeRoleAssignment::factory()->create([
         'node_id' => $appProd->id,
         'role' => 'websocket',
@@ -78,54 +82,60 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results)->toMatchArray([
-        [
-            'target' => 'agent-1',
-            'node' => 'agent-1',
-            'role' => 'agent',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-        [
-            'target' => 'app-dev-1',
-            'node' => 'app-dev-1',
-            'role' => 'app-dev',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-        [
-            'target' => 'app-prod-1',
-            'node' => 'app-prod-1',
-            'role' => 'app-prod',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-        [
-            'target' => 'database-1',
-            'node' => 'database-1',
-            'role' => 'database',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-        [
-            'target' => 'ingress-1',
-            'node' => 'ingress-1',
-            'role' => 'ingress',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-    ])
-        ->and($shell->updatedNodes())->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
-        ->and($shell->calls[0]['options']['metadata'])->toBe(['ORBIT_OPERATION_ID' => $run->id])
-        ->and($shell->scriptsFor('agent-1'))->toBe([$shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
-        ->and($shell->activeLeases)->toBe([
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'agent-1',
+                'node' => 'agent-1',
+                'role' => 'agent',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+            [
+                'target' => 'app-prod-1',
+                'node' => 'app-prod-1',
+                'role' => 'app-prod',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+            [
+                'target' => 'database-1',
+                'node' => 'database-1',
+                'role' => 'database',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+            [
+                'target' => 'ingress-1',
+                'node' => 'ingress-1',
+                'role' => 'ingress',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->updatedNodes())
+        ->toBe(['agent-1', 'app-dev-1', 'app-prod-1', 'database-1', 'ingress-1'])
+        ->and($shell->calls[0]['options']['metadata'])
+        ->toBe(['ORBIT_OPERATION_ID' => $run->id])
+        ->and($shell->scriptsFor('agent-1'))
+        ->toBe([$shell->scriptFor('agent-1'), 'orbit doctor --self --json'])
+        ->and($shell->activeLeases)
+        ->toBe([
             'agent-1' => ['node:agent-1'],
             'app-dev-1' => ['node:app-dev-1'],
             'app-prod-1' => ['node:app-prod-1'],
             'database-1' => ['node:database-1'],
             'ingress-1' => ['node:ingress-1'],
         ])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 
     expect($shell->scriptFor('agent-1'))
         ->toContain('download_cli')
@@ -149,14 +159,16 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
         ->toContain('sudo -n ln -sfn')
         ->toContain('pull_required_images')
         ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
-        ->not->toContain('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64')
-        ->toContain(str_repeat('e', 64))
-        ->toContain("docker pull 'caddy:2.9-alpine'")
+        ->not->toContain(
+            'https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64',
+        )->toContain(str_repeat('e', 64))->toContain("docker pull 'caddy:2.9-alpine'")
         ->not->toContain('orbit-websocket:2.0.0');
 
     expect($shell->scriptFor('app-prod-1'))
         ->toContain("docker pull 'caddy:2.9-alpine'")
-        ->toContain("docker pull 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'");
+        ->toContain(
+            "docker pull 'hardimpact/orbit-reverb:2.0.0@sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'",
+        );
 
     expect($shell->scriptFor('database-1'))
         ->toContain('download_cli')
@@ -170,10 +182,14 @@ it('updates active non-gateway managed nodes from the persisted manifest snapsho
 
     expect($installedCli)
         ->toBeInstanceOf(InstalledCliArtifact::class)
-        ->and($installedCli?->version)->toBe('2.0.0')
-        ->and($installedCli?->sha256)->toBe(str_repeat('e', 64))
-        ->and($installedCli?->source)->toBe('github-release')
-        ->and($installedCli?->artifactUrl)->toBe('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64');
+        ->and($installedCli?->version)
+        ->toBe('2.0.0')
+        ->and($installedCli?->sha256)
+        ->toBe(str_repeat('e', 64))
+        ->and($installedCli?->source)
+        ->toBe('github-release')
+        ->and($installedCli?->artifactUrl)
+        ->toBe('https://github.com/hardimpactdev/orbit/releases/download/v2.0.0/orbit-linux-amd64');
 });
 
 it('skips a workload node already on the target version and runs no remote update', function (): void {
@@ -181,37 +197,44 @@ it('skips a workload node already on the target version and runs no remote updat
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
-    ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
+        ]);
     Node::factory()->appProd()->create(['name' => 'app-prod-1', 'platform' => 'linux']);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results)->toMatchArray([
-        [
-            'target' => 'app-dev-1',
-            'node' => 'app-dev-1',
-            'role' => 'app-dev',
-            'status' => 'skipped',
-        ],
-        [
-            'target' => 'app-prod-1',
-            'node' => 'app-prod-1',
-            'role' => 'app-prod',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-    ])
-        ->and($shell->updatedNodes())->toBe(['app-prod-1'])
-        ->and($shell->scriptsFor('app-dev-1'))->toBe([])
-        ->and(workloadUpdaterStepMessages($run))->toContain(
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'skipped',
+            ],
+            [
+                'target' => 'app-prod-1',
+                'node' => 'app-prod-1',
+                'role' => 'app-prod',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->updatedNodes())
+        ->toBe(['app-prod-1'])
+        ->and($shell->scriptsFor('app-dev-1'))
+        ->toBe([])
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
         )
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 });
 
 it('updates topology candidate artifacts with the same version when the CLI hash differs', function (): void {
@@ -219,11 +242,13 @@ it('updates topology candidate artifacts with the same version when the CLI hash
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    $node = Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0', sha256: str_repeat('c', 64)),
-    ]);
+    $node = Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0', sha256: str_repeat('c', 64)),
+        ]);
     $plan = app(OperationUpdatePlanStore::class)->create(
         $run,
         workloadUpdaterSnapshot(
@@ -240,23 +265,31 @@ it('updates topology candidate artifacts with the same version when the CLI hash
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results)->toMatchArray([
-        [
-            'target' => 'app-dev-1',
-            'node' => 'app-dev-1',
-            'role' => 'app-dev',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-    ])
-        ->and($shell->updatedNodes())->toBe(['app-dev-1'])
-        ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
-        ->and($shell->scriptFor('app-dev-1'))->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
-        ->and(workloadUpdaterStepMessages($run))->not->toContain(
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->updatedNodes())
+        ->toBe(['app-dev-1'])
+        ->and($shell->scriptsFor('app-dev-1'))
+        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and($shell->scriptFor('app-dev-1'))
+        ->toContain("http://gateway.test/api/update/artifacts/{$run->id}/cli/linux-amd64?token=fake")
+        ->and(workloadUpdaterStepMessages($run))
+        ->not
+        ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 skipped: already up to date'],
         )
-        ->and($node->fresh()->installed_cli?->source)->toBe('topology-candidate')
-        ->and($node->fresh()->installed_cli?->buildId)->toBe('candidate-build');
+        ->and($node->fresh()->installed_cli?->source)
+        ->toBe('topology-candidate')
+        ->and($node->fresh()->installed_cli?->buildId)
+        ->toBe('candidate-build');
 });
 
 it('runs orbit doctor after a node update and reports the issue count in the done message', function (): void {
@@ -272,11 +305,16 @@ it('runs orbit doctor after a node update and reports the issue count in the don
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results[0]['status'])->toBe('completed')
-        ->and($results[0]['doctor_issues'])->toBe(2)
-        ->and($results[1]['doctor_issues'])->toBe(0)
-        ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
-        ->and(workloadUpdaterStepMessages($run))->toContain(
+    expect($results[0]['status'])
+        ->toBe('completed')
+        ->and($results[0]['doctor_issues'])
+        ->toBe(2)
+        ->and($results[1]['doctor_issues'])
+        ->toBe(0)
+        ->and($shell->scriptsFor('app-dev-1'))
+        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated (2 issues)'],
             ['workload.app-prod-1', 'done', 'Workload node app-prod-1 updated'],
         );
@@ -289,26 +327,31 @@ it('keeps a workload update completed when advisory node doctor fails', function
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'orbit_path' => '/opt/orbit-app-dev',
-    ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'orbit_path' => '/opt/orbit-app-dev',
+        ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results)->toMatchArray([
-        [
-            'target' => 'app-dev-1',
-            'node' => 'app-dev-1',
-            'role' => 'app-dev',
-            'status' => 'completed',
-            'doctor_issues' => null,
-        ],
-    ])
-        ->and($shell->scriptsFor('app-dev-1'))->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
-        ->and(workloadUpdaterStepMessages($run))->toContain(
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'completed',
+                'doctor_issues' => null,
+            ],
+        ])
+        ->and($shell->scriptsFor('app-dev-1'))
+        ->toBe([$shell->scriptFor('app-dev-1'), 'orbit doctor --self --json'])
+        ->and(workloadUpdaterStepMessages($run))
+        ->toContain(
             ['workload.app-dev-1', 'done', 'Workload node app-dev-1 updated'],
         );
 });
@@ -346,9 +389,12 @@ it('emits per-node sub-steps: installing cli, recording metadata, running doctor
     $doctorIndex = array_search('Running doctor', $texts, true);
     $doneIndex = array_search('done', $statuses, true);
 
-    expect($downloadIndex)->toBeLessThan($replaceIndex)
-        ->and($replaceIndex)->toBeLessThan($doctorIndex)
-        ->and($doctorIndex)->toBeLessThan($doneIndex);
+    expect($downloadIndex)
+        ->toBeLessThan($replaceIndex)
+        ->and($replaceIndex)
+        ->toBeLessThan($doctorIndex)
+        ->and($doctorIndex)
+        ->toBeLessThan($doneIndex);
 });
 
 it('emits skipped sub-step (no download/replace/doctor) for a node already on the desired CLI artifact', function (): void {
@@ -356,11 +402,13 @@ it('emits skipped sub-step (no download/replace/doctor) for a node already on th
     app()->instance(RemoteShell::class, $shell);
 
     $run = workloadUpdaterRun();
-    Node::factory()->appDev()->create([
-        'name' => 'app-dev-1',
-        'platform' => 'linux',
-        'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
-    ]);
+    Node::factory()
+        ->appDev()
+        ->create([
+            'name' => 'app-dev-1',
+            'platform' => 'linux',
+            'installed_cli' => workloadUpdaterInstalledCliArtifact(version: '2.0.0'),
+        ]);
     $plan = app(OperationUpdatePlanStore::class)->create($run, workloadUpdaterSnapshot(targetVersion: '2.0.0'));
 
     app(WorkloadNodeUpdater::class)->update($run, $plan);
@@ -372,9 +420,10 @@ it('emits skipped sub-step (no download/replace/doctor) for a node already on th
     ));
     $texts = array_column($nodeMessages, 2);
 
-    expect($texts)->not->toContain('Downloading 2.0.0')
-        ->and($texts)->not->toContain('Replacing cli binary')
-        ->and($texts)->not->toContain('Running doctor');
+    expect($texts)
+        ->not->toContain('Downloading 2.0.0')->and($texts)
+        ->not->toContain('Replacing cli binary')->and($texts)
+        ->not->toContain('Running doctor');
 });
 
 it('keeps a non-zero doctor issue count from failing the node update', function (): void {
@@ -387,8 +436,7 @@ it('keeps a non-zero doctor issue count from failing the node update', function 
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results[0]['status'])->toBe('completed')
-        ->and($results[0]['doctor_issues'])->toBe(5);
+    expect($results[0]['status'])->toBe('completed')->and($results[0]['doctor_issues'])->toBe(5);
 });
 
 it('continues updating later workload nodes when one remote update fails', function (): void {
@@ -404,27 +452,32 @@ it('continues updating later workload nodes when one remote update fails', funct
 
     $results = app(WorkloadNodeUpdater::class)->update($run, $plan);
 
-    expect($results)->toMatchArray([
-        [
-            'target' => 'app-dev-1',
-            'node' => 'app-dev-1',
-            'role' => 'app-dev',
-            'status' => 'failed',
-            'failed_step' => 'remote_update',
-            'output' => 'download failed',
-        ],
-        [
-            'target' => 'app-prod-1',
-            'node' => 'app-prod-1',
-            'role' => 'app-prod',
-            'status' => 'completed',
-            'doctor_issues' => 0,
-        ],
-    ])
-        ->and($shell->updatedNodes())->toBe(['app-dev-1', 'app-prod-1'])
-        ->and($shell->scriptsFor('app-dev-1'))->toHaveCount(1)
-        ->and($shell->scriptsFor('app-prod-1'))->toBe([$shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+    expect($results)
+        ->toMatchArray([
+            [
+                'target' => 'app-dev-1',
+                'node' => 'app-dev-1',
+                'role' => 'app-dev',
+                'status' => 'failed',
+                'failed_step' => 'remote_update',
+                'output' => 'download failed',
+            ],
+            [
+                'target' => 'app-prod-1',
+                'node' => 'app-prod-1',
+                'role' => 'app-prod',
+                'status' => 'completed',
+                'doctor_issues' => 0,
+            ],
+        ])
+        ->and($shell->updatedNodes())
+        ->toBe(['app-dev-1', 'app-prod-1'])
+        ->and($shell->scriptsFor('app-dev-1'))
+        ->toHaveCount(1)
+        ->and($shell->scriptsFor('app-prod-1'))
+        ->toBe([$shell->scriptFor('app-prod-1'), 'orbit doctor --self --json'])
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 });
 
 it('fails the runner workload phase with target results when any workload update fails', function (): void {
@@ -449,8 +502,10 @@ it('fails the runner workload phase with target results when any workload update
         ->where('event_type', 'error')
         ->firstOrFail();
 
-    expect($run->status)->toBe(OperationStatus::Failed)
-        ->and($run->error)->toMatchArray([
+    expect($run->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->error)
+        ->toMatchArray([
             'code' => 'workload_update_failed',
             'message' => 'One or more workload nodes failed to update.',
             'data' => [
@@ -483,7 +538,8 @@ it('fails the runner workload phase with target results when any workload update
                 ],
             ],
         ])
-        ->and($error->payload)->toMatchArray([
+        ->and($error->payload)
+        ->toMatchArray([
             'exit_code' => 1,
             'data' => [
                 'code' => 'workload_update_failed',
@@ -516,12 +572,14 @@ it('fails the runner workload phase with target results when any workload update
                 ],
             ],
         ])
-        ->and(workloadUpdaterStepEvents($run))->toContain(
+        ->and(workloadUpdaterStepEvents($run))
+        ->toContain(
             ['workload.app-dev-1', 'fail'],
             ['workload.app-prod-1', 'done'],
             ['workload-nodes', 'fail'],
         )
-        ->and(workloadUpdaterStepEvents($run))->not->toContain(['verification', 'running']);
+        ->and(workloadUpdaterStepEvents($run))
+        ->not->toContain(['verification', 'running']);
 });
 
 it('fails the update operation when a workload node lease is already held', function (): void {
@@ -552,11 +610,19 @@ it('fails the update operation when a workload node lease is already held', func
         ->where('event_type', 'error')
         ->firstOrFail();
 
-    expect($shell->updatedNodes())->toBe([])
-        ->and($run->refresh()->status)->toBe(OperationStatus::Failed)
-        ->and($run->error)->toMatchArray([
+    expect($shell->updatedNodes())
+        ->toBe([])
+        ->and($run->refresh()->status)
+        ->toBe(OperationStatus::Failed)
+        ->and($run->error)
+        ->toMatchArray([
             'code' => 'update.node_locked',
-            'message' => 'Update resource [node:app-dev-1] is already leased by operation ['.$otherRun->id.'] until '.$conflictingLease->expires_at->toIso8601String().'.',
+            'message' =>
+                'Update resource [node:app-dev-1] is already leased by operation ['
+                    .$otherRun->id
+                    .'] until '
+                    .$conflictingLease->expires_at->toIso8601String()
+                    .'.',
             'data' => [
                 'resource' => 'node:app-dev-1',
                 'resource_type' => 'node',
@@ -566,7 +632,8 @@ it('fails the update operation when a workload node lease is already held', func
                 'expires_at' => $conflictingLease->expires_at->toIso8601String(),
             ],
         ])
-        ->and($error->payload)->toMatchArray([
+        ->and($error->payload)
+        ->toMatchArray([
             'exit_code' => 1,
             'data' => [
                 'code' => 'update.node_locked',
@@ -578,14 +645,18 @@ it('fails the update operation when a workload node lease is already held', func
                 'expires_at' => $conflictingLease->expires_at->toIso8601String(),
             ],
         ])
-        ->and(workloadUpdaterStepEvents($run))->toContain(
+        ->and(workloadUpdaterStepEvents($run))
+        ->toContain(
             ['workload-nodes', 'running'],
             ['workload.app-dev-1', 'running'],
             ['workload.app-dev-1', 'fail'],
             ['workload-nodes', 'fail'],
         )
-        ->and(workloadUpdaterStepEvents($run))->not->toContain(['workload.app-prod-1', 'running'])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->pluck('resource_key')->all())->toBe(['app-dev-1']);
+        ->and(workloadUpdaterStepEvents($run))
+        ->not
+        ->toContain(['workload.app-prod-1', 'running'])
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->pluck('resource_key')->all())
+        ->toBe(['app-dev-1']);
 });
 
 it('is invoked by the default update runner pipeline while the fleet lease is active', function (): void {
@@ -602,13 +673,18 @@ it('is invoked by the default update runner pipeline while the fleet lease is ac
 
     app(UpdateRunner::class)->run($run->id);
 
-    expect($shell->updatedNodes())->toBe(['app-dev-1'])
-        ->and($shell->versionProbeCallsFor('app-dev-1'))->toBe(0)
-        ->and($shell->updateScriptCallsFor('app-dev-1'))->toBe(1)
-        ->and($shell->activeLeases)->toBe([
+    expect($shell->updatedNodes())
+        ->toBe(['app-dev-1'])
+        ->and($shell->versionProbeCallsFor('app-dev-1'))
+        ->toBe(0)
+        ->and($shell->updateScriptCallsFor('app-dev-1'))
+        ->toBe(1)
+        ->and($shell->activeLeases)
+        ->toBe([
             'app-dev-1' => ['fleet:update-all', 'node:app-dev-1'],
         ])
-        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())->toBe(0);
+        ->and(UpdateLease::query()->whereNotNull('active_resource_key')->count())
+        ->toBe(0);
 });
 
 function workloadUpdaterRun(): OperationRun
@@ -625,7 +701,8 @@ function workloadUpdaterRun(): OperationRun
  */
 function workloadUpdaterStepEvents(OperationRun $run): array
 {
-    return $run->events()
+    return $run
+        ->events()
         ->where('event_type', 'step')
         ->get()
         ->map(fn (OperationEvent $event): array => [$event->payload['key'], $event->payload['status']])
@@ -637,7 +714,8 @@ function workloadUpdaterStepEvents(OperationRun $run): array
  */
 function workloadUpdaterStepMessages(OperationRun $run): array
 {
-    return $run->events()
+    return $run
+        ->events()
         ->where('event_type', 'step')
         ->get()
         ->map(fn (OperationEvent $event): array => [
@@ -690,16 +768,18 @@ function workloadUpdaterSnapshot(
     array $cliArtifacts = [],
     array $roleImages = [],
 ): OperationUpdatePlanSnapshot {
-    $cliArtifacts = $cliArtifacts === [] ? [
-        'linux-amd64' => [
-            'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
-            'sha256' => str_repeat('b', 64),
-        ],
-    ] : $cliArtifacts;
-    $roleImages = $roleImages === [] ? [
-        'orbit-caddy' => 'caddy:2-alpine',
-        'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
-    ] : $roleImages;
+    $cliArtifacts = $cliArtifacts === []
+        ? [
+            'linux-amd64' => [
+                'url' => 'https://github.com/hardimpactdev/orbit/releases/download/v1.2.3/orbit-linux-amd64',
+                'sha256' => str_repeat('b', 64),
+            ],
+        ] : $cliArtifacts;
+    $roleImages = $roleImages === []
+        ? [
+            'orbit-caddy' => 'caddy:2-alpine',
+            'orbit-websocket' => 'hardimpact/orbit-reverb:1.2.3@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+        ] : $roleImages;
 
     return new OperationUpdatePlanSnapshot(
         targetVersion: $targetVersion,
@@ -747,7 +827,11 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
     {
         $artifact = $plan->cli_artifacts[$platform] ?? null;
 
-        if (! is_array($artifact) || ! is_string($artifact['sha256'] ?? null) || ! is_string($artifact['url'] ?? null)) {
+        if (
+            ! is_array($artifact)
+            || ! is_string($artifact['sha256'] ?? null)
+            || ! is_string($artifact['url'] ?? null)
+        ) {
             throw new RuntimeException("Missing test artifact for [{$platform}].");
         }
 
@@ -773,11 +857,15 @@ final class WorkloadUpdaterFakeArtifactRelay extends GatewayCliArtifactRelay
 
 function workloadUpdaterIsVersionProbe(string $script): bool
 {
-    return in_array($script, [
-        'orbit --version',
-        'orbit --version --local',
-        'orbit --version --local --json',
-    ], true);
+    return in_array(
+        $script,
+        [
+            'orbit --version',
+            'orbit --version --local',
+            'orbit --version --local --json',
+        ],
+        true,
+    );
 }
 
 function workloadUpdaterVersionStdout(string $version, string $script): string
@@ -826,7 +914,7 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
     #[Override]
     public function run(Node $node, string $script, array $options = []): RemoteShellResult
     {
-        (new RemoteShellMetadata)->prologue($options['metadata'] ?? []);
+        new RemoteShellMetadata()->prologue($options['metadata'] ?? []);
 
         $this->calls[] = [
             'node' => $node->name,
@@ -854,7 +942,9 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
 
             return new RemoteShellResult(
                 exitCode: 0,
-                stdout: json_encode(['success' => ['data' => ['doctor' => ['summary' => ['issues' => $issues]]]]], JSON_THROW_ON_ERROR),
+                stdout: json_encode([
+                    'success' => ['data' => ['doctor' => ['summary' => ['issues' => $issues]]]],
+                ], JSON_THROW_ON_ERROR),
                 stderr: '',
                 durationMs: 8,
             );
@@ -867,14 +957,24 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
             ->map(fn (UpdateLease $lease): string => "{$lease->resource_type}:{$lease->resource_key}")
             ->all();
 
-        return $this->failures[$node->name]
-            ?? new RemoteShellResult(exitCode: 0, stdout: "updated\n", stderr: '', durationMs: 20);
+        return (
+            $this->failures[$node->name] ?? new RemoteShellResult(
+                exitCode: 0,
+                stdout: "updated\n",
+                stderr: '',
+                durationMs: 20,
+            )
+        );
     }
 
     public function scriptFor(string $node): string
     {
         foreach ($this->calls as $call) {
-            if ($call['node'] === $node && ! workloadUpdaterIsVersionProbe($call['script']) && ! str_contains($call['script'], 'doctor')) {
+            if (
+                $call['node'] === $node
+                && ! workloadUpdaterIsVersionProbe($call['script'])
+                && ! str_contains($call['script'], 'doctor')
+            ) {
                 return $call['script'];
             }
         }
@@ -921,9 +1021,11 @@ final class WorkloadUpdaterFakeShell implements RemoteShell
     {
         return count(array_filter(
             $this->calls,
-            fn (array $call): bool => $call['node'] === $node
+            fn (array $call): bool => (
+                $call['node'] === $node
                 && ! workloadUpdaterIsVersionProbe($call['script'])
-                && ! str_contains($call['script'], 'doctor'),
+                && ! str_contains($call['script'], 'doctor')
+            ),
         ));
     }
 }

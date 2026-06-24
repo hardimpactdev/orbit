@@ -68,7 +68,13 @@ final readonly class NodeStoreController implements Loggable
             callerNodeId: $caller->id,
         );
 
-        return $streams->make(function (ProgressEventStreamEmitter $events) use ($operationRuns, $operationRun, $nodes, $arguments, $request): void {
+        return $streams->make(function (ProgressEventStreamEmitter $events) use (
+            $operationRuns,
+            $operationRun,
+            $nodes,
+            $arguments,
+            $request,
+        ): void {
             $events->tree('Creating Node', [
                 ['key' => 'operation', 'label' => 'Record operation state'],
                 ['key' => 'node', 'label' => 'Run node creation'],
@@ -170,12 +176,15 @@ final readonly class NodeStoreController implements Loggable
         $error = $payload['error'] ?? [];
         $error = is_array($error) ? $error : [];
 
-        return array_filter([
-            'code' => is_string($error['code'] ?? null) ? $error['code'] : $fallbackCode,
-            'message' => is_string($error['message'] ?? null) ? $error['message'] : $fallbackMessage,
-            'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
-            'data' => is_array($error['data'] ?? null) ? $error['data'] : null,
-        ], fn (mixed $value): bool => $value !== null);
+        return array_filter(
+            [
+                'code' => is_string($error['code'] ?? null) ? $error['code'] : $fallbackCode,
+                'message' => is_string($error['message'] ?? null) ? $error['message'] : $fallbackMessage,
+                'meta' => is_array($error['meta'] ?? null) ? $error['meta'] : [],
+                'data' => is_array($error['data'] ?? null) ? $error['data'] : null,
+            ],
+            fn (mixed $value): bool => $value !== null,
+        );
     }
 
     /**

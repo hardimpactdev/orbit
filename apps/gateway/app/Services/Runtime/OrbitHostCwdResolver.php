@@ -121,7 +121,11 @@ final class OrbitHostCwdResolver
             ->where('path', '!=', '')
             ->get();
 
-        return $this->longestPathMatch($candidates, $cwd, fn (Workspace $workspace): string => (string) $workspace->path);
+        return $this->longestPathMatch(
+            $candidates,
+            $cwd,
+            fn (Workspace $workspace): string => $workspace->path,
+        );
     }
 
     private function bestMatchingApp(string $cwd): ?App
@@ -132,7 +136,7 @@ final class OrbitHostCwdResolver
             ->where('path', '!=', '')
             ->get();
 
-        return $this->longestPathMatch($candidates, $cwd, fn (App $app): string => (string) $app->path);
+        return $this->longestPathMatch($candidates, $cwd, fn (App $app): string => $app->path);
     }
 
     /**

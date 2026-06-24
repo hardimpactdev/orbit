@@ -126,17 +126,21 @@ final readonly class FleetVersionProbe
             return 'linux-arm64';
         }
 
-        if ($platform === ''
+        if (
+            $platform === ''
             || str_contains($platform, 'linux')
             || str_contains($platform, 'ubuntu')
             || str_contains($platform, 'debian')
             || str_contains($platform, 'amd64')
             || str_contains($platform, 'x86_64')
-            || str_contains($platform, 'x64')) {
+            || str_contains($platform, 'x64')
+        ) {
             return 'linux-amd64';
         }
 
-        throw new RuntimeException("Unsupported workload update platform [{$node->platform}] for node [{$node->name}].");
+        throw new RuntimeException(
+            "Unsupported workload update platform [{$node->platform}] for node [{$node->name}].",
+        );
     }
 
     /**

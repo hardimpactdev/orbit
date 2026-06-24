@@ -17,18 +17,24 @@ it('follows operation events from the first replay through terminal success', fu
     ]);
     $events = [];
 
-    $terminal = (new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1))
-        ->follow('/api/operations/run-1/events', function (ProgressEventType $type, array $payload) use (&$events): void {
+    $terminal = new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1)
+        ->follow('/api/operations/run-1/events', function (ProgressEventType $type, array $payload) use (
+            &$events,
+        ): void {
             $events[] = [$type->value, $payload];
         });
 
-    expect($terminal['type'])->toBe(ProgressEventType::Complete)
-        ->and($terminal['payload'])->toBe(['exit_code' => 0])
-        ->and($events)->toBe([
+    expect($terminal['type'])
+        ->toBe(ProgressEventType::Complete)
+        ->and($terminal['payload'])
+        ->toBe(['exit_code' => 0])
+        ->and($events)
+        ->toBe([
             ['tree', ['title' => 'Update all']],
             ['complete', ['exit_code' => 0]],
         ])
-        ->and($client->lastEventIds)->toBe([null]);
+        ->and($client->lastEventIds)
+        ->toBe([null]);
 });
 
 it('reconnects with last event id after a non terminal replay closes', function (): void {
@@ -41,11 +47,10 @@ it('reconnects with last event id after a non terminal replay closes', function 
         ],
     ]);
 
-    $terminal = (new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1))
+    $terminal = new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1)
         ->follow('/api/operations/run-1/events', fn () => null);
 
-    expect($terminal['type'])->toBe(ProgressEventType::Complete)
-        ->and($client->lastEventIds)->toBe([null, 5]);
+    expect($terminal['type'])->toBe(ProgressEventType::Complete)->and($client->lastEventIds)->toBe([null, 5]);
 });
 
 it('suppresses duplicate event ids after reconnect replay', function (): void {
@@ -60,8 +65,10 @@ it('suppresses duplicate event ids after reconnect replay', function (): void {
     ]);
     $events = [];
 
-    (new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1))
-        ->follow('/api/operations/run-1/events', function (ProgressEventType $type, array $payload) use (&$events): void {
+    new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1)
+        ->follow('/api/operations/run-1/events', function (ProgressEventType $type, array $payload) use (
+            &$events,
+        ): void {
             $events[] = [$type->value, $payload];
         });
 
@@ -78,11 +85,13 @@ it('returns terminal failure events', function (): void {
         ],
     ]);
 
-    $terminal = (new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1))
+    $terminal = new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1)
         ->follow('/api/operations/run-1/events', fn () => null);
 
-    expect($terminal['type'])->toBe(ProgressEventType::Error)
-        ->and($terminal['payload'])->toBe(['message' => 'gateway failed']);
+    expect($terminal['type'])
+        ->toBe(ProgressEventType::Error)
+        ->and($terminal['payload'])
+        ->toBe(['message' => 'gateway failed']);
 });
 
 it('retries transient gateway stream failures during replacement', function (): void {
@@ -93,11 +102,10 @@ it('retries transient gateway stream failures during replacement', function (): 
         ],
     ]);
 
-    $terminal = (new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1, maxTransientFailures: 1))
+    $terminal = new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 1, maxTransientFailures: 1)
         ->follow('/api/operations/run-1/events', fn () => null);
 
-    expect($terminal['type'])->toBe(ProgressEventType::Complete)
-        ->and($client->lastEventIds)->toBe([null, null]);
+    expect($terminal['type'])->toBe(ProgressEventType::Complete)->and($client->lastEventIds)->toBe([null, null]);
 });
 
 it('fails after the configured number of empty replays', function (): void {
@@ -106,7 +114,7 @@ it('fails after the configured number of empty replays', function (): void {
         [],
     ]);
 
-    expect(fn () => (new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 2))
+    expect(fn () => new GatewayOperationFollower($client, reconnectSleepMs: 0, maxEmptyReplays: 2)
         ->follow('/api/operations/run-1/events', fn () => null))
         ->toThrow(GatewayApiException::class, 'terminal frame');
 });

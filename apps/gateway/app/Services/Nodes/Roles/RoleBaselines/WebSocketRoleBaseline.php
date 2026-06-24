@@ -48,13 +48,20 @@ class WebSocketRoleBaseline implements RoleBaseline
         }
 
         $this->timer()->measure('tools', fn () => $this->convergeTools($node, ['docker']));
-        $selfContainedImage = $this->timer()->measure('image', fn (): bool => $this->runtimeImageIsSelfContained($node));
+        $selfContainedImage = $this->timer()->measure('image', fn (): bool => $this->runtimeImageIsSelfContained(
+            $node,
+        ));
         $appKey = $selfContainedImage
             ? $this->timer()->measure('env', fn (): string => $this->ensureSelfContainedAppKey($node))
             : null;
         $container = $this->timer()->measure(
             'render',
-            fn (): WebSocketRuntimeContainer => $this->runtimeContainerFor($node, $assignment, $selfContainedImage, $appKey),
+            fn (): WebSocketRuntimeContainer => $this->runtimeContainerFor(
+                $node,
+                $assignment,
+                $selfContainedImage,
+                $appKey,
+            ),
         );
         $this->timer()->measure('certificates', fn () => $this->certificateInstaller->ensureFor($node));
 
@@ -76,8 +83,12 @@ class WebSocketRoleBaseline implements RoleBaseline
         throw new RuntimeException("Failed to remove websocket runtime container '{$containerName}' on {$node->name}.");
     }
 
-    private function runtimeContainerFor(Node $node, NodeRoleAssignment $assignment, bool $selfContainedImage, ?string $appKey): WebSocketRuntimeContainer
-    {
+    private function runtimeContainerFor(
+        Node $node,
+        NodeRoleAssignment $assignment,
+        bool $selfContainedImage,
+        ?string $appKey,
+    ): WebSocketRuntimeContainer {
         $settings = WebSocketRoleSettings::fromArray($assignment->settings ?? []);
 
         return $this->runtimeRenderer->render(
@@ -90,32 +101,40 @@ class WebSocketRoleBaseline implements RoleBaseline
 
     private function runtimeImageIsSelfContained(Node $node): bool
     {
-        $result = $this->remoteShell->run($node, "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'", [
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'websocket-runtime-image-inspect',
+        $result = $this->remoteShell->run(
+            $node,
+            "docker image inspect --format '{{ index .Config.Labels \"orbit.websocket.self_contained\" }}' 'orbit-reverb:current'",
+            [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'websocket-runtime-image-inspect',
+                ],
             ],
-        ]);
+        );
 
         return $result->successful() && trim($result->stdout) === 'true';
     }
 
     private function ensureSelfContainedAppKey(Node $node): string
     {
-        $result = $this->remoteShell->run($node, <<<'SH'
-set -euo pipefail
-key_file=/etc/orbit/websocket/app.key
-sudo install -d -m 0755 /etc/orbit/websocket
-if ! sudo test -f "$key_file"; then
-    app_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
-    printf '%s\n' "$app_key" | sudo tee "$key_file" >/dev/null
-    sudo chmod 0600 "$key_file"
-fi
-sudo cat "$key_file"
-SH, [
-            'metadata' => [
-                'ORBIT_OPERATION_ID' => 'websocket-runtime-app-key',
+        $result = $this->remoteShell->run(
+            $node,
+            <<<'SH'
+                set -euo pipefail
+                key_file=/etc/orbit/websocket/app.key
+                sudo install -d -m 0755 /etc/orbit/websocket
+                if ! sudo test -f "$key_file"; then
+                    app_key="base64:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
+                    printf '%s\n' "$app_key" | sudo tee "$key_file" >/dev/null
+                    sudo chmod 0600 "$key_file"
+                fi
+                sudo cat "$key_file"
+                SH,
+            [
+                'metadata' => [
+                    'ORBIT_OPERATION_ID' => 'websocket-runtime-app-key',
+                ],
             ],
-        ]);
+        );
 
         $appKey = trim($result->stdout);
 

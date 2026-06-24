@@ -25,16 +25,23 @@ describe('AnalyticsUpdateCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/analytics/update'
-            && $request->data() === [
-                'version' => '3.2.2',
-                'node' => 'analytics-1',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/analytics/update'
+                && $request->data() === [
+                    'version' => '3.2.2',
+                    'node' => 'analytics-1',
+                ]
+            ),
+        );
 
-        expect($exitCode)->toBe(0)
-            ->and($decoded['success']['data']['analytics']['version'])->toBe('3.2.2')
-            ->and($decoded['success']['data']['analytics']['process'])->toBe('plausible');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['analytics']['version'])
+            ->toBe('3.2.2')
+            ->and($decoded['success']['data']['analytics']['process'])
+            ->toBe('plausible');
     });
 
     it('omits node from the gateway payload when the analytics node is not constrained', function (): void {
@@ -53,11 +60,15 @@ describe('AnalyticsUpdateCommand', function (): void {
             '--json' => true,
         ]);
 
-        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
-            && $request->url() === 'https://gateway.test/api/analytics/update'
-            && $request->data() === [
-                'version' => '3.2.2',
-            ]);
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'POST'
+                && $request->url() === 'https://gateway.test/api/analytics/update'
+                && $request->data() === [
+                    'version' => '3.2.2',
+                ]
+            ),
+        );
 
         expect($exitCode)->toBe(0);
     });
@@ -78,15 +89,23 @@ describe('AnalyticsUpdateCommand', function (): void {
             '--node' => 'analytics-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('analytics:')
-            ->and($output)->toContain('  node: analytics-1')
-            ->and($output)->toContain('  previous_version: 3.2.1')
-            ->and($output)->toContain('  version: 3.2.2')
-            ->and($output)->toContain('  process: plausible')
-            ->and($output)->toContain('  status: updated')
-            ->and($output)->not->toContain('{')
-            ->and($output)->not->toContain('"analytics"');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('analytics:')
+            ->and($output)
+            ->toContain('  node: analytics-1')
+            ->and($output)
+            ->toContain('  previous_version: 3.2.1')
+            ->and($output)
+            ->toContain('  version: 3.2.2')
+            ->and($output)
+            ->toContain('  process: plausible')
+            ->and($output)
+            ->toContain('  status: updated')
+            ->and($output)
+            ->not->toContain('{')->and($output)
+            ->not->toContain('"analytics"');
     });
 
     it('omits the previous_version line when the gateway reports none', function (): void {
@@ -105,9 +124,12 @@ describe('AnalyticsUpdateCommand', function (): void {
             '--node' => 'analytics-1',
         ]);
 
-        expect($exitCode)->toBe(0)
-            ->and($output)->toContain('  version: 3.2.2')
-            ->and($output)->not->toContain('previous_version');
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('  version: 3.2.2')
+            ->and($output)
+            ->not->toContain('previous_version');
     });
 
     it('renders analytics:update missing-process failures as prose pointing at doctor', function (): void {
@@ -122,9 +144,12 @@ describe('AnalyticsUpdateCommand', function (): void {
             '--node' => 'analytics-1',
         ]);
 
-        expect($exitCode)->toBe(1)
-            ->and($output)->toContain("Process 'plausible' was not found")
-            ->and($output)->not->toContain('"error"');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain("Process 'plausible' was not found")
+            ->and($output)
+            ->not->toContain('"error"');
     });
 
     it('requires a version before sending gateway requests', function (): void {
@@ -138,9 +163,12 @@ describe('AnalyticsUpdateCommand', function (): void {
 
         Http::assertNothingSent();
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('version');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])
+            ->toBe('version');
     });
 
     it('maps gateway failures into canonical CLI failures', function (): void {
@@ -157,8 +185,11 @@ describe('AnalyticsUpdateCommand', function (): void {
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($exitCode)->toBe(1)
-            ->and($decoded['error']['code'])->toBe('analytics.prerequisite_failed')
-            ->and($decoded['error']['meta']['version'])->toBe('3.2.2');
+        expect($exitCode)
+            ->toBe(1)
+            ->and($decoded['error']['code'])
+            ->toBe('analytics.prerequisite_failed')
+            ->and($decoded['error']['meta']['version'])
+            ->toBe('3.2.2');
     });
 });

@@ -24,14 +24,22 @@ it('builds ssh commands with the current accept-new baseline', function (): void
         ],
     );
 
-    expect($command)->toContain('ssh -o BatchMode=yes')
-        ->and($command)->toContain('-o StrictHostKeyChecking=accept-new')
-        ->and($command)->toContain('-o LogLevel=ERROR')
-        ->and($command)->toContain('-o ConnectTimeout=10')
-        ->and($command)->toContain('-o ServerAliveInterval=30')
-        ->and($command)->toContain('-o ServerAliveCountMax=10')
-        ->and($command)->toContain("'orbit'@'10.6.0.2'")
-        ->and($command)->toContain(escapeshellarg('bash -lc '.escapeshellarg('php artisan about')));
+    expect($command)
+        ->toContain('ssh -o BatchMode=yes')
+        ->and($command)
+        ->toContain('-o StrictHostKeyChecking=accept-new')
+        ->and($command)
+        ->toContain('-o LogLevel=ERROR')
+        ->and($command)
+        ->toContain('-o ConnectTimeout=10')
+        ->and($command)
+        ->toContain('-o ServerAliveInterval=30')
+        ->and($command)
+        ->toContain('-o ServerAliveCountMax=10')
+        ->and($command)
+        ->toContain("'orbit'@'10.6.0.2'")
+        ->and($command)
+        ->toContain(escapeshellarg('bash -lc '.escapeshellarg('php artisan about')));
 });
 
 it('builds ssh commands for nodes through their wireguard address and steady-state user', function (): void {
@@ -46,8 +54,10 @@ it('builds ssh commands for nodes through their wireguard address and steady-sta
         remoteCommand: 'hostname',
     );
 
-    expect($command)->toContain("'deploy'@'10.6.0.4'")
-        ->and($command)->not->toContain("'deploy'@'public.example.com'");
+    expect($command)
+        ->toContain("'deploy'@'10.6.0.4'")
+        ->and($command)
+        ->not->toContain("'deploy'@'public.example.com'");
 });
 
 it('builds scp uploads with the same ssh option baseline', function (): void {
@@ -59,7 +69,9 @@ it('builds scp uploads with the same ssh option baseline', function (): void {
         options: ['batch_mode' => true],
     );
 
-    expect($command)->toBe("scp -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 '/tmp/orbit.tgz' 'root'@'203.0.113.10':'/tmp/orbit.tgz'");
+    expect($command)->toBe(
+        "scp -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 '/tmp/orbit.tgz' 'root'@'203.0.113.10':'/tmp/orbit.tgz'",
+    );
 });
 
 it('enforces pinned host keys for node ssh commands', function (): void {
@@ -79,11 +91,16 @@ it('enforces pinned host keys for node ssh commands', function (): void {
         remoteCommand: 'hostname',
     );
 
-    expect($command)->toContain('-o StrictHostKeyChecking=yes')
-        ->and($command)->toContain('-o UserKnownHostsFile=')
-        ->and($command)->toContain('-o GlobalKnownHostsFile=')
-        ->and($command)->toContain("'orbit'@'10.6.0.12'")
-        ->and($command)->not->toContain('accept-new');
+    expect($command)
+        ->toContain('-o StrictHostKeyChecking=yes')
+        ->and($command)
+        ->toContain('-o UserKnownHostsFile=')
+        ->and($command)
+        ->toContain('-o GlobalKnownHostsFile=')
+        ->and($command)
+        ->toContain("'orbit'@'10.6.0.12'")
+        ->and($command)
+        ->not->toContain('accept-new');
 });
 
 it('stores generated known hosts outside shared app storage', function (): void {
@@ -127,8 +144,10 @@ it('can enforce pinned host keys for the bootstrap user over the public host', f
         options: ['prefer_public_host' => true],
     );
 
-    expect($command)->toContain("'ubuntu'@'public.example.com'")
-        ->and($command)->not->toContain("'orbit'@'10.6.0.12'");
+    expect($command)
+        ->toContain("'ubuntu'@'public.example.com'")
+        ->and($command)
+        ->not->toContain("'orbit'@'10.6.0.12'");
 });
 
 it('fails closed when node host key material is missing', function (): void {

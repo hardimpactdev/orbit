@@ -32,7 +32,9 @@ final readonly class SystemdService
                 reachable: false,
                 exists: false,
                 enabled: false,
-                error: trim($result->stderr) !== '' ? trim($result->stderr) : "Probe exited with code {$result->exitCode}.",
+                error: trim($result->stderr) !== ''
+                    ? trim($result->stderr)
+                    : "Probe exited with code {$result->exitCode}.",
             );
         }
 
@@ -162,13 +164,13 @@ final readonly class SystemdService
     {
         return sprintf(
             <<<'SH'
-set -euo pipefail
-sudo install -d -m 0755 /etc/systemd/system
-printf %%s %s | base64 -d | sudo tee %s >/dev/null
-sudo chmod 0644 %s
-sudo systemctl daemon-reload
-%s
-SH,
+                set -euo pipefail
+                sudo install -d -m 0755 /etc/systemd/system
+                printf %%s %s | base64 -d | sudo tee %s >/dev/null
+                sudo chmod 0644 %s
+                sudo systemctl daemon-reload
+                %s
+                SH,
             escapeshellarg(base64_encode($this->content)),
             escapeshellarg($this->unitPath()),
             escapeshellarg($this->unitPath()),
@@ -201,31 +203,31 @@ SH,
     {
         return sprintf(
             <<<'SH'
-service=%s
-path=%s
+                service=%s
+                path=%s
 
-enabled_status="$(sudo systemctl is-enabled "$service" 2>/dev/null || true)"
-enabled=false
+                enabled_status="$(sudo systemctl is-enabled "$service" 2>/dev/null || true)"
+                enabled=false
 
-if [ "$enabled_status" = "enabled" ]; then
-    enabled=true
-fi
+                if [ "$enabled_status" = "enabled" ]; then
+                    enabled=true
+                fi
 
-if ! sudo test -f "$path"; then
-    printf '{"exists":false,"hash":null,"enabled":%%s}\n' "$enabled"
-    exit 0
-fi
+                if ! sudo test -f "$path"; then
+                    printf '{"exists":false,"hash":null,"enabled":%%s}\n' "$enabled"
+                    exit 0
+                fi
 
-hash=""
+                hash=""
 
-if command -v sha256sum >/dev/null 2>&1; then
-    hash="$(sudo sha256sum "$path" | awk '{print $1}')"
-elif command -v shasum >/dev/null 2>&1; then
-    hash="$(sudo shasum -a 256 "$path" | awk '{print $1}')"
-fi
+                if command -v sha256sum >/dev/null 2>&1; then
+                    hash="$(sudo sha256sum "$path" | awk '{print $1}')"
+                elif command -v shasum >/dev/null 2>&1; then
+                    hash="$(sudo shasum -a 256 "$path" | awk '{print $1}')"
+                fi
 
-printf '{"exists":true,"hash":"%%s","enabled":%%s}\n' "$hash" "$enabled"
-SH,
+                printf '{"exists":true,"hash":"%%s","enabled":%%s}\n' "$hash" "$enabled"
+                SH,
             escapeshellarg($this->serviceName()),
             escapeshellarg($this->unitPath()),
         );

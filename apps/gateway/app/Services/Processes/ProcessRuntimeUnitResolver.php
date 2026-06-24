@@ -55,7 +55,8 @@ final readonly class ProcessRuntimeUnitResolver
             : null;
 
         if (! $process instanceof Process) {
-            $process = $app->processes()
+            $process = $app
+                ->processes()
                 ->where('name', $processName)
                 ->first();
         }
