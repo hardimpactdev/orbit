@@ -98,7 +98,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
                 }
             }
 
-            usleep(800_000);
+            usleep(450_000);
             $body = "id: 1\nevent: complete\ndata: {\"exit_code\":0}\n\n";
             fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
             fclose($connection);
@@ -121,7 +121,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
             'type' => ProgressEventType::Complete,
             'payload' => ['exit_code' => 0],
         ])
-            ->and(count($ticks))->toBeGreaterThanOrEqual(5);
+            ->and(count($ticks))->toBeGreaterThanOrEqual(3);
 
         $maxGapMicroseconds = max(array_map(
             static fn (array $pair): int => intdiv($pair[1] - $pair[0], 1000),

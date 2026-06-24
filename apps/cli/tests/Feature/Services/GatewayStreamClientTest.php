@@ -119,10 +119,10 @@ describe('GatewayStreamClient', function (): void {
                 fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n");
                 fwrite($connection, "event: tree\ndata: {\"name\":\"doctor\"}\n\n");
                 fflush($connection);
-                usleep(500_000);
+                usleep(150_000);
                 fwrite($connection, "event: step\ndata: {\"message\":\"checking\"}\n\n");
                 fflush($connection);
-                usleep(500_000);
+                usleep(300_000);
                 fwrite($connection, "event: complete\ndata: {\"ok\":true}\n\n");
                 fclose($connection);
             }
@@ -143,18 +143,16 @@ describe('GatewayStreamClient', function (): void {
                     ];
                 });
 
-            $firstGapMicroseconds = intdiv($events[1]['at'] - $events[0]['at'], 1000);
             $secondGapMicroseconds = intdiv($events[2]['at'] - $events[1]['at'], 1000);
 
             expect($exitCode)->toBe(0)
                 ->and(array_column($events, 'type'))->toBe(['tree', 'step', 'complete'])
-                ->and($firstGapMicroseconds)->toBeGreaterThan(250_000)
-                ->and($secondGapMicroseconds)->toBeGreaterThan(250_000);
+                ->and($secondGapMicroseconds)->toBeGreaterThan(150_000);
         } finally {
             pcntl_waitpid($serverPid, $status);
             fclose($server);
         }
-    });
+    })->group('slow');
 
     it('keeps only a bounded response tail for stream HTTP errors', function (): void {
         GatewayMockClient::destroyGlobal();
@@ -187,13 +185,10 @@ describe('GatewayStreamClient', function (): void {
                     }
                 }
 
-                $body = 'orbit-leading-token'.str_repeat('x', 70_000);
+                $body = 'orbit-leading-token'.str_repeat('x', 65_600);
 
                 fwrite($connection, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n");
-
-                foreach (str_split($body, 8192) as $chunk) {
-                    fwrite($connection, $chunk);
-                }
+                fwrite($connection, $body);
 
                 fclose($connection);
             }

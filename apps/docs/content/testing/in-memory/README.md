@@ -32,5 +32,6 @@ mode for the gateway and compact output across the gateway, CLI, docs app, and
 packages.
 
 CLI tests belong in the `slow` group when they allocate a real
-pseudo-terminal, fork a progress ticker, or wait on real time. Run them through
+pseudo-terminal, fork a progress ticker, wait on real time, or prove delayed
+network-stream delivery through a real transport. Run them through
 `composer test:slow` or an explicit focused CLI Pest command.

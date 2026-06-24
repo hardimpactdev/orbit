@@ -32,5 +32,6 @@ bin/orbit-cli-pest --exclude-group=slow --compact
 
 If a deterministic test is slow because it shells out, move that behavior
 behind a fake boundary. Do the same for Docker calls, Incus mutation, real
-pseudo-terminals, or network waits. If the real boundary is the behavior under
-test, move it into the `slow` group or the E2E lane that owns that behavior.
+pseudo-terminals, real transport timing, or network waits. If the real boundary
+is the behavior under test, move it into the `slow` group or the E2E lane that
+owns that behavior.

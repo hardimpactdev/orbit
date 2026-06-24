@@ -153,7 +153,7 @@ describe('GatewayApiClient', function (): void {
                     }
                 }
 
-                usleep(800_000);
+                usleep(450_000);
                 $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
                 fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
                 fclose($connection);
@@ -175,7 +175,7 @@ describe('GatewayApiClient', function (): void {
                 ->postWithIdleTicks('/api/update/all/start');
 
             expect($result)->toBe(['started' => true])
-                ->and(count($ticks))->toBeGreaterThanOrEqual(5);
+                ->and(count($ticks))->toBeGreaterThanOrEqual(3);
 
             $maxGapMicroseconds = max(array_map(
                 static fn (array $pair): int => intdiv($pair[1] - $pair[0], 1000),
