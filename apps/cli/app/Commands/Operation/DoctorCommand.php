@@ -16,6 +16,7 @@ use App\Services\GatewayStreamClient;
 use App\Services\StreamJsonIdleStepWriter;
 use Orbit\Core\Http\JsonEnvelope;
 use Orbit\Core\Progress\ProgressEventType;
+use Symfony\Component\Console\Output\StreamOutput;
 use Throwable;
 
 final class DoctorCommand extends GatewayCommand
@@ -52,6 +53,14 @@ final class DoctorCommand extends GatewayCommand
 
     /** @var array<string, mixed>|null */
     private ?array $latestDoctorProgressReport = null;
+
+    private bool $fleetHumanStream = false;
+
+    /** @var list<string> */
+    private array $fleetNodeOrder = [];
+
+    /** @var array<string, string> */
+    private array $fleetNodePhases = [];
 
     public function handle(): int
     {
@@ -173,12 +182,6 @@ final class DoctorCommand extends GatewayCommand
             $report['mode'] = $modeOverride;
         }
 
-        if ($this->isFleetReport($report)) {
-            $this->writeDoctorFleetResult($report);
-
-            return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
-        }
-
         $this->writeDoctorPanel($report);
 
         return $type === ProgressEventType::Complete ? self::SUCCESS : self::FAILURE;
@@ -198,6 +201,9 @@ final class DoctorCommand extends GatewayCommand
         $frames = app(DoctorTerminalFrameExtractor::class);
         $renderedDoctorFrame = false;
         $this->latestDoctorProgressReport = null;
+        $this->fleetHumanStream = (bool) $this->option('all');
+        $this->fleetNodeOrder = [];
+        $this->fleetNodePhases = [];
 
         $finalType = null;
         $finalPayload = [];
@@ -212,27 +218,29 @@ final class DoctorCommand extends GatewayCommand
                     &$finalType,
                     &$finalPayload,
                 ): void {
-                    if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
-                        $finalType = $type;
-                        $finalPayload = $eventPayload;
+                    if ($this->captureTerminalDoctorFrame($type, $eventPayload, $finalType, $finalPayload)) {
+                        return;
+                    }
+
+                    if ($this->captureFleetProgressTree($type, $eventPayload)) {
+                        return;
+                    }
+
+                    $fleetStepRendered = $this->captureFleetProgressStep($type, $eventPayload, $frames);
+
+                    if ($fleetStepRendered !== null) {
+                        $renderedDoctorFrame = $renderedDoctorFrame || $fleetStepRendered;
 
                         return;
                     }
 
-                    $doctor = $frames->doctor([
-                        'type' => $type,
-                        'payload' => $eventPayload,
-                    ]);
-
-                    if ($doctor !== null) {
+                    if ($this->captureDoctorProgressSnapshot($type, $eventPayload, $frames)) {
                         $renderedDoctorFrame = true;
-                        $this->latestDoctorProgressReport = $doctor;
-                        $this->writeDoctorProgressPanel($doctor);
 
                         return;
                     }
 
-                    if (! $renderedDoctorFrame) {
+                    if (! $renderedDoctorFrame && ! $this->fleetHumanStream) {
                         $this->renderProgressFrame($type, $eventPayload);
                     }
                 },
@@ -275,6 +283,116 @@ final class DoctorCommand extends GatewayCommand
             'gateway_unavailable',
             'Gateway progress stream closed without a terminal frame.',
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $eventPayload
+     * @param  array<string, mixed>  $finalPayload
+     */
+    private function captureTerminalDoctorFrame(
+        ProgressEventType $type,
+        array $eventPayload,
+        ?ProgressEventType &$finalType,
+        array &$finalPayload,
+    ): bool {
+        if ($type !== ProgressEventType::Complete && $type !== ProgressEventType::Error) {
+            return false;
+        }
+
+        $finalType = $type;
+        $finalPayload = $eventPayload;
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $eventPayload
+     */
+    private function captureFleetProgressTree(ProgressEventType $type, array $eventPayload): bool
+    {
+        if (! $this->fleetHumanStream || $type !== ProgressEventType::Tree) {
+            return false;
+        }
+
+        $steps = is_array($eventPayload['steps'] ?? null) ? $eventPayload['steps'] : [];
+
+        foreach ($steps as $step) {
+            if (! is_array($step)) {
+                continue;
+            }
+
+            $nodeName = $step['key'] ?? null;
+
+            if (! is_string($nodeName) || trim($nodeName) === '') {
+                continue;
+            }
+
+            $this->fleetNodeOrder[] = $nodeName;
+            $this->fleetNodePhases[$nodeName] = 'queued';
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $eventPayload
+     */
+    private function captureFleetProgressStep(
+        ProgressEventType $type,
+        array $eventPayload,
+        DoctorTerminalFrameExtractor $frames,
+    ): ?bool {
+        if (! $this->fleetHumanStream || $type !== ProgressEventType::Step) {
+            return null;
+        }
+
+        $nodeName = $eventPayload['key'] ?? null;
+        $status = $eventPayload['status'] ?? null;
+        $hasNodeStatus = is_string($nodeName) && trim($nodeName) !== '' && is_string($status) && trim($status) !== '';
+
+        if ($hasNodeStatus) {
+            $this->fleetNodePhases[$nodeName] = match (trim($status)) {
+                'running', 'progress', 'checking' => 'checking',
+                'done', 'ok' => 'done',
+                default => trim($status),
+            };
+        }
+
+        if ($this->captureDoctorProgressSnapshot($type, $eventPayload, $frames)) {
+            return true;
+        }
+
+        if (! $hasNodeStatus) {
+            return false;
+        }
+
+        $this->latestDoctorProgressReport = $this->syntheticFleetProgressReport();
+        $this->writeDoctorProgressPanel($this->latestDoctorProgressReport);
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $eventPayload
+     */
+    private function captureDoctorProgressSnapshot(
+        ProgressEventType $type,
+        array $eventPayload,
+        DoctorTerminalFrameExtractor $frames,
+    ): bool {
+        $doctor = $frames->doctor([
+            'type' => $type,
+            'payload' => $eventPayload,
+        ]);
+
+        if ($doctor === null) {
+            return false;
+        }
+
+        $this->latestDoctorProgressReport = $doctor;
+        $this->writeDoctorProgressPanel($doctor);
+
+        return true;
     }
 
     /**
@@ -335,32 +453,96 @@ final class DoctorCommand extends GatewayCommand
     }
 
     /**
-     * @param  array<string, mixed>  $report
+     * @return array<string, mixed>
      */
-    private function writeDoctorFleetResult(array $report): void
+    private function syntheticFleetProgressReport(): array
     {
-        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
-        $issues = is_int($summary['issues'] ?? null) ? $summary['issues'] : 0;
-        $rawNodes = $report['nodes'] ?? [];
-        $nodes = is_array($rawNodes) ? array_values(array_filter($rawNodes, is_array(...))) : [];
-        $targetCount = count($nodes);
+        $baseReport = $this->isFleetReport($this->latestDoctorProgressReport ?? [])
+            ? $this->latestDoctorProgressReport
+            : null;
+        $progressNodes = $this->syntheticFleetProgressNodes();
 
-        $this->line('F L E E T  D O C T O R  R E S U L T');
-        $this->line($targetCount === 1 ? 'Checked 1 node' : "Checked {$targetCount} nodes");
+        if ($baseReport !== null) {
+            $baseReport['progress'] = [
+                'state' => 'running',
+                'nodes' => $progressNodes,
+            ];
 
-        foreach ($nodes as $node) {
-            $name = is_string($node['node'] ?? null) ? $node['node'] : 'unknown';
-            $role = is_string($node['role'] ?? null) ? $node['role'] : 'unknown';
-            $healthy = ($node['healthy'] ?? false) === true ? 'OK' : 'ISSUES';
-            $nodeSummary = is_array($node['summary'] ?? null) ? $node['summary'] : [];
-            $nodeIssues = is_int($nodeSummary['issues'] ?? null) ? $nodeSummary['issues'] : 0;
-
-            $this->line("{$name}  {$role}  {$healthy}  {$nodeIssues} issues");
+            return $baseReport;
         }
 
-        $this->line(
-            $issues === 0 ? 'No issues detected' : ($issues === 1 ? '1 issue detected' : "{$issues} issues detected"),
-        );
+        $nodes = [];
+
+        foreach ($this->fleetNodeOrder as $nodeName) {
+            $nodes[] = [
+                'node' => $nodeName,
+                'role' => 'unknown',
+                'healthy' => true,
+                'families' => $this->families(),
+                'summary' => ['issues' => 0],
+            ];
+        }
+
+        return [
+            'healthy' => false,
+            'mode' => 'verify',
+            'scope' => [
+                'families' => $this->families(),
+                'node' => null,
+                'role' => 'fleet',
+                'self' => false,
+                'app' => null,
+                'workspace' => null,
+                'key' => $this->option('key'),
+                'targets' => $this->fleetNodeOrder,
+            ],
+            'summary' => [
+                'issues' => 0,
+                'fixed' => 0,
+                'adopted' => 0,
+                'skipped' => 0,
+                'conflicts' => 0,
+                'failed' => 0,
+                'planned' => 0,
+            ],
+            'issues' => [],
+            'actions' => [],
+            'nodes' => $nodes,
+            'progress' => [
+                'state' => 'running',
+                'nodes' => $progressNodes,
+            ],
+        ];
+    }
+
+    /**
+     * @return list<array<string, int|string>>
+     */
+    private function syntheticFleetProgressNodes(): array
+    {
+        $total = count($this->fleetNodeOrder);
+        $completed = count(array_filter(
+            $this->fleetNodePhases,
+            static fn (string $phase): bool => in_array($phase, ['done', 'ok'], true),
+        ));
+        $progressNodes = [];
+
+        foreach ($this->fleetNodeOrder as $nodeName) {
+            $phase = $this->fleetNodePhases[$nodeName] ?? 'queued';
+            $entry = [
+                'node' => $nodeName,
+                'status' => $phase,
+            ];
+
+            if ($total > 0 && in_array($phase, ['running', 'checking', 'start'], true)) {
+                $entry['completed'] = $completed;
+                $entry['total'] = $total;
+            }
+
+            $progressNodes[] = $entry;
+        }
+
+        return $progressNodes;
     }
 
     private function mode(): string|int
@@ -478,6 +660,7 @@ final class DoctorCommand extends GatewayCommand
         $client = app(GatewayStreamClient::class);
         $streamStarted = false;
         $idleWriter = app(StreamJsonIdleStepWriter::class);
+        $stdout = $this->resolveStreamJsonStdoutStream();
 
         $emitFrame = function (ProgressEventType $type, array $eventPayload): void {
             $this->line(json_encode(
@@ -499,6 +682,7 @@ final class DoctorCommand extends GatewayCommand
                     $emitFrame,
                     $idleWriter,
                     $writeIdleLine,
+                    $stdout,
                 ): void {
                     $streamStarted = true;
                     $idleWriter->stop();
@@ -516,6 +700,7 @@ final class DoctorCommand extends GatewayCommand
                                 .PHP_EOL,
                             $writeIdleLine,
                             max(1, (int) ceil(self::STREAM_JSON_IDLE_PROGRESS_INTERVAL_MICROSECONDS / 1_000_000)),
+                            $stdout,
                         );
                     }
                 },
@@ -536,6 +721,24 @@ final class DoctorCommand extends GatewayCommand
         } finally {
             $idleWriter->stop();
         }
+    }
+
+    /**
+     * @return resource|null
+     */
+    private function resolveStreamJsonStdoutStream(): mixed
+    {
+        $output = $this->output;
+
+        if (method_exists($output, 'getOutput')) {
+            $output = $output->getOutput();
+        }
+
+        if ($output instanceof StreamOutput) {
+            return $output->getStream();
+        }
+
+        return null;
     }
 
     /**

@@ -8,6 +8,7 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\WorkspaceLifecycleStatus;
+use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -3111,7 +3112,86 @@ describe('DoctorReportRunner metrics role categories', function (): void {
             ->and($categories)
             ->toContain('proxy');
     });
+
+    it('marks proxy.node_probe_failed as diagnostic-only without restore or adopt metadata', function (): void {
+        $node = createDoctorRunnerAppHostNode(['name' => 'app-prod-1', 'platform' => 'ubuntu']);
+
+        app()->instance(RemoteShell::class, new DoctorReportRunnerThrowingRemoteShell(
+            failingNodeName: 'app-prod-1',
+            failingScriptNeedle: '/etc/caddy/sites/*.caddy',
+        ));
+
+        $report = app(DoctorReportRunner::class)->probe($node, families: ['proxy']);
+        $issue = collect($report['issues'])->firstWhere('key', 'proxy.node_probe_failed');
+
+        expect($issue)
+            ->not
+            ->toBeNull()
+            ->and($issue['kind'])
+            ->toBe('unverifiable')
+            ->and($issue['restorable'] ?? null)
+            ->toBeFalse()
+            ->and($issue['adoptable'] ?? null)
+            ->toBeFalse();
+    });
+
+    it('marks node.remote_shell_probe_failed as diagnostic-only in fleet probe fallback', function (): void {
+        $node = createDoctorRunnerAppHostNode(['name' => 'app-prod-1', 'platform' => 'ubuntu']);
+        FirewallRule::factory()->create(['node_id' => $node->id, 'name' => 'allow-https']);
+
+        app()->instance(RemoteShell::class, new DoctorReportRunnerThrowingRemoteShell(
+            failingNodeName: 'app-prod-1',
+            failingScriptNeedle: 'sudo ufw status numbered',
+        ));
+
+        $report = app(DoctorReportRunner::class)->probeFleet(families: ['firewall_rule']);
+        $issue = collect($report['issues'])->firstWhere('key', 'node.remote_shell_probe_failed');
+
+        expect($issue)
+            ->not
+            ->toBeNull()
+            ->and($issue['kind'])
+            ->toBe('unverifiable')
+            ->and($issue['restorable'] ?? null)
+            ->toBeFalse()
+            ->and($issue['adoptable'] ?? null)
+            ->toBeFalse();
+    });
 });
+
+final class DoctorReportRunnerThrowingRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly string $failingNodeName,
+        private readonly string $failingScriptNeedle,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (
+            $node->name === $this->failingNodeName
+            && str_contains($script, $this->failingScriptNeedle)
+            && ($options['throw'] ?? false) === true
+        ) {
+            $result = new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+
+            throw new RemoteShellFailed($node, $script, $result);
+        }
+
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
 
 final class DoctorReportRunnerRemoteShell implements RemoteShell
 {

@@ -39,6 +39,10 @@ the right border while the same detail was also listed below:
 ●  Tools         Unavailable, WebSocket Redis is unavailable to the Reverb runtime on node app-dev-1.│
 ```
 
+The same frame listed the identical detail below the row. Human review caught
+that the renderer needed wrapping and that issue details should be listed as
+details, not duplicated inline in the summary row.
+
 ## Prior Occurrences
 
 The update and update:all progress-rendering work required several follow-up

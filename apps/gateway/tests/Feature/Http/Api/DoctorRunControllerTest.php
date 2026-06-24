@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
+use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
 use App\Models\FirewallRule;
 use App\Models\Node;
@@ -546,6 +547,50 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.nodes.1.node', 'caller');
     });
 
+    it('returns fleet doctor JSON when a node proxy probe raises RemoteShellFailed', function (): void {
+        createDoctorRunCallerNode();
+        createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+        createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+
+        app()->instance(RemoteShell::class, new DoctorRunFleetRemoteShell(failingNodeName: 'app-prod-1'));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/run',
+            [
+                'mode' => 'verify',
+                'families' => ['proxy'],
+                'all' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.healthy', false)
+            ->assertJsonPath('success.data.doctor.scope.role', 'fleet');
+
+        $doctor = $response->json('success.data.doctor');
+
+        $failedIssue = collect($doctor['issues'] ?? [])->firstWhere('key', 'proxy.node_probe_failed');
+
+        expect($failedIssue)
+            ->not
+            ->toBeNull()
+            ->and($failedIssue['kind'] ?? null)
+            ->toBe('unverifiable')
+            ->and($failedIssue['restorable'] ?? null)
+            ->toBeFalse()
+            ->and($failedIssue['adoptable'] ?? null)
+            ->toBeFalse()
+            ->and(collect($doctor['nodes'] ?? [])->firstWhere('node', 'app-dev-1')['healthy'] ?? null)
+            ->toBeTrue()
+            ->and(collect($doctor['nodes'] ?? [])->firstWhere('node', 'app-prod-1')['healthy'] ?? null)
+            ->toBeFalse();
+    });
+
     it('restores tool drift through the doctor fix endpoint', function (): void {
         createDoctorRunCallerNode();
         $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
@@ -671,6 +716,39 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.scope.families', ['node']);
     });
 });
+
+final class DoctorRunFleetRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly string $failingNodeName = 'app-prod-1',
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (
+            $node->name === $this->failingNodeName
+            && str_contains($script, '/etc/caddy/sites/*.caddy')
+            && ($options['throw'] ?? false) === true
+        ) {
+            $result = new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+
+            throw new RemoteShellFailed($node, $script, $result);
+        }
+
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
 
 final class DoctorRunRemoteShell implements RemoteShell
 {

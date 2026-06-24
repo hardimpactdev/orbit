@@ -19,10 +19,13 @@ final class DoctorPanelRenderer
 {
     private const int PANEL_WIDTH = 80;
 
+    private const int HUMAN_ISSUE_BULLET_CAP = 10;
+
     /** Visible width available between the two side borders ("│ ... │"). */
     private const int INNER_WIDTH = self::PANEL_WIDTH - 4;
 
-    private const int ISSUE_DETAIL_INDENT = 15;
+    /** One space; contentLine() adds the second first-column space after the border. */
+    private const int CONTENT_COLUMN_INDENT = 1;
 
     /**
      * Family key to operator-facing category label (Category Catalog).
@@ -128,6 +131,19 @@ final class DoctorPanelRenderer
      */
     public function lines(array $report, int $frame = 0): array
     {
+        if ($this->isFleetReport($report)) {
+            return $this->fleetLines($report, $frame);
+        }
+
+        return $this->singleNodeLines($report, $frame);
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function singleNodeLines(array $report, int $frame = 0): array
+    {
         $mode = $this->mode($report);
         $target = $this->target($report);
         $inProgress = $this->isInProgress($report);
@@ -145,17 +161,24 @@ final class DoctorPanelRenderer
         foreach ($families as $family) {
             $familyIssues = $issuesByFamily[$family] ?? [];
             $rendersIssueDetails = $mode === 'verify' && $familyIssues !== [];
-            $lines[] = $this->categoryRow(
+            $checkProgress = $this->familyCheckProgress($report, $family);
+            foreach ($this->categoryRows(
                 $family,
                 $this->statusText(
                     family: $family,
                     familyIssues: $familyIssues,
-                    progressStatus: $this->familyProgressStatus($report, $family),
-                    mode: $mode,
-                    detailsFollow: $rendersIssueDetails,
+                    options: [
+                        'progressStatus' => $this->familyProgressStatus($report, $family),
+                        'mode' => $mode,
+                        'detailsFollow' => $rendersIssueDetails,
+                        'completed' => $checkProgress['completed'] ?? null,
+                        'total' => $checkProgress['total'] ?? null,
+                    ],
                 ),
                 $frame,
-            );
+            ) as $categoryLine) {
+                $lines[] = $categoryLine;
+            }
 
             if ($familyIssues !== []) {
                 $lines = [
@@ -177,12 +200,78 @@ final class DoctorPanelRenderer
             $lines[] = $this->blankLine();
         }
 
-        $lines[] = $this->dividerLine('S U M M A R Y');
+        if (! $inProgress) {
+            $lines[] = $this->dividerLine('S U M M A R Y');
+            $lines[] = $this->blankLine();
+
+            foreach ($this->summaryLines($report, $mode, $totalIssues, false) as $summaryLine) {
+                $lines[] = $this->centeredContentLine($summaryLine);
+                $lines[] = $this->blankLine();
+            }
+        }
+
+        $lines[] = $this->bottomLine();
+
+        return $lines;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function fleetLines(array $report, int $frame = 0): array
+    {
+        $mode = $this->mode($report);
+        $inProgress = $this->isInProgress($report);
+        $issuesByNode = $this->issuesByNode($report);
+        $nodes = $this->renderedFleetNodes($report);
+        $totalIssues = $this->totalFleetIssues($report, $issuesByNode);
+
+        $lines = [];
+        $lines[] = $this->dividerLine($this->title($mode, $inProgress), top: true);
+        $lines[] = $this->blankLine();
+        $lines[] = $this->dividerLine($this->targetLine($report, 'fleet', $inProgress));
         $lines[] = $this->blankLine();
 
-        foreach ($this->summaryLines($report, $mode, $totalIssues, $inProgress) as $summaryLine) {
-            $lines[] = $this->centeredContentLine($summaryLine);
+        foreach ($nodes as $nodeName) {
+            $nodeIssues = $issuesByNode[$nodeName] ?? [];
+            $rendersIssueDetails = $mode === 'verify' && $nodeIssues !== [];
+            $nodeProgress = $this->nodeCheckProgress($report, $nodeName);
+
+            foreach ($this->fleetNodeRows(
+                $nodeName,
+                $this->fleetNodeStatusText(
+                    nodeIssues: $nodeIssues,
+                    options: [
+                        'progressStatus' => $this->nodeProgressStatus($report, $nodeName),
+                        'mode' => $mode,
+                        'detailsFollow' => $rendersIssueDetails,
+                        'completed' => $nodeProgress['completed'] ?? null,
+                        'total' => $nodeProgress['total'] ?? null,
+                    ],
+                ),
+                $frame,
+            ) as $categoryLine) {
+                $lines[] = $categoryLine;
+            }
+
+            if ($nodeIssues !== [] && $rendersIssueDetails) {
+                $lines = [...$lines, ...$this->issueDetails($nodeIssues)];
+            }
+
             $lines[] = $this->blankLine();
+        }
+
+        if (! $inProgress) {
+            $lines[] = $this->dividerLine('S U M M A R Y');
+            $lines[] = $this->blankLine();
+
+            $affectedFleetNodes = $this->affectedFleetNodeCount($issuesByNode);
+
+            foreach ($this->summaryLines($report, $mode, $totalIssues, false, $affectedFleetNodes) as $summaryLine) {
+                $lines[] = $this->centeredContentLine($summaryLine);
+                $lines[] = $this->blankLine();
+            }
         }
 
         $lines[] = $this->bottomLine();
@@ -208,14 +297,14 @@ final class DoctorPanelRenderer
     private function title(string $mode, bool $inProgress): string
     {
         if ($inProgress) {
-            return 'D O C T O R I N G';
+            return 'D O C T O R';
         }
 
         return match ($mode) {
             'restore' => 'D O C T O R  R E S T O R E',
             'adopt' => 'D O C T O R  A D O P T',
             'interactive' => 'D O C T O R  I N T E R A C T I V E',
-            default => 'D O C T O R  R E S U L T',
+            default => 'D O C T O R - R E S U L T',
         };
     }
 
@@ -315,18 +404,25 @@ final class DoctorPanelRenderer
 
     /**
      * @param  list<array<string, mixed>>  $familyIssues
+     * @param  array{progressStatus?: string|null, mode?: string, detailsFollow?: bool, completed?: int|null, total?: int|null}  $options
      */
     private function statusText(
         string $family,
         array $familyIssues,
-        ?string $progressStatus = null,
-        string $mode = 'verify',
-        bool $detailsFollow = false,
+        array $options = [],
     ): string {
+        $progressStatus = $options['progressStatus'] ?? null;
+        $mode = $options['mode'] ?? 'verify';
+        $detailsFollow = $options['detailsFollow'] ?? false;
+        $completed = $options['completed'] ?? null;
+        $total = $options['total'] ?? null;
+
         if ($progressStatus !== null && ! in_array($progressStatus, ['done', 'ok'], true)) {
             return match ($progressStatus) {
                 'queued' => 'Queued',
-                'running', 'checking', 'start' => $mode === 'verify' ? 'Checking' : $this->actionRunningText($mode),
+                'running', 'checking', 'start' => $mode === 'verify'
+                    ? $this->checkingStatusText($completed, $total)
+                    : $this->actionRunningText($mode),
                 'gathering' => 'Gathering results',
                 'restoring' => 'Restoring',
                 'adopting' => 'Adopting',
@@ -344,7 +440,7 @@ final class DoctorPanelRenderer
             static fn (array $issue): bool => ($issue['kind'] ?? null) === 'unverifiable',
         ));
 
-        if ($unverifiable !== [] && count($unverifiable) === count($familyIssues)) {
+        if (! $detailsFollow && $unverifiable !== [] && count($unverifiable) === count($familyIssues)) {
             $reason = $this->issueSummary($unverifiable[0]);
 
             return $reason === '' ? 'Unavailable' : "Unavailable, {$reason}";
@@ -365,16 +461,29 @@ final class DoctorPanelRenderer
      */
     private function issueDetails(array $familyIssues): array
     {
-        $lines = [$this->issueSeparatorLine()];
-        $summaryWidth = self::INNER_WIDTH - self::ISSUE_DETAIL_INDENT - 2;
+        $sorted = $this->sortIssues($familyIssues);
+        $omitted = max(0, count($sorted) - self::HUMAN_ISSUE_BULLET_CAP);
 
-        foreach ($this->sortIssues($familyIssues) as $issue) {
+        if ($omitted > 0) {
+            $sorted = array_slice($sorted, 0, self::HUMAN_ISSUE_BULLET_CAP);
+        }
+
+        $lines = [$this->issueSeparatorLine()];
+        $summaryWidth = self::INNER_WIDTH - self::CONTENT_COLUMN_INDENT - 2;
+
+        foreach ($sorted as $issue) {
             foreach ($this->wrapText($this->issueBulletText($issue), $summaryWidth) as $index => $summaryLine) {
                 $prefix = $index === 0 ? '- ' : '  ';
-                $content = str_repeat(' ', self::ISSUE_DETAIL_INDENT).$prefix.$summaryLine;
+                $content = str_repeat(' ', self::CONTENT_COLUMN_INDENT).$prefix.$summaryLine;
 
                 $lines[] = $this->contentLine($content, $this->visibleWidth($content));
             }
+        }
+
+        if ($omitted > 0) {
+            $overflow = $omitted === 1 ? '+ 1 more issue' : "+ {$omitted} more issues";
+            $content = str_repeat(' ', self::CONTENT_COLUMN_INDENT).$overflow;
+            $lines[] = $this->contentLine($content, $this->visibleWidth($content));
         }
 
         return $lines;
@@ -382,12 +491,13 @@ final class DoctorPanelRenderer
 
     private function issueSeparatorLine(): string
     {
-        $dashWidth = self::INNER_WIDTH - self::ISSUE_DETAIL_INDENT;
+        $dashWidth = self::INNER_WIDTH - self::CONTENT_COLUMN_INDENT - 1;
         $content =
-            str_repeat(' ', self::ISSUE_DETAIL_INDENT)
+            str_repeat(' ', self::CONTENT_COLUMN_INDENT)
             .SpinnerTreeRenderer::DIM
             .str_repeat('-', $dashWidth)
-            .SpinnerTreeRenderer::RESET;
+            .SpinnerTreeRenderer::RESET
+            .' ';
 
         return $this->contentLine($content, self::INNER_WIDTH);
     }
@@ -497,8 +607,13 @@ final class DoctorPanelRenderer
      * @param  array<string, mixed>  $report
      * @return list<string>
      */
-    private function summaryLines(array $report, string $mode, int $totalIssues, bool $inProgress): array
-    {
+    private function summaryLines(
+        array $report,
+        string $mode,
+        int $totalIssues,
+        bool $inProgress,
+        ?int $affectedFleetNodes = null,
+    ): array {
         if ($inProgress) {
             if ($totalIssues === 0) {
                 return ['No issues detected so far'];
@@ -510,6 +625,16 @@ final class DoctorPanelRenderer
         if ($mode === 'verify') {
             if ($totalIssues === 0) {
                 return ['No issues detected'];
+            }
+
+            if ($affectedFleetNodes !== null) {
+                $issueCount = $totalIssues === 1 ? '1 issue detected' : "{$totalIssues} issues detected";
+                $nodeCount = $affectedFleetNodes === 1 ? '1 node' : "{$affectedFleetNodes} nodes";
+
+                return [
+                    "{$issueCount} among {$nodeCount}",
+                    'Run doctor --fix manually or through an LLM to resolve issues',
+                ];
             }
 
             $count = $totalIssues === 1 ? '1 issue detected' : "{$totalIssues} issues detected";
@@ -553,6 +678,17 @@ final class DoctorPanelRenderer
         };
     }
 
+    private function checkingStatusText(?int $completed, ?int $total): string
+    {
+        if ($completed !== null && $total !== null && $total > 0 && $completed < $total) {
+            $percent = intdiv($completed * 100, $total);
+
+            return "Checking - {$percent}%";
+        }
+
+        return 'Checking';
+    }
+
     /**
      * @param  array<string, mixed>  $report
      * @param  array<string, list<array<string, mixed>>>  $issuesByFamily
@@ -588,6 +724,141 @@ final class DoctorPanelRenderer
         }
 
         return $grouped;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private function issuesByNode(array $report): array
+    {
+        $grouped = [];
+
+        foreach ($this->issues($report) as $issue) {
+            $node = is_string($issue['node'] ?? null) && trim($issue['node']) !== ''
+                ? trim($issue['node'])
+                : 'unknown';
+            $grouped[$node][] = $issue;
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<string>
+     */
+    private function renderedFleetNodes(array $report): array
+    {
+        $nodes = $report['nodes'] ?? [];
+
+        if (is_array($nodes) && $nodes !== []) {
+            $names = [];
+
+            foreach ($nodes as $node) {
+                if (! is_array($node)) {
+                    continue;
+                }
+
+                $name = $node['node'] ?? null;
+
+                if (is_string($name) && trim($name) !== '') {
+                    $names[] = trim($name);
+                }
+            }
+
+            if ($names !== []) {
+                return $names;
+            }
+        }
+
+        $scope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
+        $targets = is_array($scope['targets'] ?? null) ? $scope['targets'] : [];
+        $names = [];
+
+        foreach ($targets as $target) {
+            if (is_string($target) && trim($target) !== '') {
+                $names[] = trim($target);
+            }
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $issuesByNode
+     */
+    private function affectedFleetNodeCount(array $issuesByNode): int
+    {
+        return count(array_filter(
+            $issuesByNode,
+            static fn (array $nodeIssues): bool => $nodeIssues !== [],
+        ));
+    }
+
+    /**
+     * @param  array<string, list<array<string, mixed>>>  $issuesByNode
+     */
+    private function totalFleetIssues(array $report, array $issuesByNode): int
+    {
+        $summary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
+
+        if (array_key_exists('issues', $summary) && is_int($summary['issues'])) {
+            return $summary['issues'];
+        }
+
+        $total = 0;
+
+        foreach ($issuesByNode as $nodeIssues) {
+            $total += count($nodeIssues);
+        }
+
+        return $total;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $nodeIssues
+     * @param  array{progressStatus?: string|null, mode?: string, detailsFollow?: bool, completed?: int|null, total?: int|null}  $options
+     */
+    private function fleetNodeStatusText(
+        array $nodeIssues,
+        array $options = [],
+    ): string {
+        $progressStatus = $options['progressStatus'] ?? null;
+        $mode = $options['mode'] ?? 'verify';
+        $detailsFollow = $options['detailsFollow'] ?? false;
+        $completed = $options['completed'] ?? null;
+        $total = $options['total'] ?? null;
+
+        if ($progressStatus !== null && ! in_array($progressStatus, ['done', 'ok'], true)) {
+            return match ($progressStatus) {
+                'queued' => 'Queued',
+                'running', 'checking', 'start' => $mode === 'verify'
+                    ? $this->checkingStatusText($completed, $total)
+                    : $this->actionRunningText($mode),
+                'gathering' => 'Gathering results',
+                default => ucfirst($progressStatus),
+            };
+        }
+
+        if ($nodeIssues === []) {
+            return 'OK';
+        }
+
+        $count = count($nodeIssues);
+        $status = $count === 1 ? '1 issue detected' : "{$count} issues found";
+
+        return $detailsFollow ? "{$status}:" : $status;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function isFleetReport(array $report): bool
+    {
+        $scope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
+
+        return ($scope['role'] ?? null) === 'fleet';
     }
 
     /**
@@ -858,6 +1129,126 @@ final class DoctorPanelRenderer
     }
 
     /**
+     * @param  array<string, mixed>  $report
+     */
+    private function nodeProgressStatus(array $report, string $node): ?string
+    {
+        $progress = $report['progress'] ?? null;
+
+        if (! is_array($progress)) {
+            return null;
+        }
+
+        $nodes = $progress['nodes'] ?? null;
+
+        if (! is_array($nodes)) {
+            return null;
+        }
+
+        foreach ($nodes as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['node'] ?? null) !== $node) {
+                continue;
+            }
+
+            $status = $entry['status'] ?? null;
+
+            return is_string($status) && trim($status) !== '' ? trim($status) : null;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return array{completed: int, total: int}|null
+     */
+    private function nodeCheckProgress(array $report, string $node): ?array
+    {
+        $progress = $report['progress'] ?? null;
+
+        if (! is_array($progress)) {
+            return null;
+        }
+
+        $nodes = $progress['nodes'] ?? null;
+
+        if (! is_array($nodes)) {
+            return null;
+        }
+
+        foreach ($nodes as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['node'] ?? null) !== $node) {
+                continue;
+            }
+
+            $completed = $entry['completed'] ?? null;
+            $total = $entry['total'] ?? null;
+
+            if (! is_int($completed) || ! is_int($total) || $total <= 0) {
+                return null;
+            }
+
+            return [
+                'completed' => $completed,
+                'total' => $total,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return array{completed: int, total: int}|null
+     */
+    private function familyCheckProgress(array $report, string $family): ?array
+    {
+        $progress = $report['progress'] ?? null;
+
+        if (! is_array($progress)) {
+            return null;
+        }
+
+        $families = $progress['families'] ?? null;
+
+        if (! is_array($families)) {
+            return null;
+        }
+
+        foreach ($families as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['family'] ?? null) !== $family) {
+                continue;
+            }
+
+            $completed = $entry['completed'] ?? null;
+            $total = $entry['total'] ?? null;
+
+            if (! is_int($completed) || ! is_int($total) || $total <= 0) {
+                return null;
+            }
+
+            return [
+                'completed' => $completed,
+                'total' => $total,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * @param  array<string, mixed>  $source
      */
     private function intValue(array $source, string $key): int
@@ -873,7 +1264,11 @@ final class DoctorPanelRenderer
             return SpinnerTreeRenderer::GREEN;
         }
 
-        if (in_array($status, ['Queued', 'Checking', 'Gathering results', 'Restoring', 'Adopting'], true)) {
+        if (
+            $status === 'Queued'
+            || str_starts_with($status, 'Checking')
+            || in_array($status, ['Gathering results', 'Restoring', 'Adopting'], true)
+        ) {
             return SpinnerTreeRenderer::ACCENT;
         }
 
@@ -884,19 +1279,54 @@ final class DoctorPanelRenderer
         return SpinnerTreeRenderer::RED;
     }
 
-    private function categoryRow(string $family, string $status, int $frame): string
+    /**
+     * @return list<string>
+     */
+    private function fleetNodeRows(string $nodeName, string $status, int $frame): array
+    {
+        return $this->labeledStatusRows($nodeName, $status, $frame);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function categoryRows(string $family, string $status, int $frame): array
     {
         $label = self::CATEGORY_LABELS[$family] ?? ucfirst($family);
+
+        return $this->labeledStatusRows($label, $status, $frame);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function labeledStatusRows(string $label, string $status, int $frame): array
+    {
         $dot = $this->statusDot($status, $frame);
         $labelColumn = str_pad($label, 14);
-        $content = "{$dot}  {$labelColumn}{$status}";
+        $prefix = "{$dot}  {$labelColumn}";
+        $prefixWidth = $this->visibleWidth("●  {$labelColumn}");
+        $statusWidth = max(1, self::PANEL_WIDTH - 1 - $prefixWidth);
+        $statusLines = $this->wrapText($status, $statusWidth);
+        $lines = [];
 
-        return $this->flushRightBorderLine($content, $this->visibleWidth("●  {$labelColumn}{$status}"));
+        foreach ($statusLines as $index => $statusLine) {
+            $plainPrefix = $index === 0 ? "●  {$labelColumn}" : str_repeat(' ', $prefixWidth);
+            $content = $index === 0 ? $prefix.$statusLine : $plainPrefix.$statusLine;
+            $visibleContent = $plainPrefix.$statusLine;
+
+            $lines[] = $this->flushRightBorderLine($content, $this->visibleWidth($visibleContent));
+        }
+
+        return $lines === [] ? [$this->flushRightBorderLine($prefix, $prefixWidth)] : $lines;
     }
 
     private function statusDot(string $status, int $frame): string
     {
-        if (in_array($status, ['Checking', 'Gathering results', 'Restoring', 'Adopting'], true)) {
+        if (
+            str_starts_with($status, 'Checking')
+            || in_array($status, ['Gathering results', 'Restoring', 'Adopting'], true)
+        ) {
             $frames = SpinnerTreeRenderer::spinnerFrames();
 
             return $frames[$frame % count($frames)];
@@ -1185,7 +1615,7 @@ final class DoctorPanelRenderer
             return $this->contentLine($text, $width);
         }
 
-        $leftPad = intdiv($available - $width, 2);
+        $leftPad = max(0, intdiv($available - $width, 2));
         $padded = str_repeat(' ', $leftPad).$text;
 
         return $this->contentLine($padded, $leftPad + $width);

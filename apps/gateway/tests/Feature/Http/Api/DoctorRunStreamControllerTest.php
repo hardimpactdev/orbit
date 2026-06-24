@@ -2,7 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
+use App\Exceptions\RemoteShellFailed;
+use App\Models\App;
 use App\Models\Node;
+use App\Models\Workspace;
 use App\Services\Platform\PlatformDetector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -106,6 +111,56 @@ it('streams doctor panel snapshots before and during node-scoped probes', functi
         )->toBeArray();
 });
 
+it('streams partial fleet doctor snapshots with completed-node issues on node done', function (): void {
+    createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
+    createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+    createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+
+    app()->instance(RemoteShell::class, new FleetDoctorRemoteShell(failingNodeName: 'app-dev-1'));
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['proxy'],
+            'mode' => 'verify',
+            'all' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $content = $response->streamedContent();
+    $doctorFrames = doctorRunStreamDoctorFrames(doctorRunStreamFrames($content));
+    $stepEvents = doctorRunStreamStepEvents($content);
+    $appDevDone =
+        array_values(array_filter(
+            $doctorFrames,
+            static fn (array $frame): bool => (
+                ($frame['key'] ?? null) === 'app-dev-1'
+                && ($frame['status'] ?? null) === 'done'
+            ),
+        ))[0] ?? null;
+
+    expect($appDevDone)
+        ->not
+        ->toBeNull()
+        ->and($appDevDone['doctor']['scope']['role'])
+        ->toBe('fleet')
+        ->and($appDevDone['doctor']['progress']['state'])
+        ->toBe('running')
+        ->and(collect($appDevDone['doctor']['issues'])->pluck('node')->all())
+        ->toContain('app-dev-1')
+        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-dev-1', 'done'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app-prod-1', 'running'));
+});
+
 it('streams fleet doctor progress per node only with explicit all scope', function (): void {
     createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
     createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
@@ -135,6 +190,57 @@ it('streams fleet doctor progress per node only with explicit all scope', functi
         ->toBeEmpty()
         ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-1', 'done'))
         ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'doctor-stream-caller', 'running'));
+});
+
+it('streams fleet doctor terminal error when a node proxy probe raises RemoteShellFailed', function (): void {
+    createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
+    createTestAppHostNode(['name' => 'app-dev-1', 'status' => 'active']);
+    createTestAppHostNode(['name' => 'app-prod-1', 'status' => 'active'], 'app-prod');
+
+    app()->instance(RemoteShell::class, new FleetDoctorRemoteShell(failingNodeName: 'app-prod-1'));
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['proxy'],
+            'mode' => 'verify',
+            'all' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $content = $response->streamedContent();
+    $stepEvents = doctorRunStreamStepEvents($content);
+    $frames = doctorRunStreamFrames($content);
+    $terminalFrame = collect($frames)->last();
+    $doctor = $terminalFrame['data']['data']['data']['doctor'] ?? null;
+    $issueKeys = collect(is_array($doctor) ? $doctor['issues'] ?? [] : [])->pluck('key')->all();
+
+    expect($stepEvents)
+        ->toContain(['key' => 'app-dev-1', 'status' => 'done'])
+        ->and($stepEvents)
+        ->toContain(['key' => 'app-prod-1', 'status' => 'done'])
+        ->and($terminalFrame['event'] ?? null)
+        ->toBe('error')
+        ->and($terminalFrame['data']['data']['code'] ?? null)
+        ->toBe('drift_detected')
+        ->and($doctor)
+        ->toBeArray()
+        ->and($doctor['nodes'] ?? null)
+        ->toBeArray()
+        ->and($doctor['issues'] ?? null)
+        ->not
+        ->toBeEmpty()
+        ->and($issueKeys)
+        ->toContain('proxy.node_probe_failed');
 });
 
 it('streams omitted scope as caller-node family progress instead of fleet progress', function (): void {
@@ -169,6 +275,181 @@ it('streams omitted scope as caller-node family progress instead of fleet progre
         ->toBe('doctor-stream-caller')
         ->and(doctorRunStreamStepEventIndex($stepEvents, 'node', 'running'))
         ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'node', 'done'));
+});
+
+it('streams node family completed and total for opaque composite checks', function (): void {
+    createDoctorRunStreamCallerNode();
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'families' => ['node'],
+            'mode' => 'verify',
+            'self' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $nodeProgress = doctorRunStreamFamilyCheckProgressSnapshots(
+        doctorRunStreamDoctorFrames(doctorRunStreamFrames($response->streamedContent())),
+        'node',
+    );
+
+    expect($nodeProgress)->toContain([
+        'family' => 'node',
+        'status' => 'checking',
+        'completed' => 0,
+        'total' => 1,
+    ])->and(collect($nodeProgress)->contains(
+        static fn (array $snapshot): bool => (
+            ($snapshot['status'] ?? null) === 'checking'
+            && ($snapshot['completed'] ?? null) === ($snapshot['total'] ?? null)
+        ),
+    ))->toBeFalse();
+});
+
+it('streams app family totals that include orphan container and runtime-config scans', function (): void {
+    createDoctorRunStreamCallerNode();
+    $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+    App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $appNode->id,
+        'path' => '/home/orbit/apps/docs',
+        'document_root' => 'public',
+    ]);
+    app()->instance(
+        RemoteShell::class,
+        new DoctorRunStreamRemoteShell([
+            "docs\t0\t0\t1\t1\t0\t0\t0\t0\t0\t0\t0\t0\t0\n",
+        ]),
+    );
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'mode' => 'verify',
+            'families' => ['app'],
+            'node' => 'app-1',
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $appProgress = doctorRunStreamFamilyCheckProgressSnapshots(
+        doctorRunStreamDoctorFrames(doctorRunStreamFrames($response->streamedContent())),
+        'app',
+    );
+
+    expect($appProgress)
+        ->not->toBeEmpty()->and(collect($appProgress)->pluck('total')->unique()->all())->toBe([3])->and(
+            $appProgress,
+        )->toContain([
+            'family' => 'app',
+            'status' => 'checking',
+            'completed' => 1,
+            'total' => 3,
+        ])->and($appProgress)->toContain([
+            'family' => 'app',
+            'status' => 'checking',
+            'completed' => 2,
+            'total' => 3,
+        ])->and($appProgress)
+        ->not->toContain([
+            'family' => 'app',
+            'status' => 'checking',
+            'completed' => 1,
+            'total' => 1,
+        ]);
+});
+
+it('streams per-family completed and total check counts when workspace inventory is knowable', function (): void {
+    createDoctorRunStreamCallerNode();
+    $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $appNode->id,
+        'path' => '/home/orbit/apps/docs',
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature',
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'hotfix',
+        'path' => '/home/orbit/apps/docs/.worktrees/hotfix',
+    ]);
+    app()->instance(
+        RemoteShell::class,
+        new DoctorRunStreamRemoteShell([
+            "feature\t0\t1\t0\t0\t1\t1\t0\t0\t0\t\n",
+            "hotfix\t0\t1\t0\t0\t1\t1\t0\t0\t0\t\n",
+        ]),
+    );
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'mode' => 'verify',
+            'families' => ['workspace'],
+            'node' => 'app-1',
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $workspaceProgress = doctorRunStreamFamilyCheckProgressSnapshots(
+        doctorRunStreamDoctorFrames(doctorRunStreamFrames($response->streamedContent())),
+        'workspace',
+    );
+
+    expect($workspaceProgress)
+        ->not
+        ->toBeEmpty()
+        ->and($workspaceProgress)
+        ->toContain([
+            'family' => 'workspace',
+            'status' => 'checking',
+            'completed' => 0,
+            'total' => 2,
+        ])
+        ->and($workspaceProgress)
+        ->toContain([
+            'family' => 'workspace',
+            'status' => 'checking',
+            'completed' => 1,
+            'total' => 2,
+        ])
+        ->and(collect($workspaceProgress)->contains(
+            static fn (array $snapshot): bool => (
+                ($snapshot['status'] ?? null) === 'checking'
+                && ($snapshot['completed'] ?? null) === ($snapshot['total'] ?? null)
+            ),
+        ))
+        ->toBeFalse();
 });
 
 it('streams node-scoped doctor progress per family as each family is probed', function (): void {
@@ -307,4 +588,118 @@ function doctorRunStreamStepEventIndex(array $events, string $key, string $statu
     }
 
     throw new RuntimeException("Missing step event {$key} {$status}.");
+}
+
+/**
+ * @param  list<array<string, mixed>>  $doctorFrames
+ * @return list<array{family: string, status: string, completed: int, total: int}>
+ */
+function doctorRunStreamFamilyCheckProgressSnapshots(array $doctorFrames, string $family): array
+{
+    $snapshots = [];
+
+    foreach ($doctorFrames as $frame) {
+        $doctor = $frame['doctor'] ?? null;
+
+        if (! is_array($doctor)) {
+            continue;
+        }
+
+        $families = $doctor['progress']['families'] ?? null;
+
+        if (! is_array($families)) {
+            continue;
+        }
+
+        foreach ($families as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            if (($entry['family'] ?? null) !== $family) {
+                continue;
+            }
+
+            if (! is_int($entry['completed'] ?? null) || ! is_int($entry['total'] ?? null)) {
+                continue;
+            }
+
+            $snapshots[] = [
+                'family' => $family,
+                'status' => is_string($entry['status'] ?? null) ? $entry['status'] : '',
+                'completed' => $entry['completed'],
+                'total' => $entry['total'],
+            ];
+        }
+    }
+
+    return $snapshots;
+}
+
+final class FleetDoctorRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private readonly string $failingNodeName = 'app-prod-1',
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (
+            $node->name === $this->failingNodeName
+            && str_contains($script, '/etc/caddy/sites/*.caddy')
+            && ($options['throw'] ?? false) === true
+        ) {
+            $result = new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+
+            throw new RemoteShellFailed($node, $script, $result);
+        }
+
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, 'orbit-proxy-doctor:caddy-container-probe')) {
+            return new RemoteShellResult(exitCode: 0, stdout: "available\ttrue\ttrue\n", stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
+final class DoctorRunStreamRemoteShell implements RemoteShell
+{
+    /** @var list<string> */
+    private array $perRouteStdouts;
+
+    /**
+     * @param  list<string>  $perRouteStdouts
+     */
+    public function __construct(array $perRouteStdouts)
+    {
+        $this->perRouteStdouts = $perRouteStdouts;
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (str_contains($script, "dir='/etc/orbit/apps'")) {
+            return new RemoteShellResult(exitCode: 0, stdout: "orbit-config-dir:absent\n", stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(
+            exitCode: 0,
+            stdout: array_shift($this->perRouteStdouts) ?? '',
+            stderr: '',
+            durationMs: 1,
+        );
+    }
 }

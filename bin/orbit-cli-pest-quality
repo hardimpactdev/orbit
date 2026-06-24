@@ -29,7 +29,7 @@ for directory in tests/Feature/Commands; do
 done
 
 service_dirs=()
-for directory in tests/Feature/Services; do
+for directory in tests/Feature/Services tests/Unit/Services; do
     if [ -d "$directory" ]; then
         service_dirs+=("$directory")
     fi

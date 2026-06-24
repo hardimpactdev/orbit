@@ -136,6 +136,8 @@ final class DoctorRunController implements Loggable
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
+            /** @var array<string, array{completed: int, total: int}> $familyCheckCounts */
+            $familyCheckCounts = [];
             /** @var list<array<string, mixed>> $issues */
             $issues = [];
 
@@ -148,6 +150,7 @@ final class DoctorRunController implements Loggable
                     issues: $issues,
                     actions: [],
                     familyStatuses: $familyStatuses,
+                    familyCheckCounts: $familyCheckCounts,
                 ),
             ]);
             $events->tree('Running Doctor', array_map(
@@ -163,9 +166,27 @@ final class DoctorRunController implements Loggable
                 string $family,
                 string $phase,
                 array $familyIssues = [],
-            ) use ($events, $progressReports, $target, $key, $renderedFamilies, &$familyStatuses, &$issues): void {
+                ?int $completed = null,
+                ?int $total = null,
+            ) use (
+                $events,
+                $progressReports,
+                $target,
+                $key,
+                $renderedFamilies,
+                &$familyStatuses,
+                &$familyCheckCounts,
+                &$issues,
+            ): void {
                 if ($phase === 'running') {
                     $familyStatuses[$family] = 'checking';
+
+                    if ($completed !== null && $total !== null && $total > 0) {
+                        $familyCheckCounts[$family] = [
+                            'completed' => $completed,
+                            'total' => $total,
+                        ];
+                    }
                 }
 
                 if ($phase === 'done') {
@@ -174,6 +195,7 @@ final class DoctorRunController implements Loggable
                         ...$familyIssues,
                     ];
                     $familyStatuses[$family] = 'done';
+                    unset($familyCheckCounts[$family]);
                 }
 
                 $events->stepEvent(
@@ -189,6 +211,7 @@ final class DoctorRunController implements Loggable
                             issues: $issues,
                             actions: [],
                             familyStatuses: $familyStatuses,
+                            familyCheckCounts: $familyCheckCounts,
                         ),
                     ],
                 );
@@ -245,11 +268,16 @@ final class DoctorRunController implements Loggable
             $doctor = $runner->probeFleet(
                 families: $families,
                 key: $key,
-                onNodeProgress: function (Node $node, string $phase) use ($events): void {
+                onNodeProgress: function (Node $node, string $phase, ?array $partialFleetReport = null) use (
+                    $events,
+                ): void {
+                    $extra = $partialFleetReport !== null ? ['doctor' => $partialFleetReport] : [];
+
                     $events->stepEvent(
                         $node->name,
                         $phase,
                         $phase === 'running' ? "Checking {$node->name}" : "{$node->name} checked",
+                        $extra,
                     );
                 },
             );

@@ -73,7 +73,14 @@ review into a full project audit unless the user explicitly asks for one.
   and show-detail for single-entity details.
 - For bordered panels, box drawings, progress trees, and retained terminal
   frames, strip ANSI and verify the whole visible frame, not only the rows that
-  changed.
+  changed. No content may overflow the expected panel width, collide with the
+  right border, or rely on the terminal wrapping outside the renderer.
+- Long human status text, issue details, error messages, and resource labels
+  wrap inside the renderer-owned content area with the border preserved on every
+  continuation line.
+- If a row has detailed issue/error lines below it, the summary row stays a
+  summary such as `1 issue detected:` or `5 issues found:`. Do not duplicate a
+  full issue detail inline in the family/status row while also listing it below.
 - Progress rows use stable operator-facing labels, not backend implementation
   labels.
 - Idle rows are dimmed; active and completed labels remain readable.
@@ -131,17 +138,15 @@ Review `summary.txt` for exit code, duration, maximum idle gap, and artifact
 paths. Review `chunks.jsonl` for cadence, liveness, skipped frames, and delayed
 first output; visible indicator changes for a 300ms blinker should usually be
 near 0.30s apart, allowing normal scheduler noise. Review `transcript.txt` for
-final human shape, wrapping, ANSI framing, and missing progress states. Use the
-source checkout launcher (`./apps/cli/orbit` from `/home/orbit/orbit-run`) for
-source-mounted retained topology proof, unless the report proves
-`/usr/local/bin/orbit` resolves to that source checkout. Use the installed
-binary path when validating release-candidate or live-node behavior, not the
-development launcher.
-
-For bordered output, inspect the full final frame after stripping ANSI and
-reject any line that is wider than the panel, has more than one right border,
-lacks the expected right border, or places user-facing content directly against
-the border because wrapping did not happen.
+final human shape, wrapping, ANSI framing, and missing progress states. For
+bordered output, inspect the full final frame after stripping ANSI and reject
+any line that is wider than the panel, has more than one right border, lacks the
+expected right border, or places user-facing content directly against the border
+because wrapping did not happen. Use the source checkout launcher
+(`./apps/cli/orbit` from `/home/orbit/orbit-run`) for source-mounted retained
+topology proof, unless the report proves `/usr/local/bin/orbit` resolves to
+that source checkout. Use the installed binary path when validating
+release-candidate or live-node behavior, not the development launcher.
 
 For decorated rendering claims, confirm the artifact proves decoration was
 enabled: `NO_COLOR` was not forcing plain output, the command ran under a PTY,

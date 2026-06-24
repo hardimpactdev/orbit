@@ -47,6 +47,26 @@ For long issue details, resource labels, or failure messages, the acceptable
 shape is renderer-owned wrapping with the border preserved on every
 continuation line.
 
+## Bordered Output Checks
+
+When the command renders a box, panel, tree, or other fixed-width human output,
+strip ANSI codes before judging the frame. The reviewer must inspect the whole
+final frame, not only the rows that changed.
+
+Reject the proof when any visible line:
+
+- exceeds the renderer-owned panel width;
+- places content directly against the right border because wrapping did not
+  happen;
+- has a missing, duplicated, or shifted right border;
+- relies on terminal auto-wrap instead of renderer-owned continuation lines; or
+- duplicates a full issue/error detail in a summary row while also listing the
+  same detail below.
+
+For long issue details, resource labels, or failure messages, the acceptable
+shape is renderer-owned wrapping with the border preserved on every continuation
+line.
+
 ## Quick Start
 
 ```bash

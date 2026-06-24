@@ -15,6 +15,7 @@ use App\Enums\Nodes\NodeConvergenceContext;
 use App\Enums\Nodes\NodeRoleName;
 use App\Enums\Nodes\NodeRoleStatus;
 use App\Enums\Nodes\NodeStatus;
+use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -59,7 +60,7 @@ use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection;
 
 final readonly class DoctorReportRunner
 {
@@ -259,33 +260,49 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
-     * @param  (callable(Node, 'running'|'done'): void)|null  $onNodeProgress
+     * @param  (callable(Node, 'running'|'done', ?array<string, mixed>=): void)|null  $onNodeProgress
      * @return array<string, mixed>
      */
     public function probeFleet(array $families = [], ?string $key = null, ?callable $onNodeProgress = null): array
     {
         $targets = $this->fleetTargetsForFamilies($families);
+        $targetNames = $targets
+            ->map(fn (Node $node): string => $node->name)
+            ->values()
+            ->all();
+        /** @var list<array{node: string, status: string}> $nodeProgressStatuses */
+        $nodeProgressStatuses = array_map(
+            static fn (string $nodeName): array => ['node' => $nodeName, 'status' => 'queued'],
+            $targetNames,
+        );
+        /** @var list<array<string, mixed>> $issues */
         $issues = [];
+        /** @var list<array<string, mixed>> $nodes */
         $nodes = [];
 
-        foreach ($targets as $node) {
+        foreach ($targets as $nodeIndex => $node) {
+            $nodeProgressStatuses[$nodeIndex]['status'] = 'running';
+
             if ($onNodeProgress !== null) {
                 $onNodeProgress($node, 'running');
             }
 
-            $report = $this->probe($node, families: $families, key: $key);
-
-            if ($onNodeProgress !== null) {
-                $onNodeProgress($node, 'done');
+            try {
+                $report = $this->probe($node, families: $families, key: $key);
+            } catch (RemoteShellFailed $exception) {
+                $report = $this->nodeProbeFailedReport($node, $families, $key, $exception);
             }
+
             $reportIssues = is_array($report['issues'] ?? null) ? $report['issues'] : [];
             $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
             $reportScope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
 
-            $issues = [
-                ...$issues,
-                ...array_values(array_filter($reportIssues, is_array(...))),
-            ];
+            foreach ($reportIssues as $reportIssue) {
+                if (is_array($reportIssue)) {
+                    /** @var array<string, mixed> $reportIssue */
+                    $issues[] = $reportIssue;
+                }
+            }
             $nodes[] = [
                 'node' => $node->name,
                 'role' => $node->displayRole(),
@@ -293,6 +310,25 @@ final readonly class DoctorReportRunner
                 'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
                 'summary' => $reportSummary,
             ];
+
+            $nodeProgressStatuses[$nodeIndex]['status'] = 'done';
+
+            if ($onNodeProgress !== null) {
+                $onNodeProgress(
+                    $node,
+                    'done',
+                    $this->fleetProgressReport(
+                        targets: $targets,
+                        scope: [
+                            'families' => $families,
+                            'key' => $key,
+                        ],
+                        issues: $issues,
+                        nodes: $nodes,
+                        nodeProgressStatuses: $nodeProgressStatuses,
+                    ),
+                );
+            }
         }
 
         $summary = $this->summary('verify', $issues, []);
@@ -318,6 +354,87 @@ final readonly class DoctorReportRunner
             'actions' => [],
             'nodes' => $nodes,
         ];
+    }
+
+    /**
+     * @param  Collection<int, Node>  $targets
+     * @param  array{families: list<string>, key: string|null}  $scope
+     * @param  list<array<string, mixed>>  $issues
+     * @param  list<array<string, mixed>>  $nodes
+     * @param  list<array{node: string, status: string}>  $nodeProgressStatuses
+     * @return array<string, mixed>
+     */
+    private function fleetProgressReport(
+        Collection $targets,
+        array $scope,
+        array $issues,
+        array $nodes,
+        array $nodeProgressStatuses,
+    ): array {
+        return [
+            'healthy' => $issues === [],
+            'mode' => 'verify',
+            'scope' => [
+                'families' => $this->fleetFamilies($targets, $scope['families']),
+                'node' => null,
+                'role' => 'fleet',
+                'self' => false,
+                'app' => null,
+                'workspace' => null,
+                'key' => $scope['key'],
+                'targets' => $targets
+                    ->map(fn (Node $node): string => $node->name)
+                    ->values()
+                    ->all(),
+            ],
+            'summary' => $this->summary('verify', $issues, []),
+            'issues' => $issues,
+            'actions' => [],
+            'nodes' => $this->fleetProgressNodes($targets, $scope['families'], $nodes),
+            'progress' => [
+                'state' => 'running',
+                'nodes' => $nodeProgressStatuses,
+            ],
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Node>  $targets
+     * @param  list<string>  $families
+     * @param  list<array<string, mixed>>  $completedNodes
+     * @return list<array<string, mixed>>
+     */
+    private function fleetProgressNodes(
+        Collection $targets,
+        array $families,
+        array $completedNodes,
+    ): array {
+        /** @var array<string, array<string, mixed>> $completedByName */
+        $completedByName = [];
+
+        foreach ($completedNodes as $node) {
+            $name = is_string($node['node'] ?? null) ? trim($node['node']) : '';
+
+            if ($name !== '') {
+                $completedByName[$name] = $node;
+            }
+        }
+
+        $fleetFamilies = $this->fleetFamilies($targets, $families);
+
+        $nodes = [];
+
+        foreach ($targets as $target) {
+            $nodes[] = $completedByName[$target->name] ?? [
+                'node' => $target->name,
+                'role' => $target->displayRole(),
+                'healthy' => true,
+                'families' => $fleetFamilies,
+                'summary' => ['issues' => 0],
+            ];
+        }
+
+        return $nodes;
     }
 
     /**
@@ -361,7 +478,7 @@ final readonly class DoctorReportRunner
 
     /**
      * @param  list<string>  $families
-     * @param  (callable(string, 'running'|'done', list<array<string, mixed>>): void)|null  $onFamilyProgress
+     * @param  (callable(string, 'running'|'done', list<array<string, mixed>>, ?int, ?int): void)|null  $onFamilyProgress
      * @return array<string, mixed>
      */
     public function probe(
@@ -378,31 +495,46 @@ final readonly class DoctorReportRunner
 
         if (in_array('node', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'node', 'running');
-            $snapshot = $this->nodesProbe->introspect($node);
-            $issues = [
-                ...$issues,
-                ...array_map(
-                    fn (DriftEntry $entry): array => $this->issuePayload($entry, $node),
-                    $this->nodesProbe->diff($node, $snapshot, $key),
-                ),
-            ];
+            $nodeCheckTotal =
+                1
+                + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
+                + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0);
 
-            $webSocketAssignment = $this->activeWebSocketAssignment($node);
+            $this->runFamilyCheckPlan($onFamilyProgress, 'node', $nodeCheckTotal, function (callable $advance) use (
+                $node,
+                $key,
+                &$issues,
+            ): void {
+                $snapshot = $this->nodesProbe->introspect($node);
+                $issues = [
+                    ...$issues,
+                    ...array_map(
+                        fn (DriftEntry $entry): array => $this->issuePayload($entry, $node),
+                        $this->nodesProbe->diff($node, $snapshot, $key),
+                    ),
+                ];
+                $advance();
 
-            if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                $webSocketAssignment = $this->activeWebSocketAssignment($node);
+
+                if ($webSocketAssignment instanceof NodeRoleAssignment) {
+                    foreach ($this->webSocketDoctorProbe->nodeDrift($node, $webSocketAssignment) as $entry) {
+                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    }
+
+                    $advance();
                 }
-            }
 
-            $s3Assignment = $this->activeS3Assignment($node);
+                $s3Assignment = $this->activeS3Assignment($node);
 
-            if ($s3Assignment instanceof NodeRoleAssignment) {
-                foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                if ($s3Assignment instanceof NodeRoleAssignment) {
+                    foreach ($this->s3DoctorProbe->nodeDrift($node, $s3Assignment) as $entry) {
+                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    }
+
+                    $advance();
                 }
-            }
+            });
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -414,122 +546,16 @@ final readonly class DoctorReportRunner
 
         if (in_array('app', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'app', 'running');
-            foreach (App::query()->with('node')->where('node_id', $node->id)->get() as $app) {
-                $snapshot = $this->appsProbe->introspect($app);
+            $apps = App::query()->with('node')->where('node_id', $node->id)->get();
+            $appCheckTotal = $apps->count() + 2;
 
-                foreach ($this->appsProbe->diff($app, $snapshot) as $entry) {
-                    $issues[] = $this->appIssuePayload($entry, $app);
-                }
-
-                $app->loadMissing('instances');
-
-                foreach ($app->instances as $instance) {
-                    foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
-                        $issues[] = $this->appIssuePayload($entry, $app);
-                    }
-                }
-            }
-
-            $containerProbe = $this->appsProbe->introspectNode($node);
-            $containerSnapshot = $containerProbe->containers;
-            $configProbe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
-            $configSnapshot = $configProbe->configs;
-
-            // Only active PHP apps are expected to own a FrankenPHP runtime
-            // container / managed runtime config on the node. Static apps
-            // have no runtime artifact, so a stale `orbit-app-<app>` or
-            // `/etc/orbit/apps/<app>.ini` for a static app slug must still
-            // be reported as extra.
-            $activePhpAppSlugs = App::query()
-                ->where('node_id', $node->id)
-                ->where('runtime', AppRuntimeKind::Php->value)
-                ->pluck('name')
-                ->all();
-
-            // Proven-absent docker (no `docker` command on the node) yields
-            // an empty snapshot; orphan scan skips with no false positives.
-            // Unknown probe failure (daemon down, permission, SSH transport)
-            // must NOT be treated as a clean empty list — stale
-            // runtime_container_extra artifacts could be hidden. Surface it
-            // as a dedicated probe-failure drift instead, mirroring the
-            // runtime_config_probe_failed contract.
-            if ($containerProbe->status === NodeRuntimeContainersProbeStatus::Error) {
-                $issues[] = $this->annotateIssue([
-                    'family' => 'app',
-                    'node' => $node->name,
-                    'key' => 'app.runtime_container_probe_failed',
-                    'kind' => DriftKind::Unverifiable->value,
-                    'summary' => "App runtime container scan failed on node '{$node->name}'; stale orphan runtime containers cannot be detected.",
-                    'detail' => [
-                        'error' => $containerProbe->error,
-                    ],
-                ]);
-            } elseif ($containerProbe->status === NodeRuntimeContainersProbeStatus::Present) {
-                foreach ($containerSnapshot->keys() as $appSlug) {
-                    $appSlug = $appSlug;
-
-                    if (in_array($appSlug, $activePhpAppSlugs, true)) {
-                        continue;
-                    }
-
-                    $issues[] = $this->annotateIssue([
-                        'family' => 'app',
-                        'node' => $node->name,
-                        'key' => 'app.runtime_container_extra',
-                        'kind' => DriftKind::Extra->value,
-                        'summary' => "App runtime container for '{$appSlug}' exists on node but no matching active PHP app record.",
-                        'detail' => [
-                            'app' => $appSlug,
-                            'container' => "orbit-app-{$appSlug}",
-                        ],
-                    ]);
-                }
-            }
-
-            // Proven-absent directory yields an empty snapshot; orphan scan
-            // skips with no false positives. Unknown probe failure (sudo /
-            // SSH / permission) must NOT be treated as a clean empty list —
-            // stale runtime_config_extra artifacts could be hidden. Surface
-            // it as a dedicated probe-failure drift instead.
-            if ($configProbe->status === NodeRuntimeConfigsProbeStatus::Error) {
-                $issues[] = $this->annotateIssue([
-                    'family' => 'app',
-                    'node' => $node->name,
-                    'key' => 'app.runtime_config_probe_failed',
-                    'kind' => DriftKind::Unverifiable->value,
-                    'summary' => "Managed runtime config directory probe failed on node '{$node->name}'; stale orphan configs cannot be detected.",
-                    'detail' => [
-                        'path' => '/etc/orbit/apps',
-                        'error' => $configProbe->error,
-                    ],
-                ]);
-            } elseif ($configProbe->status === NodeRuntimeConfigsProbeStatus::Present) {
-                foreach ($configSnapshot->keys() as $appSlug) {
-                    $appSlug = $appSlug;
-
-                    if (in_array($appSlug, $activePhpAppSlugs, true)) {
-                        continue;
-                    }
-
-                    $observed = $configSnapshot->get($appSlug) ?? [];
-                    $path = is_string($observed['path'] ?? null)
-                        ? $observed['path']
-                        : "/etc/orbit/apps/{$appSlug}.ini";
-
-                    $issues[] = $this->annotateIssue([
-                        'family' => 'app',
-                        'node' => $node->name,
-                        'key' => 'app.runtime_config_extra',
-                        'kind' => DriftKind::Extra->value,
-                        'summary' => "Managed runtime config for '{$appSlug}' exists on node but no matching active PHP app record.",
-                        'detail' => [
-                            'app' => $appSlug,
-                            'path' => $path,
-                        ],
-                    ]);
-                }
-            }
+            $this->runFamilyCheckPlan($onFamilyProgress, 'app', $appCheckTotal, function (callable $advance) use (
+                $apps,
+                $node,
+                &$issues,
+            ): void {
+                $this->probeAppFamily($node, $apps, $issues, $advance);
+            });
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -541,17 +567,28 @@ final readonly class DoctorReportRunner
 
         if (in_array('workspace', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'workspace', 'running');
-            foreach (Workspace::query()
-                ->with('app.node')
-                ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
-                ->get() as $workspace) {
-                $snapshot = $this->workspacesProbe->introspect($workspace);
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'workspace',
+                Workspace::query()
+                    ->with('app.node')
+                    ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
+                    ->count(),
+                function (callable $advance) use ($node, &$issues): void {
+                    foreach (Workspace::query()
+                        ->with('app.node')
+                        ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
+                        ->get() as $workspace) {
+                        $snapshot = $this->workspacesProbe->introspect($workspace);
 
-                foreach ($this->workspacesProbe->diff($workspace, $snapshot) as $entry) {
-                    $issues[] = $this->workspaceIssuePayload($entry, $workspace);
-                }
-            }
+                        foreach ($this->workspacesProbe->diff($workspace, $snapshot) as $entry) {
+                            $issues[] = $this->workspaceIssuePayload($entry, $workspace);
+                        }
+
+                        $advance();
+                    }
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -563,14 +600,22 @@ final readonly class DoctorReportRunner
 
         if (in_array('process', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'process', 'running');
-            foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
-                $snapshot = $this->processesProbe->introspect($process);
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'process',
+                Process::query()->with('owner')->where('node_id', $node->id)->count(),
+                function (callable $advance) use ($node, &$issues): void {
+                    foreach (Process::query()->with('owner')->where('node_id', $node->id)->get() as $process) {
+                        $snapshot = $this->processesProbe->introspect($process);
 
-                foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
-                    $issues[] = $this->processIssuePayload($entry, $process);
-                }
-            }
+                        foreach ($this->processesProbe->diff($process, $snapshot) as $entry) {
+                            $issues[] = $this->processIssuePayload($entry, $process);
+                        }
+
+                        $advance();
+                    }
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -582,71 +627,18 @@ final readonly class DoctorReportRunner
 
         if (in_array('proxy', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'proxy', 'running');
-            foreach (ProxyRoute::query()
-                ->with(['node', 'app', 'workspace'])
-                ->where('node_id', $node->id)
-                ->get() as $route) {
-                $snapshot = $this->proxyRouteProbe->introspect($route);
+            $proxyCheckTotal =
+                ProxyRoute::query()->where('node_id', $node->id)->count()
+                + 2
+                + ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node) ? 1 : 0)
+                + ($node->isActive() && $this->canServeGatewayOrAppHost($node) ? 1 : 0);
 
-                foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
-                    $issues[] = $this->proxyIssuePayload($entry, $route);
-                }
-            }
-
-            foreach ($this->webSocketProxyDoctorProbe->drift($node) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
-            }
-
-            foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
-                $issues[] = $this->nodeScopedIssuePayload($entry, $node);
-            }
-
-            if ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
-                $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
-
-                foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
-                    $issues[] = $this->annotateIssue([
-                        'family' => $entry->family,
-                        'node' => $node->name,
-                        'key' => $entry->key,
-                        'kind' => $entry->kind->value,
-                        'summary' => $entry->summary,
-                        'detail' => $entry->detail ?? [],
-                    ]);
-                }
-            }
-
-            if ($node->isActive() && $this->canServeGatewayOrAppHost($node)) {
-                $snapshot = $this->proxyRouteProbe->introspectNode($node);
-                $expectedDomains = $this->proxyRouteProbe->expectedDomainsForNode($node);
-
-                foreach ($snapshot->keys() as $domain) {
-                    $domain = $domain;
-
-                    if (in_array($domain, $expectedDomains, true)) {
-                        continue;
-                    }
-
-                    $entry = new DriftEntry(
-                        family: 'proxy',
-                        key: $domain,
-                        kind: DriftKind::Extra,
-                        summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
-                    );
-
-                    $issues[] = $this->annotateIssue([
-                        'family' => 'proxy',
-                        'node' => $node->name,
-                        'key' => $domain,
-                        'kind' => 'extra',
-                        'summary' => $entry->summary,
-                        'detail' => [
-                            'domain' => $domain,
-                        ],
-                    ]);
-                }
-            }
+            $this->runFamilyCheckPlan($onFamilyProgress, 'proxy', $proxyCheckTotal, function (callable $advance) use (
+                $node,
+                &$issues,
+            ): void {
+                $this->probeProxyFamily($node, $issues, $advance);
+            });
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -658,14 +650,22 @@ final readonly class DoctorReportRunner
 
         if (in_array('firewall_rule', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'firewall_rule', 'running');
-            foreach (FirewallRule::query()->with('node')->where('node_id', $node->id)->get() as $rule) {
-                $snapshot = $this->firewallRuleProbe->introspect($rule);
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'firewall_rule',
+                FirewallRule::query()->with('node')->where('node_id', $node->id)->count(),
+                function (callable $advance) use ($node, &$issues): void {
+                    foreach (FirewallRule::query()->with('node')->where('node_id', $node->id)->get() as $rule) {
+                        $snapshot = $this->firewallRuleProbe->introspect($rule);
 
-                foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
-                    $issues[] = $this->firewallIssuePayload($entry, $rule);
-                }
-            }
+                        foreach ($this->firewallRuleProbe->diff($rule, $snapshot) as $entry) {
+                            $issues[] = $this->firewallIssuePayload($entry, $rule);
+                        }
+
+                        $advance();
+                    }
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -677,36 +677,54 @@ final readonly class DoctorReportRunner
 
         if (in_array('tool', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'tool', 'running');
-            foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
-                $snapshot = $this->toolsProbe->introspect($tool);
+            $toolCheckTotal =
+                NodeTool::query()->where('node_id', $node->id)->count()
+                + ($this->activeWebSocketAssignment($node) instanceof NodeRoleAssignment ? 1 : 0)
+                + ($this->activeS3Assignment($node) instanceof NodeRoleAssignment ? 1 : 0)
+                + ($this->shouldProbeDnsRuntime($node) ? 1 : 0);
 
-                foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
-                    $issues[] = $this->toolIssuePayload($entry, $tool);
+            $this->runFamilyCheckPlan($onFamilyProgress, 'tool', $toolCheckTotal, function (callable $advance) use (
+                $node,
+                &$issues,
+            ): void {
+                foreach (NodeTool::query()->with('node')->where('node_id', $node->id)->get() as $tool) {
+                    $snapshot = $this->toolsProbe->introspect($tool);
+
+                    foreach ($this->toolsProbe->diff($tool, $snapshot) as $entry) {
+                        $issues[] = $this->toolIssuePayload($entry, $tool);
+                    }
+
+                    $advance();
                 }
-            }
 
-            $webSocketAssignment = $this->activeWebSocketAssignment($node);
+                $webSocketAssignment = $this->activeWebSocketAssignment($node);
 
-            if ($webSocketAssignment instanceof NodeRoleAssignment) {
-                foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                if ($webSocketAssignment instanceof NodeRoleAssignment) {
+                    foreach ($this->webSocketDoctorProbe->toolDrift($node, $webSocketAssignment) as $entry) {
+                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    }
+
+                    $advance();
                 }
-            }
 
-            $s3Assignment = $this->activeS3Assignment($node);
+                $s3Assignment = $this->activeS3Assignment($node);
 
-            if ($s3Assignment instanceof NodeRoleAssignment) {
-                foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                if ($s3Assignment instanceof NodeRoleAssignment) {
+                    foreach ($this->s3DoctorProbe->toolDrift($node, $s3Assignment) as $entry) {
+                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    }
+
+                    $advance();
                 }
-            }
 
-            if ($this->shouldProbeDnsRuntime($node)) {
-                foreach ($this->dnsRuntimeProbe->probe() as $entry) {
-                    $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                if ($this->shouldProbeDnsRuntime($node)) {
+                    foreach ($this->dnsRuntimeProbe->probe() as $entry) {
+                        $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+                    }
+
+                    $advance();
                 }
-            }
+            });
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -718,22 +736,40 @@ final readonly class DoctorReportRunner
 
         if (in_array('schedule', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'schedule', 'running');
+            $scheduleInventory = $this->schedulesForNode($node);
+
             if ($this->nodeRoleAssignments->nodeIsGateway($node)) {
-                $snapshot = $this->schedulesProbe->introspectGateway($node);
-
-                foreach ($this->schedulesProbe->diffGateway($node, $snapshot) as $entry) {
-                    $issues[] = $this->scheduleGatewayIssuePayload($entry, $node);
-                }
+                $scheduleInventory = collect([$node])->concat($scheduleInventory)->values();
             }
 
-            foreach ($this->schedulesForNode($node) as $schedule) {
-                $snapshot = $this->schedulesProbe->introspect($schedule);
+            $this->runFamilyCheckPlan(
+                $onFamilyProgress,
+                'schedule',
+                $scheduleInventory->count(),
+                function (callable $advance) use ($scheduleInventory, $node, &$issues): void {
+                    foreach ($scheduleInventory as $target) {
+                        if ($target instanceof Node) {
+                            $snapshot = $this->schedulesProbe->introspectGateway($target);
 
-                foreach ($this->schedulesProbe->diff($schedule, $snapshot) as $entry) {
-                    $issues[] = $this->scheduleIssuePayload($entry, $schedule);
-                }
-            }
+                            foreach ($this->schedulesProbe->diffGateway($target, $snapshot) as $entry) {
+                                $issues[] = $this->scheduleGatewayIssuePayload($entry, $node);
+                            }
+
+                            $advance();
+
+                            continue;
+                        }
+
+                        $snapshot = $this->schedulesProbe->introspect($target);
+
+                        foreach ($this->schedulesProbe->diff($target, $snapshot) as $entry) {
+                            $issues[] = $this->scheduleIssuePayload($entry, $target);
+                        }
+
+                        $advance();
+                    }
+                },
+            );
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -745,13 +781,20 @@ final readonly class DoctorReportRunner
 
         if (in_array('database_connection', $selectedFamilies, true)) {
             $familyIssueOffset = count($issues);
-            $this->reportFamilyProgress($onFamilyProgress, 'database_connection', 'running');
-            foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
-                $issues[] = $this->annotateIssue([
-                    ...$issue,
-                    'node' => $node->name,
-                ]);
-            }
+
+            $this->runFamilyCheckPlan($onFamilyProgress, 'database_connection', 1, function (callable $advance) use (
+                $node,
+                &$issues,
+            ): void {
+                foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
+                    $issues[] = $this->annotateIssue([
+                        ...$issue,
+                        'node' => $node->name,
+                    ]);
+                }
+
+                $advance();
+            });
 
             $this->reportFamilyProgress(
                 $onFamilyProgress,
@@ -783,19 +826,335 @@ final readonly class DoctorReportRunner
     }
 
     /**
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    private function nodeProbeFailedReport(
+        Node $node,
+        array $families,
+        ?string $key,
+        RemoteShellFailed $exception,
+    ): array {
+        $roleCategories = $this->categoriesForNode($node);
+        $selectedFamilies = $families === []
+            ? $roleCategories
+            : array_values(array_intersect($families, $roleCategories));
+        $issue = $this->remoteShellProbeFailedIssue(
+            node: $node,
+            family: 'node',
+            key: 'node.remote_shell_probe_failed',
+            exception: $exception,
+            summary: "Doctor probe failed on node '{$node->name}': {$exception->getMessage()}",
+        );
+        $issues = $this->filterIssuesByKey([$issue], $key);
+        $summary = $this->summary('verify', $issues, []);
+
+        return [
+            'healthy' => false,
+            'mode' => 'verify',
+            'scope' => [
+                'families' => $selectedFamilies,
+                'node' => $node->name,
+                'role' => $node->displayRole(),
+                'self' => false,
+                'app' => null,
+                'workspace' => null,
+                'key' => $key,
+            ],
+            'summary' => $summary,
+            'issues' => $issues,
+            'actions' => [],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function remoteShellProbeFailedIssue(
+        Node $node,
+        string $family,
+        string $key,
+        RemoteShellFailed $exception,
+        string $summary,
+    ): array {
+        return $this->annotateIssue([
+            'family' => $family,
+            'node' => $node->name,
+            'key' => $key,
+            'kind' => DriftKind::Unverifiable->value,
+            'summary' => $summary,
+            'detail' => [
+                'error' => $exception->getMessage(),
+                'exit_code' => $exception->result->exitCode,
+            ],
+        ]);
+    }
+
+    /**
+     * @param  Collection<int, App>  $apps
      * @param  list<array<string, mixed>>  $issues
+     */
+    private function probeAppFamily(Node $node, Collection $apps, array &$issues, callable $advance): void
+    {
+        foreach ($apps as $app) {
+            $snapshot = $this->appsProbe->introspect($app);
+
+            foreach ($this->appsProbe->diff($app, $snapshot) as $entry) {
+                $issues[] = $this->appIssuePayload($entry, $app);
+            }
+
+            $app->loadMissing('instances');
+
+            foreach ($app->instances as $instance) {
+                foreach ($this->appRuntimeRequirementProbe->drift($instance) as $entry) {
+                    $issues[] = $this->appIssuePayload($entry, $app);
+                }
+            }
+
+            $advance();
+        }
+
+        $containerProbe = $this->appsProbe->introspectNode($node);
+        $containerSnapshot = $containerProbe->containers;
+        $activePhpAppSlugs = App::query()
+            ->where('node_id', $node->id)
+            ->where('runtime', AppRuntimeKind::Php->value)
+            ->pluck('name')
+            ->all();
+
+        if ($containerProbe->status === NodeRuntimeContainersProbeStatus::Error) {
+            $issues[] = $this->annotateIssue([
+                'family' => 'app',
+                'node' => $node->name,
+                'key' => 'app.runtime_container_probe_failed',
+                'kind' => DriftKind::Unverifiable->value,
+                'summary' => "App runtime container scan failed on node '{$node->name}'; stale orphan runtime containers cannot be detected.",
+                'detail' => [
+                    'error' => $containerProbe->error,
+                ],
+            ]);
+        } elseif ($containerProbe->status === NodeRuntimeContainersProbeStatus::Present) {
+            foreach ($containerSnapshot->keys() as $appSlug) {
+                if (in_array($appSlug, $activePhpAppSlugs, true)) {
+                    continue;
+                }
+
+                $issues[] = $this->annotateIssue([
+                    'family' => 'app',
+                    'node' => $node->name,
+                    'key' => 'app.runtime_container_extra',
+                    'kind' => DriftKind::Extra->value,
+                    'summary' => "App runtime container for '{$appSlug}' exists on node but no matching active PHP app record.",
+                    'detail' => [
+                        'app' => $appSlug,
+                        'container' => "orbit-app-{$appSlug}",
+                    ],
+                ]);
+            }
+        }
+
+        $advance();
+
+        $configProbe = $this->appsProbe->introspectNodeRuntimeConfigs($node);
+        $configSnapshot = $configProbe->configs;
+
+        if ($configProbe->status === NodeRuntimeConfigsProbeStatus::Error) {
+            $issues[] = $this->annotateIssue([
+                'family' => 'app',
+                'node' => $node->name,
+                'key' => 'app.runtime_config_probe_failed',
+                'kind' => DriftKind::Unverifiable->value,
+                'summary' => "Managed runtime config directory probe failed on node '{$node->name}'; stale orphan configs cannot be detected.",
+                'detail' => [
+                    'path' => '/etc/orbit/apps',
+                    'error' => $configProbe->error,
+                ],
+            ]);
+        } elseif ($configProbe->status === NodeRuntimeConfigsProbeStatus::Present) {
+            foreach ($configSnapshot->keys() as $appSlug) {
+                if (in_array($appSlug, $activePhpAppSlugs, true)) {
+                    continue;
+                }
+
+                $observed = $configSnapshot->get($appSlug) ?? [];
+                $path = is_string($observed['path'] ?? null)
+                    ? $observed['path']
+                    : "/etc/orbit/apps/{$appSlug}.ini";
+
+                $issues[] = $this->annotateIssue([
+                    'family' => 'app',
+                    'node' => $node->name,
+                    'key' => 'app.runtime_config_extra',
+                    'kind' => DriftKind::Extra->value,
+                    'summary' => "Managed runtime config for '{$appSlug}' exists on node but no matching active PHP app record.",
+                    'detail' => [
+                        'app' => $appSlug,
+                        'path' => $path,
+                    ],
+                ]);
+            }
+        }
+
+        $advance();
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     */
+    private function probeProxyFamily(Node $node, array &$issues, callable $advance): void
+    {
+        foreach (ProxyRoute::query()
+            ->with(['node', 'app', 'workspace'])
+            ->where('node_id', $node->id)
+            ->get() as $route) {
+            $snapshot = $this->proxyRouteProbe->introspect($route);
+
+            foreach ($this->proxyRouteProbe->diff($route, $snapshot) as $entry) {
+                $issues[] = $this->proxyIssuePayload($entry, $route);
+            }
+
+            $advance();
+        }
+
+        foreach ($this->webSocketProxyDoctorProbe->drift($node) as $entry) {
+            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+        }
+
+        $advance();
+
+        foreach ($this->s3ProxyDoctorProbe->drift($node) as $entry) {
+            $issues[] = $this->nodeScopedIssuePayload($entry, $node);
+        }
+
+        $advance();
+
+        if ($node->isActive() && $this->nodeRoleAssignments->nodeHostsOrbitCaddy($node)) {
+            $caddySnapshot = $this->proxyRouteProbe->introspectCaddyContainer($node);
+
+            foreach ($this->proxyRouteProbe->diffCaddyContainer($node, $caddySnapshot) as $entry) {
+                $issues[] = $this->annotateIssue([
+                    'family' => $entry->family,
+                    'node' => $node->name,
+                    'key' => $entry->key,
+                    'kind' => $entry->kind->value,
+                    'summary' => $entry->summary,
+                    'detail' => $entry->detail ?? [],
+                ]);
+            }
+
+            $advance();
+        }
+
+        if (! $node->isActive() || ! $this->canServeGatewayOrAppHost($node)) {
+            return;
+        }
+
+        try {
+            $snapshot = $this->proxyRouteProbe->introspectNode($node);
+            $expectedDomains = $this->proxyRouteProbe->expectedDomainsForNode($node);
+
+            foreach ($snapshot->keys() as $domain) {
+                if (in_array($domain, $expectedDomains, true)) {
+                    continue;
+                }
+
+                $entry = new DriftEntry(
+                    family: 'proxy',
+                    key: $domain,
+                    kind: DriftKind::Extra,
+                    summary: "Proxy route '{$domain}' exists on node but not in gateway registry.",
+                );
+
+                $issues[] = $this->annotateIssue([
+                    'family' => 'proxy',
+                    'node' => $node->name,
+                    'key' => $domain,
+                    'kind' => 'extra',
+                    'summary' => $entry->summary,
+                    'detail' => [
+                        'domain' => $domain,
+                    ],
+                ]);
+            }
+        } catch (RemoteShellFailed $exception) {
+            $issues[] = $this->remoteShellProbeFailedIssue(
+                node: $node,
+                family: 'proxy',
+                key: 'proxy.node_probe_failed',
+                exception: $exception,
+                summary: "Proxy node route scan failed on node '{$node->name}'; extra backend routes on the node cannot be detected.",
+            );
+        }
+
+        $advance();
+    }
+
+    /**
+     * @param  callable(callable(): void): void  $runner
+     */
+    private function runFamilyCheckPlan(
+        ?callable $onFamilyProgress,
+        string $family,
+        int $total,
+        callable $runner,
+    ): void {
+        if ($total === 0) {
+            $this->reportFamilyProgress($onFamilyProgress, $family, 'running');
+            $runner(static function (): void {});
+
+            return;
+        }
+
+        $completed = 0;
+        $this->reportFamilyProgress(
+            $onFamilyProgress,
+            $family,
+            'running',
+            [],
+            [
+                'completed' => 0,
+                'total' => $total,
+            ],
+        );
+
+        $advance = function () use (&$completed, $onFamilyProgress, $family, $total): void {
+            $completed++;
+
+            if ($completed >= $total) {
+                return;
+            }
+
+            $this->reportFamilyProgress(
+                $onFamilyProgress,
+                $family,
+                'running',
+                [],
+                [
+                    'completed' => $completed,
+                    'total' => $total,
+                ],
+            );
+        };
+
+        $runner($advance);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $issues
+     * @param  array{completed: int, total: int}|null  $progress
      */
     private function reportFamilyProgress(
         ?callable $onFamilyProgress,
         string $family,
         string $phase,
         array $issues = [],
+        ?array $progress = null,
     ): void {
         if ($onFamilyProgress === null) {
             return;
         }
 
-        $onFamilyProgress($family, $phase, $issues);
+        $onFamilyProgress($family, $phase, $issues, $progress['completed'] ?? null, $progress['total'] ?? null);
     }
 
     /**
@@ -1158,11 +1517,17 @@ final readonly class DoctorReportRunner
             return $families;
         }
 
-        return $targets
-            ->flatMap(fn (Node $node): array => $this->categoriesForNode($node))
-            ->unique()
-            ->values()
-            ->all();
+        $resolved = [];
+
+        foreach ($targets as $node) {
+            foreach ($this->categoriesForNode($node) as $family) {
+                if (! in_array($family, $resolved, true)) {
+                    $resolved[] = $family;
+                }
+            }
+        }
+
+        return $resolved;
     }
 
     /**

@@ -28,6 +28,7 @@ final class DoctorProgressReportFactory
      * @param  list<array<string, mixed>>  $issues
      * @param  list<array<string, mixed>>  $actions
      * @param  array<string, string>  $familyStatuses
+     * @param  array<string, array{completed: int, total: int}>  $familyCheckCounts
      * @return array<string, mixed>
      */
     public function report(
@@ -39,6 +40,7 @@ final class DoctorProgressReportFactory
         array $actions,
         array $familyStatuses,
         string $state = 'running',
+        array $familyCheckCounts = [],
     ): array {
         return [
             'healthy' => false,
@@ -58,10 +60,20 @@ final class DoctorProgressReportFactory
             'progress' => [
                 'state' => $state,
                 'families' => array_map(
-                    fn (string $family): array => [
-                        'family' => $family,
-                        'status' => $familyStatuses[$family] ?? 'queued',
-                    ],
+                    static function (string $family) use ($familyStatuses, $familyCheckCounts): array {
+                        $entry = [
+                            'family' => $family,
+                            'status' => $familyStatuses[$family] ?? 'queued',
+                        ];
+                        $counts = $familyCheckCounts[$family] ?? null;
+
+                        if ($counts !== null && $counts['total'] > 0) {
+                            $entry['completed'] = $counts['completed'];
+                            $entry['total'] = $counts['total'];
+                        }
+
+                        return $entry;
+                    },
                     $families,
                 ),
             ],

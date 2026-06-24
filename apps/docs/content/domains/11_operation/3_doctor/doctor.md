@@ -107,17 +107,14 @@ requires `doctor:verify`; resolution actions require `doctor:restore` or
 
 ## Output
 
-Human output renders a framed check-up panel for a single target node.
-While the command is running, the panel shows each category in the target's
-active-role set and its current state. The final result uses the same
-category rows, marks healthy categories as `OK`, renders issue tables inline
-below the category that owns them, and ends with a summary line. Healthy
-output must still say what was checked. In the resolution modes (`--fix`, `--restore`,
-`--adopt`), action results render inline below the owning category.
-Verify-mode runs do not render action tables.
-
-`--all` uses a fleet-specific progress surface and a fleet result; it never
-renders a fake single-node `this node` panel.
+Human output renders one bordered doctor check-up panel. Single-node runs show
+each category in the target's active-role set. `--all` uses the same panel with
+node-keyed rows. While checks run, the panel updates in place and omits the
+summary section; the terminal panel adds summary prose. Issue details render
+inline under the owning row. In resolution modes (`--fix`, `--restore`,
+`--adopt`), action results render inline below the owning category. Verify-mode
+runs do not render action tables. `--json` and `--stream-json` keep complete
+machine payloads; human truncation does not apply to machine output.
 
 Use `--json` for one final machine-readable diagnostic result. Use
 `--stream-json` for long-running non-interactive agents that need incremental
