@@ -22,6 +22,8 @@ feature scratchpad. Keep code history in Git.
 - Parallelization scan:
   - Candidate parallel lanes:
   - Serialized because:
+  - Deferred lanes (lane -> reason -> owner):
+  - Parallel dispatch started:
 - Done when:
   -
 - Evidence:

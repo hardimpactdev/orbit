@@ -28,6 +28,11 @@ once; it was about decomposing the goal into independent lanes first, then
 dispatching Pest/quality-check, Docker E2E, and Incus E2E work through separate
 workers when their ownership and provider resources are distinct.
 
+The same pattern was then corrected again after quality-gate timing work had
+optimized package and app checks serially while Docker and Incus lanes could
+have been delegated in parallel. This confirms the guardrail needs to be a
+visible pre-execution gate, not only a sentence inside the worker-plan step.
+
 ## Missing Guardrail
 
 The harness said multiple workers were allowed for disjoint slices, but it did
@@ -48,6 +53,12 @@ be recorded in `.orbit/loop.md`, the feature scratchpad, or the worker plan. A
 serial plan for isolated goals, slices, or lanes is now explicitly incomplete
 unless it names the dependency, shared state, provider capacity limit, or
 merge-order reason.
+
+After the later recurrence, `HARNESS.md` now has a dedicated
+Parallelization Gate section, `LOOP.md.example` asks for deferred lanes and
+started parallel dispatch, and `.agents/skills/quality-gate-triage/SKILL.md`
+requires multi-lane quality-gate work to split in-memory/Pest, Docker E2E, and
+Incus E2E by default.
 
 `.agents/skills/implementing-features/SKILL.md` now applies the same rule at
 the Solo worker-plan step and names in-memory/Pest, Docker E2E, and Incus E2E
@@ -71,7 +82,7 @@ an orchestrator responsibility after worker diffs are reconciled.
 - The current session provided the failing baseline: serial quality-gate tuning.
 - `git diff --check` verifies the harness and skill edits do not introduce
   whitespace errors.
-- `rg -n "A serial plan for isolated|Parallelization scan|candidate slices" HARNESS.md LOOP.md.example .agents/skills/implementing-features/SKILL.md harness-signals/2026-06-24-parallelize-independent-slices.md`
+- `rg -n "A serial plan for isolated|Parallelization scan|candidate slices|Parallel Lane Triage" HARNESS.md LOOP.md.example .agents/skills/implementing-features/SKILL.md .agents/skills/quality-gate-triage/SKILL.md harness-signals/2026-06-24-parallelize-independent-slices.md`
   verifies the tightened rule is discoverable from the root harness, loop
   state template, implementation skill, and signal record.
 - Overlapped `composer quality-check` with active Docker/Incus E2E: failed in

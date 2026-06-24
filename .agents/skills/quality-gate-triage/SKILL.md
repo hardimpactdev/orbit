@@ -145,6 +145,28 @@ code. The analyzer prints a routing hint to
 4. Recommend the next narrow command or owner action. Do not rerun expensive
    gates unless classification proves the rerun is diagnostic.
 
+## Parallel Lane Triage
+
+When the goal is to improve or classify more than one quality lane, split the
+work before analysis starts. Treat these as separate lanes by default:
+
+- in-memory/Pest and `composer quality-check` sub-gates
+- Docker E2E
+- Incus E2E
+
+Dispatch independent lane triage or optimization through separate Solo workers
+unless a concrete dependency, shared state path, provider-capacity limit, or
+merge-order reason is recorded. Docker and Incus use different provider
+systems, so they should normally run in parallel. Do not overlap aggregate
+`composer quality-check` with active provider E2E unless shared E2E support
+state is proven isolated; schedule that aggregate check after provider lanes
+are idle.
+
+Each lane report must say whether it produced a concrete optimization diff, a
+no-op classification, or a deferred follow-up. If a lane is not dispatched, the
+orchestrator must record the reason and owner in `.orbit/loop.md`, the feature
+scratchpad, or the worker plan instead of leaving it implicit.
+
 ## Triage Workflow
 
 1. Confirm the expected lane and verify the command matches the affected

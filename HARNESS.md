@@ -142,6 +142,31 @@ the merge commit, final verification, live/user acceptance when applicable, and
 any preserved follow-up. If a worktree, scratchpad, todo, or agent must remain
 open, report the reason and owner.
 
+## Parallelization Gate
+
+Before executing a goal, feature, or quality-gate tuning pass, the orchestrator
+must decide what can run in parallel. The default is parallel dispatch for
+independent slices. Serial execution is a justified exception, not the default
+shape.
+
+Record the decision in `.orbit/loop.md`, the feature scratchpad, or the worker
+plan before workers start:
+
+- candidate slices or lanes
+- owned files and domains
+- shared provider resources
+- shared temp or local state paths
+- dependencies on another lane's result
+- merge-order constraints
+- lanes intentionally deferred, with the concrete reason and owner
+
+For quality-gate optimization, split the work into separate lanes by default:
+in-memory/Pest and `composer quality-check`, Docker E2E, and Incus E2E. Docker
+and Incus work may run at the same time when provider capacity allows. Do not
+overlap aggregate `composer quality-check` with active provider E2E unless the
+shared E2E support state is proven isolated; run that aggregate gate after
+provider workers are idle.
+
 ## Solo Role Matrix
 
 Solo is the worker substrate for Orbit repo development. Use it to split work
@@ -166,24 +191,16 @@ opens at the project root, relaunch through a Solo terminal that first `cd`s
 into the worktree. If those boundaries are hard to state, use one worker
 serially instead of parallel workers.
 
-Before execution, the orchestrator for a feature, harness goal, or quality-gate
-slice does a dependency scan and records it in `.orbit/loop.md`, the feature
-scratchpad, or the worker plan. List the candidate slices, verification lanes,
-owned files, provider resources, shared temp/state paths, and any merge-order
-dependency. A serial plan for isolated goals, slices, or lanes is incomplete
-unless it names the concrete dependency, shared state, provider capacity limit,
-or merge-order reason. If two tasks have disjoint ownership and neither needs
-the other's result, dispatch them in parallel through Solo by default. Serialize
-only when tasks edit the same files, mutate the same provider resources, depend
-on a prior result, or cannot name a clear merge order. Quality-gate tuning is a
-standing split: in-memory/Pest optimization, Docker E2E optimization, and Incus
-E2E optimization are separate by default unless the active change crosses their
-boundaries. Do not overlap the full `composer quality-check` gate with active
-provider E2E lanes unless shared E2E support state is proven isolated; run the
-final full quality-check after provider lanes are idle. In parallel-worker
-mode, workers must also scope formatters and fixers to their owned files; broad
-dirty-file tools such as `pint --dirty`, broad Rector, or aggregate fixers
-belong to the feature owner after worker diffs are reconciled.
+Before execution, use the parallelization gate above. A serial plan for isolated
+goals, slices, or lanes is incomplete unless it names the concrete dependency,
+shared state, provider capacity limit, or merge-order reason. If two tasks have
+disjoint ownership and neither needs the other's result, dispatch them in
+parallel through Solo by default. Serialize only when tasks edit the same files,
+mutate the same provider resources, depend on a prior result, or cannot name a
+clear merge order. In parallel-worker mode, workers must also scope formatters
+and fixers to their owned files; broad dirty-file tools such as `pint --dirty`,
+broad Rector, or aggregate fixers belong to the feature owner after worker
+diffs are reconciled.
 
 Documentation-heavy work may start with a Claude documenter/librarian worker.
 Code implementation can run after the feature owner accepts the docs contract as
