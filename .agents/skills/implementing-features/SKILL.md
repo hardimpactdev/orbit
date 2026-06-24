@@ -545,8 +545,11 @@ moving on to durable E2E.
     Resolve or explicitly report findings before commit.
     For small changed-files-only reviews, prompt the reviewer for a
     blockers-first verdict (`No blockers` or file/line blockers) before optional
-    suggestions. Give Claude and comparable reviewers minute-scale read time
-    when the output shows active file reads, tool use, or generation; do not
+    suggestions. Include the exact diff command and base the reviewer should
+    inspect, such as `git diff HEAD -- <owned files>` for an uncommitted
+    post-review fix, instead of leaving the reviewer to choose a broad branch
+    comparison. Give Claude and comparable reviewers minute-scale read time when
+    the output shows active file reads, tool use, or generation; do not
     interrupt productive review work just because it exceeds a short Solo wait
     deadline. Interrupt once with a verdict-only prompt only when the reviewer
     is clearly waiting for input, idle after loading context, or generating

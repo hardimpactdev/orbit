@@ -95,17 +95,22 @@ function remove_directory(string $path): void
 
 function copy_directory(string $source, string $destination): void
 {
-    $iterator = new RecursiveIteratorIterator(
+    $filter = new RecursiveCallbackFilterIterator(
         new RecursiveDirectoryIterator($source, FilesystemIterator::SKIP_DOTS),
+        static function (SplFileInfo $item) use ($source): bool {
+            $relative = substr($item->getPathname(), strlen($source) + 1);
+
+            return ! should_skip($relative, $item);
+        },
+    );
+
+    $iterator = new RecursiveIteratorIterator(
+        $filter,
         RecursiveIteratorIterator::SELF_FIRST,
     );
 
     foreach ($iterator as $item) {
         $relative = substr($item->getPathname(), strlen($source) + 1);
-
-        if (should_skip($relative, $item)) {
-            continue;
-        }
 
         $target = $destination.'/'.$relative;
 
@@ -148,16 +153,21 @@ function should_skip(string $relative, SplFileInfo $item): bool
         return true;
     }
 
-    if (str_starts_with($relative, 'storage/logs/')
-        || str_starts_with($relative, 'storage/framework/cache/')
-        || str_starts_with($relative, 'storage/framework/sessions/')
-        || str_starts_with($relative, 'storage/framework/testing/')
-        || str_starts_with($relative, 'storage/framework/views/')
-        || str_starts_with($relative, 'bootstrap/cache/')) {
+    if (is_path_or_child($relative, 'storage/logs')
+        || is_path_or_child($relative, 'storage/framework/cache')
+        || is_path_or_child($relative, 'storage/framework/sessions')
+        || is_path_or_child($relative, 'storage/framework/testing')
+        || is_path_or_child($relative, 'storage/framework/views')
+        || is_path_or_child($relative, 'bootstrap/cache')) {
         return true;
     }
 
     return $item->isFile() && (str_ends_with($relative, '.sqlite') || str_ends_with($relative, '.log'));
+}
+
+function is_path_or_child(string $relative, string $path): bool
+{
+    return $relative === $path || str_starts_with($relative, $path.DIRECTORY_SEPARATOR);
 }
 
 function rewrite_composer_json(string $path, string $version, string $package): void

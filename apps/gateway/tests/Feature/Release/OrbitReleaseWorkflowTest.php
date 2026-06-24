@@ -193,6 +193,26 @@ it('prepares the gateway release split package manifest with the exact monorepo 
     }
 });
 
+it('does not descend into skipped gateway runtime directories while packaging', function (): void {
+    $root = sys_get_temp_dir().'/orbit-release-package-'.bin2hex(random_bytes(6));
+    $skippedDirectory = repo_path('apps/gateway/storage/framework/testing/release-package-unreadable-'.bin2hex(random_bytes(6)));
+
+    try {
+        mkdir($skippedDirectory, 0000, true);
+
+        prepareReleaseWorkflowPackage('gateway', '1.2.3', "{$root}/gateway");
+
+        expect("{$root}/gateway/storage/framework/testing")->not->toBeDirectory();
+    } finally {
+        if (is_dir($skippedDirectory)) {
+            chmod($skippedDirectory, 0700);
+            File::deleteDirectory($skippedDirectory);
+        }
+
+        File::deleteDirectory($root);
+    }
+});
+
 it('prepares every release split package manifest with the exact monorepo version', function (): void {
     $root = sys_get_temp_dir().'/orbit-release-package-'.bin2hex(random_bytes(6));
 

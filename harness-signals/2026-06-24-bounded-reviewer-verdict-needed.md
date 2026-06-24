@@ -1,6 +1,6 @@
 # Signal: Bounded Reviewer Verdict Needed
 
-Status: guarded
+Status: recurring
 First seen: 2026-06-24
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
@@ -40,6 +40,16 @@ it returned a detailed `NO BLOCKERS` verdict with accurate coverage and evidence
 analysis. Active file reads, tool use, or generation should be treated as
 productive review work, not as a reason to interrupt early.
 
+The signal reappeared again after a rebase fix in
+`quality-e2e-lane-timing-baseline`: a Claude reviewer was asked to review two
+changed files, but chose `git diff main -- ...`, which expanded the review from
+the uncommitted post-rebase fix into a broader branch comparison and then did
+not return a verdict. A replacement Claude reviewer was given the exact command
+`git diff HEAD -- bin/orbit-prepare-release-package
+apps/gateway/tests/Feature/Release/OrbitReleaseWorkflowTest.php` and returned
+`NO BLOCKERS`. For small post-review or post-rebase fixes, the prompt must name
+the exact diff base and owned files.
+
 ## Prior Occurrences
 
 Related records already cover reviewer workflow hooks and worker first-diff
@@ -61,6 +71,11 @@ when output shows active progress, interrupt once only after idle or extended
 unproductive review, and replace or close the reviewer if the verdict still does
 not arrive.
 
+After the rebase-fix recurrence, the same skill also instructs feature owners to
+include the exact diff command and base for small changed-files-only reviews,
+such as `git diff HEAD -- <owned files>` for uncommitted post-review fixes,
+instead of leaving the reviewer to choose a broader branch comparison.
+
 ## Verification
 
 The quality-gate stabilization proceeded with direct evidence instead:
@@ -71,9 +86,9 @@ focused quiet PTY test, full `UpdateAllCommandTest.php` profile,
 
 If a future required reviewer takes too long on a small changed-files-only
 review, first distinguish active reading/generation from idle or waiting state,
-then follow the skill guardrail. If early interruption or unbounded waiting still
-repeats after that, mark this record recurring and move the guardrail from skill
-prose into a reviewer-persona prompt template or Solo timer helper.
+then follow the skill guardrail. If exact diff commands still do not keep
+reviews bounded, move the guardrail from skill prose into a reviewer-persona
+prompt template or Solo timer helper.
 
 ## Curation Notes
 
