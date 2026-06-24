@@ -2,13 +2,13 @@
 
 Status: recurring
 First seen: 2026-06-23
-Last seen: 2026-06-23
-Last reviewed: 2026-06-23
-Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review
-Source commit: b269f590; post-feature-session-review
+Last seen: 2026-06-24
+Last reviewed: 2026-06-24
+Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer
+Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice
 Signal type: review-comment
-Guardrail target: .agents/skills/implementing-features/SKILL.md
-Guardrail change: 38ff38aa; post-feature-session-review
+Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md
+Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice
 Related signals:
 harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md,
 harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md,
@@ -43,6 +43,13 @@ real-payload CLI review, and explicit next-step reporting. The durable gap was
 not another doctor-specific signal; it was that post-feature review itself was
 still passive unless the user asked for it.
 
+It reappeared again during quality-gate session distillation. The user had to
+ask whether `.orbit/` evidence and long-session artifacts were already being
+processed into real learnings. The answer was only partially yes: the workflow
+required post-feature review, but the orchestrator could still act as its own
+only judge, skip a durable review packet, or over-promote weak ephemeral
+artifacts into guardrails.
+
 ## Missing Guardrail
 
 The durable docs existed, but the main execution workflow did not make them
@@ -51,6 +58,12 @@ part of the agent path.
 `HARNESS.md` described post-feature review, but the implementation skill did
 not say when to run it, which evidence to inspect, or how to report that no new
 durable signal remained.
+
+After the later recurrence, the workflow also lacked a fresh-context reviewer
+that could classify candidate learnings without being polluted by the feature
+session, while still preserving the orchestrator's high-context adjudication.
+It also lacked an explicit promotion gate that says raw `.orbit/` artifacts
+produce candidates only, not automatic guardrails.
 
 ## Guardrail Change
 
@@ -66,6 +79,15 @@ report shape now includes a dedicated `Post-feature session review` block for
 evidence reviewed, mistakes found after readiness claims, existing signals
 covered, new guardrail changes, and the no-new-signal rationale.
 
+After the 2026-06-24 recurrence, the root harness and implementation skill now
+require a local distillation packet for non-trivial loops, a fresh-context
+post-feature distillation reviewer, and feature-owner adjudication before any
+candidate becomes durable. `HARNESS_SIGNALS.md` defines the promotion gate:
+concrete mistake or late catch, recurrence risk, existing-guardrail gap,
+counterfactual prevention path, smallest clear target, and narrow
+verification. `LOOP.md.example` and the implementation report now require
+accepted, rejected, already-covered, deferred, and no-new-signal outcomes.
+
 ## Verification
 
 `rg -n "HARNESS.md|LOOP.md|HARNESS_SIGNALS.md|Harness signals|guardrail target|durable harness signal|feedback loop" .agents/skills/implementing-features/SKILL.md`
@@ -74,7 +96,7 @@ shows the workflow hooks, and `composer docs-lint` exited 0.
 For the post-feature-review recurrence, run:
 
 ```bash
-rg -n "Post-Feature Session Review|post-feature session review|feature thread|human corrections|harness-signals" HARNESS.md .agents/skills/implementing-features/SKILL.md harness-signals
+rg -n "Post-Feature Session Review|post-feature session review|feature thread|human corrections|harness-signals|post-feature distillation|promotion gate|Candidate classifications|Final Distillation" HARNESS.md LOOP.md.example HARNESS_SIGNALS.md .agents/skills/implementing-features/SKILL.md .agents/review-personas/post-feature-distillation.md harness-signals
 ```
 
 This shows that the root harness, implementation workflow, report shape, and
@@ -84,7 +106,10 @@ signal record all expose the review.
 
 If future implementation reports omit durable signal triage or the
 post-feature session review summary, keep this record `recurring` and tighten
-the report template or add a review-persona check before merge.
+the report template or add a machine-readable final-distillation warning before
+merge. If fresh reviewers start promoting weak one-off findings, tighten the
+post-feature distillation reviewer or the promotion gate instead of adding more
+signal records.
 
 ## Curation Notes
 

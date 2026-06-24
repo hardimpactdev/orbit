@@ -30,7 +30,8 @@ The root harness is intentionally incremental. Not in scope yet:
 - Autonomous merge or reviewer-agent automation
 - Customer/product harness (fleet/workspace agent docs)
 - Automation loop (nightly distillation, continuous session mining)
-- Reviewer-persona framework
+- Reviewer-persona framework beyond the focused personas justified by real
+  feature-loop signals
 
 `LOOP.md.example`, `.orbit/loop.md`, `.orbit/quality-gates/`,
 `.orbit/evidence/`, and `HARNESS_SIGNALS.md` define the manual feedback-loop
@@ -89,11 +90,29 @@ Before final reporting and merge-back, the orchestrator reviews the feature
 thread, Solo worker sessions, reviewer output, retained terminal or PTY
 evidence when applicable, verification output, and human corrections.
 
-Distill durable repeated mistakes or missing context into the smallest
-appropriate sink: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
+For non-trivial feature loops, the orchestrator creates a small local
+distillation packet under `.orbit/` before merge. The packet contains only the
+facts needed for review: objective, final diff or commit, evidence artifacts,
+Solo process ids or summaries, reviewer findings, human corrections, and the
+orchestrator's factual steering notes. Do not commit the packet.
+
+Run a fresh-context post-feature distillation reviewer from that packet when
+the feature had implementation workers, reviewer corrections, retained
+terminal/PTY evidence, quality-gate artifacts, or human steering. Use
+`.agents/review-personas/post-feature-distillation.md`. The reviewer recommends
+`promote`, `already-covered`, `reject`, or `defer` for candidate learnings. It
+does not edit code, update the harness, or decide completion.
+
+The orchestrator adjudicates the reviewer recommendations using session
+context. Distill durable repeated or costly mistakes into the smallest
+appropriate guardrail target: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
 `.agents/review-personas/*`, `harness-signals/`, deterministic tests or static
 checks, command failure messages, or explicit rejection. Keep one-off local
 cleanup out of the durable harness.
+
+No durable signal is a valid result. Every final review reports evidence
+reviewed, accepted durable updates, rejected or already-covered candidates,
+deferred follow-ups, and the no-new-signal rationale when nothing changes.
 
 ## Feature Slices
 
@@ -185,6 +204,7 @@ only when ownership can stay clear.
 | Implementation worker | Solo-managed worker; Grok is the usual default | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Final commit, merge-back, release, broad refactors, unrelated dirty files |
 | Documenter / librarian worker | Claude | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
+| Post-feature distillation reviewer | Fresh Solo-managed reviewer; Claude preferred when available | Candidate learning classification from the distillation packet and changed diff | Implementation, harness edits, merge approval, or final promotion decisions |
 | Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
 
 The active feature-owner thread is the source of work. It can run in Codex CLI,
@@ -224,6 +244,7 @@ Use this table to pick the smallest workflow that can prove the change.
 | Docs-only | `updating-documentation`; `auditing-docs-drift` only for an explicit consistency scan | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | `.agents/review-personas/docs-librarian.md` or human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
 | Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Claude documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest/E2E owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
 | Quality-gate failure or slowdown | `quality-gate-triage`, plus `pest-testing`, `e2e-verification-lanes`, or `cli-output-pty-capture` by lane | `apps/docs/content/testing/README.md`, `quality-gates.md`, `in-memory/performance.md`, `e2e/environment.md`, `e2e/performance.md` | Inspect existing evidence under `.orbit/quality-gates/` and `.orbit/evidence/`; do not rerun expensive gates just to classify | Owner/human only after classification points at product behavior | Record recurring flakes, missing baselines, or confusing lane failures | Aggregate provision command, live-node mutation, or product fix before classification |
+| Post-feature distillation | `.agents/review-personas/post-feature-distillation.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, changed diff and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh reviewer recommendation for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail | Guardrail added from weak evidence, no rejected/no-op rationale, or reviewer asked to implement |
 | CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; E2E next; PTY frame capture and reviewer analysis before human UX review; retained Incus VM Solo-terminal gate before live or release-candidate deploy | `.agents/review-personas/cli-command.md` or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained VM proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; E2E when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
 | Provisioning/live-node | `e2e-verification-lanes`, `implementing-features` | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Prepared-topology lane, retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |

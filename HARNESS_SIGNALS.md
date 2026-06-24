@@ -21,6 +21,23 @@ should become guidance or enforcement.
 
 ## Guardrail Target Selection
 
+- Treat raw `.orbit/` artifacts, transcripts, and reviewer comments as
+  candidate signals only. They do not become durable guardrails until the
+  post-feature distillation reviewer recommends promotion and the orchestrator
+  adjudicates that recommendation against session context.
+- Promote a candidate only when all of these are true:
+  - A concrete mistake, late catch, expensive diagnosis, or high-risk near miss
+    happened.
+  - The same class of mistake is likely to recur across future features,
+    worktrees, or agents.
+  - Existing harness docs, skills, personas, tests, failure messages, and signal
+    records did not already cover it clearly enough.
+  - The proposed guardrail would likely have prevented the exact mistake or
+    caught it earlier.
+  - The smallest useful guardrail target is clear.
+  - A narrow verification can prove the new target is reachable.
+- Reject or mark `already-covered` when any promotion condition is missing.
+  A final review that creates no durable guardrail is a valid loop result.
 - Search `harness-signals/` before treating a durable signal as new. If a
   related signal is already `guarded` and the issue reappears, mark or treat the
   signal as `recurring` and evaluate whether the guardrail target needs to be

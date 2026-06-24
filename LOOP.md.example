@@ -56,3 +56,30 @@ feature scratchpad. Keep code history in Git.
 - Searched:
 - Created or updated:
 - Deferred follow-up:
+
+## Final Distillation
+
+Fill this before commit, merge-back, or final completion reporting for any
+non-trivial feature loop. Use `not applicable` only for truly tiny local changes
+with no workers, reviewer findings, retained terminal/PTY evidence, quality
+gate artifacts, or human steering.
+
+- Distillation packet:
+  - Location:
+  - Includes objective/final diff:
+  - Includes worker/reviewer/terminal/evidence pointers:
+  - Includes orchestrator steering notes:
+- Fresh reviewer:
+  - Persona:
+  - Solo process or reviewer:
+  - Verdict:
+- Candidate signals:
+  - <candidate -> promote | already-covered | reject | defer -> reason>
+- Accepted durable updates:
+  - <guardrail target, record, verification, or none>
+- Rejected or already-covered signals:
+  - <candidate and rationale>
+- Deferred follow-ups:
+  - <follow-up, owner, trigger, or none>
+- No-new-signal rationale:
+  - <why local cleanup, existing guardrails, or rejection was enough>
