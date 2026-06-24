@@ -98,7 +98,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
                 }
             }
 
-            usleep(450_000);
+            usleep(180_000);
             $body = "id: 1\nevent: complete\ndata: {\"exit_code\":0}\n\n";
             fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
             fclose($connection);
@@ -109,7 +109,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
     }
 
     $ticks = [];
-    $cleanupIdleCallback = registerGatewayOperationEventStreamIdleCallbackWithoutFork(100_000, function () use (&$ticks): void {
+    $cleanupIdleCallback = registerGatewayOperationEventStreamIdleCallbackWithoutFork(50_000, function () use (&$ticks): void {
         $ticks[] = hrtime(true);
     });
 
@@ -128,7 +128,7 @@ it('keeps idle callbacks on cadence while opening a slow operation event stream 
             array_map(null, array_slice($ticks, 0, -1), array_slice($ticks, 1)),
         ));
 
-        expect($maxGapMicroseconds)->toBeLessThan(300_000);
+        expect($maxGapMicroseconds)->toBeLessThan(200_000);
     } finally {
         $cleanupIdleCallback();
         pcntl_waitpid($serverPid, $status);

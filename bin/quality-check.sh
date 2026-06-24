@@ -75,6 +75,13 @@ running_bg_jobs() {
     jobs -pr | wc -l | tr -d '[:space:]'
 }
 
+wait_for_bg_label() {
+    local label="$1"
+    local pid_var="${label}_PID"
+
+    wait "${!pid_var}" 2>/dev/null
+}
+
 wait_for_bg_slot() {
     while [ "$(running_bg_jobs)" -ge "$MAX_BACKGROUND_JOBS" ]; do
         sleep 0.2
@@ -147,12 +154,40 @@ run_bg cli_pest bin/orbit-cli-pest --exclude-group=slow --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
-record_subgate_start gateway_pest
-bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
-pest_exit=$?
-record_subgate_duration gateway_pest
+run_bg gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
+
+STATIC_CHECK_LABELS=(
+    docs_lint
+    docs_testing
+    docs_references
+    gateway_phpstan
+    cli_phpstan
+    docs_phpstan
+    core_phpstan
+    sdk_phpstan
+    e2e_phpstan
+    gateway_rector
+    cli_rector
+    docs_rector
+    core_rector
+    sdk_rector
+    e2e_rector
+    gateway_pint
+    cli_pint
+    docs_pint
+    core_pint
+    sdk_pint
+    e2e_pint
+)
+
+LONG_RUNNING_PEST_LABELS=(
+    gateway_pest
+    cli_pest
+    docs_pest
+)
 
 CHECK_LABELS=(
+    gateway_pest
     docs_lint
     docs_testing
     docs_references
@@ -181,18 +216,17 @@ CHECK_LABELS=(
     e2e_pest
 )
 
-for label in "${CHECK_LABELS[@]}"; do
-    if [ "$label" = core_pest ] || [ "$label" = sdk_pest ] || [ "$label" = e2e_pest ]; then
-        continue
-    fi
-
-    pid_var="${label}_PID"
-    wait "${!pid_var}" 2>/dev/null
+for label in "${STATIC_CHECK_LABELS[@]}"; do
+    wait_for_bg_label "$label"
 done
 
 # The E2E support tests compute checkout archive hashes from the working tree.
-# Run them after static/style lanes so generated cache metadata cannot change
-# the tree hash mid-test.
+for label in "${LONG_RUNNING_PEST_LABELS[@]}"; do
+    wait_for_bg_label "$label"
+done
+
+# Run them after static/style and other Pest lanes so generated cache/runtime
+# metadata cannot change the tree hash mid-test.
 record_subgate_start e2e_pest
 ( cd apps/e2e && vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact >"$LOG_DIR/e2e_pest.log" 2>&1; echo "$?" >"$LOG_DIR/e2e_pest.exit" )
 record_subgate_duration e2e_pest
@@ -222,21 +256,20 @@ print_log() {
     return "$code"
 }
 
-overall="$pest_exit"
-summary="gateway_pest=${pest_exit}"
-SUBGATE_ARGS=(--subgate="gateway_pest=${pest_exit}")
+overall=0
+summary=""
+SUBGATE_ARGS=()
 SUBGATE_DURATION_ARGS=()
-
-gateway_pest_duration="$(subgate_duration_seconds gateway_pest)"
-if [ -n "$gateway_pest_duration" ]; then
-    SUBGATE_DURATION_ARGS+=(--subgate-duration="gateway_pest=${gateway_pest_duration}")
-fi
 
 for label in "${CHECK_LABELS[@]}"; do
     print_log "$label"
     code=$?
     overall=$((overall | code))
-    summary="${summary} ${label}=${code}"
+    if [ -z "$summary" ]; then
+        summary="${label}=${code}"
+    else
+        summary="${summary} ${label}=${code}"
+    fi
     SUBGATE_ARGS+=(--subgate="${label}=${code}")
 
     duration="$(subgate_duration_seconds "$label")"

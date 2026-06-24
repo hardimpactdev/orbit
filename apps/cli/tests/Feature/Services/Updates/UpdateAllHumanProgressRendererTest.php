@@ -464,11 +464,11 @@ it('throttles active row alternation to about 300ms on decorated output', functi
     $renderer->tick();
     expect(stripRendererAnsi($output->fetch()))->toBe('');
 
-    usleep(100_000);
+    setUpdateAllHumanProgressLastFrameAge($renderer, 100_000);
     $renderer->tick();
     expect(stripRendererAnsi($output->fetch()))->toBe('');
 
-    usleep(250_000);
+    setUpdateAllHumanProgressLastFrameAge($renderer, ForkedFrameTicker::DEFAULT_INTERVAL_US + 10_000);
     $renderer->tick();
 
     expect(stripRendererAnsi($output->fetch()))->toContain('◉  Checking for updates');
@@ -528,9 +528,14 @@ function stopUpdateAllHumanProgressTicker(UpdateAllHumanProgressRenderer $render
 
 function rewindUpdateAllHumanProgressCadence(UpdateAllHumanProgressRenderer $renderer): void
 {
+    setUpdateAllHumanProgressLastFrameAge($renderer, ForkedFrameTicker::DEFAULT_INTERVAL_US);
+}
+
+function setUpdateAllHumanProgressLastFrameAge(UpdateAllHumanProgressRenderer $renderer, int $ageUs): void
+{
     $property = new ReflectionProperty(UpdateAllHumanProgressRenderer::class, 'lastFrameAtUs');
     $property->setAccessible(true);
-    $property->setValue($renderer, ((int) (microtime(true) * 1_000_000)) - ForkedFrameTicker::DEFAULT_INTERVAL_US);
+    $property->setValue($renderer, ((int) (microtime(true) * 1_000_000)) - $ageUs);
 }
 
 function stripRendererAnsi(string $text): string

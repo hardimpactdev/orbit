@@ -201,7 +201,7 @@ describe('GatewayStreamClient', function (): void {
 
         try {
             (new GatewayStreamClient("http://127.0.0.1:{$port}", 30, preferCurl: true))
-                ->streamEvents('/api/stream', ['scope' => 'doctor'], fn () => null);
+                ->streamEvents('/api/stream', ['scope' => 'doctor'], fn () => null, idleIntervalMicroseconds: 1);
         } catch (GatewayApiException $caught) {
             $exception = $caught;
         } finally {

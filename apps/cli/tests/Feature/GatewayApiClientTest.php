@@ -86,7 +86,7 @@ describe('GatewayApiClient', function (): void {
                     }
                 }
 
-                usleep(300_000);
+                usleep(150_000);
                 $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
                 fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
                 fclose($connection);
@@ -153,7 +153,7 @@ describe('GatewayApiClient', function (): void {
                     }
                 }
 
-                usleep(450_000);
+                usleep(180_000);
                 $body = json_encode(['started' => true], JSON_THROW_ON_ERROR);
                 fwrite($connection, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ".strlen($body)."\r\nConnection: close\r\n\r\n{$body}");
                 fclose($connection);
@@ -164,7 +164,7 @@ describe('GatewayApiClient', function (): void {
         }
 
         $ticks = [];
-        $cleanupIdleCallback = registerGatewayClientIdleCallbackWithoutFork(100_000, function () use (&$ticks): void {
+        $cleanupIdleCallback = registerGatewayClientIdleCallbackWithoutFork(50_000, function () use (&$ticks): void {
             $ticks[] = hrtime(true);
         });
 
@@ -182,7 +182,7 @@ describe('GatewayApiClient', function (): void {
                 array_map(null, array_slice($ticks, 0, -1), array_slice($ticks, 1)),
             ));
 
-            expect($maxGapMicroseconds)->toBeLessThan(300_000);
+            expect($maxGapMicroseconds)->toBeLessThan(200_000);
         } finally {
             putenv('ORBIT_GATEWAY_IDLE_POST_DISABLE_FORK');
             $cleanupIdleCallback();

@@ -74,11 +74,46 @@ it('keeps the aggregate quality gate complete', function (): void {
     ]);
 
     $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
+    $scriptPosition = function (string $needle) use ($script): int {
+        $position = strpos($script, $needle);
+
+        if ($position === false) {
+            throw new RuntimeException("Expected quality-check script to contain [{$needle}].");
+        }
+
+        return $position;
+    };
+    $scriptLabels = function (string $arrayName) use ($script): array {
+        $pattern = '/^'.preg_quote($arrayName, '/').'=\\(\\R(?P<body>.*?)^\\)/ms';
+        $matches = [];
+
+        if (preg_match($pattern, $script, $matches) !== 1) {
+            throw new RuntimeException("Expected quality-check script to define [{$arrayName}].");
+        }
+
+        $labelMatches = [];
+        preg_match_all('/^    (?P<label>[a-z0-9_]+)$/m', $matches['body'], $labelMatches);
+
+        return $labelMatches['label'];
+    };
+    $backgroundLabelMatches = [];
+    preg_match_all('/^run_bg (?P<label>[a-z0-9_]+) /m', $script, $backgroundLabelMatches);
+
+    $backgroundLabels = array_values(array_unique($backgroundLabelMatches['label']));
+    $waitedBackgroundLabels = array_values(array_unique([
+        ...$scriptLabels('STATIC_CHECK_LABELS'),
+        ...$scriptLabels('LONG_RUNNING_PEST_LABELS'),
+    ]));
+
+    sort($backgroundLabels);
+    sort($waitedBackgroundLabels);
 
     expect($script)
         ->toContain('librarian:lint')
         ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
         ->toContain('quality_check_default_max_background_jobs')
+        ->toContain('STATIC_CHECK_LABELS=(')
+        ->toContain('LONG_RUNNING_PEST_LABELS=(')
         ->toContain('wait_for_bg_slot')
         ->toContain('--path=testing')
         ->toContain('--group=references')
@@ -112,6 +147,19 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('--exclude-group=slow')
         ->toContain('--parallel')
         ->toContain('--compact');
+
+    expect($waitedBackgroundLabels)
+        ->toBe($backgroundLabels)
+        ->and($scriptLabels('LONG_RUNNING_PEST_LABELS'))
+        ->toBe([
+            'gateway_pest',
+            'cli_pest',
+            'docs_pest',
+        ])
+        ->and($scriptPosition('for label in "${STATIC_CHECK_LABELS[@]}"'))
+        ->toBeLessThan($scriptPosition('for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
+        ->and($scriptPosition('for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
+        ->toBeLessThan($scriptPosition('record_subgate_start e2e_pest'));
 });
 
 it('includes monorepo path packages in the gateway image build context', function (): void {
