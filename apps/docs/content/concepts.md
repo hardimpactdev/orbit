@@ -237,8 +237,11 @@ Source: [App Concepts](domains/5_app/app-concepts.md).
 - **App adoption**
 - **App adoption flag**
 - **App pruning**
+- **App setup pipeline**
+- **App setup run**
 - **App-owned route**
 - **App-family boundaries**
+- **Setup boundary**
 <!-- /concept-index -->
 
 ## Workspace Concepts
@@ -371,9 +374,11 @@ Source: [Database Concepts](domains/18_database/database-concepts.md).
 - **Database connection restore**
 - **Database connection adopt**
 - **Existing-target rollout adoption**
+- **Managed MySQL user provisioning**
 - **Database query execution**
 - **SQLite locality**
 - **Database-family boundaries**
+- **Managed service boundary**
 <!-- /concept-index -->
 
 ## S3 Concepts

@@ -70,6 +70,7 @@ describe('node permission registry', function (): void {
             ->and($registry->impliedBy('database:read'))->toContain('database:schema')
             ->and($registry->impliedBy('database:read'))->not->toContain('database:query')
             ->and($registry->impliedBy('database:write'))->toContain('database:add')
+            ->and($registry->impliedBy('database:write'))->toContain('database:add-user')
             ->and($registry->impliedBy('database:write'))->toContain('database:detach')
             ->and($registry->impliedBy('database:write'))->not->toContain('database:query:write')
             ->and($registry->impliedBy('database:query:write'))->toContain('database:query');
@@ -81,7 +82,11 @@ describe('node permission registry', function (): void {
         expect($registry->allows(['tool:read'], 'tool:show'))->toBeTrue()
             ->and($registry->allows(['tool:read'], 'tool:credentials'))->toBeFalse()
             ->and($registry->allows(['app:read'], 'app:credentials'))->toBeFalse()
+            ->and($registry->allows(['app:read'], 'app-setup-step:list'))->toBeTrue()
             ->and($registry->allows(['app:write'], 'app:credentials'))->toBeFalse()
+            ->and($registry->allows(['app:write'], 'app:setup'))->toBeTrue()
+            ->and($registry->allows(['app:write'], 'app-setup-step:add'))->toBeTrue()
+            ->and($registry->allows(['app:write'], 'app-setup-step:list'))->toBeFalse()
             ->and($registry->allows(['app:credentials'], 'app:credentials'))->toBeTrue()
             ->and($registry->allows(['app:*'], 'app:credentials'))->toBeTrue()
             ->and($registry->allows(['tool:update'], 'tool:update:agent-tools'))->toBeTrue()
@@ -89,6 +94,7 @@ describe('node permission registry', function (): void {
             ->and($registry->allows(['database:read'], 'database:tables'))->toBeTrue()
             ->and($registry->allows(['database:read'], 'database:query'))->toBeFalse()
             ->and($registry->allows(['database:query:write'], 'database:query'))->toBeTrue()
+            ->and($registry->allows(['database:write'], 'database:add-user'))->toBeTrue()
             ->and($registry->allows(['database:write'], 'database:query:write'))->toBeFalse()
             ->and($registry->allows(['node:*'], 'node:update'))->toBeTrue()
             ->and($registry->allows(['*'], 'firewall_rule:write'))->toBeTrue();

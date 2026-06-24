@@ -38,6 +38,10 @@ final class NodePermissionRegistry
             'app:register',
             'app:remove',
             'app:prune',
+            'app:setup',
+            'app-setup-step:add',
+            'app-setup-step:list',
+            'app-setup-step:remove',
             'app:agent',
             'app:root',
             'app:update',
@@ -68,6 +72,7 @@ final class NodePermissionRegistry
             // Database
             'database:*',
             'database:add',
+            'database:add-user',
             'database:attach',
             'database:describe',
             'database:detach',
@@ -198,11 +203,11 @@ final class NodePermissionRegistry
     {
         return [
             'activity:read' => ['activity:list', 'activity:show'],
-            'app:read' => ['app:list', 'app:show'],
-            'app:write' => ['app:codex'],
+            'app:read' => ['app:list', 'app:show', 'app-setup-step:list'],
+            'app:write' => ['app:codex', 'app:setup', 'app-setup-step:add', 'app-setup-step:remove'],
             'database:query:write' => ['database:query'],
             'database:read' => ['database:list', 'database:show', 'database:tables', 'database:schema', 'database:describe'],
-            'database:write' => ['database:add', 'database:update', 'database:remove', 'database:attach', 'database:detach'],
+            'database:write' => ['database:add', 'database:add-user', 'database:update', 'database:remove', 'database:attach', 'database:detach'],
             'deploy:read' => ['deploy:history', 'deploy:log'],
             'node:read' => ['node:list', 'node:show'],
             'php:read' => ['php:list'],

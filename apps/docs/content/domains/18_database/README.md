@@ -52,6 +52,13 @@ touch.
   definitions. The database family owns connection intent, data-plane
   operations, and read-only WireGuard self-route diagnostics for same-node
   connections, not service installation, lifecycle, or route mutation.
+- `database:add-user` converges a database and user inside an existing managed
+  MySQL service process, then creates or updates the reusable database
+  connection record for that user. It does not install, start, stop, restart,
+  or log the MySQL service.
+- In the current implementation, `database:add-user` supports Docker runtime
+  managed MySQL processes. Docker Swarm support needs a service exec primitive
+  before it can converge users safely.
 
 ## Permissions
 
@@ -61,9 +68,9 @@ under the `database:*` namespace.
 - `database:read` covers registry and schema metadata reads:
   `database:list`, `database:show`, `database:tables`, `database:schema`, and
   `database:describe`.
-- `database:write` covers registry and target mapping mutations:
-  `database:add`, `database:update`, `database:remove`, `database:attach`, and
-  `database:detach`.
+- `database:write` covers registry, target mapping, and managed user
+  mutations: `database:add`, `database:add-user`, `database:update`,
+  `database:remove`, `database:attach`, and `database:detach`.
 - `database:query` allows read-only SQL execution through
   `database:query`.
 - `database:query:write` allows write-capable SQL execution when the caller
@@ -168,25 +175,26 @@ Use these commands to browse stored connection state before you change it.
 Use these commands to create, update, or remove reusable connection records.
 
 3. [`orbit database:add <slug>`](3_database-add/database-add.md)
-4. [`orbit database:update <connection>`](4_database-update/database-update.md)
-5. [`orbit database:remove <connection>`](5_database-remove/database-remove.md)
+4. [`orbit database:add-user <connection>`](12_database-add-user/database-add-user.md)
+5. [`orbit database:update <connection>`](4_database-update/database-update.md)
+6. [`orbit database:remove <connection>`](5_database-remove/database-remove.md)
 
 ### Target mapping
 
 Use these commands to bind stored connections into app, app-instance, or
 workspace env space.
 
-6. [`orbit database:attach <connection>`](6_database-attach/database-attach.md)
-7. [`orbit database:detach <connection>`](7_database-detach/database-detach.md)
+7. [`orbit database:attach <connection>`](6_database-attach/database-attach.md)
+8. [`orbit database:detach <connection>`](7_database-detach/database-detach.md)
 
 ### Query and schema
 
 Use these commands to inspect or query a resolved stored connection.
 
-8. [`orbit database:query <target>`](8_database-query/database-query.md)
-9. [`orbit database:tables <target>`](9_database-tables/database-tables.md)
-10. [`orbit database:schema <target>`](10_database-schema/database-schema.md)
-11. [`orbit database:describe <target> <table>`](11_database-describe/database-describe.md)
+9. [`orbit database:query <target>`](8_database-query/database-query.md)
+10. [`orbit database:tables <target>`](9_database-tables/database-tables.md)
+11. [`orbit database:schema <target>`](10_database-schema/database-schema.md)
+12. [`orbit database:describe <target> <table>`](11_database-describe/database-describe.md)
 
 ## Internal Commands
 

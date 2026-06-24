@@ -43,6 +43,11 @@ runtime configuration.
   `database_connection` family exists. Adoption reads their current `.env`
   files and materializes the matching connection state without requiring app or
   workspace re-registration.
+- **Managed MySQL user provisioning:** Database-family mutation that connects
+  to an existing process-owned managed MySQL service, creates or updates a
+  database user and database, grants that user access, and persists the
+  resulting connection record. It is data-plane convergence, not service
+  lifecycle.
 
 ## Execution
 
@@ -67,3 +72,7 @@ These rules define what database commands may and may not change.
   app registration, workspace registration, database service installation,
   runtime health, proxy routes, process definitions, schedule definitions, or
   firewall policy.
+- **Managed service boundary:** MySQL service installation, image selection,
+  runtime backend, lifecycle, and logs belong to process-owned managed service
+  rows. `database:add-user` may converge database users through a supported
+  running MySQL process, but it does not create or operate the process itself.

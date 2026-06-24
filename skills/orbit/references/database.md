@@ -30,6 +30,10 @@ orbit database:add [<slug>] --driver=<mysql|pgsql|sqlite> [--node=<node>]
                    [--path=<path>] [--username=<username>] [--password=<password>]
                    [--json]
 
+orbit database:add-user [<connection>] --service=<process> --database=<name>
+                         --username=<username> --password=<password>
+                         [--node=<node>] [--json]
+
 orbit database:update [<connection>] [--node=<node>] [--slug=<slug>]
                       [--driver=<mysql|pgsql|sqlite>] [--host=<host>]
                       [--port=<port>] [--database=<name>] [--path=<path>]
@@ -42,6 +46,11 @@ orbit database:remove [<connection>] [--force] [--json]
 For node-owned MySQL/PostgreSQL connections, app/workspace env restore writes
 the owning node's WireGuard service address as host. SQLite queries execute on
 the node that owns the SQLite file path.
+
+`database:add-user` requires an existing managed MySQL process. It creates or
+updates the MySQL database/user through that process and then persists the
+database connection record. It currently supports Docker runtime managed MySQL
+processes; service lifecycle remains process-owned.
 
 ## App / Workspace Targets
 

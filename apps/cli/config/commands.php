@@ -20,6 +20,10 @@ use App\Commands\App\AppPruneCommand;
 use App\Commands\App\AppRegisterCommand;
 use App\Commands\App\AppRemoveCommand;
 use App\Commands\App\AppRootCommand;
+use App\Commands\App\AppSetupCommand;
+use App\Commands\App\AppSetupStepAddCommand;
+use App\Commands\App\AppSetupStepListCommand;
+use App\Commands\App\AppSetupStepRemoveCommand;
 use App\Commands\App\AppShowCommand;
 use App\Commands\App\AppWebSocketCredentialsCommand;
 use App\Commands\App\AppWebSocketDisableCommand;
@@ -35,6 +39,7 @@ use App\Commands\Cloudflare\CfSslDisableCommand;
 use App\Commands\Cloudflare\CfSslEnableCommand;
 use App\Commands\Cloudflare\CfZoneListCommand;
 use App\Commands\Database\DatabaseAddCommand;
+use App\Commands\Database\DatabaseAddUserCommand;
 use App\Commands\Database\DatabaseAttachCommand;
 use App\Commands\Database\DatabaseDescribeCommand;
 use App\Commands\Database\DatabaseDetachCommand;
@@ -181,6 +186,10 @@ return [
         AppRegisterCommand::class,
         AppRemoveCommand::class,
         AppRootCommand::class,
+        AppSetupCommand::class,
+        AppSetupStepAddCommand::class,
+        AppSetupStepListCommand::class,
+        AppSetupStepRemoveCommand::class,
         AppShowCommand::class,
         AppWebSocketCredentialsCommand::class,
         AppWebSocketDisableCommand::class,
@@ -196,6 +205,7 @@ return [
         CfSslEnableCommand::class,
         CfZoneListCommand::class,
         DatabaseAddCommand::class,
+        DatabaseAddUserCommand::class,
         DatabaseAttachCommand::class,
         DatabaseDetachCommand::class,
         DatabaseDescribeCommand::class,

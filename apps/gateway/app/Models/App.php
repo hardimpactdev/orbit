@@ -37,6 +37,8 @@ use Illuminate\Support\Str;
  * @property int|null $latest_deployment_run_id
  * @property-read Node|null $node
  * @property-read Collection<int, AppInstance> $instances
+ * @property-read Collection<int, AppSetupRun> $setupRuns
+ * @property-read Collection<int, AppSetupStep> $setupSteps
  * @property-read Collection<int, DeployStep> $deploySteps
  * @property-read Collection<int, DeploymentRun> $deploymentRuns
  * @property-read Collection<int, DatabaseConnection> $databaseConnections
@@ -140,6 +142,22 @@ class App extends Model
     public function processes(): MorphMany
     {
         return $this->morphMany(Process::class, 'owner')->orderBy('sort_order');
+    }
+
+    /**
+     * @return HasMany<AppSetupStep, $this>
+     */
+    public function setupSteps(): HasMany
+    {
+        return $this->hasMany(AppSetupStep::class)->orderBy('sort_order');
+    }
+
+    /**
+     * @return HasMany<AppSetupRun, $this>
+     */
+    public function setupRuns(): HasMany
+    {
+        return $this->hasMany(AppSetupRun::class)->orderByDesc('started_at');
     }
 
     /**

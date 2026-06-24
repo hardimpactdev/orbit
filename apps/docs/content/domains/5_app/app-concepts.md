@@ -157,6 +157,14 @@ The terms below describe how an app moves through its active states.
 - **App pruning:** Source-of-truth cleanup performed by `app:prune`. Removes
   stale apps, workspaces, and configured agent IDE associations. It is not
   doctor drift repair.
+- **App setup pipeline:** Ordered app-owned commands recorded with
+  `app-setup-step:*` and run by `app:setup` on the app's owning node. Setup
+  commands are for finite project bootstrap work such as dependency install,
+  application key generation, storage linking, migrations, seeders, and
+  app-owned user creation.
+- **App setup run:** Gateway record of one `app:setup` execution. It stores the
+  step-set hash, per-step status, result code, and captured output so reruns can
+  skip unchanged completed setup steps.
 
 ## Boundaries
 
@@ -182,3 +190,7 @@ These boundaries define what the app family owns and what belongs to other famil
   and ad-hoc app CLI use. `app-prod` does not own lifecycle for database, cache,
   agent, storage, or web runtime units; long-running units are represented by
   processes, while tools remain node-level capability records.
+- **Setup boundary:** App setup steps may run finite host-toolchain commands
+  against the app source path. They must not represent long-running services,
+  service images, scheduled jobs, database service lifecycle, or proxy routes;
+  those belong to the process, schedule, database, and proxy families.

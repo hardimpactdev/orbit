@@ -127,7 +127,11 @@ function gatewayRemovedAppNodeLocalCommandNames(): array
         'app:register',
         'app:remove',
         'app:root',
+        'app:setup',
         'app:show',
+        'app-setup-step:add',
+        'app-setup-step:list',
+        'app-setup-step:remove',
         'app:worker',
         'dns:list',
         'dns:resolve-tld',
@@ -161,6 +165,7 @@ function gatewayRemovedResourceCommandNames(): array
 {
     return [
         'database:add',
+        'database:add-user',
         'database:attach',
         'database:describe',
         'database:detach',

@@ -60,6 +60,13 @@ These rules govern all app family commands.
   toolchain (matched to the app's PHP version), against the app source the
   FrankenPHP container serves. Orbit ships no command-`exec` surface; deploy
   steps use the same host toolchain.
+- App setup is lifecycle-specific, not a generic exec surface.
+  `app-setup-step:*` records ordered setup commands for an app, and
+  `app:setup` runs those commands on the owning app node through the same host
+  PHP, Composer, and Artisan routing used by deploy steps.
+- `app:setup` is idempotent for an unchanged setup-step set. Re-running setup
+  with no step changes returns the latest completed run instead of replaying
+  commands.
 - Worker mode is an opt-in app runtime setting. It is disabled by default and
   `app:worker enable` must validate app readiness before changing gateway
   configuration.
@@ -270,6 +277,10 @@ The following commands are available in the `app` family.
 19. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
 20. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
 21. [`orbit app:codex add|remove|list [app]`](21_app-codex/app-codex.md)
+22. [`orbit app:setup [app]`](22_app-setup/app-setup.md)
+23. [`orbit app-setup-step:add [app]`](23_app-setup-step-add/app-setup-step-add.md)
+24. [`orbit app-setup-step:list [app]`](24_app-setup-step-list/app-setup-step-list.md)
+25. [`orbit app-setup-step:remove [app]`](25_app-setup-step-remove/app-setup-step-remove.md)
 
 ## Related
 

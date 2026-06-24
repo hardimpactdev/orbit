@@ -6,6 +6,65 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 describe('database write commands', function (): void {
+    it('posts database:add-user payloads to the gateway without printing secrets', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'connection' => [
+                'slug' => 'dlf-leden',
+                'driver' => 'mysql',
+                'host' => '10.6.0.42',
+                'port' => 3308,
+                'database' => 'dlf_leden',
+                'username' => 'dlf_leden',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'database:add-user', [
+            'connection' => 'dlf-leden',
+            '--service' => 'mysql8',
+            '--node' => 'beast',
+            '--database' => 'dlf_leden',
+            '--username' => 'dlf_leden',
+            '--password' => 'super-secret',
+        ]);
+
+        Http::assertSent(function (Request $request): bool {
+            return $request->method() === 'POST'
+                && str_contains($request->url(), '/api/database-connections/dlf-leden/users')
+                && $request->data() === [
+                    'service' => 'mysql8',
+                    'node' => 'beast',
+                    'database' => 'dlf_leden',
+                    'username' => 'dlf_leden',
+                    'password' => 'super-secret',
+                ];
+        });
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain("Database user 'dlf_leden' ready on service 'mysql8'.")
+            ->and($output)->toContain("Database connection 'dlf-leden' updated.")
+            ->and($output)->not->toContain('super-secret');
+    });
+
+    it('rejects database:add-user without required options before contacting the gateway', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'database:add-user', [
+            'connection' => 'dlf-leden',
+            '--service' => 'mysql8',
+            '--database' => 'dlf_leden',
+            '--username' => 'dlf_leden',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('password');
+    });
+
     it('posts database:add payloads to the gateway without printing secrets', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'connection' => [

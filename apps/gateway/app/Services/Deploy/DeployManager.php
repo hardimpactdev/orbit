@@ -14,6 +14,7 @@ use App\Models\App;
 use App\Models\DeploymentRun;
 use App\Models\DeploymentRunStep;
 use App\Models\DeployStep;
+use App\Services\Apps\AppCommandRouter;
 use App\Services\Apps\AppRuntimeUser;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
@@ -26,6 +27,7 @@ final readonly class DeployManager
     public function __construct(
         private RemoteShell $remoteShell,
         private AppRuntimeUserResolver $appRuntimeUser = new AppRuntimeUser,
+        private AppCommandRouter $appCommandRouter = new AppCommandRouter,
         private AddDeployStep $addDeployStep = new AddDeployStep,
         private RemoveDeployStep $removeDeployStep = new RemoveDeployStep,
     ) {}
@@ -161,7 +163,7 @@ final readonly class DeployManager
         foreach ($steps as $step) {
             $stepStartedAt = now();
             $command = $this->renderCommand($step->command, $context);
-            $routedCommand = $this->routeCommand($model, $command, $context);
+            $routedCommand = $this->appCommandRouter->route($model, $command, $this->environment($context));
             $progress?->stepStart($this->progressKey($step));
             $result = $this->remoteShell->run($model->node ?? throw new GatewayApiException(
                 message: "App '{$model->name}' has no owning node.",
@@ -272,92 +274,6 @@ final readonly class DeployManager
     }
 
     /**
-     * Route a deploy step command through the host PHP toolchain when the app
-     * is a PHP app and the command uses PHP, Composer, or Artisan.
-     *
-     * Non-PHP commands and non-PHP apps run on the host as-is.
-     *
-     * @param  array<string, mixed>  $context
-     */
-    private function routeCommand(App $app, string $command, array $context): string
-    {
-        if ($app->runtimeKind() !== AppRuntimeKind::Php) {
-            return $command;
-        }
-
-        if (! $this->usesPhpTools($command)) {
-            return $command;
-        }
-
-        return $this->wrapForHost($app, $command, $context);
-    }
-
-    /**
-     * Detect whether a shell command invokes PHP, Composer, or Artisan.
-     *
-     * Excludes php-fpm and php\d+.\d+-fpm service commands, which are host
-     * infrastructure operations and must not be routed into the container.
-     */
-    private function usesPhpTools(string $command): bool
-    {
-        $normalized = preg_replace('/[\'"].*?[\'"]/', '', $command);
-
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php-fpm\b/', (string) $normalized) === 1) {
-            return false;
-        }
-
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\d+\.\d+-fpm\b/', (string) $normalized) === 1) {
-            return false;
-        }
-
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*php\s/', (string) $normalized) === 1) {
-            return true;
-        }
-
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*composer\s/', (string) $normalized) === 1) {
-            return true;
-        }
-
-        if (preg_match('/(?:^|\s|&&|\|\||;)\s*artisan\b/', (string) $normalized) === 1) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Wrap a PHP/Composer/Artisan command for host-side execution with the
-     * version-matched PHP toolchain, running as the app runtime user.
-     *
-     * Shape:
-     *   sudo -u <runtimeUser> -H bash -lc 'cd <appPath> && PATH=/opt/orbit/php/<ver>/bin:$PATH <command>'
-     *
-     * Environment variables are passed inline before the command inside the
-     * inner shell string so they are visible to the child process.
-     *
-     * @param  array<string, mixed>  $context
-     */
-    private function wrapForHost(App $app, string $command, array $context): string
-    {
-        $appPath = rtrim((string) $app->path, '/');
-        $phpVersion = $app->php_version;
-        $runtimeUser = $this->appRuntimeUser->forApp($app);
-
-        $envPrefix = '';
-
-        foreach ($this->environment($context) as $key => $value) {
-            $envPrefix .= "{$key}=".escapeshellarg($value).' ';
-        }
-
-        $inner = 'cd '.escapeshellarg($appPath)
-            .' && PATH=/opt/orbit/php/'.escapeshellarg($phpVersion).'/bin:$PATH '
-            .$envPrefix
-            .$command;
-
-        return implode(' ', array_map(escapeshellarg(...), ['sudo', '-u', $runtimeUser, '-H', 'bash', '-lc', $inner]));
-    }
-
-    /**
      * Run built-in production warmup steps for PHP apps on the host using the
      * version-matched PHP toolchain. Returns captured output when warmups run,
      * or null when skipped.
@@ -389,7 +305,7 @@ final readonly class DeployManager
         $stderr = '';
 
         foreach ($warmupCommands as $warmupCommand) {
-            $routedCommand = $this->wrapForHost($app, $warmupCommand, $context);
+            $routedCommand = $this->appCommandRouter->route($app, $warmupCommand, $this->environment($context));
 
             $result = $this->remoteShell->run($node, $routedCommand, [
                 'cwd' => $app->path,

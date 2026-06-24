@@ -96,6 +96,21 @@ orbit app:root [<app>] [<root>] [--json]
 
 `<root>` is relative to the app path (e.g. `public`, `web`, `dist`). Re-renders Caddy config.
 
+## `orbit app:setup [app]`
+
+Run an app's recorded setup pipeline on the owning app node.
+
+```bash
+orbit app:setup [<app>] [--force] [--json|--stream-json]
+orbit app-setup-step:add [<app>] [<command>] [--title=<title>] [--order=<n>] [--timeout=600] [--json]
+orbit app-setup-step:list [<app>] [--json]
+orbit app-setup-step:remove [<app>] [<step>] [--json]
+```
+
+Setup steps are finite bootstrap commands. PHP, Composer, and Artisan commands
+use the app node host PHP toolchain selected by the app's PHP version. Use
+processes for long-running services.
+
 ## `orbit app:remove [app]`
 
 Remove an app and its owned artifacts: gateway registry row, app runtime

@@ -25,6 +25,10 @@ authority](../architecture.md#gateway-implicit-authority).
 | `app:register` | `app:register` | target app node | None | `authorization_failed` | Standard missing-permission meta plus target node |
 | `app:remove` | `app:remove` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:root` | `app:root` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app:setup` | `app:write` | app owning node | `app:write` and `app:*` imply `app:setup` | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app-setup-step:add` | `app:write` | app owning node | `app:write` and `app:*` imply `app-setup-step:add` | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app-setup-step:list` | `app:read` | app owning node | `app:read` and `app:*` imply `app-setup-step:list` | `authorization_failed` | Standard missing-permission meta plus `app` |
+| `app-setup-step:remove` | `app:write` | app owning node | `app:write` and `app:*` imply `app-setup-step:remove` | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:show` | `app:read` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:websocket credentials` | `app:credentials` | app owning node | Explicit credential-read permission; not implied by `app:read` or `app:write` | `authorization_failed` | Standard missing-permission meta plus `app` |
 | `app:websocket disable` | `app:write` | app owning node | None | `authorization_failed` | Standard missing-permission meta plus `app` |
@@ -39,6 +43,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `cf-ssl:enable` | `cf:ssl:enable` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `cf-zone:list` | `cf:zone:list` | gateway | None | `authorization_failed` | Standard missing-permission meta |
 | `database:add` | `database:write` | target database host or app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
+| `database:add-user` | `database:write` | managed MySQL process node | None | `authorization_failed` | Standard missing-permission meta plus service |
 | `database:attach` | `database:write` | target database connection and app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |
 | `database:describe` | `database:read` | target database connection node | None | `authorization_failed` | Standard missing-permission meta plus connection |
 | `database:detach` | `database:write` | target database connection and app/workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus connection and target |

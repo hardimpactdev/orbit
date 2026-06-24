@@ -150,6 +150,7 @@ lifecycle directly; process rows own lifecycle for runnable services.
 |---|---|
 | `orbit database:list\|show` | Read reusable database connection intent |
 | `orbit database:add\|update\|remove` | Manage reusable connection records |
+| `orbit database:add-user` | Create/update a MySQL user through a managed MySQL process |
 | `orbit database:attach\|detach` | Map a connection to an app/workspace `.env` prefix |
 | `orbit database:query` | Run audited SQL through a registered connection |
 | `orbit database:tables\|schema\|describe` | Inspect database schema metadata |
@@ -266,7 +267,8 @@ orbit node:new gateway-1 --template=gateway --host=203.0.113.2 --operator-name=m
 ```bash
 orbit node:default beast              # set local default development node (one-time)
 orbit app:new myapp --repo=acme/myapp # served at myapp.<beast-tld>
-orbit database:add myapp --driver=pgsql --host=10.6.0.50 --database=myapp --username=orbit
+orbit process:add mysql8 --service=mysql --runtime=docker --version=8.3 --node=beast
+orbit database:add-user myapp --service=mysql8 --node=beast --database=myapp --username=myapp --password='...'
 orbit database:attach myapp --app=myapp --env-prefix=DB
 orbit doctor --app=myapp --family=database_connection --restore
 ```
