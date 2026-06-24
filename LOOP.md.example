@@ -1,44 +1,40 @@
-# Orbit Loop State
+# Orbit Current Slice State
 
-This is the committed loop-state template. For non-trivial active work, copy it
-to `.orbit/loop.md`, keep that local copy updated while work is active, and do
-not commit `.orbit/`.
+This is the committed current-slice template. For non-trivial active work, copy
+it to `.orbit/loop.md`, keep that local copy focused on the active slice, and
+do not commit `.orbit/`.
 
-## Current Goal
+When a feature has multiple slices, rewrite `.orbit/loop.md` at the start of
+each slice. Keep durable feature history, slice outcomes, and ordering in the
+feature scratchpad. Keep code history in Git.
 
-<short objective>
+## Feature Context
 
-## Worktree / Branch
-
+- Scratchpad:
 - Worktree:
 - Branch:
+- Completed slices:
+  - <slice>: <one-line outcome>
+- Current slice:
 
-## Active Contract
+## Done Contract
 
-- Objective:
-- Out of scope:
-- Affected surface:
-- Stop predicates:
-- Failure exits:
-- Evidence required:
-- Reviewer required:
-- Human approval boundary:
+- Done when:
+  -
+- Evidence:
+  -
+- Reviewer checks:
+  -
+- Stop if:
+  -
+- Pivot if:
+  -
 
-## Attempts
+## Progress
 
-- <attempt, command, or implementation path>
-
-## Failed Approaches
-
-- <what failed and why it should not be repeated>
-
-## Passed Checks
-
-- <command and result>
-
-## Next Action
-
-<one concrete next step>
+- Tried:
+  Result:
+  Next:
 
 ## Blockers
 
@@ -46,7 +42,8 @@ not commit `.orbit/`.
 
 ## Evidence Links
 
-- <test output, retained topology id, Solo terminal/session, commit, or report>
+- <command, result, artifact, retained topology id, Solo terminal/session,
+  commit, or report>
 
 ## Harness Signals
 

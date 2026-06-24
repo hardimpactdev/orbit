@@ -7,10 +7,10 @@ description: Use when the user says to implement a crystallized Orbit feature or
 
 ## Overview
 
-Implement a scoped Orbit change from a crystallized discussion, handoff, or Solo
-todo by acting as the feature owner. The feature owner may run in Codex CLI,
-the Codex app, Claude, or another capable LLM surface. Solo is the required
-substrate for spawned workers and retained verification terminals.
+Implement a scoped Orbit change from a crystallized discussion, handoff, Solo
+scratchpad, or Solo todo by acting as the feature owner. The feature owner may
+run in Codex CLI, the Codex app, Claude, or another capable LLM surface. Solo is
+the required substrate for spawned workers and retained verification terminals.
 Crystallization happens before this skill is triggered: the feature or bug fix
 has already been discussed into a concrete product contract, scope, and
 verification expectation. This skill starts when the user explicitly moves from
@@ -41,10 +41,13 @@ subagents or retained VM proof.
 
 Responsibilities:
 
-- Create and own the goal contract for the crystallized implementation when the
+- Create and own the Done Contract for the active slice when the
   user explicitly starts implementation from the current thread or app.
 - Prepare and own the dedicated Orbit worktree.
 - Read the handoff, docs, and existing code enough to define clear worker tasks.
+- For multi-slice features, keep one feature scratchpad as the roadmap and one
+  feature worktree as the execution boundary. Use `.orbit/loop.md` for the
+  active slice only, rewriting it when the next slice starts.
 - Spawn one Solo implementation worker by default. Grok is the default
   implementation model when available, but another suitable Solo-managed worker
   may own the slice if that is the active toolchain. Spawn multiple workers only
@@ -83,7 +86,8 @@ Use this prompt shape:
 ```text
 <prepend the agent_instructions returned by Solo spawn_agent>
 
-You are implementing one scoped Orbit feature slice in a dedicated worktree.
+You are implementing one scoped Orbit feature slice in a dedicated feature
+worktree. This worktree may already contain earlier slices for the same feature.
 Other workers may be active, so keep ownership narrow and do not revert
 unrelated changes.
 
@@ -93,7 +97,7 @@ Worktree:
 Read and follow:
 - AGENTS.md
 - HARNESS.md
-- LOOP.md.example, then copy it to `.orbit/loop.md` for this active worktree
+- LOOP.md.example, then copy it to `.orbit/loop.md` for this active slice
 - HARNESS_SIGNALS.md
 - harness-signals/README.md
 - .agents/skills/implementing-features/SKILL.md
@@ -104,7 +108,14 @@ Feature handoff:
 
 Rules:
 - Edit only inside the assigned worktree.
+- If a feature scratchpad exists, read its slice outcomes before editing and
+  treat `.orbit/loop.md` as the current slice contract, not feature history.
+- Inspect the current branch diff or log enough to understand prior slices that
+  already exist in this feature worktree.
 - Keep docs, tests, and code aligned.
+- The feature orchestrator owns the Done Contract in `.orbit/loop.md`. You may
+  challenge or propose changes to it, but do not silently weaken scope,
+  evidence, reviewer checks, stop conditions, or pivot conditions.
 - Use TDD: failing Pest coverage first, then implementation.
 - After reading the required local files named in this prompt, produce the
   first narrow diff before doing broad repository discovery. Prefer a
@@ -444,17 +455,21 @@ moving on to durable E2E.
 ## Workflow
 
 1. Confirm the request is moving an already-crystallized feature or bug fix into
-   implementation. Use the crystallized discussion, handoff, or Solo todo as
-   the concrete implementation handoff. Create a goal contract for the
-   implementation and proceed as feature owner. Do not route through retired
-   orchestration skills.
+   implementation. Use the crystallized discussion, handoff, Solo scratchpad, or
+   Solo todo as the concrete implementation handoff. If the feature contains
+   multiple slices, use one lightweight scratchpad as the feature roadmap and
+   one worktree as the execution boundary. Create the active slice Done Contract
+   and proceed as feature owner. Do not route through retired orchestration
+   skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
    `PRODUCT_DECISIONS.md`, relevant product docs under `apps/docs/content/**`,
    and relevant session context under `docs/superpowers/**`. Copy
-   `LOOP.md.example` to `.orbit/loop.md` for the active worktree and fill the
-   goal contract before implementation.
+   `LOOP.md.example` to `.orbit/loop.md` for the active slice and fill the Done
+   Contract before implementation. If this is a later slice in the same feature
+   worktree, rewrite `.orbit/loop.md` for the current slice and keep earlier
+   slice outcomes in the feature scratchpad.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Solo worker plan from `HARNESS.md`. Use one Solo implementation
    worker by default; Grok is the default implementation model when available.
@@ -516,10 +531,12 @@ moving on to durable E2E.
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
-16. Run focused in-memory and prepared-topology feature verification. For CLI
-    behavior, durable E2E follows the retained VM/user-verification checkpoint.
-    For non-CLI behavior, proceed to the relevant E2E lane once code and
-    focused tests are ready; no retained CLI confirmation gate applies.
+16. Run focused in-memory verification for the active slice. For multi-slice
+    features, do not spend full E2E on every internal slice by default; run the
+    agreed E2E lane as the feature-level merge gate. For CLI behavior, durable
+    E2E still follows the retained VM/user-verification checkpoint. For non-CLI
+    behavior, proceed to the relevant E2E lane once code and focused tests are
+    ready; no retained CLI confirmation gate applies.
 17. Run the applicable reviewer persona from the `HARNESS.md` routing table once
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
@@ -663,13 +680,20 @@ is not required after ordinary `composer test:e2e` runs.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.
-- Run the repo feedback loop from `.orbit/loop.md` during the slice, creating
-  it from `LOOP.md.example` when needed. Every signal does not need a repository
-  edit, but every durable signal needs either a curated `harness-signals/` record
-  plus a guardrail target update in this worktree, or a scoped follow-up in the
-  implementation report. Do not use `.orbit/loop.md` or `HARNESS_SIGNALS.md` as
-  event logs. Curate stale or noisy signal records when they are in the owned
-  scope; otherwise report a focused curation follow-up.
+- Use a feature scratchpad for multi-slice feature intent, rough slice order,
+  slice outcomes, and final gate notes. Keep Solo todos optional; create them
+  only for asynchronous assignment, queueing, or explicit tracking outside the
+  active orchestrator thread.
+- Run the repo feedback loop from `.orbit/loop.md` during the active slice,
+  creating it from `LOOP.md.example` when needed. `.orbit/loop.md` is
+  current-slice state, not feature history; rewrite it when the next slice
+  starts and preserve prior slice outcomes in the feature scratchpad. Every
+  signal does not need a repository edit, but every durable signal needs either
+  a curated `harness-signals/` record plus a guardrail target update in this
+  worktree, or a scoped follow-up in the implementation report. Do not use
+  `.orbit/loop.md` or `HARNESS_SIGNALS.md` as event logs. Curate stale or noisy
+  signal records when they are in the owned scope; otherwise report a focused
+  curation follow-up.
 - Keep the project-owned Orbit skill in sync with product and implementation
   changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
   `skills/orbit/references/*.md` carries command-family detail. If a change

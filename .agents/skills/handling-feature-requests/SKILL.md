@@ -7,14 +7,14 @@ description: Use when receiving, refining, triaging, or preparing an Orbit featu
 
 ## Overview
 
-Capture feature intent as scoped Solo todo work. This skill is intake-only: it
-does not update files, documentation, tests, or implementation code.
+Capture feature intent as a scoped handoff. This skill is intake-only: it does
+not update files, documentation, tests, or implementation code.
 
 Before refining intent, use the `brainstorming` superpower for product shaping
-or behavior changes. Once intent is clear, use this skill to write the outcome,
-contract, scope, and verification expectations into Solo todos. Actual work,
-including documentation updates, happens through the `implementing-features`
-skill.
+or behavior changes. Once intent is clear, use this skill to decide whether the
+request is one implementation slice or a larger feature that needs a lightweight
+Solo scratchpad roadmap. Actual work, including documentation updates, happens
+through the `implementing-features` skill.
 
 ## Workflow
 
@@ -22,7 +22,7 @@ skill.
 2. Identify the affected product surface: command, service, API, docs-only behavior, orchestration flow, E2E lane, or project tooling.
 3. Use the `brainstorming` superpower when intent, behavior, scope, or product
    direction still needs refinement.
-4. Read current product authority before writing Solo todos:
+4. Read current product authority before writing the handoff:
    - `AGENTS.md`
    - `PRODUCT_DECISIONS.md` (dated intent ledger — read current direction before proposing a change, so a new decision does not contradict or duplicate an existing one)
    - `apps/docs/content/mission.md`
@@ -31,11 +31,15 @@ skill.
    - `apps/docs/content/concepts.md`
    - relevant `apps/docs/content/domains/**`
    - relevant `docs/superpowers/**`
-5. Flag missing or contradictory docs in the Solo todo body; do not fix them in
+5. Flag missing or contradictory docs in the handoff; do not fix them in
    this skill.
 6. Define the smallest useful vertical slice that can be documented, tested,
-   implemented, and verified.
-7. Create or update Solo todo(s) with the handoff shape below.
+   implemented, and verified. If the request is larger than one slice, create or
+   update one lightweight Solo scratchpad with rough slice order, dependencies,
+   slice outcomes, open decisions, and the final verification gate.
+7. Create Solo todo(s) only when a slice needs asynchronous assignment, queueing,
+   or explicit tracking outside the active orchestrator thread. If no todo is
+   needed, the scratchpad or conversation handoff is enough.
 8. Leave implementation, including documentation edits and product-decision
    ledger entries, to the agent using `implementing-features`.
 
@@ -47,7 +51,7 @@ Use this decision order when evidence conflicts:
 2. Current tests describe expected implementation behavior only when they match the docs.
 3. Current code explains what exists, not necessarily what should exist.
 
-If a new decision is needed, make it explicit in the Solo todo:
+If a new decision is needed, make it explicit in the handoff:
 
 ```markdown
 Decision needed: <question>
@@ -59,7 +63,8 @@ Recommended direction: <specific choice and why>
 
 ## Handoff Shape
 
-Use this shape when creating or updating Solo todos:
+Use this shape when creating a slice handoff in a scratchpad, conversation, or
+Solo todo:
 
 ```markdown
 ## Feature Request
@@ -92,19 +97,22 @@ Use this shape when creating or updating Solo todos:
 
 ## Solo Delegation Rules
 
-- This skill may create or update Solo todos, comments, blockers, and tags.
+- This skill may create or update Solo scratchpads, todos, comments, blockers,
+  and tags.
 - This skill must not edit repository files or spawn implementation agents.
 - Documentation updates, product-decision ledger entries, tests, and code
   changes all belong to a later implementation pass using
   `implementing-features`.
-- The Solo todo body is the handoff. Include enough context for a later
-  implementation agent to start from the todo without reconstructing intent
-  from the conversation.
+- The scratchpad is the feature roadmap when multiple slices are needed. Solo
+  todos are optional assignment cards; keep them thin and point to the
+  scratchpad plus the named slice instead of duplicating the full loop contract.
+- Include enough context for a later implementation agent to start the slice
+  without reconstructing intent from the conversation.
 
 ## Implementation Handoff
 
 ```markdown
-Use `.agents/skills/implementing-features/SKILL.md` when executing this todo.
+Use `.agents/skills/implementing-features/SKILL.md` when executing this slice.
 
 Task:
 <paste the implementation handoff>
@@ -126,14 +134,17 @@ Return changed files, tests, verification, blockers, and risks.
 - Stop and narrow scope if the request mixes unrelated product surfaces.
 - Stop before editing repository files; switch to `implementing-features` for
   actual changes.
-- Stop before spawning implementation agents; leave execution to the Solo todo
-  workflow.
+- Stop before spawning implementation agents; leave execution to the
+  implementation workflow.
 
 ## Common Mistakes
 
 - Treating an implementation guess as product authority.
 - Editing docs, code, tests, or skills while using this intake skill.
-- Spawning an implementation agent instead of capturing the work in Solo todos.
+- Creating Solo todos for every slice when a scratchpad plus active
+  orchestrator thread is enough.
+- Spawning an implementation agent instead of capturing the work in a scratchpad
+  or handoff.
 - Creating broad abstractions before the vertical slice proves they are needed.
 - Splitting documentation into a separate implementation track instead of
-  capturing the doc gap in the Solo todo for `implementing-features`.
+  capturing the doc gap in the handoff for `implementing-features`.

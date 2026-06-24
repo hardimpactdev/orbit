@@ -58,9 +58,12 @@ product authority and are not linted as product docs.
 
 ## Development and debugging Rules
 
-- Feature-request handling is intake only: use it to clarify intent and capture
-  scoped Solo todo handoffs. Do not update repository files while handling the
-  request.
+- Feature-request handling is intake only: use it to clarify intent. When a
+  request is too large for one implementation slice, capture a lightweight Solo
+  scratchpad roadmap with rough slice order and update it at slice boundaries.
+  Create Solo todos only when a slice needs asynchronous assignment, queueing,
+  or explicit tracking outside the active orchestrator thread. Do not update
+  repository files while handling the request.
 - Actual implementation happens through `.agents/skills/implementing-features`
   in an isolated worktree. That includes documentation updates, product-decision
   ledger entries, tests, and code changes. Read that skill before starting

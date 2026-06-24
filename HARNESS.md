@@ -43,7 +43,7 @@ Use root `.orbit/` as the gitignored home for ephemeral state in the current
 worktree. This is repository-development state for the checkout, not product
 runtime state inside app workspaces or nodes.
 
-- `.orbit/loop.md`: active loop state copied from `LOOP.md.example`.
+- `.orbit/loop.md`: current-slice state copied from `LOOP.md.example`.
 - `.orbit/quality-gates/`: local timing, analyzer, and triage reports for
   Pest, quality-check, Docker E2E, and Incus E2E gates.
 - `.orbit/evidence/`: retained local evidence such as command transcripts,
@@ -62,7 +62,7 @@ Start at the monorepo root and read in this order:
 2. **`HARNESS.md`**: this file; repo harness anchor
 3. **`LOOP.md.example`**: local loop-state template; copy it to
    `.orbit/loop.md` for non-trivial active work
-4. **`.orbit/loop.md`**: current worktree state when present; never treat
+4. **`.orbit/loop.md`**: current slice state when present; never treat
    absence in a fresh checkout as a product gap
 5. **`HARNESS_SIGNALS.md`**: signal-to-guardrail-target map for the feedback loop
 6. **`harness-signals/`**: curated signal records to search for prior
@@ -95,6 +95,34 @@ appropriate sink: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
 checks, command failure messages, or explicit rejection. Keep one-off local
 cleanup out of the durable harness.
 
+## Feature Slices
+
+Use the least durable state that can keep the work coherent.
+
+- A small request can start directly in one feature worktree with one
+  `.orbit/loop.md`.
+- A request that is too large for one implementation slice gets one lightweight
+  Solo scratchpad. The scratchpad records feature intent, rough slice order,
+  slice outcomes, open decisions, and the final verification gate. It is not a
+  full spec and not a command log.
+- Solo todos are optional assignment cards. Create them only when a slice needs
+  asynchronous delegation, queueing, or explicit tracking outside the active
+  orchestrator thread. If a todo exists, keep it thin: point to the scratchpad
+  and name the slice instead of copying the whole loop contract.
+
+One feature maps to one implementation worktree by default. Build related
+slices in that same worktree and merge to `main` only after the whole feature
+passes the feature-level final gate, including the agreed E2E lane. Do not
+merge internal slices independently unless a slice is explicitly split into a
+separate feature with its own final gate.
+
+Within a feature worktree, `.orbit/loop.md` is the current-slice contract, not
+the feature history. Rewrite it when the next slice starts. Keep prior slice
+outcomes in the feature scratchpad and the actual code history in Git. The top
+of `.orbit/loop.md` should name the feature scratchpad, summarize completed
+slices in one line each, and identify the current slice so a worker knows the
+branch may already contain earlier feature work.
+
 ## Solo Role Matrix
 
 Solo is the worker substrate for Orbit repo development. Use it to split work
@@ -102,7 +130,7 @@ only when ownership can stay clear.
 
 | Role | Default Agent | Owns | Does Not Own |
 |------|---------------|------|--------------|
-| Feature orchestrator | Any capable LLM surface; Codex is the usual default | Goal contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
+| Feature orchestrator | Any capable LLM surface; Codex is the usual default | Done Contract, worktree, worker prompts, scope control, review, verification, final report, next step | Blind implementation or accepting worker output without inspection |
 | Implementation worker | Solo-managed worker; Grok is the usual default | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Final commit, merge-back, release, broad refactors, unrelated dirty files |
 | Documenter / librarian worker | Claude | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
@@ -111,10 +139,10 @@ only when ownership can stay clear.
 The active feature-owner thread is the source of work. It can run in Codex CLI,
 the Codex app, Claude, or another capable LLM surface. Spawned workers and
 retained verification terminals run through Solo so ownership, process ids, and
-terminal proof remain inspectable. Workers receive the active goal contract,
-worktree path, owned files or domains, stop predicates, and reporting shape. If
-those boundaries are hard to state, use one worker serially instead of parallel
-workers.
+terminal proof remain inspectable. Workers receive the active Done Contract,
+worktree path, owned files or domains, stop and pivot conditions, and reporting
+shape. If those boundaries are hard to state, use one worker serially instead
+of parallel workers.
 
 Documentation-heavy work may start with a Claude documenter/librarian worker.
 Code implementation can run after the feature owner accepts the docs contract as
@@ -137,31 +165,42 @@ Use this table to pick the smallest workflow that can prove the change.
 | Release | `release` | Release skill, changelog/version files, product docs touched by release | Release gates: doctor before, `update:all`, doctor after, `node:list`, plus exception checks | Human before tag, publish, or merge/push beyond the approved release step | Record release-gate surprises and recurring fleet drift | Any release gate fails or approval boundary is not explicit |
 | App/package shared core | `implementing-features`, Laravel/PHP skills | `packages/core/**`, affected app docs/tests | Package tests plus focused impacted app tests; broaden to `composer quality-check` for shared contracts | Owner/reviewer for cross-app behavior | Record boundary leaks or repeated shared-contract misses | Affected apps are unknown, or shared behavior lacks targeted coverage |
 
-## Goal Contract
+## Done Contract
 
-For non-trivial work, fill this contract before implementation. Keep it short
-enough to copy into `.orbit/loop.md`.
+For non-trivial work, the feature orchestrator fills the active slice contract
+before implementation. Keep it short enough to copy into `.orbit/loop.md`.
+Workers may challenge the contract, but they must not silently weaken scope,
+evidence, reviewer checks, stop conditions, or pivot conditions.
 
 ```markdown
-Objective:
+Current slice:
 
-Out of scope:
+Done when:
 
-Affected surface:
+Evidence:
 
-Stop predicates:
+Reviewer checks:
 
-Failure exits:
+Stop if:
 
-Evidence required:
-
-Reviewer required:
-
-Human approval boundary:
+Pivot if:
 ```
 
+`Stop if` means the agent should halt and hand back because continuing would be
+unsafe or outside scope. `Pivot if` means the agent can continue, but should
+change approach instead of repeatedly patching the same path.
+
 The contract is not ceremony. It defines when the agent should continue, when it
-should stop, and which evidence is enough for handoff.
+should stop, which approach changes are allowed, and which evidence is enough
+for handoff.
+
+## Slice Verification
+
+Validate each slice with the narrowest checks that keep the feature branch
+honest: focused Pest, docs-lint, static checks, or PTY proof when the slice
+changes terminal behavior. Do not spend full E2E on every internal slice by
+default. Run the agreed E2E lane as the feature-level merge gate, or earlier
+only when the active slice itself cannot be judged without topology behavior.
 
 ## Review Scope
 
