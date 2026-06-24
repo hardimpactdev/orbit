@@ -93,7 +93,72 @@ it('runs a wrapped quality gate command and writes timing evidence', function ()
             ])
             ->and(is_numeric($artifact['duration_seconds']))->toBeTrue()
             ->and($artifact['git']['branch'])->toBeString()
-            ->and($artifact['git']['commit'])->toBeString();
+            ->and($artifact['git']['commit'])->toBeString()
+            ->and($artifact)->not->toHaveKey('timing_summary');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
+it('captures e2e timing summaries from wrapped command stderr', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-e2e-timings-'.bin2hex(random_bytes(6));
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-run'),
+            '--gate=e2e-docker',
+            '--command=composer test:e2e:docker',
+            "--artifact-dir={$artifactDir}",
+            '--',
+            PHP_BINARY,
+            '-r',
+            'fwrite(STDOUT, "wrapped-out\n"); fwrite(STDERR, "[orbit-e2e] docker start gateway 1.200s\n"); fwrite(STDERR, "[orbit-e2e] docker start gateway 2.400s\n"); fwrite(STDERR, "plain-error\n");',
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toContain('wrapped-out')
+            ->and($process->getErrorOutput())
+            ->toContain('[orbit-e2e] docker start gateway 1.200s')
+            ->toContain('[orbit-e2e] docker start gateway 2.400s')
+            ->toContain('plain-error');
+
+        $artifacts = glob("{$artifactDir}/e2e-docker-*.json") ?: [];
+
+        expect($artifacts)->toHaveCount(1);
+
+        $artifact = json_decode((string) file_get_contents($artifacts[0]), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($artifact['timing_summary'])
+            ->toMatchArray([
+                'line_count' => 1,
+                'summary_lines' => [
+                    'docker/start.gateway n=2 p50=1.2 p95=2.4',
+                ],
+            ])
+            ->and($artifact['timing_summary']['raw_path'])->toStartWith('e2e-timings/e2e-docker-')
+            ->and($artifact['timing_summary']['summary_path'])->toStartWith('e2e-timings/e2e-docker-');
+
+        $rawPath = "{$artifactDir}/{$artifact['timing_summary']['raw_path']}";
+        $summaryPath = "{$artifactDir}/{$artifact['timing_summary']['summary_path']}";
+
+        expect($rawPath)->toBeFile()
+            ->and($summaryPath)->toBeFile()
+            ->and(file_get_contents($rawPath))->toContain('[orbit-e2e] docker start gateway 1.200s')
+            ->and(file_get_contents($summaryPath))->toContain('docker/start.gateway n=2 p50=1.2 p95=2.4');
+
+        $analyzer = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+            '--gate=e2e-docker',
+        ], repo_path());
+        $analyzer->run();
+
+        expect($analyzer->getExitCode())->toBe(0, $analyzer->getErrorOutput())
+            ->and($analyzer->getOutput())
+            ->toContain('timing summary: e2e-timings/e2e-docker-')
+            ->toContain('timing phase: docker/start.gateway n=2 p50=1.2 p95=2.4');
     } finally {
         (new Process(['rm', '-rf', $artifactDir]))->run();
     }
@@ -601,6 +666,8 @@ it('documents quality gate artifact and analyzer commands', function (): void {
         ->toContain('composer quality-check:fix')
         ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
         ->toContain('Queue time is reflected in the aggregate gate')
+        ->toContain('.orbit/quality-gates/e2e-timings/')
+        ->toContain('timing phase')
         ->toContain('warning-only');
 });
 

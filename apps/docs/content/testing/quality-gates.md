@@ -179,6 +179,12 @@ Use `composer test:e2e:docker` for Docker-eligible feature tests and
 `composer test:e2e:incus` for VM-feature behavior. These source-prepared lanes
 write timing artifacts through `bin/quality-gate-run`; the wrapper preserves the
 lane's exit code and does not change provider selection or argument forwarding.
+When an E2E gate emits `[orbit-e2e]` timing lines, the wrapper also stores the
+raw timing stream and `bin/e2e-timings.awk` summary under
+`.orbit/quality-gates/e2e-timings/`. The quality-gate JSON points at those
+files through `timing_summary`, and `composer quality-gate:analyze` prints the
+captured `timing phase` lines so final-check review can see slow provider
+phases without rerunning Docker or Incus.
 
 Run feature E2E before any affected provider artifact/provision gate. The
 prepared-topology lanes exercise the current source checkout and are the normal

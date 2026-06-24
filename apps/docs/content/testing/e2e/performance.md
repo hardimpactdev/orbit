@@ -8,6 +8,12 @@ diagnostics.
 Use the timing parser to summarize repeated Docker lane runs by `label` and
 `event`:
 
+The root `composer test:e2e*` scripts already preserve E2E timing summaries in
+`.orbit/quality-gates/e2e-timings/` when `[orbit-e2e]` timing lines are emitted.
+Use the explicit `tee | awk` form below when recording repeated benchmark logs
+under stable `/tmp` names or when comparing phase summaries outside the local
+quality-gate artifact directory.
+
 ```bash
 ORBIT_E2E_TIMINGS=1 \
   composer test:e2e:docker:canary \

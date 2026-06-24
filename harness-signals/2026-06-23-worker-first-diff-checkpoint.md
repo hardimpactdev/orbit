@@ -4,7 +4,7 @@ Status: recurring
 First seen: 2026-06-23
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
-Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed
+Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline
 Source commit: pending
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
@@ -52,6 +52,13 @@ Codex worker received a strict first-diff checkpoint for a narrow CLI Pest
 timing slice, identified the intended test seam, then stalled without producing
 a diff or exact missing-context blocker. The feature owner stood the worker
 down and treated the stalled attempt as a documented loop exception.
+
+This signal reappeared again in `quality-e2e-lane-timing-baseline`: Solo Codex
+process 539 received a narrow E2E timing-artifact slice, explicit worktree
+path, owned files, and a test-only first-diff expectation. It produced no
+visible checkpoint, diff, or blocker. After an interrupt-delivered correction,
+it still did not produce the requested first diff. The feature owner stopped
+the worker and implemented the test-first wrapper slice directly.
 
 ## Missing Guardrail
 

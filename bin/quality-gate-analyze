@@ -58,6 +58,7 @@ try {
         ));
 
         write_subgate_durations($latest);
+        write_timing_summary($latest);
 
         $baseline = load_baseline($artifactDir, $gate);
 
@@ -317,6 +318,38 @@ function write_subgate_durations(array $artifact): void
             (float) $seconds,
             PHP_EOL,
         ));
+    }
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function write_timing_summary(array $artifact): void
+{
+    $summary = $artifact['timing_summary'] ?? null;
+
+    if (! is_array($summary)) {
+        return;
+    }
+
+    $summaryPath = $summary['summary_path'] ?? null;
+
+    if (is_string($summaryPath) && trim($summaryPath) !== '') {
+        fwrite(STDOUT, 'timing summary: '.trim($summaryPath).PHP_EOL);
+    }
+
+    $lines = $summary['summary_lines'] ?? null;
+
+    if (! is_array($lines)) {
+        return;
+    }
+
+    foreach ($lines as $line) {
+        if (! is_string($line) || trim($line) === '') {
+            continue;
+        }
+
+        fwrite(STDOUT, 'timing phase: '.trim($line).PHP_EOL);
     }
 }
 

@@ -7,6 +7,25 @@ GATE=""
 COMMAND=""
 MODE="check"
 ARTIFACT_DIR="${ORBIT_QUALITY_GATES_DIR:-${ROOT}/.orbit/quality-gates}"
+TIMING_RAW_TMP=""
+TIMING_STDERR_TMP=""
+TIMING_STDERR_FIFO=""
+
+cleanup() {
+    if [ -n "$TIMING_RAW_TMP" ]; then
+        rm -f "$TIMING_RAW_TMP"
+    fi
+
+    if [ -n "$TIMING_STDERR_TMP" ]; then
+        rm -f "$TIMING_STDERR_TMP"
+    fi
+
+    if [ -n "$TIMING_STDERR_FIFO" ]; then
+        rm -f "$TIMING_STDERR_FIFO"
+    fi
+}
+
+trap cleanup EXIT
 
 usage_error() {
     echo "$1" >&2
@@ -77,23 +96,84 @@ fi
 STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 GIT_BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
 GIT_COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+CAPTURE_E2E_TIMINGS=0
+TIMING_RAW_PATH=""
+TIMING_SUMMARY_PATH=""
+
+case "$GATE" in
+    e2e*)
+        CAPTURE_E2E_TIMINGS=1
+        TIMING_RAW_TMP="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-e2e-timings.XXXXXX")"
+        TIMING_STDERR_TMP="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-stderr.XXXXXX")"
+        TIMING_STDERR_FIFO="$(mktemp "${TMPDIR:-/tmp}/orbit-quality-gate-stderr-fifo.XXXXXX")"
+        rm -f "$TIMING_STDERR_FIFO"
+        mkfifo "$TIMING_STDERR_FIFO" || CAPTURE_E2E_TIMINGS=0
+        ;;
+esac
 
 set +e
-"$@"
-EXIT_CODE="$?"
+if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ]; then
+    tee "$TIMING_STDERR_TMP" >&2 < "$TIMING_STDERR_FIFO" &
+    TIMING_STDERR_TEE_PID="$!"
+
+    "$@" 2> "$TIMING_STDERR_FIFO"
+    EXIT_CODE="$?"
+
+    wait "$TIMING_STDERR_TEE_PID" || true
+    awk '$1 == "[orbit-e2e]" { print }' "$TIMING_STDERR_TMP" > "$TIMING_RAW_TMP" 2>/dev/null || true
+else
+    "$@"
+    EXIT_CODE="$?"
+fi
 set -e
 
 ENDED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-php "${ROOT}/bin/quality-gate-write-artifact" \
-    --gate="$GATE" \
-    --command="$COMMAND" \
-    --mode="$MODE" \
-    --started-at="$STARTED_AT" \
-    --ended-at="$ENDED_AT" \
-    --exit-code="$EXIT_CODE" \
-    --git-branch="$GIT_BRANCH" \
-    --git-commit="$GIT_COMMIT" \
-    --artifact-dir="$ARTIFACT_DIR" >/dev/null 2>&1 || true
+if [ "$CAPTURE_E2E_TIMINGS" -eq 1 ] && [ -s "$TIMING_RAW_TMP" ]; then
+    TIMING_DIR="${ARTIFACT_DIR}/e2e-timings"
+    TIMING_STAMP="$(date -u +"%Y%m%dT%H%M%SZ")"
+    TIMING_BASENAME="${GATE}-${TIMING_STAMP}-$$"
+
+    mkdir -p "$TIMING_DIR" 2>/dev/null || true
+
+    if [ -d "$TIMING_DIR" ]; then
+        TIMING_RAW_PATH="${TIMING_DIR}/${TIMING_BASENAME}-raw.log"
+        TIMING_SUMMARY_PATH="${TIMING_DIR}/${TIMING_BASENAME}-summary.txt"
+
+        cp "$TIMING_RAW_TMP" "$TIMING_RAW_PATH" 2>/dev/null || TIMING_RAW_PATH=""
+
+        if [ -n "$TIMING_RAW_PATH" ]; then
+            awk -f "${ROOT}/bin/e2e-timings.awk" "$TIMING_RAW_PATH" > "$TIMING_SUMMARY_PATH" 2>/dev/null || TIMING_SUMMARY_PATH=""
+
+            if [ ! -s "$TIMING_SUMMARY_PATH" ]; then
+                rm -f "$TIMING_SUMMARY_PATH"
+                TIMING_SUMMARY_PATH=""
+            fi
+        fi
+    fi
+fi
+
+ARTIFACT_ARGS=(
+    "${ROOT}/bin/quality-gate-write-artifact"
+    "--gate=$GATE"
+    "--command=$COMMAND"
+    "--mode=$MODE"
+    "--started-at=$STARTED_AT"
+    "--ended-at=$ENDED_AT"
+    "--exit-code=$EXIT_CODE"
+    "--git-branch=$GIT_BRANCH"
+    "--git-commit=$GIT_COMMIT"
+    "--artifact-dir=$ARTIFACT_DIR"
+)
+
+if [ -n "$TIMING_SUMMARY_PATH" ]; then
+    ARTIFACT_ARGS+=("--timing-summary-path=$TIMING_SUMMARY_PATH")
+fi
+
+if [ -n "$TIMING_RAW_PATH" ]; then
+    ARTIFACT_ARGS+=("--timing-raw-path=$TIMING_RAW_PATH")
+fi
+
+php "${ARTIFACT_ARGS[@]}" >/dev/null 2>&1 || true
 
 exit "$EXIT_CODE"

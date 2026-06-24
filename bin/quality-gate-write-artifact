@@ -14,6 +14,8 @@ $options = getopt('', [
     'git-commit::',
     'subgate:',
     'subgate-duration:',
+    'timing-raw-path::',
+    'timing-summary-path::',
     'artifact-dir::',
 ]);
 
@@ -29,6 +31,11 @@ try {
     $gitCommit = optional_string($options, 'git-commit', '');
     $subgates = subgates(repeated_values($options, 'subgate'));
     $subgateDurations = subgate_durations(repeated_values($options, 'subgate-duration'));
+    $timingSummary = timing_summary(
+        optional_string($options, 'timing-raw-path', ''),
+        optional_string($options, 'timing-summary-path', ''),
+        $artifactDir,
+    );
 
     if (! in_array($mode, ['check', 'fix'], true)) {
         throw new InvalidArgumentException("Unsupported mode [{$mode}]. Expected check or fix.");
@@ -58,6 +65,10 @@ try {
 
     if ($subgateDurations !== []) {
         $artifact['subgate_durations'] = $subgateDurations;
+    }
+
+    if ($timingSummary !== null) {
+        $artifact['timing_summary'] = $timingSummary;
     }
 
     $filename = sprintf(
@@ -212,6 +223,61 @@ function default_artifact_dir(): string
     $root = dirname(__DIR__);
 
     return $root.'/.orbit/quality-gates';
+}
+
+/**
+ * @return array{raw_path?: string, summary_path: string, line_count: int, summary_lines: list<string>}|null
+ */
+function timing_summary(string $rawPath, string $summaryPath, string $artifactDir): ?array
+{
+    if ($summaryPath === '' || ! is_file($summaryPath)) {
+        return null;
+    }
+
+    $lines = file($summaryPath, FILE_IGNORE_NEW_LINES);
+
+    if ($lines === false) {
+        return null;
+    }
+
+    $summaryLines = array_values(array_filter(
+        array_map(fn (string $line): string => trim($line), $lines),
+        fn (string $line): bool => $line !== '',
+    ));
+
+    if ($summaryLines === []) {
+        return null;
+    }
+
+    $summary = [
+        'summary_path' => artifact_relative_path($summaryPath, $artifactDir),
+        'line_count' => count($summaryLines),
+        'summary_lines' => $summaryLines,
+    ];
+
+    if ($rawPath !== '' && is_file($rawPath)) {
+        $summary = ['raw_path' => artifact_relative_path($rawPath, $artifactDir)] + $summary;
+    }
+
+    return $summary;
+}
+
+function artifact_relative_path(string $path, string $artifactDir): string
+{
+    $absolutePath = realpath($path);
+    $absoluteArtifactDir = realpath($artifactDir);
+
+    if ($absolutePath === false || $absoluteArtifactDir === false) {
+        return $path;
+    }
+
+    $prefix = rtrim($absoluteArtifactDir, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR;
+
+    if (! str_starts_with($absolutePath, $prefix)) {
+        return $path;
+    }
+
+    return str_replace(DIRECTORY_SEPARATOR, '/', substr($absolutePath, strlen($prefix)));
 }
 
 function duration_seconds(string $startedAt, string $endedAt): float
