@@ -398,6 +398,132 @@ describe('ProcessStoreController', function (): void {
             ->not->toContain('8025:8025');
     });
 
+    it('removes explicit replacement containers before creating a Docker managed service process', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '{"Name":"dngdmt-mailpit-1"}', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '{"Name":"orbit-mailpit"}', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mailpit',
+            'service' => 'mailpit',
+            'runtime' => 'docker',
+            'replace_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.name', 'mailpit')
+            ->assertJsonPath('success.data.replaced_containers', ['dngdmt-mailpit-1', 'orbit-mailpit']);
+
+        $removeDngdmt = collect($remoteShell->scripts)->search(fn (string $script): bool => str_contains($script, "docker rm -f 'dngdmt-mailpit-1'"));
+        $removeOrbit = collect($remoteShell->scripts)->search(fn (string $script): bool => str_contains($script, "docker rm -f 'orbit-mailpit'"));
+        $create = collect($remoteShell->scripts)->search(fn (string $script): bool => str_contains($script, 'docker create'));
+
+        expect($removeDngdmt)->not->toBeFalse()
+            ->and($removeOrbit)->not->toBeFalse()
+            ->and($create)->not->toBeFalse()
+            ->and($removeDngdmt)->toBeLessThan($create)
+            ->and($removeOrbit)->toBeLessThan($create);
+    });
+
+    it('requires destructive consent before replacing containers', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mailpit',
+            'service' => 'mailpit',
+            'runtime' => 'docker',
+            'replace_containers' => ['dngdmt-mailpit-1'],
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'force')
+            ->assertJsonPath('error.meta.reason', 'destructive_consent_required');
+
+        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('does not write process configuration when replacement container removal fails', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '{"Name":"dngdmt-mailpit-1"}', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'permission denied', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mailpit',
+            'service' => 'mailpit',
+            'runtime' => 'docker',
+            'replace_containers' => ['dngdmt-mailpit-1'],
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'process.replace_container_failed')
+            ->assertJsonPath('error.meta.container', 'dngdmt-mailpit-1');
+
+        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, 'docker create')))->toBeFalse();
+    });
+
+    it('rejects replacement containers outside node owned Docker managed services', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mailpit',
+            'service' => 'mailpit',
+            'runtime' => 'docker-swarm',
+            'replace_containers' => ['dngdmt-mailpit-1'],
+            'destructive_consent' => true,
+            'destructive_consent_source' => 'force',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'replace_containers')
+            ->assertJsonPath('error.meta.reason', 'replace_container_requires_node_docker_service');
+
+        expect(Process::query()->where('name', 'mailpit')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
     it('creates node owned MySQL managed service processes without tool rows', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([

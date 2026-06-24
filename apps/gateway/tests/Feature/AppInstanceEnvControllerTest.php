@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Contracts\RemoteShell;
+use App\Data\RemoteShell\RemoteShellResult;
 use App\Models\App;
 use App\Models\AppInstance;
 use App\Models\DatabaseConnection;
@@ -111,6 +113,34 @@ it('sets lists and renders non-secret app instance env values with database atta
         ->and($connection->fresh()->instanceTargets()->where('app_instance_id', $instance->id)->exists())->toBeTrue();
 });
 
+it('applies set env values to the remote app runtime when apply is requested', function (): void {
+    $caller = createAppInstanceEnvApiCaller();
+    $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
+    grantAppInstanceEnvApiAccess($caller, $node);
+    $app = App::factory()->for($node, 'node')->create([
+        'name' => 'billing',
+        'path' => '/home/orbit/apps/billing',
+        'runtime' => 'php',
+        'php_version' => '8.5',
+    ]);
+    AppInstance::factory()->for($app)->create(['name' => 'development']);
+
+    app()->instance(RemoteShell::class, new AppInstanceEnvControllerRecordingRemoteShell);
+
+    $response = appInstanceEnvApiJson('POST', '/api/apps/billing/instances/development/env', [
+        'key' => 'MAIL_MAILER',
+        'value' => 'smtp',
+        'apply' => true,
+    ]);
+
+    $response->assertOk()
+        ->assertJsonPath('success.data.variable.key', 'MAIL_MAILER')
+        ->assertJsonPath('success.data.variable.value', 'smtp')
+        ->assertJsonPath('success.data.apply.env_path', '/home/orbit/apps/billing/.env')
+        ->assertJsonPath('success.data.apply.cache_cleared', true)
+        ->assertJsonPath('success.data.apply.runtime_outcome', 'created');
+});
+
 it('rejects secret env writes until secret storage is designed', function (): void {
     $caller = createAppInstanceEnvApiCaller();
     $node = Node::factory()->appDev()->create(['name' => 'app-dev-1']);
@@ -128,3 +158,11 @@ it('rejects secret env writes until secret storage is designed', function (): vo
         ->assertJsonPath('error.code', 'validation_failed')
         ->assertJsonPath('error.meta.field', 'secret');
 });
+
+final class AppInstanceEnvControllerRecordingRemoteShell implements RemoteShell
+{
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}

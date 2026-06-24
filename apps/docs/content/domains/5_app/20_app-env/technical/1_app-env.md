@@ -15,7 +15,7 @@
 ## Signature
 
 ```bash
-orbit app:env [action] [app] --instance=<name> [--app=<app>] [--key=<KEY>] [--value=<value>] [--secret] [--json]
+orbit app:env [action] [app] --instance=<name> [--app=<app>] [--key=<KEY>] [--value=<value>] [--apply] [--secret] [--json]
 ```
 
 ## Input Contract
@@ -30,6 +30,7 @@ This command follows the shared
 | `instance` | `--instance` | Always. | None. | Must select an instance belonging to the app. |
 | `key` | `--key` | `set`. | None. | Uppercase env key pattern. |
 | `value` | `--value` | `set`. | None. | Stored as a non-secret string. |
+| `apply` | `--apply` | `set` when applying to runtime. | `false`. | Fails with `validation_failed` outside `set`. |
 | `secret` | `--secret` | Never in this slice. | `false`. | Fails with `validation_failed`. |
 | `json` | `--json` | Optional. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
@@ -47,7 +48,7 @@ database connection to one app instance and env prefix. They are rendered by
 | Method | Path | Permission | Action |
 | --- | --- | --- | --- |
 | `GET` | `/api/apps/{app}/instances/{instance}/env` | `app:read` | List explicit env values. |
-| `POST` | `/api/apps/{app}/instances/{instance}/env` | `app:write` | Set a non-secret env value. |
+| `POST` | `/api/apps/{app}/instances/{instance}/env` | `app:write` | Set a non-secret env value. Optional `apply=true` writes the live `.env`, clears Laravel caches, and reapplies the runtime container. |
 | `GET` | `/api/apps/{app}/instances/{instance}/env/render` | `app:read` | Render effective env. |
 
 ## Behavior Contract
@@ -62,8 +63,11 @@ database connection to one app instance and env prefix. They are rendered by
    connections attached to the same instance.
 4. **Secret redaction.** Rendered database password values are marked
    `secret=true` and redacted from responses.
-5. **No file write.** The current command renders env state but does not write a
-   remote `.env` file.
+5. **Gateway-only by default.** `set` persists gateway intent only. `set --apply`
+   writes the app's live `.env` on the owning node through `RemoteShell`.
+6. **Runtime apply.** When `apply` is requested for a PHP app, Orbit clears
+   Laravel config/bootstrap cache on the host PHP toolchain and reapplies the
+   FrankenPHP runtime container through `AppRuntimeContainerManager`.
 
 ## Renderer Contracts
 
@@ -76,6 +80,7 @@ database connection to one app instance and env prefix. They are rendered by
 | --- | --- | --- |
 | App not found | No app record matches `app`. | `error.code=app.not_found`. |
 | Instance not found | No instance record matches `instance` for the app. | `error.code=app_instance.not_found`. |
+| Runtime apply failed | Gateway state saved but remote `.env`, cache clear, or runtime reapply failed. | `error.code=app_instance.env_apply_failed`. |
 
 ## Doctor Relationship
 
@@ -89,4 +94,5 @@ drift and restore for app/workspace `.env` files remain owned by
 | Path | Coverage |
 | --- | --- |
 | `apps/cli/tests/Feature/Commands/App/AppEnvCommandTest.php` | CLI validation, app selector behavior, gateway forwarding, render, and secret rejection. |
-| `apps/gateway/tests/Feature/AppInstanceEnvControllerTest.php` | API env persistence, database attachment rendering, redaction, and secret rejection. |
+| `apps/gateway/tests/Feature/AppInstanceEnvControllerTest.php` | API env persistence, apply behavior, database attachment rendering, redaction, and secret rejection. |
+| `apps/gateway/tests/Unit/Services/Apps/AppInstanceEnvApplierTest.php` | Remote `.env` writes, Laravel cache clearing, and runtime container reapply. |

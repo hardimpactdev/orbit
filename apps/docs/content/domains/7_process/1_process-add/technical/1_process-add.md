@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--replace-container=<name>] [--force] [--start] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -35,6 +35,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
 | `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`. App/workspace host-command processes accept `systemd`; `docker-swarm` requires node ownership. Managed services accept `docker` and `docker-swarm`. |
+| `replace_containers` | repeated `--replace-container` | Optional migration cleanup for node-owned Docker managed services. | When `service` is absent, `node` is absent, or runtime is not `docker`. | Empty list. | Each value must be an explicit Docker container name. Non-interactive mode requires `--force`. The gateway removes only these named containers before writing new process configuration. |
+| `force` | `--force` | Non-interactive `replace_containers`. | Never. | `false`. | Confirms destructive replacement-container cleanup without prompting. Ignored when no replacement containers are supplied. |
 | `start` | `--start` | Optional redundant flag. | When `no_start` is present. | `true`. | Backward-compatible alias for default start behavior. Cannot be combined with `no_start`. |
 | `no_start` | `--no-start` | Optional. | When `start` is present. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
@@ -52,11 +54,14 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 1. Resolve target node, app, or workspace context from supplied input or local context.
 2. Send the request to the gateway, which validates the authenticated peer's authorization and process name uniqueness within the owner scope.
-3. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
-4. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
-5. Render the derived runtime units on the owning node through the selected runtime backend.
-6. Start rendered runtime units by default unless `--no-start` is present. Record `started` events for units that start successfully.
-7. Render the selected output.
+3. Validate managed-service endpoint and volume conflicts before any destructive replacement-container cleanup.
+4. When explicit `replace_containers` are present, remove only those named Docker containers on the owning node.
+5. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
+6. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
+7. Render the derived runtime units on the owning node through the selected runtime backend.
+8. Start rendered runtime units by default unless `--no-start` is present.
+9. Record `started` events for units that start successfully.
+10. Render the selected output.
 
 If process configuration is written but runtime-unit apply or optional start fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
 
@@ -88,6 +93,9 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Unsupported managed service | `--service` names an unsupported service. | Failure (`error.code=validation_failed`; `error.meta.reason=unsupported_value`). |
 | Unsupported managed service runtime | `--service` is combined with a runtime other than `docker` or `docker-swarm`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_runtime_unsupported`). |
 | Managed service resource conflict | The managed service endpoint port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
+| Replacement cleanup without consent | `--replace-container` is supplied in non-interactive mode without `--force`. | Failure (`error.code=validation_failed`; `error.meta.field=force`; `error.meta.reason=destructive_consent_required`). |
+| Invalid replacement cleanup scope | `--replace-container` is supplied outside a node-owned Docker managed service. | Failure (`error.code=validation_failed`; `error.meta.field=replace_containers`; `error.meta.reason=replace_container_requires_node_docker_service`). |
+| Replacement cleanup failed | The gateway could not remove one explicitly named replacement container. | Failure (`error.code=process.replace_container_failed`; `error.meta.container=<name>`). No process configuration is written. |
 
 ## Doctor Relationship
 
@@ -102,7 +110,7 @@ The gateway API endpoint emits an activity entry for successful and failed proce
 | Type | `api:POST /processes` |
 | Effect | `write` |
 | Subject | Resolved `Node` for node-owned processes or `App` for app/workspace-owned processes; `none` for validation, context-resolution, or authorization failures before the owner can be logged. |
-| Properties | `node` (string or null), `app` (string or null), `workspace` (string or null), `name` (string or null), and `tool` (string or null). No raw process command text, environment data, runtime output, or secrets. |
+| Properties | `node`, `app`, `workspace`, `name`, `tool`, and `service`. No raw command text, env, runtime output, replacement-container names, or secrets. |
 | Description | derived |
 
 ## Test Mapping
@@ -111,8 +119,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, managed service selector, default start, image override, repairable warnings, and no write on validation failure. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, managed service selector, default start, image override, replacement-container cleanup, repairable warnings, and no write on validation failure. |
 | `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | CLI payload mapping, enum validation, default start, `--no-start`, managed service selector, and `--json` input-mode selection. |
-| `apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php` | Public `--version` normalization, managed service payloads, image override, and human start-step defaults. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php` | Public `--version` normalization, managed service payloads, image override, replacement-container consent, and human start-step defaults. |
 
 Renderer and input-mode test mapping lives in the split companion files.

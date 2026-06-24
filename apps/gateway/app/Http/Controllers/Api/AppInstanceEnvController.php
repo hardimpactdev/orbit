@@ -10,10 +10,12 @@ use App\Http\Authorization\RequiresPermission;
 use App\Http\Authorization\ServingNode;
 use App\Models\App;
 use App\Models\AppInstance;
+use App\Services\Apps\AppInstanceEnvApplier;
 use App\Services\Apps\AppInstanceEnvRenderer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Throwable;
 
 final class AppInstanceEnvController implements Loggable
 {
@@ -23,6 +25,7 @@ final class AppInstanceEnvController implements Loggable
 
     public function __construct(
         private readonly AppInstanceEnvRenderer $env,
+        private readonly AppInstanceEnvApplier $applier,
     ) {}
 
     #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
@@ -75,11 +78,23 @@ final class AppInstanceEnvController implements Loggable
 
         $variable = $this->env->set($targetInstance, $key, $value);
 
-        return $this->success([
+        $payload = [
             'app' => $targetApp->name,
             'instance' => $targetInstance->name,
             'variable' => $this->env->variablePayload($variable),
-        ]);
+        ];
+
+        if ($request->boolean('apply')) {
+            try {
+                $payload['apply'] = $this->applier
+                    ->apply($targetApp, $key, $value)
+                    ->toArray();
+            } catch (Throwable $exception) {
+                return $this->applyFailed($targetApp, $targetInstance, $key, $exception);
+            }
+        }
+
+        return $this->success($payload);
     }
 
     #[RequiresPermission('app:read', servingNode: ServingNode::AppOwning)]
@@ -176,6 +191,22 @@ final class AppInstanceEnvController implements Loggable
                 'meta' => ['field' => $field],
             ],
         ], 422);
+    }
+
+    private function applyFailed(App $app, AppInstance $instance, string $key, Throwable $exception): JsonResponse
+    {
+        return response()->json([
+            'error' => [
+                'code' => 'app_instance.env_apply_failed',
+                'message' => "Saved '{$key}' for instance '{$instance->name}', but applying it to the app runtime failed.",
+                'meta' => [
+                    'app' => $app->name,
+                    'instance' => $instance->name,
+                    'key' => $key,
+                    'reason' => $exception->getMessage(),
+                ],
+            ],
+        ], 500);
     }
 
     public function subject(): ?Model

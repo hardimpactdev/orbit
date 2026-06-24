@@ -20,6 +20,7 @@ orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
 orbit process:add redis --node=database-1 --service=redis --runtime=docker --version=7
 orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
+orbit process:add mailpit --node=beast --service=mailpit --runtime=docker --replace-container=dngdmt-mailpit-1 --force
 orbit process:add file-watcher "watch.sh" --app=static-site --runtime=systemd
 orbit process:add vite "npm run dev" --app=docs --json
 ```
@@ -44,6 +45,12 @@ Use this command to define a managed process for a node, app, or workspace.
   runtime + version resolve the default official image; `--image` overrides that
   image explicitly. Managed services cannot use `--tool` and are not valid for
   app or workspace scopes.
+- **Replacement Containers**: `--replace-container=<name>` is an explicit
+  migration escape hatch for node-owned Docker managed services. It removes the
+  named Docker container on the target node before creating the Orbit-managed
+  process. Repeat the option for multiple known blockers and pass `--force` in
+  non-interactive mode. Orbit never discovers or removes arbitrary Docker
+  containers on its own.
 - **Drift Reporting**: Reports repairable runtime-unit apply drift. Configuration creation is not treated as failed once the configuration write succeeds.
 
 ### Render and start dispatch

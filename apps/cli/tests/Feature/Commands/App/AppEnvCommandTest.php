@@ -189,6 +189,64 @@ describe('app:env', function (): void {
             ->and($decoded['error']['meta']['field'])->toBe('app');
     });
 
+    it('forwards apply requests when setting instance env values', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'variable' => [
+                'key' => 'MAIL_MAILER',
+                'value' => 'smtp',
+                'secret' => false,
+            ],
+            'apply' => [
+                'env_path' => '/home/orbit/apps/billing/.env',
+                'cache_cleared' => true,
+                'runtime_outcome' => 'recreated',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'set',
+            'app' => 'billing',
+            '--instance' => 'development',
+            '--key' => 'MAIL_MAILER',
+            '--value' => 'smtp',
+            '--apply' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/apps/billing/instances/development/env'
+            && $request->data() === [
+                'key' => 'MAIL_MAILER',
+                'value' => 'smtp',
+                'apply' => true,
+            ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($decoded['success']['data']['apply']['runtime_outcome'])->toBe('recreated');
+    });
+
+    it('rejects apply outside set actions before gateway io', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'app:env', [
+            'action' => 'list',
+            'app' => 'billing',
+            '--instance' => 'development',
+            '--apply' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('apply');
+    });
+
     it('does not allow secret writes in the first slice', function (): void {
         Http::fake();
 

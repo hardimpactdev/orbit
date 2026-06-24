@@ -29,6 +29,7 @@ final readonly class AddProcess
     ) {}
 
     /**
+     * @param  list<string>  $replaceContainers
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(
@@ -43,12 +44,14 @@ final readonly class AddProcess
         ?string $service = null,
         ?string $version = null,
         ?string $image = null,
+        array $replaceContainers = [],
     ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
 
         $resolvedRuntime = $runtime ?? ($service === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
         $runtimeConfig = [];
+        $replaceContainers = $this->normalizedReplacementContainers($replaceContainers);
 
         if ($image !== null && $service === null) {
             throw new GatewayApiException('Process service image requires a managed service.', 'validation_failed', [
@@ -114,6 +117,10 @@ final readonly class AddProcess
             $this->assertServiceHasNoResourceConflicts($context, $name, $runtimeConfig);
         }
 
+        $this->assertReplacementContainersAllowed($context, $resolvedRuntime, $service, $replaceContainers);
+
+        $replacedContainers = $this->removeReplacementContainers($context, $replaceContainers);
+
         $process = DB::transaction(function () use ($context, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime, $tool, $runtimeConfig): Process {
             $maxOrder = $context->ownerProcesses()
                 ->lockForUpdate()
@@ -157,9 +164,81 @@ final readonly class AddProcess
                     ...$context->processPayload($process),
                 ],
                 'runtime_units' => $runtimeUnits,
+                ...($replacedContainers !== [] ? ['replaced_containers' => $replacedContainers] : []),
             ],
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $replaceContainers
+     * @return list<string>
+     */
+    private function normalizedReplacementContainers(array $replaceContainers): array
+    {
+        $containers = [];
+
+        foreach ($replaceContainers as $container) {
+            $containers[] = is_string($container) ? trim($container) : '';
+        }
+
+        return array_values(array_unique($containers));
+    }
+
+    /**
+     * @param  list<string>  $replaceContainers
+     */
+    private function assertReplacementContainersAllowed(ProcessOwnerContext $context, ProcessRuntime $runtime, ?string $service, array $replaceContainers): void
+    {
+        if ($replaceContainers === []) {
+            return;
+        }
+
+        if (! $context->owner instanceof Node || $service === null || $runtime !== ProcessRuntime::Docker) {
+            throw new GatewayApiException('Replacement containers are only supported for node-owned Docker managed services.', 'validation_failed', [
+                'field' => 'replace_containers',
+                'reason' => 'replace_container_requires_node_docker_service',
+            ]);
+        }
+
+        foreach ($replaceContainers as $container) {
+            if (preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/', $container) === 1) {
+                continue;
+            }
+
+            throw new GatewayApiException('Replacement container names must be valid Docker container names.', 'validation_failed', [
+                'field' => 'replace_containers',
+                'value' => $container,
+            ]);
+        }
+    }
+
+    /**
+     * @param  list<string>  $replaceContainers
+     * @return list<string>
+     */
+    private function removeReplacementContainers(ProcessOwnerContext $context, array $replaceContainers): array
+    {
+        if ($replaceContainers === []) {
+            return [];
+        }
+
+        $driver = $this->runtimeDrivers->for(ProcessRuntime::Docker);
+        $replaced = [];
+
+        foreach ($replaceContainers as $container) {
+            if (! $driver->remove($context->node, $container)) {
+                throw new GatewayApiException("Replacement container '{$container}' could not be removed.", 'process.replace_container_failed', [
+                    'field' => 'replace_containers',
+                    'container' => $container,
+                    'node' => $context->node->name,
+                ]);
+            }
+
+            $replaced[] = $container;
+        }
+
+        return $replaced;
     }
 
     /**

@@ -86,6 +86,69 @@ describe('process:add managed service selector contract', function (): void {
         expect($exitCode)->toBe(0);
     });
 
+    it('posts explicit replacement containers with destructive consent when forced', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => [
+                'name' => 'mailpit',
+                'node' => 'beast',
+                'runtime' => 'docker',
+            ],
+            'runtime_units' => [['name' => 'mailpit', 'context' => 'node']],
+            'replaced_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode] = runCommand($this, 'process:add', [
+            'name' => 'mailpit',
+            '--node' => 'beast',
+            '--service' => 'mailpit',
+            '--runtime' => 'docker',
+            '--replace-container' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
+            '--force' => true,
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/processes'
+            && $request->data() === [
+                'node' => 'beast',
+                'name' => 'mailpit',
+                'restart_policy' => 'never',
+                'crash_notification' => 'none',
+                'start' => true,
+                'runtime' => 'docker',
+                'service' => 'mailpit',
+                'replace_containers' => ['dngdmt-mailpit-1', 'orbit-mailpit'],
+                'destructive_consent' => true,
+                'destructive_consent_source' => 'force',
+            ]);
+
+        expect($exitCode)->toBe(0);
+    });
+
+    it('requires force before replacing containers non-interactively', function (): void {
+        Http::fake();
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'mailpit',
+            '--node' => 'beast',
+            '--service' => 'mailpit',
+            '--runtime' => 'docker',
+            '--replace-container' => ['dngdmt-mailpit-1'],
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertNothingSent();
+
+        expect($exitCode)->toBe(1)
+            ->and($decoded['error']['code'])->toBe('validation_failed')
+            ->and($decoded['error']['meta']['field'])->toBe('force')
+            ->and($decoded['error']['meta']['reason'])->toBe('destructive_consent_required');
+    });
+
     it('sends start false only when no-start is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => [

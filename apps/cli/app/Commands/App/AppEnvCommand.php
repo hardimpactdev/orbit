@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\App;
 
+use App\Commands\Concerns\WithStepTree;
 use App\Exceptions\GatewayApiException;
+use RuntimeException;
 
 use function Laravel\Prompts\table;
 
 final class AppEnvCommand extends AppGatewayCommand
 {
+    use WithStepTree;
+
     #[\Override]
     protected $signature = 'app:env
         {action? : Action to perform (list|set|render)}
@@ -18,6 +22,7 @@ final class AppEnvCommand extends AppGatewayCommand
         {--instance= : App instance name}
         {--key= : Env key for set}
         {--value= : Env value for set}
+        {--apply : Persist and apply set values to the remote app runtime}
         {--secret : Mark value as secret (not supported in this slice)}
         {--json : Output JSON}';
 
@@ -42,6 +47,10 @@ final class AppEnvCommand extends AppGatewayCommand
 
         if ((bool) $this->option('secret')) {
             return $this->failValidation('secret', 'Secret env writes are not supported in this slice.');
+        }
+
+        if ((bool) $this->option('apply') && $action !== 'set') {
+            return $this->failValidation('apply', 'The --apply option is only supported for set.');
         }
 
         $app = $this->appSelector();
@@ -136,17 +145,24 @@ final class AppEnvCommand extends AppGatewayCommand
             return $this->failValidation('value', 'The --value option is required.');
         }
 
-        try {
-            $response = $this->gatewayPost($this->envPath($app, $instance), [
-                'key' => $key,
-                'value' => $value,
-            ]);
-        } catch (GatewayApiException $exception) {
-            return $this->renderGatewayFailure($exception);
+        if ($this->wantsJson()) {
+            try {
+                $response = $this->setEnvOnGateway($app, $instance, $key, $value);
+            } catch (GatewayApiException $exception) {
+                return $this->renderGatewayFailure($exception);
+            }
+
+            return $this->renderSuccess($response);
         }
 
-        if ($this->wantsJson()) {
-            return $this->renderSuccess($response);
+        if ($this->option('apply')) {
+            return $this->renderSetApplyTree($app, $instance, $key, $value);
+        }
+
+        try {
+            $response = $this->setEnvOnGateway($app, $instance, $key, $value);
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
         }
 
         $savedKey = $this->savedKey($response, $key);
@@ -155,6 +171,114 @@ final class AppEnvCommand extends AppGatewayCommand
         $this->line("Saved '{$savedKey}' for instance '{$savedInstance}'.");
 
         return self::SUCCESS;
+    }
+
+    private function renderSetApplyTree(string $app, string $instance, string $key, string $value): int
+    {
+        $response = [];
+
+        $outcome = $this->runStepOperation(
+            'Applying App Env',
+            [
+                ['label' => 'Save env value in gateway state', 'doneLabel' => 'Saved env value in gateway state'],
+                ['label' => 'Update remote .env file', 'doneLabel' => 'Updated remote .env file'],
+                ['label' => 'Clear Laravel caches', 'doneLabel' => 'Cleared Laravel caches'],
+                ['label' => 'Reapply app runtime container', 'doneLabel' => 'Reapplied app runtime container'],
+            ],
+            work: function () use ($app, $instance, $key, $value, &$response): array {
+                return $response = $this->setEnvOnGatewayForHuman($app, $instance, $key, $value);
+            },
+            doneFooter: function () use (&$response, $key, $instance): string {
+                return $this->applyFooterFor($response, $key, $instance);
+            },
+        );
+
+        if (! $outcome->isCompleted()) {
+            return self::FAILURE;
+        }
+
+        $this->renderApplyNotes($response, $key, $instance);
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function setEnvOnGateway(string $app, string $instance, string $key, string $value): array
+    {
+        return $this->gatewayPost($this->envPath($app, $instance), $this->setPayload($key, $value));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function setEnvOnGatewayForHuman(string $app, string $instance, string $key, string $value): array
+    {
+        try {
+            return $this->setEnvOnGateway($app, $instance, $key, $value);
+        } catch (GatewayApiException $exception) {
+            throw new RuntimeException(
+                $exception->gatewayErrorMessage() ?? $exception->getMessage(),
+                previous: $exception,
+            );
+        }
+    }
+
+    /**
+     * @return array{key: string, value: string, apply?: bool}
+     */
+    private function setPayload(string $key, string $value): array
+    {
+        $payload = [
+            'key' => $key,
+            'value' => $value,
+        ];
+
+        if ($this->option('apply')) {
+            $payload['apply'] = true;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function applyFooterFor(array $response, string $key, string $instance): string
+    {
+        $savedKey = $this->savedKey($response, $key);
+        $savedInstance = $this->savedInstance($response, $instance);
+
+        return "Applied '{$savedKey}' for instance '{$savedInstance}'";
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function renderApplyNotes(array $response, string $key, string $instance): void
+    {
+        $savedKey = $this->savedKey($response, $key);
+        $savedInstance = $this->savedInstance($response, $instance);
+        $apply = $this->successData($response)['apply'] ?? null;
+
+        $this->line("  Saved and applied '{$savedKey}' for instance '{$savedInstance}'.");
+
+        if (! is_array($apply)) {
+            return;
+        }
+
+        $envPath = $apply['env_path'] ?? null;
+
+        if (is_string($envPath) && $envPath !== '') {
+            $this->line("  Updated '{$envPath}'.");
+        }
+
+        $runtimeOutcome = $apply['runtime_outcome'] ?? null;
+
+        if (is_string($runtimeOutcome) && $runtimeOutcome !== '') {
+            $this->line("  Runtime container outcome: {$runtimeOutcome}.");
+        }
     }
 
     private function renderEnv(string $app, string $instance): int

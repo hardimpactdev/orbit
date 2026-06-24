@@ -11,6 +11,7 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
                   [--service=<mysql|redis>] [--version=<version>] [--image=<image>]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none|agent_ide]
+                  [--replace-container=<name>] [--force]
                   [--no-start] [--json]
 ```
 
@@ -23,6 +24,8 @@ orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
 | `--service` |  -  | Managed service identifier (`mysql`, `redis`, ...). Node-owned only. |
 | `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |
 | `--image` | resolved catalog image | Explicit Docker image override for managed services. |
+| `--replace-container` |  -  | Explicit Docker container to remove before adding a node-owned Docker managed service. Repeat for multiple known blockers. Requires `--force` in non-interactive mode. |
+| `--force` | off | Confirm destructive replacement-container cleanup. |
 | `--restart-policy` | `never` | Runtime restart behavior. |
 | `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter. |
 | `--no-start` | off | Skip starting rendered runtime units after apply. |
@@ -41,6 +44,9 @@ orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version
 
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker \
   --version=8.3 --image=docker.io/library/mysql:8.3 --no-start
+
+orbit process:add mailpit --node=beast --service=mailpit --runtime=docker \
+  --replace-container=dngdmt-mailpit-1 --replace-container=orbit-mailpit --force
 ```
 
 ## `orbit process:edit [name]`

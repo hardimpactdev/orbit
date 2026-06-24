@@ -74,6 +74,7 @@ final class ProcessStoreController implements Loggable
                 service: $input['service'],
                 version: $input['version'],
                 image: $input['image'],
+                replaceContainers: $input['replace_containers'],
             );
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorCode() === 'process.name_collision' ? 409 : 422);
@@ -92,7 +93,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, start: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, replace_containers: list<string>, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -108,8 +109,13 @@ final class ProcessStoreController implements Loggable
         $service = $this->optionalString($request, 'service');
         $version = $this->optionalString($request, 'version');
         $image = $this->optionalString($request, 'image');
+        $replaceContainers = $this->stringList($request, 'replace_containers');
         $noStart = $request->boolean('no_start');
         $startExplicit = $request->has('start') ? $request->boolean('start') : null;
+
+        if ($replaceContainers instanceof JsonResponse) {
+            return $replaceContainers;
+        }
 
         if ($noStart && $startExplicit === true) {
             return $this->error('validation_failed', 'The start and no-start flags cannot be used together.', [
@@ -235,6 +241,22 @@ final class ProcessStoreController implements Loggable
             }
         }
 
+        if ($replaceContainers !== []) {
+            if ($request->boolean('destructive_consent') !== true) {
+                return $this->error('validation_failed', 'Use --force to remove replacement containers.', [
+                    'field' => 'force',
+                    'reason' => 'destructive_consent_required',
+                ], 422);
+            }
+
+            if ($node === null || $service === null || ($runtime !== null && $runtime !== ProcessRuntime::Docker)) {
+                return $this->error('validation_failed', 'Replacement containers are only supported for node-owned Docker managed services.', [
+                    'field' => 'replace_containers',
+                    'reason' => 'replace_container_requires_node_docker_service',
+                ], 422);
+            }
+        }
+
         return [
             'node' => $node,
             'app' => $app,
@@ -248,6 +270,7 @@ final class ProcessStoreController implements Loggable
             'service' => $service,
             'version' => $version,
             'image' => $image,
+            'replace_containers' => $replaceContainers,
             'start' => $start,
         ];
     }
@@ -272,6 +295,46 @@ final class ProcessStoreController implements Loggable
         $value = $request->input($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    /**
+     * @return list<string>|JsonResponse
+     */
+    private function stringList(Request $request, string $key): array|JsonResponse
+    {
+        $value = $request->input($key);
+
+        if ($value === null) {
+            return [];
+        }
+
+        if (! is_array($value)) {
+            return $this->error('validation_failed', 'Replacement containers must be a list of Docker container names.', [
+                'field' => $key,
+            ], 422);
+        }
+
+        $strings = [];
+
+        foreach ($value as $item) {
+            $container = is_string($item) ? trim($item) : '';
+
+            if (! $this->isValidDockerContainerName($container)) {
+                return $this->error('validation_failed', 'Replacement container names must be valid Docker container names.', [
+                    'field' => $key,
+                    'value' => $container,
+                ], 422);
+            }
+
+            $strings[] = $container;
+        }
+
+        return array_values(array_unique($strings));
+    }
+
+    private function isValidDockerContainerName(string $container): bool
+    {
+        return preg_match('/^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/', $container) === 1;
     }
 
     /**

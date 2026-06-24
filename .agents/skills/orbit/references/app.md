@@ -186,9 +186,13 @@ Manage and render non-secret env values for one app instance.
 
 ```bash
 orbit app:env list [<app>] [--app=<app>] --instance=<name> [--json]
-orbit app:env set [<app>] [--app=<app>] --instance=<name> --key=<KEY> --value=<value> [--json]
+orbit app:env set [<app>] [--app=<app>] --instance=<name> --key=<KEY> --value=<value> [--apply] [--json]
 orbit app:env render [<app>] [--app=<app>] --instance=<name> [--json]
 ```
+
+Use `--apply` on `set` to persist gateway intent and update the live app `.env`,
+clear Laravel caches, and reapply the runtime container. Without `--apply`, `set`
+remains gateway state only.
 
 Secret env writes are intentionally rejected for now. Attach database
 connections with `database:attach --app=<app> --instance=<name>` and use
