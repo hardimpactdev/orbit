@@ -30,7 +30,7 @@ RUN apt-get update \
         docker-compose-plugin \
     && curl -fsSL https://getcomposer.org/download/latest-stable/composer.phar -o /usr/bin/composer \
     && chmod 755 /usr/bin/composer \
-    && install-php-extensions bcmath curl intl mbstring pcntl pdo_sqlite zip \
+    && install-php-extensions bcmath curl intl mbstring pcntl pdo_mysql pdo_pgsql pdo_sqlite zip \
     && groupadd --system orbit \
     && useradd --system --gid orbit --create-home --home-dir /home/orbit --shell /bin/bash orbit \
     && printf '%s\n' 'max_execution_time=0' > /usr/local/etc/php/conf.d/orbit-gateway.ini \
