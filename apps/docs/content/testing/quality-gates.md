@@ -173,6 +173,15 @@ and `composer quality-gate:final-check` exit successfully even when a run
 exceeds the local baseline. They do not rerun `composer quality-check` or E2E
 lanes to classify the slowdown.
 
+`bin/orbit-prepare-worktree` seeds missing baseline JSON files from the primary
+checkout into the prepared worktree's `.orbit/quality-gates/baselines/`
+directory. It copies files instead of symlinking them, preserves any
+worktree-local baseline file that already exists, and does not run
+`composer quality-check`, Pest, or E2E lanes. This keeps feature-worktree
+`composer quality-gate:final-check` comparisons anchored to the latest local
+main-checkout timing context while leaving each worktree's `.orbit/` state
+disposable.
+
 When the analyzer emits a timing baseline warning, it also prints a routing hint
 to `.agents/skills/quality-gate-triage/SKILL.md`. Use that skill to classify the
 slowdown before treating it as a product regression.

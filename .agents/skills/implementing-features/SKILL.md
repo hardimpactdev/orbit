@@ -484,7 +484,10 @@ moving on to durable E2E.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
    verification lanes, owned files, provider resources, shared temp/state paths,
-   and dependencies. If two tasks are isolated, dispatch them in parallel
+   and dependencies in `.orbit/loop.md`, the feature scratchpad, or the worker
+   plan. A serial plan for isolated goals, slices, or lanes is incomplete unless
+   it names the concrete dependency, shared state, provider capacity limit, or
+   merge-order reason. If two tasks are isolated, dispatch them in parallel
    through Solo. Treat in-memory/Pest optimization, Docker E2E optimization, and
    Incus E2E optimization as separate lanes by default, but do not overlap full
    `composer quality-check` with active provider E2E lanes unless shared E2E
@@ -514,9 +517,12 @@ moving on to durable E2E.
    problem to correct. After one explicit first-diff correction, if the worker
    still produces no diff or blocker, stand down the worker, mark the matching
    harness signal recurring, and replace the worker instead of letting the
-   process stall. Assign the implementation phase only after the first diff
-   exists and has been inspected. When a correction reveals missing durable
-   context, triage it through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
+   process stall. If a replacement worker also fails on a tiny known patch
+   shape, the feature owner may apply the first test or docs diff directly as a
+   documented loop exception, then update the matching signal before continuing.
+   Assign the implementation phase only after the first diff exists and has
+   been inspected. When a correction reveals missing durable context, triage it
+   through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that

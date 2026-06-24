@@ -19,6 +19,9 @@ feature scratchpad. Keep code history in Git.
 
 ## Done Contract
 
+- Parallelization scan:
+  - Candidate parallel lanes:
+  - Serialized because:
 - Done when:
   -
 - Evidence:

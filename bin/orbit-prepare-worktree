@@ -182,6 +182,9 @@ else
     printf 'skip .env.e2e link: source missing or target exists\n'
 fi
 
+step "Seeding quality gate baselines"
+run "${ROOT}/bin/quality-gate-seed-baselines" "$main_checkout" "$worktree_path"
+
 step "Installing Composer dependencies"
 run_in "$worktree_path" composer install
 

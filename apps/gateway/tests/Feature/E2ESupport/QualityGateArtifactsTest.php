@@ -1011,3 +1011,97 @@ it('documents quality gate baseline capture and subgate profiling', function ():
         ->not->toContain('best_subgate_durations')
         ->toContain('warning_threshold_percent');
 });
+
+it('seeds prepared worktree quality gate baselines without overwriting local files or running gates', function (): void {
+    $sourceCheckout = sys_get_temp_dir().'/orbit-quality-gates-baseline-source-'.bin2hex(random_bytes(6));
+    $targetCheckout = sys_get_temp_dir().'/orbit-quality-gates-baseline-target-'.bin2hex(random_bytes(6));
+    $sourceBaselineDir = "{$sourceCheckout}/.orbit/quality-gates/baselines";
+    $targetBaselineDir = "{$targetCheckout}/.orbit/quality-gates/baselines";
+
+    mkdir($sourceBaselineDir, 0700, true);
+    mkdir($targetBaselineDir, 0700, true);
+
+    file_put_contents("{$sourceBaselineDir}/quality-check.json", '{"gate":"quality-check","duration_seconds":18}');
+    file_put_contents("{$sourceBaselineDir}/e2e-docker.json", '{"gate":"e2e-docker","duration_seconds":217}');
+    file_put_contents("{$sourceBaselineDir}/e2e-incus.json", '{"gate":"e2e-incus","duration_seconds":355}');
+    file_put_contents("{$targetBaselineDir}/e2e-incus.json", '{"gate":"e2e-incus","duration_seconds":999}');
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-seed-baselines'),
+            $sourceCheckout,
+            $targetCheckout,
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and("{$targetBaselineDir}/quality-check.json")->toBeFile()
+            ->and("{$targetBaselineDir}/e2e-docker.json")->toBeFile()
+            ->and(is_link("{$targetBaselineDir}/quality-check.json"))->toBeFalse()
+            ->and(is_link("{$targetBaselineDir}/e2e-docker.json"))->toBeFalse()
+            ->and(file_get_contents("{$targetBaselineDir}/quality-check.json"))->toBe('{"gate":"quality-check","duration_seconds":18}')
+            ->and(file_get_contents("{$targetBaselineDir}/e2e-docker.json"))->toBe('{"gate":"e2e-docker","duration_seconds":217}')
+            ->and(file_get_contents("{$targetBaselineDir}/e2e-incus.json"))->toBe('{"gate":"e2e-incus","duration_seconds":999}');
+
+        $seeder = (string) file_get_contents(repo_path('bin/quality-gate-seed-baselines'));
+
+        expect($seeder)
+            ->not->toContain('quality-check.sh')
+            ->not->toContain('quality-gate-analyze')
+            ->not->toContain('ln -s')
+            ->not->toContain('vendor/bin/pest')
+            ->not->toContain('bin/orbit-gateway-pest')
+            ->not->toContain('test:e2e');
+
+        expect((string) file_get_contents(repo_path('bin/orbit-prepare-worktree')))
+            ->toContain('quality-gate-seed-baselines');
+    } finally {
+        (new Process(['rm', '-rf', $sourceCheckout, $targetCheckout]))->run();
+    }
+});
+
+it('skips prepared worktree quality gate baseline seeding when the source baseline directory is empty', function (): void {
+    $sourceCheckout = sys_get_temp_dir().'/orbit-quality-gates-empty-baselines-source-'.bin2hex(random_bytes(6));
+    $targetCheckout = sys_get_temp_dir().'/orbit-quality-gates-empty-baselines-target-'.bin2hex(random_bytes(6));
+
+    mkdir("{$sourceCheckout}/.orbit/quality-gates/baselines", 0700, true);
+    mkdir($targetCheckout, 0700, true);
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-seed-baselines'),
+            $sourceCheckout,
+            $targetCheckout,
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toContain('no source baselines')
+            ->and("{$targetCheckout}/.orbit/quality-gates/baselines")->not->toBeDirectory();
+    } finally {
+        (new Process(['rm', '-rf', $sourceCheckout, $targetCheckout]))->run();
+    }
+});
+
+it('skips prepared worktree quality gate baseline seeding when the source checkout has no baselines', function (): void {
+    $sourceCheckout = sys_get_temp_dir().'/orbit-quality-gates-empty-source-'.bin2hex(random_bytes(6));
+    $targetCheckout = sys_get_temp_dir().'/orbit-quality-gates-empty-target-'.bin2hex(random_bytes(6));
+
+    mkdir($sourceCheckout, 0700, true);
+    mkdir($targetCheckout, 0700, true);
+
+    try {
+        $process = new Process([
+            repo_path('bin/quality-gate-seed-baselines'),
+            $sourceCheckout,
+            $targetCheckout,
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())->toContain('source missing')
+            ->and("{$targetCheckout}/.orbit/quality-gates/baselines")->not->toBeDirectory();
+    } finally {
+        (new Process(['rm', '-rf', $sourceCheckout, $targetCheckout]))->run();
+    }
+});

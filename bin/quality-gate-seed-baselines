@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+if [ "$#" -ne 2 ]; then
+    printf 'Usage: bin/quality-gate-seed-baselines <source-checkout> <target-checkout>\n' >&2
+    exit 2
+fi
+
+source_checkout="${1%/}"
+target_checkout="${2%/}"
+source_baselines="${source_checkout}/.orbit/quality-gates/baselines"
+target_baselines="${target_checkout}/.orbit/quality-gates/baselines"
+
+if [ ! -d "$source_baselines" ]; then
+    printf 'skip quality gate baseline seed: source missing\n'
+    exit 0
+fi
+
+shopt -s nullglob
+baseline_files=("${source_baselines}"/*.json)
+
+if [ "${#baseline_files[@]}" -eq 0 ]; then
+    printf 'skip quality gate baseline seed: no source baselines\n'
+    exit 0
+fi
+
+mkdir -p "$target_baselines"
+
+copied=0
+preserved=0
+
+for source_file in "${baseline_files[@]}"; do
+    target_file="${target_baselines}/$(basename "$source_file")"
+
+    if [ -e "$target_file" ]; then
+        preserved=$((preserved + 1))
+        continue
+    fi
+
+    cp "$source_file" "$target_file"
+    copied=$((copied + 1))
+done
+
+printf 'quality gate baselines: copied=%d preserved=%d\n' "$copied" "$preserved"

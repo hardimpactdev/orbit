@@ -4,7 +4,7 @@ Status: recurring
 First seen: 2026-06-23
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
-Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline
+Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed; quality-e2e-lane-timing-baseline; quality-gate-baseline-seeding
 Source commit: pending
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
@@ -60,6 +60,14 @@ visible checkpoint, diff, or blocker. After an interrupt-delivered correction,
 it still did not produce the requested first diff. The feature owner stopped
 the worker and implemented the test-first wrapper slice directly.
 
+This signal reappeared again in `quality-gate-baseline-seeding`: Solo Codex
+process 570 proved the correct worktree and branch, then read extra guidance
+without creating `.orbit/loop.md`, a test diff, or a blocker. After a
+first-diff correction it still produced no diff. Replacement process 571
+proved the worktree and branch, then repeated the no-diff pattern after a
+tighter checkpoint prompt. The feature owner stopped both workers and applied
+the known tiny test-first patch directly as a documented loop exception.
+
 ## Missing Guardrail
 
 The reusable worker prompt required narrow ownership and TDD, but it did not
@@ -92,6 +100,12 @@ After the third recurrence, the first-checkpoint contract should become an
 operational gate rather than just prompt wording: the feature owner should set a
 short Solo timer for the first diff and treat any extra discovery after that
 timer as failure unless the worker reports an exact missing-context blocker.
+
+After the next recurrence, replacement alone is not enough for tiny known patch
+shapes. If one replacement worker also fails to produce the first diff or an
+exact blocker, the feature owner may apply the first test diff directly as a
+documented loop exception, then tighten this signal and the implementation
+skill in the same worktree.
 
 ## Verification
 
