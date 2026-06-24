@@ -227,7 +227,7 @@ it('keeps update-all rows blinking while the gateway event stream is quiet', fun
     $router = startUpdateAllGatewayLivenessRouter(
         port: $port,
         startDelayMicroseconds: 0,
-        silentDelayMicroseconds: 1_100_000,
+        silentDelayMicroseconds: 900_000,
     );
     $captureScript = writeUpdateAllGatewayLivenessCaptureScript(base_path(), "http://127.0.0.1:{$port}");
     $typescriptPath = sys_get_temp_dir().'/orbit-update-all-gateway-pty-'.uniqid('', true).'.typescript';
