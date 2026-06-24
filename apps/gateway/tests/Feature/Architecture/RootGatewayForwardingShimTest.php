@@ -24,10 +24,12 @@ it('routes root composer scripts through app-aware helpers', function (): void {
         ->and($composer['scripts']['test'][1])->toContain('bin/orbit-gateway-artisan config:clear')
         ->and($composer['scripts']['test'][2])->toContain('bin/orbit-gateway-pest')
         ->and($composer['scripts']['test'][3])->toContain('bin/orbit-cli-pest')
+        ->and($composer['scripts']['test'][3])->toContain('--exclude-group=slow')
         ->and($composer['scripts']['test'][4])->toContain('bin/orbit-docs-pest')
         ->and($composer['scripts']['test'][5])->toContain('cd packages/core && vendor/bin/pest')
         ->and($composer['scripts']['test:slow'][1])->toContain('bin/orbit-gateway-artisan config:clear')
         ->and($composer['scripts']['test:slow'][2])->toContain('bin/orbit-gateway-pest')
+        ->and($composer['scripts']['test:slow'][3])->toContain('bin/orbit-cli-pest --compact')
         ->and($composer['scripts']['test:e2e'][1])->toContain('bin/quality-gate-run')
         ->and($composer['scripts']['test:e2e'][1])->toContain('bin/orbit-e2e-artisan e2e:test')
         ->and($composer['scripts']['test:e2e:docker'][1])->toContain('bin/quality-gate-run')
@@ -56,6 +58,18 @@ it('routes root composer scripts through app-aware helpers', function (): void {
         ->and($composer['scripts']['rector'])->toContain('cd apps/docs && vendor/bin/rector process')
         ->and($composer['scripts']['rector'])->toContain('cd packages/core && vendor/bin/rector process')
         ->and($composer)->not->toHaveKeys(['autoload', 'autoload-dev']);
+});
+
+it('keeps cli app composer scripts aligned with root cli lanes', function (): void {
+    $composer = json_decode(
+        (string) file_get_contents(repo_path('apps/cli/composer.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($composer['scripts']['test'])
+        ->toBe('vendor/bin/pest --exclude-group=slow --compact')
+        ->and($composer['scripts']['test:slow'])->toBe('vendor/bin/pest --compact');
 });
 
 it('keeps public orbit launcher pointed at the cli app only', function (): void {

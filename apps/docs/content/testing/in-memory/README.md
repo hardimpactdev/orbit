@@ -26,6 +26,11 @@ bin/orbit-gateway-pest --compact --filter='lists nodes'
 bin/orbit-gateway-vendor-bin pint --dirty --format agent
 ```
 
-The default Composer test lane excludes `e2e` and `slow` groups, uses Pest
-parallel mode for the gateway, and runs compact output across the gateway, CLI,
-docs app, and core package.
+The default Composer test lane excludes `e2e` and `slow` groups from the
+gateway suite. It excludes `slow` from the CLI suite. It uses Pest parallel
+mode for the gateway and compact output across the gateway, CLI, docs app, and
+packages.
+
+CLI tests belong in the `slow` group when they allocate a real
+pseudo-terminal, fork a progress ticker, or wait on real time. Run them through
+`composer test:slow` or an explicit focused CLI Pest command.

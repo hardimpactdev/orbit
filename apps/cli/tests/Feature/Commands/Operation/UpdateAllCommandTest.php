@@ -210,7 +210,7 @@ it('captures alternating local-row spinner frames from a pseudo-tty before repla
         ->and($pendingTranscript)->not->toBe('')
         ->and($cadenceState['first_transition_us'])->toBeGreaterThanOrEqual(250_000)
         ->and($cadence['cadence_ok'])->toBeTrue($cadence['reason'] ?? 'spinner cadence was invalid');
-});
+})->group('slow');
 
 it('keeps update-all rows blinking while the gateway event stream is quiet', function (): void {
     if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
@@ -326,7 +326,7 @@ it('keeps update-all rows blinking while the gateway event stream is quiet', fun
         ))
         ->and($gatewayCadence['cadence_ok'])->toBeTrue($gatewayCadence['reason'] ?? 'gateway spinner cadence was invalid')
         ->and($gateway['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
-});
+})->group('slow');
 
 it('keeps the check-updates row blinking while the gateway start request is pending', function (): void {
     if (! function_exists('pcntl_fork') || ! function_exists('posix_kill') || ! function_exists('posix_getppid') || ! function_exists('pcntl_async_signals') || ! function_exists('pcntl_signal')) {
@@ -466,7 +466,7 @@ it('keeps the check-updates row blinking while the gateway start request is pend
         ))
         ->and($checkUpdatesCadence['cadence_ok'])->toBeTrue($checkUpdatesCadence['reason'] ?? 'check-updates spinner cadence was invalid')
         ->and($checkUpdates['cadence_state']['first_transition_us'])->toBeLessThan(900_000);
-});
+})->group('slow');
 
 it('does not mark the fleet check row active before gateway progress events arrive', function (): void {
     fakeGateway(fakeUpdateAllStartEnvelope());

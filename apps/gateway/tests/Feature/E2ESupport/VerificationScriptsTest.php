@@ -146,7 +146,7 @@ it('keeps default composer tests out of e2e lanes', function (): void {
                 ->toContain('pest --exclude-group=e2e')
                 ->toContain('--parallel')
                 ->toContain('--compact'),
-            fn ($script) => $script->toContain('bin/orbit-cli-pest --compact'),
+            fn ($script) => $script->toContain('bin/orbit-cli-pest --exclude-group=slow --compact'),
             fn ($script) => $script->toContain('bin/orbit-docs-pest --compact'),
             fn ($script) => $script->toContain('cd packages/core && vendor/bin/pest --compact'),
             fn ($script) => $script->toContain('cd packages/sdk && vendor/bin/pest --compact'),

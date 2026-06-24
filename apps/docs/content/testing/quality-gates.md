@@ -16,7 +16,10 @@ composer docs-lint
 
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
-default Pest suite across each app and package.
+default Pest suite across each app and package. The default CLI Pest subgate
+excludes `slow` tests; real PTY/timing checks remain available through
+`composer test:slow`, `bin/orbit-cli-pest --group=slow`, or an explicit focused
+CLI Pest command when the changed surface needs that proof.
 
 The wrapper caps background fan-out by default so local runner contention does
 not inflate the long Pest lane timings unnecessarily. The cap is derived from

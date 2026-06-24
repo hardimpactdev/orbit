@@ -41,7 +41,7 @@
             "Composer\\Config::disableProcessTimeout",
             "bin/orbit-gateway-artisan config:clear --ansi @no_additional_args",
             "bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact",
-            "bin/orbit-cli-pest --compact",
+            "bin/orbit-cli-pest --exclude-group=slow --compact",
             "bin/orbit-docs-pest --compact",
             "cd packages/core && vendor/bin/pest --compact",
             "cd packages/sdk && vendor/bin/pest --compact"

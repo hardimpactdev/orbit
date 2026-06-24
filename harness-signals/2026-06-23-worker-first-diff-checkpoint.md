@@ -4,7 +4,7 @@ Status: recurring
 First seen: 2026-06-23
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
-Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure
+Source worktree: quality-gate-final-check; quality-gate-e2e-artifacts; quality-gate-baselines; quality-check-updateall-pty-structure; quality-check-cli-pest-pty-speed
 Source commit: pending
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
@@ -46,6 +46,12 @@ two-line cadence-fix handoff. After a correction it still read more files
 without producing a diff. A replacement Codex worker repeated the pattern until
 the feature owner sent an exact patch instruction after interruption. The
 replacement then produced the intended two-line diff and verification evidence.
+
+This signal reappeared again in `quality-check-cli-pest-pty-speed`: the Solo
+Codex worker received a strict first-diff checkpoint for a narrow CLI Pest
+timing slice, identified the intended test seam, then stalled without producing
+a diff or exact missing-context blocker. The feature owner stood the worker
+down and treated the stalled attempt as a documented loop exception.
 
 ## Missing Guardrail
 

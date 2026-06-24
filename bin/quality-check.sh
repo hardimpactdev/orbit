@@ -143,7 +143,7 @@ run_bg core_pint bash -lc 'cd packages/core && vendor/bin/pint "$@"' bash "${PIN
 run_bg sdk_pint bash -lc 'cd packages/sdk && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
 run_bg e2e_pint bash -lc 'cd apps/e2e && vendor/bin/pint "$@"' bash "${PINT_ARGS[@]}"
 
-run_bg cli_pest bin/orbit-cli-pest --compact
+run_bg cli_pest bin/orbit-cli-pest --exclude-group=slow --compact
 run_bg docs_pest bin/orbit-docs-pest --compact
 
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true

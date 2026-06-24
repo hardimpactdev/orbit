@@ -58,7 +58,8 @@
         "analyse": "vendor/bin/phpstan analyse --memory-limit=512M",
         "format": "vendor/bin/pint",
         "rector": "vendor/bin/rector process",
-        "test": "vendor/bin/pest --compact"
+        "test": "vendor/bin/pest --exclude-group=slow --compact",
+        "test:slow": "vendor/bin/pest --compact"
     },
     "extra": {
         "laravel": {
