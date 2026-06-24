@@ -13,7 +13,14 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
                [--host=<host>] [--operator-name=<name>] [--tld=<tld>]
                [--user=<user>] [--gateway-endpoint=<endpoint>]
                [--ingress=<node>] [--redis-node=<node>]
-               [--s3-data-path=<path>] [--json|--stream-json]
+               [--postgres-node=<node>] [--clickhouse-node=<node>]
+               [--s3-data-path=<path>] [--host-key-fingerprint=<sha256>]
+               [--self-grant=<mode>] [--self-grant-permissions=<perms>]
+               [--grant-to=<node>]... [--grant-to-preset=<preset>]
+               [--grant-to-permissions=<perms>]
+               [--grant-from=<node>]... [--grant-from-preset=<preset>]
+               [--grant-from-permissions=<perms>]
+               [--agent-tool=<tool>]... [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
@@ -29,7 +36,19 @@ orbit node:new [<name>] [--template=<template>] [--operator] [--roles=<roles>]
 | `--gateway-endpoint` | gateway public endpoint | WireGuard endpoint this node should use to reach the gateway. Useful for nodes in the same private provider network. |
 | `--ingress` |  -  | Active ingress node for private `app-prod` placement. |
 | `--redis-node` |  -  | Active database-role node that backs `websocket` Reverb scaling. |
+| `--postgres-node` |  -  | Active database-role node for analytics PostgreSQL. |
+| `--clickhouse-node` |  -  | Active database-role node for analytics ClickHouse. |
 | `--s3-data-path` | `/srv/orbit/s3/data` | Host path mounted into SeaweedFS as `/data`. |
+| `--host-key-fingerprint` |  -  | Expected SSH host key SHA256 fingerprint for bootstrap verification. |
+| `--self-grant` |  -  | Self-grant mode for the new node. |
+| `--self-grant-permissions` |  -  | Custom self-grant permissions when self-granting. |
+| `--grant-to` |  -  | Grant the new node access to another node (repeatable). |
+| `--grant-to-preset` |  -  | Preset permissions for `--grant-to` grants. |
+| `--grant-to-permissions` |  -  | Custom permissions for `--grant-to` grants. |
+| `--grant-from` |  -  | Grant another node access to the new node (repeatable). |
+| `--grant-from-preset` |  -  | Preset permissions for `--grant-from` grants. |
+| `--grant-from-permissions` |  -  | Custom permissions for `--grant-from` grants. |
+| `--agent-tool` |  -  | Agent tool to install on `agent` nodes (repeatable). |
 | `--json` | off | JSON output. Mutually exclusive with `--stream-json`. |
 | `--stream-json` | off | Newline-delimited gateway progress frames for long-running agent runs. Mutually exclusive with `--json`. First-gateway bootstrap keeps its existing bootstrap output path. |
 

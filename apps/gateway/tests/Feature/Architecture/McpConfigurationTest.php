@@ -143,3 +143,68 @@ it('provides first-party boost skill sources in orbit packages', function (): vo
         ->and(repo_path('packages/sdk/resources/boost/skills/orbit-sdk-development/SKILL.md'))->toBeFile()
         ->and(repo_path('apps/gateway/.ai/skills/orbit-cli-development/SKILL.md'))->toBeFile();
 });
+
+it('keeps the project-owned orbit skill aligned with current CLI stream-json guidance and signatures', function (): void {
+    $skill = file_get_contents(repo_path('.agents/skills/orbit/SKILL.md')) ?: '';
+    $concepts = file_get_contents(repo_path('.agents/skills/orbit/references/concepts.md')) ?: '';
+    $app = file_get_contents(repo_path('.agents/skills/orbit/references/app.md')) ?: '';
+    $node = file_get_contents(repo_path('.agents/skills/orbit/references/node.md')) ?: '';
+    $tool = file_get_contents(repo_path('.agents/skills/orbit/references/tool.md')) ?: '';
+    $operation = file_get_contents(repo_path('.agents/skills/orbit/references/operation.md')) ?: '';
+
+    preg_match('/## Universal output rules\n\n([\s\S]*?)\n\n## /', $skill, $universalOutputRules);
+
+    expect($universalOutputRules[1] ?? '')
+        ->toContain('prefer `--stream-json`')
+        ->toContain('final-only `--json`');
+
+    preg_match(
+        '/agent-facing stream JSON commands include ([^.]+)\./',
+        $concepts,
+        $streamJsonCommands,
+    );
+
+    expect($streamJsonCommands[1] ?? '')
+        ->toContain('`app:setup`')
+        ->toContain('`doctor`')
+        ->toContain('`app:new`')
+        ->toContain('`workspace:setup`')
+        ->toContain('gateway-streamed `node:new`')
+        ->toContain('`deploy:run`')
+        ->toContain('`tool:install`')
+        ->toContain('`s3:publish`')
+        ->not->toContain('`update`')
+        ->not->toContain('`update:all`');
+
+    expect($app)
+        ->toContain('--runtime-proxy-transport')
+        ->toContain('orbit app:setup [<app>] [--json|--stream-json]')
+        ->not->toContain('orbit app:setup [<app>] [--force]')
+        ->toContain('--command=<command>')
+        ->toContain('--before=')
+        ->toContain('--after=')
+        ->not->toContain('--title=<title>')
+        ->not->toContain('--order=<n>');
+
+    expect($node)
+        ->toContain('--postgres-node')
+        ->toContain('--clickhouse-node')
+        ->toContain('--host-key-fingerprint')
+        ->toContain('--agent-tool');
+
+    expect($tool)
+        ->toContain('[--with-process] [--no-process]')
+        ->toContain('--json|--stream-json');
+
+    preg_match('/### Apps[\s\S]*?### Workspaces/', $skill, $appCommandIndex);
+
+    expect($appCommandIndex[0] ?? '')
+        ->toContain('`orbit app:setup [app]`')
+        ->toContain('`orbit app-setup-step:add`')
+        ->toContain('`orbit app-setup-step:list`')
+        ->toContain('`orbit app-setup-step:remove`');
+
+    expect($operation)
+        ->toContain('--key=<key>')
+        ->toContain('--dry-run');
+});

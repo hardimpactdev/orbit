@@ -56,13 +56,16 @@ Provision a managed tool on a node.
 
 ```bash
 orbit tool:install <tool> [--app=<name>] [--node=<name>]
-                   [--status=installed|running] [--tool-version=<v>] [--json|--stream-json]
+                   [--status=installed|running] [--tool-version=<v>]
+                   [--with-process] [--no-process] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `--status` | `installed` | Desired capability state. Tool definitions that declare a related process configure that process idempotently unless `--no-process` is used. |
+| `--status` | `installed` | Desired capability state after install (`installed` or `running`). |
 | `--tool-version` |  -  | Version or version family to install (catalog-dependent). |
+| `--with-process` | on for service tools | Also configure the related service process. Default for tools that declare one. |
+| `--no-process` | off | Install the capability only; do not configure the related service process. |
 | `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
 
 Examples:

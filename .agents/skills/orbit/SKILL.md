@@ -28,7 +28,8 @@ over the Orbit/WireGuard network.
 
 - Every command supports `--help` for signature, arguments, and options.
 - Every command that returns structured data supports `--json` (`{"success":{"data":{...}}}` or `{"success":false,"error":...}`).
-- Non-interactive mode (`-n`) auto-enables JSON. Always pass `--json` when parsing programmatically.
+- Non-interactive mode (`-n`) auto-enables JSON. Always pass `--json` when parsing programmatically and only the final machine-readable result is needed.
+- For long-running commands that offer it, LLM agents should prefer `--stream-json` over final-only `--json` so progress arrives as newline-delimited frames during slow gateway work.
 - Destructive commands take `--force` to skip confirmation.
 - Nothing prints secrets to logs; use `tool:credentials` for those.
 
@@ -85,6 +86,10 @@ Commands are grouped by family. Each reference file lists every command in that 
 | `orbit app:list` | List registered apps |
 | `orbit app:show [app]` | Show app intent, owning node, URL, agent IDE, owned routes |
 | `orbit app:root [app] [root]` | Change the app document root (relative to the app path) |
+| `orbit app:setup [app]` | Run configured setup steps on the owning app node |
+| `orbit app-setup-step:add` | Add a finite bootstrap command to an app's setup pipeline |
+| `orbit app-setup-step:list` | List an app's configured setup steps |
+| `orbit app-setup-step:remove` | Remove one app setup step |
 | `orbit app:remove [app]` | Remove an app and its owned artifacts |
 | `orbit app:prune [app]` | Remove stale workspaces (`--dry-run` to preview) |
 | `orbit app:agent-ide [app] [adapter]` | Set or inherit the Agent IDE adapter for an app |

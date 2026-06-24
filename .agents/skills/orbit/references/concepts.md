@@ -116,7 +116,7 @@ Commands like `workspace:setup`, `deploy:run`, `tool:install`, and `node:new` st
 
 For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current
-agent-facing stream JSON commands include `doctor`, `app:new`,
+agent-facing stream JSON commands include `doctor`, `app:new`, `app:setup`,
 `workspace:new`, `workspace:setup`, gateway-streamed `node:new`, `deploy:run`,
 `tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, and
 `s3:unpublish`. `--stream-json` and `--json` are mutually exclusive; use

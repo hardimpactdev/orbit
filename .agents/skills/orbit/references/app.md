@@ -26,7 +26,8 @@ Create or clone a new app on an app-role node.
 
 ```bash
 orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
-              [--php-version=8.5] [--domain=<host>] [--json|--stream-json]
+              [--php-version=8.5] [--domain=<host>]
+              [--runtime-proxy-transport=http|https] [--json|--stream-json]
 ```
 
 | Option | Default | Notes |
@@ -37,6 +38,7 @@ orbit app:new [<name>] [--node=<name>] [--repo=<git>] [--root=public]
 | `--root` | `public` | Document root relative to app path. |
 | `--php-version` | `8.5` | Initial PHP version (one of 8.3, 8.4, 8.5). |
 | `--domain` |  -  | Production: triggers production setup. If DNS/TLS isn't ready yet, the app installs but the domain stays inactive  -  re-run `app:register --domain=...` to retry. |
+| `--runtime-proxy-transport` | `http` | FrankenPHP inner proxy transport (`http` or `https`). |
 | `--stream-json` | off | JSONL progress stream for agents; mutually exclusive with `--json`. |
 
 Examples:
@@ -101,10 +103,10 @@ orbit app:root [<app>] [<root>] [--json]
 Run an app's recorded setup pipeline on the owning app node.
 
 ```bash
-orbit app:setup [<app>] [--force] [--json|--stream-json]
-orbit app-setup-step:add [<app>] [<command>] [--title=<title>] [--order=<n>] [--timeout=600] [--json]
+orbit app:setup [<app>] [--json|--stream-json]
+orbit app-setup-step:add [<app>] [--command=<command>] [--before=<id>] [--after=<id>] [--timeout=600] [--json]
 orbit app-setup-step:list [<app>] [--json]
-orbit app-setup-step:remove [<app>] [<step>] [--json]
+orbit app-setup-step:remove [<app>] [--step=<id>] [--force] [--json]
 ```
 
 Setup steps are finite bootstrap commands. PHP, Composer, and Artisan commands
