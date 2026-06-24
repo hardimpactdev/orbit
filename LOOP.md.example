@@ -70,11 +70,13 @@ non-trivial feature loop. Use `not applicable` only for truly tiny local changes
 with no workers, reviewer findings, retained terminal/PTY evidence, quality
 gate artifacts, or human steering.
 
-Keep the exact outcome labels below. `bin/orbit-feature-finalization-check`
-uses them as the mechanical merge-boundary contract; equivalent custom headings
-or prose do not replace them. Before merge or cleanup, at least one of
-`Accepted durable updates`, `Rejected or already-covered signals`, `Deferred
-follow-ups`, or `No-new-signal rationale` must contain a meaningful value.
+Keep the exact Markdown bullet-label shape below.
+`bin/orbit-feature-finalization-check` uses those list labels as the mechanical
+merge-boundary contract. Equivalent custom headings, bare label lines without
+`- ` and `:`, or prose do not replace them. Before merge or cleanup, at least
+one of `- Accepted durable updates:`, `- Rejected or already-covered signals:`,
+`- Deferred follow-ups:`, or `- No-new-signal rationale:` must contain a
+meaningful value.
 
 - Distillation packet:
   - Location:

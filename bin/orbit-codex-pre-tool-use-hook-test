@@ -136,6 +136,39 @@ write_custom_outcome_loop() {
 EOF
 }
 
+write_bare_label_loop() {
+    local path="$1"
+
+    mkdir -p "$(dirname "$path")"
+
+    cat >"$path" <<'EOF'
+# Orbit Current Slice State
+
+## Done Contract
+
+- Done when:
+  - checked
+
+## Final Distillation
+
+Accepted durable updates
+
+- A real guardrail exists elsewhere.
+
+Rejected or already-covered signals
+
+- none
+
+Deferred follow-ups
+
+- none
+
+No-new-signal rationale
+
+- not applicable because a guardrail was accepted.
+EOF
+}
+
 REPO="$TMP/repo"
 
 mkdir -p "$REPO"
@@ -170,6 +203,10 @@ git branch custom-outcome-heading
 git worktree add .worktrees/custom-outcome-heading custom-outcome-heading >/dev/null 2>&1
 write_custom_outcome_loop "$REPO/.worktrees/custom-outcome-heading/.orbit/loop.md"
 
+git branch bare-outcome-labels
+git worktree add .worktrees/bare-outcome-labels bare-outcome-labels >/dev/null 2>&1
+write_bare_label_loop "$REPO/.worktrees/bare-outcome-labels/.orbit/loop.md"
+
 git branch missing-loop
 git worktree add .worktrees/missing-loop missing-loop >/dev/null 2>&1
 
@@ -179,6 +216,7 @@ expect_pass "$REPO" 'git merge --ff-only historical-pending'
 expect_block "$REPO" 'git merge --ff-only templated'
 expect_block "$REPO" 'git merge --ff-only pending-outcome'
 expect_block "$REPO" 'git merge --ff-only custom-outcome-heading'
+expect_block "$REPO" 'git merge --ff-only bare-outcome-labels'
 expect_block "$REPO" 'git merge --ff-only missing-loop'
 expect_block "$REPO" 'git worktree remove .worktrees/templated && git branch -d templated'
 expect_check_block "$REPO" git merge --ff-only templated

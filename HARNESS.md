@@ -138,12 +138,13 @@ The gate is intentionally narrow: it only inspects git merge and
 feature-cleanup boundaries, then blocks when a targeted feature worktree has no
 completed `.orbit/loop.md` `Final Distillation` section.
 
-The mechanical contract is label-based. Keep the exact final outcome labels
-from `LOOP.md.example`: `Accepted durable updates`, `Rejected or
-already-covered signals`, `Deferred follow-ups`, and `No-new-signal rationale`.
-At least one of those labels must contain a meaningful outcome before merge or
-cleanup. Custom headings or equivalent prose can support the explanation, but
-they do not satisfy the gate by themselves.
+The mechanical contract is label-based. Keep the exact Markdown bullet-label
+lines from `LOOP.md.example`: `- Accepted durable updates:`,
+`- Rejected or already-covered signals:`, `- Deferred follow-ups:`, and
+`- No-new-signal rationale:`. At least one of those labels must contain a
+meaningful outcome before merge or cleanup. Custom headings, bare label lines
+without `- ` and `:`, or equivalent prose can support the explanation, but they
+do not satisfy the gate by themselves.
 
 The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
