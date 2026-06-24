@@ -43,6 +43,11 @@ Responsibilities:
 
 - Create and own the Done Contract for the active slice when the
   user explicitly starts implementation from the current thread or app.
+- Preserve the raw user contract in the handoff. If the user provided output
+  samples, transcripts, screenshots, failure text, or negative examples, keep
+  them in `.orbit/loop.md`, the feature scratchpad, or the worker prompt. When
+  decomposing into slices, explicitly mark which parts are in scope now, which
+  are deferred, and why the deferral is compatible with acceptance.
 - Prepare and own the dedicated Orbit worktree.
 - Read the handoff, docs, and existing code enough to define clear worker tasks.
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
@@ -120,6 +125,10 @@ Read and follow:
 Feature handoff:
 <paste the crystallized handoff or owned slice>
 
+Raw acceptance examples and explicit deferrals:
+<paste the concrete user-provided output samples, transcripts, failure text,
+negative examples, or state `none`; list deferred parts with reason and owner>
+
 Rules:
 - Edit only inside the assigned worktree.
 - If a feature scratchpad exists, read its slice outcomes before editing and
@@ -127,6 +136,9 @@ Rules:
 - Inspect the current branch diff or log enough to understand prior slices that
   already exist in this feature worktree.
 - Keep docs, tests, and code aligned.
+- Do not silently drop a user-provided sample, transcript, or negative example
+  when turning the request into a slice. If an example cannot be implemented in
+  the current slice, report the exact deferred part before editing.
 - The feature orchestrator owns the Done Contract in `.orbit/loop.md`. You may
   challenge or propose changes to it, but do not silently weaken scope,
   evidence, reviewer checks, stop conditions, or pivot conditions.
@@ -500,9 +512,11 @@ moving on to durable E2E.
    implementation. Use the crystallized discussion, handoff, Solo scratchpad, or
    Solo todo as the concrete implementation handoff. If the feature contains
    multiple slices, use one lightweight scratchpad as the feature roadmap and
-   one worktree as the execution boundary. Create the active slice Done Contract
-   and proceed as feature owner. Do not route through retired orchestration
-   skills.
+   one worktree as the execution boundary. Preserve raw user-provided output
+   samples, transcripts, screenshots, failure text, and negative examples in
+   the scratchpad or `.orbit/loop.md` before narrowing the scope. Create the
+   active slice Done Contract and proceed as feature owner. Do not route through
+   retired orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
@@ -511,7 +525,9 @@ moving on to durable E2E.
    `LOOP.md.example` to `.orbit/loop.md` for the active slice and fill the Done
    Contract before implementation. If this is a later slice in the same feature
    worktree, rewrite `.orbit/loop.md` for the current slice and keep earlier
-   slice outcomes in the feature scratchpad.
+   slice outcomes in the feature scratchpad. The Done Contract must include raw
+   acceptance examples or a precise pointer to them, plus explicit deferrals for
+   any part of the user's request that is not in the current slice.
 4. Confirm owned files or domains and existing dirty work before editing.
 5. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
    verification lanes, owned files, provider resources, shared temp/state paths,
@@ -556,7 +572,9 @@ moving on to durable E2E.
    documented loop exception, then update the matching signal before continuing.
    Assign the implementation phase only after the first diff exists and has
    been inspected. When a correction reveals missing durable context, triage it
-   through `.orbit/loop.md` and `HARNESS_SIGNALS.md`.
+   through `.orbit/loop.md` and `HARNESS_SIGNALS.md`. If a reviewer or human
+   points to behavior already present in the raw request, reclassify it as a
+   blocking contract gap unless it was explicitly deferred before editing.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
@@ -577,7 +595,9 @@ moving on to durable E2E.
    runtime behavior, deployment/profile/update flows, or operational guidance
    another LLM would need to use Orbit correctly.
 12. Ensure the implementation worker followed TDD (see Test-Driven Development
-    below): failing Pest tests first, then implementation.
+    below): failing Pest tests first, literal failing output captured, then
+    implementation. A narrative claim that a test failed is not sufficient when
+    the failure was used to prove red.
 13. Keep the smallest working vertical slice that makes the tests pass.
 14. For CLI command behavior, ensure durable E2E coverage has been created or
     updated for the integrated behavior, then run the retained ingress VM
@@ -586,8 +606,10 @@ moving on to durable E2E.
     frame analysis before user inspection. Give the user a chance to inspect the
     VM-observed CLI behavior only after the reviewer has summarized the
     confidence basis or blocker, and before any live/release-candidate
-    deployment. If this cannot be completed, report the blocker explicitly
-    instead of widening the release path.
+    deployment. If implementation changes after PTY or retained-VM evidence was
+    captured, refresh the evidence in a new artifact directory and label older
+    artifacts as stale in the report. If this cannot be completed, report the
+    blocker explicitly instead of widening the release path.
 15. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
    Incus inspection gate from this worktree before durable Incus E2E. Retained
    topologies sync the current worktree into a runner-host source mount and
@@ -604,6 +626,9 @@ moving on to durable E2E.
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
     Resolve or explicitly report findings before commit.
+    If the reviewer finds a mismatch between implementation evidence and the
+    raw user examples, treat it as a contract mismatch first; only downgrade it
+    to a follow-up when the Done Contract already names the deferral.
     For small changed-files-only reviews, prompt the reviewer for a
     blockers-first verdict (`No blockers` or file/line blockers) before optional
     suggestions. Include the exact diff command and base the reviewer should
@@ -743,7 +768,9 @@ Workflow per change:
 
 1. Write the failing Pest test(s) first — unit/feature for the contract, E2E
    for the integrated behavior.
-2. Run them and confirm they fail for the expected reason.
+2. Run them and capture the exact command and failing output that proves they
+   fail for the expected reason. Store it in `.orbit/loop.md`, the feature
+   scratchpad, or `.orbit/evidence/` when the red state matters to review.
 3. Implement the smallest slice that turns them green.
 4. Re-run the smallest staged lane that proves the changed behavior before
    reporting completion.
@@ -815,6 +842,11 @@ is not required after ordinary `composer test:e2e` runs.
 Worktree:
 - `.worktrees/<branch-name>` on branch `<branch>`
 
+Raw contract:
+- User-provided examples/transcripts preserved at: <.orbit/loop.md,
+  scratchpad section, prompt excerpt, or none>
+- Explicit deferrals: <deferred request parts with reason/owner, or none>
+
 Solo implementation delegation:
 - Worker(s): <model/tool, name/process id, and owned scope>
 - Corrections requested: <summary or none>
@@ -866,6 +898,7 @@ Post-feature session review:
 Tests:
 - Pest unit/feature: <test added or changed>
 - Pest E2E: <test added or changed>
+- Red-test evidence: <literal failing command/output path or not applicable>
 
 Verification:
 - `php artisan test --compact`: <result>

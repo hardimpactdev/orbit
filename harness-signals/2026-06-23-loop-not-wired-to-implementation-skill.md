@@ -4,11 +4,11 @@ Status: recurring
 First seen: 2026-06-23
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
-Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer
+Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer; doctor-progress-scheduler
 Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice
 Signal type: review-comment
 Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md
-Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice
+Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; pending loop-hardening-session-guardrails commit
 Related signals:
 harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md,
 harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md,
@@ -50,6 +50,12 @@ required post-feature review, but the orchestrator could still act as its own
 only judge, skip a durable review packet, or over-promote weak ephemeral
 artifacts into guardrails.
 
+It reappeared again during the doctor progress/fleet panel dogfood loop. The
+outer loop improver captured guidance in the Solo scratchpad and kept nudging
+the feature owner, but did not immediately improve the repo harness/skills when
+the same process mistakes repeated. The user had to point out that the
+scratchpad was only guidance for what still needed to be implemented.
+
 ## Missing Guardrail
 
 The durable docs existed, but the main execution workflow did not make them
@@ -64,6 +70,10 @@ that could classify candidate learnings without being polluted by the feature
 session, while still preserving the orchestrator's high-context adjudication.
 It also lacked an explicit promotion gate that says raw `.orbit/` artifacts
 produce candidates only, not automatic guardrails.
+
+After the doctor progress recurrence, the workflow still under-specified the
+active loop-improver role: loop hardening could be postponed to the scratchpad
+instead of happening in a project worktree while the feature was still running.
 
 ## Guardrail Change
 
@@ -88,6 +98,12 @@ counterfactual prevention path, smallest clear target, and narrow
 verification. `LOOP.md.example` and the implementation report now require
 accepted, rejected, already-covered, deferred, and no-new-signal outcomes.
 
+After the doctor progress recurrence, `HARNESS.md` now includes an Active Loop
+Improvement section. It says the scratchpad is guidance/backlog, not the loop
+implementation, and requires the loop improver to patch durable repo guardrails
+or explicitly reject/defer repeated signals instead of waiting for the user to
+ask.
+
 ## Verification
 
 `rg -n "HARNESS.md|LOOP.md|HARNESS_SIGNALS.md|Harness signals|guardrail target|durable harness signal|feedback loop" .agents/skills/implementing-features/SKILL.md`
@@ -102,6 +118,15 @@ rg -n "Post-Feature Session Review|post-feature session review|feature thread|hu
 This shows that the root harness, implementation workflow, report shape, and
 signal record all expose the review.
 
+For the active-loop recurrence, run:
+
+```bash
+rg -n "Active Loop Improvement|scratchpad is guidance|do not wait for the user|loop signal" HARNESS.md harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
+```
+
+This shows the active loop-improver duty is discoverable from the root harness
+and this signal record.
+
 ## Reappearance Check
 
 If future implementation reports omit durable signal triage or the
@@ -110,6 +135,11 @@ the report template or add a machine-readable final-distillation warning before
 merge. If fresh reviewers start promoting weak one-off findings, tighten the
 post-feature distillation reviewer or the promotion gate instead of adding more
 signal records.
+
+If a future loop-improver only updates a scratchpad after repeated user
+corrections and does not patch, reject, or explicitly defer the project
+guardrail, keep this record `recurring` and tighten the active-loop section or
+the loop-improver handoff.
 
 ## Curation Notes
 

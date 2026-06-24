@@ -114,6 +114,30 @@ No durable signal is a valid result. Every final review reports evidence
 reviewed, accepted durable updates, rejected or already-covered candidates,
 deferred follow-ups, and the no-new-signal rationale when nothing changes.
 
+## Active Loop Improvement
+
+The loop is improved during the feature, not only after it. When an outer loop
+improver is overseeing a dogfood feature, its job is to keep the feature owner
+honest and also turn real process failures into project guardrails in the
+smallest safe place. The scratchpad is guidance and backlog; it is not the
+implementation of the loop.
+
+When a feature exposes a repeated or costly harness gap, the loop improver
+classifies it immediately:
+
+- If the gap blocks the feature contract, steer the feature owner or reviewer
+  inside the feature worktree.
+- If the gap belongs to durable repo process, patch the harness, skills,
+  personas, or signal records in a separate harness worktree when the active
+  feature worktree is under review or otherwise should stay stable.
+- If the gap is only a one-off local cleanup, record the rejection rationale in
+  `.orbit/loop.md` or the feature report instead of adding a new rule.
+
+Do not wait for the user to ask whether the loop should be improved. When the
+user has to repeat the same correction, treat that as a loop signal and either
+patch the durable guardrail, explain why an existing guardrail already covers
+it, or create a scoped follow-up with an owner and trigger.
+
 ## Feature Slices
 
 Use the least durable state that can keep the work coherent.
@@ -257,6 +281,14 @@ For non-trivial work, the feature orchestrator fills the active slice contract
 before implementation. Keep it short enough to copy into `.orbit/loop.md`.
 Workers may challenge the contract, but they must not silently weaken scope,
 evidence, reviewer checks, stop conditions, or pivot conditions.
+
+When a request includes concrete output samples, command transcripts, UI
+examples, or negative examples, the Done Contract keeps those raw examples or a
+precise pointer to them. Any decomposition into slices must name which parts of
+the raw request are in the current slice, which are deferred, and why deferral
+does not invalidate the acceptance contract. A reviewer finding that matches
+the original raw request is a contract gap, not an optional enhancement, unless
+the feature owner had explicitly deferred it before implementation began.
 
 ```markdown
 Current slice:

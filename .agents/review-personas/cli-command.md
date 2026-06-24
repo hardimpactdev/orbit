@@ -27,13 +27,18 @@ Read only the files needed for the command under review:
   part of the change
 - The command's authoritative docs under `apps/docs/content/**`
 - The focused tests named by the implementation report
+- The raw user-provided output samples, transcripts, failure text, negative
+  examples, and explicit deferrals recorded in `.orbit/loop.md`, the feature
+  scratchpad, or the implementation report
 
 ## Review Stance
 
 Lead with correctness risks. Treat tests as evidence, not proof that the CLI
 contract is complete. A command implementation is not ready when the human
 renderer, JSON renderer, docs, tests, and runtime surface tell different
-stories.
+stories. If the implementation report narrows or omits part of the raw user
+request, accept that narrowing only when the Done Contract explicitly deferred
+it before implementation evidence was produced.
 
 ## Review Scope
 
@@ -49,6 +54,10 @@ review into a full project audit unless the user explicitly asks for one.
 - The command docs define the behavior being implemented or changed.
 - Product docs, command docs, tests, and implementation agree on the same input
   modes, side effects, caller-role rules, and failure behavior.
+- Raw user examples and transcripts are represented in the Done Contract,
+  tests, docs, or explicit deferrals. A mismatch with a provided output sample
+  is a blocker unless the sample's behavior was explicitly deferred with owner
+  and reason.
 - The change stays inside the owned command or shared command infrastructure
   named by the handoff.
 - New or touched long-running human commands render visible progress
@@ -62,6 +71,9 @@ review into a full project audit unless the user explicitly asks for one.
 - Human output uses the documented Orbit primitive: progress tree for
   long-running commands, spinner only for a short single wait, table for lists,
   and show-detail for single-entity details.
+- For bordered panels, box drawings, progress trees, and retained terminal
+  frames, strip ANSI and verify the whole visible frame, not only the rows that
+  changed.
 - Progress rows use stable operator-facing labels, not backend implementation
   labels.
 - Idle rows are dimmed; active and completed labels remain readable.
@@ -71,6 +83,20 @@ review into a full project audit unless the user explicitly asks for one.
   footers may be dim.
 - The output does not go blank or stay silent during slow network, SSH,
   gateway, package, process, WireGuard, or destructive work.
+- Human panels fit the expected terminal width in final settled frames. Long
+  status text and issue bullets wrap or truncate inside the border without
+  leaking into the frame edge. No content may overflow the expected panel
+  width, collide with the right border, or rely on terminal wrapping outside the
+  renderer.
+- Status rows and issue lists are semantically separate when the contract calls
+  for bullets. Do not accept a long failure message crammed into the status
+  column when it should be rendered as an issue.
+- Terminal-only summary text appears only in terminal/result frames when the
+  contract says progress frames should not show a summary.
+- Issue lists honor the documented cap and overflow row, such as ten visible
+  issues plus `+ X more issues`.
+- Human-readable error requirements are not satisfied by opaque machine keys
+  unless the current slice explicitly deferred human labels.
 
 ### PTY Evidence
 
@@ -86,6 +112,9 @@ Require PTY capture evidence when the change fixes or risks:
 The reviewer must either run the PTY capture or inspect artifacts produced in
 the same runtime context before asking the user for UX/output review. The user
 inspection step is confirmation; it is not the first serious rendering check.
+Artifacts captured before the latest implementation correction are stale for
+that corrected behavior. Require a fresh artifact directory or mark the review
+blocked.
 
 Use from the relevant runtime context. For retained Incus proof, prefer running
 inside the Solo terminal shell that is already attached to the target VM:
@@ -108,6 +137,20 @@ source-mounted retained topology proof, unless the report proves
 `/usr/local/bin/orbit` resolves to that source checkout. Use the installed
 binary path when validating release-candidate or live-node behavior, not the
 development launcher.
+
+For bordered output, inspect the full final frame after stripping ANSI and
+reject any line that is wider than the panel, has more than one right border,
+lacks the expected right border, or places user-facing content directly against
+the border because wrapping did not happen.
+
+For decorated rendering claims, confirm the artifact proves decoration was
+enabled: `NO_COLOR` was not forcing plain output, the command ran under a PTY,
+and the CLI/framework classified the output as decorated when that can be
+observed. If the evidence is non-decorated, it may still prove text content but
+does not prove ANSI repainting, cursor movement, dimming, blinking, or live
+frame behavior. If replacement characters appear in captured box drawing, check
+whether they come from UTF-8 bytes split across PTY reads before treating them
+as renderer output.
 
 For human rendering, progress, spinners, blinking indicators, prompts, or
 streaming output, retained Solo-terminal proof means the terminal is attached to
@@ -134,6 +177,9 @@ behavior.
 
 - Focused Pest coverage exists for the changed command contract before
   implementation is accepted.
+- The report includes the literal failing command/output for tests that were
+  used as red-test proof, or explicitly states why red-test proof is not
+  applicable.
 - E2E coverage exists when the behavior crosses node, topology, provider,
   launcher, gateway-stream, or retained VM boundaries.
 - CLI command changes that affect real terminal behavior are proven in a Solo
@@ -179,6 +225,8 @@ Use this shape:
 - Tests:
 - PTY artifacts:
 - PTY analysis before user inspection:
+- Raw contract and deferrals:
+- Stale/downgraded evidence checked:
 - E2E/live proof:
 - JSON samples:
 ```
