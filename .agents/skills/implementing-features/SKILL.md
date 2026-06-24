@@ -487,11 +487,14 @@ moving on to durable E2E.
    and dependencies in `.orbit/loop.md`, the feature scratchpad, or the worker
    plan. A serial plan for isolated goals, slices, or lanes is incomplete unless
    it names the concrete dependency, shared state, provider capacity limit, or
-   merge-order reason. If two tasks are isolated, dispatch them in parallel
-   through Solo. Treat in-memory/Pest optimization, Docker E2E optimization, and
-   Incus E2E optimization as separate lanes by default, but do not overlap full
-   `composer quality-check` with active provider E2E lanes unless shared E2E
-   support state is proven isolated. In parallel-worker mode, forbid broad
+   merge-order reason. Being part of one goal or feature is not a dependency.
+   If two tasks are isolated, dispatch them in parallel through Solo. Treat
+   in-memory/Pest optimization, Docker E2E optimization, and Incus E2E
+   optimization as separate lanes by default; start provider-lane investigation
+   while in-memory/app/package optimization continues instead of waiting for the
+   whole quality-check path to finish. Do not overlap full `composer
+   quality-check` with active provider E2E lanes unless shared E2E support state
+   is proven isolated. In parallel-worker mode, forbid broad
    dirty-file formatters/fixers inside workers; scope formatting/checks to the
    worker's owned files and run broad dirty-file tooling only after worker diffs
    are reconciled. Add a Claude documenter/librarian worker when documentation

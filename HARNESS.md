@@ -149,6 +149,11 @@ must decide what can run in parallel. The default is parallel dispatch for
 independent slices. Serial execution is a justified exception, not the default
 shape.
 
+Being part of one goal, feature, or harness-improvement effort is not a
+dependency. A slice is serial only when it needs another slice's result, edits
+the same owned files, mutates the same provider or temp state, exceeds provider
+capacity, or has an unavoidable merge-order constraint.
+
 Record the decision in `.orbit/loop.md`, the feature scratchpad, or the worker
 plan before workers start:
 
@@ -163,9 +168,11 @@ plan before workers start:
 For quality-gate optimization, split the work into separate lanes by default:
 in-memory/Pest and `composer quality-check`, Docker E2E, and Incus E2E. Docker
 and Incus work may run at the same time when provider capacity allows. Do not
-overlap aggregate `composer quality-check` with active provider E2E unless the
-shared E2E support state is proven isolated; run that aggregate gate after
-provider workers are idle.
+optimize all in-memory/app/package checks first while provider lanes sit idle;
+start the independent provider investigation in parallel and reconcile the
+lane reports afterward. Do not overlap aggregate `composer quality-check` with
+active provider E2E unless the shared E2E support state is proven isolated; run
+that aggregate gate after provider workers are idle.
 
 ## Solo Role Matrix
 

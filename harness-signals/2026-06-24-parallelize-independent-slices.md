@@ -64,6 +64,13 @@ Incus E2E by default.
 the Solo worker-plan step and names in-memory/Pest, Docker E2E, and Incus E2E
 tuning as separate lanes by default.
 
+After the same-goal serialism reappeared again, `AGENTS.md`, `HARNESS.md`,
+`LOOP.md.example`, `.agents/skills/implementing-features/SKILL.md`, and
+`.agents/skills/quality-gate-triage/SKILL.md` were tightened to state that
+being part of one goal or feature is not itself a dependency. Quality-gate
+optimization must not finish all in-memory/app/package work before dispatching
+Docker and Incus investigation when those provider lanes are independent.
+
 During verification, `composer quality-check` was started while Docker and
 Incus E2E lanes were active. It failed in the `apps/e2e` in-memory support
 tests because provider E2E state was still mutating. Rerunning
@@ -82,7 +89,7 @@ an orchestrator responsibility after worker diffs are reconciled.
 - The current session provided the failing baseline: serial quality-gate tuning.
 - `git diff --check` verifies the harness and skill edits do not introduce
   whitespace errors.
-- `rg -n "A serial plan for isolated|Parallelization scan|candidate slices|Parallel Lane Triage" HARNESS.md LOOP.md.example .agents/skills/implementing-features/SKILL.md .agents/skills/quality-gate-triage/SKILL.md harness-signals/2026-06-24-parallelize-independent-slices.md`
+- `rg -n "Being part of one goal|Parallelization scan|provider-lane investigation|Parallel Lane Triage" AGENTS.md HARNESS.md LOOP.md.example .agents/skills/implementing-features/SKILL.md .agents/skills/quality-gate-triage/SKILL.md harness-signals/2026-06-24-parallelize-independent-slices.md`
   verifies the tightened rule is discoverable from the root harness, loop
   state template, implementation skill, and signal record.
 - Overlapped `composer quality-check` with active Docker/Incus E2E: failed in

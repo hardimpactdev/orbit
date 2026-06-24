@@ -169,10 +169,12 @@ work before analysis starts. Treat these as separate lanes by default:
 Dispatch independent lane triage or optimization through separate Solo workers
 unless a concrete dependency, shared state path, provider-capacity limit, or
 merge-order reason is recorded. Docker and Incus use different provider
-systems, so they should normally run in parallel. Do not overlap aggregate
-`composer quality-check` with active provider E2E unless shared E2E support
-state is proven isolated; schedule that aggregate check after provider lanes
-are idle.
+systems, so they should normally run in parallel. Do not finish all Pest,
+package, or app-level timing work before starting Docker or Incus investigation
+when those lanes are part of the same goal and have no dependency on the
+in-memory result. Do not overlap aggregate `composer quality-check` with active
+provider E2E unless shared E2E support state is proven isolated; schedule that
+aggregate check after provider lanes are idle.
 
 Each lane report must say whether it produced a concrete optimization diff, a
 no-op classification, or a deferred follow-up. If a lane is not dispatched, the

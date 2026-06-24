@@ -21,9 +21,10 @@ feature scratchpad. Keep code history in Git.
 
 - Parallelization scan:
   - Candidate parallel lanes:
-  - Serialized because:
-  - Deferred lanes (lane -> reason -> owner):
-  - Parallel dispatch started:
+  - Serialized lanes, with required dependency/shared-state/provider-capacity/
+    merge-order reason:
+  - Deferred lanes (lane -> concrete reason -> owner):
+  - Parallel dispatch started (lane -> Solo process or owner):
 - Done when:
   -
 - Evidence:

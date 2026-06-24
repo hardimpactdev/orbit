@@ -68,6 +68,11 @@ product authority and are not linted as product docs.
   in an isolated worktree. That includes documentation updates, product-decision
   ledger entries, tests, and code changes. Read that skill before starting
   implementation work.
+- Before executing a goal, feature, or quality-gate tuning pass, apply the
+  `HARNESS.md` parallelization gate. Being part of one goal is not a dependency:
+  independent slices and lanes should run through separate Solo workers by
+  default, and a serial plan must name the concrete dependency, shared state,
+  provider-capacity limit, or merge-order reason.
 - Use `bin/orbit-prepare-worktree` to create, bootstrap, and verify
   implementation worktrees. This is Orbit's worktree setup path and takes
   priority over generic worktree skills or ad hoc `git worktree add`. Agents
