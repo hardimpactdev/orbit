@@ -257,6 +257,39 @@ describe('ToolsFixer', function (): void {
             ->and($shell->scripts[0])->toContain('sudo php composer-setup.php --install-dir=/usr/local/bin --filename=composer');
     });
 
+    it('repairs missing gh through the prepared GitHub CLI apt metadata path', function (): void {
+        $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+        $tool = NodeTool::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'gh',
+            'expected_state' => 'installed',
+        ]);
+        $shell = new ToolsFixerRemoteShell;
+
+        $action = (new ToolsFixer($shell))->fix($tool, new DriftEntry(
+            family: 'tool',
+            key: 'tool.capability_missing',
+            kind: DriftKind::Missing,
+            summary: 'Tool gh is missing on the target node.',
+            detail: ['tool' => 'gh'],
+        ));
+
+        expect($action)->toMatchArray([
+            'family' => 'tool',
+            'node' => 'app-1',
+            'key' => 'tool.capability_missing',
+            'mode' => 'fix',
+            'status' => 'completed',
+        ])->and($shell->scripts[0])->toContain('# orbit install gh')
+            ->and($shell->scripts[0])->toContain('gh_package_candidate_available')
+            ->and($shell->scripts[0])->toContain('refresh_github_cli_metadata')
+            ->and($shell->scripts[0])->toContain('github_cli_metadata_needs_refresh=1')
+            ->and($shell->scripts[0])->toContain('Dir::Etc::sourcelist="sources.list.d/github-cli.list"')
+            ->and($shell->scripts[0])->toContain('APT::Get::List-Cleanup="0"')
+            ->and($shell->scripts[0])->toContain('if ! sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq gh; then')
+            ->and($shell->scripts[0])->toContain('download_github_cli_keyring');
+    });
+
     it('passes the node managed user into host tool install scripts', function (): void {
         $node = createTestAppHostNode(['name' => 'app-1', 'status' => 'active', 'user' => 'nckrtl']);
         $tool = NodeTool::factory()->create([
