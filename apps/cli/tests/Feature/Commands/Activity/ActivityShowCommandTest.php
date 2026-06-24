@@ -37,7 +37,7 @@ describe('activity:show', function (): void {
             'related' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'activity:show', ['id' => '42']);
+        [$exitCode, $output] = runCommand($this, command: 'activity:show', params: ['id' => '42']);
 
         expect($exitCode)
             ->toBe(0)
@@ -148,5 +148,95 @@ describe('activity:show', function (): void {
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)->and($decoded['error']['code'])->toBe('gateway_unavailable');
+    });
+
+    it('returns gateway_unavailable in human mode when activity data is missing from a success envelope', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['related' => []]));
+
+        [$exitCode, $output] = runCommand($this, command: 'activity:show', params: ['id' => '42']);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($output)
+            ->toContain('gateway_unavailable: Gateway response missing required activity data.')
+            ->and($output)
+            ->not->toContain('"success"');
+    });
+
+    it('renders related activity entries in human output', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'activity' => [
+                'id' => 42,
+                'occurred_at' => '2026-05-02T08:30:00+00:00',
+                'type' => 'workspace.created',
+                'effect' => 'write',
+                'command' => 'workspace:setup',
+            ],
+            'related' => [
+                [
+                    'id' => 41,
+                    'occurred_at' => '2026-05-02T08:29:58+00:00',
+                    'type' => 'workspace.create_requested',
+                    'effect' => 'read',
+                ],
+            ],
+        ], ['related_count' => 1]));
+
+        [$exitCode, $output] = runCommand($this, command: 'activity:show', params: ['id' => '42']);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Related')
+            ->and($output)
+            ->toContain('41')
+            ->and($output)
+            ->toContain('workspace.create_requested')
+            ->and($output)
+            ->toContain('read');
+    });
+
+    it('skips non-array related entries when parsing gateway success data for human output', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'activity' => [
+                'id' => 42,
+                'occurred_at' => '2026-05-02T08:30:00+00:00',
+                'type' => 'workspace.created',
+                'effect' => 'write',
+            ],
+            'related' => [
+                [
+                    'id' => 41,
+                    'occurred_at' => '2026-05-02T08:29:58+00:00',
+                    'type' => 'workspace.create_requested',
+                    'effect' => 'read',
+                ],
+                'skip-me',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'activity:show', ['id' => '42']);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('41')
+            ->and($output)
+            ->not->toContain('skip-me');
+    });
+
+    it('passes malformed gateway success data through unchanged in JSON mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['activity' => 42, 'related' => 'nope']));
+
+        [$exitCode, $output] = runCommand($this, command: 'activity:show', params: ['id' => '42', '--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['activity'])
+            ->toBe(42)
+            ->and($decoded['success']['data']['related'])
+            ->toBe('nope');
     });
 });

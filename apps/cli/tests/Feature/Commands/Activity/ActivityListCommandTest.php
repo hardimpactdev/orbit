@@ -148,6 +148,61 @@ describe('activity:list', function (): void {
             ->not->toContain('"success"');
     });
 
+    it('skips non-array activity rows when parsing gateway success data for human output', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'activities' => [
+                [
+                    'id' => 42,
+                    'occurred_at' => '2026-05-02T08:31:12+00:00',
+                    'effect' => 'read',
+                    'type' => 'node.list',
+                    'command' => 'node:list',
+                ],
+                'skip-me',
+            ],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'activity:list');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('42')
+            ->and($output)
+            ->toContain('node:list')
+            ->and($output)
+            ->not->toContain('skip-me');
+    });
+
+    it('renders an empty human table when activities is missing from gateway success data', function (): void {
+        fakeGateway(fakeSuccessEnvelope([]));
+
+        [$exitCode, $output] = runCommand($this, 'activity:list');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('TIME')
+            ->and($output)
+            ->toContain('ID')
+            ->and($output)
+            ->not->toContain('No activity found.')->and($output)
+            ->not->toContain('"success"');
+    });
+
+    it('passes malformed gateway success data through unchanged in JSON mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope(['activities' => 'nope']));
+
+        [$exitCode, $output] = runCommand($this, 'activity:list', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['activities'])
+            ->toBe('nope');
+    });
+
     it('rejects invalid filters before opening a gateway request', function (
         array $arguments,
         string $field,
@@ -155,7 +210,7 @@ describe('activity:list', function (): void {
     ): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'activity:list', [
+        [$exitCode, $output] = runCommand($this, command: 'activity:list', params: [
             ...$arguments,
             '--json' => true,
         ]);
@@ -184,7 +239,7 @@ describe('activity:list', function (): void {
     it('surfaces the gateway error code on a gateway 500', function (): void {
         fakeGateway(fakeErrorEnvelope('internal_error', 'Server failure.'), 500);
 
-        [$exitCode, $output] = runCommand($this, 'activity:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, command: 'activity:list', params: ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
@@ -201,7 +256,7 @@ describe('activity:list', function (): void {
     it('surfaces gateway_unavailable when the gateway is unreachable', function (): void {
         fakeGatewayDown();
 
-        [$exitCode, $output] = runCommand($this, 'activity:list', ['--json' => true]);
+        [$exitCode, $output] = runCommand($this, command: 'activity:list', params: ['--json' => true]);
 
         $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 

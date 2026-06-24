@@ -38,13 +38,13 @@ final class ActivityShowCommand extends GatewayCommand
             return $this->renderSuccess($response);
         }
 
-        $activity = $this->activityFromGatewayResponse($response);
+        $activity = ActivityGatewayResponse::activityFrom($response);
 
         if ($activity === null) {
             return $this->renderFailure('gateway_unavailable', 'Gateway response missing required activity data.');
         }
 
-        $this->renderActivity($activity, $this->relatedFromGatewayResponse($response));
+        $this->renderActivity($activity, ActivityGatewayResponse::relatedFrom($response));
 
         return self::SUCCESS;
     }
@@ -72,32 +72,6 @@ final class ActivityShowCommand extends GatewayCommand
         }
 
         return (int) $value;
-    }
-
-    /**
-     * @param  array<string, mixed>  $response
-     * @return array<string, mixed>|null
-     */
-    private function activityFromGatewayResponse(array $response): ?array
-    {
-        $activity = $response['success']['data']['activity'] ?? null;
-
-        return is_array($activity) ? $activity : null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $response
-     * @return list<array<string, mixed>>
-     */
-    private function relatedFromGatewayResponse(array $response): array
-    {
-        $related = $response['success']['data']['related'] ?? [];
-
-        if (! is_array($related)) {
-            return [];
-        }
-
-        return array_values(array_filter($related, is_array(...)));
     }
 
     /**

@@ -48,7 +48,7 @@ final class ActivityListCommand extends GatewayCommand
             return $this->renderSuccess($response);
         }
 
-        if ($this->hasNoActivities($response)) {
+        if (ActivityGatewayResponse::hasNoActivities($response)) {
             $this->line('No activity found.');
 
             return self::SUCCESS;
@@ -64,25 +64,10 @@ final class ActivityListCommand extends GatewayCommand
                 $this->subjectLabel($activity),
                 $this->actorLabel($activity),
                 $this->activityString($activity, 'command'),
-            ], $this->activitiesFromResponse($response)),
+            ], ActivityGatewayResponse::activitiesFrom($response)),
         );
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @param  array<string, mixed>  $response
-     * @return list<array<string, mixed>>
-     */
-    private function activitiesFromResponse(array $response): array
-    {
-        $activities = $response['success']['data']['activities'] ?? null;
-
-        if (! is_array($activities)) {
-            return [];
-        }
-
-        return array_values(array_filter($activities, is_array(...)));
     }
 
     /**
@@ -168,13 +153,21 @@ final class ActivityListCommand extends GatewayCommand
 
         $effect = $this->stringFilter('effect');
 
-        if ($effect === false || $effect !== null && ! in_array($effect, self::VALID_EFFECTS, true)) {
+        if ($effect === false) {
+            return $this->invalidFilter('effect', 'unsupported_value');
+        }
+
+        if (is_string($effect) && ! in_array($effect, self::VALID_EFFECTS, true)) {
             return $this->invalidFilter('effect', 'unsupported_value');
         }
 
         $correlation = $this->stringFilter('correlation');
 
-        if ($correlation === false || $correlation !== null && ! Str::isUuid($correlation)) {
+        if ($correlation === false) {
+            return $this->invalidFilter('correlation', 'invalid');
+        }
+
+        if (is_string($correlation) && ! Str::isUuid($correlation)) {
             return $this->invalidFilter('correlation', 'invalid');
         }
 
@@ -222,15 +215,5 @@ final class ActivityListCommand extends GatewayCommand
         ]);
 
         return null;
-    }
-
-    /**
-     * @param  array<string, mixed>  $response
-     */
-    private function hasNoActivities(array $response): bool
-    {
-        $activities = $response['success']['data']['activities'] ?? null;
-
-        return is_array($activities) && $activities === [];
     }
 }
