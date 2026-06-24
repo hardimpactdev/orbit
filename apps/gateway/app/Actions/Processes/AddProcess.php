@@ -147,14 +147,20 @@ final readonly class AddProcess
 
         $app->unsetRelation('processes');
         $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process, $context->runtimeWorkspaceFor($process));
-        $warnings = $context->app instanceof App && $context->workspace === null
-            ? $this->ensureRuntimeUnits->handle($app)
-            : $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
+        $startableRuntimeUnits = $runtimeUnits;
+
+        if ($context->app instanceof App && $context->workspace === null) {
+            $warnings = $this->ensureRuntimeUnits->handle($app);
+        } else {
+            $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits);
+            $warnings = $applyResult['warnings'];
+            $startableRuntimeUnits = $applyResult['applied_runtime_units'];
+        }
 
         if ($start) {
             $warnings = [
                 ...$warnings,
-                ...$this->startRuntimeUnits($context, $process, $runtimeUnits),
+                ...$this->startRuntimeUnits($context, $process, $startableRuntimeUnits),
             ];
         }
 
@@ -243,11 +249,15 @@ final readonly class AddProcess
 
     /**
      * @param  list<array{name: string, context: string}>  $runtimeUnits
-     * @return list<array<string, mixed>>
+     * @return array{
+     *     warnings: list<array<string, mixed>>,
+     *     applied_runtime_units: list<array{name: string, context: string}>
+     * }
      */
     private function applyRuntimeUnits(ProcessOwnerContext $context, App $app, Process $process, array $runtimeUnits): array
     {
         $warnings = [];
+        $appliedRuntimeUnits = [];
         $driver = $this->runtimeDrivers->forProcess($process);
 
         foreach ($runtimeUnits as $runtimeUnit) {
@@ -261,10 +271,17 @@ final readonly class AddProcess
                     'message' => "Process runtime unit '{$runtimeUnit['name']}' could not be rendered or applied.",
                     'next_command' => 'doctor --family=process --restore',
                 ];
+
+                continue;
             }
+
+            $appliedRuntimeUnits[] = $runtimeUnit;
         }
 
-        return $warnings;
+        return [
+            'warnings' => $warnings,
+            'applied_runtime_units' => $appliedRuntimeUnits,
+        ];
     }
 
     /**

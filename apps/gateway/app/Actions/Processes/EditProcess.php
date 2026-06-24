@@ -67,14 +67,20 @@ final readonly class EditProcess
         $process->save();
         $app->unsetRelation('processes');
         $runtimeUnits = $this->runtimeUnitPayload->forProcess($app, $process, $context->runtimeWorkspaceFor($process));
-        $warnings = $context->app !== null && $context->workspace === null
-            ? $this->ensureRuntimeUnits->handle($app)
-            : $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits, $previousRuntime);
+        $restartableRuntimeUnits = $runtimeUnits;
+
+        if ($context->app !== null && $context->workspace === null) {
+            $warnings = $this->ensureRuntimeUnits->handle($app);
+        } else {
+            $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits, $previousRuntime);
+            $warnings = $applyResult['warnings'];
+            $restartableRuntimeUnits = $applyResult['applied_runtime_units'];
+        }
 
         if ($restart) {
             $warnings = [
                 ...$warnings,
-                ...$this->restartRuntimeUnits($context, $process, $runtimeUnits),
+                ...$this->restartRuntimeUnits($context, $process, $restartableRuntimeUnits),
             ];
         }
 
@@ -92,11 +98,15 @@ final readonly class EditProcess
 
     /**
      * @param  list<array{name: string, context: string}>  $runtimeUnits
-     * @return list<array<string, mixed>>
+     * @return array{
+     *     warnings: list<array<string, mixed>>,
+     *     applied_runtime_units: list<array{name: string, context: string}>
+     * }
      */
     private function applyRuntimeUnits(ProcessOwnerContext $context, App $app, Process $process, array $runtimeUnits, ProcessRuntime $previousRuntime): array
     {
         $warnings = [];
+        $appliedRuntimeUnits = [];
         $driver = $this->runtimeDrivers->forProcess($process);
 
         foreach ($runtimeUnits as $runtimeUnit) {
@@ -114,10 +124,17 @@ final readonly class EditProcess
                     'message' => "Process runtime unit '{$name}' could not be rendered or applied.",
                     'next_command' => 'doctor --family=process --restore',
                 ];
+
+                continue;
             }
+
+            $appliedRuntimeUnits[] = $runtimeUnit;
         }
 
-        return $warnings;
+        return [
+            'warnings' => $warnings,
+            'applied_runtime_units' => $appliedRuntimeUnits,
+        ];
     }
 
     /**
