@@ -1,6 +1,8 @@
 <?php
 
 declare(strict_types=1);
+
+use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
 it('promotes prebuilt cli artifacts gateway image and release manifest on GitHub releases', function (): void {
@@ -192,6 +194,6 @@ it('prepares release split package manifests with the exact monorepo version', f
             ->and($gateway)->not->toHaveKey('repositories')
             ->and("{$root}/gateway/composer.lock")->not->toBeFile();
     } finally {
-        (new Process(['rm', '-rf', $root]))->run();
+        File::deleteDirectory($root);
     }
 });
