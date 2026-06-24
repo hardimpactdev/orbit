@@ -41,7 +41,7 @@ PHP;
     return (int) trim($result->output());
 }
 
-it('shows one activity entry on the gateway node as JSON', function (): void {
+it('shows activity details and validates ids from an operator caller', function (): void {
     $config = E2EConfig::fromEnvironment();
     $topology = e2eTopology(E2ETopologyKind::OperatorGateway, withGatewayApi: true);
 
@@ -54,7 +54,7 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
 
         $id = activityShowSeed($topology);
 
-        $result = $topology->ssh(
+        $jsonResult = $topology->ssh(
             'operator',
             sprintf(
                 'cd %s && orbit activity:show %d --json',
@@ -64,34 +64,18 @@ it('shows one activity entry on the gateway node as JSON', function (): void {
             timeoutSeconds: 120,
         );
 
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $activity = $payload['success']['data']['activity'] ?? null;
+        $jsonPayload = json_decode(trim($jsonResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $activity = $jsonPayload['success']['data']['activity'] ?? null;
 
-        expect($activity)->toBeArray()
+        expect($jsonResult->successful())->toBeTrue($jsonResult->output().$jsonResult->errorOutput())
+            ->and($activity)->toBeArray()
             ->and($activity['id'])->toBe($id)
             ->and($activity['type'])->toBe('node.created')
             ->and($activity['effect'])->toBe('write')
-            ->and($payload['success']['data']['related'])->toBeArray()
-            ->and($payload['success']['meta']['related_count'])->toBe(0);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
+            ->and($jsonPayload['success']['data']['related'])->toBeArray()
+            ->and($jsonPayload['success']['meta']['related_count'])->toBe(0);
 
-it('shows one activity entry human output from a operator caller', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGateway, withGatewayApi: true);
-
-    try {
-        $topology->withCurrentCheckout(roles: ['operator', 'gateway']);
-        $gatewayApiIp = $topology->lease()->gatewayApiIp();
-
-        e2eRestartGatewayApi($topology, 'activity-show-human');
-        E2EGatewayApi::waitForGatewayApi($topology->instance('operator'), $config->operatorUser, $topology->lease()->sshKeyPair(), gatewayIp: $gatewayApiIp);
-
-        $id = activityShowSeed($topology);
-
-        $result = $topology->ssh(
+        $humanResult = $topology->ssh(
             'operator',
             sprintf(
                 'cd %s && orbit activity:show %d',
@@ -101,25 +85,14 @@ it('shows one activity entry human output from a operator caller', function (): 
             timeoutSeconds: 120,
         );
 
-        expect($result->successful())->toBeTrue()
-            ->and($result->output())->toContain("Activity: {$id}")
-            ->and($result->output())->toContain('Type')
-            ->and($result->output())->toContain('node.created')
-            ->and($result->output())->toContain('Effect')
-            ->and($result->output())->toContain('write');
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
+        expect($humanResult->successful())->toBeTrue()
+            ->and($humanResult->output())->toContain("Activity: {$id}")
+            ->and($humanResult->output())->toContain('Type')
+            ->and($humanResult->output())->toContain('node.created')
+            ->and($humanResult->output())->toContain('Effect')
+            ->and($humanResult->output())->toContain('write');
 
-it('returns validation_failed when id is missing from a operator caller', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
-
-    try {
-        $topology->withCurrentCheckout(roles: ['operator']);
-
-        $result = $topology->ssh(
+        $missingResult = $topology->ssh(
             'operator',
             sprintf(
                 'cd %s && orbit activity:show --json',
@@ -129,25 +102,14 @@ it('returns validation_failed when id is missing from a operator caller', functi
             allowFailure: true,
         );
 
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $missingPayload = json_decode(trim($missingResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeFalse()
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['field'])->toBe('id')
-            ->and($payload['error']['meta']['reason'])->toBe('missing');
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-operator_gateway', 'e2e-feature-operator-gateway');
+        expect($missingResult->successful())->toBeFalse()
+            ->and($missingPayload['error']['code'])->toBe('validation_failed')
+            ->and($missingPayload['error']['meta']['field'])->toBe('id')
+            ->and($missingPayload['error']['meta']['reason'])->toBe('missing');
 
-it('returns validation_failed for an invalid id from a operator caller', function (): void {
-    $config = E2EConfig::fromEnvironment();
-    $topology = e2eTopology(E2ETopologyKind::OperatorGateway);
-
-    try {
-        $topology->withCurrentCheckout(roles: ['operator']);
-
-        $result = $topology->ssh(
+        $invalidResult = $topology->ssh(
             'operator',
             sprintf(
                 'cd %s && orbit activity:show nope --json',
@@ -157,11 +119,11 @@ it('returns validation_failed for an invalid id from a operator caller', functio
             allowFailure: true,
         );
 
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $invalidPayload = json_decode(trim($invalidResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeFalse()
-            ->and($payload['error']['code'])->toBe('validation_failed')
-            ->and($payload['error']['meta']['reason'])->toBe('invalid');
+        expect($invalidResult->successful())->toBeFalse()
+            ->and($invalidPayload['error']['code'])->toBe('validation_failed')
+            ->and($invalidPayload['error']['meta']['reason'])->toBe('invalid');
     } finally {
         $topology->cleanup();
     }
