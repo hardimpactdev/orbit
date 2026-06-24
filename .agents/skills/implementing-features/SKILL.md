@@ -571,7 +571,7 @@ moving on to durable E2E.
    signal record and update the smallest guardrail target in the same worktree.
    If it is durable but broader than the slice, report a scoped follow-up
    instead of expanding ownership.
-11. Check whether the project-owned Orbit skill under `skills/orbit/**` is
+11. Check whether the project-owned Orbit skill under `.agents/skills/orbit/**` is
    affected. Update it in the same worktree when the change alters public CLI
    behavior, command signatures, node roles, state families, app/workspace
    runtime behavior, deployment/profile/update flows, or operational guidance
@@ -782,8 +782,8 @@ is not required after ordinary `composer test:e2e` runs.
   signal records when they are in the owned scope; otherwise report a focused
   curation follow-up.
 - Keep the project-owned Orbit skill in sync with product and implementation
-  changes. `skills/orbit/SKILL.md` is the concise external-LLM entry point;
-  `skills/orbit/references/*.md` carries command-family detail. If a change
+  changes. `.agents/skills/orbit/SKILL.md` is the concise external-LLM entry point;
+  `.agents/skills/orbit/references/*.md` carries command-family detail. If a change
   affects how another LLM should operate Orbit, update the matching skill
   reference file in the same commit. If the skill is not affected, say so in
   the report instead of leaving the check implicit.

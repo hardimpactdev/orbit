@@ -116,6 +116,17 @@ it('keeps expected monorepo boost skill directories at the repo root', function 
     }
 });
 
+it('keeps the project-owned orbit skill in the agents skill catalog', function (): void {
+    $codex = config('boost.agents.codex');
+    $claudeCode = config('boost.agents.claude_code');
+
+    expect(repo_path('.agents/skills/orbit/SKILL.md'))->toBeFile()
+        ->and(repo_path('.agents/skills/orbit/references/concepts.md'))->toBeFile()
+        ->and(repo_path('skills/orbit'))->not->toBeDirectory()
+        ->and(realpath(base_path((string) $codex['skills_path'])))->toBe(realpath(repo_path('.agents/skills')))
+        ->and(realpath(base_path((string) $claudeCode['skills_path'])))->toBe(realpath(repo_path('.agents/skills')));
+});
+
 it('does not keep gateway-local generated agent artifacts', function (): void {
     $gatewayRoot = repo_path('apps/gateway');
 
