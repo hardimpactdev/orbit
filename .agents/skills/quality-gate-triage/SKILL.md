@@ -102,6 +102,18 @@ expensive gates as part of analysis. A rerun can be the next command only after
 classification names why the rerun is useful, such as confirming a
 flake on the narrowest lane.
 
+When the expected lane is provider-specific E2E, pass the provider gates
+explicitly instead of relying on the analyzer default:
+
+```bash
+composer quality-gate:analyze -- --gate=e2e-docker
+composer quality-gate:analyze -- --gate=e2e-incus
+composer quality-gate:analyze -- --gate=e2e-docker --gate=e2e-incus
+```
+
+Bare `composer quality-gate:analyze` is not enough for Docker/Incus-only
+classification because it defaults to the broad `quality-check` gate.
+
 Before a worktree merge, run `composer quality-gate:final-check` when timing
 artifacts exist or when the feature owner needs to know that timing evidence is
 missing. This final check wraps the analyzer and, without explicit `--gate`

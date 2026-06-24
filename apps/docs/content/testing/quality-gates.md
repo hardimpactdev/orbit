@@ -74,6 +74,14 @@ Inspect existing artifacts with:
 composer quality-gate:analyze
 ```
 
+When reviewing only provider E2E artifacts, pass the provider gates explicitly:
+
+```bash
+composer quality-gate:analyze -- --gate=e2e-docker
+composer quality-gate:analyze -- --gate=e2e-incus
+composer quality-gate:analyze -- --gate=e2e-docker --gate=e2e-incus
+```
+
 The analyzer reads `.orbit/quality-gates/` only. It reports missing evidence,
 recent run durations, and warning-only baseline observations when a local
 baseline exists. It does not rerun `composer quality-check` or E2E lanes.
