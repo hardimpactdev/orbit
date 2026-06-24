@@ -66,6 +66,13 @@ another Codex thread (`019efa5e-35b1-7d40-8c21-2ccc5e3660e7`) with similar
 symptoms, but that exact transcript was not present in the local JSONL, logs,
 or memory stores when this guardrail was tightened.
 
+It reappeared again during the Mago baseline cleanup handoff. The loop improver
+merged and pushed the feature correctly, but only started the durable loop
+hardening after the user pointed out that waiting time should be used for
+process fixes, not just worker check-ins or steering. This was already covered
+by the Active Loop Improvement section, but the harness did not name the
+concrete waiting-time behavior.
+
 ## Missing Guardrail
 
 The durable docs existed, but the main execution workflow did not make them
@@ -122,6 +129,13 @@ contains template/pending finalization fields. This turns the existing manual
 requirement into a cheap boundary check without mining sessions on every run or
 auto-promoting raw `.orbit/` artifacts.
 
+After the Mago baseline cleanup recurrence, `HARNESS.md` now states that
+waiting for a worker, reviewer, retained terminal, or quality gate is active
+loop time. The loop improver should use that time to inspect evidence, search
+signals, update durable scratchpad state, or patch a small guardrail in a
+separate harness worktree, and should reserve steering for blockers, idle
+workers, or contract drift.
+
 ## Verification
 
 `rg -n "HARNESS.md|LOOP.md|HARNESS_SIGNALS.md|Harness signals|guardrail target|durable harness signal|feedback loop" .agents/skills/implementing-features/SKILL.md`
@@ -144,6 +158,16 @@ rg -n "Active Loop Improvement|scratchpad is guidance|do not wait for the user|l
 
 This shows the active loop-improver duty is discoverable from the root harness
 and this signal record.
+
+For the waiting-time recurrence, run:
+
+```bash
+rg -n "Waiting for a feature owner|active loop time|repeated steering" HARNESS.md harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
+```
+
+This shows that waiting time is explicitly reserved for evidence inspection,
+signal triage, scratchpad updates, and small guardrail work unless the worker is
+blocked, idle, or drifting.
 
 For the merge-boundary recurrence, run:
 

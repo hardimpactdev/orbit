@@ -193,6 +193,13 @@ classifies it immediately:
 - If the gap is only a one-off local cleanup, record the rejection rationale in
   `.orbit/loop.md` or the feature report instead of adding a new rule.
 
+Waiting for a feature owner, reviewer, retained terminal, or quality gate is
+active loop time. Use it to inspect the latest worker evidence, search
+`harness-signals/` for matching process failures, update the feature scratchpad
+when durable state changed, or patch a small guardrail in a separate harness
+worktree. Do not fill waiting time with repeated steering unless the worker is
+blocked, idle without useful progress, or drifting from the contract.
+
 Do not wait for the user to ask whether the loop should be improved. When the
 user has to repeat the same correction, treat that as a loop signal and either
 patch the durable guardrail, explain why an existing guardrail already covers
