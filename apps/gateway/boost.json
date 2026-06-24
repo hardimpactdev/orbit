@@ -8,15 +8,22 @@
     "mcp": true,
     "nightwatch": false,
     "packages": [
+        "hardimpactdev/librarian",
+        "hardimpactdev/orbit-core",
+        "hardimpactdev/orbit-sdk-laravel",
         "spatie/guidelines-skills"
     ],
     "sail": false,
     "skills": [
         "laravel-best-practices",
         "pest-testing",
+        "librarian",
+        "orbit-core-development",
+        "orbit-sdk-development",
         "spatie-javascript",
         "spatie-laravel-php",
         "spatie-security",
-        "spatie-version-control"
+        "spatie-version-control",
+        "orbit-cli-development"
     ]
 }

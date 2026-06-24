@@ -87,7 +87,6 @@ product authority and are not linted as product docs.
 - Keep the command surface contract-first. Use `.agents/skills/command-designer`
   when designing or changing command behavior.
 
-
 ## PHP And Laravel
 
 - Use `declare(strict_types=1)` in PHP files.
@@ -136,6 +135,20 @@ Orbit-specific instructions in this file override the generated Laravel Boost
 and Spatie guidelines below when they conflict. Use Boost and Spatie as the
 PHP/Laravel baseline, not as permission to override Orbit's command contracts,
 clean-rebuild constraints, or local conventions.
+
+## Laravel Boost In This Monorepo
+
+- Laravel Boost is installed only in `apps/gateway/`. Do not add a root Laravel
+  app or root Boost install.
+- Root agent MCP configs are authoritative. They start Boost through
+  `php apps/gateway/artisan boost:mcp` from the repository root.
+- Keep Boost maintenance on `boost:update`, via `bin/orbit-boost-update` or the
+  gateway `post-update-cmd`. Do not automate `boost:install --silent`; explicit
+  `boost:install` is setup/reconfiguration and can rewrite agent artifacts.
+- Gateway Boost tools are gateway-scoped. Use package/root skills for
+  `apps/cli/`, `packages/core/`, `packages/sdk/`, and docs/Librarian work.
+- From the repo root, run gateway Artisan through `bin/orbit-gateway-artisan`
+  or direct `php apps/gateway/artisan`. Do not assume a root `artisan` exists.
 
 ===
 
@@ -221,25 +234,16 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Artisan
 
-- Run gateway Artisan commands from the repo root with `bin/orbit-gateway-artisan`
-  (e.g., `bin/orbit-gateway-artisan route:list`). Use
-  `bin/orbit-gateway-artisan list` to discover available commands and
-  `bin/orbit-gateway-artisan [command] --help` to check parameters.
-- Inspect routes with `bin/orbit-gateway-artisan route:list`. Filter with:
-  `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`,
-  `--only-vendor`.
-- Read gateway configuration values from the repo root using dot notation:
-  `bin/orbit-gateway-artisan config:show app.name`,
-  `bin/orbit-gateway-artisan config:show database.default`. Or read config
-  files directly from `apps/gateway/config/`.
-- To check gateway environment variables, read `apps/gateway/.env` directly.
+- Run Artisan commands directly via the command line (e.g., `php artisan route:list`). Use `php artisan list` to discover available commands and `php artisan [command] --help` to check parameters.
+- Inspect routes with `php artisan route:list`. Filter with: `--method=GET`, `--name=users`, `--path=api`, `--except-vendor`, `--only-vendor`.
+- Read configuration values using dot notation: `php artisan config:show app.name`, `php artisan config:show database.default`. Or read config files directly from the `config/` directory.
+- To check environment variables, read the `.env` file directly.
 
 ## Tinker
 
 - Execute PHP in app context for debugging and testing code. Do not create models without user approval, prefer tests with factories instead. Prefer existing Artisan commands over custom tinker code.
-- Always use single quotes to prevent shell expansion:
-  `bin/orbit-gateway-artisan tinker --execute 'Your::code();'`
-  - Double quotes for PHP strings inside: `bin/orbit-gateway-artisan tinker --execute 'User::where("active", true)->count();'`
+- Always use single quotes to prevent shell expansion: `php artisan tinker --execute 'Your::code();'`
+  - Double quotes for PHP strings inside: `php artisan tinker --execute 'User::where("active", true)->count();'`
 
 === php rules ===
 
@@ -263,10 +267,7 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 # Test Enforcement
 
 - Every change must be programmatically tested. Write a new test or update an existing test, then run the affected tests to make sure they pass.
-- Run the minimum number of tests needed to ensure code quality and speed. From
-  the repo root, use `bin/orbit-gateway-pest --compact` with a specific
-  filename or filter, or run `php artisan test --compact` from inside
-  `apps/gateway`.
+- Run the minimum number of tests needed to ensure code quality and speed. Use `php artisan test --compact` with a specific filename or filter.
 
 === laravel/core rules ===
 
@@ -309,13 +310,60 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 
 ## Pest
 
-- This project uses Pest for testing. From the repo root, create gateway tests
-  with `bin/orbit-gateway-artisan make:test --pest {name}`, or run
-  `php artisan make:test --pest {name}` from inside `apps/gateway`.
+- This project uses Pest for testing. Create tests: `php artisan make:test --pest {name}`.
 - The `{name}` argument should not include the test suite directory. Use `php artisan make:test --pest SomeFeatureTest` instead of `php artisan make:test --pest Feature/SomeFeatureTest`.
-- Run gateway tests from the repo root with `bin/orbit-gateway-pest --compact`
-  or filter with `bin/orbit-gateway-pest --compact --filter=testName`.
+- Run tests: `php artisan test --compact` or filter: `php artisan test --compact --filter=testName`.
 - Do NOT delete tests without approval.
+
+=== hardimpactdev/librarian rules ===
+
+# Librarian
+
+Librarian gives Laravel projects a strict documentation structure for keeping
+product intent, code, and tests aligned.
+
+## Documentation Spine
+
+Projects using Librarian should maintain this docs structure:
+
+```text
+docs/
+  README.md
+  mission.md
+  architecture.md
+  tech-stack.md
+  concepts.md
+  domains/
+```
+
+`docs/README.md` and `docs/concepts.md` are generated by Librarian and should
+not be hand-edited. Put project-specific prose in `mission.md`,
+`architecture.md`, `tech-stack.md`, and domain files below `docs/domains`.
+
+## Commands
+
+Use Librarian's Artisan commands instead of manually creating or reshuffling the
+docs spine:
+
+```bash
+php artisan librarian:init
+php artisan librarian:domain billing
+php artisan librarian:domains:normalize
+php artisan librarian:build
+php artisan librarian:lint
+```
+
+Use `librarian:build` after changing docs that affect generated indexes. Use
+`librarian:lint` as the read-only consistency check in CI.
+
+## Writing Librarian Docs
+
+- Write concrete product intent, not generic template filler.
+- Keep mission, architecture, tech stack, and domain docs aligned with code and
+  tests.
+- Use lowercase kebab-case domain slugs.
+- Prefer local markdown links that resolve inside the docs tree.
+- Remove scaffold prompt text once the project has real content.
 
 === spatie/guidelines-skills rules ===
 

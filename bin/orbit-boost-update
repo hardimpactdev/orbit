@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)/_orbit-gateway-paths.sh"
+
+ROOT="$(orbit_repo_root)"
+ARTISAN="$(orbit_gateway_artisan_path "$ROOT")"
+
+cd "$ROOT"
+
+export APP_ENV="${APP_ENV:-local}"
+export APP_DEBUG="${APP_DEBUG:-true}"
+
+exec php "$ARTISAN" boost:update --ansi --no-interaction
