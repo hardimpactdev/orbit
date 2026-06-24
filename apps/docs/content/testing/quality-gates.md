@@ -165,7 +165,8 @@ that was promoted into the local baseline. The analyzer prints the latest
 artifact's subgate durations and compares them with the baseline subgate
 durations using the same warning threshold. This values the final run in a
 feature worktree instead of an earlier faster run from a different
-implementation state.
+implementation state. Subgate warnings also require at least a one-second
+absolute increase so harmless sub-second jitter does not trigger triage.
 
 Timing baseline observations remain warning-only. `composer quality-gate:analyze`
 and `composer quality-gate:final-check` exit successfully even when a run

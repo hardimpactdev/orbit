@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 const DEFAULT_WARNING_THRESHOLD_PERCENT = 25;
+const MIN_SUBGATE_WARNING_DELTA_SECONDS = 1.0;
 const TIMING_TRIAGE_SKILL_PATH = '.agents/skills/quality-gate-triage/SKILL.md';
 
 $options = getopt('', [
@@ -460,8 +461,13 @@ function write_subgate_duration_warnings(string $gate, array $artifact, array $b
         }
 
         $runSeconds = $artifactDurations[$label];
+        $deltaSeconds = $runSeconds - $baselineSeconds;
 
         if ($runSeconds <= ($baselineSeconds * $thresholdMultiplier)) {
+            continue;
+        }
+
+        if ($deltaSeconds < MIN_SUBGATE_WARNING_DELTA_SECONDS) {
             continue;
         }
 

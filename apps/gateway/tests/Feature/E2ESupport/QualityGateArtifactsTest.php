@@ -930,6 +930,7 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
         'source_artifact' => 'quality-check-2026-06-23T095000Z-baseline.json',
         'updated_at' => '2026-06-23T09:50:00Z',
         'subgate_durations' => [
+            'core_rector' => 0.3,
             'docs_lint' => 12.0,
             'gateway_pest' => 180.0,
         ],
@@ -946,7 +947,7 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
         'exit_code' => 0,
         'git' => ['branch' => 'main', 'commit' => 'profiling123'],
         'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
-        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0, 'cli_pest' => 999.9],
+        'subgate_durations' => ['gateway_pest' => 245.5, 'docs_lint' => 12.0, 'cli_pest' => 999.9, 'core_rector' => 0.5],
     ], JSON_THROW_ON_ERROR));
 
     try {
@@ -965,9 +966,11 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
             ->toContain('subgate duration: cli_pest=999.9s')
             ->toContain('subgate duration: gateway_pest=245.5s')
             ->toContain('subgate duration: docs_lint=12.0s')
+            ->toContain('subgate duration: core_rector=0.5s')
             ->toContain('warning: subgate [quality-check:gateway_pest] duration 245.5s exceeds local baseline 180.0s (warning-only)')
             ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
             ->not->toContain('warning: subgate [quality-check:cli_pest]')
+            ->not->toContain('warning: subgate [quality-check:core_rector]')
             ->not->toContain('best subgate duration')
             ->not->toContain('best_subgate_durations');
     } finally {
