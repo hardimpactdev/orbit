@@ -206,6 +206,51 @@ it('uses the managed target node namespace without aliases for Docker E2E proces
     }
 });
 
+it('publishes WireGuard-bound ports for node owned managed service process containers', function (): void {
+    $process = new ProcessDockerContainer(
+        name: 'mailpit',
+        image: 'axllent/mailpit:latest',
+        network: 'orbit-network',
+        restartPolicy: 'unless-stopped',
+        appSlug: 'beast',
+        workspaceSlug: null,
+        processSlug: 'mailpit',
+        workingDirectory: '/',
+        command: '/mailpit',
+        environment: [],
+        mounts: [],
+        networkAliases: ['mailpit'],
+        publishedPorts: [
+            '10.6.0.7:1025:1025',
+            '10.6.0.7:8025:8025',
+        ],
+    );
+
+    $command = (new DockerCommandBuilder)->createIdle($process);
+
+    expect($command)->toContain("--publish '10.6.0.7:1025:1025'")
+        ->and($command)->toContain("--publish '10.6.0.7:8025:8025'");
+});
+
+it('does not publish ports for app owned docker process containers', function (): void {
+    $process = new ProcessDockerContainer(
+        name: 'orbit_docs_main_queue',
+        image: 'ghcr.io/hardimpactdev/orbit-frankenphp:1-php8.5-bookworm',
+        network: 'orbit-network',
+        restartPolicy: 'no',
+        appSlug: 'docs',
+        workspaceSlug: null,
+        processSlug: 'queue',
+        workingDirectory: '/app',
+        command: 'php artisan queue:work',
+        environment: [],
+        mounts: [],
+        networkAliases: ['orbit_docs_main_queue'],
+    );
+
+    expect((new DockerCommandBuilder)->createIdle($process))->not->toContain('--publish');
+});
+
 it('escapes docker lifecycle command arguments', function (): void {
     $builder = new DockerCommandBuilder;
     $unsafeName = "orbit gateway'; rm -rf /";

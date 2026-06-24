@@ -19,6 +19,7 @@ orbit process:add opencode-server "opencode serve -a" --node=app-dev-1 --runtime
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
 orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3 --image=docker.io/library/mysql:8.3
 orbit process:add redis --node=database-1 --service=redis --runtime=docker --version=7
+orbit process:add mailpit --node=beast --service=mailpit --runtime=docker
 orbit process:add file-watcher "watch.sh" --app=static-site --runtime=systemd
 orbit process:add vite "npm run dev" --app=docs --json
 ```
@@ -33,9 +34,10 @@ Use this command to define a managed process for a node, app, or workspace.
 - **Runtime Boundary**: App/workspace host-command processes use `systemd` on Linux. `docker-swarm` is only valid for node-owned managed service processes. `docker` is valid for managed services and Orbit-managed runtime processes.
 - **Runtime Naming**: `systemctl` is the node command adapter, not the runtime name.
 - **Tool Dependency**: `--tool=<tool>` records the installed node capability the process uses. The process still owns start, stop, restart, and logs.
-- **Managed Service**: `--service=<mysql|redis>` materializes a node-owned
+- **Managed Service**: `--service=<service>` materializes a node-owned
   runnable service process. The process name is independent of the service
   identifier; `mysql8` is only a process name and never implies MySQL.
+  Mailpit publishes SMTP and Web UI ports on the owning node's WireGuard address.
   `--version` selects the service version. For Docker services, service +
   runtime + version resolve the default official image; `--image` overrides that
   image explicitly. Managed services cannot use `--tool` and are not valid for

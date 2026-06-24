@@ -24,11 +24,15 @@ class ProcessDockerContainer
     /** @var list<string> */
     private readonly array $networkAliases;
 
+    /** @var list<string> */
+    private readonly array $publishedPorts;
+
     /**
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      * @param  list<string>  $networkAliases
      * @param  list<array{source?: string, name?: string, target: string, read_only?: bool}>  $volumes
+     * @param  list<string>  $publishedPorts
      */
     public function __construct(
         private readonly string $name,
@@ -44,11 +48,13 @@ class ProcessDockerContainer
         array $mounts,
         array $networkAliases,
         array $volumes = [],
+        array $publishedPorts = [],
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
         $this->volumes = $this->normalizeVolumes($volumes);
         $this->networkAliases = $this->normalizeNetworkAliases($networkAliases);
+        $this->publishedPorts = $this->normalizePublishedPorts($publishedPorts);
     }
 
     public function name(): string
@@ -120,6 +126,12 @@ class ProcessDockerContainer
         return $this->networkAliases;
     }
 
+    /** @return list<string> */
+    public function publishedPorts(): array
+    {
+        return $this->publishedPorts;
+    }
+
     /** @return array<string, string> */
     public function labels(): array
     {
@@ -159,7 +171,8 @@ class ProcessDockerContainer
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     volumes: list<array{source: string, target: string, read_only: bool}>,
-     *     network_aliases: list<string>
+     *     network_aliases: list<string>,
+     *     published_ports: list<string>
      * }
      */
     public function spec(): array
@@ -178,6 +191,7 @@ class ProcessDockerContainer
             'mounts' => $this->mounts,
             'volumes' => $this->volumes,
             'network_aliases' => $this->networkAliases,
+            'published_ports' => $this->publishedPorts,
         ];
     }
 
@@ -250,5 +264,21 @@ class ProcessDockerContainer
         sort($aliases);
 
         return $aliases;
+    }
+
+    /**
+     * @param  list<string>  $publishedPorts
+     * @return list<string>
+     */
+    private function normalizePublishedPorts(array $publishedPorts): array
+    {
+        $ports = array_values(array_unique(array_filter(
+            array_map(trim(...), $publishedPorts),
+            fn (string $port): bool => $port !== '',
+        )));
+
+        sort($ports);
+
+        return $ports;
     }
 }

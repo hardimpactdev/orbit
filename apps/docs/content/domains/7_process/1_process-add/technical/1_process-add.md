@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|redis>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<service>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -29,7 +29,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:add`; pass `--app` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
-| `service` | `--service` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported managed service identifier: `mysql` or `redis`. The process name does not imply the service. |
+| `service` | `--service` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported managed service identifier from the gateway service catalog. The process name does not imply the service. |
 | `version` | `--version` | Optional for one-version services; required when the service has multiple version families. | When `service` is absent. | Service default when unambiguous. | Supported managed service version or version family. CLI implementation normalizes public `--version` to internal `--service-version` because Symfony reserves the global `--version` flag. |
 | `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |

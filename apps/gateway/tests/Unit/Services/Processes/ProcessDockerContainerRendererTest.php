@@ -263,6 +263,45 @@ it('emits docker create (not docker run -d) when the manager builds the idle cre
         ->and(substr($created, strlen('docker create')))->toBe(substr($run, strlen('docker run -d')));
 });
 
+it('renders WireGuard-bound published ports for node owned managed service docker processes', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'beast',
+        'wireguard_address' => '10.6.0.7',
+    ]);
+    $app = makeProcessRendererApp(['node_id' => $node->id]);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'mailpit',
+        'command' => '/mailpit',
+        'runtime_config' => [
+            'image' => 'axllent/mailpit:latest',
+            'ports' => [
+                ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
+                ['published' => 8025, 'target' => 8025, 'protocol' => 'tcp'],
+            ],
+        ],
+    ]);
+
+    $container = processDockerRenderer()->render($app, $process);
+
+    expect($container->publishedPorts())->toBe([
+        '10.6.0.7:1025:1025',
+        '10.6.0.7:8025:8025',
+    ]);
+});
+
+it('does not publish ports for app owned docker process containers', function (): void {
+    $app = makeProcessRendererApp();
+    $process = makeProcessRendererProcess($app, [
+        'runtime_config' => [
+            'ports' => [
+                ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
+            ],
+        ],
+    ]);
+
+    expect(processDockerRenderer()->render($app, $process)->publishedPorts())->toBe([]);
+});
+
 it('escapes shell metacharacters in the process command so the in-container shell still parses them through -c', function (): void {
     $app = makeProcessRendererApp();
     $process = makeProcessRendererProcess($app, [

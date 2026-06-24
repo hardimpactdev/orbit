@@ -230,6 +230,68 @@ it('rejects service process endpoints when the owning node has no WireGuard addr
     );
 })->throws(GatewayApiException::class, "Node 'database-1' cannot host service process endpoints without a WireGuard address.");
 
+it('resolves Mailpit managed service with SMTP and UI endpoints', function (): void {
+    $node = Node::factory()->create([
+        'name' => 'beast',
+        'wireguard_address' => '10.6.0.7',
+    ]);
+
+    $mailpit = app(ProcessServiceCatalog::class)->resolve(
+        service: 'mailpit',
+        version: null,
+        runtime: ProcessRuntime::Docker,
+        node: $node,
+        processName: 'mailpit',
+    );
+
+    expect(app(ProcessServiceCatalog::class)->names())->toContain('mailpit')
+        ->and($mailpit->command)->toBe('/mailpit')
+        ->and($mailpit->versionFamily)->toBe('latest')
+        ->and($mailpit->version)->toBe('latest')
+        ->and($mailpit->runtimeConfig)->toMatchArray([
+            'service' => 'mailpit',
+            'version_family' => 'latest',
+            'version' => 'latest',
+            'image' => 'axllent/mailpit:latest',
+            'service_name' => 'orbit-mailpit',
+            'credentials' => [],
+        ])
+        ->and($mailpit->runtimeConfig['endpoint'])->toMatchArray([
+            'name' => 'smtp',
+            'kind' => 'tcp',
+            'host' => '10.6.0.7',
+            'port' => 1025,
+        ])
+        ->and($mailpit->runtimeConfig['endpoints'])->toBe([
+            [
+                'name' => 'smtp',
+                'kind' => 'tcp',
+                'host' => '10.6.0.7',
+                'port' => 1025,
+            ],
+            [
+                'name' => 'ui',
+                'kind' => 'tcp',
+                'host' => '10.6.0.7',
+                'port' => 8025,
+            ],
+        ])
+        ->and($mailpit->runtimeConfig['ports'])->toBe([
+            [
+                'published' => 1025,
+                'target' => 1025,
+                'protocol' => 'tcp',
+            ],
+            [
+                'published' => 8025,
+                'target' => 8025,
+                'protocol' => 'tcp',
+            ],
+        ])
+        ->and($mailpit->runtimeConfig['healthcheck']['command'])->toContain('8025')
+        ->and($mailpit->runtimeConfig['labels']['orbit.process.service'])->toBe('mailpit');
+});
+
 it('rejects unsupported managed service inputs', function (Closure $operation, string $field, string $reason): void {
     $node = Node::factory()->create();
 

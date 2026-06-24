@@ -337,6 +337,73 @@ describe('ProcessStoreController', function (): void {
             ->and($remoteShell->scripts[1])->toContain("sudo systemctl enable 'opencode-server.service'");
     });
 
+    it('creates node owned Mailpit managed service processes with SMTP and UI endpoints', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mailpit',
+            'service' => 'mailpit',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.name', 'mailpit')
+            ->assertJsonPath('success.data.process.node', 'beast')
+            ->assertJsonPath('success.data.process.tool', null)
+            ->assertJsonPath('success.data.process.runtime', 'docker')
+            ->assertJsonPath('success.data.runtime_units.0.name', 'mailpit');
+
+        $process = Process::query()->where('name', 'mailpit')->firstOrFail();
+
+        expect($process->owner_type)->toBe($node->getMorphClass())
+            ->and($process->owner_id)->toBe($node->id)
+            ->and($process->tool)->toBeNull()
+            ->and($process->runtime)->toBe(ProcessRuntime::Docker)
+            ->and($process->runtime_config)->toMatchArray([
+                'service' => 'mailpit',
+                'version_family' => 'latest',
+                'version' => 'latest',
+            ])
+            ->and($process->runtime_config['endpoint'])->toMatchArray([
+                'name' => 'smtp',
+                'host' => '10.6.0.7',
+                'port' => 1025,
+            ])
+            ->and($process->runtime_config['endpoints'])->toBe([
+                [
+                    'name' => 'smtp',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 1025,
+                ],
+                [
+                    'name' => 'ui',
+                    'kind' => 'tcp',
+                    'host' => '10.6.0.7',
+                    'port' => 8025,
+                ],
+            ])
+            ->and($process->runtime_config['labels']['orbit.process.service'])->toBe('mailpit')
+            ->and($process->command)->toBe('/mailpit');
+
+        $create = collect($remoteShell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+
+        expect($create)->toBeString()
+            ->toContain("--publish '10.6.0.7:1025:1025'")
+            ->toContain("--publish '10.6.0.7:8025:8025'");
+    });
+
     it('creates node owned MySQL managed service processes without tool rows', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([

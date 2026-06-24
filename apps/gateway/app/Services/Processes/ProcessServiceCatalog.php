@@ -60,25 +60,14 @@ final readonly class ProcessServiceCatalog
         $serviceName = "orbit-{$processName}";
         $volumeName = "orbit-{$processName}";
         $dataPath = "/var/lib/orbit/processes/{$processName}";
+        $servicePorts = $this->servicePorts($entry, $host, $resolved['published_port'], $processName);
 
         $runtimeConfig = [
             'service' => $service,
             'version_family' => $resolved['family'],
             'version' => $resolved['version'],
-            'endpoint' => [
-                'name' => $processName,
-                'kind' => 'tcp',
-                'host' => $host,
-                'port' => $resolved['published_port'],
-            ],
-            'endpoints' => [
-                [
-                    'name' => $processName,
-                    'kind' => 'tcp',
-                    'host' => $host,
-                    'port' => $resolved['published_port'],
-                ],
-            ],
+            'endpoint' => $servicePorts['endpoint'],
+            'endpoints' => $servicePorts['endpoints'],
             'service_name' => $serviceName,
             'environment' => $entry['environment'],
             'network_aliases' => array_values(array_unique([$service, $processName])),
@@ -100,7 +89,9 @@ final readonly class ProcessServiceCatalog
             $runtimeConfig['command_mode'] = $entry['command_mode'];
         }
 
-        if (is_int($entry['target_port'] ?? null)) {
+        if ($servicePorts['ports'] !== []) {
+            $runtimeConfig['ports'] = $servicePorts['ports'];
+        } elseif (is_int($entry['target_port'] ?? null)) {
             $runtimeConfig['ports'] = [
                 [
                     'published' => $resolved['published_port'],
@@ -187,6 +178,39 @@ final readonly class ProcessServiceCatalog
                         'default' => '9',
                         'versions' => ['9'],
                         'port' => 3309,
+                    ],
+                ],
+            ],
+            'mailpit' => [
+                'runtimes' => [ProcessRuntime::Docker],
+                'image' => 'axllent/mailpit',
+                'command' => '/mailpit',
+                'environment' => [],
+                'credentials' => [],
+                'healthcheck' => [
+                    'command' => 'wget -qO- http://127.0.0.1:8025/livez >/dev/null',
+                    'kind' => 'command',
+                ],
+                'service_ports' => [
+                    [
+                        'name' => 'smtp',
+                        'published' => 1025,
+                        'target' => 1025,
+                        'protocol' => 'tcp',
+                        'primary' => true,
+                    ],
+                    [
+                        'name' => 'ui',
+                        'published' => 8025,
+                        'target' => 8025,
+                        'protocol' => 'tcp',
+                    ],
+                ],
+                'versions' => [
+                    'latest' => [
+                        'default' => 'latest',
+                        'versions' => ['latest'],
+                        'port' => 1025,
                     ],
                 ],
             ],
@@ -440,6 +464,110 @@ final readonly class ProcessServiceCatalog
             ]);
         }
 
+    }
+
+    /**
+     * @param  array<string, mixed>  $entry
+     * @return array{
+     *     endpoint: array{name: string, kind: string, host: string, port: int},
+     *     endpoints: list<array{name: string, kind: string, host: string, port: int}>,
+     *     ports: list<array{published: int, target: int, protocol: string}>
+     * }
+     */
+    private function servicePorts(array $entry, string $host, int $defaultPublishedPort, string $processName): array
+    {
+        $rawPorts = $entry['service_ports'] ?? null;
+
+        if (! is_array($rawPorts) || $rawPorts === []) {
+            return [
+                'endpoint' => [
+                    'name' => $processName,
+                    'kind' => 'tcp',
+                    'host' => $host,
+                    'port' => $defaultPublishedPort,
+                ],
+                'endpoints' => [
+                    [
+                        'name' => $processName,
+                        'kind' => 'tcp',
+                        'host' => $host,
+                        'port' => $defaultPublishedPort,
+                    ],
+                ],
+                'ports' => is_int($entry['target_port'] ?? null)
+                    ? [
+                        [
+                            'published' => $defaultPublishedPort,
+                            'target' => $entry['target_port'],
+                            'protocol' => 'tcp',
+                        ],
+                    ]
+                    : [],
+            ];
+        }
+
+        $endpoints = [];
+        $ports = [];
+        $primaryEndpoint = null;
+
+        foreach ($rawPorts as $rawPort) {
+            if (! is_array($rawPort)) {
+                continue;
+            }
+
+            $name = is_string($rawPort['name'] ?? null) ? trim($rawPort['name']) : '';
+            $published = (int) ($rawPort['published'] ?? 0);
+            $target = (int) ($rawPort['target'] ?? 0);
+            $protocol = is_string($rawPort['protocol'] ?? null) ? trim($rawPort['protocol']) : 'tcp';
+
+            if ($name === '' || $published < 1 || $target < 1) {
+                continue;
+            }
+
+            $endpoint = [
+                'name' => $name,
+                'kind' => 'tcp',
+                'host' => $host,
+                'port' => $published,
+            ];
+
+            $endpoints[] = $endpoint;
+            $ports[] = [
+                'published' => $published,
+                'target' => $target,
+                'protocol' => $protocol !== '' ? $protocol : 'tcp',
+            ];
+
+            if (($rawPort['primary'] ?? false) === true) {
+                $primaryEndpoint = $endpoint;
+            }
+        }
+
+        if ($endpoints === []) {
+            return [
+                'endpoint' => [
+                    'name' => $processName,
+                    'kind' => 'tcp',
+                    'host' => $host,
+                    'port' => $defaultPublishedPort,
+                ],
+                'endpoints' => [
+                    [
+                        'name' => $processName,
+                        'kind' => 'tcp',
+                        'host' => $host,
+                        'port' => $defaultPublishedPort,
+                    ],
+                ],
+                'ports' => [],
+            ];
+        }
+
+        return [
+            'endpoint' => $primaryEndpoint ?? $endpoints[0],
+            'endpoints' => $endpoints,
+            'ports' => $ports,
+        ];
     }
 
     /**

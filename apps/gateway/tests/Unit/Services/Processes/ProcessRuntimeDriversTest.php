@@ -157,6 +157,44 @@ it('applies node owned docker service processes from runtime config', function (
     );
 });
 
+it('publishes managed service ports when applying node owned docker processes', function (): void {
+    $shell = new ProcessRuntimeDriverRecordingShell([
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such network', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        new RemoteShellResult(exitCode: 1, stdout: '', stderr: 'No such container', durationMs: 1),
+        new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+    ]);
+    app()->instance(RemoteShell::class, $shell);
+
+    $node = Node::factory()->create([
+        'name' => 'beast',
+        'wireguard_address' => '10.6.0.7',
+    ]);
+    $app = App::factory()->create(['name' => 'docs', 'node_id' => $node->id, 'path' => '/srv/docs']);
+    $process = Process::factory()->forOwner($node)->create([
+        'name' => 'mailpit',
+        'command' => '/mailpit',
+        'runtime' => ProcessRuntime::Docker,
+        'runtime_config' => [
+            'image' => 'axllent/mailpit:latest',
+            'ports' => [
+                ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
+                ['published' => 8025, 'target' => 8025, 'protocol' => 'tcp'],
+            ],
+        ],
+    ]);
+
+    expect(app(DockerProcessRuntimeDriver::class)->apply($node, $app, $process))->toBeTrue();
+
+    $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
+
+    expect($create)->toBeString()
+        ->toContain("--publish '10.6.0.7:1025:1025'")
+        ->toContain("--publish '10.6.0.7:8025:8025'");
+});
+
 it('renders managed service data paths as docker named volumes for node owned docker processes', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
