@@ -40,6 +40,12 @@ against the prepared source checkout write local timing artifacts under
 `mode=fix` so triage can distinguish read-only checks from auto-fix runs without
 rerunning the gate.
 
+The CLI Pest subgate runs the default CLI suite through
+`bin/orbit-cli-pest-quality`, which splits the suite into non-overlapping Pest
+processes by test surface. This is not Pest's `--parallel` mode. The split keeps
+the Laravel Zero CLI bootstrap isolated while reducing the quality-check
+critical path.
+
 Gate names for prepared-source E2E are:
 
 | Command | Gate |

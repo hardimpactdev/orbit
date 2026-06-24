@@ -1,14 +1,14 @@
 # Signal: CLI Pest Parallel Bootstrap Blocker
 
-Status: open
+Status: guarded
 First seen: 2026-06-24
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
 Source worktree: quality-e2e-lane-timing-baseline
 Source commit: 9be2027a
 Signal type: failed-check
-Guardrail target: pending
-Guardrail change: none
+Guardrail target: bin/orbit-cli-pest-quality; bin/quality-check.sh; apps/docs/content/testing/quality-gates.md
+Guardrail change: quality-e2e-lane-timing-baseline
 Related signals: none
 Superseded by: none
 Tags: quality-gate, cli, pest, paratest, timing
@@ -57,10 +57,12 @@ individual slow tests alone.
 
 ## Guardrail Change
 
-None yet. This should become its own quality-gate slice only if CLI Pest
-duration remains a bottleneck after cheaper timing fixes. A successful slice
-must prove the full CLI Pest lane repeatedly beats the serial lane before
-changing `bin/quality-check.sh`.
+`bin/orbit-cli-pest-quality` now runs the default CLI suite as four
+non-overlapping Pest processes: root feature files, command tests, service
+tests, and architecture/support/skeleton tests. `bin/quality-check.sh` uses that
+wrapper for the `cli_pest` subgate. The testing docs state that this is a
+surface split, not Pest `--parallel`, so future agents should not reopen the
+ParaTest bootstrap path unless they are deliberately fixing parallel support.
 
 ## Verification
 
@@ -68,7 +70,15 @@ The original failed command returned immediately with the ParaTest bootstrap
 error. A file-scoped run passed with a temporary resolver, but full-suite
 parallel attempts with two and eight processes exceeded the serial baseline and
 were manually stopped. The serial CLI Pest lane continued to pass and produced
-the current timing evidence.
+the initial timing evidence.
+
+The manual surface split passed with the same coverage as the serial lane:
+1606 tests and 6427 assertions. The retained evidence lives under
+`.orbit/evidence/cli-pest-manual-split-20260624T064429Z/`.
+
+The wrapper failure path was checked with a missing Pest configuration file.
+The wrapper exited non-zero, printed failed group logs, and emitted JSON with
+`result: failed` and non-zero group exits.
 
 ## Reappearance Check
 
@@ -77,6 +87,15 @@ the CLI ParaTest bootstrap failure in a dedicated slice, then prove full-suite
 runtime and exit-code behavior. Do not wire `--parallel` into
 `bin/quality-check.sh` until the full CLI test lane passes repeatedly under
 parallel execution and beats the serial baseline.
+
+For routine quality-check speed work, keep using the surface split unless a
+newer measurement shows that it is slower than the serial wrapper on the same
+machine.
+
+If `cli_pest` starts failing with exit 143 after this split, classify it as a
+possible runner-contention false fail first. The wrapper reports that safely as
+a failed gate, but repeated occurrences should reduce nested concurrency or
+adjust scheduling instead of reopening the Pest `--parallel` path.
 
 ## Curation Notes
 

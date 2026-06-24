@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+APP_ROOT="${ROOT}/apps/cli"
+PEST_BIN="${APP_ROOT}/vendor/pestphp/pest/bin/pest"
+
+cd "$APP_ROOT"
+
+PEST_ARGS=("$@")
+LOG_DIR="$(mktemp -d)"
+trap 'rm -rf "$LOG_DIR"' EXIT
+
+GROUP_LABELS=(root commands services support)
+
+root_files=()
+while IFS= read -r file; do
+    root_files+=("$file")
+done < <(find tests/Feature -maxdepth 1 -type f -name '*Test.php' | sort)
+
+command_dirs=()
+for directory in tests/Feature/Commands; do
+    if [ -d "$directory" ]; then
+        command_dirs+=("$directory")
+    fi
+done
+
+service_dirs=()
+for directory in tests/Feature/Services; do
+    if [ -d "$directory" ]; then
+        service_dirs+=("$directory")
+    fi
+done
+
+support_dirs=()
+for directory in tests/Feature/Architecture tests/Feature/Support; do
+    if [ -d "$directory" ]; then
+        support_dirs+=("$directory")
+    fi
+done
+
+top_level_files=()
+while IFS= read -r file; do
+    top_level_files+=("$file")
+done < <(find tests -maxdepth 1 -type f -name '*Test.php' | sort)
+
+validate_coverage() {
+    local all_tests_file="$LOG_DIR/all-tests.txt"
+    local covered_tests_file="$LOG_DIR/covered-tests.txt"
+    local duplicate_tests_file="$LOG_DIR/duplicate-tests.txt"
+
+    find tests -type f -name '*Test.php' | sort >"$all_tests_file"
+
+    {
+        if [ "${#root_files[@]}" -gt 0 ]; then
+            printf '%s\n' "${root_files[@]}"
+        fi
+
+        if [ "${#command_dirs[@]}" -gt 0 ]; then
+            for directory in "${command_dirs[@]}"; do
+                find "$directory" -type f -name '*Test.php'
+            done
+        fi
+
+        if [ "${#service_dirs[@]}" -gt 0 ]; then
+            for directory in "${service_dirs[@]}"; do
+                find "$directory" -type f -name '*Test.php'
+            done
+        fi
+
+        if [ "${#support_dirs[@]}" -gt 0 ]; then
+            for directory in "${support_dirs[@]}"; do
+                find "$directory" -type f -name '*Test.php'
+            done
+        fi
+
+        if [ "${#top_level_files[@]}" -gt 0 ]; then
+            printf '%s\n' "${top_level_files[@]}"
+        fi
+    } | sort >"$covered_tests_file"
+
+    sort "$covered_tests_file" | uniq -d >"$duplicate_tests_file"
+
+    if [ -s "$duplicate_tests_file" ]; then
+        echo "CLI Pest quality split assigns test files to multiple groups:" >&2
+        cat "$duplicate_tests_file" >&2
+
+        exit 1
+    fi
+
+    if ! cmp -s "$all_tests_file" "$covered_tests_file"; then
+        echo "CLI Pest quality split does not cover every CLI test file." >&2
+        echo "Missing from split:" >&2
+        comm -23 "$all_tests_file" "$covered_tests_file" >&2 || true
+
+        exit 1
+    fi
+}
+
+record_now() {
+    local path="$1"
+
+    php -r 'file_put_contents($argv[1], (string) microtime(true));' "$path"
+}
+
+elapsed_seconds() {
+    local start_file="$1"
+
+    php -r 'echo round(max(0, microtime(true) - (float) file_get_contents($argv[1])), 3);' "$start_file"
+}
+
+run_group() {
+    local label="$1"
+    shift
+
+    local start_file="$LOG_DIR/$label.start"
+    local log_file="$LOG_DIR/$label.log"
+    local exit_file="$LOG_DIR/$label.exit"
+    local duration_file="$LOG_DIR/$label.duration"
+
+    if [ "$#" -eq 0 ]; then
+        (
+            : >"$log_file"
+            echo 0 >"$duration_file"
+            echo 0 >"$exit_file"
+        ) &
+
+        echo "$!" >"$LOG_DIR/$label.pid"
+
+        return
+    fi
+
+    record_now "$start_file"
+
+    (
+        code=0
+
+        if [ "${#PEST_ARGS[@]}" -gt 0 ]; then
+            "$PEST_BIN" "${PEST_ARGS[@]}" "$@" >"$log_file" 2>&1 || code="$?"
+        else
+            "$PEST_BIN" "$@" >"$log_file" 2>&1 || code="$?"
+        fi
+
+        elapsed_seconds "$start_file" >"$duration_file"
+        echo "$code" >"$exit_file"
+
+        exit "$code"
+    ) &
+
+    echo "$!" >"$LOG_DIR/$label.pid"
+}
+
+validate_coverage
+
+overall_start="$LOG_DIR/overall.start"
+record_now "$overall_start"
+
+if [ "${#root_files[@]}" -gt 0 ]; then
+    run_group root "${root_files[@]}"
+else
+    run_group root
+fi
+
+if [ "${#command_dirs[@]}" -gt 0 ]; then
+    run_group commands "${command_dirs[@]}"
+else
+    run_group commands
+fi
+
+if [ "${#service_dirs[@]}" -gt 0 ]; then
+    run_group services "${service_dirs[@]}"
+else
+    run_group services
+fi
+
+if [ "${#support_dirs[@]}" -gt 0 ] && [ "${#top_level_files[@]}" -gt 0 ]; then
+    run_group support "${support_dirs[@]}" "${top_level_files[@]}"
+elif [ "${#support_dirs[@]}" -gt 0 ]; then
+    run_group support "${support_dirs[@]}"
+elif [ "${#top_level_files[@]}" -gt 0 ]; then
+    run_group support "${top_level_files[@]}"
+else
+    run_group support
+fi
+
+overall_exit=0
+
+for label in "${GROUP_LABELS[@]}"; do
+    wait "$(cat "$LOG_DIR/$label.pid")" || true
+
+    code="$(cat "$LOG_DIR/$label.exit" 2>/dev/null || echo 1)"
+
+    if [ "$code" -ne 0 ]; then
+        overall_exit="$code"
+    fi
+done
+
+elapsed_seconds "$overall_start" >"$LOG_DIR/overall.duration"
+
+if [ "$overall_exit" -ne 0 ]; then
+    for label in "${GROUP_LABELS[@]}"; do
+        code="$(cat "$LOG_DIR/$label.exit" 2>/dev/null || echo 1)"
+
+        if [ "$code" -ne 0 ]; then
+            echo "─── cli_pest_${label} (exit=${code}) ───"
+            cat "$LOG_DIR/$label.log"
+            echo
+        fi
+    done
+fi
+
+php -r '
+$directory = $argv[1];
+$labels = ["root", "commands", "services", "support"];
+$groups = [];
+$tests = 0;
+$assertions = 0;
+$exitCode = 0;
+
+foreach ($labels as $label) {
+    $logPath = "{$directory}/{$label}.log";
+    $exitPath = "{$directory}/{$label}.exit";
+    $durationPath = "{$directory}/{$label}.duration";
+    $log = is_file($logPath) ? file_get_contents($logPath) : "";
+    $plain = preg_replace("/\x1B\[[0-9;?]*[ -\/]*[@-~]/", "", $log);
+    $matched = preg_match("/Tests:\s+([0-9]+) passed\s+\(([0-9]+) assertions\)/s", $plain, $matches) === 1;
+    $groupTests = $matched ? (int) $matches[1] : 0;
+    $groupAssertions = $matched ? (int) $matches[2] : 0;
+    $groupExitCode = is_file($exitPath) ? (int) trim(file_get_contents($exitPath)) : 1;
+    $duration = is_file($durationPath) ? (float) trim(file_get_contents($durationPath)) : 0.0;
+
+    $tests += $groupTests;
+    $assertions += $groupAssertions;
+    $exitCode = max($exitCode, $groupExitCode);
+
+    $groups[$label] = [
+        "exit" => $groupExitCode,
+        "duration_ms" => (int) round($duration * 1000),
+        "tests" => $groupTests,
+        "assertions" => $groupAssertions,
+    ];
+}
+
+$overallDuration = (float) trim(file_get_contents("{$directory}/overall.duration"));
+
+echo json_encode([
+    "tool" => "pest",
+    "result" => $exitCode === 0 ? "passed" : "failed",
+    "tests" => $tests,
+    "passed" => $exitCode === 0 ? $tests : null,
+    "assertions" => $assertions,
+    "duration_ms" => (int) round($overallDuration * 1000),
+    "groups" => $groups,
+], JSON_UNESCAPED_SLASHES).PHP_EOL;
+' "$LOG_DIR"
+
+exit "$overall_exit"
