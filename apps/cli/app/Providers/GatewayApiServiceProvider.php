@@ -113,7 +113,7 @@ final class GatewayApiServiceProvider extends ServiceProvider
 
         $this->app->bind(GatewayOperationFollower::class, fn (): GatewayOperationFollower => new GatewayOperationFollower(
             events: $this->app->make(GatewayOperationEventStreamClient::class),
-            reconnectSleepMs: $this->positiveInteger(config('orbit.gateway.operation_follow_reconnect_sleep_ms'), 500),
+            reconnectSleepMs: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_reconnect_sleep_ms'), 500),
             maxEmptyReplays: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_empty_replays'), 0),
             maxTransientFailures: $this->nonNegativeInteger(config('orbit.gateway.operation_follow_max_transient_failures'), 120),
         ));

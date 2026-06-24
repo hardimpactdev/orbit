@@ -352,7 +352,7 @@ describe('internal wg-easy state command', function (): void {
     it('updates the wg-easy user password hash when the value is a valid argon2id hash', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
         createWgEasyUsersDatabase($databasePath);
-        $passwordHash = password_hash('user-password-'.bin2hex(random_bytes(8)), PASSWORD_ARGON2ID);
+        $passwordHash = validWgEasyArgon2idPasswordHash();
 
         [$exitCode, $output] = runWgEasyStateCommand($this, [
             '--action' => 'update-user-password',
@@ -377,7 +377,7 @@ describe('internal wg-easy state command', function (): void {
     it('updates the wg-easy session password hash when the value is a valid argon2id hash', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
         createWgEasySessionPasswordDatabase($databasePath);
-        $passwordHash = password_hash('session-password-'.bin2hex(random_bytes(8)), PASSWORD_ARGON2ID);
+        $passwordHash = validWgEasyArgon2idPasswordHash();
 
         [$exitCode, $output] = runWgEasyStateCommand($this, [
             '--action' => 'update-session-password',
@@ -759,7 +759,7 @@ describe('internal wg-easy state command', function (): void {
     it('does not leak user password hash values to stdout, stderr, json, or logs', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
         createWgEasyUsersDatabase($databasePath);
-        $passwordHash = password_hash('user-password-'.bin2hex(random_bytes(8)), PASSWORD_BCRYPT);
+        $passwordHash = validWgEasyPasswordHash();
 
         $process = runWgEasyStateCommandProcess([
             '--action' => 'update-user-password',
@@ -780,7 +780,7 @@ describe('internal wg-easy state command', function (): void {
     it('does not leak session password hash values to stdout, stderr, json, or logs', function (): void {
         $databasePath = "{$this->wgEasyStateTemp}/wg-easy.db";
         createWgEasySessionPasswordDatabase($databasePath);
-        $passwordHash = password_hash('session-password-'.bin2hex(random_bytes(8)), PASSWORD_BCRYPT);
+        $passwordHash = validWgEasyPasswordHash();
 
         $process = runWgEasyStateCommandProcess([
             '--action' => 'update-session-password',
@@ -1016,6 +1016,11 @@ function validWgEasyPasswordHash(): string
     return '$2y$12$BoGFG2BtfhOdMhzU1PUt7OScj2ZJVvimGfq0thVV4m9hiZdLqI3Q6';
 }
 
+function validWgEasyArgon2idPasswordHash(): string
+{
+    return '$argon2id$v=19$m=65536,t=4,p=1$abcdefghijklmnop$abcdefghijklmnopqrstuvwxyzABCDEFGHIJ';
+}
+
 function invalidWgEasyPasswordHashMessage(): string
 {
     return 'password hash format is not a recognized bcrypt/argon2i/argon2id hash';
@@ -1183,146 +1188,37 @@ function runWgEasyStateCommandProcess(array $parameters, array $environment = []
         $arguments[] = "{$key}={$value}";
     }
 
-    return withFakeGatewayVerificationServer(function (string $gatewayUrl) use ($arguments, $environment): Process {
+    $directory = sys_get_temp_dir().'/orbit-cli-wg-easy-process-'.bin2hex(random_bytes(8));
+    $configPath = "{$directory}/config.json";
+
+    mkdir($directory, recursive: true);
+    file_put_contents($configPath, json_encode([
+        'schema_version' => 1,
+        'active_gateway' => null,
+        'gateways' => [],
+        'defaults' => ['node' => 'app-dev', 'profile' => null],
+        'meta' => ['imported_from' => null, 'imported_at' => null],
+    ], JSON_THROW_ON_ERROR));
+    chmod($configPath, 0600);
+
+    try {
         $process = new Process($arguments, base_path(), array_merge([
-            'ORBIT_GATEWAY_URL' => $gatewayUrl,
+            'APP_KEY' => 'gateway-secret',
+            'ORBIT_CONFIG_PATH' => $configPath,
+            'ORBIT_GATEWAY_URL' => '',
         ], $environment));
         $process->run();
 
         return $process;
-    });
-}
-
-/**
- * @template TReturn
- *
- * @param  callable(string): TReturn  $callback
- * @return TReturn
- */
-function withFakeGatewayVerificationServer(callable $callback): mixed
-{
-    $directory = sys_get_temp_dir().'/orbit-cli-gateway-'.bin2hex(random_bytes(8));
-    mkdir($directory, recursive: true);
-
-    $routerPath = "{$directory}/router.php";
-    file_put_contents($routerPath, <<<'PHP'
-<?php
-
-http_response_code(200);
-header('Content-Type: application/json');
-
-echo json_encode([
-    'success' => [
-        'data' => [
-            'allowed' => true,
-        ],
-        'meta' => [],
-    ],
-], JSON_THROW_ON_ERROR);
-PHP);
-
-    $server = null;
-
-    try {
-        [$server, $gatewayUrl] = startFakeGatewayVerificationServer($routerPath, $directory);
-
-        return $callback($gatewayUrl);
     } finally {
-        if ($server instanceof Process) {
-            $server->stop(0);
-        }
-
-        if (is_file($routerPath)) {
-            unlink($routerPath);
+        if (is_file($configPath)) {
+            unlink($configPath);
         }
 
         if (is_dir($directory)) {
             rmdir($directory);
         }
     }
-}
-
-/**
- * @return array{Process, string}
- */
-function startFakeGatewayVerificationServer(string $routerPath, string $directory): array
-{
-    $lastError = null;
-
-    for ($attempt = 1; $attempt <= 5; $attempt++) {
-        $port = reserveAvailableLocalPort();
-        $gatewayUrl = "http://127.0.0.1:{$port}";
-        $server = new Process([PHP_BINARY, '-S', "127.0.0.1:{$port}", $routerPath], $directory);
-        $server->start();
-
-        try {
-            waitForFakeGatewayServer($server, $gatewayUrl);
-
-            return [$server, $gatewayUrl];
-        } catch (RuntimeException $exception) {
-            $lastError = $exception;
-            $server->stop(0);
-            usleep(10_000);
-        }
-    }
-
-    throw new RuntimeException(
-        'Unable to start fake gateway verification server after retrying available localhost ports.',
-        previous: $lastError,
-    );
-}
-
-function reserveAvailableLocalPort(): int
-{
-    $socket = @stream_socket_server('tcp://127.0.0.1:0', $errno, $errorMessage);
-
-    if ($socket === false) {
-        throw new RuntimeException("Unable to reserve a local port: {$errorMessage} ({$errno}).");
-    }
-
-    $address = stream_socket_get_name($socket, false);
-    fclose($socket);
-
-    if (! is_string($address) || ! preg_match('/:(\d+)$/', $address, $matches)) {
-        throw new RuntimeException('Unable to determine the reserved local port.');
-    }
-
-    return (int) $matches[1];
-}
-
-function waitForFakeGatewayServer(Process $server, string $gatewayUrl): void
-{
-    $timeoutAt = microtime(true) + 5;
-    $context = stream_context_create([
-        'http' => [
-            'timeout' => 0.2,
-        ],
-    ]);
-
-    while (microtime(true) < $timeoutAt) {
-        if (! $server->isRunning()) {
-            throw new RuntimeException(
-                "Fake gateway verification server exited before becoming reachable.\n\n".fakeGatewayServerOutput($server),
-            );
-        }
-
-        $response = @file_get_contents($gatewayUrl, false, $context);
-
-        if ($response !== false) {
-            return;
-        }
-
-        usleep(10_000);
-    }
-
-    throw new RuntimeException(
-        "Timed out waiting for fake gateway verification server at {$gatewayUrl}.\n\n".fakeGatewayServerOutput($server),
-    );
-}
-
-function fakeGatewayServerOutput(Process $server): string
-{
-    return trim($server->getOutput().$server->getErrorOutput());
 }
 
 function wgEasyStateLogContents(): string
