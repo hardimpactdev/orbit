@@ -2,8 +2,15 @@
 
 declare(strict_types=1);
 
+use Orbit\Core\Progress\ForkedFrameTicker;
 use Orbit\Core\Progress\StreamedStepTree;
 use Symfony\Component\Console\Output\BufferedOutput;
+
+function ageStreamedStepTreeFrame(StreamedStepTree $renderer, int $ageUs): void
+{
+    $property = new ReflectionProperty(StreamedStepTree::class, 'lastFrameAtUs');
+    $property->setValue($renderer, ((int) (microtime(true) * 1_000_000)) - $ageUs);
+}
 
 it('uses the canonical spinner frame order for active streamed steps', function (): void {
     $output = new BufferedOutput(decorated: false);
@@ -25,7 +32,7 @@ it('uses the canonical spinner frame order for active streamed steps', function 
 
     expect($output->fetch())->toBe('');
 
-    usleep(350_000);
+    ageStreamedStepTreeFrame($renderer, ForkedFrameTicker::DEFAULT_INTERVAL_US);
     $renderer->tick();
 
     expect($output->fetch())->toContain('◉  Run workspace setup steps');
@@ -43,8 +50,9 @@ it('paints the initial active frame immediately when a new step starts right aft
     $renderer->step('first', 'start');
     $output->fetch();
 
-    usleep(100_000);
+    ageStreamedStepTreeFrame($renderer, 100_000);
     $renderer->tick();
+    expect($output->fetch())->toBe('');
 
     $renderer->step('first', 'done');
     $output->fetch();
@@ -73,11 +81,11 @@ it('throttles active streamed step alternation to about 300ms', function (): voi
     $renderer->tick();
     expect($output->fetch())->toBe('');
 
-    usleep(100_000);
+    ageStreamedStepTreeFrame($renderer, 100_000);
     $renderer->tick();
     expect($output->fetch())->toBe('');
 
-    usleep(250_000);
+    ageStreamedStepTreeFrame($renderer, ForkedFrameTicker::DEFAULT_INTERVAL_US);
     $renderer->tick();
 
     expect($output->fetch())->toContain('◉  Checking for updates');
@@ -121,7 +129,7 @@ it('animates active streamed steps while the parent process is blocked', functio
 
     $renderer->step('check', 'start');
 
-    $deadline = microtime(true) + 0.7;
+    $deadline = microtime(true) + 0.4;
 
     while (microtime(true) < $deadline) {
         usleep(50_000);

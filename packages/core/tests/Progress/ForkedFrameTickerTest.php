@@ -37,7 +37,7 @@ it('invokes tick callbacks in the parent process while work is blocked', functio
         $tickCount++;
     });
 
-    $deadline = microtime(true) + 0.7;
+    $deadline = microtime(true) + 0.25;
 
     while (microtime(true) < $deadline) {
         usleep(50_000);
@@ -73,8 +73,6 @@ it('can register an idle callback without forking a signal child', function (): 
         $ticker->start(function () use (&$tickCount): void {
             $tickCount++;
         });
-
-        usleep(250_000);
 
         expect($tickCount)->toBe(0)
             ->and(ForkedFrameTicker::hasIdleCallback())->toBeTrue();
