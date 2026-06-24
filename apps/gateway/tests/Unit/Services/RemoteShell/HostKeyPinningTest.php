@@ -53,7 +53,7 @@ it('retries transient empty ssh-keyscan failures before pinning', function (): v
     ]);
     Process::preventStrayProcesses();
 
-    $key = app(SshHostKeyPinner::class)->pin('203.0.113.10');
+    $key = new SshHostKeyPinner(scanRetryDelayMicroseconds: 0)->pin('203.0.113.10');
 
     expect($key->publicKey)->toBe($publicKey)
         ->and($key->pinMode)->toBe('tofu');

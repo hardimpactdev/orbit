@@ -27,7 +27,7 @@ function orbitCaServiceTestConfigRoot(): string
 
     expect($configRoot)->toBeString();
 
-    return rtrim($configRoot, '/');
+    return rtrim((string) $configRoot, '/');
 }
 
 function orbitCaServiceTestCaDir(): string
@@ -115,12 +115,49 @@ describe('OrbitCaService', function () {
             $service = new OrbitCaService;
             $caDir = orbitCaServiceTestCaDir();
 
+            $generationAttempt = 0;
+            $commands = [];
+
+            Process::fake(function ($process) use ($caDir, &$generationAttempt, &$commands) {
+                $command = (string) $process->command;
+                $commands[] = $command;
+
+                if (str_contains($command, 'openssl genrsa')) {
+                    $generationAttempt++;
+
+                    File::put("{$caDir}/root.key", "generated-root-key-{$generationAttempt}");
+
+                    return Process::result();
+                }
+
+                if (str_contains($command, 'openssl req -x509')) {
+                    File::put("{$caDir}/root.crt", "-----BEGIN CERTIFICATE-----\ngenerated-root-cert-{$generationAttempt}\n-----END CERTIFICATE-----\n");
+
+                    return Process::result();
+                }
+
+                return Process::result();
+            });
+            Process::preventStrayProcesses();
+
             $service->ensureRootCa();
 
             $crtBefore = File::get("{$caDir}/root.crt");
             $keyBefore = File::get("{$caDir}/root.key");
 
             $service->ensureRootCa();
+
+            expect($commands)->toHaveCount(2)
+                ->and($commands[0])
+                ->toContain('openssl genrsa')
+                ->toContain('4096')
+                ->toContain(escapeshellarg("{$caDir}/root.key"))
+                ->and($commands[1])
+                ->toContain('openssl req -x509 -new -nodes')
+                ->toContain('-sha256 -days 3650')
+                ->toContain(escapeshellarg("{$caDir}/root.key"))
+                ->toContain(escapeshellarg("{$caDir}/root.crt"))
+                ->toContain(escapeshellarg('/CN=Orbit Root CA/O=Orbit'));
 
             expect(File::get("{$caDir}/root.crt"))->toBe($crtBefore);
             expect(File::get("{$caDir}/root.key"))->toBe($keyBefore);

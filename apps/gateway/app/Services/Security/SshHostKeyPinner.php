@@ -19,6 +19,10 @@ final readonly class SshHostKeyPinner
 
     private const int ScanRetryDelayMicroseconds = 500_000;
 
+    public function __construct(
+        private int $scanRetryDelayMicroseconds = self::ScanRetryDelayMicroseconds,
+    ) {}
+
     public function pin(string $host, ?string $expectedFingerprint = null): PinnedHostKey
     {
         $failureReason = 'ssh-keyscan failed';
@@ -45,8 +49,8 @@ final readonly class SshHostKeyPinner
             $failureReason = trim($result->errorOutput())
                 ?: ($result->successful() ? 'ssh-keyscan returned no host keys.' : 'ssh-keyscan failed');
 
-            if ($attempt < self::ScanAttempts) {
-                usleep(self::ScanRetryDelayMicroseconds);
+            if ($attempt < self::ScanAttempts && $this->scanRetryDelayMicroseconds > 0) {
+                usleep($this->scanRetryDelayMicroseconds);
             }
         }
 
