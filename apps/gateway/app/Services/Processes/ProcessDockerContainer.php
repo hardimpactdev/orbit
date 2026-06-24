@@ -21,18 +21,18 @@ class ProcessDockerContainer
     /** @var list<array{source: string, target: string, read_only: bool}> */
     private readonly array $volumes;
 
-    /** @var list<string> */
-    private readonly array $networkAliases;
+    /** @var list<array{published: int, target: int, protocol: string}> */
+    private readonly array $ports;
 
     /** @var list<string> */
-    private readonly array $publishedPorts;
+    private readonly array $networkAliases;
 
     /**
      * @param  array<string, string>  $environment
      * @param  list<array{source: string, target: string, read_only?: bool}>  $mounts
      * @param  list<string>  $networkAliases
      * @param  list<array{source?: string, name?: string, target: string, read_only?: bool}>  $volumes
-     * @param  list<string>  $publishedPorts
+     * @param  list<array{published: int, target: int, protocol?: string}>  $ports
      */
     public function __construct(
         private readonly string $name,
@@ -48,13 +48,15 @@ class ProcessDockerContainer
         array $mounts,
         array $networkAliases,
         array $volumes = [],
-        array $publishedPorts = [],
+        array $ports = [],
+        private readonly string $commandMode = 'shell',
     ) {
         $this->environment = $this->normalizeEnvironment($environment);
         $this->mounts = $this->normalizeMounts($mounts);
         $this->volumes = $this->normalizeVolumes($volumes);
+        $this->ports = $this->normalizePorts($ports);
         $this->networkAliases = $this->normalizeNetworkAliases($networkAliases);
-        $this->publishedPorts = $this->normalizePublishedPorts($publishedPorts);
+        $this->assertCommandMode($commandMode);
     }
 
     public function name(): string
@@ -102,6 +104,11 @@ class ProcessDockerContainer
         return $this->command;
     }
 
+    public function commandMode(): string
+    {
+        return $this->commandMode;
+    }
+
     /** @return array<string, string> */
     public function environment(): array
     {
@@ -120,6 +127,12 @@ class ProcessDockerContainer
         return $this->volumes;
     }
 
+    /** @return list<array{published: int, target: int, protocol: string}> */
+    public function ports(): array
+    {
+        return $this->ports;
+    }
+
     /** @return list<string> */
     public function networkAliases(): array
     {
@@ -129,7 +142,10 @@ class ProcessDockerContainer
     /** @return list<string> */
     public function publishedPorts(): array
     {
-        return $this->publishedPorts;
+        return array_map(
+            static fn (array $port): string => "{$port['published']}:{$port['target']}".($port['protocol'] === 'tcp' ? '' : "/{$port['protocol']}"),
+            $this->ports,
+        );
     }
 
     /** @return array<string, string> */
@@ -168,11 +184,12 @@ class ProcessDockerContainer
      *     process_slug: string,
      *     working_directory: string,
      *     command: string,
+     *     command_mode: string,
      *     environment: array<string, string>,
      *     mounts: list<array{source: string, target: string, read_only: bool}>,
      *     volumes: list<array{source: string, target: string, read_only: bool}>,
-     *     network_aliases: list<string>,
-     *     published_ports: list<string>
+     *     ports: list<array{published: int, target: int, protocol: string}>,
+     *     network_aliases: list<string>
      * }
      */
     public function spec(): array
@@ -187,11 +204,12 @@ class ProcessDockerContainer
             'process_slug' => $this->processSlug,
             'working_directory' => $this->workingDirectory,
             'command' => $this->command,
+            'command_mode' => $this->commandMode,
             'environment' => $this->environment,
             'mounts' => $this->mounts,
             'volumes' => $this->volumes,
+            'ports' => $this->ports,
             'network_aliases' => $this->networkAliases,
-            'published_ports' => $this->publishedPorts,
         ];
     }
 
@@ -267,18 +285,38 @@ class ProcessDockerContainer
     }
 
     /**
-     * @param  list<string>  $publishedPorts
-     * @return list<string>
+     * @param  list<array{published: int, target: int, protocol?: string}>  $ports
+     * @return list<array{published: int, target: int, protocol: string}>
      */
-    private function normalizePublishedPorts(array $publishedPorts): array
+    private function normalizePorts(array $ports): array
     {
-        $ports = array_values(array_unique(array_filter(
-            array_map(trim(...), $publishedPorts),
-            fn (string $port): bool => $port !== '',
-        )));
+        return array_map(function (array $port): array {
+            $published = $port['published'];
+            $target = $port['target'];
+            $protocol = trim((string) ($port['protocol'] ?? 'tcp'));
 
-        sort($ports);
+            if ($published < 1 || $published > 65535 || $target < 1 || $target > 65535) {
+                throw new InvalidArgumentException('Process docker container ports require valid published and target ports.');
+            }
 
-        return $ports;
+            if (! in_array($protocol, ['tcp', 'udp'], true)) {
+                throw new InvalidArgumentException('Process docker container ports support tcp or udp only.');
+            }
+
+            return [
+                'published' => $published,
+                'target' => $target,
+                'protocol' => $protocol,
+            ];
+        }, $ports);
+    }
+
+    private function assertCommandMode(string $commandMode): void
+    {
+        if (in_array($commandMode, ['shell', 'image_entrypoint'], true)) {
+            return;
+        }
+
+        throw new InvalidArgumentException('Process docker container command mode must be shell or image_entrypoint.');
     }
 }

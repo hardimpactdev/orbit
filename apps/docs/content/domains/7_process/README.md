@@ -130,7 +130,7 @@ Supported managed services in this vertical slice:
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
 | `redis` | `7` -> `7.2` | `docker` | Publishes the Redis TCP endpoint from the owning node's WireGuard service address. |
-| `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) and Web UI (`8025`) on the owning node's WireGuard service address. `process:list` exposes both endpoints; SMTP is the primary endpoint. |
+| `mailpit` | `latest` -> `latest` | `docker` | Publishes SMTP (`1025`) on the owning node. The Web UI stays private on the Docker network and should be exposed with a proxy route to `http://mailpit:8025`. |
 | `prometheus` | `3` -> `v3.12.0` | `docker-swarm` | Metrics-role service process for host-resource time-series storage. Uses local TSDB retention of 15 days. |
 | `grafana` | `13` -> `13.0.2` | `docker-swarm` | Metrics-role service process for dashboards, exposed through the private `metrics.orbit` route. |
 | `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on metrics and active workload nodes through the owning node's WireGuard service address. |

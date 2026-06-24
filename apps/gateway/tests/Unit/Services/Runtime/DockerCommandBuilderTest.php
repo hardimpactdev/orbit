@@ -206,7 +206,7 @@ it('uses the managed target node namespace without aliases for Docker E2E proces
     }
 });
 
-it('publishes WireGuard-bound ports for node owned managed service process containers', function (): void {
+it('publishes process service ports without binding the Docker publish to a WireGuard address', function (): void {
     $process = new ProcessDockerContainer(
         name: 'mailpit',
         image: 'axllent/mailpit:latest',
@@ -220,16 +220,16 @@ it('publishes WireGuard-bound ports for node owned managed service process conta
         environment: [],
         mounts: [],
         networkAliases: ['mailpit'],
-        publishedPorts: [
-            '10.6.0.7:1025:1025',
-            '10.6.0.7:8025:8025',
+        ports: [
+            ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
         ],
     );
 
     $command = (new DockerCommandBuilder)->createIdle($process);
 
-    expect($command)->toContain("--publish '10.6.0.7:1025:1025'")
-        ->and($command)->toContain("--publish '10.6.0.7:8025:8025'");
+    expect($command)->toContain("--publish '1025:1025'")
+        ->and($command)->not->toContain('10.6.0.7')
+        ->and($command)->not->toContain('8025:8025');
 });
 
 it('does not publish ports for app owned docker process containers', function (): void {

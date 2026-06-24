@@ -69,6 +69,7 @@ final readonly class ProcessDockerContainerRenderer
                 ],
             ],
             networkAliases: [$name],
+            ports: [],
         );
     }
 
@@ -149,7 +150,8 @@ final readonly class ProcessDockerContainerRenderer
                 ...$this->stringList($config['network_aliases'] ?? []),
             ])),
             volumes: $volumes,
-            publishedPorts: $this->publishedPorts($node, $config['ports'] ?? []),
+            ports: $this->ports($config['ports'] ?? []),
+            commandMode: $this->optionalConfigString($config, 'command_mode') ?? 'shell',
         );
     }
 
@@ -354,6 +356,39 @@ final readonly class ProcessDockerContainerRenderer
     }
 
     /**
+     * @return list<array{published: int, target: int, protocol?: string}>
+     */
+    private function ports(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(function (mixed $port): ?array {
+                if (! is_array($port)) {
+                    return null;
+                }
+
+                $published = $port['published'] ?? null;
+                $target = $port['target'] ?? null;
+
+                if (! is_int($published) || ! is_int($target)) {
+                    return null;
+                }
+
+                $protocol = $port['protocol'] ?? 'tcp';
+
+                return [
+                    'published' => $published,
+                    'target' => $target,
+                    'protocol' => is_string($protocol) ? $protocol : 'tcp',
+                ];
+            }, $value),
+        ));
+    }
+
+    /**
      * @return list<string>
      */
     private function stringList(mixed $value): array
@@ -375,43 +410,5 @@ final readonly class ProcessDockerContainerRenderer
         }
 
         return $value;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function publishedPorts(Node $node, mixed $ports): array
-    {
-        $host = is_string($node->wireguard_address) ? trim($node->wireguard_address) : '';
-
-        if ($host === '' || ! is_array($ports)) {
-            return [];
-        }
-
-        $publishedPorts = [];
-
-        foreach ($ports as $port) {
-            if (! is_array($port)) {
-                continue;
-            }
-
-            $published = (int) ($port['published'] ?? 0);
-            $target = (int) ($port['target'] ?? 0);
-            $protocol = is_string($port['protocol'] ?? null) ? trim($port['protocol']) : 'tcp';
-
-            if ($published < 1 || $target < 1) {
-                continue;
-            }
-
-            $binding = "{$host}:{$published}:{$target}";
-
-            if ($protocol !== '' && $protocol !== 'tcp') {
-                $binding .= "/{$protocol}";
-            }
-
-            $publishedPorts[] = $binding;
-        }
-
-        return $publishedPorts;
     }
 }

@@ -37,7 +37,9 @@ Use this command to define a managed process for a node, app, or workspace.
 - **Managed Service**: `--service=<service>` materializes a node-owned
   runnable service process. The process name is independent of the service
   identifier; `mysql8` is only a process name and never implies MySQL.
-  Mailpit publishes SMTP and Web UI ports on the owning node's WireGuard address.
+  Mailpit publishes SMTP on the owning node. Its Web UI stays private on the
+  Docker network and should be exposed through a proxy route to
+  `http://mailpit:8025` when browser access is needed.
   `--version` selects the service version. For Docker services, service +
   runtime + version resolve the default official image; `--image` overrides that
   image explicitly. Managed services cannot use `--tool` and are not valid for

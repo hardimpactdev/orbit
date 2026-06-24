@@ -102,7 +102,7 @@ class DockerCommandBuilder
             }
         }
 
-        if ($container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer) {
+        if ($this->usesShellEntrypoint($container)) {
             $parts[] = '--workdir';
             $parts[] = $this->quote($container->workingDirectory());
             $parts[] = '--entrypoint';
@@ -145,7 +145,7 @@ class DockerCommandBuilder
 
         $parts[] = $this->quote($container->image());
 
-        if ($container instanceof ProcessDockerContainer || $container instanceof WebSocketRuntimeContainer) {
+        if ($this->usesShellEntrypoint($container)) {
             // Runtime process commands are stored as single shell strings
             // (e.g. "php artisan queue:work --tries=3"). Run them through
             // `sh -lc <cmd>` so the in-container shell parses tokens,
@@ -156,6 +156,19 @@ class DockerCommandBuilder
         }
 
         return implode(' ', $parts);
+    }
+
+    private function usesShellEntrypoint(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): bool
+    {
+        if ($container instanceof WebSocketRuntimeContainer) {
+            return true;
+        }
+
+        if (! $container instanceof ProcessDockerContainer) {
+            return false;
+        }
+
+        return $container->commandMode() === 'shell';
     }
 
     private function networkFor(OrbitGatewayContainer|OrbitCaddyContainer|AppRuntimeContainer|WorkspaceRuntimeContainer|ProcessDockerContainer|WebSocketRuntimeContainer $container): string

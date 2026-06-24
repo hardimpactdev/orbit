@@ -337,7 +337,7 @@ describe('ProcessStoreController', function (): void {
             ->and($remoteShell->scripts[1])->toContain("sudo systemctl enable 'opencode-server.service'");
     });
 
-    it('creates node owned Mailpit managed service processes with SMTP and UI endpoints', function (): void {
+    it('creates node owned Mailpit managed service processes with SMTP published and UI private', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
             'name' => 'beast',
@@ -387,12 +387,6 @@ describe('ProcessStoreController', function (): void {
                     'host' => '10.6.0.7',
                     'port' => 1025,
                 ],
-                [
-                    'name' => 'ui',
-                    'kind' => 'tcp',
-                    'host' => '10.6.0.7',
-                    'port' => 8025,
-                ],
             ])
             ->and($process->runtime_config['labels']['orbit.process.service'])->toBe('mailpit')
             ->and($process->command)->toBe('/mailpit');
@@ -400,8 +394,8 @@ describe('ProcessStoreController', function (): void {
         $create = collect($remoteShell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
 
         expect($create)->toBeString()
-            ->toContain("--publish '10.6.0.7:1025:1025'")
-            ->toContain("--publish '10.6.0.7:8025:8025'");
+            ->toContain("--publish '1025:1025'")
+            ->not->toContain('8025:8025');
     });
 
     it('creates node owned MySQL managed service processes without tool rows', function (): void {
@@ -663,6 +657,13 @@ describe('ProcessStoreController', function (): void {
             ->and($process->runtime_config['service'])->toBe('mysql')
             ->and($process->runtime_config['version'])->toBe('8.3')
             ->and($process->runtime_config['image'])->toBe('mysql:8.3')
+            ->and($process->runtime_config['command_mode'])->toBe('image_entrypoint')
+            ->and($process->runtime_config['ports'][0])->toBe([
+                'published' => 3308,
+                'target' => 3306,
+                'protocol' => 'tcp',
+            ])
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "--publish '3308:3306'")))->toBeTrue()
             ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))->toBeTrue();
     });
 

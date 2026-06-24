@@ -150,6 +150,7 @@ final readonly class ProcessServiceCatalog
             'mysql' => [
                 'runtimes' => [ProcessRuntime::Docker, ProcessRuntime::DockerSwarm],
                 'image' => 'mysql',
+                'command_mode' => 'image_entrypoint',
                 'command' => 'mysqld',
                 'target_port' => 3306,
                 'data_path' => '/var/lib/mysql',
@@ -184,6 +185,7 @@ final readonly class ProcessServiceCatalog
             'mailpit' => [
                 'runtimes' => [ProcessRuntime::Docker],
                 'image' => 'axllent/mailpit',
+                'command_mode' => 'image_entrypoint',
                 'command' => '/mailpit',
                 'environment' => [],
                 'credentials' => [],
@@ -201,9 +203,10 @@ final readonly class ProcessServiceCatalog
                     ],
                     [
                         'name' => 'ui',
-                        'published' => 8025,
                         'target' => 8025,
                         'protocol' => 'tcp',
+                        'endpoint' => false,
+                        'publish' => false,
                     ],
                 ],
                 'versions' => [
@@ -519,27 +522,34 @@ final readonly class ProcessServiceCatalog
             $published = (int) ($rawPort['published'] ?? 0);
             $target = (int) ($rawPort['target'] ?? 0);
             $protocol = is_string($rawPort['protocol'] ?? null) ? trim($rawPort['protocol']) : 'tcp';
+            $exposesEndpoint = ($rawPort['endpoint'] ?? true) !== false;
+            $publishesPort = ($rawPort['publish'] ?? true) !== false;
 
-            if ($name === '' || $published < 1 || $target < 1) {
+            if ($name === '' || $target < 1) {
                 continue;
             }
 
-            $endpoint = [
-                'name' => $name,
-                'kind' => 'tcp',
-                'host' => $host,
-                'port' => $published,
-            ];
+            if ($exposesEndpoint && $published > 0) {
+                $endpoint = [
+                    'name' => $name,
+                    'kind' => 'tcp',
+                    'host' => $host,
+                    'port' => $published,
+                ];
 
-            $endpoints[] = $endpoint;
-            $ports[] = [
-                'published' => $published,
-                'target' => $target,
-                'protocol' => $protocol !== '' ? $protocol : 'tcp',
-            ];
+                $endpoints[] = $endpoint;
 
-            if (($rawPort['primary'] ?? false) === true) {
-                $primaryEndpoint = $endpoint;
+                if (($rawPort['primary'] ?? false) === true) {
+                    $primaryEndpoint = $endpoint;
+                }
+            }
+
+            if ($publishesPort && $published > 0) {
+                $ports[] = [
+                    'published' => $published,
+                    'target' => $target,
+                    'protocol' => $protocol !== '' ? $protocol : 'tcp',
+                ];
             }
         }
 

@@ -178,10 +178,10 @@ it('publishes managed service ports when applying node owned docker processes', 
         'command' => '/mailpit',
         'runtime' => ProcessRuntime::Docker,
         'runtime_config' => [
+            'command_mode' => 'image_entrypoint',
             'image' => 'axllent/mailpit:latest',
             'ports' => [
                 ['published' => 1025, 'target' => 1025, 'protocol' => 'tcp'],
-                ['published' => 8025, 'target' => 8025, 'protocol' => 'tcp'],
             ],
         ],
     ]);
@@ -191,8 +191,10 @@ it('publishes managed service ports when applying node owned docker processes', 
     $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
 
     expect($create)->toBeString()
-        ->toContain("--publish '10.6.0.7:1025:1025'")
-        ->toContain("--publish '10.6.0.7:8025:8025'");
+        ->toContain("--publish '1025:1025'")
+        ->not->toContain('8025:8025')
+        ->not->toContain("--entrypoint 'sh'")
+        ->not->toContain("'-lc' '/mailpit'");
 });
 
 it('renders managed service data paths as docker named volumes for node owned docker processes', function (): void {
@@ -213,6 +215,7 @@ it('renders managed service data paths as docker named volumes for node owned do
         'command' => 'mysqld',
         'runtime' => ProcessRuntime::Docker,
         'runtime_config' => [
+            'command_mode' => 'image_entrypoint',
             'image' => 'mysql:8.4',
             'mounts' => [
                 [
@@ -226,6 +229,13 @@ it('renders managed service data paths as docker named volumes for node owned do
                     'target' => '/var/lib/mysql',
                 ],
             ],
+            'ports' => [
+                [
+                    'published' => 3308,
+                    'target' => 3306,
+                    'protocol' => 'tcp',
+                ],
+            ],
         ],
     ]);
 
@@ -234,7 +244,10 @@ it('renders managed service data paths as docker named volumes for node owned do
     $create = collect($shell->scripts)->first(fn (string $script): bool => str_contains($script, 'docker create'));
 
     expect($create)->toBeString()
+        ->toContain("--publish '3308:3306'")
         ->toContain("--mount 'type=volume,source=orbit-mysql8,target=/var/lib/mysql'")
+        ->not->toContain("--entrypoint 'sh'")
+        ->not->toContain("'-lc' 'mysqld'")
         ->not->toContain('type=bind,source=/var/lib/orbit/processes/mysql8,target=/var/lib/mysql');
 
     expect($shell->scripts)

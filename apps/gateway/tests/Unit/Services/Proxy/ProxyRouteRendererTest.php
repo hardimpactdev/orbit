@@ -57,6 +57,23 @@ describe('ProxyRouteRenderer', function (): void {
             ->and(ProxyRouteRenderer::normalizeHostLoopback('http://127.0.0.1.example.com:80'))->toBe('http://127.0.0.1.example.com:80');
     });
 
+    it('can render a custom route to a private Mailpit container upstream', function (): void {
+        $node = createTestAppHostNode();
+        $route = ProxyRoute::factory()->create([
+            'node_id' => $node->id,
+            'domain' => 'mailpit.test',
+            'owner_type' => 'custom',
+            'kind' => 'proxy',
+            'config' => ['target' => ['type' => 'upstream', 'value' => 'http://mailpit:8025'], 'upstream' => 'http://mailpit:8025'],
+        ]);
+
+        $content = (new ProxyRouteRenderer)->render($route);
+
+        expect($content)->toContain('mailpit.test {')
+            ->and($content)->toContain('reverse_proxy http://mailpit:8025')
+            ->and($content)->not->toContain('host.docker.internal');
+    });
+
     it('renders custom redirect routes with redirect codes', function (): void {
         $node = createTestAppHostNode();
         $route = ProxyRoute::factory()->create([

@@ -41,11 +41,17 @@ it('resolves MySQL and Redis managed services into process runtime config', func
             'version_family' => '8',
             'version' => '8.3',
             'image' => 'mysql:8.3',
+            'command_mode' => 'image_entrypoint',
             'service_name' => 'orbit-mysql8',
         ])
         ->and($mysql->runtimeConfig['endpoint']['name'])->toBe('mysql8')
         ->and($mysql->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
         ->and($mysql->runtimeConfig['endpoint']['port'])->toBe(3308)
+        ->and($mysql->runtimeConfig['ports'][0])->toBe([
+            'published' => 3308,
+            'target' => 3306,
+            'protocol' => 'tcp',
+        ])
         ->and($mysql->runtimeConfig['labels']['orbit.process'])->toBe('mysql8')
         ->and($mysql->runtimeConfig['labels']['orbit.process.service'])->toBe('mysql')
         ->and($mysql->runtimeConfig['labels']['orbit.process.version_family'])->toBe('8')
@@ -230,7 +236,7 @@ it('rejects service process endpoints when the owning node has no WireGuard addr
     );
 })->throws(GatewayApiException::class, "Node 'database-1' cannot host service process endpoints without a WireGuard address.");
 
-it('resolves Mailpit managed service with SMTP and UI endpoints', function (): void {
+it('resolves Mailpit managed service with published SMTP and private Web UI', function (): void {
     $node = Node::factory()->create([
         'name' => 'beast',
         'wireguard_address' => '10.6.0.7',
@@ -253,6 +259,7 @@ it('resolves Mailpit managed service with SMTP and UI endpoints', function (): v
             'version_family' => 'latest',
             'version' => 'latest',
             'image' => 'axllent/mailpit:latest',
+            'command_mode' => 'image_entrypoint',
             'service_name' => 'orbit-mailpit',
             'credentials' => [],
         ])
@@ -269,22 +276,11 @@ it('resolves Mailpit managed service with SMTP and UI endpoints', function (): v
                 'host' => '10.6.0.7',
                 'port' => 1025,
             ],
-            [
-                'name' => 'ui',
-                'kind' => 'tcp',
-                'host' => '10.6.0.7',
-                'port' => 8025,
-            ],
         ])
         ->and($mailpit->runtimeConfig['ports'])->toBe([
             [
                 'published' => 1025,
                 'target' => 1025,
-                'protocol' => 'tcp',
-            ],
-            [
-                'published' => 8025,
-                'target' => 8025,
                 'protocol' => 'tcp',
             ],
         ])
