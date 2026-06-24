@@ -5,12 +5,13 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-it('reads managed tool credentials from gateway intent', function (): void {
+it('reads configured and generated tool credentials from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
-        e2eRestartGatewayApi($topology, 'tool-credentials-opencode-intent');
+        e2eRestartGatewayApi($topology, 'tool-credentials');
+
         toolCredentialsSeedGatewayIntent($topology);
 
         $result = $topology->ssh(
@@ -34,20 +35,10 @@ it('reads managed tool credentials from gateway intent', function (): void {
                     'password' => 'secret123',
                 ],
             ]);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
-it('reads opencode-server credentials from gateway intent', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        e2eRestartGatewayApi($topology, 'tool-credentials-opencode');
         toolCredentialsSeedOpencodeServerGatewayIntent($topology);
 
-        $result = $topology->ssh(
+        $generatedResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:credentials opencode-server --node=app-dev-1 --json',
@@ -55,10 +46,10 @@ it('reads opencode-server credentials from gateway intent', function (): void {
             ),
             timeoutSeconds: 180,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $generatedPayload = json_decode(trim($generatedResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['credentials'])->toMatchArray([
+        expect($generatedResult->successful())->toBeTrue()
+            ->and($generatedPayload['success']['data']['credentials'])->toMatchArray([
                 'tool' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'fields' => [

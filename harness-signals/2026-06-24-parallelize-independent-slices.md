@@ -46,6 +46,11 @@ therefore allows Docker and Incus lanes to run together, but does not treat the
 full quality-check gate as independent of active provider lanes unless shared
 E2E support state is proven isolated.
 
+During the follow-up parallel provider split, a worker ran `pint --dirty` while
+another worker owned a different dirty PHP file in the same worktree. Parallel
+workers now need owned-file-only formatting/checks; broad dirty-file tooling is
+an orchestrator responsibility after worker diffs are reconciled.
+
 ## Verification
 
 - The current session provided the failing baseline: serial quality-gate tuning.
@@ -56,6 +61,9 @@ E2E support state is proven isolated.
 - Reran `composer quality-check` after provider lanes finished: passed.
 - The next full feature run should show the dependency scan in the worker plan
   before Solo workers are spawned.
+- The next parallel-worker run should show owned-file-only formatter commands
+  inside worker evidence, with broad dirty-file tooling deferred to the feature
+  owner.
 
 ## Reappearance Check
 
@@ -64,7 +72,8 @@ naming a dependency, shared mutable state, provider capacity conflict, or merge
 order reason, mark this signal recurring and tighten the worker-plan prompt or
 Done Contract template. If a future orchestrator overlaps full quality-check
 with active provider E2E without proving shared-state isolation, treat that as a
-recurrence too.
+recurrence too. If a parallel worker runs a broad dirty-file formatter/fixer
+while another worker owns dirty files, treat that as a recurrence.
 
 ## Curation Notes
 

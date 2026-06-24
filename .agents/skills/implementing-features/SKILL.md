@@ -57,6 +57,14 @@ Responsibilities:
 - Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Claude
   documenter/librarian worker for substantial docs-first or documentation-heavy
   slices when its ownership is separable.
+- Make each worktree-scoped Solo worker prove its starting directory and branch
+  before broad reads or edits: `pwd` must be the assigned worktree and
+  `git branch --show-current` must match the assigned branch. If Solo
+  `spawn_agent` opens at the project root, relaunch through a Solo terminal
+  that first `cd`s into the worktree.
+- In parallel-worker mode, do not let workers run broad dirty-file formatters
+  or fixers. Workers run owned-file-only formatting/checks; the feature owner
+  runs broad dirty-file tooling after worker diffs are reconciled.
 - Keep docs, tests, and code for the same behavior in one worker by default.
   Split documentation and code only when the feature owner can accept the docs
   contract before code relies on it, or when ownership is genuinely independent.
@@ -480,15 +488,22 @@ moving on to durable E2E.
    through Solo. Treat in-memory/Pest optimization, Docker E2E optimization, and
    Incus E2E optimization as separate lanes by default, but do not overlap full
    `composer quality-check` with active provider E2E lanes unless shared E2E
-   support state is proven isolated. Add a Claude documenter/librarian worker
-   when documentation is substantial and the docs-owned surface is clear.
+   support state is proven isolated. In parallel-worker mode, forbid broad
+   dirty-file formatters/fixers inside workers; scope formatting/checks to the
+   worker's owned files and run broad dirty-file tooling only after worker diffs
+   are reconciled. Add a Claude documenter/librarian worker when documentation
+   is substantial and the docs-owned surface is clear.
 6. If a Claude documenter/librarian worker is used, spawn it first or in
    parallel only after the docs-owned slice is explicit. The feature owner must
    inspect the docs result and accept the docs contract before code relies on it.
 7. Spawn the Solo implementation worker(s) with the worktree path, handoff,
    owned scope, documentation authority, TDD requirement, focused verification,
    and the rule that workers must not commit, merge to `main`, or clean up the
-   worktree unless the feature owner explicitly assigns that exact step.
+   worktree unless the feature owner explicitly assigns that exact step. Require
+   each worker's first command to prove `pwd` and `git branch --show-current`.
+   If the agent starts in `~/orbit` or another checkout, stop it and relaunch
+   through a Solo terminal that `cd`s into the assigned worktree before starting
+   the agent.
 8. Monitor workers, inspect diffs, and send correction prompts until the
    acceptance criteria are met or a blocker is explicit. Start substantial
    slices with a first-checkpoint prompt that asks only for a test-only diff

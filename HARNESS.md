@@ -160,8 +160,11 @@ the Codex app, Claude, or another capable LLM surface. Spawned workers and
 retained verification terminals run through Solo so ownership, process ids, and
 terminal proof remain inspectable. Workers receive the active Done Contract,
 worktree path, owned files or domains, stop and pivot conditions, and reporting
-shape. If those boundaries are hard to state, use one worker serially instead
-of parallel workers.
+shape. Worktree-scoped Solo workers must confirm `pwd` and
+`git branch --show-current` before broad reads or edits; if the spawned agent
+opens at the project root, relaunch through a Solo terminal that first `cd`s
+into the worktree. If those boundaries are hard to state, use one worker
+serially instead of parallel workers.
 
 Before execution, the orchestrator for a feature, harness goal, or quality-gate
 slice does a dependency scan. List the candidate slices, verification lanes,
@@ -174,7 +177,10 @@ optimization, Docker E2E optimization, and Incus E2E optimization are separate
 by default unless the active change crosses their boundaries. Do not overlap the
 full `composer quality-check` gate with active provider E2E lanes unless shared
 E2E support state is proven isolated; run the final full quality-check after
-provider lanes are idle.
+provider lanes are idle. In parallel-worker mode, workers must also scope
+formatters and fixers to their owned files; broad dirty-file tools such as
+`pint --dirty`, broad Rector, or aggregate fixers belong to the feature owner
+after worker diffs are reconciled.
 
 Documentation-heavy work may start with a Claude documenter/librarian worker.
 Code implementation can run after the feature owner accepts the docs contract as

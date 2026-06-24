@@ -7,108 +7,28 @@ use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Contracts\Process\ProcessResult;
 use Orbit\Core\Updates\UnattendedUpgradesAptConfig;
 
-it('reports missing unattended-upgrades posture on an Incus app node from the gateway', function (): void {
+it('checks unattended-upgrades posture on an Incus app node from the gateway', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
         nodeUpdatesDoctorPrepareGatewayRecord($topology);
+
+        nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
         e2eRestartGatewayApi($topology, 'node-updates-doctor-missing');
 
-        $topology->ssh(
-            'dev',
-            'sudo rm -f /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades',
-            timeoutSeconds: 60,
-        );
+        nodeUpdatesDoctorRemoveAptConfig($topology);
+        nodeUpdatesDoctorAssertMissingConfig($topology);
 
-        $result = nodeUpdatesDoctorRun($topology, allowFailure: true);
-        $payload = nodeUpdatesDoctorPayload($result->output());
-        $error = e2eJsonCommandError($payload);
-        $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_config_missing');
-
-        expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
-            ->and($error['code'])->toBe('drift_detected')
-            ->and($issue)->toMatchArray([
-                'family' => 'node',
-                'node' => 'app-dev-1',
-                'key' => 'node.updates',
-                'code' => 'node.updates_config_missing',
-                'kind' => 'missing',
-                'restorable' => true,
-            ]);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
-
-it('restores missing unattended-upgrades apt config on an Incus app node from the gateway', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        nodeUpdatesDoctorPrepareGatewayRecord($topology);
         nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
-        e2eRestartGatewayApi($topology, 'node-updates-doctor-restore');
 
-        $topology->ssh(
-            'dev',
-            'sudo rm -f /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades',
-            timeoutSeconds: 60,
-        );
+        nodeUpdatesDoctorRemoveAptConfig($topology);
+        nodeUpdatesDoctorAssertRestoresConfig($topology);
 
-        $result = nodeUpdatesDoctorRun($topology, restore: true);
-        $payload = nodeUpdatesDoctorPayload($result->output());
-        $data = e2eJsonCommandData($payload);
-
-        expect($result->successful())->toBeTrue($result->output().$result->errorOutput())
-            ->and($data['doctor']['healthy'])->toBeTrue(json_encode($data, JSON_PRETTY_PRINT))
-            ->and($data['doctor']['actions'][0])->toMatchArray([
-                'family' => 'node',
-                'node' => 'app-dev-1',
-                'key' => 'node.updates',
-                'code' => 'node.updates_config_missing',
-                'status' => 'completed',
-            ]);
-
-        nodeUpdatesDoctorAssertExpectedAptConfig($topology);
+        nodeUpdatesDoctorRequireReboot($topology);
+        nodeUpdatesDoctorAssertRebootRequired($topology);
     } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
-
-it('reports reboot-required update posture without attempting an automatic reboot', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        nodeUpdatesDoctorPrepareGatewayRecord($topology);
-        nodeUpdatesDoctorRestoreExpectedAptConfig($topology);
-        e2eRestartGatewayApi($topology, 'node-updates-doctor-reboot');
-
-        $topology->ssh(
-            'dev',
-            "printf '%s\n' linux-image-generic | sudo tee /var/run/reboot-required.pkgs >/dev/null && sudo touch /var/run/reboot-required",
-            timeoutSeconds: 60,
-        );
-
-        $result = nodeUpdatesDoctorRun($topology, allowFailure: true);
-        $payload = nodeUpdatesDoctorPayload($result->output());
-        $error = e2eJsonCommandError($payload);
-        $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_reboot_required');
-
-        expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
-            ->and($error['code'])->toBe('drift_detected')
-            ->and($issue)->toMatchArray([
-                'family' => 'node',
-                'node' => 'app-dev-1',
-                'key' => 'node.updates',
-                'code' => 'node.updates_reboot_required',
-                'kind' => 'divergent',
-                'restorable' => false,
-            ])
-            ->and($issue['summary'])->toContain('Orbit will not reboot it automatically');
-    } finally {
-        $topology->ssh('dev', 'sudo rm -f /var/run/reboot-required /var/run/reboot-required.pkgs', timeoutSeconds: 60);
+        nodeUpdatesDoctorClearRebootRequired($topology);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-provider-incus', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
@@ -173,6 +93,15 @@ SH;
     expect($result->successful())->toBeTrue($result->output().$result->errorOutput());
 }
 
+function nodeUpdatesDoctorRemoveAptConfig(E2ETopologyHarness $topology): void
+{
+    $topology->ssh(
+        'dev',
+        'sudo rm -f /etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/50unattended-upgrades',
+        timeoutSeconds: 60,
+    );
+}
+
 function nodeUpdatesDoctorAssertExpectedAptConfig(E2ETopologyHarness $topology): void
 {
     $config = new UnattendedUpgradesAptConfig;
@@ -190,6 +119,83 @@ SH,
         $config->autoUpgradesSha256(),
         $config->unattendedUpgradesSha256(),
     ]);
+}
+
+function nodeUpdatesDoctorAssertMissingConfig(E2ETopologyHarness $topology): void
+{
+    $result = nodeUpdatesDoctorRun($topology, allowFailure: true);
+    $payload = nodeUpdatesDoctorPayload($result->output());
+    $error = e2eJsonCommandError($payload);
+    $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_config_missing');
+
+    expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
+        ->and($error['code'])->toBe('drift_detected')
+        ->and($issue)->toMatchArray([
+            'family' => 'node',
+            'node' => 'app-dev-1',
+            'key' => 'node.updates',
+            'code' => 'node.updates_config_missing',
+            'kind' => 'missing',
+            'restorable' => true,
+        ]);
+}
+
+function nodeUpdatesDoctorAssertRestoresConfig(E2ETopologyHarness $topology): void
+{
+    $result = nodeUpdatesDoctorRun($topology, restore: true);
+    $payload = nodeUpdatesDoctorPayload($result->output());
+    $data = e2eJsonCommandData($payload);
+
+    expect($result->successful())->toBeTrue($result->output().$result->errorOutput())
+        ->and($data['doctor']['healthy'])->toBeTrue(json_encode($data, JSON_PRETTY_PRINT))
+        ->and($data['doctor']['actions'][0])->toMatchArray([
+            'family' => 'node',
+            'node' => 'app-dev-1',
+            'key' => 'node.updates',
+            'code' => 'node.updates_config_missing',
+            'status' => 'completed',
+        ]);
+
+    nodeUpdatesDoctorAssertExpectedAptConfig($topology);
+}
+
+function nodeUpdatesDoctorRequireReboot(E2ETopologyHarness $topology): void
+{
+    $topology->ssh(
+        'dev',
+        "printf '%s\n' linux-image-generic | sudo tee /var/run/reboot-required.pkgs >/dev/null && sudo touch /var/run/reboot-required",
+        timeoutSeconds: 60,
+    );
+}
+
+function nodeUpdatesDoctorAssertRebootRequired(E2ETopologyHarness $topology): void
+{
+    $result = nodeUpdatesDoctorRun($topology, allowFailure: true);
+    $payload = nodeUpdatesDoctorPayload($result->output());
+    $error = e2eJsonCommandError($payload);
+    $issue = nodeUpdatesDoctorIssue($payload, 'node.updates_reboot_required');
+
+    expect($result->successful())->toBeFalse($result->output().$result->errorOutput())
+        ->and($error['code'])->toBe('drift_detected')
+        ->and($issue)->toMatchArray([
+            'family' => 'node',
+            'node' => 'app-dev-1',
+            'key' => 'node.updates',
+            'code' => 'node.updates_reboot_required',
+            'kind' => 'divergent',
+            'restorable' => false,
+        ])
+        ->and($issue['summary'])->toContain('Orbit will not reboot it automatically');
+}
+
+function nodeUpdatesDoctorClearRebootRequired(E2ETopologyHarness $topology): void
+{
+    $topology->ssh(
+        'dev',
+        'sudo rm -f /var/run/reboot-required /var/run/reboot-required.pkgs',
+        timeoutSeconds: 60,
+        allowFailure: true,
+    );
 }
 
 function nodeUpdatesDoctorRun(E2ETopologyHarness $topology, bool $allowFailure = false, bool $restore = false): ProcessResult
