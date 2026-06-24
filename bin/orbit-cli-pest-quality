@@ -13,6 +13,8 @@ LOG_DIR="$(mktemp -d)"
 trap 'rm -rf "$LOG_DIR"' EXIT
 
 GROUP_LABELS=(root commands services support)
+PARALLEL_GROUP_LABELS=(root commands support)
+SERIAL_GROUP_LABELS=(services)
 
 root_files=()
 while IFS= read -r file; do
@@ -168,12 +170,6 @@ else
     run_group commands
 fi
 
-if [ "${#service_dirs[@]}" -gt 0 ]; then
-    run_group services "${service_dirs[@]}"
-else
-    run_group services
-fi
-
 if [ "${#support_dirs[@]}" -gt 0 ] && [ "${#top_level_files[@]}" -gt 0 ]; then
     run_group support "${support_dirs[@]}" "${top_level_files[@]}"
 elif [ "${#support_dirs[@]}" -gt 0 ]; then
@@ -186,14 +182,34 @@ fi
 
 overall_exit=0
 
-for label in "${GROUP_LABELS[@]}"; do
+collect_group_exit() {
+    local label="$1"
+
     wait "$(cat "$LOG_DIR/$label.pid")" || true
 
+    local code
     code="$(cat "$LOG_DIR/$label.exit" 2>/dev/null || echo 1)"
 
     if [ "$code" -ne 0 ]; then
         overall_exit="$code"
     fi
+}
+
+for label in "${PARALLEL_GROUP_LABELS[@]}"; do
+    collect_group_exit "$label"
+done
+
+# The services surface exercises the CLI's process/service helpers and has
+# proven sensitive to nested runner contention. Keep it split for visibility,
+# but run it after the other CLI surfaces finish.
+if [ "${#service_dirs[@]}" -gt 0 ]; then
+    run_group services "${service_dirs[@]}"
+else
+    run_group services
+fi
+
+for label in "${SERIAL_GROUP_LABELS[@]}"; do
+    collect_group_exit "$label"
 done
 
 elapsed_seconds "$overall_start" >"$LOG_DIR/overall.duration"

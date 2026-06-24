@@ -156,6 +156,20 @@ run_bg docs_pest bin/orbit-docs-pest --compact
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
 run_bg gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
 
+PRE_E2E_PEST_LABELS=(
+    cli_pest
+)
+
+for label in "${PRE_E2E_PEST_LABELS[@]}"; do
+    wait_for_bg_label "$label"
+done
+
+# The default apps/e2e lane excludes topology/provision feature groups, so
+# whole-tree checkout archive installs stay out of this overlap. Keep future
+# archive-sensitive in-memory tests out of this background lane.
+run_bg e2e_pest bash -lc 'cd apps/e2e && vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact'
+run_bg sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --compact'
+
 STATIC_CHECK_LABELS=(
     docs_lint
     docs_testing
@@ -182,8 +196,9 @@ STATIC_CHECK_LABELS=(
 
 LONG_RUNNING_PEST_LABELS=(
     gateway_pest
-    cli_pest
     docs_pest
+    e2e_pest
+    sdk_pest
 )
 
 CHECK_LABELS=(
@@ -220,16 +235,9 @@ for label in "${STATIC_CHECK_LABELS[@]}"; do
     wait_for_bg_label "$label"
 done
 
-# The E2E support tests compute checkout archive hashes from the working tree.
 for label in "${LONG_RUNNING_PEST_LABELS[@]}"; do
     wait_for_bg_label "$label"
 done
-
-# Run them after static/style and other Pest lanes so generated cache/runtime
-# metadata cannot change the tree hash mid-test.
-record_subgate_start e2e_pest
-( cd apps/e2e && vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact >"$LOG_DIR/e2e_pest.log" 2>&1; echo "$?" >"$LOG_DIR/e2e_pest.exit" )
-record_subgate_duration e2e_pest
 
 # The core progress tests intentionally fork short-lived ticker children. Keep
 # this lane out of the background fan-out so unrelated Pest suites cannot
@@ -237,10 +245,6 @@ record_subgate_duration e2e_pest
 record_subgate_start core_pest
 ( cd packages/core && vendor/bin/pest --compact >"$LOG_DIR/core_pest.log" 2>&1; echo "$?" >"$LOG_DIR/core_pest.exit" )
 record_subgate_duration core_pest
-
-record_subgate_start sdk_pest
-( cd packages/sdk && vendor/bin/pest --compact >"$LOG_DIR/sdk_pest.log" 2>&1; echo "$?" >"$LOG_DIR/sdk_pest.exit" )
-record_subgate_duration sdk_pest
 
 print_log() {
     local label="$1"

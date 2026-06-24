@@ -42,9 +42,22 @@ rerunning the gate.
 
 The CLI Pest subgate runs the default CLI suite through
 `bin/orbit-cli-pest-quality`, which splits the suite into non-overlapping Pest
-processes by test surface. This is not Pest's `--parallel` mode. The split keeps
-the Laravel Zero CLI bootstrap isolated while reducing the quality-check
+processes by test surface. This is not Pest's `--parallel` mode. The root,
+command, and support surfaces run together. The services surface runs after
+those finish because it is more sensitive to nested runner contention. The split
+keeps the Laravel Zero CLI bootstrap isolated while reducing the quality-check
 critical path.
+
+The `apps/e2e` in-memory Pest lane and SDK Pest lane run as background subgates
+after the gateway lane has started and the CLI Pest split has finished. This
+keeps the fragile Laravel Zero bootstrap split out of the heaviest overlap while
+still letting E2E and SDK Pest overlap the gateway tail. The overlapped E2E Pest
+lane must keep work that builds checkout archives for the whole tree in
+topology/provision feature groups, outside the default in-memory pass.
+
+Core Pest still runs after all background Pest lanes because the core progress
+tests fork ticker children and must stay isolated from unrelated Pest process
+signals.
 
 Gate names for prepared-source E2E are:
 

@@ -58,8 +58,11 @@ individual slow tests alone.
 ## Guardrail Change
 
 `bin/orbit-cli-pest-quality` now runs the default CLI suite as four
-non-overlapping Pest processes: root feature files, command tests, service
-tests, and architecture/support/skeleton tests. `bin/quality-check.sh` uses that
+non-overlapping Pest surfaces: root feature files, command tests, service
+tests, and architecture/support/skeleton tests. The root, command, and support
+surfaces run concurrently. The service surface runs after those finish because
+repeated quality-check runs showed `cli_pest_services` can terminate with exit
+143 under deeper nested runner contention. `bin/quality-check.sh` uses that
 wrapper for the `cli_pest` subgate. The testing docs state that this is a
 surface split, not Pest `--parallel`, so future agents should not reopen the
 ParaTest bootstrap path unless they are deliberately fixing parallel support.
@@ -80,6 +83,14 @@ The wrapper failure path was checked with a missing Pest configuration file.
 The wrapper exited non-zero, printed failed group logs, and emitted JSON with
 `result: failed` and non-zero group exits.
 
+After the first four-way split, two aggregate `composer quality-check` reruns
+reported `cli_pest_services=143`. The wrapper then kept the services surface
+split for reporting but ran it after the root, command, and support surfaces.
+The standalone wrapper passed with 1606 tests and 6427 assertions in 6.2s. The
+full aggregate quality check passed afterward with `cli_pest=9.5s`,
+`gateway_pest=12.0s`, `e2e_pest=3.1s`, `sdk_pest=0.4s`, and total
+`quality-check=16s`.
+
 ## Reappearance Check
 
 If a future agent tries to reduce `cli_pest` by adding `--parallel`, first solve
@@ -95,7 +106,9 @@ machine.
 If `cli_pest` starts failing with exit 143 after this split, classify it as a
 possible runner-contention false fail first. The wrapper reports that safely as
 a failed gate, but repeated occurrences should reduce nested concurrency or
-adjust scheduling instead of reopening the Pest `--parallel` path.
+adjust scheduling instead of reopening the Pest `--parallel` path. Do not move
+the service surface back into the concurrent CLI batch without repeated
+full-gate proof.
 
 ## Curation Notes
 
