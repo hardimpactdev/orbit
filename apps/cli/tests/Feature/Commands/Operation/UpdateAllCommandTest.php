@@ -304,8 +304,8 @@ it('keeps update-all rows blinking while the gateway event stream is quiet', fun
         @unlink($typescriptPath);
     }
 
-    $fleetCheckCadence = validateUpdateAllLivenessCadence($fleetCheck['cadence_state']['first_transition_us']);
-    $gatewayCadence = validateUpdateAllLivenessCadence($gateway['cadence_state']['first_transition_us']);
+    $fleetCheckCadence = validateUpdateAllLivenessCadenceState($fleetCheck['cadence_state']);
+    $gatewayCadence = validateUpdateAllLivenessCadenceState($gateway['cadence_state']);
 
     expect($timedOut)->toBeFalse('The pseudo-tty update:all gateway liveness command did not finish.')
         ->and($fleetCheck['captured'])->toBeTrue(sprintf(
