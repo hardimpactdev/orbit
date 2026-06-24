@@ -114,6 +114,26 @@ No durable signal is a valid result. Every final review reports evidence
 reviewed, accepted durable updates, rejected or already-covered candidates,
 deferred follow-ups, and the no-new-signal rationale when nothing changes.
 
+## Merge Boundary Gate
+
+Orbit installs a project-local Codex `PreToolUse` hook for Bash commands in
+`.codex/hooks.json`. The hook is intentionally narrow: it only inspects git
+merge and feature-cleanup boundaries, then blocks when a targeted feature
+worktree has no completed `.orbit/loop.md` `Final Distillation` section.
+
+The gate exists because feature agents repeatedly completed work, merged to
+`main`, and cleaned up the worktree while leaving `.orbit/` evidence and
+feature-session learnings undistilled. It does not run tests, inspect ordinary
+commands, mine old sessions, or promote signals automatically. It only prevents
+the finalization checkpoint from being skipped before `git merge`,
+`git worktree remove`, or `git branch -d` hides the local context.
+
+If the gate blocks, do not delete `.orbit/` or bypass the merge. Review the
+feature evidence, classify candidate learnings through `HARNESS_SIGNALS.md`,
+fill the final-distillation outcomes in `.orbit/loop.md`, and then rerun the
+same git command. For a genuinely tiny local change, the final-distillation
+section can record the no-review/no-new-signal rationale explicitly.
+
 ## Active Loop Improvement
 
 The loop is improved during the feature, not only after it. When an outer loop

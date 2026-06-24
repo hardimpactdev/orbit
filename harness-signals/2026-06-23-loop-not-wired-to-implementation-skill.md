@@ -1,14 +1,14 @@
 # Signal: Manual Loop Was Not Wired Into Feature Execution
 
-Status: recurring
+Status: guarded
 First seen: 2026-06-23
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
-Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer; doctor-progress-scheduler
-Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice
+Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer; doctor-progress-scheduler; pre-merge-finalization-hook
+Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice; pending pre-merge-finalization-hook commit
 Signal type: review-comment
-Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md
-Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; pending loop-hardening-session-guardrails commit
+Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md, .codex/hooks.json, bin/orbit-codex-pre-tool-use-hook
+Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; loop-hardening-session-guardrails; pending pre-merge-finalization-hook commit
 Related signals:
 harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md,
 harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md,
@@ -55,6 +55,16 @@ outer loop improver captured guidance in the Solo scratchpad and kept nudging
 the feature owner, but did not immediately improve the repo harness/skills when
 the same process mistakes repeated. The user had to point out that the
 scratchpad was only guidance for what still needed to be implemented.
+
+It reappeared again during the Mago replacement feature
+(`019efad4-787d-7ba0-b7db-9f58a498990b`). The feature branch was committed,
+merged to `main`, quality-checked, and cleaned up, but the final report only
+listed verification and cleanup. It did not show a post-feature distillation
+packet, fresh-context review, candidate classifications, accepted/rejected
+signals, deferred follow-ups, or no-new-signal rationale. The user also named
+another Codex thread (`019efa5e-35b1-7d40-8c21-2ccc5e3660e7`) with similar
+symptoms, but that exact transcript was not present in the local JSONL, logs,
+or memory stores when this guardrail was tightened.
 
 ## Missing Guardrail
 
@@ -104,6 +114,14 @@ implementation, and requires the loop improver to patch durable repo guardrails
 or explicitly reject/defer repeated signals instead of waiting for the user to
 ask.
 
+After the Mago recurrence, Orbit now has a project-local Codex `PreToolUse`
+hook. The hook watches only Bash git merge and feature-cleanup boundaries. It
+blocks `git merge`, `git worktree remove`, and `git branch -d` when the targeted
+feature worktree has no `.orbit/loop.md` final-distillation section or still
+contains template/pending finalization fields. This turns the existing manual
+requirement into a cheap boundary check without mining sessions on every run or
+auto-promoting raw `.orbit/` artifacts.
+
 ## Verification
 
 `rg -n "HARNESS.md|LOOP.md|HARNESS_SIGNALS.md|Harness signals|guardrail target|durable harness signal|feedback loop" .agents/skills/implementing-features/SKILL.md`
@@ -127,14 +145,28 @@ rg -n "Active Loop Improvement|scratchpad is guidance|do not wait for the user|l
 This shows the active loop-improver duty is discoverable from the root harness
 and this signal record.
 
+For the merge-boundary recurrence, run:
+
+```bash
+bin/orbit-codex-pre-tool-use-hook-test
+rg -n "Merge Boundary Gate|orbit-codex-pre-tool-use-hook|PreToolUse|Final Distillation" HARNESS.md .codex/hooks.json bin/orbit-codex-pre-tool-use-hook harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
+```
+
+This shows the Codex hook is installed, blocks missing or templated
+final-distillation state, and is discoverable from the root harness and signal
+record.
+
 ## Reappearance Check
 
 If future implementation reports omit durable signal triage or the
-post-feature session review summary, keep this record `recurring` and tighten
-the report template or add a machine-readable final-distillation warning before
-merge. If fresh reviewers start promoting weak one-off findings, tighten the
-post-feature distillation reviewer or the promotion gate instead of adding more
-signal records.
+post-feature session review summary, keep this record `recurring` and first
+verify whether the project-local Codex hook was loaded/trusted and whether the
+merge/cleanup happened through a Bash command the hook can see. If the hook was
+active but did not block, tighten `bin/orbit-codex-pre-tool-use-hook`. If the
+work happened outside Codex, consider a Git hook or merge wrapper instead of
+adding more prose. If fresh reviewers start promoting weak one-off findings,
+tighten the post-feature distillation reviewer or the promotion gate instead of
+adding more signal records.
 
 If a future loop-improver only updates a scratchpad after repeated user
 corrections and does not patch, reject, or explicitly defer the project

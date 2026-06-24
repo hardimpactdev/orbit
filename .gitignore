@@ -11,6 +11,7 @@
 /.codex/*
 !/.codex/
 !/.codex/config.toml
+!/.codex/hooks.json
 /.claude/settings.local.json
 /.cursor/
 /.antigravitycli/

@@ -1,0 +1,582 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$input = stream_get_contents(STDIN);
+$command = extract_command($input);
+
+if ($command === null || $command === '') {
+    exit(0);
+}
+
+$action = classify_command($command);
+
+if ($action === null) {
+    exit(0);
+}
+
+$root = git_root(getcwd());
+
+if ($root === null || ! is_file($root.'/HARNESS.md') || ! is_file($root.'/AGENTS.md')) {
+    exit(0);
+}
+
+$check = match ($action['type']) {
+    'merge' => check_merge($root, $action['target']),
+    'worktree-remove' => check_worktree_remove($root, $action['path']),
+    'branch-delete' => check_branch_delete($root, $action['branch']),
+};
+
+if ($check['ok']) {
+    exit(0);
+}
+
+fwrite(STDERR, block_message($check['subject'], $check['reason']));
+
+exit(1);
+
+function extract_command(string $input): ?string
+{
+    $trimmed = trim($input);
+
+    if ($trimmed === '') {
+        return null;
+    }
+
+    $decoded = json_decode($trimmed, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        return $trimmed;
+    }
+
+    if (! is_array($decoded)) {
+        return null;
+    }
+
+    return find_command_value($decoded);
+}
+
+/**
+ * @param  array<mixed>  $value
+ */
+function find_command_value(array $value): ?string
+{
+    foreach (['command', 'cmd'] as $key) {
+        if (isset($value[$key]) && is_string($value[$key])) {
+            return $value[$key];
+        }
+    }
+
+    foreach (['tool_input', 'input', 'arguments', 'params', 'payload'] as $key) {
+        if (isset($value[$key]) && is_array($value[$key])) {
+            $command = find_command_value($value[$key]);
+
+            if ($command !== null) {
+                return $command;
+            }
+        }
+    }
+
+    foreach ($value as $item) {
+        if (is_array($item)) {
+            $command = find_command_value($item);
+
+            if ($command !== null) {
+                return $command;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @return array{type: 'merge', target: string}|array{type: 'worktree-remove', path: string}|array{type: 'branch-delete', branch: string}|null
+ */
+function classify_command(string $command): ?array
+{
+    if (preg_match('/\bgit\s+merge\s+(--abort|--continue|--quit|--skip)\b/', $command) === 1) {
+        return null;
+    }
+
+    if (preg_match('/\bgit\s+merge\s+/', $command) === 1) {
+        $segment = command_segment_after($command, '/\bgit\s+merge\s+/');
+        $target = last_non_option_token($segment);
+
+        return $target === null ? null : ['type' => 'merge', 'target' => $target];
+    }
+
+    if (preg_match('/\bgit\s+worktree\s+remove\s+/', $command) === 1) {
+        $segment = command_segment_after($command, '/\bgit\s+worktree\s+remove\s+/');
+        $path = first_non_option_token($segment);
+
+        return $path === null ? null : ['type' => 'worktree-remove', 'path' => $path];
+    }
+
+    if (preg_match('/\bgit\s+branch\s+/', $command) === 1 && preg_match('/\s(?:-d|-D|--delete|--force-delete)(?:\s|=)/', ' '.$command.' ') === 1) {
+        $segment = command_segment_after($command, '/\bgit\s+branch\s+/');
+        $branch = branch_delete_target($segment);
+
+        return $branch === null ? null : ['type' => 'branch-delete', 'branch' => $branch];
+    }
+
+    return null;
+}
+
+function command_segment_after(string $command, string $pattern): string
+{
+    if (preg_match($pattern, $command, $matches, PREG_OFFSET_CAPTURE) !== 1) {
+        return '';
+    }
+
+    $offset = $matches[0][1] + strlen($matches[0][0]);
+    $tail = substr($command, $offset);
+    $parts = preg_split('/\s*(?:&&|\|\||;|\n)\s*/', $tail, 2);
+
+    return trim($parts[0] ?? '');
+}
+
+/**
+ * @return list<string>
+ */
+function shell_words(string $segment): array
+{
+    preg_match_all('/\'([^\']*)\'|"((?:\\\\.|[^"\\\\])*)"|(\S+)/', $segment, $matches, PREG_SET_ORDER);
+
+    $words = [];
+
+    foreach ($matches as $match) {
+        if (isset($match[1]) && $match[1] !== '') {
+            $words[] = $match[1];
+        } elseif (isset($match[2]) && $match[2] !== '') {
+            $words[] = stripcslashes($match[2]);
+        } elseif (isset($match[3]) && $match[3] !== '') {
+            $words[] = $match[3];
+        }
+    }
+
+    return $words;
+}
+
+function first_non_option_token(string $segment): ?string
+{
+    foreach (shell_words($segment) as $word) {
+        if (! str_starts_with($word, '-')) {
+            return $word;
+        }
+    }
+
+    return null;
+}
+
+function last_non_option_token(string $segment): ?string
+{
+    $target = null;
+
+    foreach (shell_words($segment) as $word) {
+        if (! str_starts_with($word, '-')) {
+            $target = $word;
+        }
+    }
+
+    return $target;
+}
+
+function branch_delete_target(string $segment): ?string
+{
+    $sawDelete = false;
+
+    foreach (shell_words($segment) as $word) {
+        if (in_array($word, ['-d', '-D', '--delete', '--force-delete'], true)) {
+            $sawDelete = true;
+
+            continue;
+        }
+
+        if ($sawDelete && ! str_starts_with($word, '-')) {
+            return $word;
+        }
+    }
+
+    return null;
+}
+
+function git_root(string $cwd): ?string
+{
+    $result = run_process(['git', 'rev-parse', '--show-toplevel'], $cwd);
+
+    if ($result['exit_code'] !== 0) {
+        return null;
+    }
+
+    $root = trim($result['stdout']);
+
+    return $root === '' ? null : $root;
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string}
+ */
+function check_merge(string $root, string $target): array
+{
+    $currentBranch = trim(run_git($root, ['branch', '--show-current'])['stdout']);
+
+    if ($currentBranch !== 'main') {
+        return ok();
+    }
+
+    $branch = normalize_branch($target);
+
+    if ($branch === null || in_array($branch, ['main', 'master'], true)) {
+        return ok();
+    }
+
+    if (! local_branch_exists($root, $branch)) {
+        return ok();
+    }
+
+    $worktree = worktree_for_branch($root, $branch);
+
+    if ($worktree === null) {
+        return [
+            'ok' => false,
+            'subject' => $branch,
+            'reason' => 'local branch exists, but no linked feature worktree was found, so `.orbit/loop.md` final distillation cannot be inspected',
+        ];
+    }
+
+    return final_distillation_check($worktree, $branch);
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string}
+ */
+function check_worktree_remove(string $root, string $path): array
+{
+    $worktree = absolute_path($root, $path);
+
+    if (! is_dir($worktree)) {
+        return ok();
+    }
+
+    $branch = branch_for_worktree($root, $worktree) ?? $worktree;
+
+    return final_distillation_check($worktree, $branch);
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string}
+ */
+function check_branch_delete(string $root, string $branch): array
+{
+    $branch = normalize_branch($branch);
+
+    if ($branch === null || in_array($branch, ['main', 'master'], true)) {
+        return ok();
+    }
+
+    $worktree = worktree_for_branch($root, $branch);
+
+    if ($worktree === null) {
+        return ok();
+    }
+
+    return final_distillation_check($worktree, $branch);
+}
+
+/**
+ * @return array{ok: bool, subject: string, reason: string}
+ */
+function final_distillation_check(string $worktree, string $subject): array
+{
+    $loopPath = rtrim($worktree, '/').'/.orbit/loop.md';
+
+    if (! is_file($loopPath)) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "missing finalization state at {$loopPath}",
+        ];
+    }
+
+    $contents = (string) file_get_contents($loopPath);
+    $section = markdown_section($contents, 'Final Distillation');
+
+    if ($section === null) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "{$loopPath} has no `Final Distillation` section",
+        ];
+    }
+
+    if (preg_match('/<[^>\n]+>/', $section) === 1) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "{$loopPath} still contains template placeholders in `Final Distillation`",
+        ];
+    }
+
+    if (preg_match('/\b(pending|todo|tbd)\b/i', $section) === 1) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "{$loopPath} still contains pending final-distillation fields",
+        ];
+    }
+
+    $outcomes = final_outcome_values($section);
+
+    foreach ($outcomes as $value) {
+        if (is_meaningful_outcome($value)) {
+            return ok();
+        }
+    }
+
+    return [
+        'ok' => false,
+        'subject' => $subject,
+        'reason' => "{$loopPath} does not record an accepted update, rejected/already-covered signal, deferred follow-up, or no-new-signal rationale",
+    ];
+}
+
+function markdown_section(string $contents, string $heading): ?string
+{
+    $lines = preg_split('/\R/', $contents);
+    $capture = false;
+    $section = [];
+
+    foreach ($lines as $line) {
+        if (preg_match('/^##\s+'.preg_quote($heading, '/').'\s*$/', $line) === 1) {
+            $capture = true;
+
+            continue;
+        }
+
+        if ($capture && preg_match('/^##\s+/', $line) === 1) {
+            break;
+        }
+
+        if ($capture) {
+            $section[] = $line;
+        }
+    }
+
+    if (! $capture) {
+        return null;
+    }
+
+    return trim(implode("\n", $section));
+}
+
+/**
+ * @return list<string>
+ */
+function final_outcome_values(string $section): array
+{
+    $labels = [
+        'Accepted durable updates',
+        'Rejected or already-covered signals',
+        'Deferred follow-ups',
+        'No-new-signal rationale',
+    ];
+
+    $values = [];
+    $activeLabel = null;
+
+    foreach (preg_split('/\R/', $section) as $line) {
+        $trimmed = trim($line);
+
+        if (preg_match('/^-\s+([^:]+):\s*(.*)$/', $trimmed, $matches) === 1) {
+            $label = $matches[1];
+            $activeLabel = in_array($label, $labels, true) ? $label : null;
+
+            if ($activeLabel !== null && trim($matches[2]) !== '') {
+                $values[] = trim($matches[2]);
+            }
+
+            continue;
+        }
+
+        if ($activeLabel !== null && preg_match('/^-\s+(.+)$/', $trimmed, $matches) === 1) {
+            $values[] = trim($matches[1]);
+        }
+    }
+
+    return $values;
+}
+
+function is_meaningful_outcome(string $value): bool
+{
+    $normalized = strtolower(trim($value, " \t\n\r\0\x0B`.'"));
+
+    if ($normalized === '') {
+        return false;
+    }
+
+    return ! in_array($normalized, ['none', 'n/a', 'na', 'not applicable', 'pending', 'todo', 'tbd', 'blocked'], true);
+}
+
+function normalize_branch(string $target): ?string
+{
+    $target = trim($target, " \t\n\r\0\x0B'\"");
+
+    if ($target === '') {
+        return null;
+    }
+
+    $target = preg_replace('/^refs\/heads\//', '', $target);
+    $target = preg_replace('/^origin\//', '', (string) $target);
+
+    if ($target === 'FETCH_HEAD' || preg_match('/^[0-9a-f]{7,40}$/i', $target) === 1) {
+        return null;
+    }
+
+    return $target;
+}
+
+function local_branch_exists(string $root, string $branch): bool
+{
+    return run_git($root, ['show-ref', '--verify', '--quiet', 'refs/heads/'.$branch])['exit_code'] === 0;
+}
+
+function worktree_for_branch(string $root, string $branch): ?string
+{
+    foreach (worktrees($root) as $worktree) {
+        if (($worktree['branch'] ?? null) === $branch) {
+            return $worktree['path'];
+        }
+    }
+
+    return null;
+}
+
+function branch_for_worktree(string $root, string $path): ?string
+{
+    $path = realpath($path) ?: $path;
+
+    foreach (worktrees($root) as $worktree) {
+        if ((realpath($worktree['path']) ?: $worktree['path']) === $path) {
+            return $worktree['branch'] ?? null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @return list<array{path: string, branch?: string}>
+ */
+function worktrees(string $root): array
+{
+    $result = run_git($root, ['worktree', 'list', '--porcelain']);
+
+    if ($result['exit_code'] !== 0) {
+        return [];
+    }
+
+    $worktrees = [];
+    $current = [];
+
+    foreach (preg_split('/\R/', trim($result['stdout'])) as $line) {
+        if (str_starts_with($line, 'worktree ')) {
+            if (isset($current['path'])) {
+                $worktrees[] = $current;
+            }
+
+            $current = ['path' => substr($line, strlen('worktree '))];
+
+            continue;
+        }
+
+        if (str_starts_with($line, 'branch refs/heads/')) {
+            $current['branch'] = substr($line, strlen('branch refs/heads/'));
+        }
+    }
+
+    if (isset($current['path'])) {
+        $worktrees[] = $current;
+    }
+
+    return $worktrees;
+}
+
+function absolute_path(string $root, string $path): string
+{
+    $path = trim($path, " \t\n\r\0\x0B'\"");
+
+    if (str_starts_with($path, '/')) {
+        return $path;
+    }
+
+    return $root.'/'.$path;
+}
+
+/**
+ * @param  list<string>  $args
+ * @return array{exit_code: int, stdout: string, stderr: string}
+ */
+function run_git(string $root, array $args): array
+{
+    return run_process(array_merge(['git'], $args), $root);
+}
+
+/**
+ * @param  list<string>  $command
+ * @return array{exit_code: int, stdout: string, stderr: string}
+ */
+function run_process(array $command, string $cwd): array
+{
+    $descriptorSpec = [
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = proc_open($command, $descriptorSpec, $pipes, $cwd);
+
+    if (! is_resource($process)) {
+        return ['exit_code' => 1, 'stdout' => '', 'stderr' => 'unable to start process'];
+    }
+
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return [
+        'exit_code' => proc_close($process),
+        'stdout' => $stdout === false ? '' : $stdout,
+        'stderr' => $stderr === false ? '' : $stderr,
+    ];
+}
+
+/**
+ * @return array{ok: true, subject: string, reason: string}
+ */
+function ok(): array
+{
+    return ['ok' => true, 'subject' => '', 'reason' => ''];
+}
+
+function block_message(string $subject, string $reason): string
+{
+    return <<<TEXT
+Orbit finalization gate blocked this merge/cleanup boundary.
+
+Subject: {$subject}
+Reason: {$reason}
+
+Before merging or deleting the feature worktree, review `.orbit/` evidence,
+fill `.orbit/loop.md` -> `Final Distillation`, and record one of:
+- an accepted durable guardrail update,
+- a rejected or already-covered signal,
+- a deferred follow-up with owner and trigger, or
+- a no-new-signal rationale.
+
+Then rerun the same git command.
+
+TEXT;
+}
