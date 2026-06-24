@@ -10,7 +10,9 @@ use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
 use App\Services\Updates\RunsLocalUpdate;
 use App\Services\Updates\UpdateAllHumanProgressRenderer;
+use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
+use Throwable;
 
 final class UpdateAllCommand extends GatewayCommand
 {
@@ -42,8 +44,14 @@ final class UpdateAllCommand extends GatewayCommand
         $progress->begin($this->output);
         $progress->checkingForUpdates($this->output);
 
+        $payload = $this->updateStartPayload();
+
+        if (is_int($payload)) {
+            return $payload;
+        }
+
         try {
-            $response = $this->gatewayPostWithIdleTicks('/api/update/all/start');
+            $response = $this->gatewayPostWithIdleTicks('/api/update/all/start', $payload);
         } catch (GatewayApiException $exception) {
             $progress->gatewayFailed($this->output, $exception->getMessage());
             $progress->finishFailure($this->output);
@@ -119,8 +127,14 @@ final class UpdateAllCommand extends GatewayCommand
 
     private function handleJson(RunsLocalUpdate $localUpdater): int
     {
+        $payload = $this->updateStartPayload();
+
+        if (is_int($payload)) {
+            return $payload;
+        }
+
         try {
-            $response = $this->gatewayPost('/api/update/all/start');
+            $response = $this->gatewayPost('/api/update/all/start', $payload);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -280,6 +294,88 @@ final class UpdateAllCommand extends GatewayCommand
         $eventsUrl = trim($eventsUrl);
 
         return $eventsUrl === '' ? null : $eventsUrl;
+    }
+
+    /**
+     * @return array{manifest: array<string, mixed>}|array{}|int
+     */
+    private function updateStartPayload(): array|int
+    {
+        $manifestUrl = $this->configuredReleaseManifestUrl();
+
+        if ($manifestUrl === null) {
+            return [];
+        }
+
+        $manifest = $this->downloadReleaseManifest($manifestUrl);
+
+        if (is_int($manifest)) {
+            return $manifest;
+        }
+
+        return ['manifest' => $manifest];
+    }
+
+    private function configuredReleaseManifestUrl(): ?string
+    {
+        $value = getenv('ORBIT_RELEASE_MANIFEST_URL');
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
+    }
+
+    /**
+     * @return array<string, mixed>|int
+     */
+    private function downloadReleaseManifest(string $url): array|int
+    {
+        try {
+            $response = Http::acceptJson()
+                ->timeout($this->releaseManifestTimeoutSeconds())
+                ->get($url);
+        } catch (Throwable $exception) {
+            return $this->renderReleaseManifestUnavailable($url, $exception->getMessage());
+        }
+
+        if (! $response->successful()) {
+            return $this->renderReleaseManifestUnavailable($url, "HTTP {$response->status()}");
+        }
+
+        $manifest = $response->json();
+
+        if (! is_array($manifest)) {
+            return $this->renderReleaseManifestUnavailable($url, 'response was not a JSON object');
+        }
+
+        return $manifest;
+    }
+
+    private function releaseManifestTimeoutSeconds(): int
+    {
+        $value = getenv('ORBIT_RELEASE_MANIFEST_TIMEOUT_SECONDS');
+
+        if (! is_numeric($value)) {
+            return 10;
+        }
+
+        return max(1, (int) $value);
+    }
+
+    private function renderReleaseManifestUnavailable(string $url, string $reason): int
+    {
+        return $this->renderFailure(
+            'release_manifest_unavailable',
+            'Release manifest could not be resolved.',
+            [
+                'url' => $url,
+                'reason' => $reason,
+            ],
+        );
     }
 
     /**

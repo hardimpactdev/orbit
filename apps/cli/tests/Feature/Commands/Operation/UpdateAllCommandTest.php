@@ -52,6 +52,47 @@ it('starts the durable update operation and follows its event stream in json mod
         ->and($output)->not->toContain('runner started');
 });
 
+it('sends the configured release manifest inline when starting the durable update operation', function (): void {
+    config()->set('orbit.gateway.url', 'https://gateway.test');
+    config()->set('orbit.gateway.timeout', 30);
+
+    $manifest = fakeUpdateAllReleaseManifest();
+    $follower = new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0, 'data' => ['updates' => []]]],
+    ]);
+
+    app()->forgetInstance(GatewayApiClient::class);
+    app()->forgetInstance(GatewayOperationEventStreamClient::class);
+    app()->forgetInstance(GatewayOperationFollower::class);
+    app()->instance(GatewayOperationFollower::class, $follower);
+
+    Http::fake([
+        'https://artifacts.orbit/live-test/orbit-release-manifest.json' => Http::response($manifest, 200),
+        'https://gateway.test/api/update/all/start' => Http::response(fakeUpdateAllStartEnvelope(), 202),
+    ]);
+
+    $previousManifestUrl = getenv('ORBIT_RELEASE_MANIFEST_URL');
+
+    putenv('ORBIT_RELEASE_MANIFEST_URL=https://artifacts.orbit/live-test/orbit-release-manifest.json');
+
+    try {
+        [$exitCode] = runCommand($this, 'update:all', [
+            '--json' => true,
+        ]);
+
+        Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+            && $request->url() === 'https://gateway.test/api/update/all/start'
+            && $request->data() === ['manifest' => $manifest]);
+
+        expect($exitCode)->toBe(0)
+            ->and($follower->eventsUrls)->toBe(['/api/operations/run-1/events']);
+    } finally {
+        $previousManifestUrl === false
+            ? putenv('ORBIT_RELEASE_MANIFEST_URL')
+            : putenv("ORBIT_RELEASE_MANIFEST_URL={$previousManifestUrl}");
+    }
+});
+
 it('reports partial failure in json mode when the local update fails after the gateway phase', function (): void {
     $this->localUpdater->results['download'] = [
         'successful' => false,
@@ -1698,6 +1739,26 @@ function fakeUpdateAllStartEnvelope(): array
         ],
         'events_url' => '/api/operations/run-1/events',
     ]);
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function fakeUpdateAllReleaseManifest(): array
+{
+    return [
+        'schema_version' => 1,
+        'version' => '1.2.3',
+        'build_id' => 'candidate-build',
+        'source' => 'topology-candidate',
+        'images' => [
+            'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3-candidate@sha256:'.str_repeat('a', 64),
+        ],
+        'cli_artifacts' => updateAllCommandCandidateCliArtifacts(),
+        'role_images' => [
+            'orbit-caddy' => 'caddy:2-alpine',
+        ],
+    ];
 }
 
 /**
