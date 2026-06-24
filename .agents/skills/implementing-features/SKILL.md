@@ -97,6 +97,13 @@ Responsibilities:
   cleanup command before executing each boundary. The Codex `PreToolUse` hook is
   a best-effort guardrail, not the only gate, because it does not intercept every
   shell execution path.
+- Treat hook dogfood as proof only when a plain Codex-issued boundary command is
+  blocked before Git runs. `.codex/hooks.json` existing or `/hooks` showing an
+  installed/active hook is not enough. If Git reaches usage output, a Git-side
+  refusal, or command execution, record that as a hook-surface failure and keep
+  using `bin/orbit-feature-finalization-check` explicitly. Prefer a
+  non-destructive dogfood command such as `git branch -d <feature-branch>` while
+  the branch is still checked out in its worktree.
 - Own final commit, merge-back, worktree cleanup, feature completion cleanup,
   and the implementation report.
 

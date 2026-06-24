@@ -134,6 +134,20 @@ bin/orbit-feature-finalization-check git worktree remove .worktrees/<feature-bra
 bin/orbit-feature-finalization-check git branch -d <feature-branch>
 ```
 
+Codex hook status is diagnostic only. Seeing `.codex/hooks.json` in the repo or
+`/hooks` report `PreToolUse` as installed/active does not prove enforcement. A
+hook dogfood only passes when a plain Codex-issued merge or cleanup command is
+blocked before Git runs. If Git prints usage, refuses the operation itself, or
+otherwise reaches command execution, treat the hook dogfood as failed and use
+the explicit finalization gate for any real boundary.
+
+Use a non-destructive command shape for hook dogfood. A good cleanup-boundary
+probe is `git branch -d <feature-branch>` while that branch is still checked
+out in a retained worktree: if the hook misses, Git should refuse the delete
+because the branch is checked out. Do not use an invalid command as the primary
+proof; it can show the hook missed the call, but it is noisier evidence than a
+valid command with Git-side safety.
+
 The gate is intentionally narrow: it only inspects git merge and
 feature-cleanup boundaries, then blocks when a targeted feature worktree has no
 completed `.orbit/loop.md` `Final Distillation` section.
@@ -156,7 +170,7 @@ finalization checkpoint from being skipped before `git merge`,
 If the gate blocks, do not delete `.orbit/` or bypass the merge. Review the
 feature evidence, classify candidate learnings through `HARNESS_SIGNALS.md`,
 fill the final-distillation outcomes in `.orbit/loop.md`, and then rerun the
-rerun `bin/orbit-feature-finalization-check`, then rerun the same git command.
+`bin/orbit-feature-finalization-check`, then rerun the same git command.
 For a genuinely tiny local change, the final-distillation section can record
 the no-review/no-new-signal rationale explicitly.
 
