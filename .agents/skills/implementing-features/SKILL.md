@@ -65,7 +65,8 @@ Responsibilities:
   evidence exists. For documentation-heavy changes, use
   `.agents/review-personas/docs-librarian.md`; for CLI command changes, use
   `.agents/review-personas/cli-command.md` before accepting the slice.
-- Own final commit, merge-back, worktree cleanup, and the implementation report.
+- Own final commit, merge-back, worktree cleanup, feature completion cleanup,
+  and the implementation report.
 
 Do not make substantive implementation edits yourself unless the user explicitly
 approves bypassing the Solo worker lane. Small orchestration-only edits,
@@ -594,6 +595,11 @@ moving on to durable E2E.
     the release artifacts are accepted, run `doctor` again, compare the before
     and after results, and either fix regressions immediately or record scoped
     follow-up tasks for intentional migration work.
+27. When the user confirms live topology behavior or explicitly says the
+    feature is complete, run feature completion cleanup: archive the feature
+    scratchpad, close or resolve related Solo todos, and stand down related
+    Solo agents or retained terminals. Keep this scoped to the feature and
+    report anything intentionally preserved.
 
 ## Test-Driven Development
 
@@ -715,6 +721,10 @@ is not required after ordinary `composer test:e2e` runs.
 - Completed work does not stay stranded in `.worktrees/`: it is committed,
   merged into `main`, and cleaned up unless the user explicitly asks for a PR or
   preserved branch.
+- Solo feature state does not stay open after the feature is accepted complete:
+  archive the feature scratchpad, close or resolve related Solo todos, and stop
+  or archive related Solo agents. Do this only after user/live acceptance, and
+  do not touch unrelated Solo state.
 
 ## Report Shape
 
@@ -781,6 +791,12 @@ Merge-back:
 - Commit: <sha>
 - Main checkout: `~/orbit` on `main` at <sha>
 - Worktree cleanup: <removed or preserved with reason>
+
+Feature completion cleanup:
+- Completion trigger: <user live confirmation, user says complete, pending, or not applicable>
+- Solo scratchpad: <archived, preserved with reason, none, or pending>
+- Solo todos: <closed/resolved ids, preserved with reason, none, or pending>
+- Solo agents/terminals: <stopped/archived ids, preserved with reason, none, or pending>
 
 Blockers:
 - <blocker or none>

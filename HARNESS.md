@@ -85,9 +85,9 @@ authority and are not the durable harness.
 
 ## Post-Feature Session Review
 
-After a feature completes, the orchestrator reviews the feature thread, Solo
-worker sessions, reviewer output, retained terminal or PTY evidence when
-applicable, verification output, and human corrections.
+Before final reporting and merge-back, the orchestrator reviews the feature
+thread, Solo worker sessions, reviewer output, retained terminal or PTY
+evidence when applicable, verification output, and human corrections.
 
 Distill durable repeated mistakes or missing context into the smallest
 appropriate sink: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
@@ -122,6 +122,25 @@ outcomes in the feature scratchpad and the actual code history in Git. The top
 of `.orbit/loop.md` should name the feature scratchpad, summarize completed
 slices in one line each, and identify the current slice so a worker knows the
 branch may already contain earlier feature work.
+
+## Feature Cleanup
+
+Cleanup has two boundaries.
+
+- Merge cleanup happens after the feature branch is committed, verified, and
+  merged into `main`. Remove the completed worktree and merged branch unless
+  the user explicitly asks to preserve them.
+- Feature completion cleanup happens only after the user confirms the live
+  topology works as expected, or explicitly says the feature can be considered
+  complete. Then archive the feature scratchpad, close or resolve related Solo
+  todos, and stand down related Solo agents or retained terminals.
+
+Keep cleanup scoped to the feature. Do not archive unrelated scratchpads, close
+unrelated todos, or stop unrelated agents just because they are in the same Solo
+project. Before archiving Solo state, make sure the scratchpad or todo records
+the merge commit, final verification, live/user acceptance when applicable, and
+any preserved follow-up. If a worktree, scratchpad, todo, or agent must remain
+open, report the reason and owner.
 
 ## Solo Role Matrix
 

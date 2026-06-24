@@ -75,8 +75,11 @@ product authority and are not linted as product docs.
   stop and report the blocker instead of silently falling back.
 - When a feature is implemented and verified, commit the worktree branch, merge
   it back into `main` from the primary `~/orbit` checkout, remove the completed
-  worktree/branch, and leave `~/orbit` on updated `main`. Preserve unrelated
-  dirty files in `~/orbit`; never discard user changes to make a merge easier.
+  worktree/branch, and leave `~/orbit` on updated `main`. After the user
+  confirms live topology behavior or explicitly says the feature is complete,
+  archive the feature scratchpad and clean up related Solo todos and agents.
+  Preserve unrelated dirty files in `~/orbit`; never discard user changes to
+  make a merge easier.
 - Always make sure that `apps/docs/content/` describes the correct behavior. If
   the docs are lacking or contradict what is requested, flag that first before
   proceeding.
