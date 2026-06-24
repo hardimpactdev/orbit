@@ -1,14 +1,14 @@
 # Signal: Bounded Reviewer Verdict Needed
 
-Status: open
+Status: recurring
 First seen: 2026-06-24
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
-Source worktree: quality-check-updateall-pty-structure
-Source commit: pending
+Source worktree: quality-check-updateall-pty-structure; quality-e2e-lane-timing-baseline
+Source commit: quality-e2e-lane-timing-baseline
 Signal type: agent-mistake
 Guardrail target: .agents/skills/implementing-features/SKILL.md
-Guardrail change: none
+Guardrail change: quality-e2e-lane-timing-baseline
 Related signals: harness-signals/2026-06-23-review-persona-needs-workflow-hook.md, harness-signals/2026-06-23-worker-first-diff-checkpoint.md
 Superseded by: none
 Tags: solo, review, claude, quality-gate, timing
@@ -26,6 +26,13 @@ The code change itself was small and independently verified, but the review
 lane did not produce timely value. A required reviewer that cannot return a
 proportional verdict becomes a bottleneck in the loop.
 
+The signal reappeared during `quality-e2e-lane-timing-baseline`: a Claude Opus
+reviewer loaded the two changed E2E test files and then stayed in a long
+reasoning step without returning a verdict. The feature owner interrupted and
+closed it, then spawned a Claude Sonnet low-effort reviewer with a concise
+blockers-first prompt. That second reviewer returned `No blockers` and useful
+non-blocking assertion-hardening suggestions.
+
 ## Prior Occurrences
 
 Related records already cover reviewer workflow hooks and worker first-diff
@@ -40,9 +47,11 @@ the right files but does not produce a verdict.
 
 ## Guardrail Change
 
-None yet. A future guardrail should make reviewer prompts request a concise
-accept/block verdict first, with optional details after, and should set a short
-Solo timer for small changed-files-only reviews.
+`.agents/skills/implementing-features/SKILL.md` now instructs feature owners to
+request a blockers-first verdict for required reviewer personas, bound small
+changed-files-only reviews, interrupt once if a reviewer has loaded the context
+but does not return, and replace or close the reviewer if the verdict still does
+not arrive.
 
 ## Verification
 
@@ -53,9 +62,9 @@ focused quiet PTY test, full `UpdateAllCommandTest.php` profile,
 ## Reappearance Check
 
 If a future required reviewer takes too long on a small changed-files-only
-review, interrupt once with a verdict-only prompt. If it still does not return,
-close the reviewer, mark this signal recurring, and continue only if the feature
-owner can defend the change from tests and direct inspection.
+review, follow the skill guardrail. If the pattern still repeats after that,
+keep this record recurring and move the guardrail from skill prose into a
+reviewer-persona prompt template or Solo timer helper.
 
 ## Curation Notes
 

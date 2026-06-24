@@ -5,15 +5,15 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-it('lists registered tools from gateway intent as JSON', function (): void {
+it('lists and filters registered tools from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
-        e2eRestartGatewayApi($topology, 'tool-list-json');
+        e2eRestartGatewayApi($topology, 'tool-list');
         toolListSeedGatewayIntent($topology);
 
-        $result = $topology->ssh(
+        $jsonResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:list --json',
@@ -21,26 +21,14 @@ it('lists registered tools from gateway intent as JSON', function (): void {
             ),
             timeoutSeconds: 120,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $jsonPayload = json_decode(trim($jsonResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['tools'])->toBeArray()
-            ->and($payload['success']['data']['tools'])->not->toBeEmpty()
-            ->and($payload['success']['data']['tools'][0])->toHaveKeys(['name', 'node', 'expected_state', 'managed']);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+        expect($jsonResult->successful())->toBeTrue()
+            ->and($jsonPayload['success']['data']['tools'])->toBeArray()
+            ->and($jsonPayload['success']['data']['tools'])->not->toBeEmpty()
+            ->and($jsonPayload['success']['data']['tools'][0])->toHaveKeys(['name', 'node', 'expected_state', 'managed']);
 
-it('lists registered tools from gateway intent as human output', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        e2eRestartGatewayApi($topology, 'tool-list-human');
-        toolListSeedGatewayIntent($topology);
-
-        $result = $topology->ssh(
+        $humanResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:list',
@@ -49,23 +37,11 @@ it('lists registered tools from gateway intent as human output', function (): vo
             timeoutSeconds: 120,
         );
 
-        expect($result->successful())->toBeTrue()
-            ->and($result->output())->toContain('Node:')
-            ->and($result->output())->toContain('opencode-server');
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+        expect($humanResult->successful())->toBeTrue()
+            ->and($humanResult->output())->toContain('Node:')
+            ->and($humanResult->output())->toContain('opencode-server');
 
-it('filters tool list by node', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        e2eRestartGatewayApi($topology, 'tool-list-node');
-        toolListSeedGatewayIntent($topology);
-
-        $result = $topology->ssh(
+        $nodeFilterResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:list --node=app-dev-1 --json',
@@ -73,26 +49,16 @@ it('filters tool list by node', function (): void {
             ),
             timeoutSeconds: 120,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $tools = $payload['success']['data']['tools'] ?? [];
+        $nodeFilterPayload = json_decode(trim($nodeFilterResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $nodeFilterTools = $nodeFilterPayload['success']['data']['tools'] ?? [];
 
-        expect($result->successful())->toBeTrue()
-            ->and($tools)->toBeArray()
-            ->and(array_unique(array_column($tools, 'node')))->toBe(['app-dev-1']);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+        expect($nodeFilterResult->successful())->toBeTrue()
+            ->and($nodeFilterTools)->toBeArray()
+            ->and(array_values(array_unique(array_column($nodeFilterTools, 'node'))))->toBe(['app-dev-1']);
 
-it('filters tool list by app', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        e2eRestartGatewayApi($topology, 'tool-list-app');
         toolListSeedGatewayIntentWithApp($topology);
 
-        $result = $topology->ssh(
+        $appFilterResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:list --app=docs --json',
@@ -100,12 +66,12 @@ it('filters tool list by app', function (): void {
             ),
             timeoutSeconds: 120,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
-        $tools = $payload['success']['data']['tools'] ?? [];
+        $appFilterPayload = json_decode(trim($appFilterResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $appFilterTools = $appFilterPayload['success']['data']['tools'] ?? [];
 
-        expect($result->successful())->toBeTrue()
-            ->and($tools)->toBeArray()
-            ->and(array_column($tools, 'name'))->toContain('opencode-server');
+        expect($appFilterResult->successful())->toBeTrue()
+            ->and($appFilterTools)->toBeArray()
+            ->and(array_column($appFilterTools, 'name'))->toContain('opencode-server');
     } finally {
         $topology->cleanup();
     }

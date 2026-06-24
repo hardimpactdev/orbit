@@ -124,6 +124,11 @@ provision is not required for ordinary feature/E2E code changes.
 
 - Use narrow Pest or in-memory tests for command contracts, validation, JSON
   envelopes, renderers, and deterministic service logic.
+- For focused prepared-topology E2E runs, pass at most one explicit Pest path to
+  `composer test:e2e:docker` or `composer test:e2e:incus`. Pest/Paratest accepts
+  a single positional `path`; to cover multiple files in one focused run, pass
+  their shared directory and add `--filter='<regex>'`, or run the files as
+  separate commands.
 - Use `composer test:e2e:docker` for gateway API, CA trust, registry-backed
   behavior, command forwarding, Docker runtime backend behavior, scheduler, and
   process lifecycle.

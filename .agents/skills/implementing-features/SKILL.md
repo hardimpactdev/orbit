@@ -543,6 +543,13 @@ moving on to durable E2E.
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
     Resolve or explicitly report findings before commit.
+    For small changed-files-only reviews, prompt the reviewer for a
+    blockers-first verdict (`No blockers` or file/line blockers) before optional
+    suggestions. If the reviewer has loaded the relevant context but does not
+    return a bounded verdict promptly, interrupt once with a verdict-only
+    prompt. If it still does not return, close or replace that reviewer and
+    record the process finding through `harness-signals/` before proceeding
+    only on defensible direct evidence.
 18. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
 19. Run provider provision gates only as final/nightly substrate verification

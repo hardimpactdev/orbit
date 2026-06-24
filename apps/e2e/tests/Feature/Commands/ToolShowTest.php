@@ -5,15 +5,15 @@ declare(strict_types=1);
 use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 
-it('shows a registered tool from gateway intent as JSON', function (): void {
+it('shows registered tools and tool errors from gateway intent', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
 
     try {
-        e2eRestartGatewayApi($topology, 'tool-show-json');
+        e2eRestartGatewayApi($topology, 'tool-show');
         toolShowSeedGatewayIntent($topology);
 
-        $result = $topology->ssh(
+        $jsonResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:show opencode-server --node=app-dev-1 --json',
@@ -22,29 +22,17 @@ it('shows a registered tool from gateway intent as JSON', function (): void {
             timeoutSeconds: 120,
             allowFailure: true,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $jsonPayload = json_decode(trim($jsonResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeTrue()
-            ->and($payload['success']['data']['tool'])->toMatchArray([
+        expect($jsonResult->successful())->toBeTrue()
+            ->and($jsonPayload['success']['data']['tool'])->toMatchArray([
                 'name' => 'opencode-server',
                 'node' => 'app-dev-1',
                 'expected_state' => 'running',
             ])
-            ->and($payload['success']['data']['tool'])->toHaveKeys(['name', 'node', 'expected_state', 'managed']);
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+            ->and($jsonPayload['success']['data']['tool'])->toHaveKeys(['name', 'node', 'expected_state', 'managed']);
 
-it('shows a registered tool from gateway intent as human output', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        e2eRestartGatewayApi($topology, 'tool-show-human');
-        toolShowSeedGatewayIntent($topology);
-
-        $result = $topology->ssh(
+        $humanResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:show opencode-server --node=app-dev-1',
@@ -54,21 +42,12 @@ it('shows a registered tool from gateway intent as human output', function (): v
             allowFailure: true,
         );
 
-        expect($result->successful())->toBeTrue()
-            ->and($result->output())->toContain('Tool: opencode-server')
-            ->and($result->output())->toContain('Node')
-            ->and($result->output())->toContain('app-dev-1');
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+        expect($humanResult->successful())->toBeTrue()
+            ->and($humanResult->output())->toContain('Tool: opencode-server')
+            ->and($humanResult->output())->toContain('Node')
+            ->and($humanResult->output())->toContain('app-dev-1');
 
-it('returns tool.not_found error for a supported tool absent from the gateway registry', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        $result = $topology->ssh(
+        $notFoundResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:show mailpit --node=app-dev-1 --json',
@@ -77,21 +56,12 @@ it('returns tool.not_found error for a supported tool absent from the gateway re
             timeoutSeconds: 120,
             allowFailure: true,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $notFoundPayload = json_decode(trim($notFoundResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeFalse()
-            ->and($payload['error']['code'])->toBe('tool.not_found');
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+        expect($notFoundResult->successful())->toBeFalse()
+            ->and($notFoundPayload['error']['code'])->toBe('tool.not_found');
 
-it('returns tool.unsupported_action error for an unsupported tool catalog name', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        $result = $topology->ssh(
+        $unsupportedResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:show not-a-real-tool --node=app-dev-1 --json',
@@ -100,26 +70,15 @@ it('returns tool.unsupported_action error for an unsupported tool catalog name',
             timeoutSeconds: 120,
             allowFailure: true,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $unsupportedPayload = json_decode(trim($unsupportedResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($result->successful())->toBeFalse()
-            ->and($payload['error']['code'])->toBe('tool.unsupported_action')
-            ->and($payload['error']['meta']['tool'])->toBe('not-a-real-tool');
-    } finally {
-        $topology->cleanup();
-    }
-})->group('e2e-feature', 'e2e-feature-canary', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
+        expect($unsupportedResult->successful())->toBeFalse()
+            ->and($unsupportedPayload['error']['code'])->toBe('tool.unsupported_action')
+            ->and($unsupportedPayload['error']['meta']['tool'])->toBe('not-a-real-tool');
 
-it('includes live key in JSON output when --live flag is passed', function (): void {
-    $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
-        ->withCurrentCheckout(roles: ['gateway']);
-
-    try {
-        e2eRestartGatewayApi($topology, 'tool-show-live');
-        toolShowSeedGatewayIntent($topology);
         toolShowPrepareOpencodeBinary($topology);
 
-        $result = $topology->ssh(
+        $liveResult = $topology->ssh(
             'gateway',
             sprintf(
                 'cd %s && orbit tool:show opencode-server --node=app-dev-1 --live --json',
@@ -127,15 +86,14 @@ it('includes live key in JSON output when --live flag is passed', function (): v
             ),
             timeoutSeconds: 180,
         );
-        $payload = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
+        $livePayload = json_decode(trim($liveResult->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        // --live requests live node inspection; the success path returns the
-        // normal tool envelope plus observed fields.
-        expect($payload)->toBeArray()
-            ->and($payload)->toHaveKey('success');
+        expect($liveResult->successful())->toBeTrue()
+            ->and($livePayload)->toBeArray()
+            ->and($livePayload)->toHaveKey('success');
 
-        if (isset($payload['success'])) {
-            expect($payload['success']['data']['tool'])->toHaveKeys(['observed_state', 'observed_version']);
+        if (isset($livePayload['success'])) {
+            expect($livePayload['success']['data']['tool'])->toHaveKeys(['observed_state', 'observed_version']);
         }
     } finally {
         $topology->cleanup();
