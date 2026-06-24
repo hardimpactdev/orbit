@@ -127,7 +127,11 @@ function copy_directory(string $source, string $destination): void
             fail('Could not copy file: '.$item->getPathname());
         }
 
-        chmod($target, $item->getPerms() & 0777);
+        $mode = $item->getPerms() & 0777;
+
+        if (($mode & 0111) !== 0) {
+            chmod($target, $mode);
+        }
     }
 }
 
