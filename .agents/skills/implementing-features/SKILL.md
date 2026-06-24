@@ -48,10 +48,12 @@ Responsibilities:
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
   active slice only, rewriting it when the next slice starts.
-- Spawn one Solo implementation worker by default. Grok is the default
-  implementation model when available, but another suitable Solo-managed worker
-  may own the slice if that is the active toolchain. Spawn multiple workers only
-  for disjoint slices with explicit ownership and merge order.
+- Run a dependency scan before spawning workers. If slices or verification lanes
+  have disjoint ownership and neither needs the other's result, dispatch them in
+  parallel through Solo by default. Use one worker serially only when ownership,
+  shared state, provider capacity, or merge order cannot be stated clearly.
+- Grok is the default implementation model when available, but another suitable
+  Solo-managed worker may own the slice if that is the active toolchain.
 - Use the Solo role matrix in `HARNESS.md` when splitting work. Spawn a Claude
   documenter/librarian worker for substantial docs-first or documentation-heavy
   slices when its ownership is separable.
@@ -472,10 +474,14 @@ moving on to durable E2E.
    worktree, rewrite `.orbit/loop.md` for the current slice and keep earlier
    slice outcomes in the feature scratchpad.
 4. Confirm owned files or domains and existing dirty work before editing.
-5. Decide the Solo worker plan from `HARNESS.md`. Use one Solo implementation
-   worker by default; Grok is the default implementation model when available.
-   Add a Claude documenter/librarian worker only when documentation is
-   substantial and the docs-owned surface is clear.
+5. Decide the Solo worker plan from `HARNESS.md`. First list candidate slices,
+   verification lanes, owned files, provider resources, shared temp/state paths,
+   and dependencies. If two tasks are isolated, dispatch them in parallel
+   through Solo. Treat in-memory/Pest optimization, Docker E2E optimization, and
+   Incus E2E optimization as separate lanes by default, but do not overlap full
+   `composer quality-check` with active provider E2E lanes unless shared E2E
+   support state is proven isolated. Add a Claude documenter/librarian worker
+   when documentation is substantial and the docs-owned surface is clear.
 6. If a Claude documenter/librarian worker is used, spawn it first or in
    parallel only after the docs-owned slice is explicit. The feature owner must
    inspect the docs result and accept the docs contract before code relies on it.
@@ -694,8 +700,9 @@ is not required after ordinary `composer test:e2e` runs.
 - Solo implementation workers perform substantive implementation edits; the
   feature owner orchestrates, reviews, verifies, commits, merges, cleans up, and
   reports.
-- Give each worker one clear ownership boundary. If a boundary is hard to state,
-  use one implementation worker serially instead of parallel workers.
+- Give each worker one clear ownership boundary. If multiple boundaries are
+  clear and independent, use parallel workers. If a boundary is hard to state,
+  use one implementation worker serially instead.
 - Apply documentation updates in the same implementation worktree as the related
   tests and code. Do not rely on a separate documentation-only implementation
   pass for feature work.

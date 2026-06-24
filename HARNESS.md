@@ -163,6 +163,19 @@ worktree path, owned files or domains, stop and pivot conditions, and reporting
 shape. If those boundaries are hard to state, use one worker serially instead
 of parallel workers.
 
+Before execution, the orchestrator for a feature, harness goal, or quality-gate
+slice does a dependency scan. List the candidate slices, verification lanes,
+owned files, provider resources, and any merge-order dependency. If two tasks
+have disjoint ownership and neither needs the other's result, dispatch them in
+parallel through Solo by default. Serialize only when tasks edit the same files,
+mutate the same provider resources, depend on a prior result, or cannot name a
+clear merge order. Quality-gate tuning is a standing split: in-memory/Pest
+optimization, Docker E2E optimization, and Incus E2E optimization are separate
+by default unless the active change crosses their boundaries. Do not overlap the
+full `composer quality-check` gate with active provider E2E lanes unless shared
+E2E support state is proven isolated; run the final full quality-check after
+provider lanes are idle.
+
 Documentation-heavy work may start with a Claude documenter/librarian worker.
 Code implementation can run after the feature owner accepts the docs contract as
 stable enough. Docs and code may proceed in parallel only when the product
