@@ -132,16 +132,26 @@ git branch finalized
 git worktree add .worktrees/finalized finalized >/dev/null 2>&1
 write_loop "$REPO/.worktrees/finalized/.orbit/loop.md" 'No durable signal remained after reviewing the feature evidence.'
 
+git branch historical-pending
+git worktree add .worktrees/historical-pending historical-pending >/dev/null 2>&1
+write_loop "$REPO/.worktrees/historical-pending/.orbit/loop.md" 'No durable signal remained after reviewing the historical pending-state block evidence.'
+
 git branch templated
 git worktree add .worktrees/templated templated >/dev/null 2>&1
 write_loop "$REPO/.worktrees/templated/.orbit/loop.md" '<why local cleanup, existing guardrails, or rejection was enough>'
+
+git branch pending-outcome
+git worktree add .worktrees/pending-outcome pending-outcome >/dev/null 2>&1
+write_loop "$REPO/.worktrees/pending-outcome/.orbit/loop.md" 'pending'
 
 git branch missing-loop
 git worktree add .worktrees/missing-loop missing-loop >/dev/null 2>&1
 
 expect_pass "$REPO" 'composer quality-check'
 expect_pass "$REPO" 'git merge --ff-only finalized'
+expect_pass "$REPO" 'git merge --ff-only historical-pending'
 expect_block "$REPO" 'git merge --ff-only templated'
+expect_block "$REPO" 'git merge --ff-only pending-outcome'
 expect_block "$REPO" 'git merge --ff-only missing-loop'
 expect_block "$REPO" 'git worktree remove .worktrees/templated && git branch -d templated'
 expect_check_block "$REPO" git merge --ff-only templated

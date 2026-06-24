@@ -42,6 +42,9 @@ worktree without the hook firing, losing `.orbit/` evidence before distillation.
   pre-cleanup command that does not depend on hook interception.
 - `HARNESS.md`, `AGENTS.md`, and the implementation skill now say the explicit
   finalization check is required and the Codex hook is best-effort.
+- The gate permits historical final-distillation prose that mentions a past
+  pending state. It blocks placeholders and missing/non-meaningful outcome
+  values, not every occurrence of words like `pending` in the evidence summary.
 
 ## Verification
 
@@ -53,6 +56,8 @@ rg -n "orbit-feature-finalization-check|best-effort|Merge Boundary Gate" AGENTS.
 
 The hook test covers JSON hook input, exit code `2`, and direct
 `bin/orbit-feature-finalization-check git merge --ff-only <branch>` blocking.
+It also covers the false-positive case where a completed final distillation
+mentions historical pending-state evidence.
 
 ## Reappearance Check
 

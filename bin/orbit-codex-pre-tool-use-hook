@@ -332,14 +332,6 @@ function final_distillation_check(string $worktree, string $subject): array
         ];
     }
 
-    if (preg_match('/\b(pending|todo|tbd)\b/i', $section) === 1) {
-        return [
-            'ok' => false,
-            'subject' => $subject,
-            'reason' => "{$loopPath} still contains pending final-distillation fields",
-        ];
-    }
-
     $outcomes = final_outcome_values($section);
 
     foreach ($outcomes as $value) {
