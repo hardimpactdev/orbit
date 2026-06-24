@@ -31,13 +31,13 @@ it('invokes tick callbacks in the parent process while work is blocked', functio
     $callbackPids = [];
     $tickCount = 0;
 
-    $ticker = new ForkedFrameTicker(80_000);
+    $ticker = new ForkedFrameTicker(40_000);
     $ticker->start(function () use (&$callbackPids, &$tickCount): void {
         $callbackPids[] = getmypid();
         $tickCount++;
     });
 
-    $deadline = microtime(true) + 0.25;
+    $deadline = microtime(true) + 0.14;
 
     while (microtime(true) < $deadline) {
         usleep(50_000);

@@ -117,7 +117,7 @@ it('animates active streamed steps while the parent process is blocked', functio
     }
 
     $output = new BufferedOutput(decorated: true);
-    $renderer = new StreamedStepTree($output);
+    $renderer = new StreamedStepTree($output, frameIntervalUs: 50_000);
 
     $renderer->tree('Updating Orbit', [
         [
@@ -129,7 +129,7 @@ it('animates active streamed steps while the parent process is blocked', functio
 
     $renderer->step('check', 'start');
 
-    $deadline = microtime(true) + 0.4;
+    $deadline = microtime(true) + 0.16;
 
     while (microtime(true) < $deadline) {
         usleep(50_000);

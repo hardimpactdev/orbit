@@ -178,7 +178,7 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
 
     $tickCount = 0;
     $written = false;
-    $ticker = new ForkedFrameTicker(50_000);
+    $ticker = new ForkedFrameTicker(20_000);
     $ticker->start(function () use (&$tickCount, &$written, $writable): void {
         $tickCount++;
 
@@ -188,7 +188,7 @@ it('invokes idle callbacks while waiting for stream data', function (): void {
         }
     });
 
-    $reader = new StreamIdleReader(50_000);
+    $reader = new StreamIdleReader(20_000);
 
     try {
         $chunk = $reader->read($stream, 64);
@@ -314,10 +314,10 @@ it('reads selected native streams directly instead of delegating to blocking PSR
         }
     };
 
-    $ticker = new ForkedFrameTicker(50_000);
+    $ticker = new ForkedFrameTicker(20_000);
     $ticker->start(static function (): void {});
 
-    $reader = new StreamIdleReader(50_000);
+    $reader = new StreamIdleReader(20_000);
 
     try {
         $chunk = $reader->read($stream, 64);
@@ -568,12 +568,12 @@ it('treats an invalid stream resource as closed without throwing', function (): 
     };
 
     $tickCount = 0;
-    $ticker = new ForkedFrameTicker(50_000);
+    $ticker = new ForkedFrameTicker(20_000);
     $ticker->start(function () use (&$tickCount): void {
         $tickCount++;
     });
 
-    $reader = new StreamIdleReader(50_000);
+    $reader = new StreamIdleReader(20_000);
 
     try {
         $chunk = $reader->read($stream, 64);
@@ -658,12 +658,12 @@ it('treats empty stream metadata arrays as closed without throwing', function ()
     };
 
     $tickCount = 0;
-    $ticker = new ForkedFrameTicker(50_000);
+    $ticker = new ForkedFrameTicker(20_000);
     $ticker->start(function () use (&$tickCount): void {
         $tickCount++;
     });
 
-    $reader = new StreamIdleReader(50_000);
+    $reader = new StreamIdleReader(20_000);
 
     try {
         expect($reader->read($stream, 64))->toBe('');
@@ -685,7 +685,7 @@ it('invokes idle callbacks while waiting for guzzle stream data', function (): v
     $stream = Utils::streamFor($readable);
     $tickCount = 0;
     $written = false;
-    $ticker = new ForkedFrameTicker(50_000);
+    $ticker = new ForkedFrameTicker(20_000);
     $ticker->start(function () use (&$tickCount, &$written, $writable): void {
         $tickCount++;
 
@@ -695,7 +695,7 @@ it('invokes idle callbacks while waiting for guzzle stream data', function (): v
         }
     });
 
-    $reader = new StreamIdleReader(50_000);
+    $reader = new StreamIdleReader(20_000);
 
     try {
         $chunk = $reader->read($stream, 64);

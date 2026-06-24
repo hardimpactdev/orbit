@@ -45,6 +45,7 @@ final class StreamedStepTree
 
     public function __construct(
         private readonly OutputInterface $output,
+        private readonly int $frameIntervalUs = ForkedFrameTicker::DEFAULT_INTERVAL_US,
     ) {}
 
     /**
@@ -110,7 +111,7 @@ final class StreamedStepTree
 
         $nowUs = (int) (microtime(true) * 1_000_000);
 
-        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < ForkedFrameTicker::DEFAULT_INTERVAL_US) {
+        if ($this->lastFrameAtUs !== 0 && ($nowUs - $this->lastFrameAtUs) < $this->frameIntervalUs) {
             return;
         }
 
@@ -216,14 +217,14 @@ final class StreamedStepTree
         if ($this->shouldUseProcessTicker()) {
             $ticker = new StreamedStepProcessTicker;
 
-            if ($ticker->start($this->processTickerFrames())) {
+            if ($ticker->start($this->processTickerFrames(), $this->frameIntervalUs)) {
                 $this->processTicker = $ticker;
 
                 return;
             }
         }
 
-        $this->ticker = new ForkedFrameTicker;
+        $this->ticker = new ForkedFrameTicker($this->frameIntervalUs);
         $this->ticker->start(function (): void {
             $this->tick();
         });
