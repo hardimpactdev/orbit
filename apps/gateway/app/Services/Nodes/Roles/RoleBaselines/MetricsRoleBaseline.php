@@ -25,7 +25,8 @@ use App\Services\Nodes\Roles\NodeRoleAssignments;
 use App\Services\Operations\FleetUpdateTargetSelector;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
-use App\Services\Processes\ProcessServiceDefinitionRegistry;
+use App\Services\Processes\ProcessRuntimeServiceMetadata;
+use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Proxy\ProxyRouteRenderer;
 use App\Services\Tools\ToolCatalog;
 use App\Services\Tools\ToolsFixer;
@@ -56,7 +57,7 @@ class MetricsRoleBaseline implements RoleBaseline
     private const string NodeExporterFirewallOwner = 'metrics';
 
     public function __construct(
-        private readonly ProcessServiceDefinitionRegistry $serviceDefinitions,
+        private readonly ProcessServiceCatalog $serviceCatalog,
         private readonly ProxyRouteRenderer $proxyRouteRenderer,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
@@ -120,14 +121,14 @@ class MetricsRoleBaseline implements RoleBaseline
 
     private function convergePrometheus(Node $node): Process
     {
-        $definition = $this->serviceDefinitions->resolve(
-            definition: 'prometheus',
+        $descriptor = $this->serviceCatalog->resolve(
+            service: 'prometheus',
             version: null,
             runtime: ProcessRuntime::DockerSwarm,
             node: $node,
             processName: 'prometheus',
         );
-        $runtimeConfig = $definition->runtimeConfig;
+        $runtimeConfig = $descriptor->runtimeConfig;
         $content = $this->prometheusConfig($node);
 
         $runtimeConfig['managed_files'] = [
@@ -146,21 +147,21 @@ class MetricsRoleBaseline implements RoleBaseline
 
         $this->refreshSpecHash($runtimeConfig, ProcessRuntime::DockerSwarm, 'prometheus');
 
-        return $this->persistProcess($node, 'prometheus', $definition->command, ProcessRuntime::DockerSwarm, $runtimeConfig);
+        return $this->persistProcess($node, 'prometheus', $descriptor->command, ProcessRuntime::DockerSwarm, $runtimeConfig);
     }
 
     private function convergeGrafana(Node $node): Process
     {
         $process = $this->process($node, 'grafana');
         $password = $this->existingGrafanaPassword($process) ?? Str::random(32);
-        $definition = $this->serviceDefinitions->resolve(
-            definition: 'grafana',
+        $descriptor = $this->serviceCatalog->resolve(
+            service: 'grafana',
             version: null,
             runtime: ProcessRuntime::DockerSwarm,
             node: $node,
             processName: 'grafana',
         );
-        $runtimeConfig = $definition->runtimeConfig;
+        $runtimeConfig = $descriptor->runtimeConfig;
         $environment = is_array($runtimeConfig['environment'] ?? null) ? $runtimeConfig['environment'] : [];
         $credentials = is_array($runtimeConfig['credentials'] ?? null) ? $runtimeConfig['credentials'] : [];
 
@@ -207,20 +208,20 @@ class MetricsRoleBaseline implements RoleBaseline
 
         $this->refreshSpecHash($runtimeConfig, ProcessRuntime::DockerSwarm, 'grafana');
 
-        return $this->persistProcess($node, 'grafana', $definition->command, ProcessRuntime::DockerSwarm, $runtimeConfig);
+        return $this->persistProcess($node, 'grafana', $descriptor->command, ProcessRuntime::DockerSwarm, $runtimeConfig);
     }
 
     private function convergeProcess(Node $node, string $name, ProcessRuntime $runtime): Process
     {
-        $definition = $this->serviceDefinitions->resolve(
-            definition: $name,
+        $descriptor = $this->serviceCatalog->resolve(
+            service: $name,
             version: null,
             runtime: $runtime,
             node: $node,
             processName: $name,
         );
 
-        return $this->persistProcess($node, $name, $definition->command, $runtime, $definition->runtimeConfig);
+        return $this->persistProcess($node, $name, $descriptor->command, $runtime, $descriptor->runtimeConfig);
     }
 
     private function convergeWorkloadNodeExporters(Node $metricsNode): void
@@ -1191,7 +1192,7 @@ class MetricsRoleBaseline implements RoleBaseline
         $runtimeConfig['labels'] = [
             'orbit.managed' => 'true',
             'orbit.process' => $processName,
-            'orbit.process.definition' => (string) ($runtimeConfig['definition'] ?? $processName),
+            'orbit.process.service' => (string) (ProcessRuntimeServiceMetadata::service($runtimeConfig) ?? $processName),
             'orbit.process.version_family' => (string) ($runtimeConfig['version_family'] ?? ''),
             'orbit.process.version' => (string) ($runtimeConfig['version'] ?? ''),
             'orbit.process.spec_hash' => $specHash,

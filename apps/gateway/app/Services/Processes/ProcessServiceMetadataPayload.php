@@ -14,14 +14,14 @@ final readonly class ProcessServiceMetadataPayload
     public function forProcess(Process $process): ?array
     {
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $definition = $this->optionalString($config, 'definition');
+        $service = ProcessRuntimeServiceMetadata::service($config);
 
-        if ($definition === null) {
+        if ($service === null) {
             return null;
         }
 
         return [
-            'definition' => $definition,
+            'service' => $service,
             'version_family' => $this->optionalString($config, 'version_family'),
             'version' => $this->optionalString($config, 'version'),
             'service_name' => $this->optionalString($config, 'service_name'),

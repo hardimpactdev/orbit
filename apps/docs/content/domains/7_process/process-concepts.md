@@ -19,13 +19,14 @@ These terms define how process definitions are identified, scoped, and ordered.
   such as `php-cli`, `viteplus`, `opencode`, or `polyscope`. The dependency
   asserts required capability; it does not transfer lifecycle ownership to the
   tool.
-- **Service process definition:** Process-family catalog entry for a runnable
-  service such as MySQL, PostgreSQL, Redis, ClickHouse, Prometheus, Grafana,
-  node-exporter, or Plausible CE. Service version, runtime, endpoint,
-  credentials, lifecycle, and logs belong to the process row produced from the
-  definition. The service endpoint host is the owning node's WireGuard service
-  address. Consumers on the same node rely on the provisioning-owned
-  WireGuard self-route, not on loopback or Docker aliases.
+- **Managed service:** Catalog entry selected with `process:add --service` for
+  a runnable service such as MySQL, PostgreSQL, Redis, ClickHouse, Prometheus,
+  Grafana, node-exporter, or Plausible CE. Service version, runtime, endpoint,
+  credentials, lifecycle, and logs belong to the process row. The process name
+  does not imply the managed service identifier. The service endpoint host is
+  the owning node's WireGuard service address. Consumers on the same node rely
+  on the provisioning-owned WireGuard self-route, not on loopback or Docker
+  aliases.
 - **Process order:** Stable order of process definitions inside their owning
   scope. Read and bulk lifecycle commands use that order.
 
@@ -40,15 +41,15 @@ These terms describe the runtime objects that Orbit derives from process definit
   process runtime for node-, app-, and workspace-scoped commands. Docker is used
   for containerized processes such as databases, caches, and FrankenPHP app or
   workspace web runtimes. Docker Swarm is valid only for node-owned managed
-  service processes created from process service definitions. Future macOS host
-  command support should add `launchd` as the platform runtime.
+  service processes. Future macOS host command support should add `launchd` as
+  the platform runtime.
 - **Docker process runtime:** Runtime backend that runs a process as an
   Orbit-managed Docker container. It is used for containerized database, cache,
   agent, app, and workspace runtime units.
 - **Docker Swarm process runtime:** Runtime backend that runs a node-owned
   managed service process as an Orbit-managed Swarm service. It is currently
-  admitted for process-defined MySQL, PostgreSQL, Redis, ClickHouse,
-  Prometheus, Grafana, and Plausible CE service processes.
+  admitted for managed-service MySQL, PostgreSQL, Redis, ClickHouse,
+  Prometheus, Grafana, and Plausible CE processes.
   App/workspace Swarm runtime remains deferred and is rejected before runtime
   side effects.
 - **Systemd process runtime:** Runtime backend for Linux host command units,

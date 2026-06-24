@@ -364,11 +364,11 @@ function expectPreparedDevDatabaseAndRedis(E2ETopologyLease $topology): void
 
     expect($state['roles'])->toContain('app-dev')
         ->and($state['roles'])->toContain('database')
-        ->and($state['redis_process_definition'])->toBe('redis');
+        ->and($state['redis_process_service'])->toBe('redis');
 }
 
 /**
- * @return array{roles: list<string>, redis_process_definition: string|null}
+ * @return array{roles: list<string>, redis_process_service: string|null}
  */
 function readPreparedDevServiceState(E2EInstance $gateway): array
 {
@@ -390,8 +390,8 @@ echo json_encode([
         ->pluck('role')
         ->values()
         ->all(),
-    'redis_process_definition' => is_array($redisRuntimeConfig)
-        ? ($redisRuntimeConfig['definition'] ?? null)
+    'redis_process_service' => is_array($redisRuntimeConfig)
+        ? ($redisRuntimeConfig['service'] ?? null)
         : null,
 ], JSON_THROW_ON_ERROR);
 PHP;
@@ -402,7 +402,7 @@ PHP;
         'Could not read prepared appdev service state',
     );
 
-    /** @var array{roles: list<string>, redis_process_definition: string|null} $state */
+    /** @var array{roles: list<string>, redis_process_service: string|null} $state */
     $state = json_decode(trim($result->output()), associative: true, flags: JSON_THROW_ON_ERROR);
 
     return $state;

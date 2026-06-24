@@ -277,7 +277,7 @@ Source: [Process Concepts](domains/7_process/process-concepts.md).
 - **Process identity slug**
 - **Process scope**
 - **Process tool dependency**
-- **Service process definition**
+- **Managed service**
 - **Process order**
 - **Runtime unit**
 - **Process runtime**

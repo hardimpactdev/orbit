@@ -115,6 +115,21 @@ class Process extends Model
             ->where('owner_id', $owner->getKey());
     }
 
+    /**
+     * @param  string|list<string>  $services
+     * @return Builder<$this>
+     */
+    public function scopeWithRuntimeService(Builder $query, string|array $services): Builder
+    {
+        $services = is_array($services) ? array_values($services) : [$services];
+
+        return $query->where(function (Builder $query) use ($services): void {
+            $query
+                ->whereIn('runtime_config->service', $services)
+                ->orWhereIn('runtime_config->definition', $services);
+        });
+    }
+
     public function ownerApp(): ?App
     {
         $this->loadMissing('owner');

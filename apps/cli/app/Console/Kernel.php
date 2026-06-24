@@ -30,6 +30,13 @@ final class Kernel extends LaravelZeroKernel
             return $parameters;
         }
 
+        if ($command === 'process:add' && array_key_exists('--version', $parameters)) {
+            $parameters['--service-version'] = $parameters['--version'];
+            unset($parameters['--version']);
+
+            return $parameters;
+        }
+
         if ($command !== 'tool:install') {
             return $parameters;
         }

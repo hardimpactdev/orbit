@@ -95,14 +95,14 @@ abstract class ProcessGatewayCommand extends GatewayCommand
         ]);
     }
 
-    protected function validateAppWorkspaceCommandRuntime(?string $runtime, ?string $node, ?string $definition = null): ?int
+    protected function validateAppWorkspaceCommandRuntime(?string $runtime, ?string $node, ?string $service = null): ?int
     {
-        if ($runtime === null || $node !== null || $definition !== null || $runtime === 'systemd') {
+        if ($runtime === null || $node !== null || $service !== null || $runtime === 'systemd') {
             return null;
         }
 
         return match ($runtime) {
-            'docker' => $this->failValidation('runtime', 'The docker runtime is only valid for service definitions or Orbit-managed runtime processes.', [
+            'docker' => $this->failValidation('runtime', 'The docker runtime is only valid for managed services or Orbit-managed runtime processes.', [
                 'value' => $runtime,
                 'reason' => 'docker_runtime_requires_service_or_managed_process',
             ]),

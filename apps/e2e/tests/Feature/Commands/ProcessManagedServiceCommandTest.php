@@ -6,15 +6,15 @@ use App\E2E\Support\E2ETopologyHarness;
 use App\E2E\Support\E2ETopologyKind;
 use Illuminate\Contracts\Process\ProcessResult;
 
-it('creates MySQL and Redis node service definitions through process commands on a prepared topology', function (): void {
+it('creates MySQL and Redis node managed services through process commands on a prepared topology', function (): void {
     $topology = e2eTopology(E2ETopologyKind::OperatorGatewayAppdev)
         ->withCurrentCheckout(roles: ['gateway']);
     $checkout = escapeshellarg($topology->checkout('gateway'));
     $suffix = strtolower(bin2hex(random_bytes(3)));
-    $definitions = [
+    $services = [
         [
             'name' => "mysql8-{$suffix}",
-            'definition' => 'mysql',
+            'service' => 'mysql',
             'version_input' => '8',
             'version_family' => '8',
             'version' => '8.4',
@@ -27,7 +27,7 @@ it('creates MySQL and Redis node service definitions through process commands on
         ],
         [
             'name' => "mysql9-{$suffix}",
-            'definition' => 'mysql',
+            'service' => 'mysql',
             'version_input' => '9',
             'version_family' => '9',
             'version' => '9',
@@ -40,7 +40,7 @@ it('creates MySQL and Redis node service definitions through process commands on
         ],
         [
             'name' => "redis7-{$suffix}",
-            'definition' => 'redis',
+            'service' => 'redis',
             'version_input' => '7',
             'version_family' => '7',
             'version' => '7.2',
@@ -52,24 +52,24 @@ it('creates MySQL and Redis node service definitions through process commands on
             'healthcheck_command' => 'redis-cli ping',
         ],
     ];
-    $names = array_column($definitions, 'name');
+    $names = array_column($services, 'name');
 
     try {
-        e2eRestartGatewayApi($topology, 'process-service-definitions');
-        processServiceDefinitionCommandCleanup($topology, $names);
-        processServiceDefinitionCommandRemovePreparedRedis($topology);
+        e2eRestartGatewayApi($topology, 'process-managed-services');
+        processManagedServiceCommandCleanup($topology, $names);
+        processManagedServiceCommandRemovePreparedRedis($topology);
 
-        $serviceHost = processServiceDefinitionCommandNodeServiceHost($topology);
+        $serviceHost = processManagedServiceCommandNodeServiceHost($topology);
 
-        foreach ($definitions as $definition) {
-            $name = $definition['name'];
+        foreach ($services as $service) {
+            $name = $service['name'];
             $runtimeUnit = "orbit-{$name}";
             $add = $topology->ssh(
                 'gateway',
                 "cd {$checkout} && orbit process:add ".escapeshellarg($name)
                     .' --node=app-dev-1'
-                    .' --definition='.escapeshellarg($definition['definition'])
-                    .' --definition-version='.escapeshellarg($definition['version_input'])
+                    .' --service='.escapeshellarg($service['service'])
+                    .' --version='.escapeshellarg($service['version_input'])
                     .' --runtime=docker-swarm'
                     .' --json',
                 timeoutSeconds: 180,
@@ -80,7 +80,7 @@ it('creates MySQL and Redis node service definitions through process commands on
                 throw new RuntimeException(trim($add->output().$add->errorOutput()));
             }
 
-            $addPayload = processServiceDefinitionCommandPayload($add->output());
+            $addPayload = processManagedServiceCommandPayload($add->output());
 
             expect($addPayload['success']['data']['process'])->toMatchArray([
                 'name' => $name,
@@ -95,7 +95,7 @@ it('creates MySQL and Redis node service definitions through process commands on
                     'context' => 'node',
                 ]);
 
-            processServiceDefinitionCommandAssertWarnings($addPayload, $runtimeUnit);
+            processManagedServiceCommandAssertWarnings($addPayload, $runtimeUnit);
         }
 
         $list = $topology->ssh(
@@ -109,12 +109,12 @@ it('creates MySQL and Redis node service definitions through process commands on
             throw new RuntimeException(trim($list->output().$list->errorOutput()));
         }
 
-        $listPayload = processServiceDefinitionCommandPayload($list->output());
+        $listPayload = processManagedServiceCommandPayload($list->output());
         $processes = collect($listPayload['success']['data']['processes'])->keyBy('name');
-        $snapshot = collect(processServiceDefinitionCommandSnapshot($topology, $names))->keyBy('name');
+        $snapshot = collect(processManagedServiceCommandSnapshot($topology, $names))->keyBy('name');
 
-        foreach ($definitions as $definition) {
-            $name = $definition['name'];
+        foreach ($services as $service) {
+            $name = $service['name'];
             $runtimeUnit = "orbit-{$name}";
             $listed = $processes->get($name);
             $record = $snapshot->get($name);
@@ -125,64 +125,64 @@ it('creates MySQL and Redis node service definitions through process commands on
                     'app' => null,
                     'workspace' => null,
                     'name' => $name,
-                    'command' => $definition['command'],
+                    'command' => $service['command'],
                     'runtime' => 'docker-swarm',
                     'tool' => null,
                     'runtime_unit' => $runtimeUnit,
                     'service' => [
-                        'definition' => $definition['definition'],
-                        'version_family' => $definition['version_family'],
-                        'version' => $definition['version'],
+                        'service' => $service['service'],
+                        'version_family' => $service['version_family'],
+                        'version' => $service['version'],
                         'service_name' => $runtimeUnit,
                         'endpoint' => [
                             'name' => $name,
                             'host' => $serviceHost,
-                            'port' => $definition['port'],
+                            'port' => $service['port'],
                         ],
                         'endpoints' => [
                             [
                                 'name' => $name,
                                 'host' => $serviceHost,
-                                'port' => $definition['port'],
+                                'port' => $service['port'],
                             ],
                         ],
-                        'credential_fields' => $definition['credential_fields'],
+                        'credential_fields' => $service['credential_fields'],
                     ],
                 ])
                 ->and($listed['service'])->not->toHaveKey('credentials')
                 ->and($record)->toMatchArray([
                     'name' => $name,
-                    'command' => $definition['command'],
+                    'command' => $service['command'],
                     'runtime' => 'docker-swarm',
                     'tool' => null,
                     'runtime_config' => [
-                        'definition' => $definition['definition'],
-                        'version_family' => $definition['version_family'],
-                        'version' => $definition['version'],
-                        'image' => $definition['image'],
+                        'service' => $service['service'],
+                        'version_family' => $service['version_family'],
+                        'version' => $service['version'],
+                        'image' => $service['image'],
                         'service_name' => $runtimeUnit,
                         'healthcheck' => [
                             'kind' => 'command',
-                            'command' => $definition['healthcheck_command'],
+                            'command' => $service['healthcheck_command'],
                         ],
                         'ports' => [
                             [
-                                'published' => $definition['port'],
-                                'target' => $definition['target_port'],
+                                'published' => $service['port'],
+                                'target' => $service['target_port'],
                                 'protocol' => 'tcp',
                             ],
                         ],
-                        'credential_fields' => $definition['credential_fields'],
+                        'credential_fields' => $service['credential_fields'],
                     ],
                 ]);
         }
     } finally {
-        processServiceDefinitionCommandCleanup($topology, $names);
+        processManagedServiceCommandCleanup($topology, $names);
         $topology->cleanup();
     }
 })->group('e2e-feature', 'e2e-feature-operator_gateway_app-dev', 'e2e-feature-operator-gateway-dev');
 
-function processServiceDefinitionCommandAssertWarnings(array $payload, string $runtimeUnit): void
+function processManagedServiceCommandAssertWarnings(array $payload, string $runtimeUnit): void
 {
     $warnings = $payload['success']['meta']['warnings'] ?? [];
 
@@ -198,9 +198,9 @@ function processServiceDefinitionCommandAssertWarnings(array $payload, string $r
     expect($unexpected)->toBe([]);
 }
 
-function processServiceDefinitionCommandNodeServiceHost(E2ETopologyHarness $topology): string
+function processManagedServiceCommandNodeServiceHost(E2ETopologyHarness $topology): string
 {
-    $result = processServiceDefinitionCommandRunGatewayTinker(
+    $result = processManagedServiceCommandRunGatewayTinker(
         $topology,
         <<<'PHP'
 $node = \App\Models\Node::query()->where('name', 'app-dev-1')->firstOrFail();
@@ -220,7 +220,7 @@ PHP,
  * @param  list<string>  $names
  * @return list<array<string, mixed>>
  */
-function processServiceDefinitionCommandSnapshot(E2ETopologyHarness $topology, array $names): array
+function processManagedServiceCommandSnapshot(E2ETopologyHarness $topology, array $names): array
 {
     if ($names === []) {
         return [];
@@ -243,7 +243,7 @@ $rows = \App\Models\Process::query()
             'runtime' => $process->runtime->value,
             'tool' => $process->tool,
             'runtime_config' => [
-                'definition' => $config['definition'] ?? null,
+                'service' => $config['service'] ?? null,
                 'version_family' => $config['version_family'] ?? null,
                 'version' => $config['version'] ?? null,
                 'image' => $config['image'] ?? null,
@@ -271,13 +271,13 @@ echo json_encode($rows, JSON_THROW_ON_ERROR);
 PHP);
 
     return json_decode(
-        processServiceDefinitionCommandRunGatewayTinker($topology, $script)->output(),
+        processManagedServiceCommandRunGatewayTinker($topology, $script)->output(),
         associative: true,
         flags: JSON_THROW_ON_ERROR,
     );
 }
 
-function processServiceDefinitionCommandRemovePreparedRedis(E2ETopologyHarness $topology): void
+function processManagedServiceCommandRemovePreparedRedis(E2ETopologyHarness $topology): void
 {
     $checkout = escapeshellarg($topology->checkout('gateway'));
 
@@ -301,13 +301,13 @@ if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
 }
 PHP;
 
-    processServiceDefinitionCommandRunGatewayTinker($topology, $script, allowFailure: true);
+    processManagedServiceCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
 
 /**
  * @param  list<string>  $names
  */
-function processServiceDefinitionCommandCleanup(E2ETopologyHarness $topology, array $names): void
+function processManagedServiceCommandCleanup(E2ETopologyHarness $topology, array $names): void
 {
     if ($names === []) {
         return;
@@ -344,10 +344,10 @@ if ($node = \App\Models\Node::query()->where('name', 'app-dev-1')->first()) {
 }
 PHP);
 
-    processServiceDefinitionCommandRunGatewayTinker($topology, $script, allowFailure: true);
+    processManagedServiceCommandRunGatewayTinker($topology, $script, allowFailure: true);
 }
 
-function processServiceDefinitionCommandRunGatewayTinker(E2ETopologyHarness $topology, string $script, bool $allowFailure = false): ProcessResult
+function processManagedServiceCommandRunGatewayTinker(E2ETopologyHarness $topology, string $script, bool $allowFailure = false): ProcessResult
 {
     return e2eRunInRoleRuntime(
         $topology,
@@ -361,7 +361,7 @@ function processServiceDefinitionCommandRunGatewayTinker(E2ETopologyHarness $top
 /**
  * @return array<string, mixed>
  */
-function processServiceDefinitionCommandPayload(string $output): array
+function processManagedServiceCommandPayload(string $output): array
 {
     return json_decode(trim($output), associative: true, flags: JSON_THROW_ON_ERROR);
 }

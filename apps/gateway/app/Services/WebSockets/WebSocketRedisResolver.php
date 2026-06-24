@@ -33,7 +33,7 @@ final readonly class WebSocketRedisResolver
 
         $hasRedis = Process::query()
             ->ownedBy($node)
-            ->where('runtime_config->definition', 'redis')
+            ->withRuntimeService('redis')
             ->exists();
 
         return $hasRedis ? $node : null;

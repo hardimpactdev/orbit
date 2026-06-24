@@ -51,7 +51,7 @@ describe('NodeRoleAddController', function (): void {
             'command' => 'prometheus --config.file=/etc/prometheus/prometheus.yml',
             'runtime' => ProcessRuntime::DockerSwarm,
             'runtime_config' => [
-                'definition' => 'prometheus',
+                'service' => 'prometheus',
                 'endpoint' => ['port' => 9090],
             ],
         ]);

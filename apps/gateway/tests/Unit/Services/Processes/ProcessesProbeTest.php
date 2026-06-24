@@ -137,7 +137,7 @@ describe('WireGuard self-route diagnostics', function (): void {
             'command' => 'redis-server --appendonly yes',
             'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
-                'definition' => 'redis',
+                'service' => 'redis',
                 'endpoint' => [
                     'name' => 'redis',
                     'kind' => 'tcp',
@@ -768,7 +768,7 @@ describe('docker runtime probe scope', function (): void {
             ]);
     });
 
-    it('introspects node-owned Docker service definition processes without app labels', function (): void {
+    it('introspects node-owned Docker managed service processes without app labels', function (): void {
         $node = Node::factory()->database()->create([
             'name' => 'database-1',
             'status' => 'active',
@@ -779,11 +779,11 @@ describe('docker runtime probe scope', function (): void {
             'command' => 'redis-server --appendonly yes',
             'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version_family' => '7',
                 'version' => '7.2',
                 'image' => 'redis:7.2',
-                'spec_hash' => 'service-definition-hash',
+                'spec_hash' => 'managed-service-hash',
                 'endpoint' => [
                     'name' => 'redis',
                     'kind' => 'tcp',
@@ -793,10 +793,10 @@ describe('docker runtime probe scope', function (): void {
                 'labels' => [
                     'orbit.managed' => 'true',
                     'orbit.process' => 'redis',
-                    'orbit.process.definition' => 'redis',
+                    'orbit.process.service' => 'redis',
                     'orbit.process.version_family' => '7',
                     'orbit.process.version' => '7.2',
-                    'orbit.process.spec_hash' => 'service-definition-hash',
+                    'orbit.process.spec_hash' => 'managed-service-hash',
                 ],
             ],
         ]);
@@ -841,7 +841,7 @@ describe('docker runtime probe scope', function (): void {
             'command' => 'redis-server --appendonly yes',
             'runtime' => ProcessRuntime::Docker,
             'runtime_config' => [
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version_family' => '7',
                 'version' => '7.2',
             ],
@@ -854,7 +854,7 @@ describe('docker runtime probe scope', function (): void {
             ->and(issue($drift, 'process.runtime_unit_unrenderable')?->detail)->toMatchArray([
                 'process' => 'redis',
                 'runtime' => 'docker',
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version_family' => '7',
                 'version' => '7.2',
             ])
@@ -873,7 +873,7 @@ describe('docker runtime probe scope', function (): void {
             'command' => 'mysqld',
             'runtime' => ProcessRuntime::DockerSwarm,
             'runtime_config' => [
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
                 'service_name' => 'orbit-mysql8',
@@ -904,7 +904,7 @@ describe('docker runtime probe scope', function (): void {
                 'process' => 'mysql8',
                 'runtime' => 'docker-swarm',
                 'runtime_unit' => 'orbit-mysql8',
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
                 'service_name' => 'orbit-mysql8',
@@ -927,7 +927,7 @@ describe('docker runtime probe scope', function (): void {
             'command' => 'mysqld',
             'runtime' => ProcessRuntime::DockerSwarm,
             'runtime_config' => [
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
                 'service_name' => 'orbit-mysql8',
@@ -947,7 +947,7 @@ describe('docker runtime probe scope', function (): void {
                 'process' => 'mysql8',
                 'node' => 'database-1',
                 'runtime' => 'docker-swarm',
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
                 'service_name' => 'orbit-mysql8',

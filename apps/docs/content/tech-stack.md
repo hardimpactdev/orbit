@@ -94,7 +94,7 @@ The sections below walk through each layer of the stack in the same order as the
 | Realtime service backend | Laravel Reverb in a Docker runtime container managed by Orbit on `websocket` nodes, bound only to the node's WireGuard address and reached through router-owned WebSocket routes |
 | S3 service backend | SeaweedFS in a Docker runtime container rendered by Orbit on `s3` nodes, bound only to the node's WireGuard address and reached through router-owned S3 routes |
 | Metrics backend | Prometheus and Grafana as Docker Swarm process definitions on metrics role nodes; node-exporter as a host binary tool plus systemd process on metrics and workload nodes; Grafana private route `metrics.orbit` |
-| Analytics service backend | Plausible CE in a Docker/Swarm service process managed by Orbit on `analytics` nodes, bound only to the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL and ClickHouse run as process-owned service definitions on active `database` role nodes. |
+| Analytics service backend | Plausible CE in a Docker/Swarm service process managed by Orbit on `analytics` nodes, bound only to the node's WireGuard address and reached through router-owned analytics routes. PostgreSQL and ClickHouse run as process-owned managed services on active `database` role nodes. |
 | Agent runtime | OpenClaw and Hermes as first-party agent tools, installed through `tool:install` on nodes with the `agent` role and run as the shared unprivileged `agent` user |
 | Network | WireGuard, served by the gateway-coupled `vpn` role |
 | Public DNS/CDN | Cloudflare integration for production domains |

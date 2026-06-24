@@ -25,7 +25,7 @@ final readonly class AnalyticsDatabaseResolver
         return $this->usableDatabaseNode($nodeId, 'clickhouse');
     }
 
-    private function usableDatabaseNode(int $nodeId, string $definition): ?Node
+    private function usableDatabaseNode(int $nodeId, string $service): ?Node
     {
         $node = Node::query()->find($nodeId);
 
@@ -43,7 +43,7 @@ final readonly class AnalyticsDatabaseResolver
 
         $hasProcess = Process::query()
             ->ownedBy($node)
-            ->where('runtime_config->definition', $definition)
+            ->withRuntimeService($service)
             ->exists();
 
         return $hasProcess ? $node : null;

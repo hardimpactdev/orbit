@@ -1541,7 +1541,7 @@ TXT;
             ->and($shell->scripts[2])->toContain("'grafana/grafana:12.0.1'");
     });
 
-    it('rehydrates service definition runtime config for unrenderable node-owned Docker process units', function (): void {
+    it('rehydrates managed service runtime config for unrenderable node-owned Docker process units', function (): void {
         $node = Node::factory()->database()->create([
             'name' => 'database-1',
             'status' => 'active',
@@ -1556,7 +1556,7 @@ TXT;
             'restart_policy' => 'always',
             'crash_notification' => 'none',
             'runtime_config' => [
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version_family' => '7',
                 'version' => '7.2',
             ],
@@ -1599,14 +1599,14 @@ TXT;
                 'details' => [
                     'node' => 'database-1',
                     'process' => 'redis',
-                    'definition' => 'redis',
+                    'service' => 'redis',
                     'version' => '7.2',
                     'runtime' => 'docker',
                     'runtime_unit' => 'redis',
                 ],
             ])
             ->and($process->runtime_config)->toMatchArray([
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version_family' => '7',
                 'version' => '7.2',
                 'image' => 'redis:7.2',

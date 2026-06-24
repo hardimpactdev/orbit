@@ -157,7 +157,7 @@ it('applies node owned docker service processes from runtime config', function (
     );
 });
 
-it('renders docker service definition data paths as docker named volumes for node owned docker processes', function (): void {
+it('renders managed service data paths as docker named volumes for node owned docker processes', function (): void {
     $shell = new ProcessRuntimeDriverRecordingShell([
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
@@ -285,7 +285,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
             'labels' => [
                 'orbit.managed' => 'true',
                 'orbit.process' => 'mysql8',
-                'orbit.process.definition' => 'mysql',
+                'orbit.process.service' => 'mysql',
                 'orbit.process.spec_hash' => 'abc123',
                 'orbit.process.version' => '8.4',
                 'orbit.process.version_family' => '8',
@@ -331,7 +331,7 @@ it('applies, removes, and cleans up docker swarm process runtime services from r
         ->toContain('docker service create')
         ->toContain("--name 'orbit-mysql-8'")
         ->toContain("--restart-condition 'any'")
-        ->toContain("--label 'orbit.process.definition=mysql'")
+        ->toContain("--label 'orbit.process.service=mysql'")
         ->toContain("--label 'orbit.process.spec_hash=abc123'")
         ->toContain("--publish 'published=3308,target=3306,protocol=tcp'")
         ->toContain("--mount 'type=volume,source=orbit-mysql-8,target=/var/lib/mysql'")

@@ -165,6 +165,27 @@ it('maps analytics update internal version option onto the public signature', fu
     expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
 });
 
+it('maps process add internal service version option onto the public signature', function (): void {
+    config()->set('librarian.rules', [SignatureLiveSurfaceRule::class]);
+    bindLiveSurfaceFake([
+        new CliCommand(
+            name: 'process:add',
+            arguments: ['name', 'process_command'],
+            options: ['node', 'app', 'workspace', 'tool', 'service', 'service-version', 'image', 'restart-policy', 'crash-notification', 'runtime', 'start', 'no-start', 'json'],
+        ),
+    ]);
+    writeLiveSurfaceCommandDirectory(
+        $this->fixtureRoot,
+        'domains/7_process/1_process-add',
+        'process-add',
+        'orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|redis>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]',
+    );
+
+    $payload = runLiveSurfaceLint();
+
+    expect(liveSurfaceFindings($payload, 'command_docs.signature_live_surface'))->toBeEmpty();
+});
+
 it('skips signature checks for commands without a live counterpart', function (): void {
     config()->set('librarian.rules', [SignatureLiveSurfaceRule::class]);
     bindLiveSurfaceFake([]);

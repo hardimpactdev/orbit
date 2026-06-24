@@ -35,7 +35,7 @@ it('seeds app-dev redis with renderable process runtime config', function (): vo
         ->and($process->runtime)->toBe(ProcessRuntime::Docker)
         ->and($process->command)->toBe('redis-server --appendonly yes --bind 0.0.0.0 --protected-mode no')
         ->and($process->runtime_config)->toMatchArray([
-            'definition' => 'redis',
+            'service' => 'redis',
             'version_family' => '7',
             'version' => '7.2',
             'image' => 'redis:7.2',

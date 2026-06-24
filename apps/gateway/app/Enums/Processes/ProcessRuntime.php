@@ -53,7 +53,7 @@ enum ProcessRuntime: string
     public function appWorkspaceCommandViolationMessage(): ?string
     {
         return match ($this) {
-            self::Docker => 'The docker runtime is only valid for service definitions or Orbit-managed runtime processes.',
+            self::Docker => 'The docker runtime is only valid for managed services or Orbit-managed runtime processes.',
             self::DockerSwarm => $this->nodeOwnerViolationMessage(),
             self::Systemd => null,
         };

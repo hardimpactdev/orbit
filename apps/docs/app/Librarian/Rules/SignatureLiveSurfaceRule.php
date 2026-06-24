@@ -192,12 +192,18 @@ final readonly class SignatureLiveSurfaceRule implements GroupedRule
      */
     private function publicOptionsFor(CliCommand $command): array
     {
-        if ($command->name !== 'analytics:update') {
+        $optionAliases = match ($command->name) {
+            'analytics:update' => ['requested-version' => 'version'],
+            'process:add' => ['service-version' => 'version'],
+            default => [],
+        };
+
+        if ($optionAliases === []) {
             return $command->options;
         }
 
         return array_values(array_map(
-            static fn (string $option): string => $option === 'requested-version' ? 'version' : $option,
+            static fn (string $option): string => $optionAliases[$option] ?? $option,
             $command->options,
         ));
     }

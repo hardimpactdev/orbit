@@ -24,9 +24,10 @@ These rules cover who owns process configuration and how process definitions are
 - A process may reference a catalogued tool with a tool dependency. The tool
   supplies a node-level capability; the process still owns start, stop,
   restart, and logs.
-- A process may also be materialized from a service process definition. Service
-  definitions are node-owned runnable services such as MySQL or Redis; they do
-  not reference tools.
+- A process may also be materialized from a managed service selector via
+  `process:add --service`. Managed services are node-owned runnable services
+  such as MySQL or Redis; they do not reference tools and do not infer service
+  identity from the process name.
 
 ### Runtime unit derivation
 
@@ -102,18 +103,18 @@ These rules describe how lifecycle commands address runtime units.
 - Omitting `[name]` for `process:start`, `process:stop`, and `process:restart` targets every process definition in process order for the resolved context.
 - Logs come from the selected runtime backend for the selected runtime unit.
 
-### Service process definitions
+### Managed services
 
-Service process definitions are the supported way to create node-owned
-database/cache services and selected node-owned platform services. They own
-service version, image, endpoint, credentials, ports, volumes, labels,
-lifecycle, and logs on the process row.
+`process:add --service` is the supported way to create node-owned database/cache
+services and selected node-owned platform services. Managed services own service
+version, image, endpoint, credentials, ports, volumes, labels, lifecycle, and
+logs on the process row. The process name does not imply the service identifier.
 The endpoint host is always the owning node's WireGuard service address. Orbit
 does not fall back to the node SSH host, node name, loopback, or Docker network
 alias for managed service endpoints.
 
 `process:list` and bounded `process:logs` expose safe connection metadata for
-service definitions: definition name, version family, concrete version, service
+managed services: service identifier, version family, concrete version, service
 runtime unit name, endpoint host/port, and credential field names. They do not
 expose credential values.
 
@@ -123,9 +124,9 @@ address, `doctor --family=process` diagnoses the Linux self-route with
 `WireGuard self-route diagnostics are only supported on Linux.` for this
 optimization and does not attempt to add or replace routes.
 
-Supported definitions in this vertical slice:
+Supported managed services in this vertical slice:
 
-| Definition | Versions | Default runtime | Notes |
+| Service | Versions | Default runtime | Notes |
 | --- | --- | --- | --- |
 | `mysql` | `8` -> `8.4`, `9` -> `9` | `docker` | Published ports are version-family specific, so MySQL 8 and 9 can coexist on one node. |
 | `redis` | `7` -> `7.2` | `docker` | Publishes the Redis TCP endpoint from the owning node's WireGuard service address. |
@@ -133,11 +134,11 @@ Supported definitions in this vertical slice:
 | `grafana` | `13` -> `13.0.2` | `docker-swarm` | Metrics-role service process for dashboards, exposed through the private `metrics.orbit` route. |
 | `node-exporter` | `1` -> `1.11.1` | `systemd` | Metrics-role host process that exposes host resource metrics on metrics and active workload nodes through the owning node's WireGuard service address. |
 
-`docker-swarm` is also admitted for node-owned service process definitions
-whose definition declares Swarm support. `node-exporter` declares only
-`systemd` because it observes host resources directly.
+`docker-swarm` is also admitted for node-owned managed services whose catalog
+entry declares Swarm support. `node-exporter` declares only `systemd` because
+it observes host resources directly.
 PostgreSQL follows the same process-owned product direction, but it is not
-advertised as a supported process definition until its definition lands.
+advertised as a supported managed service until its catalog entry lands.
 
 ### Command argument conventions
 

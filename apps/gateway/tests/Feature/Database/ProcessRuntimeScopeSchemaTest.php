@@ -32,7 +32,7 @@ it('stores node owned process runtime configuration', function (): void {
         'runtime' => ProcessRuntime::Docker,
         'tool' => null,
         'runtime_config' => [
-            'definition' => 'mysql',
+            'service' => 'mysql',
             'version' => '8.4',
             'image' => 'mysql:8.4',
             'ports' => ['3306:3306'],
@@ -46,7 +46,7 @@ it('stores node owned process runtime configuration', function (): void {
         ->node_id->toBe($node->id)
         ->tool->toBeNull()
         ->runtime_config->toBe([
-            'definition' => 'mysql',
+            'service' => 'mysql',
             'version' => '8.4',
             'image' => 'mysql:8.4',
             'ports' => ['3306:3306'],
@@ -93,7 +93,7 @@ it('stores role owned process runtime configuration', function (): void {
         'runtime' => ProcessRuntime::Docker,
         'tool' => null,
         'runtime_config' => [
-            'definition' => 'postgres',
+            'service' => 'postgres',
             'version' => '16',
             'image' => 'postgres:16',
         ],
@@ -105,7 +105,7 @@ it('stores role owned process runtime configuration', function (): void {
         ->node_id->toBe($node->id)
         ->tool->toBeNull()
         ->runtime_config->toBe([
-            'definition' => 'postgres',
+            'service' => 'postgres',
             'version' => '16',
             'image' => 'postgres:16',
         ]);

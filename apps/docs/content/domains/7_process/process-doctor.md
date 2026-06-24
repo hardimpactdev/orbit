@@ -19,8 +19,8 @@ The process family owns these facts:
 - systemd process runtime units rendered from process, app, workspace, and node
   configuration, including command, working directory, restart policy, and
   runtime environment;
-- Docker containers and Docker Swarm services rendered from node-owned service
-  process definitions, including service definition, version family, concrete
+- Docker containers and Docker Swarm services rendered from node-owned managed
+  services, including service identifier, version family, concrete
   version, runtime unit name, spec hash, endpoint metadata, and credential
   field names;
 - metrics-role Prometheus, Grafana, and node-exporter runtime artifacts created
@@ -191,7 +191,7 @@ that `process.runtime_backend_unavailable` short-circuits downstream layers.
 
 `ProcessesProbeTest` covers registry configuration, node/app/workspace owner
 validation, app and workspace expansion, and process manager availability.
-It also covers runtime-unit identity and Docker/Docker Swarm service definition metadata.
+It also covers runtime-unit identity and Docker/Docker Swarm managed service metadata.
 WireGuard self-route diagnostics, missing/extra/drifted runtime artifacts, restart
 policy drift, runtime environment drift, event notifier drift, and exclusion of
 non-process drift from issue codes are also covered.

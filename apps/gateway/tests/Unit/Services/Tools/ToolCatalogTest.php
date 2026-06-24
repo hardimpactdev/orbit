@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\ToolDefinition;
 use App\Services\Gateway\CaddyGlobalConfig;
-use App\Services\Processes\ProcessServiceDefinitionRegistry;
+use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Runtime\OrbitCaddyContainer;
 use App\Services\Tools\ToolCatalog;
 use App\Tools\CaddyTool;
@@ -66,8 +66,8 @@ describe('tool catalog definitions', function (): void {
         'supervisor',
     ]);
 
-    it('catalogs runnable services as process service definitions instead', function (): void {
-        $registry = app(ProcessServiceDefinitionRegistry::class);
+    it('catalogs runnable services as managed process services instead', function (): void {
+        $registry = app(ProcessServiceCatalog::class);
 
         expect($registry->supports('clickhouse'))->toBeTrue()
             ->and($registry->supports('mysql'))->toBeTrue()

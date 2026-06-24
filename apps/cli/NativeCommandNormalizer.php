@@ -17,9 +17,11 @@ const ORBIT_NATIVE_MULTI_TOKEN_COMMANDS = [
 function normalizeNativeCommandArgv(array $argv): array
 {
     return normalizeNativeAnalyticsUpdateVersionArgv(
-        normalizeNativeToolInstallVersionArgv(
-            normalizeNativeVersionCommandArgv(
-                normalizeNativeMultiTokenCommandArgv($argv),
+        normalizeNativeProcessAddVersionArgv(
+            normalizeNativeToolInstallVersionArgv(
+                normalizeNativeVersionCommandArgv(
+                    normalizeNativeMultiTokenCommandArgv($argv),
+                ),
             ),
         ),
     );
@@ -190,6 +192,78 @@ function normalizeNativeToolInstallVersionArgv(array $argv): array
 
         if ($insideToolInstall && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
             $rewritten[] = '--tool-version='.$argv[$index + 1];
+            $index++;
+
+            continue;
+        }
+
+        $rewritten[] = $argument;
+    }
+
+    return $rewritten;
+}
+
+/**
+ * Rewrite the public `process:add --version=<version>` contract to an
+ * internal option name because Symfony reserves `--version` globally.
+ *
+ * @param  list<string>  $argv
+ * @return list<string>
+ */
+function normalizeNativeProcessAddVersionArgv(array $argv): array
+{
+    if ($argv === []) {
+        return [];
+    }
+
+    $rewritten = [];
+    $insideProcessAdd = false;
+    $afterEndOfOptions = false;
+    $count = count($argv);
+
+    for ($index = 0; $index < $count; $index++) {
+        $argument = $argv[$index];
+
+        if ($index === 0) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($afterEndOfOptions) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($argument === '--') {
+            $rewritten[] = $argument;
+            $afterEndOfOptions = true;
+
+            continue;
+        }
+
+        if ($argument === 'process:add') {
+            $insideProcessAdd = true;
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if (! $insideProcessAdd && $argument !== '' && ! str_starts_with($argument, '-')) {
+            $rewritten[] = $argument;
+
+            continue;
+        }
+
+        if ($insideProcessAdd && str_starts_with($argument, '--version=')) {
+            $rewritten[] = '--service-version='.substr($argument, strlen('--version='));
+
+            continue;
+        }
+
+        if ($insideProcessAdd && $argument === '--version' && $index + 1 < $count && ! str_starts_with($argv[$index + 1], '-')) {
+            $rewritten[] = '--service-version='.$argv[$index + 1];
             $index++;
 
             continue;

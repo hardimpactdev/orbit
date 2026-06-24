@@ -78,7 +78,7 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
     expect($processes->keys()->all())->toBe(['grafana', 'node-exporter', 'prometheus'])
         ->and($processes['grafana']->owner_type)->toBe($node->getMorphClass())
         ->and($processes['grafana']->runtime)->toBe(ProcessRuntime::DockerSwarm)
-        ->and($grafanaConfig['definition'])->toBe('grafana')
+        ->and($grafanaConfig['service'])->toBe('grafana')
         ->and($grafanaConfig['endpoint']['port'])->toBe(3000)
         ->and($grafanaConfig['environment']['GF_SECURITY_ADMIN_PASSWORD'])->toBeString()
         ->and($grafanaConfig['credentials']['admin_password'])->toBe(
@@ -117,7 +117,7 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
             'read_only' => true,
         ])
         ->and($processes['prometheus']->runtime)->toBe(ProcessRuntime::DockerSwarm)
-        ->and($processes['prometheus']->runtime_config['definition'])->toBe('prometheus')
+        ->and($processes['prometheus']->runtime_config['service'])->toBe('prometheus')
         ->and($processes['prometheus']->runtime_config['endpoint']['port'])->toBe(9090)
         ->and($processes['prometheus']->runtime_config['managed_files'][0]['content'])->toContain("'10.6.0.55:9100'")
         ->and($processes['prometheus']->runtime_config['bind_mounts'][0])->toMatchArray([
@@ -127,7 +127,7 @@ it('converges metrics role intent as process-owned Prometheus Grafana and host e
         ])
         ->and($processes['node-exporter']->runtime)->toBe(ProcessRuntime::Systemd)
         ->and($processes['node-exporter']->tool)->toBe('node-exporter')
-        ->and($processes['node-exporter']->runtime_config['definition'])->toBe('node-exporter')
+        ->and($processes['node-exporter']->runtime_config['service'])->toBe('node-exporter')
         ->and($processes['node-exporter']->runtime_config['endpoint']['port'])->toBe(9100);
 
     $grafanaDashboard = json_decode(

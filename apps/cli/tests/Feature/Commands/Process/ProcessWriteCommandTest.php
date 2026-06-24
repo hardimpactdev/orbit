@@ -96,7 +96,7 @@ describe('process write commands', function (): void {
                 'command' => 'opencode serve -a',
                 'restart_policy' => 'never',
                 'crash_notification' => 'none',
-                'start' => false,
+                'start' => true,
                 'runtime' => 'systemd',
                 'tool' => 'opencode',
             ]);
@@ -105,7 +105,7 @@ describe('process write commands', function (): void {
             ->and($decoded['success']['data']['process']['runtime'])->toBe('systemd');
     });
 
-    it('posts node owned service definition process:add payloads to the gateway', function (): void {
+    it('posts node owned managed service process:add payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => [
                 'name' => 'mysql8',
@@ -121,8 +121,8 @@ describe('process write commands', function (): void {
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'mysql8',
             '--node' => 'database-1',
-            '--definition' => 'mysql',
-            '--definition-version' => '8',
+            '--service' => 'mysql',
+            '--version' => '8',
             '--runtime' => 'docker-swarm',
             '--json' => true,
         ]);
@@ -136,9 +136,9 @@ describe('process write commands', function (): void {
                 'name' => 'mysql8',
                 'restart_policy' => 'never',
                 'crash_notification' => 'none',
-                'start' => false,
+                'start' => true,
                 'runtime' => 'docker-swarm',
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version' => '8',
             ]);
 
@@ -147,14 +147,14 @@ describe('process write commands', function (): void {
             ->and($decoded['success']['data']['process']['runtime'])->toBe('docker-swarm');
     });
 
-    it('rejects service definition tool dependencies before contacting the gateway', function (): void {
+    it('rejects managed service tool dependencies before contacting the gateway', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'redis',
             '--node' => 'database-1',
-            '--definition' => 'redis',
-            '--definition-version' => '7',
+            '--service' => 'redis',
+            '--version' => '7',
             '--tool' => 'redis',
             '--json' => true,
         ]);
@@ -166,17 +166,17 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
             ->and($decoded['error']['meta']['field'])->toBe('tool')
-            ->and($decoded['error']['meta']['reason'])->toBe('process_definition_cannot_reference_tool');
+            ->and($decoded['error']['meta']['reason'])->toBe('process_service_cannot_reference_tool');
     });
 
-    it('rejects service definition versions without definitions before contacting the gateway', function (): void {
+    it('rejects service versions without service before contacting the gateway', function (): void {
         Http::fake();
 
         [$exitCode, $output] = runCommand($this, 'process:add', [
             'name' => 'worker',
             'process_command' => 'php artisan queue:work',
             '--node' => 'app-1',
-            '--definition-version' => '8',
+            '--version' => '8',
             '--json' => true,
         ]);
 
@@ -186,8 +186,8 @@ describe('process write commands', function (): void {
 
         expect($exitCode)->toBe(1)
             ->and($decoded['error']['code'])->toBe('validation_failed')
-            ->and($decoded['error']['meta']['field'])->toBe('definition_version')
-            ->and($decoded['error']['meta']['reason'])->toBe('process_definition_version_requires_definition');
+            ->and($decoded['error']['meta']['field'])->toBe('version')
+            ->and($decoded['error']['meta']['reason'])->toBe('process_service_version_requires_service');
     });
 
     it('validates process:add input before contacting the gateway', function (): void {
@@ -592,13 +592,35 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(0)
             ->and($output)->toContain('Adding Process')
             ->and($output)->toContain('Create process configuration')
-            ->and($output)->not->toContain('Start runtime units')
+            ->and($output)->toContain('Start runtime units')
             ->and($output)->toContain("Process 'vite' added for app 'docs'")
             ->and($output)->not->toContain('process:')
             ->and($output)->not->toContain('{');
     });
 
-    it('shows the process:add start step only when --start is present', function (): void {
+    it('omits the process:add start step when --no-start is present', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
+            'runtime_units' => [],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, 'process:add', [
+            'name' => 'vite',
+            'process_command' => 'npm run dev',
+            '--app' => 'docs',
+            '--runtime' => 'systemd',
+            '--no-start' => true,
+        ]);
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Adding Process')
+            ->and($output)->not->toContain('Start runtime units')
+            ->and($output)->toContain("Process 'vite' added for app 'docs'");
+    });
+
+    it('shows the process:add start step by default and when --start is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'runtime_units' => [],

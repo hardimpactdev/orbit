@@ -122,7 +122,7 @@ class BakeWebSocketNodeCommand extends Command
 
         $hasRedis = Process::query()
             ->ownedBy($node)
-            ->where('runtime_config->definition', 'redis')
+            ->withRuntimeService('redis')
             ->exists();
 
         if (! $hasRedis) {

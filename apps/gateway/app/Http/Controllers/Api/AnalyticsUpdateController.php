@@ -21,7 +21,7 @@ final class AnalyticsUpdateController implements Loggable
 {
     private const string ProcessName = 'plausible';
 
-    private const string ProcessDefinition = 'plausible';
+    private const string ProcessService = 'plausible';
 
     private const string ImageRepository = 'ghcr.io/plausible/community-edition';
 
@@ -82,7 +82,7 @@ final class AnalyticsUpdateController implements Loggable
             return $this->error('process.not_found', "Process 'plausible' was not found on analytics node '{$node->name}'.", [
                 'node' => $node->name,
                 'process' => self::ProcessName,
-                'definition' => self::ProcessDefinition,
+                'service' => self::ProcessService,
             ], 404);
         }
 
@@ -163,8 +163,12 @@ final class AnalyticsUpdateController implements Loggable
             ->where('name', self::ProcessName)
             ->where(function (Builder $query): void {
                 $query
-                    ->where('runtime_config->definition', self::ProcessDefinition)
-                    ->orWhereNull('runtime_config->definition');
+                    ->withRuntimeService(self::ProcessService)
+                    ->orWhere(function (Builder $query): void {
+                        $query
+                            ->whereNull('runtime_config->service')
+                            ->whereNull('runtime_config->definition');
+                    });
             })
             ->first();
     }
@@ -183,16 +187,18 @@ final class AnalyticsUpdateController implements Loggable
     private function updatedRuntimeConfig(Process $process, string $version): array
     {
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $config['definition'] = self::ProcessDefinition;
+        $config['service'] = self::ProcessService;
         $config['version_family'] = $version;
         $config['version'] = $version;
         $config['image'] = self::ImageRepository.":{$version}";
+        unset($config['definition']);
         unset($config['spec_hash']);
 
         $labels = is_array($config['labels'] ?? null) ? $config['labels'] : [];
-        $labels['orbit.process.definition'] = self::ProcessDefinition;
+        $labels['orbit.process.service'] = self::ProcessService;
         $labels['orbit.process.version_family'] = $version;
         $labels['orbit.process.version'] = $version;
+        unset($labels['orbit.process.definition']);
         unset($labels['orbit.process.spec_hash']);
         $config['labels'] = $labels;
 

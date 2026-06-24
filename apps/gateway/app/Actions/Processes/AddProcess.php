@@ -14,7 +14,7 @@ use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
-use App\Services\Processes\ProcessServiceDefinitionRegistry;
+use App\Services\Processes\ProcessServiceCatalog;
 use Illuminate\Support\Facades\DB;
 use LogicException;
 use Orbit\Sdk\Laravel\GatewayApiException;
@@ -25,7 +25,7 @@ final readonly class AddProcess
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
         private ProcessRuntimeDriverRegistry $runtimeDrivers,
-        private ProcessServiceDefinitionRegistry $serviceDefinitions,
+        private ProcessServiceCatalog $serviceCatalog,
     ) {}
 
     /**
@@ -40,44 +40,62 @@ final readonly class AddProcess
         bool $start,
         ?ProcessRuntime $runtime = null,
         ?string $tool = null,
-        ?string $definition = null,
+        ?string $service = null,
         ?string $version = null,
+        ?string $image = null,
     ): array {
         $app = $context->runtimeApp();
         $app->loadMissing(['node', 'workspaces']);
 
-        $resolvedRuntime = $runtime ?? ($definition === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
+        $resolvedRuntime = $runtime ?? ($service === null ? $context->defaultRuntime() : ProcessRuntime::Docker);
         $runtimeConfig = [];
 
-        if ($definition !== null) {
+        if ($image !== null && $service === null) {
+            throw new GatewayApiException('Process service image requires a managed service.', 'validation_failed', [
+                'field' => 'image',
+                'value' => $image,
+                'reason' => 'process_service_image_requires_service',
+            ]);
+        }
+
+        if ($image !== null && $resolvedRuntime === ProcessRuntime::Systemd) {
+            throw new GatewayApiException('Process service image overrides require a Docker runtime.', 'validation_failed', [
+                'field' => 'image',
+                'value' => $image,
+                'reason' => 'process_service_image_requires_docker_runtime',
+            ]);
+        }
+
+        if ($service !== null) {
             if (! $context->owner instanceof Node) {
-                throw new GatewayApiException('Process definitions are only valid for node-owned service processes.', 'validation_failed', [
-                    'field' => 'definition',
-                    'value' => $definition,
-                    'reason' => 'process_definition_requires_node_owned_process',
+                throw new GatewayApiException('Managed services are only valid for node-owned service processes.', 'validation_failed', [
+                    'field' => 'service',
+                    'value' => $service,
+                    'reason' => 'process_service_requires_node_owned_process',
                 ]);
             }
 
             if ($tool !== null) {
-                throw new GatewayApiException('Service process definitions do not use tool dependencies.', 'validation_failed', [
+                throw new GatewayApiException('Managed services do not use tool dependencies.', 'validation_failed', [
                     'field' => 'tool',
                     'value' => $tool,
-                    'reason' => 'process_definition_cannot_reference_tool',
+                    'reason' => 'process_service_cannot_reference_tool',
                 ]);
             }
 
             $context->assertRuntimeAllowed($resolvedRuntime);
 
-            $serviceDefinition = $this->serviceDefinitions->resolve(
-                definition: $definition,
+            $serviceDescriptor = $this->serviceCatalog->resolve(
+                service: $service,
                 version: $version,
                 runtime: $resolvedRuntime,
                 node: $context->node,
                 processName: $name,
+                imageOverride: $image,
             );
 
-            $command = $serviceDefinition->command;
-            $runtimeConfig = $serviceDefinition->runtimeConfig;
+            $command = $serviceDescriptor->command;
+            $runtimeConfig = $serviceDescriptor->runtimeConfig;
         } else {
             $context->assertRuntimeAllowed($resolvedRuntime);
         }
@@ -93,7 +111,7 @@ final readonly class AddProcess
         }
 
         if ($runtimeConfig !== []) {
-            $this->assertServiceDefinitionHasNoResourceConflicts($context, $name, $runtimeConfig);
+            $this->assertServiceHasNoResourceConflicts($context, $name, $runtimeConfig);
         }
 
         $process = DB::transaction(function () use ($context, $name, $command, $restartPolicy, $crashNotification, $resolvedRuntime, $tool, $runtimeConfig): Process {
@@ -202,7 +220,7 @@ final readonly class AddProcess
     /**
      * @param  array<string, mixed>  $runtimeConfig
      */
-    private function assertServiceDefinitionHasNoResourceConflicts(ProcessOwnerContext $context, string $name, array $runtimeConfig): void
+    private function assertServiceHasNoResourceConflicts(ProcessOwnerContext $context, string $name, array $runtimeConfig): void
     {
         $requestedEndpoints = $this->endpoints($runtimeConfig);
         $requestedVolumeNames = $this->volumeNames($runtimeConfig);
@@ -221,7 +239,7 @@ final readonly class AddProcess
                     }
 
                     throw new GatewayApiException("Process '{$name}' endpoint port {$endpoint['port']} conflicts with process '{$process->name}'.", 'validation_failed', [
-                        'field' => 'definition',
+                        'field' => 'service',
                         'reason' => 'endpoint_conflict',
                         'node' => $context->node->name,
                         'process' => $name,
@@ -237,7 +255,7 @@ final readonly class AddProcess
                 }
 
                 throw new GatewayApiException("Process '{$name}' volume '{$volumeName}' conflicts with process '{$process->name}'.", 'validation_failed', [
-                    'field' => 'definition',
+                    'field' => 'service',
                     'reason' => 'volume_conflict',
                     'node' => $context->node->name,
                     'process' => $name,

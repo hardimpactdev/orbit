@@ -43,7 +43,7 @@ use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
 use App\Services\Processes\ProcessesProbe;
 use App\Services\Processes\ProcessOwnerContext;
 use App\Services\Processes\ProcessRuntimeDriverRegistry;
-use App\Services\Processes\ProcessServiceDefinitionRegistry;
+use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Proxy\ProxyRouteAdopter;
 use App\Services\Proxy\ProxyRouteFixer;
 use App\Services\Proxy\ProxyRouteProbe;
@@ -110,7 +110,7 @@ final readonly class DoctorReportRunner
         private WorkspacesProbe $workspacesProbe,
         private ProcessesProbe $processesProbe,
         private ProcessRuntimeDriverRegistry $processRuntimeDrivers,
-        private ProcessServiceDefinitionRegistry $processServiceDefinitions,
+        private ProcessServiceCatalog $processServiceCatalog,
         private ProxyRouteProbe $proxyRouteProbe,
         private FirewallRuleProbe $firewallRuleProbe,
         private FirewallRuleFixer $firewallRuleFixer,
@@ -1367,12 +1367,14 @@ final readonly class DoctorReportRunner
     private function restoreUnrenderableProcessIssue(Node $node, string $key, array $detail): ?array
     {
         $process = $this->processFromIssueDetail($node, $detail);
-        $definition = is_string($detail['definition'] ?? null) ? $detail['definition'] : null;
+        $service = is_string($detail['service'] ?? null)
+            ? $detail['service']
+            : (is_string($detail['definition'] ?? null) ? $detail['definition'] : null);
         $version = is_string($detail['version'] ?? null)
             ? $detail['version']
             : (is_string($detail['version_family'] ?? null) ? $detail['version_family'] : null);
 
-        if (! $process instanceof Process || $definition === null) {
+        if (! $process instanceof Process || $service === null) {
             return null;
         }
 
@@ -1383,8 +1385,8 @@ final readonly class DoctorReportRunner
         }
 
         try {
-            $resolved = $this->processServiceDefinitions->resolve(
-                definition: $definition,
+            $resolved = $this->processServiceCatalog->resolve(
+                service: $service,
                 version: $version,
                 runtime: $process->runtime,
                 node: $node,
@@ -1410,7 +1412,7 @@ final readonly class DoctorReportRunner
                 'details' => [
                     'node' => $node->name,
                     'process' => $process->name,
-                    'definition' => $definition,
+                    'service' => $service,
                     'version' => $version,
                     'runtime' => $process->runtime->value,
                     'error' => $e->getMessage(),
@@ -1425,13 +1427,13 @@ final readonly class DoctorReportRunner
         $details = is_array($action['details'] ?? null) ? $action['details'] : [];
         $action['details'] = [
             ...$details,
-            'definition' => $definition,
+            'service' => $service,
             'version' => $process->runtime_config['version'] ?? $version,
             'runtime' => $process->runtime->value,
         ];
 
         if (($action['status'] ?? null) === 'completed') {
-            $action['summary'] = "Restored service definition runtime config for process {$process->name}.";
+            $action['summary'] = "Restored managed service runtime config for process {$process->name}.";
         }
 
         return $action;

@@ -145,7 +145,7 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit-prometheus');
     });
 
-    it('lists service definition connection metadata for node owned service processes without exposing credential values', function (): void {
+    it('lists managed service connection metadata for node owned service processes without exposing credential values', function (): void {
         createProcessListCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
             'name' => 'database-1',
@@ -156,7 +156,7 @@ describe('ProcessListController', function (): void {
             'command' => 'mysqld',
             'runtime' => ProcessRuntime::DockerSwarm,
             'runtime_config' => [
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
                 'service_name' => 'orbit-mysql8',
@@ -182,7 +182,7 @@ describe('ProcessListController', function (): void {
             ->assertJsonPath('success.data.processes.0.tool', null)
             ->assertJsonPath('success.data.processes.0.runtime', 'docker-swarm')
             ->assertJsonPath('success.data.processes.0.runtime_unit', 'orbit-mysql8')
-            ->assertJsonPath('success.data.processes.0.service.definition', 'mysql')
+            ->assertJsonPath('success.data.processes.0.service.service', 'mysql')
             ->assertJsonPath('success.data.processes.0.service.version_family', '8')
             ->assertJsonPath('success.data.processes.0.service.version', '8.4')
             ->assertJsonPath('success.data.processes.0.service.endpoint.host', '10.6.0.44')

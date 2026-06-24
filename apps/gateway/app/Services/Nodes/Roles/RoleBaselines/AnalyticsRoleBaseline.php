@@ -11,7 +11,7 @@ use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
-use App\Services\Processes\ProcessServiceDefinitionRegistry;
+use App\Services\Processes\ProcessServiceCatalog;
 use App\Services\Tools\ToolCatalog;
 use RuntimeException;
 
@@ -24,7 +24,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
     private const string DefaultVersion = '3.2.2';
 
     public function __construct(
-        private readonly ProcessServiceDefinitionRegistry $definitions,
+        private readonly ProcessServiceCatalog $serviceCatalog,
         private readonly ?ToolCatalog $toolCatalog = null,
         private readonly ?NodeRoleAssignments $nodeRoleAssignments = null,
     ) {}
@@ -48,7 +48,7 @@ class AnalyticsRoleBaseline implements RoleBaseline
         Process::query()
             ->ownedBy($node)
             ->where('name', self::ProcessName)
-            ->where('runtime_config->definition', 'plausible')
+            ->withRuntimeService('plausible')
             ->delete();
 
         $this->removeTools($node, ['docker']);
@@ -66,8 +66,8 @@ class AnalyticsRoleBaseline implements RoleBaseline
 
     private function convergePlausibleProcess(Node $node): void
     {
-        $definition = $this->definitions->resolve(
-            definition: 'plausible',
+        $descriptor = $this->serviceCatalog->resolve(
+            service: 'plausible',
             version: self::DefaultVersion,
             runtime: ProcessRuntime::DockerSwarm,
             node: $node,
@@ -82,12 +82,12 @@ class AnalyticsRoleBaseline implements RoleBaseline
             ],
             [
                 'node_id' => $node->id,
-                'command' => $definition->command,
+                'command' => $descriptor->command,
                 'restart_policy' => ProcessRestartPolicy::Always,
                 'crash_notification' => ProcessCrashNotification::AgentIde,
                 'runtime' => ProcessRuntime::DockerSwarm,
                 'tool' => null,
-                'runtime_config' => $definition->runtimeConfig,
+                'runtime_config' => $descriptor->runtimeConfig,
                 'sort_order' => 10,
             ],
         );

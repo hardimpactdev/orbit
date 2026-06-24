@@ -14,7 +14,7 @@
 ## Signature
 
 ```bash
-orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--definition=<mysql|redis>] [--definition-version=<version-or-family>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--json]
+orbit process:add [name] [process_command] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--tool=<tool>] [--service=<mysql|redis>] [--version=<version>] [--image=<image>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--start] [--no-start] [--json]
 ```
 
 ## Input Contract
@@ -24,17 +24,19 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `name` | `[name]` | Always. | Never. | None. | Process slug: lowercase letters, digits, and hyphens only; cannot start or end with a hyphen; max 64 characters; unique within the resolved owner scope. |
-| `process_command` | `[process_command]` | When `definition` is absent. | Never. | Service definition command when `definition` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
+| `process_command` | `[process_command]` | When `service` is absent. | Never. | Managed service command when `service` is present. | Non-empty command string. Stored as process configuration without shell rewriting by the input adapter. |
 | `node` | `--node` | Required when adding a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants `process:add`. |
 | `app` | `--app` or app context | Required unless `node` is supplied or `workspace` resolves the app. | `node` is present. | Local app context when exactly one app is resolvable. | Must resolve to an app whose owning node grants `process:add`. |
 | `workspace` | `--workspace` or workspace context | Required when adding a workspace-owned process. | `node` is present. | Local workspace context when exactly one workspace is resolvable. | Must resolve to a workspace whose app owning node grants `process:add`; pass `--app` when the workspace name is ambiguous. |
 | `tool` | `--tool` | Optional. | Never. | `null`. | Tool slug for the installed node capability this process uses. Tools do not own lifecycle. |
-| `definition` | `--definition` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported service process definition: `mysql` or `redis`. |
-| `version` | `--definition-version` | Optional for one-version definitions; required when the definition has multiple version families. | When `definition` is absent. | Definition default when unambiguous. | Supported service process definition version or version family. |
+| `service` | `--service` | Optional. | When `tool` is present or when owner scope is app/workspace. | `null`. | Supported managed service identifier: `mysql` or `redis`. The process name does not imply the service. |
+| `version` | `--version` | Optional for one-version services; required when the service has multiple version families. | When `service` is absent. | Service default when unambiguous. | Supported managed service version or version family. CLI implementation normalizes public `--version` to internal `--service-version` because Symfony reserves the global `--version` flag. |
+| `image` | `--image` | Optional. | When `service` is absent or runtime is not Docker-compatible. | Resolved official image for `service` + `runtime` + `version`. | Explicit Docker image reference overriding the catalog default. |
 | `restart_policy` | `--restart-policy` | Optional. | Never. | `never`. | One of `never`, `on_failure`, `always`. |
 | `crash_notification` | `--crash-notification` | Optional. | Never. | `none`. | One of `none`, `agent_ide`. |
-| `runtime` | `--runtime` | Optional. | Never. | `docker` for service definitions; `systemd` for node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`. App/workspace host-command processes accept `systemd`; `docker-swarm` requires node ownership. Service definitions accept `docker` and `docker-swarm`. |
-| `start` | `--start` | Optional. | Never. | `false`. | Boolean flag. Starts rendered runtime units after applying when true. |
+| `runtime` | `--runtime` | Optional. | Never. | `docker` for managed services; `systemd` for node-, app-, and workspace-owned host command processes. | One of `docker`, `docker-swarm`, `systemd`. App/workspace host-command processes accept `systemd`; `docker-swarm` requires node ownership. Managed services accept `docker` and `docker-swarm`. |
+| `start` | `--start` | Optional redundant flag. | When `no_start` is present. | `true`. | Backward-compatible alias for default start behavior. Cannot be combined with `no_start`. |
+| `no_start` | `--no-start` | Optional. | When `start` is present. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
 `process_command` is positional here because it is required to create a process definition. The sibling `process:edit` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
@@ -53,7 +55,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 3. Append gateway-owned process configuration after existing definitions for that owner, recording command, runtime, and policy fields.
 4. Derive runtime-unit identities for the selected scope. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
 5. Render the derived runtime units on the owning node through the selected runtime backend.
-6. When `--start` is present, start the rendered runtime units and record `started` events for units that start successfully.
+6. Start rendered runtime units by default unless `--no-start` is present. Record `started` events for units that start successfully.
 7. Render the selected output.
 
 If process configuration is written but runtime-unit apply or optional start fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
@@ -80,12 +82,12 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 | Duplicate process | The resolved owner scope already has a process definition with the same name. | Failure (`error.code=process.name_collision`). |
 | Invalid context | `--node` is combined with `--app` or `--workspace`, or no node/app/workspace context resolves. | Failure (`error.code=validation_failed`). |
 | Invalid app/workspace command runtime | `--runtime=docker`, `--runtime=systemd`, or `--runtime=docker-swarm` is supplied for an app- or workspace-owned host-command process. | Failure (`error.code=validation_failed`; `error.meta.reason=docker_runtime_requires_service_or_managed_process`, `systemd_requires_node_owned_process`, or `docker_swarm_requires_node_owned_process`). |
-| Version without service definition | `--definition-version` is supplied without `--definition`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_version_requires_definition`). |
-| Invalid service definition scope | `--definition` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_requires_node_owned_process`). |
-| Service definition with tool | `--definition` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_cannot_reference_tool`). |
-| Unsupported service definition | `--definition` names an unsupported definition. | Failure (`error.code=validation_failed`; `error.meta.reason=unsupported_value`). |
-| Unsupported service definition runtime | `--definition` is combined with a runtime other than `docker` or `docker-swarm`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_definition_runtime_unsupported`). |
-| Service definition resource conflict | The service definition endpoint port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
+| Version without managed service | `--version` is supplied without `--service`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_version_requires_service`). |
+| Invalid managed service scope | `--service` is supplied for an app- or workspace-owned process. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_requires_node_owned_process`). |
+| Managed service with tool | `--service` is combined with `--tool`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_cannot_reference_tool`). |
+| Unsupported managed service | `--service` names an unsupported service. | Failure (`error.code=validation_failed`; `error.meta.reason=unsupported_value`). |
+| Unsupported managed service runtime | `--service` is combined with a runtime other than `docker` or `docker-swarm`. | Failure (`error.code=validation_failed`; `error.meta.reason=process_service_runtime_unsupported`). |
+| Managed service resource conflict | The managed service endpoint port or volume conflicts with another process on the node. | Failure (`error.code=validation_failed`; `error.meta.reason=endpoint_conflict` or `volume_conflict`). |
 
 ## Doctor Relationship
 
@@ -109,7 +111,8 @@ Primary test owners:
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessAddCommandTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, runtime rendering, optional start, repairable warnings, and no write on validation failure. |
-| `apps/gateway/tests/Feature/Commands/Processes/ProcessAddInputContractTest.php` | Required inputs, process slug validation, enum validation, default restart policy, default crash notification, and `--json` input-mode selection. |
+| `apps/gateway/tests/Feature/Http/Api/ProcessStoreControllerTest.php` | Process creation, grant denial, app resolution, defaults, duplicate names, managed service selector, default start, image override, repairable warnings, and no write on validation failure. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | CLI payload mapping, enum validation, default start, `--no-start`, managed service selector, and `--json` input-mode selection. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessAddServiceSelectorContractTest.php` | Public `--version` normalization, managed service payloads, image override, and human start-step defaults. |
 
 Renderer and input-mode test mapping lives in the split companion files.

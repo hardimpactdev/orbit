@@ -16,12 +16,14 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         {--app= : Parent app slug}
         {--workspace= : Workspace name}
         {--tool= : Tool capability this process uses}
-        {--definition= : Service process definition to materialize}
-        {--definition-version= : Service process definition version or version family}
+        {--service= : Managed service identifier to materialize}
+        {--service-version= : Managed service version selector}
+        {--image= : Explicit Docker image override}
         {--restart-policy=never : Restart policy (never|on_failure|always)}
         {--crash-notification=none : Crash notification policy (none|agent_ide)}
-        {--runtime= : Process runtime (docker|docker-swarm|systemd); defaults to docker for service definitions and systemd for host commands}
-        {--start : Start rendered runtime units after creation}
+        {--runtime= : Process runtime (docker|docker-swarm|systemd); defaults to docker for managed services and systemd for host commands}
+        {--start : Redundant backward-compatible flag; processes start by default}
+        {--no-start : Skip starting rendered runtime units after creation}
         {--json : Output JSON}';
 
     #[\Override]
@@ -38,8 +40,11 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         $crashNotification = $this->stringOption('crash-notification') ?? 'none';
         $runtime = $this->stringOption('runtime');
         $tool = $this->stringOption('tool');
-        $definition = $this->stringOption('definition');
-        $version = $this->stringOption('definition-version');
+        $service = $this->stringOption('service');
+        $version = $this->stringOption('service-version');
+        $image = $this->stringOption('image');
+        $noStart = $this->option('no-start') === true;
+        $startExplicit = $this->option('start') === true;
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->failValidation('context', 'A node context cannot be combined with app or workspace context.', [
@@ -54,29 +59,42 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         }
 
         $validation = $this->validateProcessName($name)
-            ?? ($command === null && $definition === null ? $this->failValidation('command', 'The process command is required.') : null)
+            ?? ($command === null && $service === null ? $this->failValidation('command', 'The process command is required.') : null)
             ?? $this->validateRestartPolicy($restartPolicy)
             ?? $this->validateCrashNotification($crashNotification)
             ?? $this->validateRuntime($runtime)
-            ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node, $definition)
+            ?? $this->validateAppWorkspaceCommandRuntime($runtime, $node, $service)
             ?? $this->validateTool($tool)
-            ?? $this->validateDefinition($definition)
-            ?? ($definition === null && $version !== null ? $this->failValidation('definition_version', 'Process definition version requires --definition.', [
+            ?? $this->validateService($service)
+            ?? ($service === null && $version !== null ? $this->failValidation('version', 'Process service version requires --service.', [
                 'value' => $version,
-                'reason' => 'process_definition_version_requires_definition',
+                'reason' => 'process_service_version_requires_service',
             ]) : null)
-            ?? ($definition !== null && $node === null ? $this->failValidation('definition', 'Process definitions are only valid for node-owned service processes.', [
-                'value' => $definition,
-                'reason' => 'process_definition_requires_node_owned_process',
+            ?? ($service === null && $image !== null ? $this->failValidation('image', 'Process service image requires --service.', [
+                'value' => $image,
+                'reason' => 'process_service_image_requires_service',
             ]) : null)
-            ?? ($definition !== null && $tool !== null ? $this->failValidation('tool', 'Service process definitions do not use tool dependencies.', [
+            ?? ($image !== null && $runtime === 'systemd' ? $this->failValidation('image', 'Process service image overrides require a Docker runtime.', [
+                'value' => $image,
+                'reason' => 'process_service_image_requires_docker_runtime',
+            ]) : null)
+            ?? ($service !== null && $node === null ? $this->failValidation('service', 'Managed services are only valid for node-owned service processes.', [
+                'value' => $service,
+                'reason' => 'process_service_requires_node_owned_process',
+            ]) : null)
+            ?? ($service !== null && $tool !== null ? $this->failValidation('tool', 'Managed services do not use tool dependencies.', [
                 'value' => $tool,
-                'reason' => 'process_definition_cannot_reference_tool',
+                'reason' => 'process_service_cannot_reference_tool',
+            ]) : null)
+            ?? ($noStart && $startExplicit ? $this->failValidation('start', 'The start and no-start flags cannot be used together.', [
+                'reason' => 'start_and_no_start_conflict',
             ]) : null);
 
         if ($validation !== null) {
             return $validation;
         }
+
+        $start = ! $noStart;
 
         $payload = $this->filledQuery([
             'node' => $node,
@@ -86,11 +104,12 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             'command' => $command,
             'restart_policy' => $restartPolicy,
             'crash_notification' => $crashNotification,
-            'start' => $this->option('start') === true,
+            'start' => $start,
             'runtime' => $runtime,
             'tool' => $tool,
-            'definition' => $definition,
+            'service' => $service,
             'version' => $version,
+            'image' => $image,
         ]);
 
         if ($this->wantsJson()) {
@@ -103,13 +122,13 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             return $this->renderSuccess($response);
         }
 
-        return $this->renderAddTree($payload, (string) $name, $this->contextLabel($node, $app, $workspace));
+        return $this->renderAddTree($payload, (string) $name, $this->contextLabel($node, $app, $workspace), $start);
     }
 
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function renderAddTree(array $payload, string $name, string $label): int
+    private function renderAddTree(array $payload, string $name, string $label, bool $start): int
     {
         $response = [];
 
@@ -119,7 +138,7 @@ final class ProcessAddCommand extends ProcessGatewayCommand
             ['label' => 'Render runtime units', 'doneLabel' => 'Rendered runtime units'],
         ];
 
-        if ($this->option('start') === true) {
+        if ($start) {
             $phases[] = ['label' => 'Start runtime units', 'doneLabel' => 'Started runtime units'];
         }
 
@@ -156,18 +175,18 @@ final class ProcessAddCommand extends ProcessGatewayCommand
         ]);
     }
 
-    private function validateDefinition(?string $definition): ?int
+    private function validateService(?string $service): ?int
     {
-        if ($definition === null) {
+        if ($service === null) {
             return null;
         }
 
-        if (preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $definition)) {
+        if (preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $service)) {
             return null;
         }
 
-        return $this->failValidation('definition', 'The process definition must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
-            'value' => $definition,
+        return $this->failValidation('service', 'The managed service must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', [
+            'value' => $service,
         ]);
     }
 }

@@ -26,7 +26,7 @@ class NodeRoleDependencyInspector
     /**
      * @var list<string>
      */
-    private const array DatabaseProcessDefinitions = [
+    private const array DatabaseProcessServices = [
         'mysql',
         'postgres',
         'redis',
@@ -97,7 +97,7 @@ class NodeRoleDependencyInspector
     {
         $count = Process::query()
             ->ownedBy($node)
-            ->whereIn('runtime_config->definition', self::DatabaseProcessDefinitions)
+            ->withRuntimeService(self::DatabaseProcessServices)
             ->count();
 
         if ($count === 0) {
@@ -136,7 +136,7 @@ class NodeRoleDependencyInspector
     {
         Process::query()
             ->ownedBy($node)
-            ->whereIn('runtime_config->definition', self::DatabaseProcessDefinitions)
+            ->withRuntimeService(self::DatabaseProcessServices)
             ->delete();
     }
 

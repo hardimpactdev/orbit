@@ -4,32 +4,43 @@ Long-running app-owned processes (queue workers, websocket servers, vite dev ser
 
 ## `orbit process:add [name] [command]`
 
-Add a process definition for an app.
+Add a process definition for an app, workspace, or node.
 
 ```bash
-orbit process:add [<name>] [<command>] [--app=<name>]
+orbit process:add [<name>] [<command>] [--app=<name>] [--node=<node>]
+                  [--service=<mysql|redis>] [--version=<version>] [--image=<image>]
                   [--restart-policy=never|on_failure|always]
                   [--crash-notification=none|agent_ide]
-                  [--start] [--json]
+                  [--no-start] [--json]
 ```
 
 | Option | Default | Notes |
 |---|---|---|
-| `name` |  -  | Process slug (<=64 chars). |
-| `command` |  -  | Shell command (run inside the app/workspace path). |
+| `name` |  -  | Process slug (<=64 chars). Independent of `--service`. |
+| `command` |  -  | Shell command (run inside the app/workspace path). Omit when `--service` is present. |
 | `--app` |  -  | Parent app slug. |
+| `--node` |  -  | Owning node for node-owned processes and managed services. |
+| `--service` |  -  | Managed service identifier (`mysql`, `redis`, ...). Node-owned only. |
+| `--version` | service default | Service version selector. Public CLI flag; normalized internally because Symfony reserves global `--version`. |
+| `--image` | resolved catalog image | Explicit Docker image override for managed services. |
 | `--restart-policy` | `never` | Runtime restart behavior. |
 | `--crash-notification` | `none` | `agent_ide` posts crash notes to the effective Agent IDE adapter. |
-| `--start` | off | Start the rendered runtime units immediately. |
+| `--no-start` | off | Skip starting rendered runtime units after apply. |
+| `--start` | redundant | Accepted for backward compatibility; processes start by default. |
 
 Examples:
 
 ```bash
 orbit process:add queue 'php artisan queue:work --tries=3' --app=myapp \
-  --restart-policy=always --crash-notification=agent_ide --start
+  --restart-policy=always --crash-notification=agent_ide
 
 orbit process:add reverb 'php artisan reverb:start' --app=myapp \
-  --restart-policy=on_failure --start
+  --restart-policy=on_failure
+
+orbit process:add mysql8 --node=beast --service=mysql --runtime=docker --version=8.3
+
+orbit process:add mysql8 --node=beast --service=mysql --runtime=docker \
+  --version=8.3 --image=docker.io/library/mysql:8.3 --no-start
 ```
 
 ## `orbit process:edit [name]`

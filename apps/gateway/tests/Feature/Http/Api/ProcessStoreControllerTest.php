@@ -337,7 +337,7 @@ describe('ProcessStoreController', function (): void {
             ->and($remoteShell->scripts[1])->toContain("sudo systemctl enable 'opencode-server.service'");
     });
 
-    it('creates node owned MySQL service processes from process definitions without tool rows', function (): void {
+    it('creates node owned MySQL managed service processes without tool rows', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
             'name' => 'database-1',
@@ -346,13 +346,14 @@ describe('ProcessStoreController', function (): void {
         $remoteShell = new ProcessStoreRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]);
         app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call('POST', '/api/processes', [
             'node' => 'database-1',
             'name' => 'mysql8',
-            'definition' => 'mysql',
+            'service' => 'mysql',
             'version' => '8',
             'runtime' => 'docker-swarm',
             'restart_policy' => 'on_failure',
@@ -372,19 +373,19 @@ describe('ProcessStoreController', function (): void {
             ->and($process->tool)->toBeNull()
             ->and($process->runtime)->toBe(ProcessRuntime::DockerSwarm)
             ->and($process->runtime_config)->toMatchArray([
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version_family' => '8',
                 'version' => '8.4',
             ])
             ->and($process->runtime_config['endpoint']['host'])->toBe('10.6.0.44')
             ->and($process->runtime_config['endpoint']['port'])->toBe(3308)
-            ->and($process->runtime_config['labels']['orbit.process.definition'])->toBe('mysql')
+            ->and($process->runtime_config['labels']['orbit.process.service'])->toBe('mysql')
             ->and($process->runtime_config['labels']['orbit.process.version_family'])->toBe('8')
             ->and($remoteShell->scripts[0])->toContain('docker service create')
-            ->and($remoteShell->scripts[0])->toContain("--label 'orbit.process.definition=mysql'");
+            ->and($remoteShell->scripts[0])->toContain("--label 'orbit.process.service=mysql'");
     });
 
-    it('lets MySQL 8 and MySQL 9 process definitions coexist on one node', function (): void {
+    it('lets MySQL 8 and MySQL 9 managed services coexist on one node', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
             'name' => 'database-1',
@@ -393,13 +394,17 @@ describe('ProcessStoreController', function (): void {
         app()->instance(RemoteShell::class, new ProcessStoreRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
         ]));
 
         foreach ([['mysql8', '8'], ['mysql9', '9']] as [$name, $version]) {
             $this->call('POST', '/api/processes', [
                 'node' => 'database-1',
                 'name' => $name,
-                'definition' => 'mysql',
+                'service' => 'mysql',
                 'version' => $version,
                 'runtime' => 'docker',
             ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP])->assertOk();
@@ -415,7 +420,7 @@ describe('ProcessStoreController', function (): void {
             ->and($mysql8->runtime_config['spec_hash'])->not->toBe($mysql9->runtime_config['spec_hash']);
     });
 
-    it('rejects invalid service definition input before runtime side effects', function (array $payload, string $field, string $reason): void {
+    it('rejects invalid managed service input before runtime side effects', function (array $payload, string $field, string $reason): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode(['name' => 'database-1']);
         App::factory()->create(['name' => 'docs', 'node_id' => $node->id]);
@@ -436,26 +441,26 @@ describe('ProcessStoreController', function (): void {
             [
                 'app' => 'docs',
                 'name' => 'redis',
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version' => '7',
                 'runtime' => 'docker',
             ],
-            'definition',
-            'process_definition_requires_node_owned_process',
+            'service',
+            'process_service_requires_node_owned_process',
         ],
         'tool dependency' => [
             [
                 'node' => 'database-1',
                 'name' => 'redis',
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version' => '7',
                 'runtime' => 'docker',
                 'tool' => 'redis',
             ],
             'tool',
-            'process_definition_cannot_reference_tool',
+            'process_service_cannot_reference_tool',
         ],
-        'version without definition' => [
+        'version without service' => [
             [
                 'node' => 'database-1',
                 'name' => 'worker',
@@ -464,13 +469,35 @@ describe('ProcessStoreController', function (): void {
                 'runtime' => 'docker',
             ],
             'version',
-            'process_definition_version_requires_definition',
+            'process_service_version_requires_service',
         ],
-        'service definition node without WireGuard address' => [
+        'image without service' => [
+            [
+                'node' => 'database-1',
+                'name' => 'worker',
+                'command' => 'php artisan queue:work',
+                'image' => 'docker.io/library/mysql:8.3',
+                'runtime' => 'docker',
+            ],
+            'image',
+            'process_service_image_requires_service',
+        ],
+        'image with systemd runtime' => [
+            [
+                'node' => 'database-1',
+                'name' => 'node-exporter',
+                'service' => 'node-exporter',
+                'runtime' => 'systemd',
+                'image' => 'prom/node-exporter:v1.11.1',
+            ],
+            'image',
+            'process_service_image_requires_docker_runtime',
+        ],
+        'managed service node without WireGuard address' => [
             [
                 'node' => 'database-1',
                 'name' => 'redis',
-                'definition' => 'redis',
+                'service' => 'redis',
                 'version' => '7',
                 'runtime' => 'docker',
             ],
@@ -479,7 +506,7 @@ describe('ProcessStoreController', function (): void {
         ],
     ]);
 
-    it('rejects service definition endpoint conflicts before runtime side effects', function (): void {
+    it('rejects managed service endpoint conflicts before runtime side effects', function (): void {
         createProcessStoreCallerNode(role: 'gateway');
         $node = createTestAppHostNode([
             'name' => 'database-1',
@@ -500,7 +527,7 @@ describe('ProcessStoreController', function (): void {
         $response = $this->call('POST', '/api/processes', [
             'node' => 'database-1',
             'name' => 'redis',
-            'definition' => 'redis',
+            'service' => 'redis',
             'version' => '7',
             'runtime' => 'docker',
         ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
@@ -530,6 +557,144 @@ describe('ProcessStoreController', function (): void {
 
         $response->assertStatus(409)
             ->assertJsonPath('error.code', 'process.name_collision');
+    });
+
+    it('creates node owned MySQL processes from the service selector with default start', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        $node = createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mysql8',
+            'service' => 'mysql',
+            'version' => '8.3',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk()
+            ->assertJsonPath('success.data.process.name', 'mysql8')
+            ->assertJsonPath('success.data.process.node', 'beast')
+            ->assertJsonPath('success.data.process.tool', null)
+            ->assertJsonPath('success.data.process.runtime', 'docker')
+            ->assertJsonPath('success.data.runtime_units.0.name', 'mysql8');
+
+        $process = Process::query()->where('name', 'mysql8')->firstOrFail();
+
+        expect($process->owner_type)->toBe($node->getMorphClass())
+            ->and($process->owner_id)->toBe($node->id)
+            ->and($process->tool)->toBeNull()
+            ->and($process->runtime)->toBe(ProcessRuntime::Docker)
+            ->and($process->runtime_config['service'])->toBe('mysql')
+            ->and($process->runtime_config['version'])->toBe('8.3')
+            ->and($process->runtime_config['image'])->toBe('mysql:8.3')
+            ->and(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))->toBeTrue();
+    });
+
+    it('accepts an explicit image override for docker managed service processes', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mysql8',
+            'service' => 'mysql',
+            'version' => '8.3',
+            'runtime' => 'docker',
+            'image' => 'docker.io/library/mysql:8.3',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        $process = Process::query()->where('name', 'mysql8')->firstOrFail();
+
+        expect($process->runtime_config['image'])->toBe('docker.io/library/mysql:8.3');
+    });
+
+    it('does not start managed service runtime units when no_start is true', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode([
+            'name' => 'beast',
+            'wireguard_address' => '10.6.0.44',
+        ]);
+        $remoteShell = new ProcessStoreRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mysql8',
+            'service' => 'mysql',
+            'version' => '8.3',
+            'runtime' => 'docker',
+            'no_start' => true,
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertOk();
+
+        expect(collect($remoteShell->scripts)->contains(fn (string $script): bool => str_contains($script, "docker start 'mysql8'")))->toBeFalse();
+    });
+
+    it('does not infer managed service from process name alone', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode(['name' => 'beast']);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'mysql8',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'command');
+
+        expect(Process::query()->where('name', 'mysql8')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
+    });
+
+    it('rejects service versions without service before runtime side effects', function (): void {
+        createProcessStoreCallerNode(role: 'gateway');
+        createTestAppHostNode(['name' => 'beast']);
+        $remoteShell = new ProcessStoreRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call('POST', '/api/processes', [
+            'node' => 'beast',
+            'name' => 'worker',
+            'command' => 'php artisan queue:work',
+            'version' => '8.3',
+            'runtime' => 'docker',
+        ], [], [], ['REMOTE_ADDR' => PROCESS_STORE_CALLER_WG_IP]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'version')
+            ->assertJsonPath('error.meta.reason', 'process_service_version_requires_service');
+
+        expect(Process::query()->where('name', 'worker')->exists())->toBeFalse()
+            ->and($remoteShell->scripts)->toBe([]);
     });
 });
 

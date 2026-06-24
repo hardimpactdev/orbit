@@ -520,7 +520,7 @@ describe('node role assignment service', function (): void {
         ]), function (Node $node): void {
             Process::factory()->forOwner($node)->create([
                 'name' => 'redis',
-                'runtime_config' => ['definition' => 'redis'],
+                'runtime_config' => ['service' => 'redis'],
             ]);
         }),
         'inactive database node with redis process' => fn (): Node => tap(Node::factory()->database()->create([
@@ -529,7 +529,7 @@ describe('node role assignment service', function (): void {
         ]), function (Node $node): void {
             Process::factory()->forOwner($node)->create([
                 'name' => 'redis',
-                'runtime_config' => ['definition' => 'redis'],
+                'runtime_config' => ['service' => 'redis'],
             ]);
         }),
         'database node without redis process' => fn (): Node => Node::factory()->database()->create([
@@ -562,7 +562,7 @@ describe('node role assignment service', function (): void {
         ]);
         Process::factory()->forOwner($databaseNode)->create([
             'name' => 'redis',
-            'runtime_config' => ['definition' => 'redis'],
+            'runtime_config' => ['service' => 'redis'],
         ]);
         $node = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -591,7 +591,7 @@ describe('node role assignment service', function (): void {
         ]);
         Process::factory()->forOwner($validRedisNode)->create([
             'name' => 'redis',
-            'runtime_config' => ['definition' => 'redis'],
+            'runtime_config' => ['service' => 'redis'],
         ]);
         $invalidRedisNode = Node::factory()->create([
             'platform' => 'ubuntu',
@@ -1275,7 +1275,7 @@ describe('node role assignment service', function (): void {
         ]);
         Process::factory()->forOwner($node)->create([
             'name' => 'postgres16',
-            'runtime_config' => ['definition' => 'postgres'],
+            'runtime_config' => ['service' => 'postgres'],
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -1285,7 +1285,7 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true);
 
-        expect(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())->toBeFalse()
+        expect(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())->toBeFalse()
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });
@@ -1300,7 +1300,7 @@ describe('node role assignment service', function (): void {
         ]);
         Process::factory()->forOwner($node)->create([
             'name' => 'postgres16',
-            'runtime_config' => ['definition' => 'postgres'],
+            'runtime_config' => ['service' => 'postgres'],
         ]);
         NodeTool::factory()->create([
             'node_id' => $node->id,
@@ -1310,7 +1310,7 @@ describe('node role assignment service', function (): void {
 
         app(NodeRoleAssignmentService::class)->remove($node, 'database', force: true, purgeData: true);
 
-        expect(Process::query()->ownedBy($node)->where('runtime_config->definition', 'postgres')->exists())->toBeFalse()
+        expect(Process::query()->ownedBy($node)->withRuntimeService('postgres')->exists())->toBeFalse()
             ->and(NodeTool::query()->where('node_id', $node->id)->where('name', 'docker')->exists())->toBeFalse()
             ->and($node->fresh()->roleAssignments)->toHaveCount(0);
     });

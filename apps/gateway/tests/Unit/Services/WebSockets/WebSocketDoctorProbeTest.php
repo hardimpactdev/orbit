@@ -28,7 +28,7 @@ it('runs the redis doctor script inside the rendered websocket runtime container
         'runtime' => ProcessRuntime::Docker,
         'command' => 'redis-server --appendonly yes',
         'runtime_config' => [
-            'definition' => 'redis',
+            'service' => 'redis',
         ],
     ]);
     $websocketNode = Node::factory()->create([

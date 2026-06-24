@@ -4,36 +4,40 @@ declare(strict_types=1);
 
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\Node;
-use App\Services\Processes\ProcessServiceDefinitionRegistry;
-use App\Services\Tools\ToolCatalog;
+use App\Services\Processes\ProcessServiceCatalog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
 
-it('selects service versions from process definitions instead of tool instances', function (): void {
-    $node = Node::factory()->create(['wireguard_address' => '10.6.0.44']);
-    $registry = app(ProcessServiceDefinitionRegistry::class);
+it('keeps managed service runtime selection independent of node tool platform rows', function (): void {
+    $node = Node::factory()->create([
+        'platform' => 'ubuntu_24-04',
+        'wireguard_address' => '10.6.0.44',
+    ]);
 
-    $mysql8 = $registry->resolve('mysql', '8', ProcessRuntime::Docker, $node, 'mysql8');
-    $mysql84 = $registry->resolve('mysql', '8.4', ProcessRuntime::Docker, $node, 'mysql8-alt');
+    $descriptor = app(ProcessServiceCatalog::class)->resolve(
+        service: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::DockerSwarm,
+        node: $node,
+        processName: 'redis',
+    );
 
-    expect(app(ToolCatalog::class)->supports('mysql'))->toBeFalse()
-        ->and($mysql8->versionFamily)->toBe('8')
-        ->and($mysql8->version)->toBe('8.4')
-        ->and($mysql84->versionFamily)->toBe('8')
-        ->and($mysql84->version)->toBe('8.4');
+    expect($descriptor->runtimeConfig['image'])->toBe('redis:7.2')
+        ->and($descriptor->runtimeConfig['endpoint']['host'])->toBe('10.6.0.44')
+        ->and($descriptor->runtimeConfig['labels']['orbit.process.service'])->toBe('redis');
 });
 
-it('rejects unsupported service process definition versions', function (): void {
+it('rejects unsupported managed service runtimes through the service catalog', function (): void {
     $node = Node::factory()->create();
 
-    app(ProcessServiceDefinitionRegistry::class)->resolve(
-        definition: 'mysql',
-        version: '10',
-        runtime: ProcessRuntime::Docker,
+    app(ProcessServiceCatalog::class)->resolve(
+        service: 'redis',
+        version: '7',
+        runtime: ProcessRuntime::Systemd,
         node: $node,
-        processName: 'mysql10',
+        processName: 'redis',
     );
-})->throws(GatewayApiException::class, "Process definition 'mysql' does not support version '10'.");
+})->throws(GatewayApiException::class, "Managed service 'redis' does not support runtime 'systemd'.");

@@ -42,12 +42,12 @@ function createAnalyticsUpdateProcess(Node $node, string $version = '3.2.1'): Pr
         'command' => 'plausible start',
         'runtime' => ProcessRuntime::DockerSwarm,
         'runtime_config' => [
-            'definition' => 'plausible',
+            'service' => 'plausible',
             'version_family' => $version,
             'version' => $version,
             'image' => "ghcr.io/plausible/community-edition:{$version}",
             'labels' => [
-                'orbit.process.definition' => 'plausible',
+                'orbit.process.service' => 'plausible',
                 'orbit.process.version' => $version,
             ],
         ],
@@ -108,7 +108,8 @@ describe('AnalyticsUpdateController', function (): void {
         expect($runtimeConfig['version'])->toBe('3.2.2')
             ->and($runtimeConfig['version_family'])->toBe('3.2.2')
             ->and($runtimeConfig['image'])->toBe('ghcr.io/plausible/community-edition:3.2.2')
-            ->and($runtimeConfig['labels']['orbit.process.definition'])->toBe('plausible')
+            ->and($runtimeConfig['service'])->toBe('plausible')
+            ->and($runtimeConfig['labels']['orbit.process.service'])->toBe('plausible')
             ->and($runtimeConfig['labels']['orbit.process.version'])->toBe('3.2.2');
     });
 

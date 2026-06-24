@@ -71,8 +71,9 @@ final class ProcessStoreController implements Loggable
                 start: $input['start'],
                 runtime: $input['runtime'],
                 tool: $input['tool'],
-                definition: $input['definition'],
+                service: $input['service'],
                 version: $input['version'],
+                image: $input['image'],
             );
         } catch (GatewayApiException $e) {
             return $this->error($e->errorCode() ?? 'validation_failed', $e->getMessage(), $e->errorMeta(), $e->errorCode() === 'process.name_collision' ? 409 : 422);
@@ -91,7 +92,7 @@ final class ProcessStoreController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, definition: string|null, version: string|null, start: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, name: string, command: string|null, restart_policy: ProcessRestartPolicy, crash_notification: ProcessCrashNotification, runtime: ?ProcessRuntime, tool: string|null, service: string|null, version: string|null, image: string|null, start: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
@@ -104,8 +105,20 @@ final class ProcessStoreController implements Loggable
         $crashNotificationInput = $this->optionalString($request, 'crash_notification') ?? ProcessCrashNotification::None->value;
         $runtimeInput = $this->optionalString($request, 'runtime');
         $tool = $this->optionalString($request, 'tool');
-        $definition = $this->optionalString($request, 'definition');
+        $service = $this->optionalString($request, 'service');
         $version = $this->optionalString($request, 'version');
+        $image = $this->optionalString($request, 'image');
+        $noStart = $request->boolean('no_start');
+        $startExplicit = $request->has('start') ? $request->boolean('start') : null;
+
+        if ($noStart && $startExplicit === true) {
+            return $this->error('validation_failed', 'The start and no-start flags cannot be used together.', [
+                'field' => 'start',
+                'reason' => 'start_and_no_start_conflict',
+            ], 422);
+        }
+
+        $start = $noStart ? false : ($startExplicit ?? true);
 
         if ($node !== null && ($app !== null || $workspace !== null)) {
             return $this->error('validation_failed', 'A node context cannot be combined with app or workspace context.', [
@@ -128,35 +141,43 @@ final class ProcessStoreController implements Loggable
             return $this->error('validation_failed', 'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'name', 'value' => $name], 422);
         }
 
-        if ($command === null && $definition === null) {
+        if ($command === null && $service === null) {
             return $this->error('validation_failed', 'The process command is required.', ['field' => 'command'], 422);
         }
 
-        if ($definition !== null && ! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $definition)) {
-            return $this->error('validation_failed', 'The process definition must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'definition', 'value' => $definition], 422);
+        if ($service !== null && ! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $service)) {
+            return $this->error('validation_failed', 'The managed service must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.', ['field' => 'service', 'value' => $service], 422);
         }
 
-        if ($definition === null && $version !== null) {
-            return $this->error('validation_failed', 'Process definition version requires a service process definition.', [
+        if ($service === null && $version !== null) {
+            return $this->error('validation_failed', 'Process service version requires a managed service.', [
                 'field' => 'version',
                 'value' => $version,
-                'reason' => 'process_definition_version_requires_definition',
+                'reason' => 'process_service_version_requires_service',
             ], 422);
         }
 
-        if ($definition !== null && $node === null) {
-            return $this->error('validation_failed', 'Process definitions are only valid for node-owned service processes.', [
-                'field' => 'definition',
-                'value' => $definition,
-                'reason' => 'process_definition_requires_node_owned_process',
+        if ($service === null && $image !== null) {
+            return $this->error('validation_failed', 'Process service image requires a managed service.', [
+                'field' => 'image',
+                'value' => $image,
+                'reason' => 'process_service_image_requires_service',
             ], 422);
         }
 
-        if ($definition !== null && $tool !== null) {
-            return $this->error('validation_failed', 'Service process definitions do not use tool dependencies.', [
+        if ($service !== null && $node === null) {
+            return $this->error('validation_failed', 'Managed services are only valid for node-owned service processes.', [
+                'field' => 'service',
+                'value' => $service,
+                'reason' => 'process_service_requires_node_owned_process',
+            ], 422);
+        }
+
+        if ($service !== null && $tool !== null) {
+            return $this->error('validation_failed', 'Managed services do not use tool dependencies.', [
                 'field' => 'tool',
                 'value' => $tool,
-                'reason' => 'process_definition_cannot_reference_tool',
+                'reason' => 'process_service_cannot_reference_tool',
             ], 422);
         }
 
@@ -197,11 +218,19 @@ final class ProcessStoreController implements Loggable
                 ], 422);
             }
 
-            if ($node === null && $definition === null && $runtime->appWorkspaceCommandViolationReason() !== null) {
+            if ($node === null && $service === null && $runtime->appWorkspaceCommandViolationReason() !== null) {
                 return $this->error('validation_failed', $runtime->appWorkspaceCommandViolationMessage() ?? 'The selected runtime is not valid for this process owner.', [
                     'field' => 'runtime',
                     'value' => $runtimeInput,
                     'reason' => $runtime->appWorkspaceCommandViolationReason(),
+                ], 422);
+            }
+
+            if ($image !== null && $runtime === ProcessRuntime::Systemd) {
+                return $this->error('validation_failed', 'Process service image overrides require a Docker runtime.', [
+                    'field' => 'image',
+                    'value' => $image,
+                    'reason' => 'process_service_image_requires_docker_runtime',
                 ], 422);
             }
         }
@@ -216,9 +245,10 @@ final class ProcessStoreController implements Loggable
             'crash_notification' => $crashNotification,
             'runtime' => $runtime,
             'tool' => $tool,
-            'definition' => $definition,
+            'service' => $service,
             'version' => $version,
-            'start' => $request->boolean('start'),
+            'image' => $image,
+            'start' => $start,
         ];
     }
 
@@ -284,7 +314,7 @@ final class ProcessStoreController implements Loggable
             'workspace' => $this->optionalString(request(), 'workspace'),
             'name' => $this->optionalString(request(), 'name'),
             'tool' => $this->optionalString(request(), 'tool'),
-            'definition' => $this->optionalString(request(), 'definition'),
+            'service' => $this->optionalString(request(), 'service'),
         ];
     }
 

@@ -91,4 +91,11 @@ describe('native command option normalization', function (): void {
         expect(normalizeNativeCommandArgv(['orbit', '--version', 'tool:install', 'mysql']))
             ->toBe(['orbit', '--version', 'tool:install', 'mysql']);
     });
+
+    it('rewrites process add version options after the command name', function (): void {
+        expect(normalizeNativeCommandArgv(['orbit', 'process:add', 'mysql8', '--node=beast', '--service=mysql', '--runtime=docker', '--version=8.3']))
+            ->toBe(['orbit', 'process:add', 'mysql8', '--node=beast', '--service=mysql', '--runtime=docker', '--service-version=8.3'])
+            ->and(normalizeNativeCommandArgv(['orbit', 'process:add', 'mysql8', '--node', 'beast', '--service', 'mysql', '--runtime', 'docker', '--version', '8.3']))
+            ->toBe(['orbit', 'process:add', 'mysql8', '--node', 'beast', '--service', 'mysql', '--runtime', 'docker', '--service-version=8.3']);
+    });
 });

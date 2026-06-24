@@ -10,7 +10,7 @@ use App\Services\Nodes\NodeWireGuardServiceAddress;
 use Orbit\Sdk\Laravel\GatewayApiException;
 use RuntimeException;
 
-final readonly class ProcessServiceDefinitionRegistry
+final readonly class ProcessServiceCatalog
 {
     public function __construct(
         private NodeWireGuardServiceAddress $serviceAddress,
@@ -21,48 +21,48 @@ final readonly class ProcessServiceDefinitionRegistry
      */
     public function names(): array
     {
-        return array_keys($this->definitions());
+        return array_keys($this->services());
     }
 
-    public function supports(string $definition): bool
+    public function supports(string $service): bool
     {
-        return array_key_exists($definition, $this->definitions());
+        return array_key_exists($service, $this->services());
     }
 
-    public function resolve(string $definition, ?string $version, ProcessRuntime $runtime, Node $node, string $processName): ProcessServiceDefinition
+    public function resolve(string $service, ?string $version, ProcessRuntime $runtime, Node $node, string $processName, ?string $imageOverride = null): ProcessServiceDescriptor
     {
-        $catalog = $this->definitions();
-        $service = $catalog[$definition] ?? null;
+        $catalog = $this->services();
+        $entry = $catalog[$service] ?? null;
 
-        if (! is_array($service)) {
-            throw new GatewayApiException("Process definition '{$definition}' is not supported.", 'validation_failed', [
-                'field' => 'definition',
-                'value' => $definition,
+        if (! is_array($entry)) {
+            throw new GatewayApiException("Managed service '{$service}' is not supported.", 'validation_failed', [
+                'field' => 'service',
+                'value' => $service,
                 'reason' => 'unsupported_value',
                 'allowed' => $this->names(),
             ]);
         }
 
-        $allowedRuntimes = $this->allowedRuntimes($service);
+        $allowedRuntimes = $this->allowedRuntimes($entry);
 
         if (! in_array($runtime, $allowedRuntimes, true)) {
-            throw new GatewayApiException("Process definition '{$definition}' does not support runtime '{$runtime->value}'.", 'validation_failed', [
+            throw new GatewayApiException("Managed service '{$service}' does not support runtime '{$runtime->value}'.", 'validation_failed', [
                 'field' => 'runtime',
                 'value' => $runtime->value,
-                'reason' => 'process_definition_runtime_unsupported',
-                'definition' => $definition,
+                'reason' => 'process_service_runtime_unsupported',
+                'service' => $service,
                 'allowed' => array_map(static fn (ProcessRuntime $runtime): string => $runtime->value, $allowedRuntimes),
             ]);
         }
 
-        $resolved = $this->resolveVersion($definition, $service['versions'], $version);
+        $resolved = $this->resolveVersion($service, $entry['versions'], $version);
         $host = $this->serviceHost($node);
         $serviceName = "orbit-{$processName}";
         $volumeName = "orbit-{$processName}";
         $dataPath = "/var/lib/orbit/processes/{$processName}";
 
         $runtimeConfig = [
-            'definition' => $definition,
+            'service' => $service,
             'version_family' => $resolved['family'],
             'version' => $resolved['version'],
             'endpoint' => [
@@ -80,45 +80,47 @@ final readonly class ProcessServiceDefinitionRegistry
                 ],
             ],
             'service_name' => $serviceName,
-            'environment' => $service['environment'],
-            'network_aliases' => array_values(array_unique([$definition, $processName])),
-            'healthcheck' => $service['healthcheck'],
-            'credentials' => $service['credentials'],
+            'environment' => $entry['environment'],
+            'network_aliases' => array_values(array_unique([$service, $processName])),
+            'healthcheck' => $entry['healthcheck'],
+            'credentials' => $entry['credentials'],
             'update_strategy' => [
                 'order' => 'stop-first',
                 'parallelism' => 1,
             ],
         ];
 
-        if (is_string($service['image'] ?? null) && $service['image'] !== '') {
-            $runtimeConfig['image'] = "{$service['image']}:{$resolved['version']}";
+        if ($imageOverride !== null && $imageOverride !== '') {
+            $runtimeConfig['image'] = $imageOverride;
+        } elseif (is_string($entry['image'] ?? null) && $entry['image'] !== '') {
+            $runtimeConfig['image'] = "{$entry['image']}:{$resolved['version']}";
         }
 
-        if (is_string($service['command_mode'] ?? null) && $service['command_mode'] !== '') {
-            $runtimeConfig['command_mode'] = $service['command_mode'];
+        if (is_string($entry['command_mode'] ?? null) && $entry['command_mode'] !== '') {
+            $runtimeConfig['command_mode'] = $entry['command_mode'];
         }
 
-        if (is_int($service['target_port'] ?? null)) {
+        if (is_int($entry['target_port'] ?? null)) {
             $runtimeConfig['ports'] = [
                 [
                     'published' => $resolved['published_port'],
-                    'target' => $service['target_port'],
+                    'target' => $entry['target_port'],
                     'protocol' => 'tcp',
                 ],
             ];
         }
 
-        if (is_string($service['data_path'] ?? null) && $service['data_path'] !== '') {
+        if (is_string($entry['data_path'] ?? null) && $entry['data_path'] !== '') {
             $runtimeConfig['mounts'] = [
                 [
                     'source' => $dataPath,
-                    'target' => $service['data_path'],
+                    'target' => $entry['data_path'],
                 ],
             ];
             $runtimeConfig['volumes'] = [
                 [
                     'name' => $volumeName,
-                    'target' => $service['data_path'],
+                    'target' => $entry['data_path'],
                 ],
             ];
         }
@@ -133,17 +135,17 @@ final readonly class ProcessServiceDefinitionRegistry
         $runtimeConfig['labels'] = [
             'orbit.managed' => 'true',
             'orbit.process' => $processName,
-            'orbit.process.definition' => $definition,
+            'orbit.process.service' => $service,
             'orbit.process.version_family' => $resolved['family'],
             'orbit.process.version' => $resolved['version'],
             'orbit.process.spec_hash' => $specHash,
         ];
 
-        return new ProcessServiceDefinition(
-            name: $definition,
+        return new ProcessServiceDescriptor(
+            service: $service,
             versionFamily: $resolved['family'],
             version: $resolved['version'],
-            command: $service['command'],
+            command: $entry['command'],
             runtimeConfig: $runtimeConfig,
         );
     }
@@ -151,7 +153,7 @@ final readonly class ProcessServiceDefinitionRegistry
     /**
      * @return array<string, array<string, mixed>>
      */
-    private function definitions(): array
+    private function services(): array
     {
         return [
             'mysql' => [
@@ -178,7 +180,7 @@ final readonly class ProcessServiceDefinitionRegistry
                 'versions' => [
                     '8' => [
                         'default' => '8.4',
-                        'versions' => ['8.4'],
+                        'versions' => ['8.3', '8.4'],
                         'port' => 3308,
                     ],
                     '9' => [
@@ -369,13 +371,13 @@ final readonly class ProcessServiceDefinitionRegistry
      * @param  array<array-key, array{default: string, versions: list<string>, port: int}>  $versions
      * @return array{family: string, version: string, published_port: int}
      */
-    private function resolveVersion(string $definition, array $versions, ?string $version): array
+    private function resolveVersion(string $service, array $versions, ?string $version): array
     {
         if ($version === null && count($versions) > 1) {
-            throw new GatewayApiException("Process definition '{$definition}' requires a version.", 'validation_failed', [
+            throw new GatewayApiException("Managed service '{$service}' requires a version.", 'validation_failed', [
                 'field' => 'version',
                 'reason' => 'required',
-                'definition' => $definition,
+                'service' => $service,
                 'allowed' => $this->versionFamilies($versions),
             ]);
         }
@@ -402,13 +404,14 @@ final readonly class ProcessServiceDefinitionRegistry
                     'published_port' => $metadata['port'],
                 ];
             }
+
         }
 
-        throw new GatewayApiException("Process definition '{$definition}' does not support version '{$version}'.", 'validation_failed', [
+        throw new GatewayApiException("Managed service '{$service}' does not support version '{$version}'.", 'validation_failed', [
             'field' => 'version',
             'value' => $version,
             'reason' => 'unsupported_value',
-            'definition' => $definition,
+            'service' => $service,
             'allowed' => $this->versionFamilies($versions),
         ]);
     }

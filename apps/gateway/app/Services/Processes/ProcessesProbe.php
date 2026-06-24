@@ -1432,14 +1432,14 @@ SH,
     private function serviceRuntimeDetail(Process $process): array
     {
         $config = is_array($process->runtime_config) ? $process->runtime_config : [];
-        $definition = $this->optionalConfigString($config, 'definition');
+        $service = ProcessRuntimeServiceMetadata::service($config);
 
-        if ($definition === null) {
+        if ($service === null) {
             return [];
         }
 
         return array_filter([
-            'definition' => $definition,
+            'service' => $service,
             'version_family' => $this->optionalConfigString($config, 'version_family'),
             'version' => $this->optionalConfigString($config, 'version'),
             'service_name' => $this->optionalConfigString($config, 'service_name'),

@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-24 — Node-owned managed service process creation uses `process:add --service=<identifier>` with public `--version=<version>` and optional Docker `--image=<image>` override; Orbit resolves official catalog images for known Docker services from service, runtime, and version, starts processes by default, and retains legacy service-definition storage keys only as read compatibility fallback. Supersedes the prior `--definition` service selector wording.
 - 2026-06-23 — `app-dev` PHP app and workspace FrankenPHP runtimes terminate inner HTTPS on port `8443` with the same Orbit-issued site certificate the public `orbit-caddy` route already uses; outer `orbit-caddy` reverse-proxies those backends over HTTPS with gateway CA trust and `tls_server_name`, while `app-prod` PHP runtimes stay plain HTTP on `8080` and static runtimes are unchanged.
 - 2026-06-23 — `orbit doctor` defaults to exactly one target node: the configured local default node first, then the caller identity when no default is selected; fleet doctor verification is explicit `--all` only, and `--node=all` is invalid.
 - 2026-06-23 — Workspace FrankenPHP runtime containers mount the workspace source both at `/app` and at the workspace's original absolute node path, matching app runtimes, so absolute source-local configuration paths such as SQLite database files continue to resolve without storing Orbit-specific state in the checkout.

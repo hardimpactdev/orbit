@@ -11,6 +11,7 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Services\Nodes\Access\NodeAccessAuthorizer;
 use App\Services\Nodes\Roles\NodeRoleAssignments;
+use App\Services\Processes\ProcessRuntimeServiceMetadata;
 use Illuminate\Support\Str;
 
 final readonly class MetricsCredentialsAction
@@ -230,7 +231,7 @@ final readonly class MetricsCredentialsAction
         $runtimeConfig['labels'] = [
             'orbit.managed' => 'true',
             'orbit.process' => 'grafana',
-            'orbit.process.definition' => (string) ($runtimeConfig['definition'] ?? 'grafana'),
+            'orbit.process.service' => (string) (ProcessRuntimeServiceMetadata::service($runtimeConfig) ?? 'grafana'),
             'orbit.process.version_family' => (string) ($runtimeConfig['version_family'] ?? ''),
             'orbit.process.version' => (string) ($runtimeConfig['version'] ?? ''),
             'orbit.process.spec_hash' => $specHash,

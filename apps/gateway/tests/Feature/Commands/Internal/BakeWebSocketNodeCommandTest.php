@@ -160,7 +160,7 @@ function createBakeWebSocketRedisNode(): Node
 
     Process::factory()->forOwner($node)->create([
         'name' => 'redis',
-        'runtime_config' => ['definition' => 'redis'],
+        'runtime_config' => ['service' => 'redis'],
     ]);
 
     return $node;

@@ -74,7 +74,7 @@ final readonly class ToolInstaller
             return ToolRegistryFailure::validation(
                 field: 'runtime',
                 value: $runtime,
-                message: 'Tools do not own runtime lifecycle. Use process:add --definition for runnable services.',
+                message: 'Tools do not own runtime lifecycle. Use process:add --service for runnable services.',
                 meta: ['reason' => 'unsupported_field'],
             );
         }
@@ -83,7 +83,7 @@ final readonly class ToolInstaller
             return ToolRegistryFailure::validation(
                 field: 'instance',
                 value: $instance,
-                message: 'Tools do not support runnable service instances. Use process:add --definition for runnable services.',
+                message: 'Tools do not support runnable service instances. Use process:add --service for runnable services.',
                 meta: ['reason' => 'unsupported_field'],
             );
         }
