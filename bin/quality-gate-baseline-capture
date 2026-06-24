@@ -62,6 +62,12 @@ try {
         $baseline['subgate_durations'] = $subgateDurations;
     }
 
+    $timingPhases = timing_phases($latest);
+
+    if ($timingPhases !== []) {
+        $baseline['timing_phases'] = $timingPhases;
+    }
+
     $baselinePath = $baselineDir.'/'.$gate.'.json';
     $encoded = json_encode($baseline, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
 
@@ -196,4 +202,68 @@ function subgate_durations(array $artifact): array
     ksort($parsedDurations);
 
     return $parsedDurations;
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ * @return array<string, array{sample_count: int, p50: float, p95: float}>
+ */
+function timing_phases(array $artifact): array
+{
+    $summary = $artifact['timing_summary'] ?? null;
+
+    if (! is_array($summary) || ! is_array($summary['summary_lines'] ?? null)) {
+        return [];
+    }
+
+    $phases = [];
+
+    foreach ($summary['summary_lines'] as $line) {
+        if (! is_string($line)) {
+            continue;
+        }
+
+        $phase = timing_phase_from_summary_line($line);
+
+        if ($phase === null) {
+            continue;
+        }
+
+        $phases[$phase['label']] = [
+            'sample_count' => $phase['sample_count'],
+            'p50' => $phase['p50'],
+            'p95' => $phase['p95'],
+        ];
+    }
+
+    ksort($phases);
+
+    return $phases;
+}
+
+/**
+ * @return array{label: string, sample_count: int, p50: float, p95: float}|null
+ */
+function timing_phase_from_summary_line(string $line): ?array
+{
+    $line = trim($line);
+
+    if (preg_match('/^(.+?)\s+n=([0-9]+)\s+p50=([0-9]+(?:\.[0-9]+)?)\s+p95=([0-9]+(?:\.[0-9]+)?)$/', $line, $matches) !== 1) {
+        return null;
+    }
+
+    $sampleCount = (int) $matches[2];
+    $p50 = (float) $matches[3];
+    $p95 = (float) $matches[4];
+
+    if ($sampleCount <= 0 || $p50 < 0 || $p95 < 0) {
+        return null;
+    }
+
+    return [
+        'label' => trim($matches[1]),
+        'sample_count' => $sampleCount,
+        'p50' => $p50,
+        'p95' => $p95,
+    ];
 }

@@ -164,6 +164,13 @@ Baseline file shape:
   "subgate_durations": {
     "gateway_pest": 245.5,
     "docs_lint": 12.0
+  },
+  "timing_phases": {
+    "acquire/docker.seedGatewayRegistry": {
+      "sample_count": 35,
+      "p50": 5.944,
+      "p95": 11.275
+    }
   }
 }
 ```
@@ -184,6 +191,14 @@ durations using the same warning threshold. This values the final run in a
 feature worktree instead of an earlier faster run from a different
 implementation state. Subgate warnings also require at least a one-second
 absolute increase so harmless sub-second jitter does not trigger triage.
+
+E2E artifacts may record provider phase summaries under
+`timing_summary.summary_lines`. Baseline capture stores those summaries as
+`timing_phases`, keyed by the phase label with `sample_count`, `p50`, and `p95`
+values. The analyzer compares the latest phase `p95` with the stored baseline
+phase `p95` using the same warning threshold. The increase must also be at
+least one second. This lets Docker and Incus timing regressions route to triage
+from existing artifacts without rerunning provider lanes.
 
 Timing baseline observations remain warning-only. `composer quality-gate:analyze`
 and `composer quality-gate:final-check` exit successfully even when a run

@@ -1148,6 +1148,74 @@ it('surfaces slow sub-gate durations from analyzer output', function (): void {
     }
 });
 
+it('surfaces slow e2e timing phases from analyzer output', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-phase-analyze-'.bin2hex(random_bytes(6));
+    $baselineDir = "{$artifactDir}/baselines";
+    mkdir($baselineDir, 0700, true);
+
+    file_put_contents("{$baselineDir}/e2e-incus.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'e2e-incus',
+        'duration_seconds' => 355,
+        'warning_threshold_percent' => 25,
+        'source_artifact' => 'e2e-incus-2026-06-23T095000Z-baseline.json',
+        'updated_at' => '2026-06-23T09:50:00Z',
+        'timing_phases' => [
+            'acquire/incus.source-sync' => [
+                'sample_count' => 12,
+                'p50' => 3.5,
+                'p95' => 4.0,
+            ],
+            'checkout/checkout.gateway.checkout.vendor' => [
+                'sample_count' => 10,
+                'p50' => 5.1,
+                'p95' => 5.0,
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    file_put_contents("{$artifactDir}/e2e-incus-2026-06-23T100530Z-profiling123.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'e2e-incus',
+        'command' => 'composer test:e2e:incus',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:06:02Z',
+        'duration_seconds' => 362,
+        'exit_code' => 0,
+        'git' => ['branch' => 'main', 'commit' => 'profiling123'],
+        'subgates' => [],
+        'timing_summary' => [
+            'summary_path' => 'e2e-timings/e2e-incus-summary.txt',
+            'summary_lines' => [
+                'acquire/incus.source-sync n=12 p50=3.6 p95=27.9',
+                'checkout/checkout.gateway.checkout.vendor n=10 p50=5.1 p95=5.6',
+                'tiny/phase n=2 p50=0.2 p95=0.9',
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-analyze'),
+            "--artifact-dir={$artifactDir}",
+            '--gate=e2e-incus',
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain('timing phase: acquire/incus.source-sync n=12 p50=3.6 p95=27.9')
+            ->toContain('warning: timing phase [e2e-incus:acquire/incus.source-sync] p95 27.9s exceeds local baseline 4.0s (warning-only)')
+            ->toContain('.agents/skills/quality-gate-triage/SKILL.md')
+            ->not->toContain('warning: timing phase [e2e-incus:checkout/checkout.gateway.checkout.vendor]')
+            ->not->toContain('warning: timing phase [e2e-incus:tiny/phase]');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
 it('keeps baseline capture wired as a composer script', function (): void {
     $composer = json_decode(file_get_contents(repo_path('composer.json')) ?: '', associative: true, flags: JSON_THROW_ON_ERROR);
     $script = (string) file_get_contents(repo_path('bin/quality-gate-baseline-capture'));
@@ -1169,6 +1237,71 @@ it('keeps baseline capture wired as a composer script', function (): void {
         ->not->toContain('best_subgate_durations');
 });
 
+it('promotes e2e timing phases into provider baseline files', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-phase-baseline-'.bin2hex(random_bytes(6));
+    mkdir($artifactDir, 0700, true);
+
+    $artifactPath = "{$artifactDir}/e2e-docker-2026-06-23T100530Z-latest456.json";
+    file_put_contents($artifactPath, json_encode([
+        'schema_version' => 1,
+        'gate' => 'e2e-docker',
+        'command' => 'composer test:e2e:docker',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:03:43Z',
+        'duration_seconds' => 223,
+        'exit_code' => 0,
+        'git' => ['branch' => 'quality-gate-baseline-capture', 'commit' => 'latest456'],
+        'subgates' => [],
+        'timing_summary' => [
+            'summary_path' => 'e2e-timings/e2e-docker-summary.txt',
+            'summary_lines' => [
+                'acquire/docker.seedGatewayRegistry n=35 p50=5.944 p95=11.275',
+                'cleanup/cleanup.volumes n=35 p50=1.511 p95=9.764',
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-baseline-capture'),
+            '--gate=e2e-docker',
+            "--artifact-dir={$artifactDir}",
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput());
+
+        $baselinePath = "{$artifactDir}/baselines/e2e-docker.json";
+
+        expect($baselinePath)->toBeFile();
+
+        $baseline = json_decode((string) file_get_contents($baselinePath), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($baseline)->toMatchArray([
+            'schema_version' => 1,
+            'gate' => 'e2e-docker',
+            'duration_seconds' => 223.0,
+            'source_artifact' => basename($artifactPath),
+            'timing_phases' => [
+                'acquire/docker.seedGatewayRegistry' => [
+                    'sample_count' => 35,
+                    'p50' => 5.944,
+                    'p95' => 11.275,
+                ],
+                'cleanup/cleanup.volumes' => [
+                    'sample_count' => 35,
+                    'p50' => 1.511,
+                    'p95' => 9.764,
+                ],
+            ],
+        ]);
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
 it('documents quality gate baseline capture and subgate profiling', function (): void {
     $qualityGates = (string) file_get_contents(repo_path('apps/docs/content/testing/quality-gates.md'));
 
@@ -1178,6 +1311,7 @@ it('documents quality gate baseline capture and subgate profiling', function ():
         ->toContain('source_artifact')
         ->toContain('latest quality-gate artifact')
         ->toContain('subgate_durations')
+        ->toContain('timing_phases')
         ->not->toContain('best_subgate_durations')
         ->toContain('warning_threshold_percent');
 });

@@ -5,6 +5,7 @@ declare(strict_types=1);
 
 const DEFAULT_WARNING_THRESHOLD_PERCENT = 25;
 const MIN_SUBGATE_WARNING_DELTA_SECONDS = 1.0;
+const MIN_TIMING_PHASE_WARNING_DELTA_SECONDS = 1.0;
 const TIMING_TRIAGE_SKILL_PATH = '.agents/skills/quality-gate-triage/SKILL.md';
 
 $options = getopt('', [
@@ -107,6 +108,10 @@ try {
         }
 
         if (write_subgate_duration_warnings($gate, $latest, $baseline, $thresholdMultiplier)) {
+            $needsTimingTriage = true;
+        }
+
+        if (write_timing_phase_warnings($gate, $latest, $baseline, $thresholdMultiplier)) {
             $needsTimingTriage = true;
         }
 
@@ -584,6 +589,57 @@ function write_subgate_duration_warnings(string $gate, array $artifact, array $b
 }
 
 /**
+ * @param  array<string, mixed>  $artifact
+ * @param  array<string, mixed>  $baseline
+ */
+function write_timing_phase_warnings(string $gate, array $artifact, array $baseline, float $thresholdMultiplier): bool
+{
+    $artifactPhases = timing_phases($artifact);
+    $baselinePhases = timing_phases($baseline);
+
+    if ($artifactPhases === [] || $baselinePhases === []) {
+        return false;
+    }
+
+    $warned = false;
+    $labels = array_keys($artifactPhases);
+
+    foreach ($labels as $label) {
+        $baselinePhase = $baselinePhases[$label] ?? null;
+
+        if ($baselinePhase === null || $baselinePhase['p95'] <= 0) {
+            continue;
+        }
+
+        $runPhase = $artifactPhases[$label];
+        $runP95 = $runPhase['p95'];
+        $baselineP95 = $baselinePhase['p95'];
+        $deltaSeconds = $runP95 - $baselineP95;
+
+        if ($runP95 <= ($baselineP95 * $thresholdMultiplier)) {
+            continue;
+        }
+
+        if ($deltaSeconds < MIN_TIMING_PHASE_WARNING_DELTA_SECONDS) {
+            continue;
+        }
+
+        fwrite(STDOUT, sprintf(
+            'warning: timing phase [%s:%s] p95 %.1fs exceeds local baseline %.1fs (warning-only)%s',
+            $gate,
+            $label,
+            $runP95,
+            $baselineP95,
+            PHP_EOL,
+        ));
+
+        $warned = true;
+    }
+
+    return $warned;
+}
+
+/**
  * @param  array<string, mixed>  $source
  * @return array<string, float>
  */
@@ -614,4 +670,115 @@ function subgate_durations(array $source): array
     ksort($parsedDurations);
 
     return $parsedDurations;
+}
+
+/**
+ * @param  array<string, mixed>  $source
+ * @return array<string, array{sample_count: int, p50: float, p95: float}>
+ */
+function timing_phases(array $source): array
+{
+    $storedPhases = $source['timing_phases'] ?? null;
+
+    if (is_array($storedPhases)) {
+        return parsed_timing_phases($storedPhases);
+    }
+
+    $summary = $source['timing_summary'] ?? null;
+
+    if (! is_array($summary) || ! is_array($summary['summary_lines'] ?? null)) {
+        return [];
+    }
+
+    $phases = [];
+
+    foreach ($summary['summary_lines'] as $line) {
+        if (! is_string($line)) {
+            continue;
+        }
+
+        $phase = timing_phase_from_summary_line($line);
+
+        if ($phase === null) {
+            continue;
+        }
+
+        $phases[$phase['label']] = [
+            'sample_count' => $phase['sample_count'],
+            'p50' => $phase['p50'],
+            'p95' => $phase['p95'],
+        ];
+    }
+
+    ksort($phases);
+
+    return $phases;
+}
+
+/**
+ * @param  array<mixed>  $storedPhases
+ * @return array<string, array{sample_count: int, p50: float, p95: float}>
+ */
+function parsed_timing_phases(array $storedPhases): array
+{
+    $phases = [];
+
+    foreach ($storedPhases as $label => $phase) {
+        if (! is_string($label) || trim($label) === '' || ! is_array($phase)) {
+            continue;
+        }
+
+        $sampleCount = $phase['sample_count'] ?? null;
+        $p50 = $phase['p50'] ?? null;
+        $p95 = $phase['p95'] ?? null;
+
+        if (! is_numeric($sampleCount) || ! is_numeric($p50) || ! is_numeric($p95)) {
+            continue;
+        }
+
+        $parsedSampleCount = (int) $sampleCount;
+        $parsedP50 = (float) $p50;
+        $parsedP95 = (float) $p95;
+
+        if ($parsedSampleCount <= 0 || $parsedP50 < 0 || $parsedP95 < 0) {
+            continue;
+        }
+
+        $phases[trim($label)] = [
+            'sample_count' => $parsedSampleCount,
+            'p50' => $parsedP50,
+            'p95' => $parsedP95,
+        ];
+    }
+
+    ksort($phases);
+
+    return $phases;
+}
+
+/**
+ * @return array{label: string, sample_count: int, p50: float, p95: float}|null
+ */
+function timing_phase_from_summary_line(string $line): ?array
+{
+    $line = trim($line);
+
+    if (preg_match('/^(.+?)\s+n=([0-9]+)\s+p50=([0-9]+(?:\.[0-9]+)?)\s+p95=([0-9]+(?:\.[0-9]+)?)$/', $line, $matches) !== 1) {
+        return null;
+    }
+
+    $sampleCount = (int) $matches[2];
+    $p50 = (float) $matches[3];
+    $p95 = (float) $matches[4];
+
+    if ($sampleCount <= 0 || $p50 < 0 || $p95 < 0) {
+        return null;
+    }
+
+    return [
+        'label' => trim($matches[1]),
+        'sample_count' => $sampleCount,
+        'p50' => $p50,
+        'p95' => $p95,
+    ];
 }
