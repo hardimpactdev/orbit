@@ -26,6 +26,8 @@ and code.
   handoff or identified during implementation.
 - Acceptance criteria and verification commands are known.
 - Owned files or domains are explicit enough to avoid unrelated edits.
+- If the request spans multiple slices, a feature roadmap scratchpad exists and
+  its `solo://` URL is known before worktree setup or worker dispatch.
 - A dedicated worktree can be created for the change (see Workspace Setup
   below).
 - Solo can spawn the workers or retained terminals needed for the slice. If the
@@ -52,7 +54,10 @@ Responsibilities:
 - Read the handoff, docs, and existing code enough to define clear worker tasks.
 - For multi-slice features, keep one feature scratchpad as the roadmap and one
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
-  active slice only, rewriting it when the next slice starts.
+  active slice only, rewriting it when the next slice starts. If the source
+  roadmap lives in another Solo project or machine, create a reachable
+  execution-project scratchpad that links back to the source before spawning
+  workers.
 - Run a dependency scan before spawning workers. If slices or verification lanes
   have disjoint ownership and neither needs the other's result, dispatch them in
   parallel through Solo by default. Use one worker serially only when ownership,
@@ -515,15 +520,21 @@ moving on to durable E2E.
    one worktree as the execution boundary. Preserve raw user-provided output
    samples, transcripts, screenshots, failure text, and negative examples in
    the scratchpad or `.orbit/loop.md` before narrowing the scope. Create the
-   active slice Done Contract and proceed as feature owner. Do not route through
-   retired orchestration skills.
+   active slice Done Contract and proceed as feature owner. When execution is
+   delegated to a different Solo project or machine than the source handoff,
+   create a local execution-project roadmap scratchpad that links the source.
+   Do not prepare the worktree or spawn workers for multi-slice work until the
+   feature roadmap scratchpad URL is recorded. Do not route through retired
+   orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
    `HARNESS_SIGNALS.md`, `harness-signals/README.md`,
    `PRODUCT_DECISIONS.md`, relevant product docs under `apps/docs/content/**`,
    and relevant session context under `docs/superpowers/**`. Copy
    `LOOP.md.example` to `.orbit/loop.md` for the active slice and fill the Done
-   Contract before implementation. If this is a later slice in the same feature
+   Contract before implementation. For multi-slice work, the top of
+   `.orbit/loop.md` must link the feature roadmap scratchpad before any
+   implementation worker is spawned. If this is a later slice in the same feature
    worktree, rewrite `.orbit/loop.md` for the current slice and keep earlier
    slice outcomes in the feature scratchpad. The Done Contract must include raw
    acceptance examples or a precise pointer to them, plus explicit deferrals for
@@ -797,7 +808,9 @@ is not required after ordinary `composer test:e2e` runs.
 - Use a feature scratchpad for multi-slice feature intent, rough slice order,
   slice outcomes, and final gate notes. Keep Solo todos optional; create them
   only for asynchronous assignment, queueing, or explicit tracking outside the
-  active orchestrator thread.
+  active orchestrator thread. Missing a feature scratchpad before multi-slice
+  worker dispatch is a process miss; pause, create or link the scratchpad, and
+  record the correction in `.orbit/loop.md` final distillation.
 - Run the repo feedback loop from `.orbit/loop.md` during the active slice,
   creating it from `LOOP.md.example` when needed. `.orbit/loop.md` is
   current-slice state, not feature history; rewrite it when the next slice

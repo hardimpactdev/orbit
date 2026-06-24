@@ -10,7 +10,8 @@ feature scratchpad. Keep code history in Git.
 
 ## Feature Context
 
-- Scratchpad:
+- Scratchpad: <required `solo://...` feature roadmap for multi-slice features;
+  use `none, single-slice` only when the request truly fits one slice>
 - Worktree:
 - Branch:
 - Completed slices:
@@ -19,6 +20,11 @@ feature scratchpad. Keep code history in Git.
 
 ## Done Contract
 
+- Active slice start gate:
+  - Multi-slice feature roadmap scratchpad exists before worker dispatch:
+  - `.orbit/loop.md` links the feature roadmap and names the current slice:
+  - If the source scratchpad lives in another Solo project, execution-project
+    scratchpad links back to it:
 - Parallelization scan:
   - Candidate parallel lanes:
   - Serialized lanes, with required dependency/shared-state/provider-capacity/

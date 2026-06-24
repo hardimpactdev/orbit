@@ -168,6 +168,12 @@ Use the least durable state that can keep the work coherent.
   Solo scratchpad. The scratchpad records feature intent, rough slice order,
   slice outcomes, open decisions, and the final verification gate. It is not a
   full spec and not a command log.
+- Scratchpad creation is a pre-dispatch gate for multi-slice features. Create
+  or identify the feature roadmap before preparing the implementation worktree
+  or spawning workers, then put its `solo://` URL at the top of `.orbit/loop.md`
+  and in worker prompts. If the work executes in a different Solo project or
+  machine from the source scratchpad, create a reachable execution-project
+  roadmap that links back to the source scratchpad.
 - Solo todos are optional assignment cards. Create them only when a slice needs
   asynchronous delegation, queueing, or explicit tracking outside the active
   orchestrator thread. If a todo exists, keep it thin: point to the scratchpad
@@ -185,6 +191,11 @@ outcomes in the feature scratchpad and the actual code history in Git. The top
 of `.orbit/loop.md` should name the feature scratchpad, summarize completed
 slices in one line each, and identify the current slice so a worker knows the
 branch may already contain earlier feature work.
+
+If a multi-slice feature reaches worker dispatch without a feature roadmap
+scratchpad link, pause the feature loop and create the scratchpad before
+continuing. Classify the miss in `.orbit/loop.md` final distillation and update
+`harness-signals/` only when existing guidance did not make the gate clear.
 
 ## Feature Cleanup
 
