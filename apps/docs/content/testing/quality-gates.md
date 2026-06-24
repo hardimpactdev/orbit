@@ -86,6 +86,15 @@ The analyzer reads `.orbit/quality-gates/` only. It reports missing evidence,
 recent run durations, and warning-only baseline observations when a local
 baseline exists. It does not rerun `composer quality-check` or E2E lanes.
 
+Treat the first `composer quality-check` run in a newly prepared worktree as
+potentially cold-cache evidence. PHPStan's app/package-local `build/phpstan/`
+directories are one visible cache signal, and those directories may not exist
+until the first run in that worktree. When a fresh-worktree run is much slower
+than the baseline, inspect `apps/*/build/phpstan` and
+`packages/*/build/phpstan` first. If the cause is still ambiguous, use a
+same-command warmed rerun as a diagnostic confirmation before calling the
+scheduler, product code, or a specific subgate regressed.
+
 Before merging a worktree, inspect the existing timing evidence with:
 
 ```bash

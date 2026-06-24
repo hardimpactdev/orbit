@@ -138,6 +138,13 @@ rerun expensive gates or warn about E2E lanes that were not run.
   cache state, and host load are healthy enough for the comparison.
 - Compare Incus E2E timing only when the prepared topology, source checkout,
   storage pool, host slots, and cache mode match the baseline.
+- For `composer quality-check` in a fresh worktree, check cache warmth before
+  treating the first timing warning as a regression. PHPStan result caches are
+  one visible worktree-local cache signal under app/package `build/phpstan/`:
+  inspect `apps/*/build/phpstan` and `packages/*/build/phpstan` first. When
+  the first run is slow and cache state is still ambiguous, rerun the same
+  `composer quality-check` command once as a diagnostic warm-run and classify
+  the cold run separately from the latest warmed evidence.
 - If runner pool, SSH, caches, host load, or provider availability are degraded,
   classify timing as `provider capacity`, `host/env drift`, or
   `stale/missing baseline` before considering `product regression`.
@@ -153,8 +160,11 @@ code. The analyzer prints a routing hint to
    baseline file under `.orbit/quality-gates/baselines/`.
 2. Confirm the baseline is compatible with the current lane, runner pool, cache
    state, and host health.
-3. Classify the slowdown using the categories below.
-4. Recommend the next narrow command or owner action. Do not rerun expensive
+3. For `composer quality-check`, distinguish cold-cache first-run evidence from
+   warmed evidence before optimizing the scheduler or individual tools. Change
+   only one variable between timing comparisons.
+4. Classify the slowdown using the categories below.
+5. Recommend the next narrow command or owner action. Do not rerun expensive
    gates unless classification proves the rerun is diagnostic.
 
 ## Parallel Lane Triage
