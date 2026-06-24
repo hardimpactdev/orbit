@@ -541,6 +541,45 @@ it('final-check discovers existing e2e gate artifacts when no explicit gate is p
     }
 });
 
+it('final-check warns when latest timing evidence was captured for a different commit', function (): void {
+    $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-final-stale-'.bin2hex(random_bytes(6));
+    mkdir($artifactDir, 0700, true);
+
+    $staleCommit = str_repeat('0', 40);
+
+    file_put_contents("{$artifactDir}/e2e-docker-2026-06-23T100000Z-stale.json", json_encode([
+        'schema_version' => 1,
+        'gate' => 'e2e-docker',
+        'command' => 'composer test:e2e:docker',
+        'mode' => 'check',
+        'started_at' => '2026-06-23T10:00:00Z',
+        'ended_at' => '2026-06-23T10:04:00Z',
+        'duration_seconds' => 240,
+        'exit_code' => 0,
+        'git' => ['branch' => 'quality-gate-e2e-artifacts', 'commit' => $staleCommit],
+        'subgates' => [],
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $process = new Process([
+            PHP_BINARY,
+            repo_path('bin/quality-gate-final-check'),
+            "--artifact-dir={$artifactDir}",
+            '--gate=e2e-docker',
+        ], repo_path());
+        $process->run();
+
+        expect($process->getExitCode())->toBe(0, $process->getErrorOutput())
+            ->and($process->getOutput())
+            ->toContain("missing evidence: latest [e2e-docker] artifact commit {$staleCommit} does not match current HEAD")
+            ->toContain('Final-check warnings:')
+            ->toContain("- missing evidence: latest [e2e-docker] artifact commit {$staleCommit} does not match current HEAD")
+            ->toContain('Final check did not rerun quality-check or E2E lanes');
+    } finally {
+        (new Process(['rm', '-rf', $artifactDir]))->run();
+    }
+});
+
 it('final-check surfaces analyzer warnings without rerunning quality gates', function (): void {
     $artifactDir = sys_get_temp_dir().'/orbit-quality-gates-final-warning-'.bin2hex(random_bytes(6));
     $baselineDir = "{$artifactDir}/baselines";
@@ -667,6 +706,8 @@ it('documents quality gate artifact and analyzer commands', function (): void {
         ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
         ->toContain('Queue time is reflected in the aggregate gate')
         ->toContain('.orbit/quality-gates/e2e-timings/')
+        ->toContain('different Git commit than the current worktree')
+        ->toContain('`HEAD`')
         ->toContain('timing phase')
         ->toContain('warning-only');
 });

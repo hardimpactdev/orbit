@@ -88,10 +88,14 @@ The final check wraps the analyzer and highlights stale evidence, latest gate
 exits that were non-zero, and local baseline observations that remain
 warning-only. Without explicit `--gate` arguments, it analyzes the gates that
 already have artifacts in this worktree. It does not warn about missing E2E
-lanes that were not run, and it does not rerun `composer quality-check`, Pest,
-Docker E2E, Incus E2E, or provider provision lanes. When no timing artifacts
-exist, it exits successfully and reports that timing regression analysis was
-skipped so the feature owner can decide whether another gate run is needed.
+lanes that were not run.
+
+Evidence is stale when the latest artifact exceeds the configured max-age
+window or was captured for a different Git commit than the current worktree
+`HEAD`. The final check does not rerun `composer quality-check`, Pest, Docker
+E2E, Incus E2E, or provider provision lanes. When no timing artifacts exist, it
+exits successfully and reports that timing regression analysis was skipped so
+the feature owner can decide whether another gate run is needed.
 
 ## Failure and timing triage
 

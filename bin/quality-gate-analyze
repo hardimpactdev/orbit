@@ -20,6 +20,7 @@ try {
     $artifacts = load_artifacts($artifactDir);
     $latestByGate = latest_artifacts_by_gate($artifacts);
     $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $currentCommit = current_git_commit();
 
     fwrite(STDOUT, 'Quality gate analyzer'.PHP_EOL);
     fwrite(STDOUT, 'Artifact directory: '.$artifactDir.PHP_EOL.PHP_EOL);
@@ -44,6 +45,8 @@ try {
                 PHP_EOL,
             ));
         }
+
+        write_commit_freshness_warning($gate, $latest, $currentCommit);
 
         fwrite(STDOUT, sprintf(
             'recent run: gate=%s duration=%.1fs exit=%d mode=%s branch=%s commit=%s ended_at=%s%s',
@@ -273,6 +276,86 @@ function normalize_timestamp(string $timestamp): string
     }
 
     return $timestamp;
+}
+
+function current_git_commit(): ?string
+{
+    $command = ['git', '-C', dirname(__DIR__), 'rev-parse', 'HEAD'];
+    $descriptorSpec = [
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $process = proc_open($command, $descriptorSpec, $pipes);
+
+    if (! is_resource($process)) {
+        return null;
+    }
+
+    $output = stream_get_contents($pipes[1]);
+    stream_get_contents($pipes[2]);
+
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    if (proc_close($process) !== 0 || ! is_string($output)) {
+        return null;
+    }
+
+    $commit = trim($output);
+
+    return is_full_git_commit($commit) ? strtolower($commit) : null;
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function write_commit_freshness_warning(string $gate, array $artifact, ?string $currentCommit): void
+{
+    if ($currentCommit === null) {
+        return;
+    }
+
+    $artifactCommit = artifact_git_commit($artifact);
+
+    if ($artifactCommit === null || $artifactCommit === $currentCommit) {
+        return;
+    }
+
+    fwrite(STDOUT, sprintf(
+        'missing evidence: latest [%s] artifact commit %s does not match current HEAD %s%s',
+        $gate,
+        $artifactCommit,
+        $currentCommit,
+        PHP_EOL,
+    ));
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function artifact_git_commit(array $artifact): ?string
+{
+    $git = $artifact['git'] ?? null;
+
+    if (! is_array($git)) {
+        return null;
+    }
+
+    $commit = $git['commit'] ?? null;
+
+    if (! is_string($commit)) {
+        return null;
+    }
+
+    $commit = trim($commit);
+
+    return is_full_git_commit($commit) ? strtolower($commit) : null;
+}
+
+function is_full_git_commit(string $value): bool
+{
+    return preg_match('/\A[0-9a-f]{40}\z/i', $value) === 1;
 }
 
 /**
