@@ -1,6 +1,6 @@
 # Signal: Bounded Reviewer Verdict Needed
 
-Status: recurring
+Status: guarded
 First seen: 2026-06-24
 Last seen: 2026-06-24
 Last reviewed: 2026-06-24
@@ -33,6 +33,13 @@ closed it, then spawned a Claude Sonnet low-effort reviewer with a concise
 blockers-first prompt. That second reviewer returned `No blockers` and useful
 non-blocking assertion-hardening suggestions.
 
+The same worktree exposed the opposite failure mode: Claude was again reading
+files and generating, but the orchestrator was about to treat the short wait
+window as a stall. After the reviewer was given several uninterrupted minutes,
+it returned a detailed `NO BLOCKERS` verdict with accurate coverage and evidence
+analysis. Active file reads, tool use, or generation should be treated as
+productive review work, not as a reason to interrupt early.
+
 ## Prior Occurrences
 
 Related records already cover reviewer workflow hooks and worker first-diff
@@ -49,8 +56,9 @@ the right files but does not produce a verdict.
 
 `.agents/skills/implementing-features/SKILL.md` now instructs feature owners to
 request a blockers-first verdict for required reviewer personas, bound small
-changed-files-only reviews, interrupt once if a reviewer has loaded the context
-but does not return, and replace or close the reviewer if the verdict still does
+changed-files-only reviews, give Claude-style reviewers minute-scale read time
+when output shows active progress, interrupt once only after idle or extended
+unproductive review, and replace or close the reviewer if the verdict still does
 not arrive.
 
 ## Verification
@@ -62,9 +70,10 @@ focused quiet PTY test, full `UpdateAllCommandTest.php` profile,
 ## Reappearance Check
 
 If a future required reviewer takes too long on a small changed-files-only
-review, follow the skill guardrail. If the pattern still repeats after that,
-keep this record recurring and move the guardrail from skill prose into a
-reviewer-persona prompt template or Solo timer helper.
+review, first distinguish active reading/generation from idle or waiting state,
+then follow the skill guardrail. If early interruption or unbounded waiting still
+repeats after that, mark this record recurring and move the guardrail from skill
+prose into a reviewer-persona prompt template or Solo timer helper.
 
 ## Curation Notes
 

@@ -7,6 +7,7 @@ use App\E2E\Support\DockerInstance;
 use App\E2E\Support\E2EConfig;
 use App\E2E\Support\E2ECurrentCheckout;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 
 afterEach(function (): void {
     E2ECurrentCheckout::flushCache();
@@ -66,15 +67,12 @@ it('writes direct CLI gateway config while refreshing current checkout gateway s
 });
 
 it('prunes stale checkout archive cache tarballs and locks', function (): void {
-    $previousCacheDirectory = getenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR');
     $cacheDirectory = sys_get_temp_dir().'/orbit-checkout-cache-'.bin2hex(random_bytes(6));
 
     File::ensureDirectoryExists($cacheDirectory);
 
     try {
-        putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$cacheDirectory}");
-
-        $currentArchive = $cacheDirectory.'/'.E2ECurrentCheckout::treeHash().'.tar.gz';
+        $currentArchive = "{$cacheDirectory}/current-tree.tar.gz";
         $currentLock = "{$currentArchive}.lock";
         $staleArchive = "{$cacheDirectory}/stale-tree.tar.gz";
         $staleLock = "{$staleArchive}.lock";
@@ -86,18 +84,14 @@ it('prunes stale checkout archive cache tarballs and locks', function (): void {
         touch($staleArchive, time() - 90000);
         touch($staleLock, time() - 90000);
 
-        $method = new ReflectionMethod(E2ECurrentCheckout::class, 'cachedArchive');
+        $method = new ReflectionMethod(E2ECurrentCheckout::class, 'pruneCheckoutArchiveCache');
+        $method->invoke(null, $cacheDirectory, $currentArchive, $currentLock);
 
-        expect($method->invoke(null))->toBe($currentArchive)
-            ->and($currentArchive)->toBeFile()
+        expect($currentArchive)->toBeFile()
             ->and($currentLock)->toBeFile()
             ->and($staleArchive)->not->toBeFile()
             ->and($staleLock)->not->toBeFile();
     } finally {
-        $previousCacheDirectory === false
-            ? putenv('ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR')
-            : putenv("ORBIT_E2E_CHECKOUT_ARCHIVE_CACHE_DIR={$previousCacheDirectory}");
-
         File::deleteDirectory($cacheDirectory);
     }
 });
@@ -143,6 +137,17 @@ it('prunes stale checkout archive artifacts while building temporary archives', 
         touch($staleArchive, time() - 90000);
         touch($staleLock, time() - 90000);
         touch($staleTemporaryArchive, time() - 90000);
+
+        Process::fake(function ($process) {
+            $command = (string) $process->command;
+
+            if (str_starts_with($command, 'COPYFILE_DISABLE=1 tar ')
+                && preg_match("/ -czf '([^']+)' /", $command, $matches) === 1) {
+                File::put($matches[1], 'archive');
+            }
+
+            return Process::result();
+        });
 
         $builtArchive = E2ECurrentCheckout::buildArchive();
 
