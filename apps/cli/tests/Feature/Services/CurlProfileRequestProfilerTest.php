@@ -21,7 +21,7 @@ describe(ProfileRequestProfiler::class, function (): void {
         expect($profile['request']['completed'])->toBeTrue()
             ->and($profile['request']['status'])->toBe(200)
             ->and($profile['error'])->toBeNull()
-            ->and($profile['timings']['total_ms'])->toBeGreaterThan(200.0);
+            ->and($profile['timings']['total_ms'])->toBeGreaterThan(50.0);
     });
 
     it('trusts the active gateway CA PEM for caller-side HTTPS profiles', function (): void {
@@ -61,7 +61,7 @@ function startSlowCurlProfileHttpTestServer(): array
     file_put_contents("{$directory}/index.php", <<<'PHP'
 <?php
 
-usleep(250_000);
+usleep(75_000);
 
 header('Content-Type: text/plain');
 
@@ -107,7 +107,7 @@ PHP);
             ];
         }
 
-        usleep(100_000);
+        usleep(10_000);
     }
 
     stopSlowCurlProfileHttpTestServer([
@@ -382,7 +382,7 @@ PHP);
             ];
         }
 
-        usleep(100_000);
+        usleep(10_000);
     }
 
     stopCurlProfileHttpsTestServer([
