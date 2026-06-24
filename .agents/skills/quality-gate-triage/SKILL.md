@@ -12,6 +12,11 @@ asks why an Orbit verification lane failed or slowed down. It classifies the
 failure, names the next command or owner, and decides whether a durable harness
 signal is needed.
 
+Use it as the post-implementation quality-gate reviewer after a feature owner
+has produced tests and timing evidence. It reviews changed tests and artifacts;
+it does not replace the implementer as the default owner of docs, tests, or
+code.
+
 This skill is for triage. Do not implement product fixes by default.
 
 ## Required Inputs
@@ -26,6 +31,11 @@ The orchestrator or final-check analyzer must provide:
   surface.
 - Expected lane: Pest, `composer test`, `composer quality-check`, Docker E2E,
   Incus E2E, or an explicitly named provider/provision lane.
+- Current `HEAD`, artifact commit metadata when present, and whether the
+  artifact is from the same worktree being reviewed.
+- Local baseline file and the source artifact used to create that baseline when
+  a baseline warning is being classified.
+- Changed test files when the question is whether new tests slowed a lane.
 
 If an input is missing, report the missing field and classify only as far as
 the evidence permits.
@@ -41,6 +51,12 @@ the evidence permits.
   report. Inspect the evidence produced by the run first.
 - Do not call a product regression when runner pool health, SSH transport,
   cache state, host load, or lane selection is degraded or unknown.
+- Do not ask for a dedicated test-writer agent by default. Tests stay with the
+  implementer unless classification shows a test-harness regression or a
+  focused follow-up is explicitly assigned.
+- Do not refresh a local baseline just to silence one warning. Classify the
+  warning first and keep the old baseline until the new timing is accepted by
+  repeated compatible evidence.
 
 ## Routing By Lane
 
@@ -122,6 +138,39 @@ worktree. It highlights stale evidence, latest gate exits that were non-zero,
 and local baseline observations that remain warning-only. It still does not
 rerun expensive gates or warn about E2E lanes that were not run.
 
+Worktree-local timing artifacts are disposable. After a worktree is removed or a
+branch is merged, the primary checkout's `.orbit/quality-gates/` may contain
+older artifacts. Do not claim those primary-checkout artifacts prove the removed
+worktree's final timing evidence. Prove merged analyzer or wrapper code with
+focused tests and docs checks, and report missing timing evidence separately.
+
+## Post-Implementation Review Gate
+
+When using this skill as a quality-gate reviewer, start after the implementer
+has produced the feature tests, code, and initial evidence. The reviewer
+inspects and classifies; it does not take over normal test writing.
+
+Review in this order:
+
+1. Confirm the latest relevant artifact for the current `HEAD`. Favor the
+   latest final run, not the fastest or best historical run. Best timings are
+   context only; they must not hide a slower or failing final artifact.
+2. Confirm stale-evidence checks: artifact age, artifact commit, worktree path,
+   gate name, exit code, test count, assertion count, provider plan, and
+   baseline source artifact when available.
+3. Inspect changed tests for timing hazards: sleeps, real network or provider
+   calls in default in-memory Pest, archive/build work, broad fixtures,
+   accidental E2E groups in default Pest, or assertions that require slow
+   external state.
+4. If the changed tests are slow, classify before assigning work:
+   `test-harness regression` when the test does unnecessary work,
+   `expected slower coverage` when the diff intentionally proves a broader
+   contract, or `product regression` only when changed product behavior is the
+   proven cause.
+5. Ask for test changes only when the classification points at test design,
+   harness behavior, or accidental lane selection. Otherwise route to the
+   feature owner, provider owner, or a scoped follow-up.
+
 ## Baseline Rules
 
 - Prefer local, machine-specific, lane-specific baselines before global
@@ -134,6 +183,8 @@ rerun expensive gates or warn about E2E lanes that were not run.
   passes with matching test count, assertion count, provider pool, and host
   health. Analyzer and final-check timing warnings do not fail the merge gate by
   themselves.
+- Compare the latest final artifact first. During feature work, timings may
+  regress and later recover; an earlier best run is not the final signal.
 - Compare Docker E2E timing only when SSH multiplexing, runner reachability,
   cache state, and host load are healthy enough for the comparison.
 - Compare Incus E2E timing only when the prepared topology, source checkout,
@@ -144,7 +195,12 @@ rerun expensive gates or warn about E2E lanes that were not run.
   inspect `apps/*/build/phpstan` and `packages/*/build/phpstan` first. When
   the first run is slow and cache state is still ambiguous, rerun the same
   `composer quality-check` command once as a diagnostic warm-run and classify
-  the cold run separately from the latest warmed evidence.
+  the cold run separately from the latest warmed evidence. Cold first runs can
+  also inflate Pint and Rector timings, so do not assume PHPStan is the only
+  affected subgate.
+- Change only one variable when testing a timing hypothesis. A comparison that
+  changes both scheduler fan-out and cache warmth is not evidence for either
+  cause.
 - If runner pool, SSH, caches, host load, or provider availability are degraded,
   classify timing as `provider capacity`, `host/env drift`, or
   `stale/missing baseline` before considering `product regression`.
@@ -163,9 +219,34 @@ code. The analyzer prints a routing hint to
 3. For `composer quality-check`, distinguish cold-cache first-run evidence from
    warmed evidence before optimizing the scheduler or individual tools. Change
    only one variable between timing comparisons.
-4. Classify the slowdown using the categories below.
-5. Recommend the next narrow command or owner action. Do not rerun expensive
+4. For provider E2E phase warnings, compare the latest artifact with the
+   baseline source artifact: lane/provider, runner shape, command process count,
+   test file count, test/assertion summary when available, provider plan
+   environment, and artifact commit. For Docker, verify SSH multiplexing and
+   repeated `ssh true` latency before trusting phase comparisons. For Incus,
+   verify source checkout, storage pool, host slots, prepared topology, and
+   cache mode.
+5. Classify the slowdown using the categories below.
+6. Recommend the next narrow command or owner action. Do not rerun expensive
    gates unless classification proves the rerun is diagnostic.
+
+## Provider Phase Warning Triage
+
+E2E phase warnings are routing signals, not automatic regressions.
+
+- If the full provider gate is within baseline and only one phase regresses,
+  classify from compatibility evidence first. A single Docker or Incus phase
+  p95 warning with compatible runner shape is usually `provider capacity` or
+  `flake` until repeated evidence proves otherwise.
+- Do not refresh the phase baseline from one warning. Record the classification
+  under `.orbit/evidence/` or the feature scratchpad. Refresh only after the new
+  timing is accepted by repeated compatible runs or an intentional provider
+  capacity change.
+- If the same phase warning recurs across independent worktrees, promote it to a
+  durable `harness-signals/` record or tighten the analyzer/docs. If it affects
+  full-lane duration, assign a provider-specific optimization slice.
+- If the warning comes from an artifact captured before the current `HEAD`,
+  classify as stale evidence before drawing timing conclusions.
 
 ## Parallel Lane Triage
 
@@ -191,20 +272,30 @@ no-op classification, or a deferred follow-up. If a lane is not dispatched, the
 orchestrator must record the reason and owner in `.orbit/loop.md`, the feature
 scratchpad, or the worker plan instead of leaving it implicit.
 
+Concrete optimization diffs to the quality-gate analyzer, wrappers, or E2E
+timing model need a Claude review or an explicitly recorded fallback reviewer
+before commit. Use a bounded, blockers-first prompt with the exact changed-file
+diff. Give reviewers real read time while they are actively reading or
+generating; replace or downgrade the review only after idle/unproductive wait
+is clear and recorded.
+
 ## Triage Workflow
 
 1. Confirm the expected lane and verify the command matches the affected
    surface.
 2. Inspect the provided run evidence and command output before running anything.
-3. Split aggregate output into sub-gates when the command is
+3. Confirm the latest relevant artifact matches the current `HEAD` and worktree.
+4. Split aggregate output into sub-gates when the command is
    `composer quality-check`.
-4. Compare failures against changed files and the relevant authority docs.
-5. For E2E lanes, check provider capacity, host/env drift, stale artifacts, and
+5. Compare failures against changed files and the relevant authority docs.
+6. For E2E lanes, check provider capacity, host/env drift, stale artifacts, and
    lane-selection errors before product blame.
-6. For timing reports, compare only against a stable compatible baseline.
-7. Choose one classification category, name confidence, and recommend the next
+7. For timing reports, compare only against a stable compatible baseline.
+8. Review changed tests for slow-test or lane-selection regressions before
+   asking for implementation changes.
+9. Choose one classification category, name confidence, and recommend the next
    smallest command or owner action.
-8. Search `harness-signals/` for matching prior records. Recommend a durable
+10. Search `harness-signals/` for matching prior records. Recommend a durable
    signal only when the issue is recurring, expensive, safety-sensitive, or a
    missing guardrail.
 
