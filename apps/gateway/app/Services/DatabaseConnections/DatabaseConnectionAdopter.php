@@ -25,6 +25,7 @@ final readonly class DatabaseConnectionAdopter
     public function __construct(
         private EnvFileEditor $envFileEditor,
         private RemoteShell $remoteShell,
+        private DatabaseConnectionTargetEndpointResolver $endpointResolver,
     ) {}
 
     /**
@@ -158,6 +159,10 @@ final readonly class DatabaseConnectionAdopter
     private function persistObservedConnection(?DatabaseConnectionTarget $target, string $baseSlug, DatabaseConnectionPayload $payload, Node $node): array
     {
         if ($target?->connection instanceof DatabaseConnection) {
+            if ($this->connectionMatchesPayload($target->connection, $payload, $node)) {
+                return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
+            }
+
             $target->connection->fill($this->attributesFromPayload($payload, $target->connection, $node))->save();
 
             return [$target->connection->fresh(), AdoptAction::Updated, 'database_connection.env_mismatch'];
@@ -330,9 +335,14 @@ final readonly class DatabaseConnectionAdopter
         }
 
         $password = $connection->credentials['password'] ?? null;
+        try {
+            $endpoint = $this->endpointResolver->forConnectionOnNode($connection, $node);
+        } catch (\RuntimeException) {
+            return false;
+        }
 
-        return $connection->host === $payload->host
-            && $connection->port === $payload->port
+        return $endpoint['host'] === $payload->host
+            && $endpoint['port'] === $payload->port
             && $connection->database === $payload->database
             && $connection->username === $payload->username
             && (! is_string($payload->password) || $password === $payload->password);

@@ -11,7 +11,6 @@ use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
 use App\Models\Workspace;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
-use App\Services\Nodes\NodeWireGuardServiceAddress;
 
 final readonly class DatabaseConnectionProbe
 {
@@ -25,7 +24,7 @@ final readonly class DatabaseConnectionProbe
         private EnvFileEditor $envFileEditor,
         private DatabaseConnectionEnvMapper $envMapper,
         private RemoteShell $remoteShell,
-        private NodeWireGuardServiceAddress $serviceAddress,
+        private DatabaseConnectionTargetEndpointResolver $endpointResolver,
         private NodeWireGuardSelfRouteProbe $wireGuardSelfRouteProbe,
     ) {}
 
@@ -124,18 +123,14 @@ final readonly class DatabaseConnectionProbe
     private function expectedEnvValues(DatabaseConnectionTarget $target): array
     {
         $connection = $target->connection;
-        $host = $connection->host;
-
-        if ($connection->driver !== 'sqlite' && $connection->node instanceof Node) {
-            $host = $this->serviceAddress->forServiceOn($connection->node, $this->targetNode($target), $connection->driver);
-        }
+        $endpoint = $this->endpointResolver->forTarget($target);
 
         return $this->envMapper->toEnvValues(
             $target->env_prefix,
             DatabaseConnectionPayload::fromArray([
                 'driver' => $connection->driver,
-                'host' => $host,
-                'port' => $connection->port,
+                'host' => $endpoint['host'],
+                'port' => $endpoint['port'],
                 'database' => $connection->database,
                 'path' => $connection->path,
                 'username' => $connection->username,
@@ -468,18 +463,14 @@ final readonly class DatabaseConnectionProbe
         }
 
         $password = $connection->credentials['password'] ?? null;
-        $host = $connection->host;
-
-        if ($connection->node instanceof Node) {
-            try {
-                $host = $this->serviceAddress->forServiceOn($connection->node, $node, $connection->driver);
-            } catch (\RuntimeException) {
-                return false;
-            }
+        try {
+            $endpoint = $this->endpointResolver->forConnectionOnNode($connection, $node);
+        } catch (\RuntimeException) {
+            return false;
         }
 
-        return $host === $payload->host
-            && $connection->port === $payload->port
+        return $endpoint['host'] === $payload->host
+            && $endpoint['port'] === $payload->port
             && $connection->database === $payload->database
             && $connection->username === $payload->username
             && (! is_string($payload->password) || $password === $payload->password);

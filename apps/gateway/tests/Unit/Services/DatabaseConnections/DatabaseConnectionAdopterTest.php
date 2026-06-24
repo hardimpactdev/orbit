@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionAdopter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -127,6 +129,119 @@ describe('DatabaseConnectionAdopter', function (): void {
                 'username' => 'new-user',
             ])
             ->and($connection->credentials)->toMatchArray(['password' => 'new-secret']);
+    });
+
+    it('keeps the canonical endpoint when adopting an existing managed docker mysql target alias', function (): void {
+        $node = Node::factory()->gateway()->create([
+            'name' => 'beast',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-adopter-managed-docker-existing-target');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dlf-leden',
+            'path' => $path,
+        ]);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'dlf-leden-mysql',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'service' => 'mysql',
+                'endpoint' => [
+                    'host' => '10.6.0.7',
+                    'port' => 3308,
+                ],
+                'ports' => [
+                    [
+                        'published' => 3308,
+                        'target' => 3306,
+                        'protocol' => 'tcp',
+                    ],
+                ],
+            ],
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'dlf-leden',
+            'driver' => 'mysql',
+            'host' => '10.6.0.7',
+            'port' => 3308,
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        $connection->refresh();
+
+        expect($results)->toHaveCount(1)
+            ->and(DatabaseConnection::query()->count())->toBe(1)
+            ->and($connection)->toMatchArray([
+                'host' => '10.6.0.7',
+                'port' => 3308,
+                'database' => 'dlf_leden',
+                'username' => 'dlf_leden',
+            ]);
+    });
+
+    it('reuses existing managed docker mysql connections when adopting a target alias', function (): void {
+        $node = Node::factory()->gateway()->create([
+            'name' => 'beast',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-adopter-managed-docker-new-target');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dlf-leden',
+            'path' => $path,
+        ]);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'dlf-leden-mysql',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'service' => 'mysql',
+                'endpoint' => [
+                    'host' => '10.6.0.7',
+                    'port' => 3308,
+                ],
+                'ports' => [
+                    [
+                        'published' => 3308,
+                        'target' => 3306,
+                        'protocol' => 'tcp',
+                    ],
+                ],
+            ],
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'dlf-leden',
+            'driver' => 'mysql',
+            'host' => '10.6.0.7',
+            'port' => 3308,
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'credentials' => ['password' => 'secret'],
+        ]);
+
+        $results = app(DatabaseConnectionAdopter::class)->adopt($node);
+
+        expect($results)->toHaveCount(1)
+            ->and(DatabaseConnection::query()->count())->toBe(1)
+            ->and($app->databaseConnectionTargets()->first()?->database_connection_id)->toBe($connection->id);
     });
 
     it('adopts both DB and ANALYTICS_DB prefixes for the same app', function (): void {

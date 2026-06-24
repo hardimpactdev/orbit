@@ -44,8 +44,13 @@ orbit database:remove [<connection>] [--force] [--json]
 ```
 
 For node-owned MySQL/PostgreSQL connections, app/workspace env restore writes
-the owning node's WireGuard service address as host. SQLite queries execute on
-the node that owns the SQLite file path.
+the owning node's WireGuard service address as host when the target reaches the
+database over Orbit's private network. If a stored MySQL connection matches a
+managed Docker MySQL process on the same node as the app or workspace target,
+restore and doctor comparisons write the process Docker service alias and
+internal target port instead; adoption recognizes that alias as the same
+canonical connection and keeps the stored gateway endpoint for `database:query`.
+SQLite queries execute on the node that owns the SQLite file path.
 
 `database:add-user` requires an existing managed MySQL process. It creates or
 updates the MySQL database/user through that process and then persists the

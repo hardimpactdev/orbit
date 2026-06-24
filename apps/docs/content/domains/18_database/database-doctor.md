@@ -41,7 +41,13 @@ selected app/workspace `.env` files and checks these layers:
 3. **Expected env presence:** gateway-owned keys for a mapped prefix exist in
    the target `.env` when that connection should be materialized there.
 4. **Expected env shape:** observed env values for a mapped prefix match the
-   gateway-owned connection record.
+   gateway-owned connection record. For app and workspace targets on the same
+   node as a managed Docker MySQL process, expected `*_HOST` and `*_PORT` can use
+   the process Docker service alias and internal target port. This applies only
+   when the process gateway endpoint matches the stored connection record.
+   Adoption treats that Docker alias/internal-port pair as the same canonical
+   connection, so adopting a healthy app runtime env does not replace the stored
+   gateway endpoint used by `database:query`.
 5. **WireGuard self-route diagnostics:** when a mapped managed database host
    equals the consuming node's own WireGuard service address, Linux nodes are
    diagnosed with `ip route get <wireguard-ip>` and must report a local route

@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Data\RemoteShell\RemoteShellResult;
+use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\Node;
+use App\Models\Process;
 use App\Models\Workspace;
 use App\Services\DatabaseConnections\DatabaseConnectionProbe;
 use App\Services\Nodes\NodeWireGuardSelfRouteProbe;
@@ -85,6 +87,58 @@ describe('DatabaseConnectionProbe', function (): void {
             ->and($issue['detail']['mismatched_keys']['DB_PASSWORD'] ?? null)->toBe('masked')
             ->and(json_encode($issue, JSON_THROW_ON_ERROR))->not->toContain('stored-secret')
             ->and(json_encode($issue, JSON_THROW_ON_ERROR))->not->toContain('observed-secret');
+    });
+
+    it('accepts managed docker mysql service aliases on the same node as the app target', function (): void {
+        $node = Node::factory()->gateway()->create([
+            'name' => 'beast',
+            'status' => 'active',
+            'wireguard_address' => '10.6.0.7',
+        ]);
+        $path = storage_path('framework/testing/database-probe-managed-docker-mysql-alias');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dlf-leden',
+            'path' => $path,
+        ]);
+        Process::factory()->forOwner($node)->create([
+            'name' => 'dlf-leden-mysql',
+            'runtime' => ProcessRuntime::Docker,
+            'runtime_config' => [
+                'service' => 'mysql',
+                'version' => '8.4',
+                'endpoint' => [
+                    'host' => '10.6.0.7',
+                    'port' => 3308,
+                ],
+                'ports' => [
+                    [
+                        'published' => 3308,
+                        'target' => 3306,
+                        'protocol' => 'tcp',
+                    ],
+                ],
+            ],
+        ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'dlf-leden',
+            'driver' => 'mysql',
+            'host' => '10.6.0.7',
+            'port' => 3308,
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()->forApp($app)->create([
+            'database_connection_id' => $connection->id,
+            'env_prefix' => 'DB',
+        ]);
+
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
     });
 
     it('expects managed database hosts to use the owner node WireGuard service address', function (): void {

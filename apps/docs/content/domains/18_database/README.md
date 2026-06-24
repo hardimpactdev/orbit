@@ -27,7 +27,14 @@ touch.
   `.env` files while preserving unrelated keys and comments.
 - For node-owned MySQL and PostgreSQL connections, database restore and doctor
   comparisons materialize `*_HOST` as the owning node's WireGuard service
-  address, even when the consuming app or workspace is on that same node.
+  address when the consuming app or workspace reaches the database over Orbit's
+  private network.
+- When a stored connection record matches a managed Docker MySQL process on the
+  same node as the target app or workspace, doctor restore and comparisons
+  materialize the process Docker service alias and internal target port.
+- Doctor adoption recognizes the managed Docker MySQL alias as the same
+  canonical connection instead of replacing the stored gateway endpoint.
+- Gateway `database:query` continues to use the stored connection endpoint.
   External connections without an owning node keep their stored host value.
 - When a mapped managed database host equals the consuming node's own WireGuard
   service address, `doctor --family=database_connection` diagnoses the Linux
