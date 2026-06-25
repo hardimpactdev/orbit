@@ -34,6 +34,10 @@ touch.
   materialize the process Docker service alias and internal target port.
 - Doctor adoption recognizes the managed Docker MySQL alias as the same
   canonical connection instead of replacing the stored gateway endpoint.
+- When the matching managed Docker MySQL process is renamed through
+  `process:update --name=<new-slug>`, same-node app and workspace `.env`
+  materialization uses the new Docker service alias, while gateway
+  `database:query` continues to use the stored canonical endpoint.
 - Gateway `database:query` continues to use the stored connection endpoint.
   External connections without an owning node keep their stored host value.
 - When a mapped managed database host equals the consuming node's own WireGuard

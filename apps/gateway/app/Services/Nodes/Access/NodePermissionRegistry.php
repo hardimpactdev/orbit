@@ -139,6 +139,7 @@ final class NodePermissionRegistry
             'process:restart',
             'process:start',
             'process:stop',
+            'process:update',
 
             // Proxy
             'proxy:*',
@@ -224,6 +225,7 @@ final class NodePermissionRegistry
             'deploy:read' => ['deploy:history', 'deploy:log'],
             'node:read' => ['node:list', 'node:show'],
             'php:read' => ['php:list'],
+            'process:edit' => ['process:update'],
             'process:read' => ['process:list', 'process:logs'],
             'proxy:read' => ['proxy:list'],
             'role:read' => ['role:list'],

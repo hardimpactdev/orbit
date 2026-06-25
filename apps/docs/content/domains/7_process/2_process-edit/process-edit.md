@@ -1,36 +1,21 @@
 # `orbit process:edit [name]`
 
+<!-- command-status: reserved -->
+
 [Back to Process commands.](../README.md)
 
-Update a node-, app-, or workspace-owned process definition.
+`process:edit` is a backward-compatible alias for
+[`process:update`](../2_process-update/process-update.md).
 
-`process:edit` changes a process command, restart policy, crash notification
-policy, or process runtime for the resolved owner scope. It re-renders every
-runtime unit derived from that process definition.
+Existing scripts may continue to call `process:edit` during the compatibility
+window. New documentation, examples, and automation should use
+`process:update`.
 
-## Usage
-
-```bash
-orbit process:edit vite --app=docs --command="npm run dev"
-orbit process:edit queue --app=docs --restart-policy=on_failure --restart
-orbit process:edit horizon --app=docs --workspace=feature-docs --command="php artisan horizon"
-orbit process:edit opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
-orbit process:edit watcher --app=docs --runtime=systemd
-orbit process:edit vite --app=docs --command="npm run dev" --json
-```
-
-## Behavior Summary
-
-Use this command to update a process definition and re-render its runtime units.
-
-- **Gateway Update**: Updates the gateway-owned process definition.
-- **Scope Resolution**: `--node` edits a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` edits a workspace-owned process; otherwise `--app` edits an app-owned process.
-- **Runtime Unit Re-rendering**: Re-renders the runtime units derived from the selected process definition.
-- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service processes. `docker-swarm` is only valid for node-owned managed service processes.
-- **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.
-- **Drift Reporting**: Reports repairable runtime-unit apply drift after successful configuration changes.
-
-See also: [`process:add`](../1_process-add/process-add.md), [`process:restart`](../7_process-restart/process-restart.md), [`process-doctor.md`](../process-doctor.md).
+The alias accepts the same arguments and options as `process:update`, including
+`--name=<new-slug>` for supported process identity rename paths and `--json`
+for the machine-readable renderer. Human output may include deprecation copy;
+JSON output keeps the same envelope and payload as `process:update` so scripted
+callers can migrate command names without changing parsers.
 
 ***
 

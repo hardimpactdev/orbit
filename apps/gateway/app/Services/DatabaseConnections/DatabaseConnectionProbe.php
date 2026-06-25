@@ -54,12 +54,12 @@ final readonly class DatabaseConnectionProbe
             $mismatched = [];
 
             foreach (array_intersect_key($expected, $observed) as $key => $value) {
-                if ((string) $observed[$key] !== (string) $value) {
+                if ($observed[$key] !== $value) {
                     $mismatched[$key] = $this->isSecretKey($key)
                         ? 'masked'
                         : [
-                            'expected' => (string) $value,
-                            'observed' => (string) $observed[$key],
+                            'expected' => $value,
+                            'observed' => $observed[$key],
                         ];
                 }
             }
