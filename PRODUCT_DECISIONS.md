@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-25 — Fleet doctor --all node progress now reflects each node's own intra-node family check progress (family-weighted), reversing the prior out-of-scope deferral; per-family rows remain hidden in fleet output.
 - 2026-06-25 — Process mutation is named `process:update`; `process:edit` remains a backward-compatible alias, and supported process identity rename flows use `process:update --name=<new-slug>` while preserving managed database connection coherence.
 - 2026-06-24 — `orbit doctor` human output uses one bordered doctor panel for single-node and `--all` fleet runs: in-progress title `D O C T O R`, terminal verify title `D O C T O R - R E S U L T`, no in-progress `S U M M A R Y`, fleet rows keyed by node name (not `Check <node>` or a separate `F L E E T  D O C T O R  R E S U L T` block), flat per-node issue bullets with a human-only 10-bullet cap and `+ <n> more issues` overflow, while `--json` and `--stream-json` payloads stay complete.
 - 2026-06-24 — App setup is a lifecycle-specific pipeline: `app-setup-step:*` records ordered host-toolchain setup commands for an app and `app:setup` runs that pipeline idempotently; Orbit still has no generic `app:exec` or `workspace:exec` surface.

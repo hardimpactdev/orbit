@@ -995,6 +995,50 @@ describe('doctor human panel', function (): void {
             ->not->toContain('S U M M A R Y');
     });
 
+    it('renders plain Checking on active fleet node rows when per-node progress totals are absent', function (): void {
+        fakeDoctorRunStream(
+            gatewayProgressFrame('tree', [
+                'title' => 'Running Doctor',
+                'steps' => [
+                    ['key' => 'agent-1', 'label' => 'Check agent-1'],
+                    ['key' => 'app-dev-1', 'label' => 'Check app-dev-1'],
+                    ['key' => 'app-prod-1', 'label' => 'Check app-prod-1'],
+                ],
+            ])
+                .gatewayProgressFrame('step', [
+                    'key' => 'app-dev-1',
+                    'status' => 'running',
+                    'message' => 'Checking app-dev-1',
+                ])
+                .gatewayProgressFrame('complete', [
+                    'exit_code' => 0,
+                    'data' => [
+                        'footer' => 'Doctor completed.',
+                        'doctor' => doctorFleetReport(),
+                    ],
+                ]),
+        );
+
+        [$exitCode, $output] = runDecoratedCommand($this, 'doctor', [
+            '--all' => true,
+            '--family' => ['node'],
+        ]);
+
+        $terminalMarker = 'D O C T O R - R E S U L T';
+        $inProgressOutput = stripAnsi(substr(
+            $output,
+            0,
+            (int) strrpos($output, $terminalMarker),
+        ));
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($inProgressOutput)
+            ->toMatch('/app-dev-1\s+Checking/')
+            ->and($inProgressOutput)
+            ->not->toMatch('/app-dev-1\s+Checking -/');
+    });
+
     it('renders count-based Checking - N% on active fleet node rows when progress totals exist', function (): void {
         $partialReport = doctorPartialFleetProgressReport(
             issues: [],

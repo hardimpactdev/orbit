@@ -520,26 +520,14 @@ final class DoctorCommand extends GatewayCommand
      */
     private function syntheticFleetProgressNodes(): array
     {
-        $total = count($this->fleetNodeOrder);
-        $completed = count(array_filter(
-            $this->fleetNodePhases,
-            static fn (string $phase): bool => in_array($phase, ['done', 'ok'], true),
-        ));
         $progressNodes = [];
 
         foreach ($this->fleetNodeOrder as $nodeName) {
             $phase = $this->fleetNodePhases[$nodeName] ?? 'queued';
-            $entry = [
+            $progressNodes[] = [
                 'node' => $nodeName,
                 'status' => $phase,
             ];
-
-            if ($total > 0 && in_array($phase, ['running', 'checking', 'start'], true)) {
-                $entry['completed'] = $completed;
-                $entry['total'] = $total;
-            }
-
-            $progressNodes[] = $entry;
         }
 
         return $progressNodes;

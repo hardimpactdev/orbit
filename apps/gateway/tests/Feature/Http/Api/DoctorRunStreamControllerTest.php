@@ -161,6 +161,81 @@ it('streams partial fleet doctor snapshots with completed-node issues on node do
         ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app-prod-1', 'running'));
 });
 
+it('streams fleet per-node completed and total progress while a node is running', function (): void {
+    createDoctorRunStreamCallerNode();
+    $appNode = createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
+    $app = App::factory()->create([
+        'name' => 'docs',
+        'node_id' => $appNode->id,
+        'path' => '/home/orbit/apps/docs',
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'feature',
+        'path' => '/home/orbit/apps/docs/.worktrees/feature',
+    ]);
+    Workspace::factory()->create([
+        'app_id' => $app->id,
+        'name' => 'hotfix',
+        'path' => '/home/orbit/apps/docs/.worktrees/hotfix',
+    ]);
+    app()->instance(
+        RemoteShell::class,
+        new DoctorRunStreamRemoteShell([
+            "feature\t0\t1\t0\t0\t1\t1\t0\t0\t0\t\n",
+            "hotfix\t0\t1\t0\t0\t1\t1\t0\t0\t0\t\n",
+        ]),
+    );
+
+    $response = $this->call(
+        'POST',
+        '/api/doctor/run',
+        [
+            'mode' => 'verify',
+            'families' => ['workspace'],
+            'all' => true,
+        ],
+        [],
+        [],
+        [
+            'HTTP_ACCEPT' => 'text/event-stream',
+            'REMOTE_ADDR' => DOCTOR_RUN_STREAM_CALLER_WG_IP,
+        ],
+    );
+
+    $response->assertOk();
+
+    $nodeProgress = doctorRunStreamFleetNodeCheckProgressSnapshots(
+        doctorRunStreamDoctorFrames(doctorRunStreamFrames($response->streamedContent())),
+        'app-1',
+    );
+
+    expect($nodeProgress)
+        ->not
+        ->toBeEmpty()
+        ->and($nodeProgress)
+        ->toContain([
+            'node' => 'app-1',
+            'status' => 'running',
+            'completed' => 0,
+            'total' => 2,
+        ])
+        ->and($nodeProgress)
+        ->toContain([
+            'node' => 'app-1',
+            'status' => 'running',
+            'completed' => 1,
+            'total' => 2,
+        ])
+        ->and(collect($nodeProgress)->contains(
+            static fn (array $snapshot): bool => in_array($snapshot['status'] ?? null, ['running', 'checking'], true)
+            && ($snapshot['completed'] ?? null) === ($snapshot['total'] ?? null),
+        ))
+        ->toBeFalse()
+        ->and(collect($nodeProgress)->pluck('completed')->unique()->count())
+        ->toBeGreaterThan(1);
+});
+
 it('streams fleet doctor progress per node only with explicit all scope', function (): void {
     createDoctorRunStreamCallerNode(['name' => 'doctor-stream-caller']);
     createTestAppHostNode(['name' => 'app-1', 'status' => 'active']);
@@ -591,9 +666,71 @@ function doctorRunStreamStepEventIndex(array $events, string $key, string $statu
 }
 
 /**
- * @param  list<array<string, mixed>>  $doctorFrames
- * @return list<array{family: string, status: string, completed: int, total: int}>
+ * @param  array<string, mixed>  $frame
+ * @return list<array{node: string, status: string, completed: int, total: int}>
  */
+function doctorRunStreamFleetNodeProgressSnapshotsFromFrame(array $frame, string $nodeName): array
+{
+    $doctor = $frame['doctor'] ?? null;
+
+    if (! is_array($doctor)) {
+        return [];
+    }
+
+    $nodes = $doctor['progress']['nodes'] ?? null;
+
+    if (! is_array($nodes)) {
+        return [];
+    }
+
+    $snapshots = [];
+
+    foreach ($nodes as $entry) {
+        if (! is_array($entry)) {
+            continue;
+        }
+
+        if (($entry['node'] ?? null) !== $nodeName) {
+            continue;
+        }
+
+        if (! is_int($entry['completed'] ?? null) || ! is_int($entry['total'] ?? null)) {
+            continue;
+        }
+
+        $snapshots[] = [
+            'node' => $nodeName,
+            'status' => is_string($entry['status'] ?? null) ? $entry['status'] : '',
+            'completed' => $entry['completed'],
+            'total' => $entry['total'],
+        ];
+    }
+
+    return $snapshots;
+}
+
+/**
+ * @param  list<array<string, mixed>>  $doctorFrames
+ * @return list<array{node: string, status: string, completed: int, total: int}>
+ */
+function doctorRunStreamFleetNodeCheckProgressSnapshots(array $doctorFrames, string $nodeName): array
+{
+    $snapshots = [];
+
+    foreach ($doctorFrames as $frame) {
+        if (($frame['key'] ?? null) !== $nodeName || ($frame['status'] ?? null) !== 'running') {
+            continue;
+        }
+
+        $snapshots = [
+            ...$snapshots,
+            ...doctorRunStreamFleetNodeProgressSnapshotsFromFrame($frame, $nodeName),
+        ];
+    }
+
+    return $snapshots;
+}
+
 function doctorRunStreamFamilyCheckProgressSnapshots(array $doctorFrames, string $family): array
 {
     $snapshots = [];
