@@ -566,12 +566,6 @@ count = 1
 
 [[issues]]
 file = "app/Console/Commands/E2ETestCommand.php"
-code = "redundant-docblock-type"
-message = "Redundant docblock type for variable `$availability`."
-count = 1
-
-[[issues]]
-file = "app/Console/Commands/E2ETestCommand.php"
 code = "reference-to-undefined-variable"
 message = "Reference created from a previously undefined variable `$matches`."
 count = 2
@@ -964,7 +958,7 @@ count = 2
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "invalid-array-element"
 message = "Cannot use spread operator on non-iterable type `mixed`."
-count = 5
+count = 3
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -975,43 +969,13 @@ count = 1
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installE2EBaseDependencies`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 2
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installRealWireGuard`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 3
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "less-specific-argument"
 message = '''Argument type mismatch for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installRealWireGuard`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array{'gateway': App\E2E\Support\IncusInstance, ...}` is less specific.'''
 count = 1
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\E2E\Support\IncusTopologyBuilder::checkpointSuccessfulPreparedRolesOrFail`: expected `array<string, App\E2E\Support\IncusInstance>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 2
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "less-specific-nested-argument-type"
 message = '''Argument type mismatch for argument #3 of `App\E2E\Support\IncusTopologyBuilder::checkpointSuccessfulPreparedRolesOrFail`: expected `array<string, int>`, but provided type `array{'agent'?: int(0), 'dev'?: int(0), 'prod'?: int(0), 'websocket'?: mixed}|list<mixed>` is less specific.'''
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, App\E2E\Support\IncusInstance>` for function `App\E2E\Support\IncusTopologyBuilder::buildPreparedFullStage`.'
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "less-specific-return-statement"
-message = 'Returned type `array<array-key, mixed>` is less specific than the declared return type `array<string, App\E2E\Support\IncusInstance>` for function `App\E2E\Support\IncusTopologyBuilder::buildPreparedFullWebSocketStage`.'
 count = 1
 
 [[issues]]
@@ -1024,19 +988,13 @@ count = 1
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `App\E2E\Support\E2EGatewayApi::waitForGatewayApi`: expected `App\E2E\Support\E2EInstance`, but found `mixed`.'
-count = 3
+count = 1
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::assertSuccessful`: expected `Illuminate\Contracts\Process\ProcessResult`, but found `mixed`.'
 count = 7
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::authorizePreparedRuntimeUserSsh`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
-count = 2
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -1053,38 +1011,8 @@ count = 2
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::installPreparedAppRuntimePrerequisites`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
-count = 2
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::retargetOperator`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
 count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamAndWebSocketBakeInParallel`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::runPreparedDownstreamBakeInParallel`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::runPreparedWebSocketBake`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-argument"
-message = 'Invalid argument type for argument #1 of `App\E2E\Support\IncusTopologyBuilder::seedAppdevDatabaseAndRedis`: expected `App\E2E\Support\IncusInstance`, but found `mixed`.'
-count = 3
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -1216,13 +1144,13 @@ count = 2
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 37
+count = 34
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "mixed-method-access"
 message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 36
+count = 24
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -1234,42 +1162,6 @@ count = 1
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "mixed-operand"
 message = "Invalid right operand: type `mixed` cannot be reliably used in string concatenation."
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-return-statement"
-message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:1160:52}`. Saw type `mixed`."
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-return-statement"
-message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:1161:54}`. Saw type `mixed`."
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-return-statement"
-message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:1162:56}`. Saw type `mixed`."
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-return-statement"
-message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:970:52}`. Saw type `mixed`."
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-return-statement"
-message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:971:54}`. Saw type `mixed`."
-count = 1
-
-[[issues]]
-file = "app/E2E/Support/IncusTopologyBuilder.php"
-code = "mixed-return-statement"
-message = "Could not infer a precise return type for function `{closure:app/E2E/Support/IncusTopologyBuilder.php:972:56}`. Saw type `mixed`."
 count = 1
 
 [[issues]]

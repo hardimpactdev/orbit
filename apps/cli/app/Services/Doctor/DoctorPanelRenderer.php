@@ -777,9 +777,11 @@ final class DoctorPanelRenderer
         $names = [];
 
         foreach ($targets as $target) {
-            if (is_string($target) && trim($target) !== '') {
-                $names[] = trim($target);
+            if (! (is_string($target) && trim($target) !== '')) {
+                continue;
             }
+
+            $names[] = trim($target);
         }
 
         return $names;

@@ -17,6 +17,16 @@ composer docs-lint
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, Mago analyze/lint/format checks, Rector
 dry-run, and the default Pest suites for the gateway, CLI, docs, core, and SDK.
+
+In an interactive TTY, `bin/quality-check.sh` renders an in-place progress tree
+for the monorepo areas (`apps/gateway`, `apps/cli`, `apps/docs`, `apps/e2e`,
+`apps/reverb`, `packages/core`, `packages/sdk`) while subgates run, leaves the
+final pass/fail tree visible, and then prints the same per-subgate logs and
+summaries as before.
+
+Redirected or non-TTY runs skip the live tree so CI logs stay free of ANSI
+cursor repainting. `NO_COLOR` removes color from the tree but keeps the live
+terminal progress visible.
 Default Pest subgates exclude `slow` tests. `composer test:slow` keeps real
 boundary checks available when the behavior under test is the boundary: PTY
 rendering, transport timing, and shell commands that build release packages. Use
@@ -24,12 +34,12 @@ a lane-specific command such as `bin/orbit-gateway-pest --group=slow` or
 `bin/orbit-cli-pest --group=slow`, or run a focused Pest command for the changed
 file.
 
-The wrapper caps background fan-out by default so local runner contention does
-not inflate the long Pest lane timings unnecessarily. The cap is derived from
-the detected logical CPU count and only changes scheduling; every subgate still
-runs and still contributes to the final exit code. For a one-off diagnostic,
-override it with `ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=<n> composer
-quality-check`.
+The wrapper caps background fan-out at two jobs by default so local runner
+contention does not inflate the long Pest lane timings unnecessarily. One-core
+hosts use one background job. The cap only changes scheduling; every subgate
+still runs and still contributes to the final exit code. For a one-off
+diagnostic, override it with `ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS=<n>
+composer quality-check`.
 
 Subgate durations start when the actual subgate command starts, after any
 background-slot queue wait. Queue time is reflected in the aggregate gate
@@ -40,6 +50,9 @@ and E2E lanes that run against the prepared source checkout write local timing
 artifacts under `.orbit/quality-gates/`. The `:fix` lane records the same
 evidence shape with `mode=fix` so triage can distinguish read-only checks from
 auto-fix runs without rerunning the gate.
+
+The E2E lane launcher gives each provider lane its own temp directory. This
+keeps Pest cache files isolated when Docker and Incus lanes start together.
 
 The CLI Pest subgate runs the default CLI suite through
 `bin/orbit-cli-pest-quality`, which splits the suite into non-overlapping Pest

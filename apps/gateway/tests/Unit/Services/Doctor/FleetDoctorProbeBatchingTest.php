@@ -305,10 +305,12 @@ function fleetDoctorProbeReportList(array $report, string $key): array
     }
 
     foreach ($items as $item) {
-        if (is_array($item)) {
-            /** @var array<string, mixed> $item */
-            $list[] = $item;
+        if (! is_array($item)) {
+            continue;
         }
+
+        /** @var array<string, mixed> $item */
+        $list[] = $item;
     }
 
     return $list;

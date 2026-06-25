@@ -232,6 +232,9 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('librarian:lint')
         ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
         ->toContain('quality_check_default_max_background_jobs')
+        ->toContain('if [ "$detected_jobs" -le 1 ]; then')
+        ->toContain('echo 1')
+        ->toContain('echo 2')
         ->toContain('STATIC_CHECK_LABELS=(')
         ->toContain('LONG_RUNNING_PEST_LABELS=(')
         ->toContain('wait_for_bg_slot')
@@ -333,6 +336,80 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toBeLessThan($cliWrapperPosition('run_group services "${service_dirs[@]}"'))
         ->and($cliWrapperPosition('run_group services "${service_dirs[@]}"'))
         ->toBeLessThan($cliWrapperPosition('for label in "${SERIAL_GROUP_LABELS[@]}"'));
+});
+
+it('renders a TTY progress tree for aggregate quality-check areas', function (): void {
+    $script = (string) file_get_contents(repo_path('bin/quality-check.sh'));
+    $scriptPosition = function (string $needle) use ($script): int {
+        $position = strpos($script, $needle);
+
+        if ($position === false) {
+            throw new RuntimeException("Expected quality-check script to contain [{$needle}].");
+        }
+
+        return $position;
+    };
+
+    expect($script)
+        ->toContain('PROGRESS_AREAS=(')
+        ->toContain('quality_check_progress_enabled')
+        ->toContain('[ -t 1 ]')
+        ->toContain('if [ -n "${NO_COLOR:-}" ]; then')
+        ->toContain('quality_check_label_area')
+        ->toContain('quality_check_progress_start_ticker')
+        ->toContain('quality_check_progress_stop_ticker')
+        ->toContain('quality_check_progress_render_final')
+        ->toContain('Running quality checks')
+        ->toContain('Working...')
+        ->toContain('Quality checks passed')
+        ->toContain('Quality checks failed')
+        ->toContain('apps/gateway')
+        ->toContain('apps/cli')
+        ->toContain('apps/docs')
+        ->toContain('apps/e2e')
+        ->toContain('apps/reverb')
+        ->toContain('packages/core')
+        ->toContain('packages/sdk')
+        ->toContain('ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST')
+        ->and($scriptPosition('quality_check_progress_start_ticker'))
+        ->toBeLessThan($scriptPosition('run_bg docs_lint'))
+        ->and($scriptPosition('quality_check_progress_stop_ticker'))
+        ->toBeLessThan($scriptPosition('print_log "$label"'))
+        ->and($scriptPosition('quality_check_progress_render_final'))
+        ->toBeLessThan($scriptPosition('print_log "$label"'));
+});
+
+it('maps every aggregate subgate to a quality-check progress area', function (): void {
+    $process = new Process(
+        [
+            'env',
+            'ORBIT_QUALITY_CHECK_PROGRESS_SELF_TEST=1',
+            'bash',
+            repo_path('bin/quality-check.sh'),
+        ],
+        repo_path(),
+        null,
+        null,
+        30,
+    );
+    $process->mustRun();
+
+    $lines = collect(preg_split('/\R+/', trim($process->getOutput())) ?: [])
+        ->filter()
+        ->values()
+        ->all();
+
+    expect($lines)->toBe([
+        'apps/gateway=5',
+        'apps/cli=5',
+        'apps/docs=8',
+        'apps/e2e=4',
+        'apps/reverb=3',
+        'packages/core=5',
+        'packages/sdk=5',
+        'passed=apps/gateway,apps/cli,apps/docs,apps/e2e,apps/reverb,packages/core,packages/sdk',
+        'failed=apps/gateway',
+    ]);
 });
 
 it('includes monorepo path packages in the gateway image build context', function (): void {

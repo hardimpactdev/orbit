@@ -1787,9 +1787,12 @@ final class E2ECurrentCheckout
         }
 
         $directory = self::archiveCacheDirectory();
+        $mkdirError = null;
 
-        if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
-            throw new RuntimeException("Failed to create checkout archive cache directory: {$directory}");
+        if (! is_dir($directory) && ! self::tryMakeDirectory($directory, 0o755, $mkdirError) && ! is_dir($directory)) {
+            $detail = $mkdirError === null ? '' : ": {$mkdirError}";
+
+            throw new RuntimeException("Failed to create checkout archive cache directory: {$directory}{$detail}");
         }
 
         $archive = $directory.'/'.self::treeHash().'.tar.gz';
@@ -1837,6 +1840,21 @@ final class E2ECurrentCheckout
         self::$cachedArchiveIsShared = true;
 
         return self::$cachedArchive;
+    }
+
+    private static function tryMakeDirectory(string $directory, int $permissions, ?string &$errorMessage): bool
+    {
+        set_error_handler(static function (int $_severity, string $message) use (&$errorMessage): bool {
+            $errorMessage = $message;
+
+            return true;
+        });
+
+        try {
+            return mkdir(directory: $directory, permissions: $permissions, recursive: true);
+        } finally {
+            restore_error_handler();
+        }
     }
 
     private static function pruneStaleCheckoutArchives(): void

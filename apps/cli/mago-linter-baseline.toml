@@ -25,12 +25,6 @@ message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Commands/Activity/ActivityShowCommand.php"
-code = "too-many-methods"
-message = "Class has too many methods."
-count = 1
-
-[[issues]]
 file = "app/Commands/AgentIde/AgentIdeMessageCommand.php"
 code = "cyclomatic-complexity"
 message = "Class has high complexity."
@@ -1264,7 +1258,7 @@ count = 1
 file = "app/Commands/Operation/DoctorCommand.php"
 code = "halstead"
 message = "Method has a high halstead effort"
-count = 2
+count = 3
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
@@ -1277,12 +1271,6 @@ file = "app/Commands/Operation/DoctorCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
 count = 2
-
-[[issues]]
-file = "app/Commands/Operation/DoctorCommand.php"
-code = "no-nested-ternary"
-message = "Nested ternary expressions are confusing due to PHP's operator associativity rules."
-count = 1
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
@@ -1366,12 +1354,36 @@ count = 1
 file = "app/Commands/Operation/UpdateAllCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `''` should be passed as a named argument for clarity."
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Commands/Operation/UpdateAllCommand.php"
 code = "literal-named-argument"
 message = "Literal argument `'>='` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Operation/UpdateAllCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Operation/UpdateAllCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `2` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Commands/Operation/UpdateAllCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `4` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "app/Commands/Operation/UpdateAllCommand.php"
+code = "literal-named-argument"
+message = "Literal argument `6` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -1403,12 +1415,6 @@ file = "app/Commands/Operation/UpdateAllCommand.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 2
-
-[[issues]]
-file = "app/Commands/Operation/UpdateAllCommand.php"
-code = "prefer-static-closure"
-message = "This closure does not use `$this` and should be declared static."
-count = 1
 
 [[issues]]
 file = "app/Commands/Operation/UpdateAllCommand.php"
@@ -1447,9 +1453,9 @@ message = "Class has high complexity."
 count = 1
 
 [[issues]]
-file = "app/Commands/Php/PhpUseCommand.php"
-code = "prefer-static-closure"
-message = "This arrow function does not use `$this` and should be declared static."
+file = "app/Commands/Php/PhpUseGatewayHumanTreeRunner.php"
+code = "no-boolean-flag-parameter"
+message = "Avoid boolean flag parameters."
 count = 1
 
 [[issues]]
@@ -1546,6 +1552,24 @@ count = 1
 file = "app/Commands/Process/ProcessRemoveCommand.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
+count = 1
+
+[[issues]]
+file = "app/Commands/Process/ProcessUpdateValidator.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `ProcessUpdateAllowedValueValidator` but class `ProcessUpdateValidator` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "app/Commands/Process/ProcessUpdateValidator.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `ProcessUpdateContextValidator` but class `ProcessUpdateValidator` is already defined in this file."
+count = 1
+
+[[issues]]
+file = "app/Commands/Process/ProcessUpdateValidator.php"
+code = "single-class-per-file"
+message = "File contains multiple class-like definitions; found class `ProcessUpdateRuntimeScopeValidator` but class `ProcessUpdateValidator` is already defined in this file."
 count = 1
 
 [[issues]]
@@ -2092,7 +2116,7 @@ count = 1
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
 code = "halstead"
 message = "Method has a high halstead effort"
-count = 1
+count = 2
 
 [[issues]]
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
@@ -2122,7 +2146,7 @@ count = 1
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
 code = "literal-named-argument"
 message = "Literal argument `0` should be passed as a named argument for clarity."
-count = 3
+count = 4
 
 [[issues]]
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
@@ -2140,13 +2164,13 @@ count = 2
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 6
+count = 7
 
 [[issues]]
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
 code = "no-boolean-flag-parameter"
 message = "Avoid boolean flag parameters."
-count = 6
+count = 5
 
 [[issues]]
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
@@ -3073,42 +3097,6 @@ message = "Unsafe use of error control operator `@`."
 count = 5
 
 [[issues]]
-file = "app/Services/Version/VersionInfoResolver.php"
-code = "constant-name"
-message = "Constant name `LatestManifestUrl` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/Version/VersionInfoResolver.php"
-code = "constant-name"
-message = "Constant name `ReleasesApi` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/Version/VersionInfoResolver.php"
-code = "constant-name"
-message = "Constant name `VersionManifestUrl` should be in constant case."
-count = 1
-
-[[issues]]
-file = "app/Services/Version/VersionInfoResolver.php"
-code = "cyclomatic-complexity"
-message = "Class has high complexity."
-count = 1
-
-[[issues]]
-file = "app/Services/Version/VersionInfoResolver.php"
-code = "literal-named-argument"
-message = "Literal argument `'>'` should be passed as a named argument for clarity."
-count = 1
-
-[[issues]]
-file = "app/Services/Version/VersionInfoResolver.php"
-code = "literal-named-argument"
-message = "Literal argument `'v'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
 file = "app/Services/WireGuard/WireGuardGatewayAddressResolver.php"
 code = "literal-named-argument"
 message = "Literal argument `2` should be passed as a named argument for clarity."
@@ -3375,6 +3363,12 @@ count = 1
 [[issues]]
 file = "tests/Feature/CommandListVisibilityTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'process:edit'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/CommandListVisibilityTest.php"
+code = "literal-named-argument"
 message = "Literal argument `'stub:publish'` should be passed as a named argument for clarity."
 count = 1
 
@@ -3634,6 +3628,54 @@ count = 1
 file = "tests/Feature/Commands/App/AppListCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `502` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "function-name"
+message = "Function name `appNewInteractiveCompleteFrame` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "function-name"
+message = "Function name `fakeAppNewNodeListEnvelope` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app-2'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app:new'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'orbit-app-new-interactive-'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
 count = 1
 
 [[issues]]
@@ -5301,13 +5343,37 @@ count = 2
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "function-name"
+message = "Function name `assertDoctorPanelLinesWithinWidth` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "function-name"
 message = "Function name `decodeDoctorNdjson` should be in snake case."
 count = 1
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "function-name"
+message = "Function name `doctorFleetDriftReport` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "function-name"
 message = "Function name `doctorFleetReport` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "function-name"
+message = "Function name `doctorIssuesForFamily` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "function-name"
+message = "Function name `doctorPartialFleetProgressReport` should be in snake case."
 count = 1
 
 [[issues]]
@@ -5361,13 +5427,31 @@ count = 1
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "literal-named-argument"
+message = 'Literal argument `"\0"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n"` should be passed as a named argument for clarity.'
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = 'Literal argument `"\n│  - Issue "` should be passed as a named argument for clarity.'
+count = 3
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
 message = "Literal argument `''` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'D O C T O R  R E S U L T'` should be passed as a named argument for clarity."
+message = "Literal argument `'D O C T O R - R E S U L T'` should be passed as a named argument for clarity."
 count = 2
 
 [[issues]]
@@ -5379,14 +5463,32 @@ count = 1
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'agent-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
 message = "Literal argument `'app'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "literal-named-argument"
+message = "Literal argument `'app-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app-dev-1'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
 message = "Literal argument `'doctor'` should be passed as a named argument for clarity."
-count = 25
+count = 48
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
@@ -5398,6 +5500,30 @@ count = 1
 file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 8
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `11` should be passed as a named argument for clarity."
+count = 6
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `74` should be passed as a named argument for clarity."
+count = 4
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `75` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/DoctorCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `8` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -5649,6 +5775,12 @@ count = 3
 [[issues]]
 file = "tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
 code = "function-name"
+message = "Function name `fakeUpdateAllReleaseManifest` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
+code = "function-name"
 message = "Function name `fakeUpdateAllStartEnvelope` should be in snake case."
 count = 1
 
@@ -5830,7 +5962,7 @@ count = 1
 file = "tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'update:all'` should be passed as a named argument for clarity."
-count = 31
+count = 36
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
@@ -5866,7 +5998,7 @@ count = 1
 file = "tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `64` should be passed as a named argument for clarity."
-count = 3
+count = 4
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/UpdateAllCommandTest.php"
@@ -5968,7 +6100,7 @@ count = 1
 file = "tests/Feature/Commands/Operation/UpdateCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'update'` should be passed as a named argument for clarity."
-count = 16
+count = 17
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/UpdateCommandTest.php"
@@ -6028,7 +6160,7 @@ count = 2
 file = "tests/Feature/Commands/Operation/VersionCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'version'` should be passed as a named argument for clarity."
-count = 7
+count = 8
 
 [[issues]]
 file = "tests/Feature/Commands/Operation/VersionCommandTest.php"
@@ -6261,12 +6393,6 @@ count = 14
 [[issues]]
 file = "tests/Feature/Commands/Process/ProcessWriteCommandTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'process:update'` should be passed as a named argument for clarity."
-count = 8
-
-[[issues]]
-file = "tests/Feature/Commands/Process/ProcessWriteCommandTest.php"
-code = "literal-named-argument"
 message = "Literal argument `'process:remove'` should be passed as a named argument for clarity."
 count = 5
 
@@ -6275,6 +6401,12 @@ file = "tests/Feature/Commands/Process/ProcessWriteCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'process:start'` should be passed as a named argument for clarity."
 count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/Process/ProcessWriteCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'process:update'` should be passed as a named argument for clarity."
+count = 8
 
 [[issues]]
 file = "tests/Feature/Commands/Process/ProcessWriteCommandTest.php"
@@ -9097,49 +9229,31 @@ message = "Literal argument `1000` should be passed as a named argument for clar
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-code = "function-name"
-message = "Function name `appNewInteractiveCompleteFrame` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-code = "function-name"
-message = "Function name `fakeAppNewNodeListEnvelope` should be in snake case."
-count = 1
-
-[[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+file = "tests/Unit/Services/StreamJsonIdleStepWriterTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'app-1'` should be passed as a named argument for clarity."
+message = "Literal argument `'orbit-stream-json-capture-'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+file = "tests/Unit/Services/StreamJsonIdleStepWriterTest.php"
 code = "literal-named-argument"
-message = "Literal argument `'app-2'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'app:new'` should be passed as a named argument for clarity."
-count = 2
-
-[[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-code = "literal-named-argument"
-message = "Literal argument `'orbit-app-new-interactive-'` should be passed as a named argument for clarity."
+message = "Literal argument `'orbit-stream-json-script-'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-code = "no-error-control-operator"
-message = "Unsafe use of error control operator `@`."
-count = 2
+file = "tests/Unit/Services/StreamJsonIdleStepWriterTest.php"
+code = "literal-named-argument"
+message = "Literal argument `0` should be passed as a named argument for clarity."
+count = 1
 
 [[issues]]
-file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
+file = "tests/Unit/Services/StreamJsonIdleStepWriterTest.php"
+code = "literal-named-argument"
+message = "Literal argument `3` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "tests/Unit/Services/StreamJsonIdleStepWriterTest.php"
+code = "literal-named-argument"
+message = "Literal argument `877` should be passed as a named argument for clarity."
+count = 3

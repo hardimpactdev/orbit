@@ -292,7 +292,7 @@ final class UpdateAllCommand extends GatewayCommand
 
         $progress->localNodeSubStep($this->output, 'downloading', $targetVersion ?? '');
 
-        $download = $this->withBinaryUrl($candidateBinaryUrl, fn (): array => $localUpdater->downloadBinary());
+        $download = $this->withBinaryUrl($candidateBinaryUrl, static fn (): array => $localUpdater->downloadBinary());
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
             $progress->localNodeFailed($this->output, $download['output']);

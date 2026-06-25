@@ -567,10 +567,12 @@ final readonly class DoctorReportRunner
         $issues = [];
 
         foreach ($reportIssues as $reportIssue) {
-            if (is_array($reportIssue)) {
-                /** @var array<string, mixed> $reportIssue */
-                $issues[] = $reportIssue;
+            if (! is_array($reportIssue)) {
+                continue;
             }
+
+            /** @var array<string, mixed> $reportIssue */
+            $issues[] = $reportIssue;
         }
 
         return $issues;
@@ -2024,9 +2026,11 @@ final readonly class DoctorReportRunner
 
         foreach ($targets as $node) {
             foreach ($this->categoriesForNode($node) as $family) {
-                if (! in_array($family, $resolved, true)) {
-                    $resolved[] = $family;
+                if (in_array($family, $resolved, true)) {
+                    continue;
                 }
+
+                $resolved[] = $family;
             }
         }
 
@@ -3934,15 +3938,15 @@ final readonly class DoctorReportRunner
             )),
             'conflicts' => count(array_filter(
                 $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'conflict',
+                static fn (array $action): bool => ($action['status'] ?? null) === 'conflict',
             )),
             'failed' => count(array_filter(
                 $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'failed',
+                static fn (array $action): bool => ($action['status'] ?? null) === 'failed',
             )),
             'planned' => count(array_filter(
                 $actions,
-                fn (array $action): bool => ($action['status'] ?? null) === 'planned',
+                static fn (array $action): bool => ($action['status'] ?? null) === 'planned',
             )),
         ];
     }

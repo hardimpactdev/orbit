@@ -32,8 +32,9 @@ orbit update:all --stream-json
 ## Arguments and options
 
 - `--json`: Output the final result as a single JSON envelope.
-- `--stream-json`: Stream newline-delimited JSON progress frames while the fleet
-  update runs, followed by one terminal frame. Mutually exclusive with `--json`.
+- `--stream-json`: Stream progress frames as newline-delimited JSON while the
+  fleet update runs, followed by one terminal frame. Mutually exclusive with
+  `--json`.
 
 ## What Happens
 
@@ -52,14 +53,17 @@ orbit update:all --stream-json
    image is configured. Inline-manifest starts use the target digest from the
    persisted plan. The runner resolves and persists the immutable plan during
    `Checking for updates` when needed, then compares the desired artifact
-   identity against the gateway database before any update side effects. If the
-   tracked gateway image digest and workload CLI hashes already match the
+   identity against the gateway database before any update side effects.
+
+   If the tracked gateway image digest and workload CLI hashes already match the
    desired manifest artifacts, it skips the gateway, local, workload, and
    verification phases. A `topology-candidate` manifest updates when its desired
    artifact hash or digest differs, even if the semantic version is unchanged.
    If the gateway-selected manifest URL is a stable candidate channel, the
-   channel is resolved only for this plan. After the plan exists, the runner
-   uses only that immutable snapshot for the rest of the run.
+   channel is resolved only for this plan.
+
+   After the plan exists, the runner uses only that immutable snapshot for the
+   rest of the run.
 4. When outdated installations exist, the runner updates the gateway first as
    the fleet version ceiling, then fans out to the caller-local CLI and selected
    workload nodes. Production installs update the native CLI binary artifact;
@@ -73,10 +77,11 @@ orbit update:all --stream-json
 7. Report every per-installation result and the terminal operation status,
    including partial failures.
 
-Workload-node fan-out continues remaining selected nodes after one target fails,
-but the workload phase fails before final verification if any selected node did
-not update. The failure result includes the failed node results so operators see
-the update failure directly instead of only a later version-verification error.
+When one workload node fails, fan-out continues for the remaining selected
+nodes. The workload phase still fails before final verification if any selected
+node did not update. The failure result includes the failed node results so
+operators see the update failure directly instead of only a later version
+verification error.
 
 `update:all` updates the gateway, the local installation, and active workload
 nodes.
@@ -103,7 +108,7 @@ gateway replacement does not lose already-recorded state. See the
 the exact layout.
 
 Use `--json` for a single machine-readable result envelope, or `--stream-json`
-for newline-delimited progress frames followed by one terminal frame. See the
+for progress frames as newline-delimited JSON followed by one terminal frame. See the
 [JSON renderer contract](technical/6.2_update-all_output-render_json.md) for
 the exact shape of both modes.
 

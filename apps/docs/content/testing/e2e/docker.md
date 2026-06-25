@@ -97,6 +97,10 @@ is a build-host helper for preparing those images. Remote source-dev live runs
 may use `composer:2` transiently on the runner to hydrate the synced gateway
 and CLI vendor directories, but it is not a topology role image.
 
+Prepared Docker feature runners are filtered before Pest starts when prepared
+role images lack the gateway or CLI vendor autoloads, or when their lockfiles do
+not match the current checkout.
+
 ## Host transport
 
 On this Mac, OrbStack provides the local Docker CLI and daemon. The active Docker

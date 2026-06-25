@@ -109,16 +109,16 @@ fields and does not prompt.
 
 ### Update Steps
 
-When the gate allows an update, `update` runs these steps, each surfaced as a
-progress-tree row:
+When the gate allows an update, `update` runs these progress-tree rows:
 
-1. `Downloading binary` — download the versioned binary asset to a staged path
-   away from the running binary.
-2. `Replacing binary` — move the verified binary to
-   `<install-root>/bin/orbit-binary-<version>` and relink the host launcher.
-   When the versioned binary is already present locally the move is skipped at
-   the updater layer, but the public step still runs and settles as `Done`.
-3. `Running doctor` — run `orbit doctor` in verify mode for the local node.
+| Row | Contract |
+| --- | --- |
+| `Downloading binary` | Downloads the versioned binary asset to a staged path away from the running binary. |
+| `Replacing binary` | Moves the verified binary to `<install-root>/bin/orbit-binary-<version>` and relinks the host launcher. |
+| `Running doctor` | Runs `orbit doctor` in verify mode for the local node. |
+
+When the versioned binary is already present locally the updater skips the move,
+but the public `Replacing binary` row still runs and settles as `Done`.
 
 ### Doctor Verification
 
@@ -155,13 +155,12 @@ progress-tree row:
 
 ### Scope Boundaries
 
-`update` must not:
-- Update other nodes.
-- SSH to the gateway or nodes.
-- Mutate gateway fleet configuration (reading the gateway's version for the
-  gateway-first gate is a read-only status query and is permitted).
-- Repair node, app, workspace, process, proxy route, schedule, tool, or
-  firewall drift (the `Running doctor` step is verify-only).
+`update` is caller-local. It must not update other nodes, SSH to the gateway or
+nodes, mutate gateway fleet configuration, or repair node, app, workspace,
+process, proxy route, schedule, tool, or firewall drift.
+
+Reading the gateway's version for the gateway-first gate is the only permitted
+gateway status query. The `Running doctor` step is verify-only.
 
 ## Renderer Contracts
 

@@ -178,7 +178,7 @@ it('provides a compact Solo todo handoff skill for Claude Opus implementation ag
 
     expect($promptSkeletonBody)
         ->not
-        ->toBe('')
+        ->toBeEmpty()
         ->and(str_starts_with($promptSkeletonBody, '/goal '))
         ->toBeTrue()
         ->and(mb_strlen($promptSkeletonBody))

@@ -36,7 +36,7 @@ This command follows the shared
 | `roles` | `--roles` | Never required. | When `--template` or `--operator` is present. | `[]`. | Comma-separated canonical role values (see role values below). |
 | `host` | `--host` | First-gateway bootstrap, gateway convergence, `app-dev`, `app-prod`, `database`, `ingress`, `agent`, `websocket`, `s3`, `metrics`, `analytics`, and every template that provisions a host. | Client identity with no roles or `--operator`. | None. | SSH/bootstrap endpoint, never the canonical node address. Must be an IP address or dotted DNS name. |
 | `operator_name` | `--operator-name` | `--template=gateway` and no gateway is configured locally (first-gateway bootstrap). | Outside first-gateway bootstrap. | Normalized local short hostname. | Valid [identity slug](../../../../architecture.md#identity-names). Must not equal `node_new.name`. Must be unique among active node records unless the existing record is the compatible initiating client for first-gateway convergence. |
-| `tld` | `--tld` | Never required when `node_new.name` is a valid unique DNS label. | Client identity and gateway bootstrap (defaults apply). | `node_new.name` for hosted roles and client enrollment; `gateway` for gateway bootstrap. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. Wildcard development DNS mappings apply only when an `app-dev` or `agent` role consumes the TLD. |
+| `tld` | `--tld` | Never required when `node_new.name` is a valid unique DNS label. | Client identity and gateway bootstrap (defaults apply). | `node_new.name` for hosted roles and client enrollment; `gateway` for gateway bootstrap. | Single lowercase DNS label without a leading dot. Unique among active node TLDs and gateway development DNS mappings. |
 | `user` | `--user` | Never required from the operator; resolved when SSH provisioning is used. | Client identity with no host provisioning. | `root`. | Bootstrap SSH user. The gateway stores the steady-state runtime user after provisioning. |
 | `gateway_endpoint` | `--gateway-endpoint` | Never required. | Client identity with no roles or `--operator`. | Gateway VPN public endpoint. | IP address or dotted DNS name that this node's WireGuard peer should use to reach the gateway. The WireGuard port is appended by Orbit. |
 | `ingress_node` | `--ingress` | Private `app-prod` placement. | Every path other than private `app-prod` placement. | None. | Must match an active node with the `ingress` role. |
@@ -192,7 +192,7 @@ Caller-path behavior is split out into:
   gateway API exists. It must not use the shared managed-node setup path that
   applies gateway intent to already registered nodes.
 
-### Workload Role Provisioning
+## Workload Role Provisioning
 
 - Provision host-capable identities over SSH before initial role
   assignments are created.
@@ -243,7 +243,7 @@ routes.
   `last_error` in failure metadata. The persisted assignment remains available
   for later doctor recovery.
 
-### Managed Node Setup and Activation
+## Managed Node Setup and Activation
 
 - For a fresh managed workload node, `node:new` writes node identity and role
   intent first, then applies the setup slice of that gateway intent to the real
@@ -260,7 +260,7 @@ routes.
   `doctor --family=tool` check for the baseline tool slice without requiring
   an immediate explicit `doctor --family=tool --restore` repair.
 
-### Shared Provisioning Details
+## Shared Provisioning Details
 
 - The `node_new.user` value is the bootstrap SSH credential. Successful
   gateway and app-role provisioning creates or verifies the Orbit-managed SSH
@@ -273,7 +273,7 @@ routes.
   to the runtime user, validates the sshd configuration, reloads sshd, locks
   the root password, and removes `/root/.ssh/authorized_keys`.
 
-### Adoption and drift boundaries
+## Adoption and Drift Boundaries
 
 - `node:new` is an explicit node-membership adoption and convergence path. It may
   adopt compatible app hosts into gateway configuration as part of adding that
@@ -287,7 +287,7 @@ routes.
   artifacts, except node-owned bootstrap artifacts such as minimum app-role
   runtime readiness, node identity readiness, and development TLD mapping.
 
-### Out of scope
+## Out of Scope
 
 - `node:new` does not detect, infer, or store public IPv4/IPv6 metadata.
   `node_new.host` is the SSH/bootstrap endpoint the operator supplies, and for

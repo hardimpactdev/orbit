@@ -131,3 +131,9 @@ file = "config/reverb.php"
 code = "literal-named-argument"
 message = "Literal argument `false` should be passed as a named argument for clarity."
 count = 1
+
+[[issues]]
+file = "routes/console.php"
+code = "prefer-first-class-callable"
+message = "Use first-class callable syntax `...` instead of a arrow function."
+count = 1

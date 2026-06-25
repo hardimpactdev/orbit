@@ -40,10 +40,12 @@ Orbit distinguishes these concepts:
   workload. Workload roles are `app-dev`, `app-prod`, `database`, `agent`,
   `ingress`, `websocket`, `s3`, `metrics`, and `analytics`.
   `agent` is exclusive during `node:new`; `node role:add` rejects it.
+
   `websocket` is a private workload role for Laravel Reverb; it binds only to
   WireGuard and receives traffic through router-owned private service routes.
   `s3` is a private workload role for SeaweedFS object storage; it binds only to
   WireGuard and receives traffic through router-owned S3 service routes.
+
   `metrics` is an optional host-resource observability role; it records and
   starts Prometheus and Grafana process runtimes on the metrics node, records
   and starts node-exporter tool/process runtimes on metrics and active workload

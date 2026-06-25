@@ -42,8 +42,8 @@ The terms below define the core identity vocabulary for the app family.
 
 These terms describe runtime/deployment environments. The app record remains the
 logical identity. The concrete environment is represented by an app instance and
-its driver/placement. App-level environment fields remain compatibility metadata
-derived from the default node role.
+its driver/placement. Environment fields on the app record are compatibility
+metadata derived from the default node role.
 
 - **Development app:** App whose owning node carries the `app-dev`
   role. Hostname uses the development TLD. Workspaces may attach to the app for
@@ -113,9 +113,9 @@ derived from the default node role.
   the app on that target. The list is normalized for stable output. Orbit driver
   instances are checked against the running FrankenPHP container by app doctor;
   Laravel Cloud instances use compatibility metadata as a preflight signal.
-- **App instance env:** Instance-owned non-secret env values stored in the
-  gateway and rendered on demand. Secret env storage is intentionally deferred in
-  this slice.
+- **App instance env:** Values owned by the instance for non-secret env keys,
+  stored in the gateway, and rendered on demand. Secret env storage is
+  intentionally deferred in this slice.
 - **App instance database target:** Mapping from a reusable database connection
   to one app instance and env prefix. Rendering the instance env injects
   supported database keys and redacts secret values in API responses.

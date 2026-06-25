@@ -828,11 +828,20 @@ describe('doctor human panel', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($terminalOffset)
-            ->not->toBeFalse()->and($inProgressOutput)->toContain('D O C T O R')->and($inProgressOutput)->toContain(
+            ->toBeInt()
+            ->and($inProgressOutput)
+            ->toContain('D O C T O R')
+            ->and($inProgressOutput)
+            ->toContain(
                 'Performing check-up on fleet',
-            )->and($inProgressOutput)->toMatch('/app-prod-1\s+Checking/')->and($inProgressOutput)->toMatch(
+            )
+            ->and($inProgressOutput)
+            ->toMatch('/app-prod-1\s+Checking/')
+            ->and($inProgressOutput)
+            ->toMatch(
                 '/gateway-1\s+Queued/',
-            )->and($inProgressOutput)
+            )
+            ->and($inProgressOutput)
             ->not->toContain('Check app-prod-1')->and($inProgressOutput)
             ->not->toContain('Check gateway-1')->and($inProgressOutput)
             ->not->toContain('F L E E T  D O C T O R  R E S U L T')->and($inProgressOutput)
@@ -915,9 +924,14 @@ describe('doctor human panel', function (): void {
         expect($exitCode)
             ->toBe(1)
             ->and($terminalOffset)
-            ->not->toBeFalse()->and($inProgressOutput)->toContain('Proxy route scan failed on app-dev-1.')->and(
+            ->toBeInt()
+            ->and($inProgressOutput)
+            ->toContain('Proxy route scan failed on app-dev-1.')
+            ->and(
                 $inProgressOutput,
-            )->toMatch('/app-prod-1\s+Checking/')->and($inProgressOutput)
+            )
+            ->toMatch('/app-prod-1\s+Checking/')
+            ->and($inProgressOutput)
             ->not->toContain('S U M M A R Y')->and($inProgressOutput)
             ->not->toContain('Check app-dev-1');
     });

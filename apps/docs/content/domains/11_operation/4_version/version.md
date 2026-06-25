@@ -35,6 +35,8 @@ orbit --version --local --json
 
 ## What Happens
 
+### Release Lookup
+
 `version` reads the installed CLI version, checks the public
 `hardimpactdev/orbit` release manifest assets on a best-effort basis, and reads
 local install metadata from the operator host. The GitHub Releases API is only a
@@ -44,8 +46,10 @@ With `--local`, the command does not contact public release sources. It reports
 the installed version and install timestamp, with release metadata fields set to
 unknown or `null`.
 
-Use it when you need to confirm the installed Orbit version before or after an
-update.
+### Local Metadata
+
+For routine checks, use it when you need to confirm the installed Orbit version
+before or after an update.
 
 The installed timestamp comes from `ORBIT_INSTALL_METADATA_PATH` when set, or
 `$HOME/.config/orbit/install.json` by default. The installer and local updater

@@ -24,6 +24,8 @@ it('plans docker and incus lanes by default', function (): void {
                 '--lanes' => 'all',
             ]);
             $payload = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+            $dockerLane = $payload['success']['data']['lanes'][0];
+            $incusLane = $payload['success']['data']['lanes'][1];
 
             expect($exitCode)
                 ->toBe(0)
@@ -42,6 +44,21 @@ it('plans docker and incus lanes by default', function (): void {
                         ->environment->ORBIT_E2E_FAIL_ON_TOPOLOGY_UNAVAILABLE->toBe('1')
                         ->environment->ORBIT_E2E_TOPOLOGY_CACHE_LIMIT->toBe('1'),
                 );
+
+            expect($dockerLane['environment']['TMPDIR'])
+                ->toStartWith(sys_get_temp_dir().DIRECTORY_SEPARATOR.'orbit-e2e-docker-')
+                ->not
+                ->toBe($incusLane['environment']['TMPDIR'])
+                ->and($dockerLane['environment']['TMP'])
+                ->toBe($dockerLane['environment']['TMPDIR'])
+                ->and($dockerLane['environment']['TEMP'])
+                ->toBe($dockerLane['environment']['TMPDIR'])
+                ->and($incusLane['environment']['TMPDIR'])
+                ->toStartWith(sys_get_temp_dir().DIRECTORY_SEPARATOR.'orbit-e2e-incus-')
+                ->and($incusLane['environment']['TMP'])
+                ->toBe($incusLane['environment']['TMPDIR'])
+                ->and($incusLane['environment']['TEMP'])
+                ->toBe($incusLane['environment']['TMPDIR']);
         },
     );
 });
@@ -641,6 +658,53 @@ it('filters unavailable docker runners before starting Pest workers', function (
     );
 });
 
+it('filters docker runners missing prepared source vendor dependencies before starting Pest workers', function (): void {
+    Process::fake(function ($process) {
+        if (is_docker_runner_preflight_command($process->command)) {
+            return Process::result();
+        }
+
+        if (is_prepared_source_vendor_probe_command($process->command)) {
+            return ($process->environment['DOCKER_HOST'] ?? null) === 'ssh://nmbp'
+                ? Process::result(exitCode: 1, errorOutput: 'missing vendor')
+                : Process::result();
+        }
+
+        if (is_pest_lane_process($process->command)) {
+            return Process::result();
+        }
+
+        return Process::result();
+    });
+    Process::preventStrayProcesses();
+
+    withE2EEnvironment(
+        [],
+        [
+            'ORBIT_E2E_DOCKER_TEST_RUNNERS' => 'sidecar1:4:28,nmbp:4:28',
+            'ORBIT_E2E_DOCKER_MIN_PROCESSES' => '4',
+        ],
+        function (): void {
+            $this
+                ->artisan('e2e:test --lanes=docker')
+                ->expectsOutputToContain(
+                    'E2E Docker runner [nmbp] ignored: prepared source vendor dependencies are missing or stale in Docker image',
+                )
+                ->assertSuccessful();
+        },
+    );
+
+    Process::assertRan(
+        fn ($process): bool => (
+            is_array($process->command)
+            && in_array('test', $process->command, true)
+            && in_array('--processes=4', $process->command, true)
+            && ($process->environment['ORBIT_E2E_DOCKER_TEST_RUNNERS'] ?? null) === 'sidecar1:4:28'
+            && ($process->environment['ORBIT_E2E_PARALLEL_PROCESSES'] ?? null) === '4'
+        ),
+    );
+});
+
 it('fails the docker lane when reachable runner capacity drops below the minimum', function (): void {
     Process::fake(function ($process) {
         if ($process->command === 'command -v docker >/dev/null') {
@@ -674,7 +738,7 @@ it('fails the docker lane when reachable runner capacity drops below the minimum
     );
 
     Process::assertRanTimes(
-        fn ($process): bool => is_array($process->command) && in_array('test', $process->command, true),
+        fn ($process): bool => is_array($process->command) && in_array('test', $process->command, strict: true),
         0,
     );
 });
@@ -1899,6 +1963,25 @@ function invokeE2ETestCommandMethod(E2ETestCommand $command, string $method, arr
     return $target->invokeArgs($command, $arguments);
 }
 
+function is_docker_runner_preflight_command(mixed $command): bool
+{
+    return (
+        $command === 'command -v docker >/dev/null'
+        || $command === 'docker info >/dev/null'
+        || is_string($command) && str_starts_with($command, 'docker image inspect ')
+    );
+}
+
+function is_prepared_source_vendor_probe_command(mixed $command): bool
+{
+    return is_string($command) && str_starts_with($command, 'docker run --rm --entrypoint sh ');
+}
+
+function is_pest_lane_process(mixed $command): bool
+{
+    return is_array($command) && in_array('test', $command, strict: true);
+}
+
 /**
  * @param  array<string, string>  $groups
  * @return array<string, string>
@@ -1907,7 +1990,7 @@ function createTopologySchedulingFixtureFiles(array $groups): array
 {
     $directory = repo_path('apps/e2e/tests/Feature/Commands/.topology-scheduling-fixtures/'.bin2hex(random_bytes(4)));
 
-    if (! mkdir($directory, 0777, true) && ! is_dir($directory)) {
+    if (! mkdir(directory: $directory, permissions: 0o777, recursive: true) && ! is_dir($directory)) {
         throw new RuntimeException("Could not create fixture directory [{$directory}].");
     }
 

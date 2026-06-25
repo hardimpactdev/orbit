@@ -469,7 +469,11 @@ Source: [Operation Concepts](domains/11_operation/operation-concepts.md).
 - **Local operation command**
 - **Fleet-changing operation command**
 - **Local update**
+- **Production local update**
+- **Source-dev local update**
 - **Fleet update**
+- **Fleet update source**
+- **Fleet update order**
 - **Operation event journal**
 - **Immutable update plan**
 - **Update lease**

@@ -403,18 +403,6 @@ message = "Use of the `isset` construct."
 count = 2
 
 [[issues]]
-file = "src/Requests/Processes/UpdateProcessRequest.php"
-code = "excessive-parameter-list"
-message = "Parameter list is too long."
-count = 1
-
-[[issues]]
-file = "src/Requests/Processes/UpdateProcessRequest.php"
-code = "no-isset"
-message = "Use of the `isset` construct."
-count = 2
-
-[[issues]]
 file = "src/Requests/Processes/ListProcessesRequest.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
@@ -455,6 +443,18 @@ file = "src/Requests/Processes/StopProcessesRequest.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
 count = 1
+
+[[issues]]
+file = "src/Requests/Processes/UpdateProcessRequest.php"
+code = "excessive-parameter-list"
+message = "Parameter list is too long."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/UpdateProcessRequest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
+count = 2
 
 [[issues]]
 file = "src/Requests/Profile/ShowProfileRequest.php"

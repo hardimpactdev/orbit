@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\E2E\Support\DockerHost;
+use App\E2E\Support\DockerTopologyBuilder;
 use App\E2E\Support\DockerTopologyNetworkPlan;
 use App\E2E\Support\DockerTopologyProvider;
 use App\E2E\Support\E2EConfig;
@@ -318,6 +319,7 @@ class E2ETestCommand extends Command
             ...$this->topologyCacheLimitEnvironment(),
             ...$this->topologyArtifactEnvironment(),
             ...$this->runtimeIsolationEnvironment(),
+            ...$this->laneTempEnvironment('docker'),
         ];
 
         $capacity = $this->dockerCapacityPlan($config, $testFiles, $processes);
@@ -410,6 +412,7 @@ class E2ETestCommand extends Command
                 ...$this->topologyCacheLimitEnvironment(),
                 ...$this->topologyArtifactEnvironment(),
                 ...$this->runtimeIsolationEnvironment(),
+                ...$this->laneTempEnvironment('incus'),
             ],
         ];
 
@@ -494,6 +497,30 @@ class E2ETestCommand extends Command
 
         return [
             'ORBIT_E2E_INSTANCE_PREFIX' => E2ETopologyArtifactNamespace::runtimeInstancePrefix('orbit-e2e'),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function laneTempEnvironment(string $lane): array
+    {
+        $processId = getmypid();
+
+        $directory =
+            rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR)
+            .DIRECTORY_SEPARATOR
+            .'orbit-e2e-'
+            .$lane
+            .'-'
+            .($processId === false ? 'unknown' : $processId)
+            .'-'
+            .bin2hex(random_bytes(4));
+
+        return [
+            'TMPDIR' => $directory,
+            'TMP' => $directory,
+            'TEMP' => $directory,
         ];
     }
 
@@ -1226,80 +1253,14 @@ class E2ETestCommand extends Command
             return $plans;
         }
 
-        /** @var array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>} $availability */
-        $availability = $this->withPlanEnvironment($plans['docker'], function () use ($plans): array {
-            $config = E2EConfig::fromEnvironment();
-            $hostSlots = [];
-            $unavailable = [];
-            $plannedProcesses = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', array_sum($config->dockerHostSlots));
-            $reservedHosts = $this->reservedDockerHostsForSelectedIncusLane($plans);
-
-            foreach ($config->dockerHostSlots as $host => $slots) {
-                if (isset($reservedHosts[strtolower($host)])) {
-                    $unavailable[$host] = 'reserved for selected Incus lane';
-
-                    continue;
-                }
-
-                $reason = $this->dockerRunnerUnavailableReason($config, $host);
-
-                if ($reason !== null) {
-                    $unavailable[$host] = $reason;
-
-                    continue;
-                }
-
-                $hostSlots[$host] = $slots;
-            }
-
-            return [
-                'host_slots' => $hostSlots,
-                'processes' => array_sum($hostSlots),
-                'minimum_processes' => $this->minimumDockerProcessCapacity($plannedProcesses),
-                'test_runners' => $hostSlots === [] ? '' : $this->renderDockerTestRunners($hostSlots, $config),
-                'unavailable' => $unavailable,
-            ];
-        });
+        $availability = $this->dockerRunnerAvailability($plans);
 
         foreach ($availability['unavailable'] as $host => $reason) {
             $this->line("E2E Docker runner [{$host}] ignored: {$reason}");
         }
 
-        if ($availability['host_slots'] === []) {
-            $details = implode('; ', array_map(
-                fn (string $host, string $reason): string => "{$host}: {$reason}",
-                array_keys($availability['unavailable']),
-                array_values($availability['unavailable']),
-            ));
-            $message = 'E2E lane [docker] unavailable: no configured Docker test runner is reachable.';
-
-            if ($details !== '') {
-                $message .= " {$details}.";
-            }
-
-            $this->emitCheckpoint('e2e.lane.docker', 'failed');
-
-            throw new \InvalidArgumentException($message);
-        }
-
-        if ($availability['processes'] < $availability['minimum_processes']) {
-            $details = implode('; ', array_map(
-                fn (string $host, string $reason): string => "{$host}: {$reason}",
-                array_keys($availability['unavailable']),
-                array_values($availability['unavailable']),
-            ));
-            $message = "E2E lane [docker] unavailable: reachable Docker capacity is {$availability['processes']} process(es), below required minimum {$availability['minimum_processes']}.";
-
-            if ($details !== '') {
-                $message .= " Unavailable runners: {$details}.";
-            }
-
-            $message .= " Restore the configured Docker runners or set ORBIT_E2E_DOCKER_MIN_PROCESSES={$availability['processes']} for an intentionally degraded run.";
-
-            $this->emitCheckpoint('e2e.lane.docker', 'failed');
-
-            throw new \InvalidArgumentException($message);
-        }
+        $this->failIfNoDockerRunnerAvailable($availability);
+        $this->failIfDockerRunnerCapacityBelowMinimum($availability);
 
         $plans['docker']['environment']['ORBIT_E2E_DOCKER_TEST_RUNNERS'] = $availability['test_runners'];
         $plans['docker']['environment']['ORBIT_E2E_PARALLEL_PROCESSES'] = (string) $availability['processes'];
@@ -1309,6 +1270,114 @@ class E2ETestCommand extends Command
         );
 
         return $plans;
+    }
+
+    /**
+     * @param  array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>}  $availability
+     */
+    private function failIfNoDockerRunnerAvailable(array $availability): void
+    {
+        if ($availability['host_slots'] !== []) {
+            return;
+        }
+
+        $message = 'E2E lane [docker] unavailable: no configured Docker test runner is reachable.';
+        $details = $this->dockerUnavailableRunnerDetails($availability['unavailable']);
+
+        if ($details !== '') {
+            $message .= " {$details}.";
+        }
+
+        $this->emitCheckpoint('e2e.lane.docker', 'failed');
+
+        throw new \InvalidArgumentException($message);
+    }
+
+    /**
+     * @param  array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>}  $availability
+     */
+    private function failIfDockerRunnerCapacityBelowMinimum(array $availability): void
+    {
+        if ($availability['processes'] >= $availability['minimum_processes']) {
+            return;
+        }
+
+        $message = "E2E lane [docker] unavailable: reachable Docker capacity is {$availability['processes']} process(es), below required minimum {$availability['minimum_processes']}.";
+        $details = $this->dockerUnavailableRunnerDetails($availability['unavailable']);
+
+        if ($details !== '') {
+            $message .= " Unavailable runners: {$details}.";
+        }
+
+        $message .= " Restore the configured Docker runners or set ORBIT_E2E_DOCKER_MIN_PROCESSES={$availability['processes']} for an intentionally degraded run.";
+
+        $this->emitCheckpoint('e2e.lane.docker', 'failed');
+
+        throw new \InvalidArgumentException($message);
+    }
+
+    /**
+     * @param  array<string, string>  $unavailable
+     */
+    private function dockerUnavailableRunnerDetails(array $unavailable): string
+    {
+        return implode('; ', array_map(
+            fn (string $host, string $reason): string => "{$host}: {$reason}",
+            array_keys($unavailable),
+            array_values($unavailable),
+        ));
+    }
+
+    /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     * @return array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>}
+     */
+    private function dockerRunnerAvailability(array $plans): array
+    {
+        return $this->withPlanEnvironment(
+            $plans['docker'],
+            fn (): array => $this->resolveDockerRunnerAvailability($plans),
+        );
+    }
+
+    /**
+     * @param  array<string, array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}>  $plans
+     * @return array{host_slots: array<string, int>, processes: int, minimum_processes: int, test_runners: string, unavailable: array<string, string>}
+     */
+    private function resolveDockerRunnerAvailability(array $plans): array
+    {
+        $config = E2EConfig::fromEnvironment();
+        $hostSlots = [];
+        $unavailable = [];
+        $plannedProcesses = $this->envInt('ORBIT_E2E_PARALLEL_PROCESSES', array_sum($config->dockerHostSlots));
+        $reservedHosts = $this->reservedDockerHostsForSelectedIncusLane($plans);
+        $testFiles = $plans['docker']['test_files'] ?? [];
+
+        foreach ($config->dockerHostSlots as $host => $slots) {
+            if (isset($reservedHosts[strtolower($host)])) {
+                $unavailable[$host] = 'reserved for selected Incus lane';
+
+                continue;
+            }
+
+            $reason = $this->dockerRunnerUnavailableReason($config, $host, $testFiles);
+
+            if ($reason !== null) {
+                $unavailable[$host] = $reason;
+
+                continue;
+            }
+
+            $hostSlots[$host] = $slots;
+        }
+
+        return [
+            'host_slots' => $hostSlots,
+            'processes' => array_sum($hostSlots),
+            'minimum_processes' => $this->minimumDockerProcessCapacity($plannedProcesses),
+            'test_runners' => $hostSlots === [] ? '' : $this->renderDockerTestRunners($hostSlots, $config),
+            'unavailable' => $unavailable,
+        ];
     }
 
     /**
@@ -1344,7 +1413,10 @@ class E2ETestCommand extends Command
         return min(8, $plannedProcesses);
     }
 
-    private function dockerRunnerUnavailableReason(E2EConfig $config, string $host): ?string
+    /**
+     * @param  list<string>  $testFiles
+     */
+    private function dockerRunnerUnavailableReason(E2EConfig $config, string $host, array $testFiles): ?string
     {
         $dockerHost = new DockerHost($config, $host);
 
@@ -1354,6 +1426,99 @@ class E2ETestCommand extends Command
 
         if (! $this->dockerProbeSuccessful($dockerHost, 'docker info >/dev/null')) {
             return 'docker daemon is not reachable';
+        }
+
+        return $this->dockerPreparedSourceUnavailableReason($dockerHost, $testFiles);
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     */
+    private function dockerPreparedSourceUnavailableReason(DockerHost $dockerHost, array $testFiles): ?string
+    {
+        $imageNames = $this->dockerPreparedSourceProbeImageNames($dockerHost, $testFiles);
+
+        foreach ($imageNames as $imageName) {
+            $command = sprintf(
+                'docker run --rm --entrypoint sh %s -lc %s',
+                escapeshellarg($imageName),
+                escapeshellarg($this->dockerPreparedSourceProbeScript()),
+            );
+
+            if ($this->dockerProbeSuccessful($dockerHost, $command)) {
+                continue;
+            }
+
+            return "prepared source vendor dependencies are missing or stale in Docker image {$imageName}";
+        }
+
+        return null;
+    }
+
+    private function dockerPreparedSourceProbeScript(): string
+    {
+        return implode(' && ', [
+            'test -f /home/orbit/orbit/apps/gateway/vendor/autoload.php',
+            'test -d /home/orbit/orbit/apps/gateway/vendor/composer',
+            'test -f /home/orbit/orbit/apps/cli/vendor/autoload.php',
+            'test -d /home/orbit/orbit/apps/cli/vendor/composer',
+            $this->composerLockHashProbe('apps/gateway/composer.lock'),
+            $this->composerLockHashProbe('apps/cli/composer.lock'),
+        ]);
+    }
+
+    private function composerLockHashProbe(string $relativePath): string
+    {
+        $expectedHash = hash_file('sha256', repo_path($relativePath));
+
+        if (! is_string($expectedHash)) {
+            throw new \RuntimeException("Could not hash composer lock file [{$relativePath}].");
+        }
+
+        return sprintf(
+            'test "$(sha256sum %s | awk \'{print $1}\')" = %s',
+            escapeshellarg("/home/orbit/orbit/{$relativePath}"),
+            escapeshellarg($expectedHash),
+        );
+    }
+
+    /**
+     * @param  list<string>  $testFiles
+     * @return list<string>
+     */
+    private function dockerPreparedSourceProbeImageNames(DockerHost $dockerHost, array $testFiles): array
+    {
+        $provider = new DockerTopologyProvider(E2EConfig::fromEnvironment());
+        $imageNames = [];
+
+        foreach ($this->dockerLaneTopologyKinds($testFiles) as $kind) {
+            foreach ($provider->rolesFor($kind) as $role) {
+                $imageName = $this->resolveDockerPreparedImageName($dockerHost, $kind, $role);
+
+                if ($imageName !== null) {
+                    $imageNames[$imageName] = $imageName;
+                }
+            }
+        }
+
+        return array_values($imageNames);
+    }
+
+    private function resolveDockerPreparedImageName(
+        DockerHost $dockerHost,
+        E2ETopologyKind $kind,
+        string $role,
+    ): ?string {
+        $candidate = DockerTopologyBuilder::imageNameFor($kind, $role);
+        $baseCandidate = DockerTopologyBuilder::baseImageNameFor($kind, $role);
+        $imageNames = $candidate === $baseCandidate ? [$candidate] : [$candidate, $baseCandidate];
+
+        foreach ($imageNames as $imageName) {
+            $command = sprintf('docker image inspect %s >/dev/null', escapeshellarg($imageName));
+
+            if ($this->dockerProbeSuccessful($dockerHost, $command)) {
+                return $imageName;
+            }
         }
 
         return null;
@@ -1888,6 +2053,8 @@ class E2ETestCommand extends Command
     private function preparePlanArtifacts(array &$plans): void
     {
         foreach ($plans as &$plan) {
+            $this->prepareLaneTempDirectory($plan);
+
             if ($this->timingsEnabled()) {
                 $plan['timings_file'] = $this->createTimingsFile($plan['lane']);
                 $plan['environment']['ORBIT_E2E_TIMINGS_FILE'] = $plan['timings_file'];
@@ -1960,7 +2127,64 @@ class E2ETestCommand extends Command
             if (is_string($timingsFile) && $timingsFile !== '') {
                 @unlink($timingsFile);
             }
+
+            $this->cleanupLaneTempDirectory($plan);
         }
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function prepareLaneTempDirectory(array $plan): void
+    {
+        $directory = $plan['environment']['TMPDIR'] ?? null;
+
+        if (! is_string($directory) || $directory === '') {
+            return;
+        }
+
+        $mkdirError = null;
+
+        if (! is_dir($directory) && ! $this->tryMakeDirectory($directory, 0o777, $mkdirError) && ! is_dir($directory)) {
+            $detail = $mkdirError === null ? '' : ": {$mkdirError}";
+
+            throw new \RuntimeException("Could not create E2E lane temp directory [{$directory}]{$detail}.");
+        }
+    }
+
+    private function tryMakeDirectory(string $directory, int $permissions, ?string &$errorMessage): bool
+    {
+        set_error_handler(static function (int $_severity, string $message) use (&$errorMessage): bool {
+            $errorMessage = $message;
+
+            return true;
+        });
+
+        try {
+            return mkdir(directory: $directory, permissions: $permissions, recursive: true);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * @param  array{lane: string, command: list<string>, environment: array<string, string>, test_path?: string, test_files?: list<string>, timings_file?: string}  $plan
+     */
+    private function cleanupLaneTempDirectory(array $plan): void
+    {
+        $directory = $plan['environment']['TMPDIR'] ?? null;
+
+        if (! is_string($directory) || $directory === '') {
+            return;
+        }
+
+        $prefix = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.'orbit-e2e-'.$plan['lane'].'-';
+
+        if (! str_starts_with($directory, $prefix)) {
+            return;
+        }
+
+        $this->removeDirectory($directory);
     }
 
     private function removeDirectory(string $directory): void

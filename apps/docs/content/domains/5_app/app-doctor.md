@@ -17,7 +17,7 @@ The app family owns these facts:
 - gateway-owned app records: name, default owning node, app path, document root,
   PHP version, production policy, deployment pipeline configuration, and the
   agent IDE default set at the app level;
-- gateway-owned app instance records: instance name, driver, driver
+- app instance records owned by the gateway: instance name, driver, driver
   configuration, required PHP extensions, instance env values, and related
   instance database targets;
 - app source location: the managed app path exists on the owning node and

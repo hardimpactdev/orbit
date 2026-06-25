@@ -14,7 +14,7 @@ it('rewrites stored process:edit node-access grants to process:update', function
         'migrations/2026_06_25_120000_migrate_process_edit_permission_to_process_update.php',
     );
 
-    expect(is_file($migrationPath))->toBeTrue();
+    expect($migrationPath)->toBeFile();
 
     $consumer = Node::factory()->create(['name' => 'caller']);
     $serving = Node::factory()->create(['name' => 'app-1']);

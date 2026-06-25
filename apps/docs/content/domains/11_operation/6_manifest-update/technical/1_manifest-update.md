@@ -64,8 +64,7 @@ release manifest URL, normally the public GitHub release manifest.
 
 ## Failure Semantics
 
-No command-specific failures exist beyond the shared validation,
-authorization, and gateway failures in
+This command uses the shared validation, authorization, and gateway failures in
 [Common Failures](../../../README.md#common-failures).
 
 ## Activity Logging

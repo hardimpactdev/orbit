@@ -722,6 +722,12 @@ count = 1
 
 [[issues]]
 file = "app/Concerns/PromptsForRegistryEntities.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
+
+[[issues]]
+file = "app/Concerns/PromptsForRegistryEntities.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
 count = 1
@@ -838,7 +844,13 @@ count = 6
 file = "app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
+count = 8
+
+[[issues]]
+file = "app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php"
+code = "mixed-assignment"
+message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "app/Console/Commands/Internal/BootstrapGatewayLocalCommand.php"
@@ -904,6 +916,12 @@ count = 1
 file = "app/Console/Kernel.php"
 code = "nullable-return-statement"
 message = 'Function `App\Console\Kernel::getArtisan` is declared to return `Illuminate\Console\Application` but possibly returns a nullable value (inferred as `Illuminate\Console\Application|null`).'
+count = 1
+
+[[issues]]
+file = "app/Console/Kernel.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
 count = 1
 
 [[issues]]
@@ -4616,12 +4634,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "invalid-property-read"
-message = 'Cannot read protected property `$connection` from class `Illuminate\Database\Eloquent\Model`.'
-count = 2
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionAdopter::appsForNode`: expected `list<App\Models\App>`, but found `array<int, App\Models\App&static>`.'
 count = 1
@@ -4634,26 +4646,8 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "less-specific-nested-return-statement"
-message = '''Returned type `list{mixed, enum(App\Enums\AdoptAction::Updated), string('database_connection.env_mismatch')}` is less specific than the declared return type `array{0: App\Models\DatabaseConnection, 1: enum(App\Enums\AdoptAction), 2: string}` for function `App\Services\DatabaseConnections\DatabaseConnectionAdopter::persistObservedConnection` due to nested 'mixed'.'''
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "mixed-method-access"
-message = "Attempting to access a method on a non-object type (`mixed`)."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "no-value"
-message = 'Argument #2 passed to method `App\Services\DatabaseConnections\DatabaseConnectionAdopter::attributesFromPayload` has type `never`, meaning it cannot produce a value.'
 count = 1
 
 [[issues]]
@@ -4666,12 +4660,6 @@ count = 2
 file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
 code = "possibly-null-argument"
 message = 'Argument #1 of method `Illuminate\Support\Str::slug` is possibly `null`, but parameter type `string` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionAdopter.php"
-code = "redundant-condition"
-message = "This condition (type `true`) will always evaluate to true."
 count = 1
 
 [[issues]]
@@ -4718,12 +4706,6 @@ count = 2
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "impossible-type-comparison"
 message = 'Impossible condition: variable `$connection->node` (type `null`) can never be `App\Models\Node`.'
 count = 1
@@ -4732,7 +4714,7 @@ count = 1
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "invalid-property-access"
 message = "Attempting to access a property on a non-object type (`never`)."
-count = 12
+count = 8
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
@@ -4744,12 +4726,6 @@ count = 2
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "invalid-return-statement"
 message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionProbe::appsForNode`: expected `list<App\Models\App>`, but found `array<int, App\Models\App&static>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\DatabaseConnections\DatabaseConnectionProbe::targetsForNode`: expected `list<App\Models\DatabaseConnectionTarget>`, but found `array<int, App\Models\DatabaseConnectionTarget&static>`.'
 count = 1
 
 [[issues]]
@@ -4772,27 +4748,9 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "no-value"
-message = 'Argument #1 passed to method `App\Services\Nodes\NodeWireGuardServiceAddress::forServiceOn` has type `never`, meaning it cannot produce a value.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "non-documented-property"
 message = 'Ambiguous property access: $id on class `App\Models\App`.'
 count = 2
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "null-argument"
-message = 'Argument #3 of method `App\Services\Nodes\NodeWireGuardServiceAddress::forServiceOn` is `null`, but parameter type `string` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
@@ -4804,18 +4762,6 @@ count = 1
 file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
 code = "redundant-condition"
 message = "This condition (type `true`) will always evaluate to true."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionProbe.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always falsy."
 count = 1
 
 [[issues]]
@@ -4922,50 +4868,14 @@ count = 1
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
 code = "invalid-property-access"
 message = "Attempting to access a property on a non-object type (`never`)."
-count = 9
+count = 5
 
 [[issues]]
 file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
 code = "invalid-property-read"
 message = 'Cannot read protected property `$connection` from class `Illuminate\Database\Eloquent\Model`.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
-code = "no-value"
-message = 'Argument #1 passed to method `App\Services\Nodes\NodeWireGuardServiceAddress::forServiceOn` has type `never`, meaning it cannot produce a value.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
-code = "null-argument"
-message = 'Argument #3 of method `App\Services\Nodes\NodeWireGuardServiceAddress::forServiceOn` is `null`, but parameter type `string` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "app/Services/DatabaseConnections/DatabaseConnectionRestorer.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is evaluated and right operand is always falsy."
 count = 1
 
 [[issues]]
@@ -5093,6 +5003,12 @@ file = "app/Services/DatabaseConnections/DatabaseSchemaInspector.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\DatabaseConnections\DatabaseConnectionPayload::fromArray`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
 count = 1
+
+[[issues]]
+file = "app/Services/DatabaseConnections/ManagedDockerMysqlEndpointResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
 
 [[issues]]
 file = "app/Services/Deploy/DeployManager.php"
@@ -5306,12 +5222,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "invalid-return-statement"
-message = 'Invalid return type for function `App\Services\Doctor\DoctorReportRunner::fleetFamilies`: expected `list<string>`, but found `array<int, Illuminate\Database\Eloquent\Model>`.'
-count = 1
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\Doctor\DoctorReportRunner::nodeFromIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
 count = 1
@@ -5326,18 +5236,6 @@ count = 1
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #2 of `App\Services\Doctor\DoctorReportRunner::applyDatabaseConnectionIssue`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\Services\Doctor\DoctorReportRunner::processForRuntimeUnit`: expected `Illuminate\Database\Eloquent\Collection<int, App\Models\Process>`, but provided type `Illuminate\Database\Eloquent\Collection<int, App\Models\Process&static>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #2 of `App\Services\Doctor\DoctorReportRunner::summary`: expected `list<array<string, mixed>>`, but provided type `array{}|list<array<array-key, mixed>>` is less specific.'
 count = 1
 
 [[issues]]
@@ -5402,12 +5300,6 @@ count = 1
 
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
-code = "less-specific-return-statement"
-message = 'Returned type `Illuminate\Database\Eloquent\Collection<int, App\Models\Schedule&static>` is less specific than the declared return type `Illuminate\Database\Eloquent\Collection<int, App\Models\Schedule>` for function `App\Services\Doctor\DoctorReportRunner::schedulesForNode`.'
-count = 2
-
-[[issues]]
-file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `App\Services\Doctor\DoctorReportRunner::categoriesForRole`: expected `string`, but found `mixed`.'
 count = 1
@@ -5446,7 +5338,7 @@ count = 1
 file = "app/Services/Doctor/DoctorReportRunner.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 3
+count = 8
 
 [[issues]]
 file = "app/Services/Doctor/DoctorReportRunner.php"
@@ -6712,6 +6604,12 @@ count = 1
 file = "app/Services/Operations/ResultBoundaryRedactionPolicy.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Operations/ResultBoundaryRedactionPolicy.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
 count = 1
 
 [[issues]]
@@ -8609,6 +8507,12 @@ file = "app/Services/Tools/ToolsProbe.php"
 code = "possibly-null-argument"
 message = 'Argument #2 of method `App\Services\Tools\ToolsProbe::introspectDockerImages` is possibly `null`, but parameter type `array<string, mixed>` does not accept it.'
 count = 2
+
+[[issues]]
+file = "app/Services/Tools/ToolsProbe.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
 
 [[issues]]
 file = "app/Services/Tools/ToolsProbe.php"

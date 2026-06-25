@@ -130,9 +130,10 @@ output is deterministic and contains:
   `tld` and `wireguard_address` set. Nodes missing either field are skipped.
   Wildcard TLD mappings continue to serve `app-dev` and `agent` development
   hostnames such as `*.test`.
-- One `address=/orbit.{tld}/{wireguard_address}` node-host line per resolvable
-  node, except when `tld` is `orbit` (that name would collide with router-owned
-  `.orbit` private service routes such as `websocket.orbit`).
+- One host line for each resolvable node:
+  `address=/orbit.{tld}/{wireguard_address}`. Nodes whose `tld` is `orbit` are
+  excluded because that name would collide with router-owned `.orbit` private
+  service routes such as `websocket.orbit`.
 - Optional `local=/{tld}/` companions per TLD.
 - Router-owned `.orbit` private service routes continue to emit
   `address=/orbit/{router_wireguard_address}` and `local=/orbit/`.

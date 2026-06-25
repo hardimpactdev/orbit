@@ -79,7 +79,7 @@ return new class extends Migration {
         }
 
         $migrated = array_map(
-            fn (string $permission): string => $permission === 'process:edit' ? 'process:update' : $permission,
+            static fn (string $permission): string => $permission === 'process:edit' ? 'process:update' : $permission,
             $permissions,
         );
 

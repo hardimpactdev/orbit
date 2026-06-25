@@ -17,15 +17,34 @@ Product families remain the owners of configuration, reality, issue codes, and r
 
 These terms describe the update workflow and its components.
 
-- **Local update:** `update` sequence that changes only the current Orbit CLI installation. It checks the latest available release first, skips when the installed version is current, and never updates the local CLI past the gateway's version. Production installs replace the native CLI binary and relink the host launcher. Source-dev lanes update by changing the mounted source checkout.
-- **Fleet update:** `update:all` sequence that checks the target release and fleet versions, skips finalized GitHub releases when all selected installations are current, reapplies topology-candidate assets resolved from the gateway-selected release manifest URL or stable candidate channel for live release testing, updates the gateway first as the fleet version ceiling, then updates the caller-local CLI and selected active workload Orbit installations as fan-out targets through a durable gateway-owned operation.
+- **Local update:** `update` sequence that changes only the current Orbit CLI
+  installation. It checks the latest available release first, skips when the
+  installed version is current, and never updates the local CLI past the
+  gateway's version.
+- **Production local update:** Local update path that replaces the native CLI
+  binary and relinks the host launcher.
+- **Source-dev local update:** Local update path that changes the mounted source
+  checkout.
+- **Fleet update:** `update:all` sequence that checks the target release and
+  fleet versions, skips finalized GitHub releases when all selected
+  installations are current, and reapplies topology-candidate assets for live
+  release testing.
+- **Fleet update source:** Topology-candidate assets are resolved from the
+  release manifest URL selected by the gateway, or from a stable candidate
+  channel.
+- **Fleet update order:** The gateway updates first as the fleet version ceiling.
+  The caller-local CLI and selected active workload Orbit installations then
+  update as fan-out targets through a durable gateway-owned operation.
 - **Operation event journal:** Durable ordered event log for a gateway-owned
   operation. Events carry a per-run sequence. The SSE event id is that sequence,
   `Last-Event-ID` replays only events with a greater sequence, and live
   followers stay connected with heartbeat comments until a terminal `complete`
   or `error` event is persisted.
-- **Immutable update plan:** Persisted plan keyed by `operation_run_id`. Captures target version, gateway image digest, manifest snapshot, CLI artifact hashes, and required role images.
-- **Update lease:** Expiring lease row for mutually exclusive update work, such as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
+- **Immutable update plan:** Persisted plan keyed by `operation_run_id`. Captures
+  target version, gateway image digest, manifest snapshot, CLI artifact hashes,
+  and required role images.
+- **Update lease:** Expiring lease row for mutually exclusive update work, such
+  as `fleet:update-all`, `gateway`, `scheduler`, or an individual node update.
 - **Update target:** One selected Orbit installation in an update workflow.
 - **Update step:** Ordered local installation update action: native CLI artifact update or source-mounted checkout refresh, launcher verification, containerized dependency installation, or migration execution.
 - **Target result:** Per-update-target outcome preserved for renderers.

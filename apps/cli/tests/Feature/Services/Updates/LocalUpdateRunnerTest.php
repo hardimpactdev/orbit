@@ -406,7 +406,7 @@ describe('LocalUpdateRunner', function (): void {
         expect($second->status)
             ->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
             ->and($updaterForSecondRun->calls)
-            ->toBe([])
+            ->toBeEmpty()
             ->and($second->stepResults)
             ->toBe(['check' => 'skipped']);
     });

@@ -356,7 +356,7 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdev, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deleted)
-        ->toBe([]);
+        ->toBeEmpty();
 });
 
 it('does not reuse an operator-gateway stage when rebuilding the prepared full topology', function (): void {
@@ -518,7 +518,7 @@ it('does not delete shared base template instances when replacing artifact backe
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deletedInstances)
-        ->toBe([])
+        ->toBeEmpty()
         ->and($deletedSnapshots)
         ->toContain("orbit-template-operator-base/{$ingressSnapshot}")
         ->and($deletedSnapshots)

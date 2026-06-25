@@ -199,6 +199,11 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 | `kind` | `app`, `workspace`, `internal`, `proxy`, or `redirect` | Route behavior at ingress. |
 | `owner.type` | `app`, `app-websocket`, `app-analytics`, `workspace`, `gateway`, `router`, `s3`, `tool`, or `custom` | Domain whose convergence edits the route record. Router-owned service routes (`websocket.orbit`, `s3.orbit`, `analytics.orbit`) use `router`; `s3` is used by public S3 host routes and `app-analytics` by public analytics host routes. |
 | `owner.name` | string \| null | Owning app, app WebSocket binding, workspace, gateway route, router service, S3 publication, or tool identity when applicable. |
+
+The remaining fields describe placement, backend target, TLS, and status.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
 | `node` | string | Serving node where proxy artifacts are expected. |
 | `target.type` | string | Target behavior, such as `upstream`, `redirect`, `app`, `workspace`, `gateway`, `websocket`, `s3`, `analytics`, or `tool`. |
 | `target.value` | string | Upstream URL, redirect URL, or owner-specific target value. |
@@ -208,11 +213,10 @@ Proxy JSON renderers that return one route entity embed this shape under `succes
 
 ## Commands
 
-Each command links to its public documentation and technical contract.
-
-1. [`orbit proxy:list`](1_proxy-list/proxy-list.md)
-2. [`orbit proxy:add <domain> --upstream=<url>`](2_proxy-add/proxy-add.md)
-3. [`orbit proxy:remove <domain>`](3_proxy-remove/proxy-remove.md)
+Each command links to its public documentation and technical contract:
+[`orbit proxy:list`](1_proxy-list/proxy-list.md),
+[`orbit proxy:add <domain> --upstream=<url>`](2_proxy-add/proxy-add.md), and
+[`orbit proxy:remove <domain>`](3_proxy-remove/proxy-remove.md).
 
 ## Related
 

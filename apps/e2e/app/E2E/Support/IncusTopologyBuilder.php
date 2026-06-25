@@ -4331,7 +4331,7 @@ class IncusTopologyBuilder
             }
 
             $instance = new IncusInstance($this->host, $slugTemplateName);
-            $this->timer->measure("selected.agent-ready.{$role}", fn () => $instance->waitForAgent());
+            $this->timer->measure("selected.agent-ready.{$role}", static fn () => $instance->waitForAgent());
 
             $this->timer->measure("selected.bundle-overlay.{$role}", fn () => $this->applyBundleOverlay(
                 $instance,

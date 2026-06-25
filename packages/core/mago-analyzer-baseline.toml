@@ -41,3 +41,9 @@ file = "src/Progress/StreamedStepTree.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
+
+[[issues]]
+file = "src/Progress/VirtualTerminalScreen.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 2

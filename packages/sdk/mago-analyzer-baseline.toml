@@ -10,7 +10,7 @@ count = 1
 file = "src/GatewayRequest.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 6
 
 [[issues]]
 file = "src/GatewayRequest.php"
@@ -101,6 +101,12 @@ file = "src/Requests/Activity/ShowActivityRequest.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 4
+
+[[issues]]
+file = "src/Requests/AgentIde/ListAgentIdeAdaptersRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "src/Requests/Apps/CreateAppRequest.php"
@@ -214,7 +220,7 @@ count = 1
 file = "src/Requests/Deploy/DeployResponseFactory.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 1
+count = 2
 
 [[issues]]
 file = "src/Requests/Deploy/DeployResponseFactory.php"
@@ -385,24 +391,6 @@ message = "Redundant type assertion: `$body` is already `array<array-key, mixed>
 count = 1
 
 [[issues]]
-file = "src/Requests/Processes/UpdateProcessRequest.php"
-code = "redundant-comparison"
-message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
-count = 1
-
-[[issues]]
-file = "src/Requests/Processes/UpdateProcessRequest.php"
-code = "redundant-logical-operation"
-message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
-count = 1
-
-[[issues]]
-file = "src/Requests/Processes/UpdateProcessRequest.php"
-code = "redundant-type-comparison"
-message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
-count = 1
-
-[[issues]]
 file = "src/Requests/Processes/ListProcessesRequest.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
@@ -454,6 +442,24 @@ count = 1
 file = "src/Requests/Processes/StopProcessesRequest.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/UpdateProcessRequest.php"
+code = "redundant-comparison"
+message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/UpdateProcessRequest.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Requests/Processes/UpdateProcessRequest.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
 count = 1
 
 [[issues]]
@@ -745,10 +751,46 @@ message = "Assigning `nonnull` type to a variable may lead to unexpected behavio
 count = 1
 
 [[issues]]
-file = "src/Testing/GatewayPendingRequest.php"
+file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
+code = "impossible-condition"
+message = "This condition (type `false`) will always evaluate to false."
+count = 1
+
+[[issues]]
+file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
+
+[[issues]]
+file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$adapter` is already `array<string, mixed>`."
+count = 1
+
+[[issues]]
+file = "src/Responses/AgentIde/AgentIdeAdapterChoicesResponse.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$token` is already `string`."
+count = 1
+
+[[issues]]
+file = "src/Testing/GatewayMockClient.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "src/Testing/GatewayPendingRequest.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "src/Testing/GatewayPendingRequest.php"

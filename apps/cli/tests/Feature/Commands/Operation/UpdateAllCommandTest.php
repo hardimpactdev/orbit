@@ -1773,7 +1773,7 @@ it('skips the local download in json mode when the caller is already on the targ
 
     [$exitCode] = runCommand($this, 'update:all', ['--json' => true]);
 
-    expect($exitCode)->toBe(0)->and($this->localUpdater->calls)->toBe([]);
+    expect($exitCode)->toBe(0)->and($this->localUpdater->calls)->toBeEmpty();
 });
 
 it('runs the local download in json mode for topology candidate manifests when the caller is already on the target version', function (): void {

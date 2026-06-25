@@ -68,12 +68,18 @@ Run `app:register` when you need to install, re-apply, or retry Orbit management
 gateway and that its runtime artifacts are properly applied on the target app
 node.
 
-1. **Resolution**: Identifies the app and target node from the provided name, options, or the CLI's stored `node:default` development node.
-2. **Registration/Adoption**: Writes the app's configuration to the gateway database. An existing path not yet managed by Orbit is adopted at this step. Existing apps can move to another eligible node/path only when both `--node` and `--path` are explicit.
-3. **Apply**: Connects to the node over SSH to configure runtime container and install runtime configuration. It then records app-owned proxy route configuration for the `proxy` family to converge.
-4. **Production Activation**: Performs DNS and TLS checks to activate production routing.
+1. **Resolution**: Identifies the app and target node from the provided name,
+   options, or the CLI's stored `node:default` development node.
+2. **Registration/Adoption**: Writes the app's configuration to the gateway
+   database. An existing path not yet managed by Orbit is adopted at this step.
+3. **Move**: Existing apps can move to another eligible node/path only when both
+   `--node` and `--path` are explicit.
+4. **Apply**: Connects to the node over SSH to configure runtime container and
+   install runtime configuration. It then records app-owned proxy route
+   configuration for the `proxy` family to converge.
+5. **Production Activation**: Performs DNS and TLS checks to activate production routing.
 
-Step 4 only runs when a domain is supplied.
+Step 5 only runs when a domain is supplied.
 
 ### Pending production prerequisites
 

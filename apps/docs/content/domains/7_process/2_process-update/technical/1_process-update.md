@@ -59,12 +59,16 @@ count as an editable field.
 4. Send the request to the gateway, which validates the authenticated peer's authorization.
 5. Update gateway-owned process configuration. Rename updates are atomic at the
    gateway state layer: either the process row has the new identity and
-   dependent gateway records point at it, or the old identity remains active.
-6. Re-render the runtime units that the process definition produces. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
-7. When identity changes, remove or replace old derived runtime units after the
-   new desired units have been rendered, so `doctor --family=process --restore`
-   can converge without orphaning the old unit.
-8. When `--restart` is present, restart affected running runtime units and record lifecycle events for units that restart successfully.
+   dependent gateway records point at it, or the previous identity remains active.
+6. Re-render the runtime units that the process definition produces. Node-owned
+   and workspace-owned processes normally derive one unit. App-owned processes
+   derive one main-app unit plus one unit for each active workspace.
+7. When identity changes, remove or replace derived runtime units for the
+   previous identity after the current desired units have been rendered, so
+   `doctor --family=process --restore`
+   can converge without orphaning the replaced unit.
+8. When `--restart` is present, restart affected running runtime units and
+   record lifecycle events for units that restart successfully.
 9. Render the selected output.
 
 If process configuration is updated but re-rendering or optional restart fails, the command returns success with repairable process-family warnings because the requested durable configuration exists.
@@ -111,7 +115,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
-| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | Process update contract, rename uniqueness, grant authorization denial, required editable fields, app resolution, re-rendering/replacing derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | Process update contract, rename uniqueness, grant authorization denial, required editable fields, app resolution, runtime unit rendering/replacement, optional restart behavior, repairable warnings, and no write on validation failure. |
 | `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | Required inputs, editable field validation, name validation, enum validation, no-op rejection, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.

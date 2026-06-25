@@ -730,7 +730,7 @@ count = 1
 file = "app/Console/Commands/E2ETestCommand.php"
 code = "halstead"
 message = "Method has a high halstead difficulty and effort"
-count = 2
+count = 1
 
 [[issues]]
 file = "app/Console/Commands/E2ETestCommand.php"
@@ -814,7 +814,7 @@ count = 2
 file = "app/Console/Commands/E2ETestCommand.php"
 code = "prefer-static-closure"
 message = "This arrow function does not use `$this` and should be declared static."
-count = 12
+count = 11
 
 [[issues]]
 file = "app/Console/Commands/E2ETestCommand.php"
@@ -1270,7 +1270,7 @@ count = 10
 file = "app/E2E/Support/E2ECurrentCheckout.php"
 code = "explicit-octal"
 message = "Use explicit octal numeral notation."
-count = 5
+count = 4
 
 [[issues]]
 file = "app/E2E/Support/E2ECurrentCheckout.php"
@@ -1324,7 +1324,7 @@ count = 3
 file = "app/E2E/Support/E2ECurrentCheckout.php"
 code = "literal-named-argument"
 message = "Literal argument `0755` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "app/E2E/Support/E2ECurrentCheckout.php"
@@ -1354,7 +1354,7 @@ count = 1
 file = "app/E2E/Support/E2ECurrentCheckout.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 7
+count = 6
 
 [[issues]]
 file = "app/E2E/Support/E2ECurrentCheckout.php"
@@ -2253,14 +2253,20 @@ count = 5
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "halstead"
+message = "Method has a high halstead difficulty"
+count = 1
+
+[[issues]]
+file = "app/E2E/Support/IncusTopologyBuilder.php"
+code = "halstead"
 message = "Method has a high halstead effort"
-count = 4
+count = 3
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "halstead"
 message = "Method has a high halstead volume and effort"
-count = 3
+count = 4
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -2302,7 +2308,7 @@ count = 1
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "literal-named-argument"
 message = "Literal argument `true` should be passed as a named argument for clarity."
-count = 27
+count = 28
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -2314,7 +2320,7 @@ count = 7
 file = "app/E2E/Support/IncusTopologyBuilder.php"
 code = "no-else-clause"
 message = "Avoid `elseif` clauses."
-count = 2
+count = 3
 
 [[issues]]
 file = "app/E2E/Support/IncusTopologyBuilder.php"
@@ -5528,8 +5534,20 @@ count = 1
 
 [[issues]]
 file = "tests/Feature/Commands/ProcessManagedServiceCommandTest.php"
+code = "halstead"
+message = "Function has a high halstead volume and effort"
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/ProcessManagedServiceCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `'gateway'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/ProcessManagedServiceCommandTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'process-managed-service-rename'` should be passed as a named argument for clarity."
 count = 1
 
 [[issues]]
@@ -6928,7 +6946,7 @@ count = 5
 file = "tests/Feature/E2ESupport/Commands/E2ETestCommandTest.php"
 code = "explicit-octal"
 message = "Use explicit octal numeral notation."
-count = 2
+count = 1
 
 [[issues]]
 file = "tests/Feature/E2ESupport/Commands/E2ETestCommandTest.php"
@@ -7036,7 +7054,7 @@ count = 1
 file = "tests/Feature/E2ESupport/Commands/E2ETestCommandTest.php"
 code = "literal-named-argument"
 message = "Literal argument `0777` should be passed as a named argument for clarity."
-count = 2
+count = 1
 
 [[issues]]
 file = "tests/Feature/E2ESupport/Commands/E2ETestCommandTest.php"
@@ -7186,12 +7204,6 @@ count = 1
 file = "tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php"
 code = "literal-named-argument"
 message = '''Literal argument `"<?php\nreturn 'worker network changed';\n"` should be passed as a named argument for clarity.'''
-count = 1
-
-[[issues]]
-file = "tests/Feature/E2ESupport/E2EProvisionCheckpointTest.php"
-code = "literal-named-argument"
-message = '''Literal argument `"<?php\nreturn ['generated' => 'changed'];\n"` should be passed as a named argument for clarity.'''
 count = 1
 
 [[issues]]

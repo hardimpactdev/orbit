@@ -81,9 +81,11 @@ final readonly class ProcessUpdateInput
         $payload = [];
 
         foreach ($this->stringPayloadFields() as $field => $value) {
-            if ($value !== null && $value !== '') {
-                $payload[$field] = $value;
+            if (! ($value !== null && $value !== '')) {
+                continue;
             }
+
+            $payload[$field] = $value;
         }
 
         $payload['restart'] = $this->restart;

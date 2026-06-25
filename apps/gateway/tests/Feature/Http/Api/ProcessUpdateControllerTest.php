@@ -261,10 +261,9 @@ describe('ProcessUpdateController', function (): void {
         $cleanupIndex = collect($remoteShell->scripts)
             ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'mysql'"));
 
-        expect($applyIndex !== false)
-            ->toBeTrue()
-            ->and($cleanupIndex !== false)
-            ->toBeTrue()
+        expect($applyIndex)
+            ->not
+            ->toBe(false)
             ->and($cleanupIndex)
             ->toBeGreaterThan($applyIndex);
     });

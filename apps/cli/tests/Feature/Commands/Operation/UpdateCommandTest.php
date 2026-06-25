@@ -475,7 +475,7 @@ describe('update', function (): void {
             ->and($secondOutput)
             ->not->toContain('Downloading binary')->and($secondOutput)
             ->not->toContain('Replacing binary')->and($secondOutput)
-            ->not->toContain('Running doctor')->and($this->updater->calls)->toBe([]);
+            ->not->toContain('Running doctor')->and($this->updater->calls)->toBeEmpty();
     });
 
     it('surfaces the doctor issue count without failing the update in JSON mode', function (): void {

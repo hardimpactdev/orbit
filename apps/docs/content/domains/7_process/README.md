@@ -15,7 +15,10 @@ These rules govern process configuration ownership, naming, and runtime unit der
 These rules cover who owns process configuration and how process definitions are named.
 
 - The gateway owns process configuration.
-- Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters. `process:update --name=<new-slug>` is the public rename path when the selected runtime/backend can safely replace derived unit identity.
+- Process names are identity slugs: lowercase letters, digits, and hyphens only.
+  They cannot start or end with a hyphen and are limited to 64 characters.
+- `process:update --name=<new-slug>` is the public rename path when the selected
+  runtime/backend can safely replace derived unit identity.
 - Process definitions may be scoped to a node, app, or workspace. The scope
   selects the owning node and default runtime context.
 - Process definitions have a stable order inside their owning scope.
@@ -53,7 +56,7 @@ These rules describe how runtime units are derived from process definitions.
   identity, path, URL, environment, ports, and volumes.
 - Runtime unit names use Orbit-owned backend-safe names such as
   `orbit_<scope>_<process>`. When process identity is renamed, Orbit replaces
-  derived runtime units and removes old derived names instead of leaving
+  derived runtime units and removes names from the previous identity instead of leaving
   orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.

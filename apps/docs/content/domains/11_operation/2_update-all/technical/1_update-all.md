@@ -76,8 +76,8 @@ execution details live in the renderer contracts.
   topology-reachable `topology-candidate` source. The manifest source is part of
   the immutable plan and terminal operation result so release-candidate
   acceptance can use a non-GitHub artifact source before promotion.
-- For release-candidate rehearsal, the gateway-selected release manifest URL may
-  be a stable artifact channel such as
+- For release-candidate rehearsal, the gateway may select a release manifest URL
+  from a stable artifact channel such as
   `channels/live-test/orbit-release-manifest.json`. The channel object is only a
   manifest discovery location; the runner snapshots the resolved manifest
   content into the immutable plan before any side effects begin.
@@ -128,7 +128,7 @@ execution details live in the renderer contracts.
 - The gateway is the fleet version ceiling: it updates first, before any
   workload node is updated, so no node is ever taken past the gateway's version.
 
-### Fleet Selection Rules
+## Fleet Selection Rules
 
 - Include the caller's local Orbit installation.
 - Include active non-local managed Orbit installations from gateway node
@@ -149,7 +149,7 @@ The expected target shape per calling context:
 | Non-gateway caller with gateway-admin authority | The caller-local installation, updated as a fan-out target after the gateway phase. | Yes, when the gateway is an active node distinct from the caller. Updated first, before local and app-role targets. | Yes, every active node selected by the rules above. Updated in parallel with the local target after the gateway phase. | Never. |
 | Gateway caller | The gateway installation (via the local target). Updated as the gateway phase; the local target concept does not apply separately. | N/A — the gateway is the local target. | Yes, every active node selected by the rules above. | Never. |
 
-### Durable Operation Rules
+## Durable Operation Rules
 
 - The gateway start request creates an `operation_runs` row whose id is the
   `operation_run_id` for the whole update.
@@ -182,7 +182,7 @@ The expected target shape per calling context:
   the beginning or continue from `Last-Event-ID`. Duplicate events after
   reconnect must not be rendered twice.
 
-### Lease Rules
+## Lease Rules
 
 - Every update entry point that mutates fleet state must acquire an expiring
   update lease before side effects.
@@ -199,15 +199,16 @@ The expected target shape per calling context:
   `update.node_locked`, the locked resource, the conflicting operation id, and
   the lease expiry time.
 
-### Per-Installation Update Rules
+## Per-Installation Update Rules
 
 - The gateway updates first as the version ceiling. The gateway phase runs
   before the local caller update or any workload fan-out. If the gateway phase
   fails, the local update does not run.
 - The caller-local installation is updated as a fan-out target after the gateway
   phase succeeds, in parallel with the remote workload nodes. Production installs
-  update the native CLI binary artifact; source-dev Docker/Incus topology nodes
-  keep `/usr/local/bin/orbit` pointed at `<source>/apps/cli/orbit`. A local
+  update the native CLI binary artifact. Docker/Incus topology nodes that mount
+  source for development keep `/usr/local/bin/orbit` pointed at
+  `<source>/apps/cli/orbit`. A local
   update failure after the fleet has been updated is a partial failure: the
   fleet is updated, the operator-local install failed, and the operator
   re-runs `orbit update` to recover.
@@ -250,8 +251,8 @@ The expected target shape per calling context:
 - Production workload updates install the binary into the node user's Orbit
   install root. When the host launcher is system-wide under `/usr/local/bin/`,
   the remote update also publishes the binary to a shared root-owned executable
-  path under `/usr/local/lib/orbit/` and links the system launcher there, so
-  unprivileged role users can execute the CLI without traversing the node
+  path under `/usr/local/lib/orbit/` and links the system launcher there. This
+  lets unprivileged role users execute the CLI without traversing the node
   user's home directory. The remote update may use non-interactive `sudo -n`
   only for the shared copy and symlink replacement; it must fail rather than
   prompt.
@@ -260,10 +261,10 @@ The expected target shape per calling context:
   writes `installed_cli` for that node only after the remote replacement command
   exits successfully.
 - The remote update reconciles a shadowing launcher: when `orbit` resolves
-  through the node's `PATH` to a launcher other than the relinked one (a legacy
-  install earlier in `PATH`) that points at a different binary, it relinks that
-  launcher to the new binary too. Best-effort: an unwritable legacy path is left
-  as-is rather than failing the node update.
+  through the node's `PATH` to a launcher other than the relinked one and that
+  launcher points at a different binary, it relinks that launcher to the new
+  binary too. Best-effort: an unwritable earlier path is left unchanged and the
+  node update continues.
 - Workload fan-out uses the same persisted manifest snapshot as the gateway
   update for CLI artifacts and required role image metadata.
 - Remote update execution is gateway-owned node execution through `RemoteShell`.
@@ -277,7 +278,7 @@ The expected target shape per calling context:
 - Preserve every target result for the selected output renderer in selected
   target order, regardless of the order in which parallel workers finish.
 
-### Final Verification Rules
+## Final Verification Rules
 
 - The runner emits terminal success only after verifying gateway health,
   scheduler health, selected workload CLI execution, and required role image
@@ -286,21 +287,21 @@ The expected target shape per calling context:
   the runner can write operation events while the gateway API reads and streams
   them.
 
-### Partial Failure Rules
+## Partial Failure Rules
 
 - If every selected installation updates successfully, report a full fleet
   success. If one or more installations fail after side effects begin, report
   both successful and failed target results.
 - When the gateway installation update fails, do not start the local or
   app-role fan-out.
-- When the caller-local installation update fails after the gateway phase
+- When the caller's local installation update fails after the gateway phase
   succeeded, report a partial failure: the fleet was updated but the
   operator-local install was not. The operator re-runs `orbit update` to
   recover.
 - When a node with an app role fails, do not hide successful app-role updates
   and do not cancel unrelated in-flight app-role updates.
 
-### Scope Boundaries
+## Scope Boundaries
 
 `update:all` must not:
 - Create or remove node records.
@@ -320,7 +321,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 | Failure | Condition | Outcome |
 | --- | --- | --- |
-| Local update failed (partial) | The caller's local CLI update fails after the fleet has already been updated by the gateway phase. | Partial failure — the fleet is updated; the operator re-runs `orbit update` to recover the local install. |
+| Local update failed (partial) | The caller's local CLI update fails after the fleet has already been updated by the gateway phase. | Partial failure. The fleet is updated. The operator re-runs `orbit update` to recover the local install. |
 | Immutable plan missing | The gateway cannot persist or load the immutable update plan for `operation_run_id`. | Failure before side effects |
 | Update lease conflict | Another active update lease owns the same fleet, gateway, scheduler, or node resource. | Failure before conflicting side effects |
 | Gateway update failed | The gateway service update, migration, or health verification fails. | Terminal operation failure; local and app-role targets are not started |
@@ -356,8 +357,14 @@ The runner outcome entry uses these fields:
 | Type | `update:all` |
 | Effect | `write` |
 | Subject | The `operation_run_id` for the durable fleet update operation. |
-| Properties | `scope=fleet`, `operation_run_id`, `status` (`completed` or `failed`), `target_version`, gateway image digest, manifest version/source, and `failed_step` for local, gateway, scheduler, remote, or verification failures. Per-target results and summary counts live in the durable operation record, not the activity entry. No process output, SSH output, environment values, private keys, operation tokens, or secrets. |
+| Properties | `scope=fleet`, `operation_run_id`, `status`, `target_version`, gateway image digest, manifest version/source, and `failed_step`. |
 | Description | derived |
+
+`status` is `completed` or `failed`. `failed_step` names local, gateway,
+scheduler, remote, or verification failures. Per-target results and summary
+counts live in the durable operation record, not the activity entry. No process
+output, SSH output, environment values, private keys, operation tokens, or
+secrets are recorded.
 
 ## Test Mapping
 

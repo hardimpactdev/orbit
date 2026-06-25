@@ -7,7 +7,7 @@ Update or rename a node-, app-, or workspace-owned process definition.
 `process:update` changes a process identity slug, command, restart policy,
 crash notification policy, or process runtime for the resolved owner scope. It
 re-renders every runtime unit derived from that process definition, replacing
-old derived unit names when the identity slug changes.
+derived unit names so they match the current identity slug.
 
 ## Usage
 
@@ -29,11 +29,15 @@ slug, and re-render its runtime units.
 - **Gateway Update**: Updates the gateway-owned process definition.
 - **Identity Rename**: `--name=<new-slug>` renames the process identity inside
   the owning scope after uniqueness validation.
-- **Scope Resolution**: `--node` updates a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` updates a workspace-owned process; otherwise `--app` updates an app-owned process.
+- **Scope Resolution**: `--node` updates a node-owned process and cannot be
+  combined with `--app` or `--workspace`; `--workspace` updates a workspace-owned
+  process; otherwise `--app` updates an app-owned process.
 - **Runtime Unit Replacement**: Re-renders the runtime units derived from the
-  selected process definition and removes or replaces old derived units when
-  the process identity changes.
-- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service processes. `docker-swarm` is only valid for node-owned managed service processes.
+  selected process definition and removes or replaces derived units that no
+  longer match when the process identity changes.
+- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service
+  processes. `docker-swarm` is only valid for node-owned managed service
+  processes.
 - **Unsupported Rename Boundary**: Backends that cannot safely replace derived
   unit identity reject `--name` before changing gateway state.
 - **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.

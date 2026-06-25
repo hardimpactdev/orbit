@@ -57,8 +57,8 @@ The command has no required inputs and does not prompt.
 
 ## Failure Semantics
 
-No command-specific failures exist beyond the shared authorization and gateway
-failures in [Common Failures](../../../README.md#common-failures).
+This command uses the shared authorization and gateway failures in
+[Common Failures](../../../README.md#common-failures).
 
 ## Activity Logging
 

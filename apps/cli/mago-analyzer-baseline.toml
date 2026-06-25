@@ -703,6 +703,12 @@ message = 'Method `option` does not exist on type `App\Commands\Concerns\Resolve
 count = 1
 
 [[issues]]
+file = "app/Commands/Concerns/ResolvesHostContext.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
+
+[[issues]]
 file = "app/Commands/Concerns/StreamsGatewayProgress.php"
 code = "impossible-condition"
 message = "Redundant ternary operator: condition is always falsy."
@@ -1274,12 +1280,6 @@ count = 1
 
 [[issues]]
 file = "app/Commands/Internal/InternalExecutorCommand.php"
-code = "less-specific-argument"
-message = 'Argument type mismatch for argument #1 of `App\Commands\Internal\InternalExecutorCommand::findForbiddenField`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
-count = 1
-
-[[issues]]
-file = "app/Commands/Internal/InternalExecutorCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
@@ -1598,18 +1598,6 @@ count = 1
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
-code = "impossible-condition"
-message = "Redundant ternary operator: condition is always falsy."
-count = 1
-
-[[issues]]
-file = "app/Commands/Operation/DoctorCommand.php"
-code = "impossible-condition"
-message = "This condition (type `false`) will always evaluate to false."
-count = 1
-
-[[issues]]
-file = "app/Commands/Operation/DoctorCommand.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #2 of `App\Commands\Operation\DoctorCommand::doctorStreamFrame`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
 count = 1
@@ -1648,13 +1636,7 @@ count = 2
 file = "app/Commands/Operation/DoctorCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 7
-
-[[issues]]
-file = "app/Commands/Operation/DoctorCommand.php"
-code = "mixed-assignment"
-message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 1
+count = 11
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
@@ -1670,14 +1652,20 @@ count = 1
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
-code = "redundant-comparison"
-message = "Redundant `===` comparison: left-hand side is never identical to right-hand side."
-count = 2
+code = "redundant-condition"
+message = "Redundant condition: variable `$renderedDoctorFrame` (type `false`) will always evaluate to true."
+count = 1
 
 [[issues]]
 file = "app/Commands/Operation/DoctorCommand.php"
-code = "redundant-condition"
-message = "This condition (type `true`) will always evaluate to true."
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
+count = 1
+
+[[issues]]
+file = "app/Commands/Operation/DoctorCommand.php"
+code = "redundant-logical-operation"
+message = "Redundant `||` operation: left operand is always false and right operand is evaluated."
 count = 1
 
 [[issues]]
@@ -1726,13 +1714,19 @@ count = 1
 file = "app/Commands/Operation/UpdateAllCommand.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 8
+count = 10
 
 [[issues]]
 file = "app/Commands/Operation/UpdateAllCommand.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
 count = 1
+
+[[issues]]
+file = "app/Commands/Operation/UpdateAllCommand.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 2
 
 [[issues]]
 file = "app/Commands/Php/PhpListCommand.php"
@@ -1763,6 +1757,18 @@ file = "app/Commands/Php/PhpUseCommand.php"
 code = "redundant-logical-operation"
 message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
 count = 1
+
+[[issues]]
+file = "app/Commands/Php/PhpUseHumanDriftNotes.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 4
+
+[[issues]]
+file = "app/Commands/Php/PhpUseHumanGatewayCaller.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 2
 
 [[issues]]
 file = "app/Commands/Process/ProcessGatewayCommand.php"
@@ -2524,13 +2530,13 @@ count = 1
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 12
+count = 29
 
 [[issues]]
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
 code = "mixed-assignment"
 message = "Assigning `nonnull` type to a variable may lead to unexpected behavior."
-count = 3
+count = 4
 
 [[issues]]
 file = "app/Services/Doctor/DoctorPanelRenderer.php"
@@ -3002,15 +3008,9 @@ count = 2
 
 [[issues]]
 file = "app/Services/StreamJsonIdleStepWriter.php"
-code = "mixed-argument"
-message = "Invalid argument type for argument #3 of `proc_open`: expected `array<array-key, mixed>|null`, but found `mixed`."
-count = 1
-
-[[issues]]
-file = "app/Services/StreamJsonIdleStepWriter.php"
-code = "reference-to-undefined-variable"
-message = "Reference created from a previously undefined variable `$pipes`."
-count = 1
+code = "redundant-logical-operation"
+message = "Redundant `&&` operation: left operand is evaluated and right operand is always truthy."
+count = 2
 
 [[issues]]
 file = "app/Services/Updates/GatewayVersionProbe.php"
@@ -3085,16 +3085,46 @@ message = "Failed to parse property docblock comment."
 count = 1
 
 [[issues]]
+file = "app/Services/Version/GitHubReleaseResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 3
+
+[[issues]]
 file = "app/Services/Version/InstallMetadataStore.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
 count = 1
 
 [[issues]]
+file = "app/Services/Version/ReleaseManifestParser.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Version/ReleaseManifestResolver.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Version/ReleaseTimestampParser.php"
+code = "mixed-assignment"
+message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
+count = 1
+
+[[issues]]
+file = "app/Services/Version/ReleaseTimestampParser.php"
+code = "reference-to-undefined-variable"
+message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
 file = "app/Services/Version/VersionInfoResolver.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 6
+count = 1
 
 [[issues]]
 file = "app/Services/Version/VersionInfoResolver.php"

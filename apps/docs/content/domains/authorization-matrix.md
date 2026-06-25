@@ -93,7 +93,7 @@ authority](../architecture.md#gateway-implicit-authority).
 | `node role:add` | `role:add` | target node | Triggers self-grant materialization | `authorization_failed` | Standard missing-permission meta plus target node and role |
 | `node role:list` | `role:read` | target node | `role:read` implies `role:list` | `authorization_failed` | Standard missing-permission meta plus target node |
 | `node role:remove` | `role:remove` | target node | Triggers self-grant reconciliation | `authorization_failed` | Standard missing-permission meta plus target node and role |
-| `node role:update` | deleted in PR 2d | n/a | Deprecated surface; use `node:update` for node metadata | n/a | n/a |
+| `node role:update` | n/a | n/a | No command surface; use `node:update` for node metadata | n/a | n/a |
 | `php:list` | `php:read` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `php:use` | `php:write` | target node, app owning node, or workspace owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved target |
 | `process:add` | `process:add` | process owning node | None | `authorization_failed` | Standard missing-permission meta plus resolved process scope |

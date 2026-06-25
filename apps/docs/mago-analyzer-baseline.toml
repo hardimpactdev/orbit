@@ -4,7 +4,19 @@ variant = "loose"
 file = "app/Librarian/CommandDocsRegistry.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 2
+count = 3
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "redundant-condition"
+message = "This condition (type `true`) will always evaluate to true."
+count = 1
+
+[[issues]]
+file = "app/Librarian/DoctorIssueTableParser.php"
+code = "redundant-type-comparison"
+message = "Redundant type assertion: `$body` is already `string`."
+count = 1
 
 [[issues]]
 file = "app/Librarian/DoctorIssueTableParser.php"
@@ -202,7 +214,7 @@ count = 1
 file = "app/Librarian/Rules/JsonRendererExampleRule.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Librarian/Rules/JsonWarningShapeRule.php"
@@ -254,6 +266,12 @@ count = 1
 
 [[issues]]
 file = "app/Librarian/Rules/ReaderAddressRule.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/ReaderAddressRule.php"
 code = "reference-to-undefined-variable"
 message = "Reference created from a previously undefined variable `$matches`."
 count = 1
@@ -268,6 +286,12 @@ count = 1
 file = "app/Librarian/Rules/RendererPrimitiveReferenceRule.php"
 code = "reference-to-undefined-variable"
 message = "Reference created from a previously undefined variable `$matches`."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/RoleCompanionCoverageRule.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
 count = 1
 
 [[issues]]
@@ -316,6 +340,12 @@ count = 2
 file = "app/Librarian/Rules/TechnicalSlotSemanticsRule.php"
 code = "possibly-undefined-variable"
 message = "Variable `$matches` might not have been defined on all execution paths leading to this point."
+count = 1
+
+[[issues]]
+file = "app/Librarian/Rules/TechnicalTestMappingRule.php"
+code = "redundant-cast"
+message = "Redundant cast to `(string)`: the expression already has this type."
 count = 1
 
 [[issues]]

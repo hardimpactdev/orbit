@@ -255,6 +255,10 @@ workspace permissions it needs.
 
 The following commands are available in the `app` family.
 
+### App Lifecycle
+
+Use these commands to create, inspect, and remove app records.
+
 1. [`orbit app:new [name]`](1_app-new/app-new.md)
 2. [`orbit app:register [name]`](2_app-register/app-register.md)
 3. [`orbit app:list`](3_app-list/app-list.md)
@@ -264,23 +268,38 @@ The following commands are available in the `app` family.
 7. [`orbit app:prune [app]`](7_app-prune/app-prune.md)
 8. Reserved for a future app metadata update command. No `app:update` command
    contract exists in the current converted surface.
-9. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
-10. Reserved. `app:exec` was removed; Orbit has no command-`exec` surface.
-11. [`orbit app:worker show|enable|disable [app]`](11_app-worker/app-worker.md)
-12. [`orbit app:websocket enable [app]`](12_app-websocket-enable/app-websocket-enable.md)
-13. [`orbit app:websocket disable [app]`](13_app-websocket-disable/app-websocket-disable.md)
-14. [`orbit app:websocket credentials [app]`](14_app-websocket-credentials/app-websocket-credentials.md)
-15. [`orbit app:mount list|add|remove [app]`](15_app-mount/app-mount.md)
-16. [`orbit app:analytics enable [app]`](16_app-analytics-enable/app-analytics-enable.md)
-17. [`orbit app:analytics disable [app]`](17_app-analytics-disable/app-analytics-disable.md)
-18. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
-19. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
-20. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
-21. [`orbit app:codex add|remove|list [app]`](21_app-codex/app-codex.md)
-22. [`orbit app:setup [app]`](22_app-setup/app-setup.md)
-23. [`orbit app-setup-step:add [app]`](23_app-setup-step-add/app-setup-step-add.md)
-24. [`orbit app-setup-step:list [app]`](24_app-setup-step-list/app-setup-step-list.md)
-25. [`orbit app-setup-step:remove [app]`](25_app-setup-step-remove/app-setup-step-remove.md)
+
+### App Runtime Features
+
+Use these commands to configure runtime-facing app capabilities.
+
+1. [`orbit app:agent-ide [app] [agent_ide]`](9_app-agent-ide/app-agent-ide.md)
+2. Reserved. `app:exec` was removed; Orbit has no command-`exec` surface.
+3. [`orbit app:worker show|enable|disable [app]`](11_app-worker/app-worker.md)
+4. [`orbit app:websocket enable [app]`](12_app-websocket-enable/app-websocket-enable.md)
+5. [`orbit app:websocket disable [app]`](13_app-websocket-disable/app-websocket-disable.md)
+6. [`orbit app:websocket credentials [app]`](14_app-websocket-credentials/app-websocket-credentials.md)
+7. [`orbit app:mount list|add|remove [app]`](15_app-mount/app-mount.md)
+
+### App Integrations
+
+Use these commands for analytics, app instances, and env values.
+
+1. [`orbit app:analytics enable [app]`](16_app-analytics-enable/app-analytics-enable.md)
+2. [`orbit app:analytics disable [app]`](17_app-analytics-disable/app-analytics-disable.md)
+3. [`orbit app:analytics show [app]`](18_app-analytics-show/app-analytics-show.md)
+4. [`orbit app:instance list|show|add|remove [app]`](19_app-instance/app-instance.md)
+5. [`orbit app:env list|set|render [app]`](20_app-env/app-env.md)
+
+### App tooling and setup
+
+Use these commands for Codex bindings and setup steps.
+
+1. [`orbit app:codex add|remove|list [app]`](21_app-codex/app-codex.md)
+2. [`orbit app:setup [app]`](22_app-setup/app-setup.md)
+3. [`orbit app-setup-step:add [app]`](23_app-setup-step-add/app-setup-step-add.md)
+4. [`orbit app-setup-step:list [app]`](24_app-setup-step-list/app-setup-step-list.md)
+5. [`orbit app-setup-step:remove [app]`](25_app-setup-step-remove/app-setup-step-remove.md)
 
 ## Related
 
