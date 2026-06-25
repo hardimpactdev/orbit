@@ -92,7 +92,6 @@ Rules:
 - This is a send-and-forget handoff; do not wait for orchestrator correction before continuing.
 - Use TDD for behavior changes and keep docs, tests, and code aligned.
 - Make the first narrow diff after reading required local files; do not drift into broad discovery.
-- Do not commit, merge, clean up, or touch unrelated dirty files unless the workflow/user explicitly allows that boundary.
 ```
 
 ## Handoff Boundary

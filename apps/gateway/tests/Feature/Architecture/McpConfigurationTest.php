@@ -172,7 +172,9 @@ it('provides a compact Solo todo handoff skill for Claude Opus implementation ag
         ->toContain('send follow-up prompts')
         ->toContain('.agents/skills/implementing-features/SKILL.md')
         ->not->toContain('corrective prompt')
-        ->not->toContain('If Claude stops midway');
+        ->not->toContain('If Claude stops midway')
+        ->not->toContain('Do not commit, merge')
+        ->not->toContain('workflow/user explicitly allows');
 
     expect($promptSkeletonBody)
         ->not
