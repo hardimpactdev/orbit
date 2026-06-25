@@ -19,18 +19,6 @@ message = 'Could not infer a precise return type for function `App\Actions\Apps\
 count = 1
 
 [[issues]]
-file = "app/Actions/Apps/EnactAppRuntime.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Contracts\SiteCertificateInstaller::ensureFor` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnactAppRuntime.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Apps\AppRuntimeContainerManager::apply` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
 file = "app/Actions/Apps/EnsureAppProcessRuntimeUnits.php"
 code = "impossible-condition"
 message = "This condition (type `false`) will always evaluate to false."
@@ -80,12 +68,6 @@ count = 1
 
 [[issues]]
 file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "invalid-return-statement"
-message = '''Invalid return type for function `App\Actions\Apps\EnsureAppProxyRoute::routeArtifact`: expected `array{0: App\Models\Node, 1: array<string, mixed>, 2: string}`, but found `list{App\Models\Node|null, array{'document_root': string, 'php_socket': null, 'runtime_upstream': null|string, 'runtime_upstream_tls'?: array{'ca_path': string, 'server_name': string, 'trusted_by_gateway_ca': bool}, 'tls': array{'cert_path': string, 'key_path': string}}, string}`.'''
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
 code = "less-specific-argument"
 message = 'Argument type mismatch for argument #1 of `App\Services\Apps\AppDevelopmentInnerTlsPolicy::runtimeUpstreamTransportDirectives`: expected `array<string, mixed>`, but provided type `array<array-key, mixed>` is less specific.'
 count = 1
@@ -112,54 +94,6 @@ count = 4
 file = "app/Actions/Apps/EnsureAppProxyRoute.php"
 code = "possibly-invalid-argument"
 message = '''Possible argument type mismatch for argument #3 of `App\Actions\Apps\EnsureAppProxyRoute::renderCaddySite`: expected `array{'document_root': string, 'php_socket'?: null|string, 'runtime_upstream'?: null|string, 'tls': array{'cert_path': string, 'key_path': string}}`, but possibly received `array{'document_root': string, 'php_socket': null, 'runtime_upstream': null|string, 'runtime_upstream_tls'?: array{'ca_path': string, 'server_name': string, 'trusted_by_gateway_ca': bool}, 'tls': array{'cert_path': string, 'key_path': string}}`.'''
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Actions\Apps\EnsureAppProxyRoute::ensureGlobalCaddyfile` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Actions\Apps\EnsureAppProxyRoute::ensureRuntimeTrustPool` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Actions\Apps\EnsureAppProxyRoute::renderInstallScript` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Contracts\RemoteShell::run` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Contracts\SiteCertificateInstaller::expectedPathsFor` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Apps\AppDevelopmentInnerTlsPolicy::runtimeUpstreamTlsConfig` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Proxy\IngressResolver::backendUrl` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
-count = 1
-
-[[issues]]
-file = "app/Actions/Apps/EnsureAppProxyRoute.php"
-code = "possibly-null-argument"
-message = 'Argument #1 of method `App\Services\Proxy\IngressResolver::forAppNode` is possibly `null`, but parameter type `App\Models\Node` does not accept it.'
 count = 1
 
 [[issues]]
