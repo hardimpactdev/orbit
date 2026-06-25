@@ -92,8 +92,9 @@ meaningful value.
 - Accepted durable updates:
   - <guardrail target, record, verification, or none>
 - Rejected or already-covered signals:
-  - <candidate and rationale>
+  - <candidate, rationale, and existing coverage when already-covered>
 - Deferred follow-ups:
   - <follow-up, owner, trigger, or none>
 - No-new-signal rationale:
-  - <why local cleanup, existing guardrails, or rejection was enough>
+  - <why local cleanup, existing guardrails, already-landed fixes, or rejection
+    was enough>

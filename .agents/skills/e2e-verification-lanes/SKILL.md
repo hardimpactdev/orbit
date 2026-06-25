@@ -146,6 +146,13 @@ Missing prepared artifacts are not fixed by switching providers. Follow the
 scoped artifact command printed by the failing lane, or run the matching
 provider provision command when a full refresh is intended.
 
+When a feature's acceptance requires E2E and the required lane cannot be fully
+performed, halt the feature loop if the E2E blocker cannot be resolved in the
+current slice. Do not treat a blocked E2E lane as a completed verification
+signal, and do not proceed to finalization, merge, cleanup, or final
+loop-improvement extraction. Record the blocker, owner, and unblock condition
+for the feature owner.
+
 Serving behavior (`app:new`, Caddy/FrankenPHP HTTP serving, and `app:exec
 composer install`) belongs in prepared feature lanes. It must not be tagged with
 the broad `e2e-provision` group unless a focused diagnostic is intentionally

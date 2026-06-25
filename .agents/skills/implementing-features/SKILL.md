@@ -650,7 +650,12 @@ moving on to durable E2E.
     agreed E2E lane as the feature-level merge gate. For CLI behavior, durable
     E2E still follows the retained VM/user-verification checkpoint. For non-CLI
     behavior, proceed to the relevant E2E lane once code and focused tests are
-    ready; no retained CLI confirmation gate applies.
+    ready; no retained CLI confirmation gate applies. When the agreed E2E lane
+    is required for feature acceptance and cannot be completed, stop the loop if
+    the E2E blocker cannot be resolved inside this slice. Do not commit,
+    merge, clean up, or run final loop-improvement extraction while required
+    E2E is still blocked; record the blocker, owner, and unblock condition in
+    `.orbit/loop.md` and the report.
 17. Run the applicable reviewer persona from the `HARNESS.md` routing table once
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
@@ -672,6 +677,10 @@ moving on to durable E2E.
     without useful progress for an extended window. If it still does not return,
     close or replace that reviewer and record the process finding through
     `harness-signals/` before proceeding only on defensible direct evidence.
+    Reviewer findings fixed before merge are normal feature-loop work. Promote
+    them to loop improvements only when the review process itself missed a
+    recurring class of issue, or existing reviewer guidance would not catch the
+    same issue next time.
 18. Run artifact-backed feature verification when production artifact behavior
     matters and that lane exists for the provider.
 19. Run provider provision gates only as final/nightly substrate verification
@@ -713,7 +722,10 @@ moving on to durable E2E.
     no-review rationale. Use the reviewer recommendation to classify each
     candidate as local cleanup, already covered by existing `harness-signals/`
     records, rejected, deferred, or a new durable signal. The feature owner
-    adjudicates the recommendation using session context. Update, create,
+    adjudicates the recommendation using session context. Before creating a new
+    guardrail, check whether a later slice already absorbed the lesson in code,
+    tests, docs, skills, signal records, or clearer failure messages; if so,
+    classify it as `already-covered` and name that coverage. Update, create,
     curate, retire, or intentionally leave `harness-signals/` records and the
     smallest guardrail target only for concrete durable signals that pass the
     promotion gate in `HARNESS_SIGNALS.md`. If no new durable signal remains,

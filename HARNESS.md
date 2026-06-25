@@ -110,6 +110,12 @@ appropriate guardrail target: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
 checks, command failure messages, or explicit rejection. Keep one-off local
 cleanup out of the durable harness.
 
+Before adding a new guardrail, check whether the lesson has already landed in
+the current project as code, tests, docs, skills, signal records, or clearer
+failure messages. If a later slice already absorbed the lesson, classify the
+candidate as `already-covered` and name the existing coverage instead of
+creating duplicate guidance.
+
 No durable signal is a valid result. Every final review reports evidence
 reviewed, accepted durable updates, rejected or already-covered candidates,
 deferred follow-ups, and the no-new-signal rationale when nothing changes.
@@ -173,6 +179,11 @@ fill the final-distillation outcomes in `.orbit/loop.md`, and then rerun the
 `bin/orbit-feature-finalization-check`, then rerun the same git command.
 For a genuinely tiny local change, the final-distillation section can record
 the no-review/no-new-signal rationale explicitly.
+
+Historical worktrees that only contain gitignored `.orbit/` evidence are
+cleanup targets, not automatic harness-improvement sources. If the useful
+lesson already landed elsewhere, fill or report the final distillation as
+`already-covered` or `no-new-signal` instead of promoting another guardrail.
 
 ## Active Loop Improvement
 
@@ -403,6 +414,12 @@ honest: focused Pest, docs-lint, static checks, or PTY proof when the slice
 changes terminal behavior. Do not spend full E2E on every internal slice by
 default. Run the agreed E2E lane as the feature-level merge gate, or earlier
 only when the active slice itself cannot be judged without topology behavior.
+
+When the agreed E2E lane is required for acceptance and cannot be completed,
+the feature loop halts if the E2E blocker cannot be resolved inside the current
+slice. Do not finalize, merge, clean up, or mine final loop improvements while
+required E2E is still blocked. Record the exact blocker, owner, and unblock
+condition, then hand back unresolved work.
 
 ## Review Scope
 

@@ -55,7 +55,7 @@ Classify every candidate as one of:
 | Classification | Meaning |
 |----------------|---------|
 | `promote` | All promotion conditions hold; name the smallest guardrail target. |
-| `already-covered` | A current signal, skill, persona, test, or doc already covers it; name the source. |
+| `already-covered` | Current code, tests, docs, skills, personas, signal records, static checks, or failure messages already cover it; name the source. |
 | `reject` | The evidence is one-off, weak, expected cleanup, or not likely to recur. |
 | `defer` | The concern may be real, but needs another feature loop, clearer evidence, or a separate owner. |
 
