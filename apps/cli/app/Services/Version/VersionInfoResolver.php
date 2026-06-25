@@ -23,12 +23,19 @@ final readonly class VersionInfoResolver
     public function resolve(): VersionInfo
     {
         $version = $this->currentVersion();
-        $latestRelease = $this->releaseManifest(self::LatestManifestUrl) ?? $this->apiRelease('latest');
+        $latestRelease =
+            $this->configuredReleaseManifest() ?? $this->releaseManifest(
+                self::LatestManifestUrl,
+            ) ?? $this->apiRelease('latest');
         $latestVersion = $latestRelease['version'] ?? null;
         $releasedAt = null;
 
         if (($latestRelease['version'] ?? null) === $version) {
             $releasedAt = $latestRelease['published_at'];
+        }
+
+        if ($latestVersion !== null && ! version_compare($latestVersion, $version, '>')) {
+            $latestVersion = $version;
         }
 
         if ($releasedAt === null) {
@@ -38,6 +45,10 @@ final readonly class VersionInfoResolver
                     $version,
                 )) ?? $this->apiRelease("tags/v{$version}");
             $releasedAt = $currentRelease['published_at'] ?? null;
+        }
+
+        if ($releasedAt === null) {
+            $releasedAt = $this->installMetadata->releasedAtFor($version);
         }
 
         return new VersionInfo(
@@ -104,19 +115,23 @@ final readonly class VersionInfoResolver
      */
     private function configuredReleaseManifestFor(string $version): ?array
     {
-        $url = $this->configuredReleaseManifestUrl();
-
-        if ($url === null) {
-            return null;
-        }
-
-        $manifest = $this->releaseManifest($url);
+        $manifest = $this->configuredReleaseManifest();
 
         if (($manifest['version'] ?? null) !== $version) {
             return null;
         }
 
         return $manifest;
+    }
+
+    /**
+     * @return array{version: string, published_at: string|null}|null
+     */
+    private function configuredReleaseManifest(): ?array
+    {
+        $url = $this->configuredReleaseManifestUrl();
+
+        return $url === null ? null : $this->releaseManifest($url);
     }
 
     private function configuredReleaseManifestUrl(): ?string
@@ -203,14 +218,17 @@ final readonly class VersionInfoResolver
         }
 
         if (! preg_match(
-            '/^(?<date>\d{4}-\d{2}-\d{2})T(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})Z(?:-|$)/',
+            '/^(?<date>\d{4}-?\d{2}-?\d{2})T(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})Z(?:-|$)/',
             $buildId,
             $matches,
         )) {
             return null;
         }
 
-        return $this->timestamp("{$matches['date']}T{$matches['hour']}:{$matches['minute']}:{$matches['second']}Z");
+        $date = str_replace('-', '', $matches['date']);
+        $date = substr($date, 0, 4).'-'.substr($date, 4, 2).'-'.substr($date, 6, 2);
+
+        return $this->timestamp("{$date}T{$matches['hour']}:{$matches['minute']}:{$matches['second']}Z");
     }
 
     private function currentVersion(): string

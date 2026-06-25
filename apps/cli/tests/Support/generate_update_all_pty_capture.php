@@ -99,7 +99,7 @@ $source = <<<PHP
             ];
         }
 
-        public function replaceBinary(string \$stagedPath, string \$version): array
+        public function replaceBinary(string \$stagedPath, string \$version, ?string \$releasedAt = null): array
         {
             if (\$this->replaceDelayMicroseconds > 0) {
                 \$deadline = hrtime(true) + (\$this->replaceDelayMicroseconds * 1000);

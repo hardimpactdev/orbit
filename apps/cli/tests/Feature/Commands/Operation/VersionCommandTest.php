@@ -44,6 +44,7 @@ describe('version', function (): void {
         file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
+            'released_at' => '2026-06-17T10:47:00+00:00',
             'installed_at' => '2026-06-17T10:54:00+00:00',
         ], JSON_THROW_ON_ERROR));
 
@@ -72,6 +73,7 @@ describe('version', function (): void {
         file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
+            'released_at' => '2026-06-17T10:47:00+00:00',
             'installed_at' => '2026-06-17T10:54:00+00:00',
         ], JSON_THROW_ON_ERROR));
 
@@ -168,6 +170,7 @@ describe('version', function (): void {
         file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
             'version' => '0.1.105',
+            'released_at' => '2026-06-17T10:47:00+00:00',
             'installed_at' => '2026-06-17T10:54:00+00:00',
         ], JSON_THROW_ON_ERROR));
 
@@ -195,8 +198,46 @@ describe('version', function (): void {
                 'version' => '0.1.105',
                 'latest_version' => null,
                 'update_available' => false,
-                'released_at' => null,
+                'released_at' => '2026-06-17T10:47:00+00:00',
                 'installed_at' => '2026-06-17T10:54:00+00:00',
+            ]);
+    });
+
+    it('does not report an older release source as the latest version', function (): void {
+        config()->set('app.version', '0.1.174');
+
+        file_put_contents($this->installMetadataPath, json_encode([
+            'schema_version' => 1,
+            'version' => '0.1.174',
+            'released_at' => '2026-06-25T20:00:25+00:00',
+            'installed_at' => '2026-06-25T20:05:20+00:00',
+        ], JSON_THROW_ON_ERROR));
+
+        Http::fake([
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest(
+                version: '0.1.156',
+                releasedAt: '2026-06-21T13:07:13Z',
+            )),
+            'https://github.com/hardimpactdev/orbit/releases/download/v0.1.174/orbit-release-manifest.json' => Http::response(
+                [],
+                404,
+            ),
+            'https://api.github.com/repos/hardimpactdev/orbit/releases/tags/v0.1.174' => Http::response([], 404),
+        ]);
+
+        [$exitCode, $output] = runCommand($this, 'version', ['--json' => true]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data'])
+            ->toBe([
+                'version' => '0.1.174',
+                'latest_version' => '0.1.174',
+                'update_available' => false,
+                'released_at' => '2026-06-25T20:00:25+00:00',
+                'installed_at' => '2026-06-25T20:05:20+00:00',
             ]);
     });
 
@@ -245,6 +286,52 @@ describe('version', function (): void {
         }
     });
 
+    it('prefers the configured release manifest as the latest source', function (): void {
+        config()->set('app.version', '0.1.174');
+
+        file_put_contents($this->installMetadataPath, json_encode([
+            'schema_version' => 1,
+            'version' => '0.1.174',
+            'installed_at' => '2026-06-25T20:05:20+00:00',
+        ], JSON_THROW_ON_ERROR));
+
+        $candidateManifestUrl = 'https://artifacts.orbit/channels/live-test/orbit-release-manifest.json';
+        $previousManifestUrl = getenv('ORBIT_RELEASE_MANIFEST_URL');
+        putenv("ORBIT_RELEASE_MANIFEST_URL={$candidateManifestUrl}");
+
+        Http::fake([
+            $candidateManifestUrl => Http::response(topology_candidate_manifest(
+                version: '0.1.174',
+                buildId: '20260625T200025Z-20a9d4f6',
+            )),
+            'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(releaseManifest(
+                version: '0.1.156',
+                releasedAt: '2026-06-21T13:07:13Z',
+            )),
+        ]);
+
+        try {
+            [$exitCode, $output] = runCommand($this, command: 'version', params: ['--json' => true]);
+
+            $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+            expect($exitCode)
+                ->toBe(0)
+                ->and($decoded['success']['data'])
+                ->toMatchArray([
+                    'version' => '0.1.174',
+                    'latest_version' => '0.1.174',
+                    'update_available' => false,
+                    'released_at' => '2026-06-25T20:00:25+00:00',
+                    'installed_at' => '2026-06-25T20:05:20+00:00',
+                ]);
+        } finally {
+            $previousManifestUrl === false
+                ? putenv('ORBIT_RELEASE_MANIFEST_URL')
+                : putenv("ORBIT_RELEASE_MANIFEST_URL={$previousManifestUrl}");
+        }
+    });
+
     it('falls back to the GitHub releases API when public manifests are unavailable', function (): void {
         file_put_contents($this->installMetadataPath, json_encode([
             'schema_version' => 1,
@@ -286,7 +373,7 @@ describe('version', function (): void {
 
         Http::fake([
             'https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json' => Http::response(
-                topology_candidate_manifest(version: '0.1.173', buildId: '2026-06-25T143000Z-abc123'),
+                topology_candidate_manifest(version: '0.1.173', buildId: '20260625T143000Z-abc123'),
             ),
         ]);
 

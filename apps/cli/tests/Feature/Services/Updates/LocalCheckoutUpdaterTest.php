@@ -251,7 +251,7 @@ describe('LocalCheckoutUpdater', function (): void {
         );
     });
 
-    it('reconciles a shadowing launcher resolved earlier in PATH', function (): void {
+    it('does not relink a shadowing launcher resolved through PATH', function (): void {
         Process::fake([
             '*command -v orbit*' => Process::result(output: "/tmp/orbit-shadow-bin/orbit\n", exitCode: 0),
             '*' => Process::result(output: 'orbit 1.2.3', exitCode: 0),
@@ -266,9 +266,7 @@ describe('LocalCheckoutUpdater', function (): void {
 
         expect($replace['successful'])->toBeTrue();
 
-        // The shadowing launcher (PATH-first, different from the relinked launcher)
-        // is relinked to the same new binary so the shell's `orbit` reflects the update.
-        Process::assertRan(
+        Process::assertNotRan(
             fn (PendingProcess $process): bool => (
                 is_array($process->command)
                 && $process->command === ['ln', '-sfn', $versionedBinary, '/tmp/orbit-shadow-bin/orbit']
@@ -440,7 +438,13 @@ describe('LocalCheckoutUpdater', function (): void {
         Process::fake(['*' => Process::result(output: 'Version       1.2.3', exitCode: 0)]);
         Process::preventStrayProcesses();
 
-        $result = runDownloadAndReplace(new LocalCheckoutUpdater(new CheckoutPathResolver));
+        $updater = new LocalCheckoutUpdater(new CheckoutPathResolver);
+        $download = $updater->downloadBinary();
+        $replace = $updater->replaceBinary(
+            $download['staged_path'],
+            $download['version'],
+            '2026-06-25T20:00:25Z',
+        );
 
         $metadata = json_decode(
             file_get_contents($this->installRoot.'/install.json'),
@@ -448,12 +452,14 @@ describe('LocalCheckoutUpdater', function (): void {
             flags: JSON_THROW_ON_ERROR,
         );
 
-        expect($result['replace']['successful'])
+        expect($replace['successful'])
             ->toBeTrue()
             ->and($metadata['schema_version'])
             ->toBe(1)
             ->and($metadata['version'])
             ->toBe('1.2.3')
+            ->and($metadata['released_at'])
+            ->toBe('2026-06-25T20:00:25+00:00')
             ->and($metadata['binary_path'])
             ->toBe($this->linkPath)
             ->and($metadata['install_root'])

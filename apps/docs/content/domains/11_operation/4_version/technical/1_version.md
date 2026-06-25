@@ -8,8 +8,9 @@
 
 **Prerequisites:**
 - The CLI can read its own configured `app.version`.
-- Release metadata is available from public GitHub Release assets for full
-  freshness, but release lookup failures must not fail the command.
+- Release metadata is available from `ORBIT_RELEASE_MANIFEST_URL` when set, or
+  public GitHub Release assets otherwise, but release lookup failures must not
+  fail the command.
 
 ## Signature
 
@@ -44,13 +45,18 @@ available.
 
 - `version` is the current CLI version from application configuration, which
   is sourced from the monorepo release version.
-- `latest_version` is read first from the public release manifest at
+- `latest_version` is read first from `ORBIT_RELEASE_MANIFEST_URL` when set.
+  This supports release-candidate channels that intentionally run ahead of
+  public GitHub releases. When no configured manifest exists, read from the
+  public release manifest at
   `https://github.com/hardimpactdev/orbit/releases/latest/download/orbit-release-manifest.json`.
   If that manifest is unavailable or malformed, fall back to the GitHub
   Releases API on a best-effort basis. The command uses a short timeout and
-  treats network, response, or schema failures as missing metadata. When
-  `--local` is present, release source lookups are skipped and `latest_version`
-  is `null`.
+  treats network, response, or schema failures as missing metadata. When the
+  installed version is newer than the resolved release source, such as during a
+  release-candidate rollout while public GitHub releases lag, `latest_version`
+  is normalized to the installed version. When `--local` is present, release
+  source lookups are skipped and `latest_version` is `null`.
 - `released_at` is the publish timestamp for the installed version. If the
   latest manifest is the installed version, reuse the latest manifest
   timestamp. Otherwise, if `ORBIT_RELEASE_MANIFEST_URL` points to a manifest
@@ -59,8 +65,12 @@ available.
   `https://github.com/hardimpactdev/orbit/releases/download/v<version>/orbit-release-manifest.json`.
   If the manifest lookup cannot provide the timestamp, fall back to the GitHub
   Releases API on a best-effort basis. Topology-candidate manifests without
-  `released_at` use the timestamp prefix from `build_id`. When `--local` is
-  present, this lookup is skipped and `released_at` is `null`.
+  `released_at` use the timestamp prefix from `build_id`; both compact
+  `YYYYMMDDTHHMMSSZ-*` and dashed `YYYY-MM-DDTHHMMSSZ-*` build IDs are
+  accepted. If release source lookups cannot provide the timestamp, matching
+  install metadata may provide `released_at`. When `--local` is present, release
+  source and install-metadata release lookups are skipped and `released_at` is
+  `null`.
 - `installed_at` is read from `ORBIT_INSTALL_METADATA_PATH` when set, or
   `$HOME/.config/orbit/install.json` by default, only when the metadata version
   matches the installed version. If no matching metadata exists, fall back to
@@ -74,6 +84,7 @@ Install metadata uses this JSON shape:
 {
     "schema_version": 1,
     "version": "0.1.105",
+    "released_at": "2026-06-17T10:47:00+00:00",
     "installed_at": "2026-06-17T10:54:00+00:00",
     "binary_path": "/home/orbit/.local/bin/orbit",
     "install_root": "/home/orbit/orbit"

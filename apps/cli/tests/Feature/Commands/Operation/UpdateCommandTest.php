@@ -44,7 +44,7 @@ final class UpdateCommandFakeUpdater implements RunsLocalUpdate
         return $this->downloadResult;
     }
 
-    public function replaceBinary(string $stagedPath, string $version): array
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array
     {
         $this->calls[] = 'replace';
 
@@ -238,6 +238,25 @@ describe('update', function (): void {
             )->and($output)
             ->not->toContain('Downloading binary')->and($output)
             ->not->toContain('"success"');
+    });
+
+    it('renders the installed version in the skip footer when the release source is older', function (): void {
+        config()->set('app.version', '0.1.174');
+        fakeUpdateLatest('0.1.156');
+
+        [$exitCode, $output] = runCommand($this, 'update');
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($output)
+            ->toContain('Checking for updates')
+            ->and($output)
+            ->toContain('Skipped: 0.1.174 is already installed')
+            ->and($output)
+            ->not
+            ->toContain('Skipped: 0.1.156 is already installed')
+            ->and($this->updater->calls)
+            ->toBe([]);
     });
 
     it('returns a JSON skip envelope when the gateway is still behind', function (): void {

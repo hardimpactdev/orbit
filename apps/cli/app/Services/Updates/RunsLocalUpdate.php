@@ -44,7 +44,7 @@ interface RunsLocalUpdate
      *
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */
-    public function replaceBinary(string $stagedPath, string $version): array;
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array;
 
     /**
      * Run `orbit doctor` in verify mode for the local node through the relinked

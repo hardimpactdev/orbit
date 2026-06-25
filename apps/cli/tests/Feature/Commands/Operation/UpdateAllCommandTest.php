@@ -1751,7 +1751,9 @@ it('runs the local fan-out for topology candidate manifests when the caller is a
         ->and($this->localUpdater->calls)
         ->toBe(['download', 'replace', 'doctor'])
         ->and($this->localUpdater->binaryUrls[0] ?? '')
-        ->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-')
+        ->toContain('https://artifacts.orbit/releases/candidates/20260625T200025Z-20a9d4f6/orbit-')
+        ->and($this->localUpdater->releasedAts)
+        ->toBe(['2026-06-25T20:00:25+00:00'])
         ->and($output)
         ->toMatch('/local\s+Done/')
         ->and($output)
@@ -1800,7 +1802,9 @@ it('runs the local download in json mode for topology candidate manifests when t
         ->and($this->localUpdater->calls)
         ->toBe(['download', 'replace', 'doctor'])
         ->and($this->localUpdater->binaryUrls[0] ?? '')
-        ->toContain('https://artifacts.orbit/releases/candidates/candidate-build/orbit-');
+        ->toContain('https://artifacts.orbit/releases/candidates/20260625T200025Z-20a9d4f6/orbit-')
+        ->and($this->localUpdater->releasedAts)
+        ->toBe(['2026-06-25T20:00:25+00:00']);
 });
 
 it('returns failure exit code and json output for terminal operation errors', function (): void {
@@ -2265,7 +2269,7 @@ function writeUpdateAllLivenessCaptureScript(string $cliRoot, int $replaceDelayM
                 ];
             }
 
-            public function replaceBinary(string \$stagedPath, string \$version): array
+            public function replaceBinary(string \$stagedPath, string \$version, ?string \$releasedAt = null): array
             {
                 if (\$this->replaceDelayMicroseconds > 0) {
                     \$deadline = hrtime(true) + (\$this->replaceDelayMicroseconds * 1000);
@@ -2369,7 +2373,7 @@ function writeUpdateAllGatewayLivenessCaptureScript(string $cliRoot, string $gat
                 ];
             }
 
-            public function replaceBinary(string \$stagedPath, string \$version): array
+            public function replaceBinary(string \$stagedPath, string \$version, ?string \$releasedAt = null): array
             {
                 return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
             }
@@ -2466,7 +2470,7 @@ function fakeUpdateAllReleaseManifest(): array
     return [
         'schema_version' => 1,
         'version' => '1.2.3',
-        'build_id' => 'candidate-build',
+        'build_id' => '20260625T200025Z-20a9d4f6',
         'source' => 'topology-candidate',
         'images' => [
             'gateway' => 'ghcr.io/hardimpactdev/orbit-gateway:1.2.3-candidate@sha256:'.str_repeat('a', 64),
@@ -2485,11 +2489,11 @@ function updateAllCommandCandidateCliArtifacts(): array
 {
     return [
         'linux-amd64' => [
-            'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-linux-x64',
+            'url' => 'https://artifacts.orbit/releases/candidates/20260625T200025Z-20a9d4f6/orbit-linux-x64',
             'sha256' => str_repeat('b', 64),
         ],
         'darwin-arm64' => [
-            'url' => 'https://artifacts.orbit/releases/candidates/candidate-build/orbit-macos-arm64',
+            'url' => 'https://artifacts.orbit/releases/candidates/20260625T200025Z-20a9d4f6/orbit-macos-arm64',
             'sha256' => str_repeat('c', 64),
         ],
     ];
@@ -2551,6 +2555,11 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
      */
     public array $binaryUrls = [];
 
+    /**
+     * @var list<string|null>
+     */
+    public array $releasedAts = [];
+
     public int $replaceDelayMicroseconds = 0;
 
     /**
@@ -2595,9 +2604,10 @@ final class UpdateAllCommandFakeUpdater implements RunsLocalUpdate
     /**
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */
-    public function replaceBinary(string $stagedPath, string $version): array
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array
     {
         $this->calls[] = 'replace';
+        $this->releasedAts[] = $releasedAt;
 
         if ($this->replaceDelayMicroseconds > 0) {
             $deadline = hrtime(true) + ($this->replaceDelayMicroseconds * 1000);

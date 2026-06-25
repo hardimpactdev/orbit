@@ -160,7 +160,7 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
      *
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */
-    public function replaceBinary(string $stagedPath, string $version): array
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array
     {
         $installRoot = $this->checkoutPathResolver->resolve();
         $linkPath = $this->resolveLinkPath();
@@ -199,12 +199,11 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
                 return $this->failedReplaceFrom($verifyResult);
             }
 
-            $this->reconcileShadowingLauncher($linkPath, $versionedBinary);
-
             $this->installMetadata->write(
                 version: $this->versionFromOutput($verifyResult->output()),
                 binaryPath: $linkPath,
                 installRoot: $installRoot,
+                releasedAt: $releasedAt,
             );
 
             return [
@@ -535,30 +534,5 @@ class LocalCheckoutUpdater implements RunsLocalUpdate
     private function linkCommand(string $binaryDest, string $linkPath): array
     {
         return ['ln', '-sfn', $binaryDest, $linkPath];
-    }
-
-    /**
-     * Reconcile a shadowing launcher: if `orbit` resolves (via PATH) to a
-     * different launcher than the one just relinked, and it points at a
-     * different binary, relink it too so the shell's actual `orbit` reflects
-     * the update. Best-effort — a legacy install in an unwritable path is left
-     * as-is rather than failing the update.
-     */
-    private function reconcileShadowingLauncher(string $linkPath, string $versionedBinary): void
-    {
-        $resolved = trim($this->runCommand(['sh', '-c', 'command -v orbit 2>/dev/null || true'], 5)->output());
-
-        if ($resolved === '' || ! str_starts_with($resolved, '/') || $resolved === $linkPath) {
-            return;
-        }
-
-        $resolvedReal = realpath($resolved);
-        $targetReal = realpath($versionedBinary);
-
-        if ($resolvedReal !== false && $targetReal !== false && $resolvedReal === $targetReal) {
-            return;
-        }
-
-        $this->runCommand($this->linkCommand($versionedBinary, $resolved), 10);
     }
 }

@@ -55,9 +55,10 @@ final class RunnerFakeUpdater implements RunsLocalUpdate
         return $this->downloadResult;
     }
 
-    public function replaceBinary(string $stagedPath, string $version): array
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array
     {
-        $this->calls[] = "replace:{$stagedPath}:{$version}";
+        $releasedAt ??= 'null';
+        $this->calls[] = "replace:{$stagedPath}:{$version}:{$releasedAt}";
 
         return $this->replaceResult;
     }
@@ -198,6 +199,26 @@ describe('LocalUpdateRunner', function (): void {
             ->toBe(['check' => 'skipped']);
     });
 
+    it('reports the installed version as latest when the release source is older', function (): void {
+        config()->set('app.version', '0.1.174');
+        fakeRunnerLatest('0.1.156');
+
+        $updater = new RunnerFakeUpdater;
+
+        $result = makeRunner($updater)->run();
+
+        expect($result->status)
+            ->toBe(LocalUpdateResult::STATUS_SKIPPED_ALREADY)
+            ->and($result->latestVersion)
+            ->toBe('0.1.174')
+            ->and($result->fromVersion)
+            ->toBe('0.1.174')
+            ->and($updater->calls)
+            ->toBe([])
+            ->and($result->stepResults)
+            ->toBe(['check' => 'skipped']);
+    });
+
     it('skips with gateway-behind when the gateway is older than the latest release', function (): void {
         config()->set('app.version', '0.1.130');
         fakeRunnerLatest('0.1.131');
@@ -254,7 +275,7 @@ describe('LocalUpdateRunner', function (): void {
             ->and($updater->calls)
             ->toBe([
                 'download',
-                'replace:/tmp/staged-orbit:0.1.131',
+                'replace:/tmp/staged-orbit:0.1.131:2026-06-18T00:00:00+00:00',
                 'doctor',
             ])
             ->and($result->stepResults)
@@ -282,7 +303,7 @@ describe('LocalUpdateRunner', function (): void {
             ->and($updater->calls)
             ->toBe([
                 'download',
-                'replace:/tmp/staged-orbit:0.1.131',
+                'replace:/tmp/staged-orbit:0.1.131:2026-06-18T00:00:00+00:00',
                 'doctor',
             ]);
     });
@@ -314,7 +335,7 @@ describe('LocalUpdateRunner', function (): void {
             ->and($updater->calls)
             ->toBe([
                 'download',
-                'replace:/tmp/staged-orbit:0.1.131',
+                'replace:/tmp/staged-orbit:0.1.131:2026-06-18T00:00:00+00:00',
                 'doctor',
             ]);
     });
@@ -443,6 +464,6 @@ describe('LocalUpdateRunner', function (): void {
             ->and($result->output)
             ->toBe('ln: Permission denied')
             ->and($updater->calls)
-            ->toBe(['download', 'replace:/tmp/staged-orbit:0.1.131']);
+            ->toBe(['download', 'replace:/tmp/staged-orbit:0.1.131:2026-06-18T00:00:00+00:00']);
     });
 });

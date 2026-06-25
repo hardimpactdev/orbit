@@ -83,7 +83,7 @@ final readonly class LocalUpdateRunner
                 status: LocalUpdateResult::STATUS_SKIPPED_ALREADY,
                 stepResults: [self::STEP_CHECK => 'skipped'],
                 fromVersion: $local,
-                latestVersion: $latest,
+                latestVersion: $local,
             );
         }
 
@@ -102,14 +102,18 @@ final readonly class LocalUpdateRunner
 
         $this->emit($onStep, self::STEP_CHECK, 'done', "new version available, {$latest}");
 
-        return $this->applyUpdate($onStep, $local, $latest);
+        return $this->applyUpdate($onStep, $local, $latest, $info->releasedAt);
     }
 
     /**
      * @param  callable(string, string, ?string): void|null  $onStep
      */
-    private function applyUpdate(?callable $onStep, string $local, string $latest): LocalUpdateResult
-    {
+    private function applyUpdate(
+        ?callable $onStep,
+        string $local,
+        string $latest,
+        ?string $releasedAt,
+    ): LocalUpdateResult {
         $stepResults = [self::STEP_CHECK => 'completed'];
 
         $this->emit($onStep, self::STEP_DOWNLOAD, 'progress', "Downloading {$latest}");
@@ -139,7 +143,7 @@ final readonly class LocalUpdateRunner
         $this->emit($onStep, self::STEP_DOWNLOAD, 'done', "Downloaded {$latest}");
 
         $this->emit($onStep, self::STEP_REPLACE, 'progress', "Replacing {$local} with {$latest}");
-        $replace = $this->updater->replaceBinary($download['staged_path'], $resolvedVersion);
+        $replace = $this->updater->replaceBinary($download['staged_path'], $resolvedVersion, $releasedAt);
 
         if (! $replace['successful']) {
             $stepResults[self::STEP_REPLACE] = 'failed';

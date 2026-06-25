@@ -48,7 +48,7 @@ final class LocalUpdateWorkflowFakeUpdater implements RunsLocalUpdate
     /**
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */
-    public function replaceBinary(string $stagedPath, string $version): array
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array
     {
         $this->calls[] = 'replace';
 

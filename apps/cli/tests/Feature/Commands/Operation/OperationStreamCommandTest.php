@@ -175,7 +175,7 @@ final class OperationStreamUpdateAllFakeUpdater implements RunsLocalUpdate
     /**
      * @return array{successful: bool, exit_code: int, output: string, skipped: bool}
      */
-    public function replaceBinary(string $stagedPath, string $version): array
+    public function replaceBinary(string $stagedPath, string $version, ?string $releasedAt = null): array
     {
         return ['successful' => true, 'exit_code' => 0, 'output' => '', 'skipped' => false];
     }

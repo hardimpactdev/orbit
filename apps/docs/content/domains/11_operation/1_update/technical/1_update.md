@@ -70,11 +70,10 @@ fields and does not prompt.
   root-owned executable path under `/usr/local/lib/orbit/`, then point the
   launcher there so unprivileged role users can execute the CLI even when the
   node user's home directory is private.
-- Reconcile a shadowing launcher: when `orbit` resolves through `PATH` to a
-  different launcher than the relinked one (a legacy install earlier in `PATH`)
-  and that launcher points at a different binary, relink it to the new binary
-  too, so the shell's actual `orbit` reflects the update. This is best-effort: a
-  legacy install in an unwritable path is left as-is rather than failing.
+- Relink only the configured host launcher path. `update` must not rewrite
+  unrelated `orbit` executables or symlinks discovered elsewhere in `PATH`.
+  Operators who have stale duplicate launchers must remove or relink them
+  explicitly.
 - Verify the resolved local Orbit entry point responds to `--version`.
   Production artifact installs verify the updated binary; source-mounted
   Docker/Incus development and E2E lanes verify the resolved
@@ -86,9 +85,15 @@ fields and does not prompt.
 - `update` always runs a `Checking for updates` step first. It resolves the
   latest available release version from the configured release source without
   downloading the full binary, and compares it to the installed CLI version.
+  `ORBIT_RELEASE_MANIFEST_URL` is the first release manifest source when set;
+  otherwise the command uses the public GitHub latest-release manifest/API.
 - When the installed version already equals the latest release, `update`
   performs no download and returns a success/skip result reporting that the
   current version is already installed.
+- When the installed version is newer than the release source, such as during a
+  release-candidate rollout while public GitHub releases lag, `update` treats
+  the installed version as current and reports that installed version in both
+  the check row and skip footer.
 - The local CLI version must never exceed the version its gateway runs. When a
   newer release exists, `update` reads the gateway's current version (a
   read-only gateway status query) and only proceeds when the gateway is already

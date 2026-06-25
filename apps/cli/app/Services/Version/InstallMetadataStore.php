@@ -16,6 +16,7 @@ final class InstallMetadataStore
      * @return array{
      *     schema_version: int|null,
      *     version: string|null,
+     *     released_at: string|null,
      *     installed_at: string|null,
      *     binary_path: string|null,
      *     install_root: string|null,
@@ -48,10 +49,26 @@ final class InstallMetadataStore
         return [
             'schema_version' => is_int($decoded['schema_version'] ?? null) ? $decoded['schema_version'] : null,
             'version' => is_string($decoded['version'] ?? null) ? $decoded['version'] : null,
+            'released_at' => is_string($decoded['released_at'] ?? null) ? $decoded['released_at'] : null,
             'installed_at' => is_string($decoded['installed_at'] ?? null) ? $decoded['installed_at'] : null,
             'binary_path' => is_string($decoded['binary_path'] ?? null) ? $decoded['binary_path'] : null,
             'install_root' => is_string($decoded['install_root'] ?? null) ? $decoded['install_root'] : null,
         ];
+    }
+
+    public function releasedAtFor(string $version): ?string
+    {
+        $metadata = $this->read();
+
+        if (
+            $metadata !== null
+            && ($metadata['version'] ?? null) === $version
+            && $this->isIsoTimestamp($metadata['released_at'] ?? null)
+        ) {
+            return CarbonImmutable::parse($metadata['released_at'])->toIso8601String();
+        }
+
+        return null;
     }
 
     public function installedAtFor(string $version): ?string
@@ -74,6 +91,7 @@ final class InstallMetadataStore
         string $binaryPath,
         string $installRoot,
         ?CarbonImmutable $installedAt = null,
+        ?string $releasedAt = null,
     ): void {
         $path = $this->path();
 
@@ -92,6 +110,9 @@ final class InstallMetadataStore
         $payload = [
             'schema_version' => self::SchemaVersion,
             'version' => $version,
+            'released_at' => $this->isIsoTimestamp($releasedAt)
+                ? CarbonImmutable::parse($releasedAt)->toIso8601String()
+                : null,
             'installed_at' => ($installedAt ?? CarbonImmutable::now())->toIso8601String(),
             'binary_path' => $binaryPath,
             'install_root' => $installRoot,

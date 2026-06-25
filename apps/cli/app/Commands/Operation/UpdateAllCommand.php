@@ -10,6 +10,7 @@ use App\Exceptions\GatewayApiException;
 use App\Services\GatewayOperationFollower;
 use App\Services\Updates\RunsLocalUpdate;
 use App\Services\Updates\UpdateAllHumanProgressRenderer;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
 use Throwable;
@@ -217,7 +218,11 @@ final class UpdateAllCommand extends GatewayCommand
             return $this->renderLocalUpdateFailure('download', $download['output']);
         }
 
-        $replace = $localUpdater->replaceBinary($download['staged_path'], $download['version']);
+        $replace = $localUpdater->replaceBinary(
+            $download['staged_path'],
+            $download['version'],
+            $this->terminalCandidateReleasedAt($terminal['payload']),
+        );
 
         if (! $replace['successful']) {
             return $this->renderLocalUpdateFailure('replace', $replace['output']);
@@ -296,7 +301,11 @@ final class UpdateAllCommand extends GatewayCommand
         }
 
         $progress->localNodeSubStep($this->output, 'replacing_cli_binary');
-        $replace = $localUpdater->replaceBinary($download['staged_path'], $download['version']);
+        $replace = $localUpdater->replaceBinary(
+            $download['staged_path'],
+            $download['version'],
+            $this->terminalCandidateReleasedAtFrom($candidateBinaryUrl),
+        );
 
         if (! $replace['successful']) {
             $progress->localNodeFailed($this->output, $replace['output']);
@@ -508,6 +517,72 @@ final class UpdateAllCommand extends GatewayCommand
         $url = trim($url);
 
         return $url === '' ? null : $url;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function terminalCandidateReleasedAt(array $payload): ?string
+    {
+        if (! $this->terminalUsesTopologyCandidateManifest($payload)) {
+            return null;
+        }
+
+        $data = $this->frameData($payload);
+
+        return (
+            $this->timestamp(
+                $this->frameString($data, 'released_at') ?? $this->frameString($payload, 'released_at'),
+            ) ?? $this->topologyCandidateBuildTimestamp(
+                $this->frameString($data, 'build_id') ?? $this->frameString($payload, 'build_id'),
+            ) ?? $this->terminalCandidateReleasedAtFrom($this->terminalCandidateBinaryUrl($payload))
+        );
+    }
+
+    private function terminalCandidateReleasedAtFrom(?string $binaryUrl): ?string
+    {
+        if ($binaryUrl === null || $binaryUrl === '') {
+            return null;
+        }
+
+        if (! preg_match('#/candidates/(?<build_id>[^/]+)/#', $binaryUrl, $matches)) {
+            return null;
+        }
+
+        return $this->topologyCandidateBuildTimestamp($matches['build_id']);
+    }
+
+    private function topologyCandidateBuildTimestamp(?string $buildId): ?string
+    {
+        if ($buildId === null) {
+            return null;
+        }
+
+        if (! preg_match(
+            '/^(?<date>\d{4}-?\d{2}-?\d{2})T(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})Z(?:-|$)/',
+            $buildId,
+            $matches,
+        )) {
+            return null;
+        }
+
+        $date = str_replace('-', '', $matches['date']);
+        $date = substr($date, 0, 4).'-'.substr($date, 4, 2).'-'.substr($date, 6, 2);
+
+        return $this->timestamp("{$date}T{$matches['hour']}:{$matches['minute']}:{$matches['second']}Z");
+    }
+
+    private function timestamp(?string $value): ?string
+    {
+        if ($value === null || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value)->toIso8601String();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function localCliPlatform(): ?string
