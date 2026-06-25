@@ -9,6 +9,7 @@ use App\Models\DatabaseConnection;
 use App\Models\Node;
 use App\Models\NodeRoleAssignment;
 use App\Models\Process;
+use App\Services\RemoteShell\RemoteShellMetadata;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -49,6 +50,27 @@ function createManagedMysqlProcess(Node $node, array $overrides = []): Process
                 ],
             ],
         ], $overrides));
+}
+
+/**
+ * @param  array<string, string>  $metadata
+ */
+function assert_approved_database_add_user_remote_shell_metadata(array $metadata, string $processName): void
+{
+    expect($metadata)
+        ->not
+        ->toHaveKeys(['operation', 'process'])
+        ->and($metadata)
+        ->toMatchArray([
+            'ORBIT_OPERATION_ID' => 'database.add-user',
+            'ORBIT_TOOL_SERVICE' => $processName,
+        ]);
+
+    $validator = new RemoteShellMetadata;
+
+    foreach ($metadata as $key => $value) {
+        $validator->validate($key, $value);
+    }
 }
 
 it('adds a mysql user through a managed docker process and stores the connection without leaking secrets', function (): void {
@@ -148,11 +170,50 @@ it('updates an existing connection after converging the mysql user', function ()
     expect($connection->credentials)->toBe(['password' => 'new-secret']);
 });
 
+it('passes approved remote-shell metadata when converging a renamed managed mysql8 process', function (): void {
+    $caller = createDatabaseAddUserCallerNode();
+    assignDatabaseAddUserGatewayRole($caller);
+    $node = createTestAppHostNode(['name' => 'beast']);
+    createManagedMysqlProcess($node);
+    $password = fake()->password();
+    $shell = new DatabaseAddUserRemoteShell(new RemoteShellResult(
+        exitCode: 0,
+        stdout: '',
+        stderr: '',
+        durationMs: 12,
+    ));
+
+    app()->instance(RemoteShell::class, $shell);
+
+    $response = $this->call(
+        'POST',
+        '/api/database-connections/dngdmt/users',
+        [
+            'service' => 'mysql8',
+            'node' => 'beast',
+            'database' => 'dngdmt',
+            'username' => 'dngdmt',
+            'password' => $password,
+        ],
+        [],
+        [],
+        ['REMOTE_ADDR' => DATABASE_ADD_USER_CALLER_WG_IP],
+    );
+
+    $response->assertOk();
+
+    assert_approved_database_add_user_remote_shell_metadata(
+        $shell->options['metadata'] ?? [],
+        processName: 'mysql8',
+    );
+});
+
 it('fails before remote convergence for non docker managed mysql processes', function (): void {
     $caller = createDatabaseAddUserCallerNode();
     assignDatabaseAddUserGatewayRole($caller);
     $node = createTestAppHostNode(['name' => 'beast']);
     createManagedMysqlProcess($node, ['runtime' => ProcessRuntime::DockerSwarm]);
+    $password = fake()->password();
     $shell = new DatabaseAddUserRemoteShell(new RemoteShellResult(
         exitCode: 0,
         stdout: '',
@@ -170,7 +231,7 @@ it('fails before remote convergence for non docker managed mysql processes', fun
             'node' => 'beast',
             'database' => 'dlf_leden',
             'username' => 'dlf_leden',
-            'password' => 'super-secret',
+            'password' => $password,
         ],
         [],
         [],

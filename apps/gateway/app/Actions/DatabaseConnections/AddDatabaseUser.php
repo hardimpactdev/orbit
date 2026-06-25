@@ -233,8 +233,8 @@ final readonly class AddDatabaseUser
         $result = $this->remoteShell->run($node, $this->convergenceScript($container), [
             'input' => $this->sql($database, $username, $password),
             'metadata' => [
-                'operation' => 'database.add-user',
-                'process' => $process->name,
+                'ORBIT_OPERATION_ID' => 'database.add-user',
+                'ORBIT_TOOL_SERVICE' => $process->name,
             ],
             'strict' => true,
             'timeout' => 120,
