@@ -23,6 +23,18 @@ without micromanaging every step.
 (failures, reviews, drift), triage what went wrong, distill durable guardrails
 back into the harness. The loop improves the harness over time.
 
+Feature loops have three top-level outcomes:
+
+- `complete`: the feature is verified and no unresolved blocker remains.
+- `blocked`: required evidence or acceptance work cannot be completed and the
+  blocker cannot be resolved inside the current slice.
+- `complete + loop improvement`: the feature is verified, and a real recurring
+  or costly process lesson was promoted into a durable guardrail.
+
+Candidate classifications such as `promote`, `already-covered`, `reject`, and
+`defer` are supporting detail for the final distillation. They do not replace
+the feature-loop outcome.
+
 ## Non-Goals
 
 The root harness is intentionally incremental. Not in scope yet:
@@ -90,11 +102,16 @@ Before final reporting and merge-back, the orchestrator reviews the feature
 thread, Solo worker sessions, reviewer output, retained terminal or PTY
 evidence when applicable, verification output, and human corrections.
 
-For non-trivial feature loops, the orchestrator creates a small local
-distillation packet under `.orbit/` before merge. The packet contains only the
-facts needed for review: objective, final diff or commit, evidence artifacts,
-Solo process ids or summaries, reviewer findings, human corrections, and the
-orchestrator's factual steering notes. Do not commit the packet.
+For non-trivial feature loops, `.orbit/loop.md` is the canonical local final
+packet. It should point to evidence artifacts rather than duplicate everything:
+objective, final diff or commit, Solo process ids or summaries, reviewer
+findings, verification output, human corrections, and the orchestrator's
+factual steering notes. Scratchpads, reviewer output, and final reports point
+back to `.orbit/loop.md` instead of replacing it. Do not commit the packet.
+
+Add candidate signals to `.orbit/loop.md` as they appear. The final review
+should classify an already-collected packet, not reconstruct the session from
+scattered artifacts after the fact.
 
 Run a fresh-context post-feature distillation reviewer from that packet when
 the feature had implementation workers, reviewer corrections, retained
@@ -104,11 +121,13 @@ terminal/PTY evidence, quality-gate artifacts, or human steering. Use
 does not edit code, update the harness, or decide completion.
 
 The orchestrator adjudicates the reviewer recommendations using session
-context. Distill durable repeated or costly mistakes into the smallest
-appropriate guardrail target: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
+context. Start by eliminating non-signals: one-off handoffs, lessons already
+covered by current project guidance or enforcement, reviewer findings fixed
+before merge, stale historical artifacts, and ordinary feature work. Distill
+only durable repeated or costly mistakes into the smallest appropriate
+guardrail target: `HARNESS.md`, `AGENTS.md`, `.agents/skills/*`,
 `.agents/review-personas/*`, `harness-signals/`, deterministic tests or static
-checks, command failure messages, or explicit rejection. Keep one-off local
-cleanup out of the durable harness.
+checks, command failure messages, or explicit rejection.
 
 Before adding a new guardrail, check whether the lesson has already landed in
 the current project as code, tests, docs, skills, signal records, or clearer
@@ -116,9 +135,12 @@ failure messages. If a later slice already absorbed the lesson, classify the
 candidate as `already-covered` and name the existing coverage instead of
 creating duplicate guidance.
 
-No durable signal is a valid result. Every final review reports evidence
-reviewed, accepted durable updates, rejected or already-covered candidates,
-deferred follow-ups, and the no-new-signal rationale when nothing changes.
+Feature completion and loop improvement are separate decisions. No durable
+signal is a valid `complete` result when the feature is verified and the final
+distillation records why no new signal remains. Every final review reports the
+loop outcome, evidence reviewed, accepted durable updates, rejected or
+already-covered candidates, deferred follow-ups, and the no-new-signal
+rationale when nothing changes.
 
 ## Merge Boundary Gate
 
@@ -184,6 +206,9 @@ Historical worktrees that only contain gitignored `.orbit/` evidence are
 cleanup targets, not automatic harness-improvement sources. If the useful
 lesson already landed elsewhere, fill or report the final distillation as
 `already-covered` or `no-new-signal` instead of promoting another guardrail.
+Regular loop improvement comes from the active feature's evidence. Broad
+history or worktree mining is a separate explicitly requested workflow, not the
+default finalization path.
 
 ## Active Loop Improvement
 
@@ -215,6 +240,10 @@ Do not wait for the user to ask whether the loop should be improved. When the
 user has to repeat the same correction, treat that as a loop signal and either
 patch the durable guardrail, explain why an existing guardrail already covers
 it, or create a scoped follow-up with an owner and trigger.
+
+The outer loop improver is a gatekeeper and classifier, not a second feature
+orchestrator. It watches for drift, blocks premature completion, and promotes
+only lessons that materially improve the next feature loop.
 
 ## Feature Slices
 
@@ -421,6 +450,10 @@ slice. Do not finalize, merge, clean up, or mine final loop improvements while
 required E2E is still blocked. Record the exact blocker, owner, and unblock
 condition, then hand back unresolved work.
 
+Treat this as the `blocked` feature-loop outcome, not as a candidate learning.
+It becomes a loop-improvement signal only when the reason for the E2E block
+reveals a recurring process gap.
+
 ## Review Scope
 
 Reviewer personas inspect the changed files, named authority docs, focused
@@ -439,15 +472,16 @@ review.
 Orbit repo development follows a simple loop stack:
 
 1. **Implement**: scoped change in an isolated worktree; align docs, tests, and
-   code
+   code.
 2. **Verify**: run the narrowest useful checks for the change type (Pest,
-   quality-check, E2E when touched)
+   quality-check, E2E when touched).
 3. **Triage**: when something fails or review finds a gap, identify the missing
-   context or guardrail
-4. **Distill**: encode the lesson into durable text: skill, doc, test message,
-   or product-decision entry
-5. **Handoff**: report the completed evidence and name the next slice or next
-   concrete step. Do not make the user ask what comes next.
+   context or guardrail.
+4. **Distill**: record candidate signals in `.orbit/loop.md` as they appear,
+   then classify them as `promote`, `already-covered`, `reject`, or `defer`.
+5. **Handoff**: report `complete`, `blocked`, or `complete + loop improvement`
+   with evidence and the next concrete step. Do not make the user ask what
+   comes next.
 
 The harness surfaces the map; the loop turns session signals into better
 guardrails.

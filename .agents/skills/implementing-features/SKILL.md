@@ -712,11 +712,13 @@ moving on to durable E2E.
     missing, report that the timing analysis was skipped and decide whether the
     feature needs another gate run before merge.
 23. Before committing or reporting completion, run a Post-Feature Session
-    Review. Build a local distillation packet from the feature thread or
-    handoff, Solo worker sessions, reviewer output, retained terminal or PTY
-    evidence when applicable, verification output, human corrections, and
-    factual orchestrator steering notes. For non-trivial loops, spawn a fresh
-    post-feature distillation reviewer with
+    Review. Treat `.orbit/loop.md` as the canonical local final packet and
+    point it at the feature thread or handoff, Solo worker sessions, reviewer
+    output, retained terminal or PTY evidence when applicable, verification
+    output, human corrections, and factual orchestrator steering notes. Record
+    candidate signals as they appear so final review classifies an existing
+    packet instead of reconstructing the session. For non-trivial loops, spawn a
+    fresh post-feature distillation reviewer with
     `.agents/review-personas/post-feature-distillation.md`; for tiny local
     changes, fill the `.orbit/loop.md` final-distillation section with the
     no-review rationale. Use the reviewer recommendation to classify each
@@ -725,12 +727,18 @@ moving on to durable E2E.
     adjudicates the recommendation using session context. Before creating a new
     guardrail, check whether a later slice already absorbed the lesson in code,
     tests, docs, skills, signal records, or clearer failure messages; if so,
-    classify it as `already-covered` and name that coverage. Update, create,
-    curate, retire, or intentionally leave `harness-signals/` records and the
-    smallest guardrail target only for concrete durable signals that pass the
-    promotion gate in `HARNESS_SIGNALS.md`. If no new durable signal remains,
-    say that in `.orbit/loop.md` and the report. Re-run the narrow check that
-    proves any changed guardrail target is reachable.
+    classify it as `already-covered` and name that coverage. Eliminate
+    one-off handoffs, stale historical artifacts, reviewer findings fixed
+    before merge, and ordinary feature work before considering promotion.
+    Required E2E that cannot be completed is a `blocked` feature-loop outcome
+    first, not a candidate signal; promote it only when the blocker exposes a
+    recurring process gap. Update, create, curate, retire, or intentionally
+    leave `harness-signals/` records and the smallest guardrail target only for
+    concrete durable signals that pass the promotion gate in
+    `HARNESS_SIGNALS.md`. Report the loop outcome as `complete`, `blocked`, or
+    `complete + loop improvement`. If no new durable signal remains, say that
+    in `.orbit/loop.md` and the report. Re-run the narrow check that proves any
+    changed guardrail target is reachable.
 24. Commit the verified worktree changes on the worktree branch.
 25. Merge the branch back into `main` from the primary `~/orbit` checkout,
     remove the completed worktree/branch, and leave `~/orbit` on updated
@@ -923,8 +931,9 @@ Reviewer personas:
 - <persona path>: <findings resolved, findings deferred, not applicable, or blocked>
 
 Post-feature session review:
-- Distillation packet: <.orbit path, included in .orbit/loop.md, not applicable,
-  or blocked>
+- Loop outcome: <complete, blocked, or complete + loop improvement>
+- Distillation packet: <.orbit/loop.md canonical packet, not applicable, or
+  blocked>
 - Fresh distillation reviewer: <persona/process id/verdict, not used with
   rationale, or blocked>
 - Evidence reviewed: <feature thread, Solo workers, reviewer output,

@@ -31,6 +31,13 @@ Start skeptical. The default result is `no durable guardrail needed`.
 Ephemeral evidence produces candidate signals only. Promote a candidate only
 when it would help future agents avoid repeating a real mistake.
 
+Eliminate non-signals early: one-off handoffs, lessons already covered by
+current project guidance or enforcement, reviewer findings fixed before merge
+when the reviewer guidance already caught them, stale historical artifacts, and
+ordinary feature work. Required E2E that cannot be completed is a `blocked`
+feature-loop outcome first; treat it as a candidate learning only when the
+blocker exposes a recurring process gap.
+
 Preserve the orchestrator's context without accepting it blindly: treat
 orchestrator steering notes as evidence to test against artifacts, not as final
 classification.
@@ -73,6 +80,10 @@ The packet is sufficient when it includes:
 If the packet is missing key evidence, report `blocked: insufficient packet`
 instead of inventing learnings from memory.
 
+Broad history or worktree mining is outside this reviewer by default. Use only
+the active feature packet, changed diff, and named evidence unless the
+orchestrator explicitly assigns a history scan.
+
 ## Findings Format
 
 Report a concise verdict first:
@@ -81,6 +92,8 @@ Report a concise verdict first:
 ## Verdict
 
 <No durable guardrail needed | Promote candidates | Blocked: insufficient packet>
+
+Loop outcome checked: <complete | blocked | complete + loop improvement | not provided>
 
 ## Candidate Classifications
 

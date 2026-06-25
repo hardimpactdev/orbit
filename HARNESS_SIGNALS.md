@@ -36,6 +36,14 @@ should become guidance or enforcement.
     caught it earlier.
   - The smallest useful guardrail target is clear.
   - A narrow verification can prove the new target is reachable.
+- Eliminate non-signals before considering promotion:
+  - one-off handoffs or machine moves
+  - lessons already covered by current code, tests, docs, skills, personas,
+    signal records, static checks, or failure messages
+  - reviewer findings fixed before merge when reviewer guidance already caught
+    the issue
+  - stale historical `.orbit/` artifacts that do not reveal a current gap
+  - ordinary feature work that belongs in the active diff, not the harness
 - Reject or mark `already-covered` when any promotion condition is missing.
   A final review that creates no durable guardrail is a valid loop result.
 - Search `harness-signals/` before treating a durable signal as new. If a
@@ -81,8 +89,14 @@ Every distilled signal needs evidence that the chosen guardrail target works:
 - E2E/live target: record the exact lane, topology, node, command, and observed
   result.
 
+Required E2E that cannot be completed is first a `blocked` feature-loop
+outcome, not a candidate signal. Promote it only when the cause reveals a
+recurring verification-lane, setup, or process gap.
+
 ## Current Manual Cadence
 
 Run the loop during implementation handoff and final reporting. Periodic
 distillation over CI, Solo todos, and review comments is intentionally deferred
 until a later automation slice proves the manual guardrail-target map is stable.
+Broad history or worktree mining is separate from the regular feature loop and
+should run only when explicitly requested.
