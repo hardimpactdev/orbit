@@ -6,6 +6,8 @@ namespace App\Services\Doctor;
 
 use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Doctor\DoctorRunRequest;
+use App\Data\Doctor\DoctorTargetScope;
 use App\Data\Doctor\DriftEntry;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Apps\NodeRuntimeConfigsProbeStatus;
@@ -445,10 +447,13 @@ final readonly class DoctorReportRunner
         Node $node,
         string $mode = 'verify',
         array $families = [],
-        ?string $key = null,
-        bool $dryRun = false,
+        ?DoctorRunRequest $request = null,
     ): array {
-        $probe = $this->probe($node, $families, $key);
+        $request ??= DoctorRunRequest::none();
+        $scope = $request->targetScope();
+        $key = $request->key;
+        $dryRun = $request->dryRun;
+        $probe = $this->probe($node, $families, $key, scope: $scope);
 
         if ($mode === 'verify') {
             return $probe;
@@ -459,7 +464,15 @@ final readonly class DoctorReportRunner
         }
 
         $actions = $mode === 'adopt'
-            ? ($key === 'node.updates' ? [] : $this->adoptSelectedFamilies($node, $probe['scope']['families'] ?? []))
+            ? (
+                $key === 'node.updates'
+                    ? []
+                    : $this->adoptSelectedFamilies(
+                        $node,
+                        $probe['scope']['families'] ?? [],
+                        $scope,
+                    )
+            )
             : $this->apply($node, $mode, $probe['issues'] ?? []);
 
         if ($mode !== 'adopt' || $key === 'node.updates') {
@@ -470,7 +483,11 @@ final readonly class DoctorReportRunner
         }
 
         if ($mode === 'restore' && $key === 'node.updates') {
-            return $this->finalize($this->probe($node, $families, $key), $mode, $actions);
+            return $this->finalize(
+                $this->probe($node, $families, $key, scope: $scope),
+                $mode,
+                $actions,
+            );
         }
 
         return $this->finalize($probe, $mode, $actions);
@@ -486,7 +503,9 @@ final readonly class DoctorReportRunner
         array $families = [],
         ?string $key = null,
         ?callable $onFamilyProgress = null,
+        ?DoctorTargetScope $scope = null,
     ): array {
+        $scope ??= DoctorTargetScope::none();
         $roleCategories = $this->categoriesForNode($node);
         $selectedFamilies = $families === []
             ? $roleCategories
@@ -784,9 +803,10 @@ final readonly class DoctorReportRunner
 
             $this->runFamilyCheckPlan($onFamilyProgress, 'database_connection', 1, function (callable $advance) use (
                 $node,
+                $scope,
                 &$issues,
             ): void {
-                foreach ($this->databaseConnectionProbe->probe($node) as $issue) {
+                foreach ($this->databaseConnectionProbe->probe($node, $scope) as $issue) {
                     $issues[] = $this->annotateIssue([
                         ...$issue,
                         'node' => $node->name,
@@ -810,15 +830,7 @@ final readonly class DoctorReportRunner
         return [
             'healthy' => $issues === [],
             'mode' => 'verify',
-            'scope' => [
-                'families' => $selectedFamilies,
-                'node' => $node->name,
-                'role' => $node->displayRole(),
-                'self' => false,
-                'app' => null,
-                'workspace' => null,
-                'key' => $key,
-            ],
+            'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
             'issues' => $issues,
             'actions' => [],
@@ -834,7 +846,9 @@ final readonly class DoctorReportRunner
         array $families,
         ?string $key,
         RemoteShellFailed $exception,
+        ?DoctorTargetScope $scope = null,
     ): array {
+        $scope ??= DoctorTargetScope::none();
         $roleCategories = $this->categoriesForNode($node);
         $selectedFamilies = $families === []
             ? $roleCategories
@@ -852,18 +866,31 @@ final readonly class DoctorReportRunner
         return [
             'healthy' => false,
             'mode' => 'verify',
-            'scope' => [
-                'families' => $selectedFamilies,
-                'node' => $node->name,
-                'role' => $node->displayRole(),
-                'self' => false,
-                'app' => null,
-                'workspace' => null,
-                'key' => $key,
-            ],
+            'scope' => $this->reportScope($selectedFamilies, $node, $key, $scope),
             'summary' => $summary,
             'issues' => $issues,
             'actions' => [],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return array{families: list<string>, node: string, role: string, self: false, app: string|null, workspace: string|null, key: string|null}
+     */
+    private function reportScope(
+        array $families,
+        Node $node,
+        ?string $key,
+        DoctorTargetScope $scope,
+    ): array {
+        return [
+            'families' => $families,
+            'node' => $node->name,
+            'role' => $node->displayRole(),
+            'self' => false,
+            'app' => $scope->app,
+            'workspace' => $scope->workspace,
+            'key' => $key,
         ];
     }
 
@@ -1376,8 +1403,11 @@ final readonly class DoctorReportRunner
      * @param  list<string>  $families
      * @return list<array<string, mixed>>
      */
-    private function adoptSelectedFamilies(Node $node, array $families): array
-    {
+    private function adoptSelectedFamilies(
+        Node $node,
+        array $families,
+        DoctorTargetScope $scope,
+    ): array {
         $actions = [];
 
         if (in_array('node', $families, true)) {
@@ -1437,7 +1467,7 @@ final readonly class DoctorReportRunner
         }
 
         if (in_array('database_connection', $families, true)) {
-            foreach ($this->databaseConnectionAdopter->adopt($node) as $result) {
+            foreach ($this->databaseConnectionAdopter->adopt($node, $scope) as $result) {
                 $actions[] = [
                     'family' => $result->family,
                     'node' => $node->name,
@@ -3389,6 +3419,8 @@ final readonly class DoctorReportRunner
         $key = (string) ($issue['key'] ?? 'this issue');
         $code = is_string($issue['code'] ?? null) ? $issue['code'] : $key;
 
+        $issueDetail = is_array($issue['detail'] ?? null) ? $issue['detail'] : [];
+
         return [
             'family' => $issue['family'] ?? null,
             'node' => $issue['node'] ?? null,
@@ -3398,6 +3430,7 @@ final readonly class DoctorReportRunner
             'status' => 'planned',
             'summary' => "Would {$mode} {$code}.",
             'details' => [
+                ...$issueDetail,
                 'dry_run' => true,
             ],
         ];

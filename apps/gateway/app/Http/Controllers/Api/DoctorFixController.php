@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Doctor\DoctorRunRequest;
+use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\Doctor\DoctorProgressReportFactory;
@@ -106,6 +108,13 @@ final class DoctorFixController implements Loggable
 
         $issues = $this->issues($request);
 
+        $scope = DoctorTargetScope::from(
+            $this->scopeValue($request, 'app'),
+            $this->scopeValue($request, 'workspace'),
+        );
+        $app = $scope->app;
+        $workspace = $scope->workspace;
+
         if ($this->wantsEventStream($request)) {
             return $this->stream(
                 $streams,
@@ -117,12 +126,19 @@ final class DoctorFixController implements Loggable
                 $issues,
                 $key,
                 $dryRun,
+                $app,
+                $workspace,
             );
         }
 
         $doctor = $issues === null || $dryRun
-            ? $runner->run($target, mode: $mode, families: $families, key: $key, dryRun: $dryRun)
-            : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key);
+            ? $runner->run(
+                $target,
+                mode: $mode,
+                families: $families,
+                request: new DoctorRunRequest($key, $dryRun, $scope),
+            )
+            : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key, $scope);
 
         return response()->json([
             'success' => [
@@ -147,6 +163,8 @@ final class DoctorFixController implements Loggable
         ?array $issues,
         ?string $key,
         bool $dryRun,
+        ?string $app,
+        ?string $workspace,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
@@ -157,6 +175,8 @@ final class DoctorFixController implements Loggable
             $issues,
             $key,
             $dryRun,
+            $app,
+            $workspace,
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
@@ -170,6 +190,8 @@ final class DoctorFixController implements Loggable
                     issues: [],
                     actions: [],
                     familyStatuses: $familyStatuses,
+                    app: $app,
+                    workspace: $workspace,
                 ),
             ]);
             $events->tree('Running Doctor', array_map(
@@ -191,13 +213,32 @@ final class DoctorFixController implements Loggable
                         issues: [],
                         actions: [],
                         familyStatuses: $familyStatuses,
+                        app: $app,
+                        workspace: $workspace,
                     ),
                 ]);
             }
 
             $doctor = $issues === null || $dryRun
-                ? $runner->run($target, mode: $mode, families: $families, key: $key, dryRun: $dryRun)
-                : $this->applySelectedIssues($runner, $target, $mode, $families, $issues, $key);
+                ? $runner->run(
+                    $target,
+                    mode: $mode,
+                    families: $families,
+                    request: new DoctorRunRequest(
+                        $key,
+                        $dryRun,
+                        DoctorTargetScope::from($app, $workspace),
+                    ),
+                )
+                : $this->applySelectedIssues(
+                    $runner,
+                    $target,
+                    $mode,
+                    $families,
+                    $issues,
+                    $key,
+                    DoctorTargetScope::from($app, $workspace),
+                );
 
             foreach ($renderedFamilies as $family) {
                 $familyStatuses[$family] = 'done';
@@ -210,6 +251,8 @@ final class DoctorFixController implements Loggable
                         issues: $this->doctorEntries($doctor, 'issues'),
                         actions: $this->doctorEntries($doctor, 'actions'),
                         familyStatuses: $familyStatuses,
+                        app: $app,
+                        workspace: $workspace,
                     ),
                 ]);
             }
@@ -260,8 +303,9 @@ final class DoctorFixController implements Loggable
         array $families,
         array $issues,
         ?string $key,
+        DoctorTargetScope $scope,
     ): array {
-        $probe = $runner->probe($target, $families, $key);
+        $probe = $runner->probe($target, $families, $key, scope: $scope);
         $actions = $runner->apply($target, $mode, $issues);
 
         return $runner->finalize($probe, $mode, $actions);

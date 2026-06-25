@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\DatabaseConnections;
 
 use App\Contracts\RemoteShell;
+use App\Data\Doctor\DoctorTargetScope;
 use App\Models\App;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -31,12 +32,13 @@ final readonly class DatabaseConnectionProbe
     /**
      * @return list<array<string, mixed>>
      */
-    public function probe(Node $node): array
+    public function probe(Node $node, ?DoctorTargetScope $scope = null): array
     {
+        $scope ??= DoctorTargetScope::none();
         $issues = [];
         $scannedTargets = [];
 
-        foreach ($this->targetsForNode($node) as $target) {
+        foreach ($this->targetsForNode($node, $scope) as $target) {
             $contents = $this->readEnvContents($node, $target);
 
             if ($contents === null) {
@@ -83,12 +85,12 @@ final readonly class DatabaseConnectionProbe
             }
         }
 
-        foreach ($this->appsForNode($node) as $app) {
-            $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $app, $scannedTargets)];
+        foreach ($this->appsForNode($node, $scope) as $scopedApp) {
+            $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $scopedApp, $scannedTargets)];
         }
 
-        foreach ($this->workspacesForNode($node) as $workspace) {
-            $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $workspace, $scannedTargets)];
+        foreach ($this->workspacesForNode($node, $scope) as $scopedWorkspace) {
+            $issues = [...$issues, ...$this->extraIssuesForObservedPrefixes($node, $scopedWorkspace, $scannedTargets)];
         }
 
         return $issues;
@@ -181,17 +183,38 @@ final readonly class DatabaseConnectionProbe
     /**
      * @return list<DatabaseConnectionTarget>
      */
-    private function targetsForNode(Node $node): array
+    private function targetsForNode(Node $node, DoctorTargetScope $scope): array
     {
-        return DatabaseConnectionTarget::query()
+        $query = DatabaseConnectionTarget::query()
             ->with(['connection.node', 'app.node', 'workspace.app.node'])
             ->where(function ($query) use ($node): void {
                 $query
-                    ->whereHas('app', fn ($appQuery) => $appQuery->where('node_id', $node->id))
-                    ->orWhereHas('workspace.app', fn ($workspaceQuery) => $workspaceQuery->where('node_id', $node->id));
-            })
-            ->get()
-            ->all();
+                    ->whereHas('app', static fn ($appQuery) => $appQuery->where('node_id', $node->id))
+                    ->orWhereHas('workspace.app', static fn ($workspaceQuery) => $workspaceQuery->where(
+                        'node_id',
+                        $node->id,
+                    ));
+            });
+
+        if ($scope->workspace !== null) {
+            $query->whereHas('workspace', static function ($workspaceQuery) use ($scope): void {
+                $workspaceQuery->where('name', $scope->workspace);
+
+                if ($scope->app !== null) {
+                    $workspaceQuery->whereHas('app', static fn ($appQuery) => $appQuery->where('name', $scope->app));
+                }
+            });
+
+            /** @var list<DatabaseConnectionTarget> */
+            return $query->get()->all();
+        }
+
+        if ($scope->app !== null) {
+            $query->whereHas('app', static fn ($appQuery) => $appQuery->where('name', $scope->app));
+        }
+
+        /** @var list<DatabaseConnectionTarget> */
+        return $query->get()->all();
     }
 
     private function targetNode(DatabaseConnectionTarget $target): Node
@@ -516,21 +539,43 @@ final readonly class DatabaseConnectionProbe
     /**
      * @return list<App>
      */
-    private function appsForNode(Node $node): array
+    private function appsForNode(Node $node, DoctorTargetScope $scope): array
     {
-        return App::query()->where('node_id', $node->id)->get()->all();
+        if ($scope->workspace !== null) {
+            return [];
+        }
+
+        $query = App::query()->where('node_id', $node->id);
+
+        if ($scope->app !== null) {
+            $query->where('name', $scope->app);
+        }
+
+        return $query->get()->all();
     }
 
     /**
      * @return list<Workspace>
      */
-    private function workspacesForNode(Node $node): array
+    private function workspacesForNode(Node $node, DoctorTargetScope $scope): array
     {
-        return Workspace::query()
+        if ($scope->workspace === null && $scope->app !== null) {
+            return [];
+        }
+
+        $query = Workspace::query()
             ->with('app')
-            ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
-            ->get()
-            ->all();
+            ->whereHas('app', static fn ($appQuery) => $appQuery->where('node_id', $node->id));
+
+        if ($scope->workspace !== null) {
+            $query->where('name', $scope->workspace);
+
+            if ($scope->app !== null) {
+                $query->whereHas('app', static fn ($appQuery) => $appQuery->where('name', $scope->app));
+            }
+        }
+
+        return $query->get()->all();
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool

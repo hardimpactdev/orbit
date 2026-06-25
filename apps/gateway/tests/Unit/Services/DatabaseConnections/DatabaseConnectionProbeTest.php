@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
+use App\Data\Doctor\DoctorTargetScope;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Models\App;
@@ -697,6 +698,72 @@ describe('DatabaseConnectionProbe', function (): void {
             ->toBeEmpty()
             ->and($shell->scripts)
             ->not->toBeEmpty();
+    });
+
+    it('limits combined app and workspace scope to the workspace owned by that app', function (): void {
+        $node = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
+
+        $docsFeaturePath = storage_path('framework/testing/database-probe-docs-feature');
+        $billingFeaturePath = storage_path('framework/testing/database-probe-billing-feature');
+        File::ensureDirectoryExists($docsFeaturePath);
+        File::ensureDirectoryExists($billingFeaturePath);
+        File::put($docsFeaturePath.'/.env', "DB_CONNECTION=mysql\n");
+        File::put($billingFeaturePath.'/.env', "DB_CONNECTION=mysql\n");
+
+        $docs = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'docs',
+            'path' => storage_path('framework/testing/database-probe-docs-root'),
+        ]);
+        $billing = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'billing',
+            'path' => storage_path('framework/testing/database-probe-billing-root'),
+        ]);
+
+        $docsFeature = Workspace::factory()->create([
+            'app_id' => $docs->id,
+            'name' => 'feature',
+            'path' => $docsFeaturePath,
+        ]);
+        $billingFeature = Workspace::factory()->create([
+            'app_id' => $billing->id,
+            'name' => 'feature',
+            'path' => $billingFeaturePath,
+        ]);
+
+        $fixturePassword = substr(hash('sha256', 'database-probe combined app workspace scope'), 0, 16);
+
+        foreach ([$docsFeature, $billingFeature] as $workspace) {
+            $connection = DatabaseConnection::factory()->create([
+                'slug' => $workspace->name.'-'.$workspace->app?->name,
+                'driver' => 'pgsql',
+                'host' => 'db.internal',
+                'port' => 5432,
+                'database' => $workspace->app?->name,
+                'username' => 'orbit',
+                'credentials' => ['password' => $fixturePassword],
+            ]);
+            DatabaseConnectionTarget::factory()
+                ->forWorkspace($workspace)
+                ->create([
+                    'database_connection_id' => $connection->id,
+                    'env_prefix' => 'DB',
+                ]);
+        }
+
+        $issues = app(DatabaseConnectionProbe::class)->probe(
+            $node,
+            DoctorTargetScope::from('docs', 'feature'),
+        );
+
+        expect($issues)
+            ->not
+            ->toBeEmpty()
+            ->and(collect($issues)->pluck('detail.workspace')->filter()->unique()->values()->all())
+            ->toBe(['feature'])
+            ->and(collect($issues)->pluck('detail.app')->filter()->unique()->values()->all())
+            ->toBe(['docs']);
     });
 });
 

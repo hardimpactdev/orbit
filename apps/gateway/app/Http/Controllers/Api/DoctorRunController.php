@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Contracts\Loggable;
+use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\ActivityLogType;
 use App\Models\Node;
 use App\Services\Doctor\DoctorProgressReportFactory;
@@ -102,10 +103,24 @@ final class DoctorRunController implements Loggable
         }
 
         if ($this->wantsEventStream($request)) {
-            return $this->stream($streams, $runner, $progressReports, $target, $families, $key);
+            return $this->stream(
+                $streams,
+                $runner,
+                $progressReports,
+                $target,
+                $families,
+                $key,
+                $this->scopeValue($request, 'app'),
+                $this->scopeValue($request, 'workspace'),
+            );
         }
 
-        $doctor = $runner->probe($target, families: $families, key: $key);
+        $doctor = $runner->probe(
+            $target,
+            families: $families,
+            key: $key,
+            scope: $this->doctorTargetScope($request),
+        );
 
         return response()->json([
             'success' => [
@@ -126,6 +141,8 @@ final class DoctorRunController implements Loggable
         Node $target,
         array $families,
         ?string $key,
+        ?string $app,
+        ?string $workspace,
     ): StreamedResponse {
         return $streams->make(function (ProgressEventStreamEmitter $events) use (
             $runner,
@@ -133,6 +150,8 @@ final class DoctorRunController implements Loggable
             $target,
             $families,
             $key,
+            $app,
+            $workspace,
         ): void {
             $renderedFamilies = $families === [] ? $runner->categoriesForNode($target) : $families;
             $familyStatuses = $progressReports->familyStatuses($renderedFamilies);
@@ -151,6 +170,8 @@ final class DoctorRunController implements Loggable
                     actions: [],
                     familyStatuses: $familyStatuses,
                     familyCheckCounts: $familyCheckCounts,
+                    app: $app,
+                    workspace: $workspace,
                 ),
             ]);
             $events->tree('Running Doctor', array_map(
@@ -174,6 +195,8 @@ final class DoctorRunController implements Loggable
                 $target,
                 $key,
                 $renderedFamilies,
+                $app,
+                $workspace,
                 &$familyStatuses,
                 &$familyCheckCounts,
                 &$issues,
@@ -212,6 +235,8 @@ final class DoctorRunController implements Loggable
                             actions: [],
                             familyStatuses: $familyStatuses,
                             familyCheckCounts: $familyCheckCounts,
+                            app: $app,
+                            workspace: $workspace,
                         ),
                     ],
                 );
@@ -222,6 +247,7 @@ final class DoctorRunController implements Loggable
                 families: $families,
                 key: $key,
                 onFamilyProgress: $onFamilyProgress,
+                scope: DoctorTargetScope::from($app, $workspace),
             );
 
             if (($doctor['healthy'] ?? false) === true) {
@@ -316,6 +342,14 @@ final class DoctorRunController implements Loggable
         $value = $request->input($key);
 
         return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function doctorTargetScope(Request $request): DoctorTargetScope
+    {
+        return DoctorTargetScope::from(
+            $this->scopeValue($request, 'app'),
+            $this->scopeValue($request, 'workspace'),
+        );
     }
 
     /**

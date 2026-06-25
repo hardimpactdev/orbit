@@ -7,6 +7,8 @@ use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Processes\ProcessRuntime;
 use App\Exceptions\RemoteShellFailed;
 use App\Models\App;
+use App\Models\DatabaseConnection;
+use App\Models\DatabaseConnectionTarget;
 use App\Models\FirewallRule;
 use App\Models\Node;
 use App\Models\NodeAccess;
@@ -21,6 +23,7 @@ use App\Services\Ca\OrbitCaService;
 use App\Services\Platform\PlatformDetector;
 use App\Services\Proxy\ProxyRouteRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
 
@@ -715,7 +718,394 @@ describe('DoctorRunController', function (): void {
             ->assertJsonPath('success.data.doctor.mode', 'adopt')
             ->assertJsonPath('success.data.doctor.scope.families', ['node']);
     });
+
+    it('reflects app scope in database_connection verify JSON and limits issues to the scoped app', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'beast', 'status' => 'active']);
+
+        $dngdmtPath = storage_path('framework/testing/doctor-run-db-scope-verify-dngdmt');
+        $otherPath = storage_path('framework/testing/doctor-run-db-scope-verify-other');
+        File::ensureDirectoryExists($dngdmtPath);
+        File::ensureDirectoryExists($otherPath);
+
+        $dngdmt = App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'dngdmt',
+            'path' => $dngdmtPath,
+        ]);
+        $other = App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'other-app',
+            'path' => $otherPath,
+        ]);
+
+        $fixturePassword = substr(hash('sha256', 'doctor-run db scope verify app credentials'), 0, 16);
+
+        foreach ([$dngdmt, $other] as $app) {
+            $connection = DatabaseConnection::factory()->create([
+                'slug' => $app->name,
+                'driver' => 'pgsql',
+                'host' => 'db.internal',
+                'port' => 5432,
+                'database' => $app->name,
+                'username' => 'orbit',
+                'credentials' => ['password' => $fixturePassword],
+            ]);
+            DatabaseConnectionTarget::factory()
+                ->forApp($app)
+                ->create([
+                    'database_connection_id' => $connection->id,
+                    'env_prefix' => 'DB',
+                ]);
+        }
+
+        app()->instance(RemoteShell::class, new DoctorRunDatabaseScopeRemoteShell([
+            $dngdmtPath.'/.env' => "DB_CONNECTION=mysql\n",
+            $otherPath.'/.env' => "DB_CONNECTION=mysql\n",
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/run',
+            [
+                'mode' => 'verify',
+                'families' => ['database_connection'],
+                'node' => 'beast',
+                'app' => 'dngdmt',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.app', 'dngdmt')
+            ->assertJsonPath('success.data.doctor.scope.workspace', null);
+
+        $issueApps = collect($response->json('success.data.doctor.issues'))
+            ->pluck('detail.app')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        expect($issueApps)->toBe(['dngdmt']);
+    });
+
+    it('reflects workspace scope in database_connection verify JSON and limits issues to the scoped workspace', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'beast', 'status' => 'active']);
+
+        $featurePath = storage_path('framework/testing/doctor-run-db-scope-verify-feature');
+        $hotfixPath = storage_path('framework/testing/doctor-run-db-scope-verify-hotfix');
+        File::ensureDirectoryExists($featurePath);
+        File::ensureDirectoryExists($hotfixPath);
+
+        $app = App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'docs',
+            'path' => storage_path('framework/testing/doctor-run-db-scope-verify-docs'),
+        ]);
+        $feature = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'feature',
+            'path' => $featurePath,
+        ]);
+        $hotfix = Workspace::factory()->create([
+            'app_id' => $app->id,
+            'name' => 'hotfix',
+            'path' => $hotfixPath,
+        ]);
+
+        $fixturePassword = substr(hash('sha256', 'doctor-run db scope verify workspace credentials'), 0, 16);
+
+        foreach ([$feature, $hotfix] as $workspace) {
+            $connection = DatabaseConnection::factory()->create([
+                'slug' => $workspace->name.'-docs',
+                'driver' => 'pgsql',
+                'host' => 'db.internal',
+                'port' => 5432,
+                'database' => 'docs',
+                'username' => 'orbit',
+                'credentials' => ['password' => $fixturePassword],
+            ]);
+            DatabaseConnectionTarget::factory()
+                ->forWorkspace($workspace)
+                ->create([
+                    'database_connection_id' => $connection->id,
+                    'env_prefix' => 'DB',
+                ]);
+        }
+
+        app()->instance(RemoteShell::class, new DoctorRunDatabaseScopeRemoteShell([
+            $featurePath.'/.env' => "DB_CONNECTION=mysql\n",
+            $hotfixPath.'/.env' => "DB_CONNECTION=mysql\n",
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/run',
+            [
+                'mode' => 'verify',
+                'families' => ['database_connection'],
+                'node' => 'beast',
+                'workspace' => 'feature',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.workspace', 'feature')
+            ->assertJsonPath('success.data.doctor.scope.app', null);
+
+        $issueWorkspaces = collect($response->json('success.data.doctor.issues'))
+            ->pluck('detail.workspace')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        expect($issueWorkspaces)->toBe(['feature']);
+    });
+
+    it(
+        'reflects combined app and workspace scope in database_connection verify JSON and disambiguates duplicate workspace names',
+        function (): void {
+            createDoctorRunCallerNode();
+            $appNode = createTestAppHostNode(['name' => 'beast', 'status' => 'active']);
+
+            $docsFeaturePath = storage_path('framework/testing/doctor-run-db-scope-verify-docs-feature');
+            $billingFeaturePath = storage_path('framework/testing/doctor-run-db-scope-verify-billing-feature');
+            File::ensureDirectoryExists($docsFeaturePath);
+            File::ensureDirectoryExists($billingFeaturePath);
+
+            $docs = App::factory()->create([
+                'node_id' => $appNode->id,
+                'name' => 'docs',
+                'path' => storage_path('framework/testing/doctor-run-db-scope-verify-docs-root'),
+            ]);
+            $billing = App::factory()->create([
+                'node_id' => $appNode->id,
+                'name' => 'billing',
+                'path' => storage_path('framework/testing/doctor-run-db-scope-verify-billing-root'),
+            ]);
+
+            $docsFeature = Workspace::factory()->create([
+                'app_id' => $docs->id,
+                'name' => 'feature',
+                'path' => $docsFeaturePath,
+            ]);
+            $billingFeature = Workspace::factory()->create([
+                'app_id' => $billing->id,
+                'name' => 'feature',
+                'path' => $billingFeaturePath,
+            ]);
+
+            $fixturePassword = substr(hash('sha256', 'doctor-run db scope verify combined credentials'), 0, 16);
+
+            foreach ([$docsFeature, $billingFeature] as $workspace) {
+                $connection = DatabaseConnection::factory()->create([
+                    'slug' => $workspace->name.'-'.$workspace->app?->name,
+                    'driver' => 'pgsql',
+                    'host' => 'db.internal',
+                    'port' => 5432,
+                    'database' => $workspace->app?->name,
+                    'username' => 'orbit',
+                    'credentials' => ['password' => $fixturePassword],
+                ]);
+                DatabaseConnectionTarget::factory()
+                    ->forWorkspace($workspace)
+                    ->create([
+                        'database_connection_id' => $connection->id,
+                        'env_prefix' => 'DB',
+                    ]);
+            }
+
+            app()->instance(RemoteShell::class, new DoctorRunDatabaseScopeRemoteShell([
+                $docsFeaturePath.'/.env' => "DB_CONNECTION=mysql\n",
+                $billingFeaturePath.'/.env' => "DB_CONNECTION=mysql\n",
+            ]));
+
+            $response = $this->call(
+                'POST',
+                '/api/doctor/run',
+                [
+                    'mode' => 'verify',
+                    'families' => ['database_connection'],
+                    'node' => 'beast',
+                    'app' => 'docs',
+                    'workspace' => 'feature',
+                ],
+                [],
+                [],
+                ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+            );
+
+            $response
+                ->assertOk()
+                ->assertJsonPath('success.data.doctor.scope.app', 'docs')
+                ->assertJsonPath('success.data.doctor.scope.workspace', 'feature');
+
+            $issueDetails = collect($response->json('success.data.doctor.issues'))
+                ->pluck('detail')
+                ->filter()
+                ->values();
+
+            expect($issueDetails->pluck('workspace')->filter()->unique()->values()->all())
+                ->toBe(['feature'])
+                ->and($issueDetails->pluck('app')->filter()->unique()->values()->all())
+                ->toBe(['docs']);
+        },
+    );
+
+    it('dry-runs app-scoped database_connection adopt plans only the scoped app target', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'beast', 'status' => 'active']);
+
+        $dngdmtPath = storage_path('framework/testing/doctor-run-db-scope-adopt-dngdmt');
+        $otherPath = storage_path('framework/testing/doctor-run-db-scope-adopt-other');
+        File::ensureDirectoryExists($dngdmtPath);
+        File::ensureDirectoryExists($otherPath);
+
+        App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'dngdmt',
+            'path' => $dngdmtPath,
+        ]);
+        App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'other-app',
+            'path' => $otherPath,
+        ]);
+
+        $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
+
+        app()->instance(RemoteShell::class, new DoctorRunDatabaseScopeRemoteShell([
+            $dngdmtPath.'/.env' => $completeEnv,
+            $otherPath.'/.env' => $completeEnv,
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/fix',
+            [
+                'mode' => 'adopt',
+                'families' => ['database_connection'],
+                'node' => 'beast',
+                'app' => 'dngdmt',
+                'dry_run' => true,
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.dry_run', true)
+            ->assertJsonPath('success.data.doctor.scope.app', 'dngdmt')
+            ->assertJsonPath('success.data.doctor.scope.workspace', null);
+
+        $actions = collect($response->json('success.data.doctor.actions'));
+
+        expect($actions)
+            ->toHaveCount(1)
+            ->and($actions->pluck('details.app')->filter()->unique()->values()->all())
+            ->toBe(['dngdmt'])
+            ->and($actions->first())
+            ->not->toHaveKey('detail');
+    });
+
+    it('adopts database_connection state only for the scoped app target', function (): void {
+        createDoctorRunCallerNode();
+        $appNode = createTestAppHostNode(['name' => 'beast', 'status' => 'active']);
+
+        $dngdmtPath = storage_path('framework/testing/doctor-run-db-scope-adopt-mutate-dngdmt');
+        $otherPath = storage_path('framework/testing/doctor-run-db-scope-adopt-mutate-other');
+        File::ensureDirectoryExists($dngdmtPath);
+        File::ensureDirectoryExists($otherPath);
+
+        App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'dngdmt',
+            'path' => $dngdmtPath,
+        ]);
+        App::factory()->create([
+            'node_id' => $appNode->id,
+            'name' => 'other-app',
+            'path' => $otherPath,
+        ]);
+
+        $completeEnv = "DB_CONNECTION=pgsql\nDB_HOST=db.internal\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n";
+
+        app()->instance(RemoteShell::class, new DoctorRunDatabaseScopeRemoteShell([
+            $dngdmtPath.'/.env' => $completeEnv,
+            $otherPath.'/.env' => $completeEnv,
+        ]));
+
+        $response = $this->call(
+            'POST',
+            '/api/doctor/fix',
+            [
+                'mode' => 'adopt',
+                'families' => ['database_connection'],
+                'node' => 'beast',
+                'app' => 'dngdmt',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => DOCTOR_RUN_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.doctor.scope.app', 'dngdmt');
+
+        expect(DatabaseConnection::query()->count())
+            ->toBe(1)
+            ->and(DatabaseConnection::query()->where('slug', 'dngdmt')->exists())
+            ->toBeTrue()
+            ->and(DatabaseConnection::query()->where('slug', 'other-app')->exists())
+            ->toBeFalse();
+    });
 });
+
+final class DoctorRunDatabaseScopeRemoteShell implements RemoteShell
+{
+    /**
+     * @param  array<string, string>  $envByPath
+     */
+    public function __construct(
+        private readonly array $envByPath,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        if (str_contains($script, 'docker container ls')) {
+            return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+        }
+
+        if (preg_match("/test -f '([^']+)' && cat '([^']+)'/", $script, $matches) === 1) {
+            $path = $matches[1];
+            $env = $this->envByPath[$path] ?? null;
+
+            if (! is_string($env)) {
+                return new RemoteShellResult(exitCode: 1, stdout: '', stderr: '', durationMs: 1);
+            }
+
+            return new RemoteShellResult(exitCode: 0, stdout: $env, stderr: '', durationMs: 1);
+        }
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
 
 final class DoctorRunFleetRemoteShell implements RemoteShell
 {
