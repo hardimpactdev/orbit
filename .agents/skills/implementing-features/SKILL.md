@@ -430,9 +430,9 @@ For CLI changes, use this ordering:
 Do not spend the live topology or release-candidate path on a CLI change before
 this retained VM proof and user verification point. Do not treat retained Incus
 as optional "extra confidence" for those changes. The retained check is the
-operator-facing proof checkpoint; it is not the final automated signal by
-itself, and the durable prepared Incus lane must still pass afterward when the
-change requires it.
+operator-facing proof gate; it is not the final automated signal by itself, and
+the durable prepared Incus lane must still pass afterward when the change
+requires it.
 
 Acquire the topology from the implementation worktree and source-mount only the
 roles that need the current checkout:
@@ -575,23 +575,25 @@ moving on to durable E2E.
    through a Solo terminal that `cd`s into the assigned worktree before starting
    the agent.
 8. Monitor workers, inspect diffs, and send correction prompts until the
-   acceptance criteria are met or a blocker is explicit. Start substantial
-   slices with a first-checkpoint prompt that asks only for a test-only diff
-   for behavior changes or a docs-only diff for documentation-owned work. Give
-   that checkpoint a short timer in Solo when available. The first checkpoint is
-   a narrow owned diff or an explicit missing-context blocker after the required
-   local files are read; broad discovery without a first diff is a process
-   problem to correct. After one explicit first-diff correction, if the worker
-   still produces no diff or blocker, stand down the worker, mark the matching
-   harness signal recurring, and replace the worker instead of letting the
-   process stall. If a replacement worker also fails on a tiny known patch
-   shape, the feature owner may apply the first test or docs diff directly as a
-   documented loop exception, then update the matching signal before continuing.
-   Assign the implementation phase only after the first diff exists and has
-   been inspected. When a correction reveals missing durable context, triage it
-   through `.orbit/loop.md` and `HARNESS_SIGNALS.md`. If a reviewer or human
-   points to behavior already present in the raw request, reclassify it as a
-   blocking contract gap unless it was explicitly deferred before editing.
+   acceptance criteria are met or a blocker is explicit. Worker handoffs must
+   request the complete owned outcome in one continuous feature loop: align docs
+   when needed, create the first failing test or docs diff, implement the fix,
+   run focused verification, and report evidence or a blocker. Do not split the
+   worker handoff into staged-stop-only prompts, and do not ask the worker to
+   stop after "step 1" or wait for routine feature-owner approval between
+   normal phases. The first narrow owned diff or explicit missing-context
+   blocker is still expected after the required local files are read; broad
+   discovery without that diff or blocker is a process problem to correct.
+   After one explicit first-diff correction, if the worker still produces no
+   diff or blocker, stand down the worker, mark the matching harness signal
+   recurring, and replace the worker instead of letting the process stall. If a
+   replacement worker also fails on a tiny known patch shape, the feature owner
+   may apply the first test or docs diff directly as a documented loop
+   exception, then update the matching signal before continuing. When a
+   correction reveals missing durable context, triage it through
+   `.orbit/loop.md` and `HARNESS_SIGNALS.md`. If a reviewer or human points to
+   behavior already present in the raw request, reclassify it as a blocking
+   contract gap unless it was explicitly deferred before editing.
 9. Align documentation inside this worktree when the handoff identifies missing
    or contradictory docs. Use the Claude documenter/librarian for substantial
    docs-owned corrections; otherwise keep docs corrections with the worker that
@@ -635,7 +637,7 @@ moving on to durable E2E.
 16. Run focused in-memory verification for the active slice. For multi-slice
     features, do not spend full E2E on every internal slice by default; run the
     agreed E2E lane as the feature-level merge gate. For CLI behavior, durable
-    E2E still follows the retained VM/user-verification checkpoint. For non-CLI
+    E2E still follows the retained VM/user-verification gate. For non-CLI
     behavior, proceed to the relevant E2E lane once code and focused tests are
     ready; no retained CLI confirmation gate applies. When the agreed E2E lane
     is required for feature acceptance and cannot be completed, stop the loop if
