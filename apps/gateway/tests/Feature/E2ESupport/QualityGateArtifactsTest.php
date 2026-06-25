@@ -873,7 +873,7 @@ it('keeps final-check wired as an evidence-only composer script', function (): v
             'composer quality-gate:final-check',
         )->toContain('must not rerun Pest')->toContain('timing analysis was skipped')->toContain(
             'first narrow diff',
-        )->toContain('discovery without that diff or blocker is a process problem to correct');
+        )->toContain('broad discovery without a first diff as a process problem to correct');
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {
