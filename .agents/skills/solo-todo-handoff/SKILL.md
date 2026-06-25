@@ -34,8 +34,10 @@ Solo todo id or URL.
    `spawn_agent`, `extra_args=["--model", "opus", "--effort", "medium"]`, and a
    name such as `todo-<todo-id>-opus`. If Claude Opus is not available, stop and
    report the available tools instead of silently using Sonnet.
-6. Send the first prompt with `send_input`. Prepend Solo's returned
-   `agent_instructions` as required, then paste the `/goal` body.
+6. Send the first prompt with `send_input`. The exact text passed to
+   `send_input.input` must start with `/goal`. If Solo returns
+   `agent_instructions`, include them inside the `/goal` body under the
+   `Solo context` section; never prepend anything before `/goal`.
 7. Report the Solo process id/name, todo URL, and `/goal` character count. The
    handoff is complete once `send_input` succeeds. Do not poll, supervise, or
    send follow-up prompts unless the user explicitly asks to inspect or resume
@@ -44,6 +46,9 @@ Solo todo id or URL.
 ## Prompt Rules
 
 - The `/goal` body starts with `/goal`.
+- The submitted prompt starts with `/goal` as its first characters. No Solo
+  orchestration context, preamble, whitespace, or commentary may appear before
+  `/goal`.
 - The goal says `implement`, not `investigate`, unless the todo is explicitly
   research-only.
 - Include a direct reference to the Solo todo.
@@ -77,6 +82,7 @@ Success criteria:
 
 Context:
 - Solo todo: <solo URL>
+- Solo context: <paste Solo's agent_instructions here, or "none returned">
 - Linked scratchpad or raw examples: <solo URL/heading, short pointer, or none>
 - Likely owned surface: <paths, command family, docs, or "discover narrowly after required reads">
 
