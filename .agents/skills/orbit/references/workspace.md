@@ -45,6 +45,8 @@ orbit workspace:setup [<name>] [--app=<name>] [--path=<path>] [--json|--stream-j
 ```
 
 `--path` adopts an existing on-disk workspace path instead of creating a fresh checkout.
+The path may live outside the parent app path, including external agent worktrees.
+The parent app root itself is not a valid workspace path.
 Use `--stream-json` for JSONL setup progress when an agent needs incremental
 frames; use `--json` for the final result envelope only.
 

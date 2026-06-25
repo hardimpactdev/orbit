@@ -253,10 +253,6 @@ final class WorkspaceSetupController implements Loggable
 
     private function resolveErrorCode(string $message, string $field): string
     {
-        if (str_contains($message, 'outside the parent app workspace policy')) {
-            return 'workspace.path_outside_policy';
-        }
-
         return $field === 'app' ? 'validation_failed' : 'workspace.not_found';
     }
 

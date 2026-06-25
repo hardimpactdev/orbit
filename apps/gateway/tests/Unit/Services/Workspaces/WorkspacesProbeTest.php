@@ -121,7 +121,7 @@ describe('source path reality', function (): void {
         expect(issue($drift, 'workspace.path_unusable')?->kind)->toBe(DriftKind::Unverifiable);
     });
 
-    it('detects workspace paths outside the parent app path', function (): void {
+    it('allows generic workspace paths outside the parent app path', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -132,10 +132,10 @@ describe('source path reality', function (): void {
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 
-    it('detects generic workspace paths outside the app worktrees directory', function (): void {
+    it('allows generic workspace paths outside the app worktrees directory', function (): void {
         $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
         $workspace = Workspace::factory()
             ->for($app, 'app')
@@ -146,7 +146,7 @@ describe('source path reality', function (): void {
 
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
-        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
+        expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
     });
 
     it('allows agent IDE workspace paths outside the parent app path', function (): void {
@@ -163,6 +163,20 @@ describe('source path reality', function (): void {
         $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
 
         expect(issue($drift, 'workspace.path_outside_policy'))->toBeNull();
+    });
+
+    it('detects workspace paths that equal the parent app root', function (): void {
+        $app = workspaceableApp(['path' => '/home/orbit/apps/docs']);
+        $workspace = Workspace::factory()
+            ->for($app, 'app')
+            ->create([
+                'name' => 'feature',
+                'path' => '/home/orbit/apps/docs',
+            ]);
+
+        $drift = new WorkspacesProbe()->diff($workspace, new ProbeSnapshot([]));
+
+        expect(issue($drift, 'workspace.path_outside_policy')?->kind)->toBe(DriftKind::Divergent);
     });
 });
 

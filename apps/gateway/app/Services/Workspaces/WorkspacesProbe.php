@@ -540,7 +540,7 @@ final readonly class WorkspacesProbe
                     family: $this->key(),
                     key: 'workspace.path_outside_policy',
                     kind: DriftKind::Divergent,
-                    summary: "Workspace {$workspace->name} path is outside the generic worktree policy.",
+                    summary: "Workspace {$workspace->name} path is the parent app root, not a workspace path.",
                     detail: [
                         'path' => $workspace->path,
                         'app_path' => $workspace->app?->path,
@@ -590,10 +590,6 @@ final readonly class WorkspacesProbe
     {
         $workspace->loadMissing('app');
 
-        if ($workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
-            return false;
-        }
-
         if (! $workspace->app instanceof App || $workspace->app->path === '') {
             return false;
         }
@@ -601,7 +597,11 @@ final readonly class WorkspacesProbe
         $appPath = $this->normalizePath($workspace->app->path);
         $workspacePath = $this->normalizePath($workspace->path);
 
-        return ! str_starts_with($workspacePath, "{$appPath}/.worktrees/");
+        if ($workspacePath === $appPath) {
+            return true;
+        }
+
+        return false;
     }
 
     private function normalizePath(string $path): string

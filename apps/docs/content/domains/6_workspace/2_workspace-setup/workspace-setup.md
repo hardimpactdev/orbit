@@ -36,9 +36,10 @@ orbit workspace:setup feature-a --app=my-app --path=/var/www/my-app/.worktrees/f
   parent app, the local app context, or an interactive prompt.
 - `--path=<path>`: Absolute path to the workspace on the owning node.
   Defaults to the caller's current directory resolved to an absolute path on
-  that node. Generic worktree paths must live under the parent app's
-  `.worktrees/` directory. A relative or non-absolute value fails before side
-  effects.
+  that node. The path may live outside the parent app path, including external
+  agent worktrees such as Codex or Claude worktree directories. The parent app
+  root itself is not a valid workspace path. A relative or non-absolute value
+  fails before side effects.
 - `--json`: Output JSON.
 
 ## Path Awareness
@@ -100,10 +101,10 @@ The following steps describe what the command does during a successful run.
 - **Input Resolution**: Resolves the workspace from `[name]`, local context,
   or interactive prompts.
 - **Idempotent Set-Up Or Adoption**: Sets up a workspace path created by
-  `workspace:new`, or adopts an unmanaged path that already satisfies the
-  parent app's workspace policy. Adoption is based on the explicit `[name]`,
-  `--app`, and `--path` inputs; `workspace:setup` does not inspect project
-  files to discover workspace identity.
+  `workspace:new`, or adopts an unmanaged absolute path supplied explicitly.
+  Adoption is based on the explicit `[name]`, `--app`, and `--path` inputs;
+  `workspace:setup` does not inspect project files to discover workspace
+  identity.
 - **Gateway Configuration**: Ensures the gateway workspace record exists.
 - **Proxy Routing**: Ensures a workspace-owned route record exists in
   `proxy`.

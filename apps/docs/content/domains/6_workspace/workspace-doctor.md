@@ -49,10 +49,9 @@ The workspaces probe reads gateway workspace records and checks these layers:
    record that can own workspaces. App runtime health is not diagnosed here;
    app drift is reported by the app family.
 3. **Source path:** the workspace path exists on the parent app's node, is
-   usable as the workspace source directory, and satisfies source-driver path
-   policy. Generic worktrees must stay inside `<app path>/.worktrees/...`.
-   Adapter-owned sources such as PolyScope may live outside the parent app
-   path when the workspace row records the owning adapter metadata.
+   usable as the workspace source directory, and is distinct from the parent
+   app root. Generic and adapter-owned workspace sources may live outside the
+   parent app path.
 4. **PHP runtime:** active workspaces have an effective PHP image that can serve
    the workspace runtime on the owning node, and their workspace FrankenPHP
    container endpoint matches gateway workspace configuration. Workspaces still
@@ -85,7 +84,7 @@ Each code below corresponds to a specific layer in the workspaces probe.
 | `workspace.parent_app_invalid` | The workspace record points at a missing app, unauthorized app, or app that cannot own workspaces. |
 | `workspace.path_missing` | The configured workspace path does not exist on the parent app's node. |
 | `workspace.path_unusable` | The configured workspace path exists but cannot be read, entered, or managed by Orbit. |
-| `workspace.path_outside_policy` | A generic workspace path resolves outside the parent app's workspace policy. Adapter-owned paths are checked against their adapter metadata instead of the generic app-root policy. |
+| `workspace.path_outside_policy` | A generic workspace path equals the parent app root instead of a distinct workspace path. Adapter-owned paths are checked against their adapter metadata instead of this generic policy. |
 | `workspace.php_version_unavailable` | An active workspace's effective PHP version cannot serve the workspace runtime on the owning node. |
 | `workspace.runtime_container_missing` | The workspace runtime container or endpoint is absent. |
 | `workspace.runtime_container_mismatch` | The workspace runtime container or endpoint differs from gateway workspace configuration. |

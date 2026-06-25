@@ -33,8 +33,8 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 The `--path` value must be an absolute path on the owning node. A relative
 or non-absolute value fails before side effects with
 `error.code=validation_failed`, `error.meta.field=path`. The path must exist
-on the node and satisfy the parent app's workspace source policy. Generic
-worktree paths must live under `<app path>/.worktrees/`.
+on the node and must be distinct from the parent app root. It may live outside
+the parent app path, including external agent worktree directories.
 
 ## Input Resolution
 
@@ -110,9 +110,9 @@ worktree paths must live under `<app path>/.worktrees/`.
      node, when adopting an unregistered path.
 3. **Validate Eligibility**:
    - Target node must be reachable.
-   - Path must satisfy the parent app's workspace source policy. Generic
-     worktree paths must live under `<app path>/.worktrees/`; adapter-owned
-     paths are represented by `workspace:new` through stored adapter metadata.
+   - Path must be a workspace source path, not the parent app root. Explicit
+     `--path` adoption may register paths outside the parent app path,
+     including external agent worktree directories.
    - Path must exist on the node (created by `workspace:new` or manual
      provisioning before adoption).
    - Adoption is based on explicit command input and gateway path policy only.
@@ -212,10 +212,11 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
   `error.code=workspace.agent_ide_path_resolution_failed`,
   `error.meta.adapter=<name>`, and `error.meta.reason=<short>`. The probe
   does not silently fall through on adapter errors.
-- **Path Outside Policy**: The resolved generic workspace path is outside the
-  parent app's `.worktrees/` policy
-  (`error.code=workspace.path_outside_policy`).
-  Fails before side effects.
+- **Path Is App Root (Explicit `--path`)**: The supplied `--path` equals the
+  parent app's own root path. Fails before side effects with
+  `error.code=workspace.path_is_app_root`, `error.meta.app=<app>`,
+  `error.meta.path=<path>`, and
+  `error.meta.next_command=orbit workspace:new`.
 - **Remote Failures**: SSH timeout, permission denied, or remote command
   termination that prevents Orbit from classifying the remaining artifact
   state (`error.code=workspace.enactment_failed`, `error.meta.phase`,
@@ -265,13 +266,12 @@ all documented command failures exit with the standard command failure status
 
 | Path | Coverage |
 | --- | --- |
-| `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, and per-phase failure metadata. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Input resolution across CWD outcomes and adapter probe branches, `workspace.path_is_app_root` pre-side-effect failure, `--path` absolute-validation, gateway-applied peer allowance, interactive prompts, JSON envelope alignment, and `success.meta.warnings[]` shape. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupPathResolutionTest.php` | CWD path-ownership outcomes (`workspace`, `app_root`, `inside_app`, `unregistered`); adapter-probe single/none/ambiguous/error branches; adapter-mismatch rejection against explicit `--app`/`[name]`; adapter-driven adoption recording `agent_ide` and `agent_ide_workspace_id`. |
-| `apps/gateway/tests/Feature/Commands/Workspaces/WorkspaceSetupCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` authorization failures before side effects. |
+| `apps/gateway/tests/Feature/Actions/Workspaces/SetupWorkspaceActionTest.php` | Configuration convergence, adoption logic, step-tree orchestration, `result.action` selection across `set_up`/`adopted`/`converged` paths, `success.meta.warnings[]` payloads, and per-phase failure metadata. |
+| `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupTargetResolverTest.php` | Explicit `--path` adoption outside the parent app path and parent-app-root rejection before side effects. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceWriteCommandTest.php` | Gateway forwarding, local-workflow setup paths, and `workspace:setup` validation before opening a stream. |
+| `apps/cli/tests/Feature/Commands/Workspace/WorkspaceStreamCommandTest.php` | Streamed setup rendering, gateway progress, and failure output paths. |
 | `apps/gateway/tests/Unit/Services/Workspaces/WorkspaceSetupStepRunnerTest.php` | Sequential execution, lifecycle environment exposure, fail-fast on non-zero exit, and `error.meta.phase=setup_steps` propagation. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
-| `apps/gateway/tests/E2E/Ephemeral/WorkspaceSetupStepExecutionTest.php` | Real step execution with lifecycle env verification and step-failure reporting. |
+| `apps/e2e/tests/Feature/Commands/WorkspaceSetupTest.php` | Real-node setup, adoption, and idempotent re-apply refresh including non-rollback retry path. |
 
 Role-specific behavior and test mapping live in:
 

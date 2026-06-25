@@ -116,11 +116,15 @@ final readonly class WorkspaceSetupTargetResolver
             ->where('name', $workspaceName)
             ->first();
 
-        if (! $this->pathAllowedForWorkspace($app, $path, $existing)) {
+        if (! $this->pathAllowedForWorkspace($app, $path)) {
             throw new WorkspaceSetupResolutionFailed(
-                'workspace.path_outside_policy',
-                "Path {$path} is outside the parent app workspace policy.",
-                ['field' => 'path'],
+                'workspace.path_is_app_root',
+                "Path {$path} is the '{$app->name}' app root, not a workspace path. Use 'orbit workspace:new' to create a workspace, or pass a workspace path with --path.",
+                [
+                    'app' => $app->name,
+                    'path' => $path,
+                    'next_command' => 'orbit workspace:new',
+                ],
             );
         }
 
@@ -448,15 +452,11 @@ final readonly class WorkspaceSetupTargetResolver
         return App::query()->with('node')->where('name', $appName)->first();
     }
 
-    private function pathAllowedForWorkspace(App $app, string $path, ?Workspace $workspace): bool
+    private function pathAllowedForWorkspace(App $app, string $path): bool
     {
-        if ($workspace instanceof Workspace && $workspace->agent_ide !== null && $workspace->agent_ide !== 'none') {
-            return true;
-        }
-
         $appPath = rtrim($this->normalizePath($app->path), '/');
 
-        return str_starts_with($this->normalizePath($path), "{$appPath}/.worktrees/");
+        return $this->normalizePath($path) !== $appPath;
     }
 
     private function normalizePath(string $path): string
