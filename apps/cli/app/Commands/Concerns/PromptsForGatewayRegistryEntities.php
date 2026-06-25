@@ -64,6 +64,28 @@ trait PromptsForGatewayRegistryEntities
         );
     }
 
+    protected function promptForAppNewTargetNode(?string $preferredDefault = null): string|int
+    {
+        try {
+            $response = $this->gatewayGet('/api/nodes');
+        } catch (GatewayApiException $exception) {
+            return $this->renderGatewayFailure($exception);
+        }
+
+        $rows = $this->appHostNodePromptRows($this->registryPayloads($response, 'nodes'));
+
+        if ($rows === []) {
+            return $this->renderFailure('node.not_found', 'No app nodes found.', ['field' => 'node']);
+        }
+
+        return $this->promptRegistryDataTable(
+            label: 'Select target node:',
+            headers: ['Node', 'Roles', 'Host', 'Status'],
+            rows: $this->preferNodePromptRows($rows, $preferredDefault),
+            field: 'node',
+        );
+    }
+
     /**
      * @return array{name: string, app: string|null}|int
      */
@@ -228,6 +250,82 @@ trait PromptsForGatewayRegistryEntities
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $nodes
+     * @return array<string, array<int, string>>
+     */
+    private function appHostNodePromptRows(array $nodes): array
+    {
+        $rows = [];
+
+        foreach ($nodes as $node) {
+            $name = $this->registryString($node['name'] ?? null);
+
+            if (
+                $name === null
+                || ($this->registryString($node['status'] ?? null) ?? 'active') !== 'active'
+                || ! $this->nodeHasActiveAppRole($node)
+            ) {
+                continue;
+            }
+
+            $rows[$name] = [
+                $name,
+                $this->nodeRolesLabel($node),
+                $this->nodePeerAddressLabel($node),
+                $this->registryString($node['status'] ?? null) ?? '-',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param  array<string, array<int, string>>  $rows
+     * @return array<string, array<int, string>>
+     */
+    private function preferNodePromptRows(array $rows, ?string $preferred): array
+    {
+        if ($preferred === null || $preferred === '' || ! array_key_exists($preferred, $rows)) {
+            return $rows;
+        }
+
+        return [
+            $preferred => $rows[$preferred],
+            ...array_diff_key($rows, [$preferred => true]),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     */
+    private function nodeHasActiveAppRole(array $node): bool
+    {
+        $roles = $node['roles'] ?? null;
+
+        if (! is_array($roles)) {
+            return false;
+        }
+
+        foreach ($roles as $role) {
+            if (! is_array($role)) {
+                continue;
+            }
+
+            $roleName = $this->registryString($role['role'] ?? null);
+            $status = $this->registryString($role['status'] ?? null) ?? 'active';
+
+            if (
+                $status === 'active'
+                && in_array($roleName, ['app-dev', 'app-prod'], true)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

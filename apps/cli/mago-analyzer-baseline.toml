@@ -544,13 +544,13 @@ count = 1
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "mixed-argument"
 message = 'Invalid argument type for argument #1 of `App\Commands\Concerns\PromptsForGatewayRegistryEntities::registryPayloads`: expected `array<string, mixed>`, but found `mixed`.'
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "mixed-assignment"
 message = "Assigning `mixed` type to a variable may lead to unexpected behavior."
-count = 10
+count = 13
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
@@ -569,6 +569,12 @@ file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "mixed-operand"
 message = "Right operand in `&&` operation has `mixed` type."
 count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
+code = "mixed-return-statement"
+message = 'Could not infer a precise return type for function `App\Commands\Concerns\PromptsForGatewayRegistryEntities::promptForAppNewTargetNode`. Saw type `mixed`.'
+count = 2
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
@@ -610,19 +616,19 @@ count = 4
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "non-existent-method"
 message = 'Method `gatewayget` does not exist on type `App\Commands\Concerns\PromptsForGatewayRegistryEntities`.'
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "non-existent-method"
 message = 'Method `renderfailure` does not exist on type `App\Commands\Concerns\PromptsForGatewayRegistryEntities`.'
-count = 6
+count = 7
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "non-existent-method"
 message = 'Method `rendergatewayfailure` does not exist on type `App\Commands\Concerns\PromptsForGatewayRegistryEntities`.'
-count = 4
+count = 5
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"

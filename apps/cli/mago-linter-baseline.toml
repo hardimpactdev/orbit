@@ -350,6 +350,12 @@ count = 2
 
 [[issues]]
 file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
+code = "literal-named-argument"
+message = "Literal argument `true` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "app/Commands/Concerns/PromptsForGatewayRegistryEntities.php"
 code = "too-many-methods"
 message = "Trait has too many methods."
 count = 1
@@ -9088,4 +9094,52 @@ count = 1
 file = "tests/Support/update_all_liveness_cadence.php"
 code = "literal-named-argument"
 message = "Literal argument `1000` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "function-name"
+message = "Function name `appNewInteractiveCompleteFrame` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "function-name"
+message = "Function name `fakeAppNewNodeListEnvelope` should be in snake case."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app-1'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app-2'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'app:new'` should be passed as a named argument for clarity."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "literal-named-argument"
+message = "Literal argument `'orbit-app-new-interactive-'` should be passed as a named argument for clarity."
+count = 1
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "no-error-control-operator"
+message = "Unsafe use of error control operator `@`."
+count = 2
+
+[[issues]]
+file = "tests/Feature/Commands/App/AppNewInteractiveInputModeTest.php"
+code = "no-isset"
+message = "Use of the `isset` construct."
 count = 1
