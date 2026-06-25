@@ -32,9 +32,11 @@ final readonly class VersionInfoResolver
         }
 
         if ($releasedAt === null) {
-            $currentRelease = $this->releaseManifest(sprintf(self::VersionManifestUrl, $version)) ?? $this->apiRelease(
-                "tags/v{$version}",
-            );
+            $currentRelease =
+                $this->configuredReleaseManifestFor($version) ?? $this->releaseManifest(sprintf(
+                    self::VersionManifestUrl,
+                    $version,
+                )) ?? $this->apiRelease("tags/v{$version}");
             $releasedAt = $currentRelease['published_at'] ?? null;
         }
 
@@ -91,8 +93,43 @@ final readonly class VersionInfoResolver
 
         return [
             'version' => ltrim(trim($version), 'v'),
-            'published_at' => $this->timestamp($body['released_at'] ?? null),
+            'published_at' => $this->timestamp($body['released_at'] ?? null) ?? $this->topologyCandidateBuildTimestamp(
+                $body,
+            ),
         ];
+    }
+
+    /**
+     * @return array{version: string, published_at: string|null}|null
+     */
+    private function configuredReleaseManifestFor(string $version): ?array
+    {
+        $url = $this->configuredReleaseManifestUrl();
+
+        if ($url === null) {
+            return null;
+        }
+
+        $manifest = $this->releaseManifest($url);
+
+        if (($manifest['version'] ?? null) !== $version) {
+            return null;
+        }
+
+        return $manifest;
+    }
+
+    private function configuredReleaseManifestUrl(): ?string
+    {
+        $value = getenv('ORBIT_RELEASE_MANIFEST_URL');
+
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     /**
@@ -148,6 +185,32 @@ final readonly class VersionInfoResolver
         } catch (Throwable) {
             return null;
         }
+    }
+
+    /**
+     * @param  array<mixed>  $manifest
+     */
+    private function topologyCandidateBuildTimestamp(array $manifest): ?string
+    {
+        if (($manifest['source'] ?? null) !== 'topology-candidate') {
+            return null;
+        }
+
+        $buildId = $manifest['build_id'] ?? null;
+
+        if (! is_string($buildId)) {
+            return null;
+        }
+
+        if (! preg_match(
+            '/^(?<date>\d{4}-\d{2}-\d{2})T(?<hour>\d{2})(?<minute>\d{2})(?<second>\d{2})Z(?:-|$)/',
+            $buildId,
+            $matches,
+        )) {
+            return null;
+        }
+
+        return $this->timestamp("{$matches['date']}T{$matches['hour']}:{$matches['minute']}:{$matches['second']}Z");
     }
 
     private function currentVersion(): string

@@ -53,11 +53,14 @@ available.
   is `null`.
 - `released_at` is the publish timestamp for the installed version. If the
   latest manifest is the installed version, reuse the latest manifest
-  timestamp. Otherwise, fetch the installed version manifest at
+  timestamp. Otherwise, if `ORBIT_RELEASE_MANIFEST_URL` points to a manifest
+  for the installed version, use that manifest. If no configured manifest
+  matches the installed version, fetch the installed version manifest at
   `https://github.com/hardimpactdev/orbit/releases/download/v<version>/orbit-release-manifest.json`.
   If the manifest lookup cannot provide the timestamp, fall back to the GitHub
-  Releases API on a best-effort basis. When `--local` is present, this lookup is
-  skipped and `released_at` is `null`.
+  Releases API on a best-effort basis. Topology-candidate manifests without
+  `released_at` use the timestamp prefix from `build_id`. When `--local` is
+  present, this lookup is skipped and `released_at` is `null`.
 - `installed_at` is read from `ORBIT_INSTALL_METADATA_PATH` when set, or
   `$HOME/.config/orbit/install.json` by default, only when the metadata version
   matches the installed version. If no matching metadata exists, fall back to
