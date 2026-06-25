@@ -47,7 +47,10 @@ selected app/workspace `.env` files and checks these layers:
    when the process gateway endpoint matches the stored connection record.
    Adoption treats that Docker alias/internal-port pair as the same canonical
    connection, so adopting a healthy app runtime env does not replace the stored
-   gateway endpoint used by `database:query`.
+   gateway endpoint used by `database:query`. After a managed Docker MySQL
+   process is renamed through `process:update --name=<new-slug>`, restore and
+   comparison use the renamed Docker service alias for same-node app/workspace
+   targets while preserving the stored gateway endpoint for query commands.
 5. **WireGuard self-route diagnostics:** when a mapped managed database host
    equals the consuming node's own WireGuard service address, Linux nodes are
    diagnosed with `ip route get <wireguard-ip>` and must report a local route

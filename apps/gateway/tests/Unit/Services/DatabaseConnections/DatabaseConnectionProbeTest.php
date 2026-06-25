@@ -161,6 +161,67 @@ describe('DatabaseConnectionProbe', function (): void {
         expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
     });
 
+    it('accepts renamed managed docker mysql service aliases as the stored endpoint', function (): void {
+        $node = Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'beast',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $path = storage_path('framework/testing/database-probe-renamed-managed-docker-mysql-alias');
+        File::ensureDirectoryExists($path);
+        File::put(
+            $path.'/.env',
+            "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-db\nDB_PORT=3306\nDB_DATABASE=dlf_leden\nDB_USERNAME=dlf_leden\nDB_PASSWORD=secret\n",
+        );
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dlf-leden',
+            'path' => $path,
+        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'dlf-leden-db',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'version' => '8.4',
+                    'endpoint' => [
+                        'host' => '10.6.0.7',
+                        'port' => 3308,
+                    ],
+                    'ports' => [
+                        [
+                            'published' => 3308,
+                            'target' => 3306,
+                            'protocol' => 'tcp',
+                        ],
+                    ],
+                ],
+            ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'slug' => 'dlf-leden',
+            'driver' => 'mysql',
+            'host' => '10.6.0.7',
+            'port' => 3308,
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        DatabaseConnectionTarget::factory()
+            ->forApp($app)
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
+
+        expect(app(DatabaseConnectionProbe::class)->probe($node))->toBe([]);
+    });
+
     it('expects managed database hosts to use the owner node WireGuard service address', function (): void {
         $appNode = Node::factory()->gateway()->create(['name' => 'gateway-1', 'status' => 'active']);
         $databaseNode = Node::factory()
@@ -171,9 +232,10 @@ describe('DatabaseConnectionProbe', function (): void {
             ]);
         $path = storage_path('framework/testing/database-probe-managed-host');
         File::ensureDirectoryExists($path);
+        $credentialValue = substr(hash('sha256', 'target missing managed host'), 0, 16);
         File::put(
             $path.'/.env',
-            "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD=secret\n",
+            "DB_CONNECTION=pgsql\nDB_HOST=10.6.0.7\nDB_PORT=5432\nDB_DATABASE=docs\nDB_USERNAME=orbit\nDB_PASSWORD={$credentialValue}\n",
         );
 
         $app = App::factory()->create([
@@ -189,7 +251,7 @@ describe('DatabaseConnectionProbe', function (): void {
             'port' => 5432,
             'database' => 'docs',
             'username' => 'orbit',
-            'credentials' => ['password' => 'secret'],
+            'credentials' => ['password' => $credentialValue],
         ]);
         DatabaseConnectionTarget::factory()
             ->forApp($app)
@@ -634,7 +696,7 @@ describe('DatabaseConnectionProbe', function (): void {
         expect($issues)
             ->toBeEmpty()
             ->and($shell->scripts)
-            ->not->toBe([]);
+            ->not->toBeEmpty();
     });
 });
 

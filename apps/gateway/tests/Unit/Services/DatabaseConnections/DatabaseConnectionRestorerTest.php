@@ -128,6 +128,71 @@ describe('DatabaseConnectionRestorer', function (): void {
             ->not->toContain('DB_PORT=3308');
     });
 
+    it('writes renamed managed docker mysql service aliases without changing the stored endpoint', function (): void {
+        $node = Node::factory()
+            ->gateway()
+            ->create([
+                'name' => 'beast',
+                'status' => 'active',
+                'wireguard_address' => '10.6.0.7',
+            ]);
+        $path = storage_path('framework/testing/database-restorer-renamed-managed-docker-mysql-alias');
+        File::ensureDirectoryExists($path);
+        File::put($path.'/.env', "DB_CONNECTION=mysql\nDB_HOST=dlf-leden-mysql\nDB_PORT=3306\n");
+
+        $app = App::factory()->create([
+            'node_id' => $node->id,
+            'name' => 'dlf-leden',
+            'path' => $path,
+        ]);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'dlf-leden-db',
+                'runtime' => ProcessRuntime::Docker,
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'version' => '8.4',
+                    'endpoint' => [
+                        'host' => '10.6.0.7',
+                        'port' => 3308,
+                    ],
+                    'ports' => [
+                        [
+                            'published' => 3308,
+                            'target' => 3306,
+                            'protocol' => 'tcp',
+                        ],
+                    ],
+                ],
+            ]);
+        $connection = DatabaseConnection::factory()->create([
+            'node_id' => $node->id,
+            'driver' => 'mysql',
+            'host' => '10.6.0.7',
+            'port' => 3308,
+            'database' => 'dlf_leden',
+            'username' => 'dlf_leden',
+            'credentials' => ['password' => 'secret'],
+        ]);
+        $target = DatabaseConnectionTarget::factory()
+            ->forApp($app)
+            ->create([
+                'database_connection_id' => $connection->id,
+                'env_prefix' => 'DB',
+            ]);
+
+        app(DatabaseConnectionRestorer::class)->restore($target);
+
+        expect(File::get($path.'/.env'))
+            ->toContain('DB_HOST=dlf-leden-db')
+            ->toContain('DB_PORT=3306')
+            ->not->toContain('DB_HOST=dlf-leden-mysql')
+            ->not->toContain('DB_HOST=10.6.0.7')->and($connection->fresh()->host)->toBe(
+                '10.6.0.7',
+            )->and($connection->fresh()->port)->toBe(3308);
+    });
+
     it('writes managed database hosts as the owner node WireGuard service address', function (): void {
         $appNode = Node::factory()->gateway()->create(['status' => 'active']);
         $databaseNode = Node::factory()
@@ -138,6 +203,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             ]);
         $path = storage_path('framework/testing/database-restorer-managed-host');
         File::ensureDirectoryExists($path);
+        $credentialValue = substr(hash('sha256', 'restorer managed host'), 0, 16);
         File::put($path.'/.env', "DB_CONNECTION=pgsql\nDB_HOST=localhost\n");
 
         $app = App::factory()->create([
@@ -151,7 +217,7 @@ describe('DatabaseConnectionRestorer', function (): void {
             'port' => 5432,
             'database' => 'docs',
             'username' => 'orbit',
-            'credentials' => ['password' => 'secret'],
+            'credentials' => ['password' => $credentialValue],
         ]);
         $target = DatabaseConnectionTarget::factory()
             ->forApp($app)

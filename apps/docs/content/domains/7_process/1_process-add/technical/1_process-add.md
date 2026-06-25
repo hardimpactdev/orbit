@@ -41,7 +41,7 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 | `no_start` | `--no-start` | Optional. | When `start` is present. | `false`. | Boolean flag. Skips starting rendered runtime units after apply. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
 
-`process_command` is positional here because it is required to create a process definition. The sibling `process:edit` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value.
+`process_command` is positional here because it is required to create a process definition. The sibling `process:update` command uses `--command=<command>` because command is one optional editable field and omission preserves the current value. `process:edit` remains a compatibility alias for `process:update`.
 
 ## Input Mode Contracts
 

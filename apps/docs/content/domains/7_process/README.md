@@ -15,7 +15,7 @@ These rules govern process configuration ownership, naming, and runtime unit der
 These rules cover who owns process configuration and how process definitions are named.
 
 - The gateway owns process configuration.
-- Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters.
+- Process names are identity slugs: lowercase letters, digits, and hyphens only; they cannot start or end with a hyphen and are limited to 64 characters. `process:update --name=<new-slug>` is the public rename path when the selected runtime/backend can safely replace derived unit identity.
 - Process definitions may be scoped to a node, app, or workspace. The scope
   selects the owning node and default runtime context.
 - Process definitions have a stable order inside their owning scope.
@@ -52,7 +52,9 @@ These rules describe how runtime units are derived from process definitions.
   rendering context supplies per-instance fields such as node/app/workspace
   identity, path, URL, environment, ports, and volumes.
 - Runtime unit names use Orbit-owned backend-safe names such as
-  `orbit_<scope>_<process>`.
+  `orbit_<scope>_<process>`. When process identity is renamed, Orbit replaces
+  derived runtime units and removes old derived names instead of leaving
+  orphaned units.
 - The `orbit_` prefix marks Orbit ownership, and underscores are reserved as
   backend segment delimiters.
 - Systemd unit names, Docker container names, and Swarm service names
@@ -143,7 +145,7 @@ advertised as a supported managed service until its catalog entry lands.
 
 ### Command argument conventions
 
-Create commands use positional arguments for required fields. Edit commands use named options so omitted fields preserve their current value. This is why `process:add` accepts the required `[command]` positionally, while `process:edit` uses `--command=<command>` as one optional edit field among several.
+Create commands use positional arguments for required fields. Update commands use named options so omitted fields preserve their current value. This is why `process:add` accepts the required `[command]` positionally, while `process:update` uses `--command=<command>` and `--name=<new-slug>` as optional update fields. `process:edit` remains a backward-compatible alias for `process:update`.
 
 Implementation-shape details for process runtime backends and the Orbit
 Scheduler live in
@@ -166,10 +168,11 @@ branch on the node-role column locally.
   calls from the owning app-host node are authorized by its
   self-grant — see [Architecture: Self-grants and
   self-serving](../../architecture.md#self-grants-and-self-serving).
-- Configuration mutation commands (`process:add`, `process:edit`,
-  `process:remove`) require their matching `process:add`, `process:edit`, or
-  `process:remove` permission and are typically reserved for admin-class
-  presets.
+- Configuration mutation commands (`process:add`, `process:update`,
+  `process:remove`) require their matching mutation permission and are
+  typically reserved for admin-class presets. During the compatibility window,
+  `process:edit` grants authorize `process:update`, and `process:edit` remains
+  a command alias for existing scripts.
 
 Every process command is a request to the gateway typed API. The CLI never
 writes process configuration, reads Docker or systemd logs directly, or
@@ -220,13 +223,14 @@ Agent IDE crash notification is a consumer of the recorded crash event. For `age
 Each command links to its public documentation and technical contract.
 
 1. [`orbit process:add [name] [command]`](1_process-add/process-add.md)
-2. [`orbit process:edit [name]`](2_process-edit/process-edit.md)
-3. [`orbit process:remove [name]`](3_process-remove/process-remove.md)
-4. [`orbit process:list`](4_process-list/process-list.md)
-5. [`orbit process:start [name]`](5_process-start/process-start.md)
-6. [`orbit process:stop [name]`](6_process-stop/process-stop.md)
-7. [`orbit process:restart [name]`](7_process-restart/process-restart.md)
-8. [`orbit process:logs [name]`](8_process-logs/process-logs.md)
+2. [`orbit process:update [name]`](2_process-update/process-update.md)
+3. [`orbit process:edit [name]`](2_process-edit/process-edit.md) compatibility alias
+4. [`orbit process:remove [name]`](3_process-remove/process-remove.md)
+5. [`orbit process:list`](4_process-list/process-list.md)
+6. [`orbit process:start [name]`](5_process-start/process-start.md)
+7. [`orbit process:stop [name]`](6_process-stop/process-stop.md)
+8. [`orbit process:restart [name]`](7_process-restart/process-restart.md)
+9. [`orbit process:logs [name]`](8_process-logs/process-logs.md)
 
 ## Doctor
 

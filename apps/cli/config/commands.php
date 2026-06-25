@@ -107,6 +107,7 @@ use App\Commands\Process\ProcessRemoveCommand;
 use App\Commands\Process\ProcessRestartCommand;
 use App\Commands\Process\ProcessStartCommand;
 use App\Commands\Process\ProcessStopCommand;
+use App\Commands\Process\ProcessUpdateCommand;
 use App\Commands\Proxy\ProxyAddCommand;
 use App\Commands\Proxy\ProxyListCommand;
 use App\Commands\Proxy\ProxyRemoveCommand;
@@ -266,6 +267,7 @@ return [
         ProcessRestartCommand::class,
         ProcessStartCommand::class,
         ProcessStopCommand::class,
+        ProcessUpdateCommand::class,
         ProxyAddCommand::class,
         ProxyListCommand::class,
         ProxyRemoveCommand::class,
