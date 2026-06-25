@@ -896,6 +896,24 @@ it('keeps quality-check artifact capture wired into the aggregate gate script', 
         ->toContain('.orbit/quality-gates');
 });
 
+it('keeps docs-lint artifact capture wired into the docs lint script', function (): void {
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    expect($composer['scripts'])
+        ->toHaveKey('docs-lint')
+        ->and(implode("\n", $composer['scripts']['docs-lint']))
+        ->toContain('bin/quality-gate-run')
+        ->toContain('--gate=docs-lint')
+        ->toContain('--command="composer docs-lint"')
+        ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --path=domains')
+        ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --path=testing')
+        ->toContain('bin/orbit-docs-artisan librarian:lint --format=agent --group=references');
+});
+
 it('keeps source-prepared e2e artifact capture out of provider provision scripts', function (): void {
     $composer = json_decode(
         file_get_contents(repo_path('composer.json')) ?: '',
@@ -933,6 +951,8 @@ it('documents quality gate artifact and analyzer commands', function (): void {
 
     expect($qualityGates)
         ->toContain('.orbit/quality-gates/')
+        ->toContain('composer docs-lint')
+        ->toContain('docs-lint')
         ->toContain('composer test:e2e')
         ->toContain('e2e-docker')
         ->toContain('e2e-incus')

@@ -8,7 +8,7 @@ Source worktree: php command no-human-renderer loop on Mini
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: required verification rows are now part of the finalization gate; passed Durable E2E rows require matching quality-gate artifacts
+Guardrail change: required verification rows are now part of the finalization gate; required proof is derived from the branch diff; docs-lint, quality-check, and passed Durable E2E proof require matching quality-gate artifacts
 Related signals: harness-signals/2026-06-24-codex-hook-best-effort-finalization-check.md
 Superseded by: none
 Tags: finalization, e2e, verification, loop-engineering
@@ -31,10 +31,11 @@ the content of the final packet when the gate does run.
 ## Missing Guardrail
 
 The finalization gate required a `Final Distillation` section and meaningful
-signal labels, but it did not mechanically require explicit verification rows.
-That left room for an agent to mark a feature complete while durable E2E,
-retained CLI proof, or `composer quality-check` was missing, deferred, blocked,
-or described only as follow-up prose.
+signal labels, but it did not mechanically require explicit verification rows
+or artifact evidence based on what changed. That left room for an agent to mark
+a feature complete while docs-lint, durable E2E, retained CLI proof, or
+`composer quality-check` was missing, deferred, blocked, or described only as
+follow-up prose.
 
 ## Guardrail Change
 
@@ -45,6 +46,13 @@ or described only as follow-up prose.
   the loop outcome is `blocked`, not complete.
 - `bin/orbit-codex-pre-tool-use-hook` now blocks merge/cleanup when the final
   packet omits required verification rows or records blocked/incomplete status.
+- The hook derives required proof from the branch diff. Docs-only diffs require
+  a successful `docs-lint` or broader `quality-check` artifact, other diffs
+  require a successful `quality-check` artifact, and production PHP diffs also
+  require Durable E2E to be `passed`.
+- `composer docs-lint` now writes a `docs-lint` artifact under
+  `.orbit/quality-gates/`, so docs-only finalization can be proven without
+  rerunning Pest or E2E.
 - A `Durable E2E: passed` row must name the exact E2E command or e2e quality
   gate. The hook reads the latest matching `.orbit/quality-gates/` artifact and
   blocks missing or non-zero evidence without rerunning E2E.
@@ -55,6 +63,7 @@ or described only as follow-up prose.
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/FeatureFinalizationGateTest.php
 bin/orbit-gateway-pest --compact tests/Feature/E2ESupport/QualityGateArtifactsTest.php
 php -l bin/orbit-codex-pre-tool-use-hook
+composer docs-lint
 ```
 
 The new feature-finalization tests cover missing verification rows, a missing
@@ -63,14 +72,19 @@ allowed `not applicable` case.
 
 The artifact-backed tests cover passed Durable E2E with no matching artifact,
 passed Durable E2E with a latest failed artifact, and passed Durable E2E with a
-latest successful artifact.
+latest successful artifact. Diff-derived tests cover docs-only finalization
+with and without docs-lint evidence, PHP diffs without quality-check artifacts,
+non-docs diffs with quality-check marked not applicable, production PHP diffs
+with E2E marked not applicable, and production PHP diffs with artifact-backed
+quality-check plus E2E.
 
 ## Reappearance Check
 
-If a future loop marks a feature complete with skipped E2E, retained PTY proof,
-or `composer quality-check`, inspect `.orbit/loop.md` first. If the required
-verification rows are absent or incomplete and the merge/cleanup still passed,
-tighten `bin/orbit-codex-pre-tool-use-hook` and add a test for the missed row
+If a future loop marks a feature complete with skipped docs-lint, E2E, retained
+PTY proof, or `composer quality-check`, inspect `.orbit/loop.md` and the branch
+diff first. If the required verification rows or artifacts are absent or
+incomplete and the merge/cleanup still passed, tighten
+`bin/orbit-codex-pre-tool-use-hook` and add a test for the missed row/artifact
 shape. If the Durable E2E row says `passed`, also inspect the latest matching
 artifact under `.orbit/quality-gates/`; missing or non-zero artifacts are a hook
 bug, while stale/timing warnings belong to `composer quality-gate:final-check`

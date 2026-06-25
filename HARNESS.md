@@ -164,7 +164,9 @@ feature-cleanup boundaries, then blocks when a targeted feature worktree has no
 completed `.orbit/loop.md` `Final Distillation` section, when the loop outcome
 is not exactly `complete` or `complete + loop improvement`, when required
 verification rows are missing, or when required verification is still recorded
-as blocked, pending, skipped, missing, deferred, unresolved, or not run.
+as blocked, pending, skipped, missing, deferred, unresolved, or not run. It
+derives the required proof from the branch diff and reads existing
+`.orbit/quality-gates/` artifacts instead of rerunning gates.
 
 The mechanical contract is label-based. Keep the exact Markdown bullet-label
 lines from `LOOP.md.example`: `- Loop outcome:`, `- Required verification:`,
@@ -179,12 +181,15 @@ E2E, retained CLI ingress VM Solo-terminal proof, and `composer quality-check`:
 `- Durable E2E: passed | blocked | not applicable - <evidence or reason>`.
 If the feature required a lane and it is blocked, the feature outcome is
 `blocked`; do not write `complete` with a deferred verification follow-up.
-When Durable E2E is `passed`, name the exact E2E command or quality-gate lane
-that ran, such as `composer test:e2e`, `composer test:e2e:docker`, or
-`composer test:e2e:incus`. The merge/cleanup gate reads the latest matching
-artifact under `.orbit/quality-gates/` and blocks missing or non-zero evidence;
-it does not rerun E2E. Stale-commit and timing-threshold warnings remain the
-job of `composer quality-gate:final-check` and the quality-gate triage skill.
+Docs-only diffs can satisfy the gate with a successful `composer docs-lint` or
+broader `composer quality-check` artifact. Other diffs require successful
+`composer quality-check` artifact evidence. Production PHP diffs additionally
+require Durable E2E to be `passed`. When Durable E2E is `passed`, name the exact
+E2E command or quality-gate lane that ran, such as `composer test:e2e`,
+`composer test:e2e:docker`, or `composer test:e2e:incus`; the gate reads the
+latest matching artifact and blocks missing or non-zero evidence. Stale-commit
+and timing-threshold warnings remain the job of
+`composer quality-gate:final-check` and the quality-gate triage skill.
 
 The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
@@ -443,8 +448,11 @@ for handoff.
 Validate each slice with the narrowest checks that keep the feature branch
 honest: focused Pest, docs-lint, static checks, or PTY proof when the slice
 changes terminal behavior. Do not spend full E2E on every internal slice by
-default. Run the agreed E2E lane as the feature-level merge gate, or earlier
-only when the active slice itself cannot be judged without topology behavior.
+default. The finalization gate derives the feature-level proof from the final
+branch diff: docs-only changes need docs-lint evidence, non-docs changes need
+quality-check evidence, and production PHP changes need the agreed E2E lane.
+Run E2E earlier only when the active slice itself cannot be judged without
+topology behavior.
 
 When the agreed E2E lane is required for acceptance and cannot be completed,
 the feature loop halts if the E2E blocker cannot be resolved inside the current
