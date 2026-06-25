@@ -252,9 +252,12 @@ steering notes. Include the Codex thread id or transcript path for the feature
 orchestrator when available, plus Solo scratchpads or process ids needed to
 inspect worker and reviewer reports.
 
-Spawn a fresh Solo-managed analyzer, usually Claude when available, and give it
-only the packet, Codex/Solo session pointers, changed diff, relevant harness
-docs, and named evidence pointers. Use
+Spawn a fresh Solo-managed analyzer as Claude Opus at medium effort: discover
+the enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
+`extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is not
+available through Solo, stop and report the blocker instead of substituting
+another model. Give it only the packet, Codex/Solo session pointers, changed
+diff, relevant harness docs, and named evidence pointers. Use
 `.agents/review-personas/post-feature-analyzer.md`. The analyzer reports
 whether the loop was performed properly and classifies guardrail decisions as
 `correct-noop`, `missed`, `redundant`, `wrong-target`, or `defer`. It must not
@@ -673,6 +676,12 @@ command address/output transcript.
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
     For CLI command changes, run `.agents/review-personas/cli-command.md`.
+    Spawn any code-reviewer or CLI-reviewer persona as Claude Opus through Solo
+    at medium effort: discover the enabled `Claude` tool with
+    `list_agent_tools`, then `spawn_agent` with
+    `extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is
+    not available through Solo, stop and report the blocker instead of
+    substituting another model.
     Resolve or explicitly report findings before commit.
     If the reviewer finds a mismatch between implementation evidence and the
     raw user examples, treat it as a contract mismatch first; only downgrade it

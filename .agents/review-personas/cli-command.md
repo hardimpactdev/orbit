@@ -9,6 +9,15 @@ This is a reviewer persona, not an implementation workflow. It does not replace
 tests. It tells a reviewer what to inspect after an implementation report or
 diff exists.
 
+## Default Agent
+
+Run this CLI reviewer as Claude Opus through Solo at medium effort. Discover the
+enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
+`extra_args=["--model", "opus", "--effort", "medium"]`. If Claude Opus is not
+available through Solo, stop and report the blocker instead of substituting
+another model. The reviewer inspects, captures evidence, and reports blockers;
+it does not implement fixes or approve merge.
+
 ## Required Context
 
 Read only the files needed for the command under review:

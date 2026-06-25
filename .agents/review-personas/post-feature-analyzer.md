@@ -10,6 +10,16 @@ fixes, edit harness files, create `harness-signals/` records, approve merge,
 run cleanup, or decide which recommendations become durable. The feature owner
 or human uses the report to decide the next action.
 
+## Default Agent
+
+Run this analyzer as Claude Opus through Solo at medium effort. Discover the
+enabled `Claude` tool with `list_agent_tools`, then `spawn_agent` with
+`extra_args=["--model", "opus", "--effort", "medium"]` and a fresh context. If
+Claude Opus is not available through Solo, stop and report the blocker instead
+of substituting another model. The model choice does not relax the read-only
+boundary above: Claude Opus analyzes and reports, it does not implement,
+approve merge, or run cleanup.
+
 ## Inputs
 
 The prompt should provide as many of these pointers as exist:

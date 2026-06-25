@@ -232,6 +232,40 @@ it('routes post-feature analysis through the analyzer persona', function (): voi
         ->toContain('Do not use this file for new Orbit feature loops');
 });
 
+it('pins post-feature analyzer and reviewer personas to Solo Claude Opus medium effort', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
+    $cliReviewer = file_get_contents(repo_path('.agents/review-personas/cli-command.md')) ?: '';
+
+    foreach ([$analyzer, $cliReviewer, $harness, $implementingFeatures] as $contents) {
+        expect($contents)
+            ->toContain('Claude Opus')
+            ->toContain('--model')
+            ->toContain('opus')
+            ->toContain('--effort')
+            ->toContain('medium');
+    }
+
+    expect($analyzer)
+        ->toContain('list_agent_tools')
+        ->toContain('spawn_agent')
+        ->toContain('extra_args=["--model", "opus", "--effort", "medium"]')
+        ->toContain('does not implement');
+
+    expect($cliReviewer)
+        ->toContain('list_agent_tools')
+        ->toContain('spawn_agent')
+        ->toContain('extra_args=["--model", "opus", "--effort", "medium"]')
+        ->toContain('does not implement fixes or approve merge');
+
+    expect($harness)
+        ->toContain('Code / CLI reviewer persona')
+        ->toContain('Solo-managed Claude Opus reviewer (medium effort)')
+        ->toContain('Solo-managed Claude Opus analyzer (medium effort)')
+        ->not->toContain('Claude preferred when available');
+});
+
 it('provides first-party boost skill sources in orbit packages', function (): void {
     expect(repo_path('packages/core/resources/boost/skills/orbit-core-development/SKILL.md'))
         ->toBeFile()
