@@ -89,24 +89,9 @@ Responsibilities:
 - Build the local post-feature distillation packet before completion, request
   fresh-context classification when the loop was non-trivial, and adjudicate
   candidate learnings before any durable guardrail is changed.
-- Preserve the exact `LOOP.md.example` final-distillation outcome list labels:
-  `- Accepted durable updates:`, `- Rejected or already-covered signals:`,
-  `- Deferred follow-ups:`, and `- No-new-signal rationale:`. The
-  merge-boundary gate reads those Markdown bullet-label lines mechanically;
-  custom prose, plain headings, or bare label lines do not replace them.
-- Run `bin/orbit-feature-finalization-check` for the intended merge-back command
-  before executing that boundary. Worktree and branch cleanup are no longer part
-  of automatic merge finalization; run the same gate for cleanup only after
-  post-feature signal audit is complete or the user explicitly approves cleanup.
-  The Codex `PreToolUse` hook is a best-effort guardrail, not the only gate,
-  because it does not intercept every shell execution path.
-- Treat hook dogfood as proof only when a plain Codex-issued boundary command is
-  blocked before Git runs. `.codex/hooks.json` existing or `/hooks` showing an
-  installed/active hook is not enough. If Git reaches usage output, a Git-side
-  refusal, or command execution, record that as a hook-surface failure and keep
-  using `bin/orbit-feature-finalization-check` explicitly. Prefer a
-  non-destructive dogfood command such as `git branch -d <feature-branch>` while
-  the branch is still checked out in its worktree.
+- Follow `HARNESS.md` for final-distillation, merge-boundary, post-feature
+  signal-audit, and cleanup policy. Use `LOOP.md.example` for the local packet
+  shape and `bin/orbit-feature-finalization-check` for executable gate usage.
 - Own final commit, merge-back, preserved-worktree post-analysis handoff,
   feature completion cleanup, and the implementation report.
 
@@ -742,14 +727,10 @@ moving on to durable E2E.
     in `.orbit/loop.md` and the report. Re-run the narrow check that proves any
     changed guardrail target is reachable.
 24. Commit the verified worktree changes on the worktree branch.
-25. Merge the branch back into `main` from the primary `~/orbit` checkout and
-    leave `~/orbit` on updated `main`. Preserve the completed worktree and
-    branch after merge so `.orbit/loop.md`, evidence artifacts, reviewer output,
-    and harness-signal decisions remain available for post-feature analysis.
-    Remove the worktree or branch only after post-feature signal audit is
-    complete or the user explicitly approves cleanup. Preserve unrelated dirty
-    files in `~/orbit`; if they overlap with the merge, stop for direction
-    instead of discarding them.
+25. Merge the branch back into `main` from the primary `~/orbit` checkout by
+    following `HARNESS.md` merge and cleanup boundaries. Leave `~/orbit` on
+    updated `main`. Preserve unrelated dirty files in `~/orbit`; if they
+    overlap with the merge, stop for direction instead of discarding them.
 26. If release was explicitly agreed or specifically discussed as part of the
     crystallized scope, run the release flow after merge. Capture live topology
     `doctor` status before publishing a release, run `orbit update:all` after
@@ -974,8 +955,7 @@ Verification:
 Merge-back:
 - Commit: <sha>
 - Main checkout: `~/orbit` on `main` at <sha>
-- Worktree cleanup: <preserved for post-feature signal audit, removed after
-  approved audit, or preserved with blocker/reason>
+- Worktree cleanup: <status per `HARNESS.md` Feature Cleanup>
 
 Feature completion cleanup:
 - Completion trigger: <user live confirmation, user says complete, pending, or not applicable>

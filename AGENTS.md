@@ -85,19 +85,10 @@ product authority and are not linted as product docs.
   priority over generic worktree skills or ad hoc `git worktree add`. Agents
   must not recreate that setup flow manually. If the script cannot be used,
   stop and report the blocker instead of silently falling back.
-- When a feature is implemented and verified, commit the worktree branch and
-  merge it back into `main` from the primary `~/orbit` checkout, then leave
-  `~/orbit` on updated `main`. Preserve the completed feature worktree and
-  branch until post-feature signal audit confirms `.orbit/loop.md`, Solo
-  scratchpads, reviewer output, and harness-signal decisions were processed, or
-  until the user explicitly approves cleanup. Before each merge or explicit
-  cleanup boundary, run `bin/orbit-feature-finalization-check` with the exact
-  intended `git merge`, `git worktree remove`, or `git branch -d` command; the
-  Codex hook is best-effort and does not replace this explicit check. After the
-  user confirms live topology behavior or explicitly says the feature is
-  complete, archive the feature scratchpad and clean up related Solo todos and
-  agents. Preserve unrelated dirty files in `~/orbit`; never discard user
-  changes to make a merge easier.
+- When a feature is implemented and verified, follow `HARNESS.md` for merge,
+  post-feature signal audit, and cleanup boundaries. Leave `~/orbit` on updated
+  `main`, and preserve unrelated dirty files; never discard user changes to make
+  a merge easier.
 - Always make sure that `apps/docs/content/` describes the correct behavior. If
   the docs are lacking or contradict what is requested, flag that first before
   proceeding.

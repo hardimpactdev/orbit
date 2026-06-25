@@ -144,38 +144,18 @@ rationale when nothing changes.
 
 ## Merge Boundary Gate
 
-Orbit has two merge-boundary checks:
+This section is the authority for feature merge and cleanup boundaries. Other
+instructions should point here instead of restating this policy.
 
-1. `bin/orbit-feature-finalization-check` is the required explicit gate before
-   merge-back and before any explicitly approved feature cleanup.
-2. `.codex/hooks.json` installs a best-effort Codex `PreToolUse` hook that
-   calls the same gate when Codex intercepts the tool call.
+`bin/orbit-feature-finalization-check` is the executable gate. The Codex
+`PreToolUse` hook calls the same gate when that hook surface intercepts a
+boundary command, but hook status is diagnostic only. Use the helper directly
+before real merge or cleanup boundaries; run it with no arguments for current
+command usage.
 
-Codex hooks are useful but not a complete enforcement boundary: current Codex
-`PreToolUse` support does not intercept every newer shell execution path. Do
-not rely on the hook alone. Run the explicit gate before `git merge`. Run the
-same gate before `git worktree remove` or `git branch -d` only when cleanup has
-been explicitly approved after post-feature signal audit:
-
-```bash
-bin/orbit-feature-finalization-check git merge <feature-branch>
-bin/orbit-feature-finalization-check git worktree remove .worktrees/<feature-branch>
-bin/orbit-feature-finalization-check git branch -d <feature-branch>
-```
-
-Codex hook status is diagnostic only. Seeing `.codex/hooks.json` in the repo or
-`/hooks` report `PreToolUse` as installed/active does not prove enforcement. A
-hook dogfood only passes when a plain Codex-issued merge or cleanup command is
-blocked before Git runs. If Git prints usage, refuses the operation itself, or
-otherwise reaches command execution, treat the hook dogfood as failed and use
-the explicit finalization gate for any real boundary.
-
-Use a non-destructive command shape for hook dogfood. A good cleanup-boundary
-probe is `git branch -d <feature-branch>` while that branch is still checked
-out in a retained worktree: if the hook misses, Git should refuse the delete
-because the branch is checked out. Do not use an invalid command as the primary
-proof; it can show the hook missed the call, but it is noisier evidence than a
-valid command with Git-side safety.
+Cleanup commands are valid only after the post-feature signal audit is complete
+or the user explicitly approves cleanup. Until then, leave the completed
+feature worktree and branch intact.
 
 The gate is intentionally narrow: it only inspects git merge and
 feature-cleanup boundaries, then blocks when a targeted feature worktree has no
@@ -192,14 +172,12 @@ do not satisfy the gate by themselves.
 The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
 feature-session learnings undistilled. It does not run tests, inspect ordinary
-commands, mine old sessions, or promote signals automatically. It prevents the
-finalization checkpoint from being skipped before `git merge` and before any
-explicitly approved cleanup command that would hide the local context.
+commands, mine old sessions, or promote signals automatically.
 
 If the gate blocks, do not delete `.orbit/` or bypass the merge. Review the
 feature evidence, classify candidate learnings through `HARNESS_SIGNALS.md`,
-fill the final-distillation outcomes in `.orbit/loop.md`, and then rerun the
-`bin/orbit-feature-finalization-check`, then rerun the same git command.
+fill the final-distillation outcomes in `.orbit/loop.md`, rerun the helper, and
+then rerun the same git command.
 For a genuinely tiny local change, the final-distillation section can record
 the no-review/no-new-signal rationale explicitly.
 
@@ -304,9 +282,8 @@ Merge and cleanup are separate boundaries.
   terminal or PTY artifacts. Confirm accepted, rejected, already-covered, and
   deferred signals were processed and that no harness signal was lost.
 - Worktree cleanup happens only after that audit is complete or the user
-  explicitly approves cleanup. Then run `bin/orbit-feature-finalization-check`
-  for the exact `git worktree remove` or `git branch -d` command before running
-  it.
+  explicitly approves cleanup. Follow the Merge Boundary Gate above before
+  running cleanup.
 - Feature completion cleanup happens only after the user confirms the live
   topology works as expected, or explicitly says the feature can be considered
   complete. Then archive the feature scratchpad, close or resolve related Solo
