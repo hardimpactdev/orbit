@@ -189,7 +189,6 @@ final class NodePermissionPresets
             'workspace:log',
             'process:read',
             'process:add',
-            'process:edit',
             'process:update',
             'process:remove',
             'process:start',
@@ -309,7 +308,6 @@ final class NodePermissionPresets
             // Process
             'process:read',
             'process:add',
-            'process:edit',
             'process:update',
             'process:remove',
             'process:start',

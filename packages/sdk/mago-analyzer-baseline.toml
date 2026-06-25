@@ -385,19 +385,19 @@ message = "Redundant type assertion: `$body` is already `array<array-key, mixed>
 count = 1
 
 [[issues]]
-file = "src/Requests/Processes/EditProcessRequest.php"
+file = "src/Requests/Processes/UpdateProcessRequest.php"
 code = "redundant-comparison"
 message = "Redundant `!==` comparison: left-hand side is always not identical to right-hand side."
 count = 1
 
 [[issues]]
-file = "src/Requests/Processes/EditProcessRequest.php"
+file = "src/Requests/Processes/UpdateProcessRequest.php"
 code = "redundant-logical-operation"
 message = "Redundant `&&` operation: left operand is always truthy and right operand is evaluated."
 count = 1
 
 [[issues]]
-file = "src/Requests/Processes/EditProcessRequest.php"
+file = "src/Requests/Processes/UpdateProcessRequest.php"
 code = "redundant-type-comparison"
 message = "Redundant type assertion: `$body` is already `array<array-key, mixed>`."
 count = 1

@@ -117,7 +117,7 @@ Commands are grouped by family. Each reference file lists every command in that 
 | Command | What it does |
 |---|---|
 | `orbit process:add [name] [cmd]` | Add a process definition for an app (systemd-backed on Linux) |
-| `orbit process:edit [name]` | Edit a process definition |
+| `orbit process:update [name]` | Update a process definition |
 | `orbit process:remove [name]` | Remove a process definition |
 | `orbit process:list` | List configured processes |
 | `orbit process:start\|stop\|restart [name]` | Control runtime units |

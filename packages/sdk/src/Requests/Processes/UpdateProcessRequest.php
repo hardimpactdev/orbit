@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Laravel\Requests\Processes;
 
 use Orbit\Sdk\Laravel\GatewayRequest;
-use Orbit\Sdk\Laravel\Responses\Processes\ProcessEditResponse;
+use Orbit\Sdk\Laravel\Responses\Processes\ProcessUpdateResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasJsonBody;
 
-final class EditProcessRequest extends GatewayRequest implements HasBody
+final class UpdateProcessRequest extends GatewayRequest implements HasBody
 {
     use HasJsonBody;
 
@@ -47,11 +47,11 @@ final class EditProcessRequest extends GatewayRequest implements HasBody
                 'runtime' => $this->runtime,
                 'restart' => $this->restart,
             ],
-            fn (mixed $value): bool => $value !== null,
+            static fn (mixed $value): bool => $value !== null,
         );
     }
 
-    public function createDtoFromResponse(Response $response): ProcessEditResponse
+    public function createDtoFromResponse(Response $response): ProcessUpdateResponse
     {
         $data = $this->unwrapData($response);
         $body = $response->json();
@@ -65,7 +65,7 @@ final class EditProcessRequest extends GatewayRequest implements HasBody
             }
         }
 
-        return new ProcessEditResponse(
+        return new ProcessUpdateResponse(
             data: $data,
             warnings: $warnings,
         );

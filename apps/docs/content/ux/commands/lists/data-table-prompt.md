@@ -70,7 +70,7 @@ This command uses `datatable` and is the canonical model to follow.
   given. See `apps/gateway/app/Console/Commands/ProfileCommand.php` and
   `docs/domains/11_operation/5_profile/technical/5.1_profile_input-mode_interactive.md`.
 - `orbit app:remove`, `orbit node:show`, `orbit workspace:show`,
-  `orbit process:edit`, and `orbit schedule:run` — select existing registry
+  `orbit process:update`, and `orbit schedule:run` — select existing registry
   rows before acting on them.
 
 ## Cross References

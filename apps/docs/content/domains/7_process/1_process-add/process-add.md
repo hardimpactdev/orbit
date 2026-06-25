@@ -63,7 +63,6 @@ accepted as a backward-compatible redundant flag.
 
 - [`process:list`](../4_process-list/process-list.md)
 - [`process:update`](../2_process-update/process-update.md)
-- [`process:edit`](../2_process-edit/process-edit.md) compatibility alias
 - [`process-doctor.md`](../process-doctor.md)
 
 ***

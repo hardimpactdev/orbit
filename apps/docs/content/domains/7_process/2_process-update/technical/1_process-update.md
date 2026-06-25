@@ -8,9 +8,8 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The gateway authorizes the authenticated peer for process-configuration
-  mutation on the resolved owning node. During the compatibility window,
-  `process:edit` grants authorize `process:update`.
+- The gateway authorizes the authenticated peer for `process:update` on the
+  resolved owning node.
 - To re-render runtime artifacts, the gateway must reach the owning node.
 
 ## Signature
@@ -25,8 +24,6 @@ This command follows the shared [Invocation Model](../../../README.md#invocation
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
-| `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
 | `name` | `[name]` | Always. | Never. | None. | Existing process slug within the resolved owner scope. |
 | `new_name` | `--name` | Optional. At least one editable field is required. | Never. | Current process slug. | Valid process slug, unique inside the resolved owner scope, and supported by the selected runtime/backend rename path. |
 | `node` | `--node` | Required when updating a node-owned process. | `app` or `workspace` is present. | None. | Must resolve to a node that grants process-configuration mutation. |

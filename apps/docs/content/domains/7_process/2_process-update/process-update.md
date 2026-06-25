@@ -9,9 +9,6 @@ crash notification policy, or process runtime for the resolved owner scope. It
 re-renders every runtime unit derived from that process definition, replacing
 old derived unit names when the identity slug changes.
 
-`process:edit` remains a backward-compatible alias for existing scripts. New
-documentation and automation should use `process:update`.
-
 ## Usage
 
 ```bash
@@ -42,7 +39,7 @@ slug, and re-render its runtime units.
 - **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.
 - **Drift Reporting**: Reports repairable runtime-unit apply drift after successful configuration changes.
 
-See also: [`process:add`](../1_process-add/process-add.md), [`process:restart`](../7_process-restart/process-restart.md), [`process-doctor.md`](../process-doctor.md), [`process:edit` compatibility alias](../2_process-edit/process-edit.md).
+See also: [`process:add`](../1_process-add/process-add.md), [`process:restart`](../7_process-restart/process-restart.md), [`process-doctor.md`](../process-doctor.md).
 
 ***
 

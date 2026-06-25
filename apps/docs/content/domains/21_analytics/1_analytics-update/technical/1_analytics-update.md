@@ -8,7 +8,7 @@
 
 **Prerequisites:**
 - The CLI caller can reach the Orbit gateway.
-- The caller identity is authorized by the gateway for `process:edit` on the
+- The caller identity is authorized by the gateway for `process:update` on the
   selected active analytics node.
 - At least one visible active analytics role node exists.
 

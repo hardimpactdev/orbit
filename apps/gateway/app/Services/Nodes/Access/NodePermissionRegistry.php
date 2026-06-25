@@ -131,7 +131,6 @@ final class NodePermissionRegistry
             // Process
             'process:*',
             'process:add',
-            'process:edit',
             'process:list',
             'process:logs',
             'process:read',
@@ -225,7 +224,6 @@ final class NodePermissionRegistry
             'deploy:read' => ['deploy:history', 'deploy:log'],
             'node:read' => ['node:list', 'node:show'],
             'php:read' => ['php:list'],
-            'process:edit' => ['process:update'],
             'process:read' => ['process:list', 'process:logs'],
             'proxy:read' => ['proxy:list'],
             'role:read' => ['role:list'],
