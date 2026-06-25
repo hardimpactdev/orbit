@@ -113,12 +113,14 @@ Add candidate signals to `.orbit/loop.md` as they appear. The final review
 should classify an already-collected packet, not reconstruct the session from
 scattered artifacts after the fact.
 
-Run a fresh-context post-feature distillation reviewer from that packet when
-the feature had implementation workers, reviewer corrections, retained
-terminal/PTY evidence, quality-gate artifacts, or human steering. Use
-`.agents/review-personas/post-feature-distillation.md`. The reviewer recommends
-`promote`, `already-covered`, `reject`, or `defer` for candidate learnings. It
-does not edit code, update the harness, or decide completion.
+Run a fresh-context post-feature analyzer from that packet when the feature had
+implementation workers, reviewer corrections, retained terminal/PTY evidence,
+quality-gate artifacts, human steering, or guardrail decisions. Use
+`.agents/review-personas/post-feature-analyzer.md`. The analyzer reviews the
+orchestrator's Codex/Solo session messages and worktree artifacts, then reports
+whether the loop was performed properly and whether guardrails were missed,
+redundant, correctly omitted, or aimed at the wrong target. It does not edit
+code, update the harness, or decide completion.
 
 The orchestrator adjudicates the reviewer recommendations using session
 context. Start by eliminating non-signals: one-off handoffs, lessons already
@@ -204,40 +206,38 @@ Regular loop improvement comes from the active feature's evidence. Broad
 history or worktree mining is a separate explicitly requested workflow, not the
 default finalization path.
 
-## Active Loop Improvement
+## Post-Feature Signal Audit
 
-The loop is improved during the feature, not only after it. When an outer loop
-improver is overseeing a dogfood feature, its job is to keep the feature owner
-honest and also turn real process failures into project guardrails in the
-smallest safe place. The scratchpad is guidance and backlog; it is not the
-implementation of the loop.
+Normal feature work does not need an outer loop-improver watcher. Kick off the
+feature implementer through the implementation workflow, let it complete the
+feature loop, preserve the worktree and `.orbit/` artifacts, then run the
+post-feature analyzer against the implementation session and artifacts.
 
-When a feature exposes a repeated or costly harness gap, the loop improver
-classifies it immediately:
+The analyzer is read-only. It inspects the feature orchestrator's Codex/Solo
+session messages, `.orbit/loop.md`, `.orbit/evidence/`,
+`.orbit/quality-gates/`, Solo scratchpads, worker and reviewer reports,
+retained terminal or PTY evidence, verification output, human corrections, and
+the final diff or commit. It reports whether the loop was proper, flawed, or
+blocked by missing evidence.
 
-- If the gap blocks the feature contract, steer the feature owner or reviewer
-  inside the feature worktree.
-- If the gap belongs to durable repo process, patch the harness, skills,
-  personas, or signal records in a separate harness worktree when the active
-  feature worktree is under review or otherwise should stay stable.
-- If the gap is only a one-off local cleanup, record the rejection rationale in
-  `.orbit/loop.md` or the feature report instead of adding a new rule.
+The analyzer checks guardrail decisions instead of supervising live work:
 
-Waiting for a feature owner, reviewer, retained terminal, or quality gate is
-active loop time. Use it to inspect the latest worker evidence, search
-`harness-signals/` for matching process failures, update the feature scratchpad
-when durable state changed, or patch a small guardrail in a separate harness
-worktree. Do not fill waiting time with repeated steering unless the worker is
-blocked, idle without useful progress, or drifting from the contract.
+- `correct-noop`: no durable guardrail was needed, and the evidence supports
+  that result.
+- `missed`: a durable guardrail should have been added or tightened.
+- `redundant`: a guardrail was added even though existing guidance or
+  enforcement already covered it.
+- `wrong-target`: a real signal was promoted, but the target is too broad,
+  undiscoverable, or not verifiable.
+- `defer`: the concern may be real, but evidence, ownership, or recurrence risk
+  is not clear enough yet.
 
-Do not wait for the user to ask whether the loop should be improved. When the
-user has to repeat the same correction, treat that as a loop signal and either
-patch the durable guardrail, explain why an existing guardrail already covers
-it, or create a scoped follow-up with an owner and trigger.
-
-The outer loop improver is a gatekeeper and classifier, not a second feature
-orchestrator. It watches for drift, blocks premature completion, and promotes
-only lessons that materially improve the next feature loop.
+The feature owner or human adjudicates the analyzer report. Patch Orbit only
+when the report identifies a concrete recurring or costly signal, the smallest
+guardrail target is clear, and the verification for that target is reachable.
+If the report finds only local cleanup, existing coverage, stale artifacts, or
+ordinary feature work, record the no-new-signal rationale and do not add a new
+rule.
 
 ## Feature Slices
 
@@ -354,7 +354,7 @@ only when ownership can stay clear.
 | Implementation worker | Solo-managed worker; Grok is the usual default | Bounded PHP, CLI, Pest, E2E, and app/package code slices | Final commit, merge-back, release, broad refactors, unrelated dirty files |
 | Documenter / librarian worker | Claude | Documentation contracts, command docs, docs-first handoffs, focused docs drift analysis | Final product decision, code implementation, broad audit unless requested |
 | CLI verifier | Codex or another smart model | PTY capture, retained VM command proof, JSON/human output evidence | Product redefinition or release approval |
-| Post-feature distillation reviewer | Fresh Solo-managed reviewer; Claude preferred when available | Candidate learning classification from the distillation packet and changed diff | Implementation, harness edits, merge approval, or final promotion decisions |
+| Post-feature analyzer | Fresh Solo-managed analyzer; Claude preferred when available | Read-only review of Codex/Solo session messages, `.orbit` artifacts, verification evidence, final diff, and guardrail decisions | Live steering, implementation, harness edits, merge approval, cleanup, or final promotion decisions |
 | Overflow lane | `mini` through Solo/SSH | Independent feature, review, verification, or investigation work | Shared mutable state, generic E2E host assumptions, uncoordinated merge authority |
 
 The active feature-owner thread is the source of work. It can run in Codex CLI,
@@ -394,7 +394,7 @@ Use this table to pick the smallest workflow that can prove the change.
 | Docs-only | `updating-documentation`; `auditing-docs-drift` only for an explicit consistency scan | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | `.agents/review-personas/docs-librarian.md` or human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
 | Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Claude documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest/E2E owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
 | Quality-gate failure or slowdown | `quality-gate-triage`, plus `pest-testing`, `e2e-verification-lanes`, or `cli-output-pty-capture` by lane | `apps/docs/content/testing/README.md`, `quality-gates.md`, `in-memory/performance.md`, `e2e/environment.md`, `e2e/performance.md` | Inspect existing evidence under `.orbit/quality-gates/` and `.orbit/evidence/`; do not rerun expensive gates just to classify | Owner/human only after classification points at product behavior | Record recurring flakes, missing baselines, or confusing lane failures | Aggregate provision command, live-node mutation, or product fix before classification |
-| Post-feature distillation | `.agents/review-personas/post-feature-distillation.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, changed diff and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh reviewer recommendation for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail | Guardrail added from weak evidence, no rejected/no-op rationale, or reviewer asked to implement |
+| Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, Codex/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh analyzer report for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
 | CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; E2E next; PTY frame capture and reviewer analysis before human UX review; retained Incus VM Solo-terminal gate before live or release-candidate deploy | `.agents/review-personas/cli-command.md` or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained VM proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
 | Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; E2E when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
 | Provisioning/live-node | `e2e-verification-lanes`, `implementing-features` | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Prepared-topology lane, retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |

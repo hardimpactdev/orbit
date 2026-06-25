@@ -86,9 +86,9 @@ Responsibilities:
   evidence exists. For documentation-heavy changes, use
   `.agents/review-personas/docs-librarian.md`; for CLI command changes, use
   `.agents/review-personas/cli-command.md` before accepting the slice.
-- Build the local post-feature distillation packet before completion, request
-  fresh-context classification when the loop was non-trivial, and adjudicate
-  candidate learnings before any durable guardrail is changed.
+- Build the local post-feature packet before completion, request fresh-context
+  post-feature analysis when the loop was non-trivial, and adjudicate analyzer
+  findings before any durable guardrail is changed.
 - Follow `HARNESS.md` for final-distillation, merge-boundary, post-feature
   signal-audit, and cleanup policy. Use `LOOP.md.example` for the local packet
   shape and `bin/orbit-feature-finalization-check` for executable gate usage.
@@ -234,31 +234,36 @@ Report changed docs, authority docs read, docs-lint result, open questions,
 harness signals, and whether the docs contract is stable enough for code work.
 ```
 
-## Post-Feature Distillation Reviewer Delegation
+## Post-Feature Analyzer Delegation
 
-Use a fresh-context reviewer before commit, merge-back, or final reporting when
-the feature loop used implementation workers, reviewer corrections, retained
-terminal or PTY proof, quality-gate artifacts, human steering, or any other
-non-trivial evidence. Skip only for tiny local changes where `.orbit/loop.md`
-can honestly record that no worker, reviewer, terminal, quality-gate, or human
-correction evidence exists.
+Use a fresh-context analyzer before commit, merge-back, final reporting, or
+post-feature signal audit when the feature loop used implementation workers,
+reviewer corrections, retained terminal or PTY proof, quality-gate artifacts,
+human steering, guardrail decisions, or any other non-trivial evidence. Skip
+only for tiny local changes where `.orbit/loop.md` can honestly record that no
+worker, reviewer, terminal, quality-gate, guardrail, or human-correction
+evidence exists.
 
 First write a small local packet under `.orbit/evidence/` or the final section
 of `.orbit/loop.md`. Do not commit the packet. Include objective, final diff or
 commit, verification results, worker/reviewer ids or summaries, terminal or PTY
 artifacts, quality-gate evidence, human corrections, and factual orchestrator
-steering notes.
+steering notes. Include the Codex thread id or transcript path for the feature
+orchestrator when available, plus Solo scratchpads or process ids needed to
+inspect worker and reviewer reports.
 
-Spawn a fresh Solo-managed reviewer, usually Claude when available, and give it
-only the packet, changed diff, relevant harness docs, and named evidence
-pointers. Use `.agents/review-personas/post-feature-distillation.md`. The
-reviewer classifies candidates as `promote`, `already-covered`, `reject`, or
-`defer`. It must not edit code, update `harness-signals/`, change skills, or
-approve merge.
+Spawn a fresh Solo-managed analyzer, usually Claude when available, and give it
+only the packet, Codex/Solo session pointers, changed diff, relevant harness
+docs, and named evidence pointers. Use
+`.agents/review-personas/post-feature-analyzer.md`. The analyzer reports
+whether the loop was performed properly and classifies guardrail decisions as
+`correct-noop`, `missed`, `redundant`, `wrong-target`, or `defer`. It must not
+steer live work, edit code, update `harness-signals/`, change skills, approve
+merge, or run cleanup.
 
-The feature owner accepts, rejects, or defers the recommendation using full
-session context. A durable guardrail is allowed only when the candidate has a
-concrete mistake or late catch, recurrence risk, an existing guardrail gap, a
+The feature owner accepts, rejects, or defers the analyzer recommendation using
+full session context. A durable guardrail is allowed only when the candidate has
+a concrete mistake or late catch, recurrence risk, an existing guardrail gap, a
 counterfactual prevention path, the smallest useful target, and a narrow
 verification. `No durable guardrail needed` is a valid result.
 
@@ -711,17 +716,20 @@ moving on to durable E2E.
     output, retained terminal or PTY evidence when applicable, verification
     output, human corrections, and factual orchestrator steering notes. Record
     candidate signals as they appear so final review classifies an existing
-    packet instead of reconstructing the session. For non-trivial loops, spawn a
-    fresh post-feature distillation reviewer with
-    `.agents/review-personas/post-feature-distillation.md`; for tiny local
-    changes, fill the `.orbit/loop.md` final-distillation section with the
-    no-review rationale. Use the reviewer recommendation to classify each
-    candidate as local cleanup, already covered by existing `harness-signals/`
-    records, rejected, deferred, or a new durable signal. The feature owner
-    adjudicates the recommendation using session context. Before creating a new
-    guardrail, check whether a later slice already absorbed the lesson in code,
-    tests, docs, skills, signal records, or clearer failure messages; if so,
-    classify it as `already-covered` and name that coverage. Eliminate
+    packet instead of reconstructing the session. Include the orchestrator
+    Codex thread id or transcript path when available. For non-trivial loops,
+    spawn a fresh post-feature analyzer with
+    `.agents/review-personas/post-feature-analyzer.md`; for tiny local changes,
+    fill the `.orbit/loop.md` final-distillation section with the no-analysis
+    rationale. Use the analyzer report to classify each guardrail decision as
+    correct-noop, missed, redundant, wrong-target, or deferred; then classify
+    each candidate as local cleanup, already covered by existing
+    `harness-signals/` records, rejected, deferred, or a new durable signal.
+    The feature owner adjudicates the recommendation using session context.
+    Before creating a new guardrail, check whether a later slice already
+    absorbed the lesson in code, tests, docs, skills, signal records, or clearer
+    failure messages; if so, classify it as `already-covered` and name that
+    coverage. Eliminate
     one-off handoffs, stale historical artifacts, reviewer findings fixed
     before merge, and ordinary feature work before considering promotion.
     Required E2E that cannot be completed is a `blocked` feature-loop outcome
@@ -943,7 +951,7 @@ Post-feature session review:
     command/evidence, blocker, or reason>
 - Distillation packet: <.orbit/loop.md canonical packet, not applicable, or
   blocked>
-- Fresh distillation reviewer: <persona/process id/verdict, not used with
+- Fresh post-feature analyzer: <persona/process id/verdict, not used with
   rationale, or blocked>
 - Evidence reviewed: <feature thread, Solo workers, reviewer output,
   terminal/PTY evidence, verification output, human corrections, or not

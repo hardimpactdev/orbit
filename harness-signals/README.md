@@ -17,12 +17,12 @@ to diagnose, affected correctness or safety, or revealed missing repo-wide
 guidance. Do not record ordinary typo fixes, one-off local mistakes, or every
 failed command.
 
-Raw `.orbit/` artifacts and post-feature review notes create candidate signals,
-not records by default. Before a candidate becomes a record or guardrail, the
-fresh post-feature distillation reviewer should classify it and the feature
-orchestrator should adjudicate it against `HARNESS_SIGNALS.md`. A reviewed
-`no durable guardrail needed` result is healthy; do not add a record just to
-prove the review happened.
+Raw `.orbit/` artifacts, Codex/Solo session messages, and post-feature review
+notes create candidate signals, not records by default. Before a candidate
+becomes a record or guardrail, the fresh post-feature analyzer should classify
+the completed loop and the feature orchestrator should adjudicate it against
+`HARNESS_SIGNALS.md`. A reviewed `no durable guardrail needed` result is
+healthy; do not add a record just to prove the review happened.
 
 Good candidates:
 

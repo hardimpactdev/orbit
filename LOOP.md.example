@@ -50,9 +50,9 @@ feature scratchpad. Keep code history in Git.
 
 ## Candidate Signals While Working
 
-Record possible loop-improvement signals as they happen. The final
-distillation classifies this list; it should not have to reconstruct the
-session from scattered artifacts.
+Record possible loop-improvement signals as they happen. The post-feature
+analysis classifies this list; it should not have to reconstruct the session
+from scattered artifacts.
 
 - <time/source>: <candidate signal, evidence pointer, and current status>
 
@@ -105,12 +105,13 @@ meaningful value.
   - Includes objective/final diff:
   - Includes worker/reviewer/terminal/evidence pointers:
   - Includes orchestrator steering notes:
-- Fresh reviewer:
+- Fresh analyzer:
   - Persona:
-  - Solo process or reviewer:
+  - Solo process or analyzer:
   - Verdict:
 - Candidate signals:
-  - <candidate -> promote | already-covered | reject | defer -> reason>
+  - <candidate -> correct-noop | missed | redundant | wrong-target | defer |
+    promote | already-covered | reject -> reason>
 - Accepted durable updates:
   - <guardrail target, record, verification, or none>
 - Rejected or already-covered signals:

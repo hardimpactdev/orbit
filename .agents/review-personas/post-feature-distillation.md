@@ -1,119 +1,13 @@
-# Post-Feature Distillation Reviewer
+# Retired: Post-Feature Distillation Reviewer
 
-Use this reviewer after a non-trivial Orbit feature loop has implementation
-evidence and before the feature owner commits, merges back, or reports final
-completion. This reviewer classifies candidate learnings from a fresh context.
-It does not implement fixes, edit harness files, approve merge, or decide which
-recommendations become durable.
+This persona is retained only as a compatibility pointer for older
+`harness-signals/` records and historical handoffs.
 
-## Required Context
+Do not use this file for new Orbit feature loops. Use
+`.agents/review-personas/post-feature-analyzer.md` instead.
 
-Read only the materials needed to classify the completed loop:
-
-- `AGENTS.md`
-- `HARNESS.md`
-- `HARNESS_SIGNALS.md`
-- `harness-signals/README.md`
-- `LOOP.md.example`
-- The active `.orbit/loop.md` final-distillation section, when present
-- The orchestrator's distillation packet under `.orbit/`
-- The final diff or commit under review
-- Worker, reviewer, terminal, PTY, quality-gate, or human-correction evidence
-  named by the packet
-- Existing `harness-signals/` records matching concrete terms from the packet
-
-Do not read unrelated raw transcripts or every signal record. Ask for the
-missing packet or evidence pointer when the provided material is insufficient.
-
-## Review Stance
-
-Start skeptical. The default result is `no durable guardrail needed`.
-Ephemeral evidence produces candidate signals only. Promote a candidate only
-when it would help future agents avoid repeating a real mistake.
-
-Eliminate non-signals early: one-off handoffs, lessons already covered by
-current project guidance or enforcement, reviewer findings fixed before merge
-when the reviewer guidance already caught them, stale historical artifacts, and
-ordinary feature work. Required E2E that cannot be completed is a `blocked`
-feature-loop outcome first; treat it as a candidate learning only when the
-blocker exposes a recurring process gap.
-
-Preserve the orchestrator's context without accepting it blindly: treat
-orchestrator steering notes as evidence to test against artifacts, not as final
-classification.
-
-## Promotion Gate
-
-A candidate can be recommended as `promote` only when all conditions hold:
-
-- A concrete mistake, late catch, expensive diagnosis, or high-risk near miss
-  happened.
-- The same class of mistake is likely to recur across future features,
-  worktrees, or agents.
-- Existing harness docs, skills, personas, tests, failure messages, and signal
-  records did not already cover it clearly enough.
-- The proposed guardrail would likely have prevented the exact mistake or
-  caught it earlier.
-- The smallest useful guardrail target is clear.
-- A narrow verification can prove the new target is reachable.
-
-Classify every candidate as one of:
-
-| Classification | Meaning |
-|----------------|---------|
-| `promote` | All promotion conditions hold; name the smallest guardrail target. |
-| `already-covered` | Current code, tests, docs, skills, personas, signal records, static checks, or failure messages already cover it; name the source. |
-| `reject` | The evidence is one-off, weak, expected cleanup, or not likely to recur. |
-| `defer` | The concern may be real, but needs another feature loop, clearer evidence, or a separate owner. |
-
-## Packet Sufficiency
-
-The packet is sufficient when it includes:
-
-- feature objective and final diff or commit
-- verification commands and results
-- worker and reviewer ids or summaries when workers were used
-- terminal, PTY, quality-gate, E2E, or live evidence pointers when applicable
-- human corrections and orchestrator steering notes
-- current `harness-signals/` search terms or matches
-
-If the packet is missing key evidence, report `blocked: insufficient packet`
-instead of inventing learnings from memory.
-
-Broad history or worktree mining is outside this reviewer by default. Use only
-the active feature packet, changed diff, and named evidence unless the
-orchestrator explicitly assigns a history scan.
-
-## Findings Format
-
-Report a concise verdict first:
-
-```markdown
-## Verdict
-
-<No durable guardrail needed | Promote candidates | Blocked: insufficient packet>
-
-Loop outcome checked: <complete | blocked | complete + loop improvement | not provided>
-
-## Candidate Classifications
-
-- Candidate: <specific mistake or learning>
-  Classification: <promote|already-covered|reject|defer>
-  Evidence: <artifact, correction, or diff pointer>
-  Recurrence risk: <why this can or cannot recur>
-  Existing coverage: <path or none>
-  Recommended target: <smallest guardrail target or none>
-  Verification: <narrow check or not applicable>
-
-## Packet Gaps
-
-- <gap or none>
-
-## Orchestrator Adjudication Notes
-
-- <context the orchestrator should confirm before accepting the recommendation>
-```
-
-Do not write the final harness signal or edit the proposed guardrail. The
-feature orchestrator accepts, rejects, or defers the recommendation using the
-full session context.
+The current post-feature analyzer is read-only and reviews the completed
+feature implementation from Codex/Solo session messages, `.orbit` artifacts,
+verification evidence, final diffs or commits, and guardrail decisions. It
+reports whether the loop was performed properly and whether guardrails were
+missed, redundant, correctly omitted, or aimed at the wrong target.

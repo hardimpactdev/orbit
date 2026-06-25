@@ -158,6 +158,41 @@ it('does not keep gateway-local generated agent artifacts', function (): void {
         ->not->toBeFile();
 });
 
+it('routes post-feature analysis through the analyzer persona', function (): void {
+    $harness = file_get_contents(repo_path('HARNESS.md')) ?: '';
+    $signals = file_get_contents(repo_path('HARNESS_SIGNALS.md')) ?: '';
+    $loopTemplate = file_get_contents(repo_path('LOOP.md.example')) ?: '';
+    $implementingFeatures = file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md')) ?: '';
+    $analyzer = file_get_contents(repo_path('.agents/review-personas/post-feature-analyzer.md')) ?: '';
+    $retiredDistillation = file_get_contents(repo_path('.agents/review-personas/post-feature-distillation.md')) ?: '';
+
+    expect(repo_path('.agents/review-personas/post-feature-analyzer.md'))
+        ->toBeFile()
+        ->and($analyzer)
+        ->toContain('Codex/Solo session messages')
+        ->toContain('correct-noop')
+        ->toContain('wrong-target')
+        ->toContain('must not steer live work')
+        ->and($harness)
+        ->toContain('Normal feature work does not need an outer loop-improver watcher')
+        ->toContain('.agents/review-personas/post-feature-analyzer.md')
+        ->toContain('Post-feature analyzer')
+        ->not
+        ->toContain('Post-feature distillation | `.agents/review-personas/post-feature-distillation.md`')
+        ->and($signals)
+        ->toContain('post-feature analyzer reviews the completed loop')
+        ->and($loopTemplate)
+        ->toContain('- Fresh analyzer:')
+        ->toContain('correct-noop | missed | redundant | wrong-target')
+        ->and($implementingFeatures)
+        ->toContain('Post-Feature Analyzer Delegation')
+        ->toContain('.agents/review-personas/post-feature-analyzer.md')
+        ->toContain('Codex thread id or transcript path')
+        ->and($retiredDistillation)
+        ->toContain('Retired: Post-Feature Distillation Reviewer')
+        ->toContain('Do not use this file for new Orbit feature loops');
+});
+
 it('provides first-party boost skill sources in orbit packages', function (): void {
     expect(repo_path('packages/core/resources/boost/skills/orbit-core-development/SKILL.md'))
         ->toBeFile()

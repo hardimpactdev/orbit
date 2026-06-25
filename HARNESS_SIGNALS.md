@@ -21,10 +21,10 @@ should become guidance or enforcement.
 
 ## Guardrail Target Selection
 
-- Treat raw `.orbit/` artifacts, transcripts, and reviewer comments as
-  candidate signals only. They do not become durable guardrails until the
-  post-feature distillation reviewer recommends promotion and the orchestrator
-  adjudicates that recommendation against session context.
+- Treat raw `.orbit` artifacts, session transcripts, scratchpads, and reviewer
+  comments as candidate signals only. They do not become durable guardrails
+  until the post-feature analyzer reviews the completed loop and the
+  orchestrator adjudicates that recommendation against session context.
 - Promote a candidate only when all of these are true:
   - A concrete mistake, late catch, expensive diagnosis, or high-risk near miss
     happened.
