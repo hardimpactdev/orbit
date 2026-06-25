@@ -30,6 +30,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         $this->remoteShell->run(
             $node,
             $this->installScript(
+                node: $node,
                 certPath: $remote['cert'],
                 cert: File::get($local['cert']),
                 keyPath: $remote['key'],
@@ -56,7 +57,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
         ];
     }
 
-    private function installScript(string $certPath, string $cert, string $keyPath, string $key): string
+    private function installScript(Node $node, string $certPath, string $cert, string $keyPath, string $key): string
     {
         return sprintf(
             <<<'SH'
@@ -66,6 +67,7 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
                 printf %%s %s | base64 -d | sudo tee %s >/dev/null
                 sudo chmod 0644 %s
                 sudo chmod 0600 %s
+                %s
                 SH,
             escapeshellarg(dirname($certPath)),
             escapeshellarg(base64_encode($cert)),
@@ -73,6 +75,31 @@ final readonly class OrbitSiteCertificateInstaller implements SiteCertificateIns
             escapeshellarg(base64_encode($key)),
             escapeshellarg($keyPath),
             escapeshellarg($certPath),
+            escapeshellarg($keyPath),
+            $this->ownershipLines($node, $certPath, $keyPath),
+        );
+    }
+
+    private function ownershipLines(Node $node, string $certPath, string $keyPath): string
+    {
+        $user = $node->user ?: 'orbit';
+
+        if ($user === 'root') {
+            return '';
+        }
+
+        $owner = escapeshellarg($user);
+        $ownerAndGroup = escapeshellarg("{$user}:{$user}");
+
+        return sprintf(
+            "sudo chown %s %s || sudo chown %s %s\nsudo chown %s %s || sudo chown %s %s\n",
+            $ownerAndGroup,
+            escapeshellarg($certPath),
+            $owner,
+            escapeshellarg($certPath),
+            $ownerAndGroup,
+            escapeshellarg($keyPath),
+            $owner,
             escapeshellarg($keyPath),
         );
     }

@@ -83,6 +83,52 @@ it('installs Orbit CA leaf certificates into the node Orbit cert directory', fun
         ->not->toContain('chgrp');
 });
 
+it('grants the node service user ownership of site TLS material for Vite dev server readability', function (): void {
+    $appNode = Node::factory()->create([
+        'name' => 'booster-node',
+        'user' => 'nckrtl',
+    ]);
+
+    $ca = new readonly class extends OrbitCaService {
+        public function issueLeaf(string $host, array $additionalSans = []): array
+        {
+            $certsDir = storage_path('app/orbit/certs');
+            File::ensureDirectoryExists($certsDir);
+
+            $certPath = "{$certsDir}/{$host}.crt";
+            $keyPath = "{$certsDir}/{$host}.key";
+
+            File::put($certPath, 'test-cert');
+            File::put($keyPath, 'test-key');
+
+            return ['cert' => $certPath, 'key' => $keyPath];
+        }
+    };
+    $shell = new OrbitSiteCertificateInstallerTestShell;
+
+    $paths = new OrbitSiteCertificateInstaller($ca, $shell)->ensureFor($appNode, 'booster.test');
+
+    $script = $shell->scripts[0];
+    $certPath = '/home/nckrtl/.config/orbit/certs/booster.test.crt';
+    $keyPath = '/home/nckrtl/.config/orbit/certs/booster.test.key';
+
+    expect($paths)
+        ->toBe([
+            'cert' => $certPath,
+            'key' => $keyPath,
+        ])
+        ->and($shell->scripts)
+        ->toHaveCount(1)
+        ->and($script)
+        ->toContain("sudo chown 'nckrtl:nckrtl' '{$certPath}' || sudo chown 'nckrtl' '{$certPath}'")
+        ->and($script)
+        ->toContain("sudo chown 'nckrtl:nckrtl' '{$keyPath}' || sudo chown 'nckrtl' '{$keyPath}'")
+        ->and($script)
+        ->toContain("sudo chmod 0600 '{$keyPath}'")
+        ->and($script)
+        ->not->toContain("sudo chmod 0644 '{$keyPath}'");
+});
+
 final class OrbitSiteCertificateInstallerTestShell implements RemoteShell
 {
     /**
