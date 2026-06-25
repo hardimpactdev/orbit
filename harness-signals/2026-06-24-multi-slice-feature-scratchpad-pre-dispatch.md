@@ -1,9 +1,17 @@
-# Multi-Slice Feature Scratchpad Must Exist Before Dispatch
+# Signal: Multi-Slice Feature Scratchpad Must Exist Before Dispatch
 
 Status: guarded
-Date: 2026-06-24
+First seen: 2026-06-24
+Last seen: 2026-06-24
+Last reviewed: 2026-06-25
 Source worktree: mago-baseline-cli-activity-normalization
+Source commit: none
+Signal type: agent-mistake
 Guardrail target: AGENTS.md; HARNESS.md; LOOP.md.example; .agents/skills/implementing-features/SKILL.md
+Guardrail change: multi-slice roadmap scratchpad pre-dispatch gate
+Related signals: harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md, harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md
+Superseded by: none
+Tags: scratchpad, roadmap, multi-slice, pre-dispatch, loop-engineering
 
 ## Signal
 
@@ -17,7 +25,7 @@ scratchpad with the slice roadmap. The orchestrator then created
 `solo://proj/2/scratchpad/mago-baseline-contra--380` and linked it from the
 active `.orbit/loop.md`.
 
-## Impact
+## Missing Guardrail
 
 Without a reachable feature roadmap scratchpad, `.orbit/loop.md` can become a
 hidden substitute for feature history even though it is supposed to be
@@ -25,7 +33,7 @@ current-slice state only. This makes handoff, slice boundaries, and post-feature
 distillation weaker, especially when execution happens on a different machine or
 Solo project from the source handoff.
 
-## Guardrail
+## Guardrail Change
 
 Root and skill guidance now make the scratchpad a pre-dispatch gate:
 
@@ -52,3 +60,11 @@ and correct it before accepting implementation work. If the rule is still missed
 after this guardrail, consider adding a mechanical finalization check that blocks
 merge when `.orbit/loop.md` names multiple slices but has no usable `solo://`
 scratchpad roadmap.
+
+## Curation Notes
+
+Reviewed in the 2026-06-25 uniqueness pass. Keep separate from
+`harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md` and
+`harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md`: this
+record covers pre-dispatch roadmap state, raw-contract covers preserving user
+examples through slicing, and loop-not-wired covers final distillation wiring.

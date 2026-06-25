@@ -68,6 +68,19 @@ Signal records should make future work easier. If the ledger starts producing
 too many weak matches, curate it instead of expecting agents to read around the
 noise.
 
+### Uniqueness Rule
+
+Keep one canonical record per durable signal. Before creating or keeping a
+related record, ask whether a future agent would take the same reappearance
+action and update the same guardrail target for both records. If yes,
+consolidate the unique recurrence history into the canonical record and delete
+the redundant file after checking inbound references.
+
+Overlap is allowed only when the records answer different triage questions,
+have different guardrail targets, or need different reappearance checks. In
+that case, keep both records, cross-link them through `Related signals`, and add
+a short curation note that names the boundary.
+
 Run a focused curation pass when:
 
 - A search returns several records for the same underlying signal

@@ -44,4 +44,6 @@ State what a future agent should do if this signal appears again.
 ## Curation Notes
 
 Record updates, consolidation decisions, stale reasons, retirement reasons, or
-delete rationale when useful.
+delete rationale when useful. If this record is related to another signal, state
+whether it supersedes, is superseded by, or remains separate from that record
+and why.

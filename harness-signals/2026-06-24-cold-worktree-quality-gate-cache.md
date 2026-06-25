@@ -3,7 +3,15 @@
 Status: guarded
 First seen: 2026-06-24
 Last seen: 2026-06-24
-Last reviewed: 2026-06-24
+Last reviewed: 2026-06-25
+Source worktree: quality-gate-timing-optimization
+Source commit: none
+Signal type: failed-check
+Guardrail target: .agents/skills/quality-gate-triage/SKILL.md, apps/docs/content/testing/quality-gates.md
+Guardrail change: cold-cache timing triage guidance
+Related signals: harness-signals/2026-06-24-stale-quality-gate-artifact-commit.md, harness-signals/2026-06-24-subgate-baseline-jitter-floor.md
+Superseded by: none
+Tags: quality-gate, timing, cache, worktree
 
 ## Signal
 
@@ -66,3 +74,8 @@ unless the goal is explicitly to test scheduling.
 Keep while timing baselines are still being tuned. Retire only after the
 quality-gate triage workflow reliably separates cold-cache runs from real
 regressions.
+
+Reviewed in the 2026-06-25 uniqueness pass. Keep separate from stale-artifact
+and subgate-jitter records: this record covers invalid comparisons caused by
+worktree-local cache warmth, not whether evidence belongs to the current commit
+or whether a warning threshold is too sensitive.

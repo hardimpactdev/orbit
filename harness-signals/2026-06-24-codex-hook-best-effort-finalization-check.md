@@ -1,10 +1,17 @@
-# Codex Hook Best-Effort Finalization Check
+# Signal: Codex Hook Best-Effort Finalization Check
 
-Date: 2026-06-24
-Status: guarded by explicit gate; Codex hook remains best-effort
+Status: guarded
+First seen: 2026-06-24
+Last seen: 2026-06-24
+Last reviewed: 2026-06-25
 Source worktree: mago-baseline-cli-activity-normalization on Mini
 Source commit: 6c0e30296 Normalize activity gateway responses
+Signal type: agent-mistake
 Guardrail target: HARNESS.md, AGENTS.md, .agents/skills/implementing-features/SKILL.md, .codex/hooks.json, bin/orbit-codex-pre-tool-use-hook, bin/orbit-feature-finalization-check
+Guardrail change: explicit finalization gate and Codex hook dogfood hardening
+Related signals: harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
+Superseded by: none
+Tags: finalization, codex-hook, merge-boundary, loop-engineering
 
 ## Signal
 
@@ -33,7 +40,7 @@ hooks are useful guardrails, but current Codex support does not intercept every
 newer shell execution path. A feature owner can therefore merge or clean up a
 worktree without the hook firing, losing `.orbit/` evidence before distillation.
 
-## Guardrail
+## Guardrail Change
 
 - `bin/orbit-codex-pre-tool-use-hook` now exits `2` when blocking.
 - `.codex/hooks.json` uses `matcher: "*"` so any supported `PreToolUse`
@@ -113,3 +120,11 @@ a test case for the missed command shape.
 If a future loop claims the hook was verified, inspect the evidence. It must
 show a plain Codex-issued boundary command that was stopped before Git ran. Hook
 configuration, `/hooks` status, or direct script invocation alone are not enough.
+
+## Curation Notes
+
+Reviewed in the 2026-06-25 uniqueness pass. Keep separate from
+`harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md`: that
+record covers the broad loop/final-distillation workflow, while this record
+covers the narrower hook-interception failure mode and explicit boundary-check
+contract.

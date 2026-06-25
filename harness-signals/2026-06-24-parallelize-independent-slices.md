@@ -3,7 +3,15 @@
 Status: recurring
 First seen: 2026-06-24
 Last seen: 2026-06-24
-Last reviewed: 2026-06-24
+Last reviewed: 2026-06-25
+Source worktree: quality-gate-timing-optimization; quality-gate-baseline-seeding
+Source commit: none
+Signal type: agent-mistake
+Guardrail target: AGENTS.md, HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, .agents/skills/quality-gate-triage/SKILL.md
+Guardrail change: parallelization gate and worker-plan dependency scan
+Related signals: harness-signals/2026-06-23-solo-role-matrix-needed.md, harness-signals/2026-06-23-worker-first-diff-checkpoint.md
+Superseded by: none
+Tags: parallelization, solo-workers, quality-gate, orchestration
 
 ## Signal
 
@@ -115,3 +123,8 @@ while another worker owns dirty files, treat that as a recurrence.
 
 Keep while the loop harness is new. This should become a core orchestration
 habit before any automation is added.
+
+Reviewed in the 2026-06-25 uniqueness pass. Keep separate from worker-role and
+first-diff records: this record decides whether independent lanes should run in
+parallel, while those records decide who owns the diff and when the
+orchestrator should checkpoint worker work.

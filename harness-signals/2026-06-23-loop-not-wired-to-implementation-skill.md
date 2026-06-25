@@ -3,7 +3,7 @@
 Status: guarded
 First seen: 2026-06-23
 Last seen: 2026-06-24
-Last reviewed: 2026-06-24
+Last reviewed: 2026-06-25
 Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer; doctor-progress-scheduler; pre-merge-finalization-hook
 Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice; pending pre-merge-finalization-hook commit
 Signal type: review-comment
@@ -13,7 +13,10 @@ Related signals:
 harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md,
 harness-signals/2026-06-23-runtime-proof-vs-repo-proof.md,
 harness-signals/2026-06-23-review-persona-needs-workflow-hook.md,
-harness-signals/2026-06-23-handoff-needs-next-step.md
+harness-signals/2026-06-23-handoff-needs-next-step.md,
+harness-signals/2026-06-24-codex-hook-best-effort-finalization-check.md,
+harness-signals/2026-06-24-multi-slice-feature-scratchpad-pre-dispatch.md,
+harness-signals/2026-06-24-raw-contract-dropped-during-slicing.md
 Superseded by: none
 Tags: implementing-features, workflow, loop-engineering
 
@@ -204,3 +207,8 @@ the loop-improver handoff.
 Keep until several feature worktrees have produced implementation reports with
 usable harness-signal and post-feature-review sections. Then retire or
 consolidate into a broader implementation-report signal.
+
+Reviewed in the 2026-06-25 uniqueness pass. Keep as the broad loop-wiring
+record. Related records stay separate when they govern a narrower start gate,
+raw-contract preservation check, evidence proof, reviewer hook, handoff surface,
+or finalization-enforcement surface with its own reappearance check.

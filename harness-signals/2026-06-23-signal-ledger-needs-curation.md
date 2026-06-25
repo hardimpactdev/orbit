@@ -3,7 +3,7 @@
 Status: guarded
 First seen: 2026-06-23
 Last seen: 2026-06-23
-Last reviewed: 2026-06-23
+Last reviewed: 2026-06-25
 Source worktree: codex/root-harness-anchor-review-ui
 Source commit: e0e96b50
 Signal type: review-comment
@@ -53,3 +53,9 @@ script that flags stale, redundant, or long-unreviewed records.
 
 Keep while the manual curation process is being tried. Retire only after the
 process has been folded into a stronger reviewer or automation slice.
+
+The 2026-06-25 uniqueness pass reviewed all 26 signal records. No fully
+redundant records were found. Related records were kept only when their
+reappearance action, guardrail target, or triage question differed; the pass
+normalized sparse records and added an explicit uniqueness rule to the ledger
+README and template.
