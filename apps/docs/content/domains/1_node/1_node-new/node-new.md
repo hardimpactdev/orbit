@@ -301,7 +301,7 @@ and requires a future explicit reset contract.
 When no `--template` or `--operator` is supplied, `--roles=<csv>` remains
 available for explicit programmatic compositions. Canonical stored role values
 are `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`,
-and `metrics`. The sections below describe agent-tool and grant behavior that applies
+`metrics`, and `analytics`. The sections below describe agent-tool and grant behavior that applies
 regardless of whether a template or explicit role list was used.
 
 **`agent` role details**

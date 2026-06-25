@@ -100,7 +100,6 @@ use App\Commands\Operation\VersionCommand;
 use App\Commands\Php\PhpListCommand;
 use App\Commands\Php\PhpUseCommand;
 use App\Commands\Process\ProcessAddCommand;
-use App\Commands\Process\ProcessEditCommand;
 use App\Commands\Process\ProcessListCommand;
 use App\Commands\Process\ProcessLogsCommand;
 use App\Commands\Process\ProcessRemoveCommand;
@@ -260,7 +259,6 @@ return [
         PhpListCommand::class,
         PhpUseCommand::class,
         ProcessAddCommand::class,
-        ProcessEditCommand::class,
         ProcessListCommand::class,
         ProcessLogsCommand::class,
         ProcessRemoveCommand::class,

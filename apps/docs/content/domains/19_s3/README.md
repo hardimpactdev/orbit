@@ -49,9 +49,12 @@ The S3 command domain coordinates state owned by other families:
 - [`node`](../1_node/README.md) owns the `s3` role assignment and its
   `data_path` setting. Role assignment drift is verified and repaired through
   `doctor --family=node`.
-- [`tool`](../3_tool/README.md) owns the `seaweedfs` tool row, credentials,
-  container lifecycle, logs, and updates. SeaweedFS tool-row and container drift
-  is verified and repaired through `doctor --family=tool`.
+- [`tool`](../3_tool/README.md) owns the `seaweedfs` tool row, service
+  credentials, and capability updates. SeaweedFS tool-row drift is verified and
+  repaired through `doctor --family=tool`.
+- [`process`](../7_process/README.md) owns the SeaweedFS runtime container:
+  start, stop, restart, logs, and runtime drift. SeaweedFS container and runtime
+  drift is verified and repaired through `doctor --family=process`.
 - [`proxy`](../8_proxy/README.md) owns the proxy route rows, route artifacts,
   TLS material, router private service route, and S3 backend pool. S3 route
   drift is verified and repaired through `doctor --family=proxy`.

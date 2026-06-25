@@ -49,14 +49,15 @@ orbit process:add mailpit --node=beast --service=mailpit --runtime=docker \
   --replace-container=dngdmt-mailpit-1 --replace-container=orbit-mailpit --force
 ```
 
-## `orbit process:edit [name]`
+## `orbit process:update [name]`
 
-Edit a process definition. Only the supplied fields change.
+Update a process definition. Only the supplied fields change.
 
 ```bash
-orbit process:edit [<name>] [--app=<name>] [--command='<shell>']
-                   [--restart-policy=<p>] [--crash-notification=<n>]
-                   [--restart] [--json]
+orbit process:update [<name>] [--app=<name>] [--command='<shell>']
+                     [--name=<new-slug>] [--restart-policy=<p>]
+                     [--crash-notification=<n>] [--runtime=<backend>]
+                     [--restart] [--json]
 ```
 
 `--restart` restarts affected runtime units after the update lands.

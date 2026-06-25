@@ -46,7 +46,8 @@ These rules define what S3 commands may and may not change.
 - **S3-domain boundaries:** S3 commands coordinate public host publication,
   public host removal, private endpoint metadata, and service-level credential
   rendering. Node role settings remain node-owned, SeaweedFS runtime lifecycle
-  remains tool-owned, and proxy route artifacts remain proxy-owned.
+  remains process-owned while the `seaweedfs` tool row and service credentials
+  remain tool-owned, and proxy route artifacts remain proxy-owned.
 - **S3-domain exclusions:** S3 commands do not create buckets, manage bucket
   policy, create per-app credentials, rotate credentials, expose the SeaweedFS
   console, configure wildcard DNS or TLS, build distributed SeaweedFS, or manage

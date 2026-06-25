@@ -63,7 +63,7 @@ function grantAnalyticsUpdateAccess(Node $caller, Node $analyticsNode): void
     NodeAccess::query()->create([
         'consumer_node_id' => $caller->id,
         'serving_node_id' => $analyticsNode->id,
-        'permissions' => ['process:edit'],
+        'permissions' => ['process:update'],
         'custom_permissions' => [],
     ]);
 }
@@ -152,7 +152,7 @@ describe('AnalyticsUpdateController', function (): void {
             ->assertJsonPath('error.meta.version', '3.2.2');
     });
 
-    it('rejects callers without process edit permission before mutating Plausible intent', function (): void {
+    it('rejects callers without process update permission before mutating Plausible intent', function (): void {
         createAnalyticsUpdateCallerNode();
         $analyticsNode = createAnalyticsUpdateNode();
         $process = createAnalyticsUpdateProcess($analyticsNode);
@@ -165,7 +165,7 @@ describe('AnalyticsUpdateController', function (): void {
         $response
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
-            ->assertJsonPath('error.meta.missing_permission', 'process:edit');
+            ->assertJsonPath('error.meta.missing_permission', 'process:update');
 
         expect($process->refresh()->runtime_config['version'])->toBe('3.2.1');
     });

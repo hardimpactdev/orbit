@@ -91,7 +91,7 @@ These rules apply to all gateway commands and define the invariants the family e
 
 ## Commands
 
-These are the gateway-family commands available to operator-node callers.
+These are the gateway-family commands available to operator callers.
 
 1. Existing gateway onboarding:
    [`orbit gateway:add [gateway_ip]`](1_gateway-add/gateway-add.md)

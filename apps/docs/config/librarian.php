@@ -162,5 +162,11 @@ return [
             'replacement' => '`manifest:update` / `manifest:remove`',
             'allow_paths' => [],
         ],
+        [
+            'terms' => ['process:edit'],
+            'decision' => '2026-06-25 process:edit removed; process:update is the sole mutation command (solo todo #1981)',
+            'replacement' => '`process:update`',
+            'allow_paths' => [],
+        ],
     ],
 ];

@@ -18,17 +18,23 @@ The categories rendered for a run are derived from the target node's active
 role assignments. The compatibility node role field is only a shadow value
 and does not by itself grant workload-family probes:
 
-- client target: `Node`.
-- `gateway` target: `Node`, `Scheduling`.
-- `database` target: `Node`, `Tools`.
-- `agent` target: `Node`, `Tools`.
+- client target (no active role): `Node`.
+- `gateway` target: `Node`, `Processes`, `Scheduling`.
+- `database` target: `Node`, `Tools`, `Processes`.
+- `agent` target: `Node`, `Tools`, `Processes`.
+- `router` target: `Node`, `Proxy routes`, `Processes`.
 - `app-dev` target: `Node`, `Apps`, `Workspaces`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
 - `app-prod` target: `Node`, `Apps`, `Processes`, `Proxy routes`,
   `Firewall`, `Tools`, `Scheduling`, `Databases`.
-- `ingress` target: `Node`, `Proxy routes`, `Firewall`, `Tools`.
-- `websocket` target: `Node`, `Tools`, `Proxy routes`.
-- `s3` target: `Node`, `Tools`, `Proxy routes`.
+- `ingress` target: `Node`, `Proxy routes`, `Firewall`, `Tools`, `Processes`.
+- `websocket` target: `Node`, `Tools`, `Processes`.
+- `s3` target: `Node`, `Tools`, `Proxy routes`, `Processes`.
+- `metrics` target: `Node`, `Tools`, `Processes`, `Proxy routes`.
+- `vpn` or `analytics` target (no other role-specific category): `Node`, `Processes`.
+
+Every node with at least one active role assignment includes `Processes`; a
+client or operator identity with no active role renders only `Node`.
 
 `Scheduling` on a `gateway` target surfaces the scheduler daemon's health
 (presence, heartbeat, stuck locks) plus per-target dispatch reachability.

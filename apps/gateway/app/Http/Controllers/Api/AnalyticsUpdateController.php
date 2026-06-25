@@ -85,7 +85,7 @@ final class AnalyticsUpdateController implements Loggable
             );
         }
 
-        $authorization = $this->authorizeProcessAccess($caller, $node, 'process:edit');
+        $authorization = $this->authorizeProcessAccess($caller, $node, 'process:update');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;

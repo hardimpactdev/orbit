@@ -267,7 +267,7 @@ describe('process write commands', function (): void {
         'runtime' => [['--runtime' => 'podman'], 'runtime'],
     ]);
 
-    it('patches process:edit payloads to the gateway', function (): void {
+    it('patches process:update payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'app' => 'docs', 'restart_policy' => 'on_failure'],
             'runtime_units' => [],
@@ -275,7 +275,7 @@ describe('process write commands', function (): void {
             'warnings' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
             '--app' => 'docs',
             '--command' => 'npm run dev -- --host 0.0.0.0',
@@ -345,10 +345,10 @@ describe('process write commands', function (): void {
             ->toBe('mysql');
     });
 
-    it('rejects app scoped docker process:edit payloads before contacting the gateway', function (): void {
+    it('rejects app scoped docker process:update payloads before contacting the gateway', function (): void {
         Http::fake();
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'queue',
             '--app' => 'docs',
             '--runtime' => 'docker',
@@ -369,7 +369,7 @@ describe('process write commands', function (): void {
             ->toBe('docker_runtime_requires_service_or_managed_process');
     });
 
-    it('patches node owned process:edit payloads to the gateway', function (): void {
+    it('patches node owned process:update payloads to the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'opencode-server', 'node' => 'app-1', 'runtime' => 'systemd'],
             'runtime_units' => [['name' => 'opencode-server', 'context' => 'node']],
@@ -377,7 +377,7 @@ describe('process write commands', function (): void {
             'warnings' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'opencode-server',
             '--node' => 'app-1',
             '--command' => 'opencode serve -a',
@@ -403,10 +403,10 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['process']['runtime'])->toBe('systemd');
     });
 
-    it('requires at least one process:edit field before contacting the gateway', function (): void {
+    it('requires at least one process:update field before contacting the gateway', function (): void {
         fakeGateway(fakeSuccessEnvelope());
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
             '--app' => 'docs',
             '--json' => true,
@@ -424,13 +424,13 @@ describe('process write commands', function (): void {
             ->toBe('editable_fields');
     });
 
-    it('preserves gateway error envelopes for process:edit', function (): void {
+    it('preserves gateway error envelopes for process:update', function (): void {
         fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found.", [
             'name' => 'vite',
             'app' => 'docs',
         ]), 404);
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
             '--app' => 'docs',
             '--command' => 'npm run dev',
@@ -836,7 +836,7 @@ describe('process write commands', function (): void {
             ->toContain('validation_failed');
     });
 
-    it('renders process:edit human output as a progress tree with a success footer', function (): void {
+    it('renders process:update human output as a progress tree with a success footer', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'changed' => ['command'],
@@ -845,7 +845,7 @@ describe('process write commands', function (): void {
             'warnings' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
             '--app' => 'docs',
             '--command' => 'npm run dev -- --host 0.0.0.0',
@@ -865,7 +865,7 @@ describe('process write commands', function (): void {
             ->not->toContain('{');
     });
 
-    it('shows the process:edit restart step only when --restart is present', function (): void {
+    it('shows the process:update restart step only when --restart is present', function (): void {
         fakeGateway(fakeSuccessEnvelope([
             'process' => ['name' => 'vite', 'node' => 'app-1', 'app' => 'docs', 'workspace' => null],
             'changed' => ['command'],
@@ -874,7 +874,7 @@ describe('process write commands', function (): void {
             'warnings' => [],
         ]));
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
             '--app' => 'docs',
             '--command' => 'npm run dev',
@@ -889,10 +889,10 @@ describe('process write commands', function (): void {
             ->toContain("Process 'vite' updated for app 'docs'");
     });
 
-    it('renders process:edit gateway failures as prose in human mode', function (): void {
+    it('renders process:update gateway failures as prose in human mode', function (): void {
         fakeGateway(fakeErrorEnvelope('process.not_found', "Process 'vite' not found for app 'docs'."), 404);
 
-        [$exitCode, $output] = runCommand($this, 'process:edit', [
+        [$exitCode, $output] = runCommand($this, 'process:update', [
             'name' => 'vite',
             '--app' => 'docs',
             '--command' => 'npm run dev',

@@ -200,6 +200,12 @@ describe('command list visibility', function (): void {
         ]);
     });
 
+    it('does not register the removed process:edit compatibility alias', function (): void {
+        $list = orbitCommandList();
+
+        expect(findCommandInList($list, 'process:edit'))->toBeNull();
+    });
+
     it('does not register command exec surfaces', function (): void {
         $list = orbitCommandList();
         $visible = visibleCommandNames($list);

@@ -32,7 +32,7 @@ Plausible site configuration, or tracking script installation.
 ## Requirements
 
 - The CLI caller can reach the Orbit gateway.
-- The caller is authorized for `process:edit` on the selected analytics node.
+- The caller is authorized for `process:update` on the selected analytics node.
 - The selected node has an active `analytics` role.
 - The Plausible CE process row exists for the selected analytics node.
 

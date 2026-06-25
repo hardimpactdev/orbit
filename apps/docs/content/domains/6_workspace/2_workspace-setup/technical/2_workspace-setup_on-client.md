@@ -24,7 +24,10 @@ This contract defines behavior when `workspace:setup` is invoked from a
 ## Authorization
 
 - Requires a valid client identity.
-- Identity must have `manage` or `write` permission for the parent app.
+- The authenticated WireGuard identity must hold the `workspace:setup`
+  permission on the workspace's owning node (a self-grant when run from that
+  node). See [Architecture: Self-grants and
+  self-serving](../../../../architecture.md#self-grants-and-self-serving).
 
 ## Test Mapping
 

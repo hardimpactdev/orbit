@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Sdk\Laravel\Responses\Processes;
 
-final readonly class ProcessEditResponse
+final readonly class ProcessUpdateResponse
 {
     /**
      * @param  array<string, mixed>  $data

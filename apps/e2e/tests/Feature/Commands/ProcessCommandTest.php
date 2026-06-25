@@ -57,18 +57,18 @@ it('manages process intent runtime lifecycle and bounded logs on a prepared app 
             ->and($addPayload['success']['data']['runtime_units'][0]['name'])
             ->toBe($runtimeUnit);
 
-        $edit = $topology->ssh(
+        $update = $topology->ssh(
             'gateway',
-            "cd {$checkout} && orbit process:edit {$process} --app="
+            "cd {$checkout} && orbit process:update {$process} --app="
             .escapeshellarg($app)
             .' --restart-policy=always --json',
             timeoutSeconds: 180,
         );
-        $editPayload = processCommandPayload($edit->output());
+        $updatePayload = processCommandPayload($update->output());
 
-        expect($edit->successful())
+        expect($update->successful())
             ->toBeTrue()
-            ->and($editPayload['success']['data']['process']['restart_policy'])
+            ->and($updatePayload['success']['data']['process']['restart_policy'])
             ->toBe('always');
 
         $start = $topology->ssh(
