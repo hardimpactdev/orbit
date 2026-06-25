@@ -60,7 +60,9 @@ These rules govern what the tool command family owns and what it may not touch.
   schema inspection, audited SQL execution, and backup/restore where
   applicable belong to the `database:*` family, not per-database command
   families. S3 publication and service credential workflows belong to the
-  `s3:*` family; generic SeaweedFS lifecycle and inventory remain under `tool:*`.
+  `s3:*` family; SeaweedFS runtime lifecycle and logs remain under `process:*`,
+  while the `seaweedfs` tool row, credentials, and inventory remain under
+  `tool:*`.
 
 ## Supported Tool Catalog
 

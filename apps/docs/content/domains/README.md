@@ -62,8 +62,9 @@ These rules govern every command contract in this directory.
   belong to `database:*` instead of `mysql:*` or `postgres:*` command
   families.
 - `s3:*` owns role-backed object-storage publication and service credentials
-  for the SeaweedFS-backed S3 role; generic SeaweedFS lifecycle remains under
-  `tool:*`. `metrics:*` owns role-backed observability enablement, status, and
+  for the SeaweedFS-backed S3 role; SeaweedFS runtime lifecycle and logs remain
+  under `process:*`, while the `seaweedfs` tool row, credentials, and inventory
+  remain under `tool:*`. `metrics:*` owns role-backed observability enablement, status, and
   Grafana credentials for the metrics role; Prometheus, Grafana, and
   node-exporter lifecycle remains under `process:*`.
 - Commands must state whether they mutate gateway configuration, apply node artifacts, stream runtime data, or only read state.

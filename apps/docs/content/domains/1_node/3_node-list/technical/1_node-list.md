@@ -13,7 +13,7 @@
 ## Signature
 
 ```bash
-orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3|metrics>] [--json]
+orbit node:list [--role=<gateway|vpn|router|app-dev|app-prod|database|agent|ingress|websocket|s3|metrics|analytics>] [--json]
 ```
 
 ## Input Contract
@@ -26,7 +26,7 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`. |
+| `role` | `--role` | Optional. | Never. | None. | One of `gateway`, `vpn`, `router`, `app-dev`, `app-prod`, `database`, `agent`, `ingress`, `websocket`, `s3`, `metrics`, `analytics`. |
 | `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode according to the shared invocation model in [`docs/domains/README.md`](../../../README.md#invocation-model). |
 
 `--role` is a scalar enum filter with single-value semantics; comma-separated

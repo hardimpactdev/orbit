@@ -88,7 +88,8 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 `s3:publish` changes S3 publication intent stored on the gateway and applies
 route artifacts for the command. [`doctor --family=proxy`](../../../8_proxy/proxy-doctor.md)
 owns route drift verification and repair after partial apply. [`doctor --family=tool`](../../../3_tool/tool-doctor.md)
-owns SeaweedFS tool-row and container drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
+owns SeaweedFS tool-row drift. [`doctor --family=process`](../../../7_process/process-doctor.md)
+owns SeaweedFS container and runtime drift. [`doctor --family=node`](../../../1_node/node-doctor.md)
 owns s3 role assignment readiness.
 
 ## Activity Logging
