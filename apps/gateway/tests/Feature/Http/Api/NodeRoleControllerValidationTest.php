@@ -99,7 +99,6 @@ function assignNodeRoleApiRole(int $nodeId, string $role, array $settings = []):
  */
 function postNodeRoleApiJson(string $uri, array $data, array $server = []): TestResponse
 {
-    /** @phpstan-ignore-next-line Pest resolves call() on the bound Laravel test case at runtime. */
     return test()->call(
         'POST',
         $uri,
@@ -120,7 +119,6 @@ function postNodeRoleApiJson(string $uri, array $data, array $server = []): Test
  */
 function deleteNodeRoleApiJson(string $uri, array $data, array $server = []): TestResponse
 {
-    /** @phpstan-ignore-next-line Pest resolves call() on the bound Laravel test case at runtime. */
     return test()->call(
         'DELETE',
         $uri,

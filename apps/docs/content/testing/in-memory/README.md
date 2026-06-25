@@ -23,7 +23,7 @@ Use focused files and filters before escalating to the full default suite.
 ```bash
 bin/orbit-gateway-pest --compact tests/Feature/Commands/Nodes/NodeListCommandTest.php
 bin/orbit-gateway-pest --compact --filter='lists nodes'
-bin/orbit-gateway-vendor-bin pint --dirty --format agent
+bin/orbit-gateway-vendor-bin mago format --check
 ```
 
 The default Composer test lane excludes `e2e` and `slow` groups from the

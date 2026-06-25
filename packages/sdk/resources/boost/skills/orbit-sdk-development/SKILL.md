@@ -29,6 +29,6 @@ From the repo root:
 
 ```bash
 bin/orbit-gateway-pest --compact tests/Feature/Architecture/GatewayApiContractTest.php
-cd packages/sdk && vendor/bin/pint --dirty --format agent
+cd packages/sdk && vendor/bin/mago format --check
 composer quality-check
 ```

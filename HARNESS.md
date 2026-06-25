@@ -90,8 +90,8 @@ Start at the monorepo root and read in this order:
    repo-dev procedures)
 11. **`bin/orbit-prepare-worktree`**: create and bootstrap isolated
    implementation worktrees
-12. **Root Composer scripts**: orchestrate docs-lint, tests, Pint, PHPStan,
-   Rector, and E2E lanes across apps/packages
+12. **Root Composer scripts**: orchestrate docs-lint, tests, Mago, Rector, and
+   E2E lanes across apps/packages
 
 Session plans and specs stay at `docs/superpowers/`. They are not product
 authority and are not the durable harness.
@@ -380,9 +380,8 @@ disjoint ownership and neither needs the other's result, dispatch them in
 parallel through Solo by default. Serialize only when tasks edit the same files,
 mutate the same provider resources, depend on a prior result, or cannot name a
 clear merge order. In parallel-worker mode, workers must also scope formatters
-and fixers to their owned files; broad dirty-file tools such as `pint --dirty`,
-broad Rector, or aggregate fixers belong to the feature owner after worker
-diffs are reconciled.
+and fixers to their owned files; broad Mago formatting, broad Rector, or
+aggregate fixers belong to the feature owner after worker diffs are reconciled.
 
 Documentation-heavy work may start with a Claude documenter/librarian worker.
 Code implementation can run after the feature owner accepts the docs contract as

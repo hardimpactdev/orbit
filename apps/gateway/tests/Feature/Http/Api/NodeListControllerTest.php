@@ -73,7 +73,6 @@ function assignApiNodeRole(string $nodeName, string $role, array $settings = [])
 function getApiNodesJson(string $uri, array $server = []): TestResponse
 {
     /** @var TestCase $test */
-    // @phpstan-ignore-next-line varTag.nativeType
     $test = test();
 
     return $test->call(

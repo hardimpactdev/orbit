@@ -150,14 +150,25 @@ it('uses Mago for analysis, linting, and formatting', function (): void {
 
         expect($manifest['require-dev']['carthage-software/mago'] ?? null)
             ->toBe('^1.40.1')
-            ->and(repo_path("{$projectPath}/mago.toml"))
-            ->toBeFile()
-            ->and(repo_path("{$projectPath}/mago-analyzer-baseline.toml"))
-            ->toBeFile()
-            ->and(repo_path("{$projectPath}/mago-linter-baseline.toml"))
-            ->toBeFile()
-            ->and($manifest['scripts'])
-            ->toHaveKeys(['analyse', 'format', 'mago:analyze', 'mago:lint', 'mago:format', 'mago:format:check']);
+            ->and($manifest['require-dev'] ?? [])
+            ->not->toHaveKeys([
+                'larastan/larastan',
+                'laravel/pint',
+                'phpstan/phpstan',
+            ])->and(repo_path("{$projectPath}/mago.toml"))->toBeFile()->and(repo_path(
+                "{$projectPath}/mago-analyzer-baseline.toml",
+            ))->toBeFile()->and(repo_path("{$projectPath}/mago-linter-baseline.toml"))->toBeFile()->and(repo_path(
+                "{$projectPath}/pint.json",
+            ))
+            ->not->toBeFile()->and(repo_path("{$projectPath}/phpstan.neon"))
+            ->not->toBeFile()->and($manifest['scripts'])->toHaveKeys([
+                'analyse',
+                'format',
+                'mago:analyze',
+                'mago:lint',
+                'mago:format',
+                'mago:format:check',
+            ]);
     }
 });
 

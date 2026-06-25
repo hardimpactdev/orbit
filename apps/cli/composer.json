@@ -18,12 +18,10 @@
     },
     "require-dev": {
         "carthage-software/mago": "^1.40.1",
-        "laravel/pint": "^1.29",
         "mockery/mockery": "^1.6",
         "pestphp/pest": "^4.6",
         "pestphp/pest-plugin-laravel": "^4.1",
         "phpacker/phpacker": "^0.6.4",
-        "phpstan/phpstan": "^2.1",
         "rector/rector": "^2.3"
     },
     "provide": {

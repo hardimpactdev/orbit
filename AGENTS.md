@@ -13,8 +13,7 @@ the harness differs from the feedback loop. Product behavior contracts remain in
 - The repository root is orchestration only: root Composer scripts, `bin/`
   helper launchers, Docker/E2E assets, AI/project configuration, and
   cross-project documentation artifacts. There is no root Laravel app, root
-  `artisan`, root `phpunit.xml`, root Pint config, root PHPStan config, or root
-  Rector config.
+  `artisan`, root `phpunit.xml`, or root Rector/Mago config.
 - `apps/gateway/` is the Laravel 13 gateway/control-plane application. It owns
   the gateway HTTP/API surface, gateway database, provisioning logic, E2E
   harness, deployed public/storage assets, frontend build, and gateway-local
@@ -180,11 +179,9 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - php - 8.5
 - laravel/framework (LARAVEL) - v13
 - laravel/prompts (PROMPTS) - v0
-- larastan/larastan (LARASTAN) - v3
 - laravel/boost (BOOST) - v2
 - laravel/mcp (MCP) - v0
 - laravel/pail (PAIL) - v1
-- laravel/pint (PINT) - v1
 - pestphp/pest (PEST) - v4
 - phpunit/phpunit (PHPUNIT) - v12
 - rector/rector (RECTOR) - v2
@@ -312,13 +309,6 @@ This project has domain-specific skills available in `**/skills/**`. You MUST ac
 ## Vite Error
 
 - If you receive an "Illuminate\Foundation\ViteException: Unable to locate file in Vite manifest" error, you can run `npm run build` or ask the user to run `npm run dev` or `composer run dev`.
-
-=== pint/core rules ===
-
-# Laravel Pint Code Formatter
-
-- If you have modified any PHP files, you must run `vendor/bin/pint --dirty --format agent` before finalizing changes to ensure your code matches the project's expected style.
-- Do not run `vendor/bin/pint --test --format agent`, simply run `vendor/bin/pint --format agent` to fix any formatting issues.
 
 === pest/core rules ===
 

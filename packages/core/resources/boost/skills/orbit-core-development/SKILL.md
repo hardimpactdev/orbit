@@ -29,8 +29,8 @@ From the repo root:
 
 ```bash
 cd packages/core && vendor/bin/pest --compact
-cd packages/core && vendor/bin/pint --dirty --format agent
-cd packages/core && vendor/bin/phpstan analyse --memory-limit=512M
+cd packages/core && vendor/bin/mago analyze src --reporting-format=medium
+cd packages/core && vendor/bin/mago format --check
 ```
 
 For broader safety after core contract changes:

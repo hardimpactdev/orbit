@@ -48,9 +48,7 @@ it('keeps the Laravel gateway app under apps gateway', function (): void {
         ->toBeFile()
         ->and("{$gatewayRoot}/package.json")
         ->toBeFile()
-        ->and("{$gatewayRoot}/pint.json")
-        ->toBeFile()
-        ->and("{$gatewayRoot}/phpstan.neon")
+        ->and("{$gatewayRoot}/mago.toml")
         ->toBeFile()
         ->and("{$gatewayRoot}/rector.php")
         ->toBeFile()
@@ -67,7 +65,7 @@ it('keeps the Laravel gateway app under apps gateway', function (): void {
         ->not->toBeDirectory()->and("{$repoRoot}/tests")
         ->not->toBeDirectory()->and("{$repoRoot}/artisan")
         ->not->toBeFile()->and("{$repoRoot}/.env.live.example")
-        ->not->toBeFile()->and("{$repoRoot}/pint.json")
+        ->not->toBeFile()->and("{$repoRoot}/mago.toml")
         ->not->toBeFile()->and("{$repoRoot}/.npmrc")
         ->not->toBeFile()->and("{$repoRoot}/phpunit.xml")
         ->not->toBeFile();
@@ -96,17 +94,28 @@ it('keeps root composer as an orchestrator without gateway autoloads', function 
 it('keeps quality tool configs local to each app and package', function (): void {
     $repoRoot = gatewayRelocationRepoRoot();
 
-    foreach (['apps/gateway', 'apps/cli', 'apps/docs', 'apps/e2e', 'packages/core'] as $projectPath) {
-        expect("{$repoRoot}/{$projectPath}/pint.json")
+    foreach ([
+        'apps/gateway',
+        'apps/cli',
+        'apps/docs',
+        'apps/e2e',
+        'apps/reverb',
+        'packages/core',
+        'packages/sdk',
+    ] as $projectPath) {
+        expect("{$repoRoot}/{$projectPath}/mago.toml")
             ->toBeFile()
-            ->and("{$repoRoot}/{$projectPath}/phpstan.neon")
+            ->and("{$repoRoot}/{$projectPath}/mago-analyzer-baseline.toml")
             ->toBeFile()
-            ->and("{$repoRoot}/{$projectPath}/rector.php")
+            ->and("{$repoRoot}/{$projectPath}/mago-linter-baseline.toml")
             ->toBeFile();
     }
 
-    expect("{$repoRoot}/pint.json")
-        ->not->toBeFile()->and("{$repoRoot}/phpstan.neon")
+    foreach (['apps/gateway', 'apps/cli', 'apps/docs', 'apps/e2e', 'packages/core', 'packages/sdk'] as $projectPath) {
+        expect("{$repoRoot}/{$projectPath}/rector.php")->toBeFile();
+    }
+
+    expect("{$repoRoot}/mago.toml")
         ->not->toBeFile()->and("{$repoRoot}/rector.php")
         ->not->toBeFile();
 });
@@ -143,20 +152,13 @@ it('registers gateway providers from the relocated bootstrap directory', functio
         ->toBeTrue();
 });
 
-it('points PHPStan at a bootstrap file for the relocated gateway app', function (): void {
+it('points Mago at the relocated gateway app paths', function (): void {
     $repoRoot = gatewayRelocationRepoRoot();
-    $phpstanConfig = file_get_contents("{$repoRoot}/apps/gateway/phpstan.neon") ?: '';
-    $phpstanBootstrap = file_get_contents("{$repoRoot}/apps/gateway/bootstrap/phpstan.php") ?: '';
+    $magoConfig = file_get_contents("{$repoRoot}/apps/gateway/mago.toml") ?: '';
 
-    expect($phpstanConfig)
-        ->toContain('bootstrap/phpstan.php')
-        ->toContain('app')
-        ->toContain('config')
-        ->toContain('database')
-        ->not
-        ->toContain('apps/gateway/')
-        ->and($phpstanBootstrap)
-        ->toContain("__DIR__.'/app.php'")
-        ->and($phpstanBootstrap)
-        ->toContain('LARAVEL_VERSION');
+    expect($magoConfig)
+        ->toContain('paths = ["app", "bootstrap", "config", "database", "routes", "tests"]')
+        ->toContain('preset = "laravel"')
+        ->toContain('integrations = ["laravel", "pest", "phpunit"]')
+        ->not->toContain('apps/gateway/');
 });

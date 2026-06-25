@@ -288,11 +288,11 @@ it('does not invalidate role checkpoints when CLI build output changes', functio
     try {
         $before = E2EProvisionFingerprint::fromRoot($root, E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
 
-        mkdir("{$root}/apps/cli/build/phpstan", 0777, true);
+        mkdir("{$root}/apps/cli/build/mago", 0777, true);
         mkdir("{$root}/apps/cli/builds/dist/linux", 0777, true);
         file_put_contents(
-            "{$root}/apps/cli/build/phpstan/resultCache.php",
-            "<?php\nreturn ['generated' => 'changed'];\n",
+            "{$root}/apps/cli/build/mago/result-cache.json",
+            json_encode(['generated' => 'changed'], JSON_THROW_ON_ERROR),
         );
         file_put_contents("{$root}/apps/cli/builds/orbit.phar", 'changed phar bytes');
         file_put_contents("{$root}/apps/cli/builds/dist/linux/linux-x64", 'changed native binary bytes');

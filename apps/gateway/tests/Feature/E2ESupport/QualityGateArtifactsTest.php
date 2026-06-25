@@ -21,7 +21,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
             '--git-commit=abc123def456',
             '--subgate=gateway_pest=0',
             '--subgate=docs_lint=0',
-            '--subgate=gateway_phpstan=1',
+            '--subgate=gateway_mago_analyze=1',
             "--artifact-dir={$artifactDir}",
         ], repo_path());
         $process->run();
@@ -50,7 +50,7 @@ it('writes a quality gate artifact with required timing and git metadata', funct
             'subgates' => [
                 'gateway_pest' => 0,
                 'docs_lint' => 0,
-                'gateway_phpstan' => 1,
+                'gateway_mago_analyze' => 1,
             ],
         ]);
     } finally {
@@ -986,12 +986,12 @@ it('promotes the latest successful quality-check artifact into a local baseline 
         'subgates' => ['gateway_pest' => 0],
         'subgate_durations' => [
             'core_pest' => 4.2,
-            'core_phpstan' => 6.4,
-            'core_pint' => 1.0,
+            'core_mago_analyze' => 6.4,
+            'core_mago_format' => 1.0,
             'core_rector' => 2.0,
             'sdk_pest' => 0.5,
-            'sdk_phpstan' => 5.0,
-            'sdk_pint' => 0.8,
+            'sdk_mago_analyze' => 5.0,
+            'sdk_mago_format' => 0.8,
             'sdk_rector' => 1.7,
             'gateway_pest' => 120.0,
             'docs_lint' => 8.0,
@@ -1011,9 +1011,9 @@ it('promotes the latest successful quality-check artifact into a local baseline 
         'subgates' => ['core_pest' => 1, 'sdk_pest' => 1],
         'subgate_durations' => [
             'core_pest' => 0.1,
-            'core_phpstan' => -1,
+            'core_mago_analyze' => -1,
             'sdk_pest' => 0.1,
-            'sdk_phpstan' => 'fast',
+            'sdk_mago_analyze' => 'fast',
         ],
     ], JSON_THROW_ON_ERROR));
 
@@ -1031,12 +1031,12 @@ it('promotes the latest successful quality-check artifact into a local baseline 
         'subgates' => ['gateway_pest' => 0, 'docs_lint' => 0],
         'subgate_durations' => [
             'core_pest' => 3.2,
-            'core_phpstan' => 7.0,
-            'core_pint' => 1.2,
+            'core_mago_analyze' => 7.0,
+            'core_mago_format' => 1.2,
             'core_rector' => 1.8,
             'sdk_pest' => 0.3,
-            'sdk_phpstan' => 4.8,
-            'sdk_pint' => 0.9,
+            'sdk_mago_analyze' => 4.8,
+            'sdk_mago_format' => 0.9,
             'sdk_rector' => 1.5,
             'gateway_pest' => 245.5,
             'docs_lint' => 12.0,
@@ -1068,14 +1068,14 @@ it('promotes the latest successful quality-check artifact into a local baseline 
             'updated_at' => '2026-06-23T10:05:30Z',
             'subgate_durations' => [
                 'core_pest' => 3.2,
-                'core_phpstan' => 7.0,
-                'core_pint' => 1.2,
+                'core_mago_analyze' => 7.0,
+                'core_mago_format' => 1.2,
                 'core_rector' => 1.8,
                 'docs_lint' => 12.0,
                 'gateway_pest' => 245.5,
                 'sdk_pest' => 0.3,
-                'sdk_phpstan' => 4.8,
-                'sdk_pint' => 0.9,
+                'sdk_mago_analyze' => 4.8,
+                'sdk_mago_format' => 0.9,
                 'sdk_rector' => 1.5,
             ],
         ]);

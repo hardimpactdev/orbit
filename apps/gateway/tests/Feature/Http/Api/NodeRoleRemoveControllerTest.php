@@ -105,7 +105,6 @@ function grantNodeRoleRemoveAccess(int $callerId, int $targetId, array $permissi
  */
 function deleteNodeRoleRemoveJson(string $uri, array $data = [], array $server = []): TestResponse
 {
-    /** @phpstan-ignore-next-line Pest resolves call() on the bound Laravel test case at runtime. */
     return test()->call(
         'DELETE',
         $uri,

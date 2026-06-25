@@ -143,7 +143,6 @@ function internalExecutorCallerNode(array $overrides = []): Node
 function internalExecutorVerifyTokenRequest(array $payload)
 {
     /** @var TestCase $test */
-    // @phpstan-ignore-next-line varTag.nativeType
     $test = test();
 
     return $test

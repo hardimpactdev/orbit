@@ -10,13 +10,13 @@ filter first.
 
 ```bash
 bin/orbit-gateway-pest --compact
-bin/orbit-gateway-vendor-bin pint --dirty --format agent
+bin/orbit-gateway-vendor-bin mago format --check
 composer docs-lint
 ```
 
 Run `composer quality-check` before handing off a change that should be broadly
-safe. That gate fans out docs linting, PHPStan, Rector dry-run, Pint, and the
-default Pest suite across each app and package. Default Pest subgates exclude
+safe. That gate fans out docs linting, Mago analyze/lint/format checks, Rector
+dry-run, and the default Pest suite across each app and package. Default Pest subgates exclude
 `slow` tests. `composer test:slow` keeps real boundary checks available when
 the behavior under test is the boundary: PTY rendering, transport timing, and
 shell commands that build release packages. Use `bin/orbit-gateway-pest
@@ -88,13 +88,9 @@ recent run durations, and warning-only baseline observations when a local
 baseline exists. It does not rerun `composer quality-check` or E2E lanes.
 
 Treat the first `composer quality-check` run in a newly prepared worktree as
-potentially cold-cache evidence. PHPStan's app/package-local `build/phpstan/`
-directories are one visible cache signal, and those directories may not exist
-until the first run in that worktree. When a fresh-worktree run is much slower
-than the baseline, inspect `apps/*/build/phpstan` and
-`packages/*/build/phpstan` first. If the cause is still ambiguous, use a
-same-command warmed rerun as a diagnostic confirmation before calling the
-scheduler, product code, or a specific subgate regressed.
+potentially cold-cache evidence. When a fresh-worktree run is much slower than
+the baseline, use a same-command warmed rerun as a diagnostic confirmation
+before calling the scheduler, product code, or a specific subgate regressed.
 
 Before merging a worktree, inspect the existing timing evidence with:
 

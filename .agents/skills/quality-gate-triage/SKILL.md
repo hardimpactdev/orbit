@@ -73,7 +73,7 @@ Read lane-specific guidance before classifying:
 | Lane | Required docs and skills |
 |------|--------------------------|
 | Pest, `composer test`, in-memory failures | `.agents/skills/pest-testing/SKILL.md`; `apps/docs/content/testing/in-memory/performance.md` |
-| `composer quality-check` | `apps/docs/content/testing/quality-gates.md`; then route each failing sub-gate to Pest, docs, Pint, PHPStan, Rector, or package owner guidance |
+| `composer quality-check` | `apps/docs/content/testing/quality-gates.md`; then route each failing sub-gate to Pest, docs, Mago, Rector, or package owner guidance |
 | Docker E2E | `.agents/skills/e2e-verification-lanes/SKILL.md`; `apps/docs/content/testing/e2e/environment.md`; `apps/docs/content/testing/e2e/performance.md` |
 | Incus E2E | `.agents/skills/e2e-verification-lanes/SKILL.md`; `apps/docs/content/testing/e2e/environment.md`; `apps/docs/content/testing/e2e/performance.md` |
 | CLI rendering, progress, prompts, or streaming output | `.agents/skills/cli-output-pty-capture/SKILL.md` before asking for human UX review |
@@ -190,14 +190,11 @@ Review in this order:
 - Compare Incus E2E timing only when the prepared topology, source checkout,
   storage pool, host slots, and cache mode match the baseline.
 - For `composer quality-check` in a fresh worktree, check cache warmth before
-  treating the first timing warning as a regression. PHPStan result caches are
-  one visible worktree-local cache signal under app/package `build/phpstan/`:
-  inspect `apps/*/build/phpstan` and `packages/*/build/phpstan` first. When
-  the first run is slow and cache state is still ambiguous, rerun the same
-  `composer quality-check` command once as a diagnostic warm-run and classify
-  the cold run separately from the latest warmed evidence. Cold first runs can
-  also inflate Pint and Rector timings, so do not assume PHPStan is the only
-  affected subgate.
+  treating the first timing warning as a regression. When the first run is slow
+  and cache state is still ambiguous, rerun the same `composer quality-check`
+  command once as a diagnostic warm-run and classify the cold run separately
+  from the latest warmed evidence. Cold first runs can also inflate Mago and
+  Rector timings, so do not assume a product or scheduler regression first.
 - Change only one variable when testing a timing hypothesis. A comparison that
   changes both scheduler fan-out and cache warmth is not evidence for either
   cause.

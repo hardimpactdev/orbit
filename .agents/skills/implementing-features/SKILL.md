@@ -686,7 +686,7 @@ moving on to durable E2E.
 20. If PHP changed, run:
 
    ```bash
-   vendor/bin/pint --dirty --format agent
+   vendor/bin/mago format --check
    ```
 
 21. Before reporting completion, run the verification gate implied by the final

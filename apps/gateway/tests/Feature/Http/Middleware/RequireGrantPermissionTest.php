@@ -88,7 +88,6 @@ function requireGrantAccess(Node $consumer, Node $serving, array $permissions): 
 function requireGrantGet(string $uri, string $wireguardAddress = REQUIRE_GRANT_CALLER_WG_IP): TestResponse
 {
     /** @var TestCase $test */
-    // @phpstan-ignore-next-line varTag.nativeType
     $test = test();
 
     return $test->call(

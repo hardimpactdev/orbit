@@ -109,7 +109,6 @@ function getNodeRoleApiContractJson(string $uri): TestResponse
  */
 function nodeRoleApiContractRequest(string $method, string $uri, array $data): TestResponse
 {
-    /** @phpstan-ignore-next-line Pest resolves call() on the bound Laravel test case at runtime. */
     return test()->call(
         $method,
         $uri,
