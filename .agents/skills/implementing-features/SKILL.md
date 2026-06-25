@@ -503,6 +503,22 @@ source of truth. VM-side edits in `/home/orbit/orbit-run` are scratch work and
 are overwritten by the next sync; VM-side edits in `/home/orbit/orbit` mutate
 the runner-host copy, not the local worktree.
 
+`--sync` refreshes files on disk but does not reload the long-running gateway
+API container. After a sync, the gateway lease container keeps serving the
+pre-sync code and returns HTTP 500 on every gateway call (including paths the
+change never touched, e.g. single-node `doctor`), which reads as a product
+regression but is not one. Restart the gateway lease containers on the gateway
+VM before re-verifying:
+
+```bash
+ssh <incus-host> 'incus exec <gateway-instance> -- bash -lc \
+  "docker restart orbit-gateway-e2e-topology-lease-http orbit-gateway-e2e-topology-lease-tls"'
+```
+
+Then re-run the changed command. A 500 on an unrelated gateway path right after
+`--sync` is a stale-container signal, not a code defect — restart first, then
+classify.
+
 Record the retained topology id, topology kind, checkout roles, inspected
 instances, Solo terminal or fallback session, commands run, and observed result
 in the Solo report. If you mutate state for a focused check, isolate unrelated
