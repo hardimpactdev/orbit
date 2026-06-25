@@ -38,6 +38,7 @@ direction.
 
 <!-- newest first; add new entries directly under this comment -->
 
+- 2026-06-25 — Process mutation is named `process:update`; `process:edit` remains a backward-compatible alias, and supported process identity rename flows use `process:update --name=<new-slug>` while preserving managed database connection coherence.
 - 2026-06-24 — App setup is a lifecycle-specific pipeline: `app-setup-step:*` records ordered host-toolchain setup commands for an app and `app:setup` runs that pipeline idempotently; Orbit still has no generic `app:exec` or `workspace:exec` surface.
 - 2026-06-24 — Managed MySQL database user provisioning belongs to the database family through `database:add-user <connection> --service=<process>`, while MySQL service installation, runtime, start, stop, restart, and logs remain process-owned.
 - 2026-06-24 — Node-owned managed service process creation uses `process:add --service=<identifier>` with public `--version=<version>` and optional Docker `--image=<image>` override; Orbit resolves official catalog images for known Docker services from service, runtime, and version, starts processes by default, and retains legacy service-definition storage keys only as read compatibility fallback. Supersedes the prior `--definition` service selector wording.

@@ -1,0 +1,49 @@
+# `orbit process:update [name]`
+
+[Back to Process commands.](../README.md)
+
+Update or rename a node-, app-, or workspace-owned process definition.
+
+`process:update` changes a process identity slug, command, restart policy,
+crash notification policy, or process runtime for the resolved owner scope. It
+re-renders every runtime unit derived from that process definition, replacing
+old derived unit names when the identity slug changes.
+
+`process:edit` remains a backward-compatible alias for existing scripts. New
+documentation and automation should use `process:update`.
+
+## Usage
+
+```bash
+orbit process:update vite --app=docs --command="npm run dev"
+orbit process:update queue --app=docs --restart-policy=on_failure --restart
+orbit process:update horizon --app=docs --workspace=feature-docs --command="php artisan horizon"
+orbit process:update opencode-server --node=app-dev-1 --command="opencode serve -a" --runtime=systemd
+orbit process:update watcher --app=docs --runtime=systemd
+orbit process:update mysql --node=database-1 --name=app-mysql --json
+orbit process:update vite --app=docs --command="npm run dev" --json
+```
+
+## Behavior Summary
+
+Use this command to update a process definition, optionally rename its identity
+slug, and re-render its runtime units.
+
+- **Gateway Update**: Updates the gateway-owned process definition.
+- **Identity Rename**: `--name=<new-slug>` renames the process identity inside
+  the owning scope after uniqueness validation.
+- **Scope Resolution**: `--node` updates a node-owned process and cannot be combined with `--app` or `--workspace`; `--workspace` updates a workspace-owned process; otherwise `--app` updates an app-owned process.
+- **Runtime Unit Replacement**: Re-renders the runtime units derived from the
+  selected process definition and removes or replaces old derived units when
+  the process identity changes.
+- **Runtime Boundary**: `systemd` is only valid for node-owned Linux service processes. `docker-swarm` is only valid for node-owned managed service processes.
+- **Unsupported Rename Boundary**: Backends that cannot safely replace derived
+  unit identity reject `--name` before changing gateway state.
+- **Restart Behavior**: Does not restart running runtime units unless `--restart` is supplied.
+- **Drift Reporting**: Reports repairable runtime-unit apply drift after successful configuration changes.
+
+See also: [`process:add`](../1_process-add/process-add.md), [`process:restart`](../7_process-restart/process-restart.md), [`process-doctor.md`](../process-doctor.md), [`process:edit` compatibility alias](../2_process-edit/process-edit.md).
+
+***
+
+**Technical Contract:** [`technical/1_process-update.md`](technical/1_process-update.md)

@@ -55,9 +55,10 @@ describe('ProcessUpdateController', function (): void {
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'vite', 'command' => 'npm run dev']);
-        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
+        $remoteShell = new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call(
             'PATCH',
@@ -102,7 +103,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
-            ->assertJsonPath('error.meta.missing_permission', 'process:edit');
+            ->assertJsonPath('error.meta.missing_permission', 'process:update');
 
         expect(Process::query()->where('name', 'vite')->value('command'))->toBe('npm run dev');
     });
@@ -129,7 +130,7 @@ describe('ProcessUpdateController', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'authorization_failed')
             ->assertJsonPath('error.meta.reason', 'missing_permission')
-            ->assertJsonPath('error.meta.missing_permission', 'process:edit');
+            ->assertJsonPath('error.meta.missing_permission', 'process:update');
     });
 
     it('persists and returns the runtime field when supplied', function (): void {
@@ -138,9 +139,10 @@ describe('ProcessUpdateController', function (): void {
         grantProcessUpdateAccess($caller, $appNode);
         $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
         Process::factory()->forOwner($app)->create(['name' => 'queue', 'runtime' => 'docker']);
-        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
+        $remoteShell = new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call(
             'PATCH',
@@ -174,9 +176,10 @@ describe('ProcessUpdateController', function (): void {
                 'runtime' => 'systemd',
                 'tool' => 'opencode',
             ]);
-        app()->instance(RemoteShell::class, new ProcessUpdateRemoteShell([
+        $remoteShell = new ProcessUpdateRemoteShell([
             new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
-        ]));
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
 
         $response = $this->call(
             'PATCH',
@@ -202,6 +205,230 @@ describe('ProcessUpdateController', function (): void {
             ->assertJsonPath('success.data.runtime_units.0', ['name' => 'opencode-server', 'context' => 'node']);
 
         expect(Process::query()->where('name', 'opencode-server')->value('command'))->toBe('opencode serve -a');
+    });
+
+    it('renames node owned process identity inside its owner scope', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $node = createTestAppHostNode(['name' => 'database-1']);
+        grantProcessUpdateAccess($caller, $node);
+        $credentialValue = substr(hash('sha256', 'node owned rename'), 0, 16);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql',
+                'runtime' => 'docker',
+                'runtime_config' => [
+                    'service' => 'mysql',
+                    'image' => 'mysql:8.4',
+                    'target_ports' => [3306],
+                    'ports' => [['host' => '10.6.0.20', 'published' => 3308, 'target' => 3306]],
+                    'environment' => ['MYSQL_ROOT_PASSWORD' => $credentialValue],
+                ],
+            ]);
+        $remoteShell = new ProcessUpdateRemoteShell([
+            new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1),
+        ]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/mysql',
+            [
+                'node' => 'database-1',
+                'name' => 'app-mysql',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.name', 'app-mysql')
+            ->assertJsonPath('success.data.old_name', 'mysql')
+            ->assertJsonPath('success.data.changed', ['name'])
+            ->assertJsonPath('success.meta.warnings', []);
+
+        expect(Process::query()->where('name', 'mysql')->exists())
+            ->toBeFalse()
+            ->and(Process::query()->where('name', 'app-mysql')->exists())
+            ->toBeTrue()
+            ->and(implode("\n---\n", $remoteShell->scripts))
+            ->toContain("docker rm -f 'mysql'");
+
+        $applyIndex = collect($remoteShell->scripts)
+            ->search(fn (string $script): bool => str_contains($script, "--name 'app-mysql'"));
+        $cleanupIndex = collect($remoteShell->scripts)
+            ->search(fn (string $script): bool => str_contains($script, "docker rm -f 'mysql'"));
+
+        expect($applyIndex !== false)
+            ->toBeTrue()
+            ->and($cleanupIndex !== false)
+            ->toBeTrue()
+            ->and($cleanupIndex)
+            ->toBeGreaterThan($applyIndex);
+    });
+
+    it('renames app owned process identity and cleans derived workspace runtime units after re-rendering', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $appNode = createTestAppHostNode();
+        grantProcessUpdateAccess($caller, $appNode);
+        $app = App::factory()->create(['name' => 'docs', 'node_id' => $appNode->id]);
+        Workspace::factory()->for($app)->create(['name' => 'feature-docs', 'path' => '/srv/docs-feature']);
+        Process::factory()
+            ->forOwner($app)
+            ->create([
+                'name' => 'vite',
+                'command' => 'npm run dev',
+                'runtime' => 'systemd',
+            ]);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/vite',
+            [
+                'app' => 'docs',
+                'name' => 'dev-server',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success.data.process.name', 'dev-server')
+            ->assertJsonPath('success.data.old_name', 'vite')
+            ->assertJsonPath('success.data.runtime_units.0', [
+                'name' => 'orbit_docs_main_dev-server',
+                'context' => 'main',
+            ])
+            ->assertJsonPath('success.data.runtime_units.1', [
+                'name' => 'orbit_docs_feature-docs_dev-server',
+                'context' => 'feature-docs',
+            ]);
+
+        $scripts = implode("\n---\n", $remoteShell->scripts);
+
+        expect($scripts)
+            ->toContain("sudo systemctl stop 'orbit_docs_main_vite.service'")
+            ->toContain("sudo systemctl stop 'orbit_docs_feature-docs_vite.service'");
+    });
+
+    it('rejects same-name process rename requests without runtime side effects', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $node = createTestAppHostNode(['name' => 'database-1']);
+        grantProcessUpdateAccess($caller, $node);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql',
+                'runtime' => 'docker',
+            ]);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/mysql',
+            [
+                'node' => 'database-1',
+                'name' => 'mysql',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'validation_failed')
+            ->assertJsonPath('error.meta.field', 'editable_fields');
+
+        expect(Process::query()->where('name', 'mysql')->exists())
+            ->toBeTrue()
+            ->and($remoteShell->scripts)
+            ->toBeEmpty();
+    });
+
+    it('rejects process rename conflicts inside the owner scope before runtime side effects', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $node = createTestAppHostNode(['name' => 'database-1']);
+        grantProcessUpdateAccess($caller, $node);
+        Process::factory()->forOwner($node)->create(['name' => 'mysql', 'runtime' => 'docker']);
+        Process::factory()->forOwner($node)->create(['name' => 'app-mysql', 'runtime' => 'docker']);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/mysql',
+            [
+                'node' => 'database-1',
+                'name' => 'app-mysql',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'process.name_conflict')
+            ->assertJsonPath('error.meta.field', 'name');
+
+        expect(Process::query()->where('name', 'mysql')->exists())
+            ->toBeTrue()
+            ->and(Process::query()->where('name', 'app-mysql')->count())
+            ->toBe(1)
+            ->and($remoteShell->scripts)
+            ->toBeEmpty();
+    });
+
+    it('rejects process renames when the runtime unit has a fixed backend name', function (): void {
+        $caller = createProcessUpdateCallerNode();
+        $node = createTestAppHostNode(['name' => 'database-1']);
+        grantProcessUpdateAccess($caller, $node);
+        Process::factory()
+            ->forOwner($node)
+            ->create([
+                'name' => 'mysql',
+                'runtime' => 'docker-swarm',
+                'runtime_config' => [
+                    'service_name' => 'orbit-mysql',
+                ],
+            ]);
+        $remoteShell = new ProcessUpdateRemoteShell([]);
+        app()->instance(RemoteShell::class, $remoteShell);
+
+        $response = $this->call(
+            'PATCH',
+            '/api/processes/mysql',
+            [
+                'node' => 'database-1',
+                'name' => 'app-mysql',
+            ],
+            [],
+            [],
+            ['REMOTE_ADDR' => PROCESS_UPDATE_CALLER_WG_IP],
+        );
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'process.rename_unsupported')
+            ->assertJsonPath('error.meta.field', 'name')
+            ->assertJsonPath('error.meta.reason', 'fixed_runtime_unit_name')
+            ->assertJsonPath('error.meta.runtime', 'docker-swarm')
+            ->assertJsonPath('error.meta.runtime_unit_name', 'orbit-mysql');
+
+        expect(Process::query()->where('name', 'mysql')->exists())
+            ->toBeTrue()
+            ->and(Process::query()->where('name', 'app-mysql')->exists())
+            ->toBeFalse()
+            ->and($remoteShell->scripts)
+            ->toBeEmpty();
     });
 
     it('updates workspace owned process intent', function (): void {
@@ -268,7 +495,7 @@ describe('ProcessUpdateController', function (): void {
         );
 
         $response
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'podman')
@@ -299,7 +526,7 @@ describe('ProcessUpdateController', function (): void {
         );
 
         $response
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'supervisor')
@@ -308,7 +535,7 @@ describe('ProcessUpdateController', function (): void {
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)
             ->toBe('docker')
             ->and($remoteShell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('rejects docker swarm for app scoped process updates before runtime side effects', function (): void {
@@ -333,7 +560,7 @@ describe('ProcessUpdateController', function (): void {
         );
 
         $response
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker-swarm')
@@ -342,7 +569,7 @@ describe('ProcessUpdateController', function (): void {
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)
             ->toBe('docker')
             ->and($remoteShell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('rejects docker for app scoped host-command process updates before runtime side effects', function (): void {
@@ -367,7 +594,7 @@ describe('ProcessUpdateController', function (): void {
         );
 
         $response
-            ->assertStatus(422)
+            ->assertUnprocessable()
             ->assertJsonPath('error.code', 'validation_failed')
             ->assertJsonPath('error.meta.field', 'runtime')
             ->assertJsonPath('error.meta.value', 'docker')
@@ -376,7 +603,7 @@ describe('ProcessUpdateController', function (): void {
         expect(Process::query()->where('name', 'queue')->value('runtime')->value)
             ->toBe('systemd')
             ->and($remoteShell->scripts)
-            ->toBe([]);
+            ->toBeEmpty();
     });
 
     it('rejects docker for workspace scoped host-command process updates before runtime side effects', function (): void {
@@ -469,6 +696,15 @@ final class ProcessUpdateRemoteShell implements RemoteShell
                     'enabled' => false,
                 ], JSON_THROW_ON_ERROR)
                     ."\n",
+                stderr: '',
+                durationMs: 1,
+            );
+        }
+
+        if (str_contains($script, 'docker container inspect --format')) {
+            return new RemoteShellResult(
+                exitCode: 0,
+                stdout: '{"Id":"process-container"}'."\n",
                 stderr: '',
                 durationMs: 1,
             );

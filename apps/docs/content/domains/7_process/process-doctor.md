@@ -166,8 +166,8 @@ Use `doctor --adopt` to apply the adoption action listed for each code.
 | `process.wireguard_self_route_unavailable` | No adoption action. |
 | `process.runtime_unit_unrenderable` | No adoption action. Invalid gateway intent must be corrected instead of adopted from runtime state. |
 | `process.runtime_unit_extra` | No adoption action. Runtime artifacts are derived and must not create process configuration. |
-| `process.runtime_unit_mismatch` | No adoption action. Update process configuration with `process:edit` when the observed runtime command should become configuration. |
-| `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:edit` when the observed policy should become configuration. |
+| `process.runtime_unit_mismatch` | No adoption action. Update process configuration with `process:update` when the observed runtime command should become configuration. |
+| `process.restart_policy_mismatch` | No adoption action. Update restart policy with `process:update` when the observed policy should become configuration. |
 | `process.runtime_environment_mismatch` | No adoption action. Runtime environment is derived from app, workspace, and node configuration. |
 | `process.event_notifier_mismatch` | No adoption action. Event notifier material is derived from gateway-owned process configuration and gateway event intake identity. |
 

@@ -8,10 +8,8 @@ use App\Actions\Apps\EnsureAppProcessRuntimeUnits;
 use App\Enums\ProcessCrashNotification;
 use App\Enums\Processes\ProcessRuntime;
 use App\Enums\ProcessRestartPolicy;
-use App\Models\App;
 use App\Models\Process;
 use App\Services\Processes\ProcessOwnerContext;
-use App\Services\Processes\ProcessRuntimeDriverRegistry;
 use App\Services\Processes\ProcessRuntimeUnitPayload;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
@@ -19,12 +17,12 @@ final readonly class EditProcess
 {
     public function __construct(
         private EnsureAppProcessRuntimeUnits $ensureRuntimeUnits,
+        private EditProcessRuntimeUnits $runtimeUnits,
         private ProcessRuntimeUnitPayload $runtimeUnitPayload,
-        private ProcessRuntimeDriverRegistry $runtimeDrivers,
     ) {}
 
     /**
-     * @param  array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
+     * @param  array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}  $changes
      * @return array{data: array<string, mixed>, warnings: list<array<string, mixed>>}
      */
     public function handle(ProcessOwnerContext $context, string $name, array $changes, bool $restart): array
@@ -46,27 +44,85 @@ final readonly class EditProcess
         }
 
         $changed = [];
+        $oldName = $process->name;
         $previousRuntime = $process->runtime;
+        $previousRuntimeUnits = $this->runtimeUnitPayload->forProcess(
+            $app,
+            $process,
+            $context->runtimeWorkspaceFor($process),
+        );
 
-        if (isset($changes['command']) && $process->command !== $changes['command']) {
+        if (array_key_exists('name', $changes) && $process->name !== $changes['name']) {
+            $fixedRuntimeUnitName = $this->runtimeUnits->fixedRuntimeUnitName($process);
+
+            if ($fixedRuntimeUnitName !== null) {
+                throw new GatewayApiException(
+                    "Process '{$process->name}' cannot be renamed because its {$process->runtime->value} runtime unit is explicitly named '{$fixedRuntimeUnitName}'.",
+                    'process.rename_unsupported',
+                    [
+                        ...$context->errorMeta($process->name),
+                        'field' => 'name',
+                        'reason' => 'fixed_runtime_unit_name',
+                        'runtime' => $process->runtime->value,
+                        'runtime_unit_name' => $fixedRuntimeUnitName,
+                    ],
+                );
+            }
+
+            $conflict = $context
+                ->ownerProcesses()
+                ->where('name', $changes['name'])
+                ->where('id', '!=', $process->id)
+                ->exists();
+
+            if ($conflict) {
+                throw new GatewayApiException(
+                    "Process '{$changes['name']}' already exists for {$context->label()}.",
+                    'process.name_conflict',
+                    [
+                        ...$context->errorMeta($changes['name']),
+                        'field' => 'name',
+                    ],
+                );
+            }
+
+            $process->name = $changes['name'];
+            $changed[] = 'name';
+        }
+
+        if (array_key_exists('command', $changes) && $process->command !== $changes['command']) {
             $process->command = $changes['command'];
             $changed[] = 'command';
         }
 
-        if (isset($changes['restart_policy']) && $process->restart_policy !== $changes['restart_policy']) {
+        if (array_key_exists('restart_policy', $changes) && $process->restart_policy !== $changes['restart_policy']) {
             $process->restart_policy = $changes['restart_policy'];
             $changed[] = 'restart_policy';
         }
 
-        if (isset($changes['crash_notification']) && $process->crash_notification !== $changes['crash_notification']) {
+        if (
+            array_key_exists('crash_notification', $changes)
+            && $process->crash_notification !== $changes['crash_notification']
+        ) {
             $process->crash_notification = $changes['crash_notification'];
             $changed[] = 'crash_notification';
         }
 
-        if (isset($changes['runtime']) && $process->runtime !== $changes['runtime']) {
+        if (array_key_exists('runtime', $changes) && $process->runtime !== $changes['runtime']) {
             $context->assertRuntimeAllowed($changes['runtime']);
             $process->runtime = $changes['runtime'];
             $changed[] = 'runtime';
+        }
+
+        if ($changed === []) {
+            throw new GatewayApiException(
+                'At least one editable field is required.',
+                'validation_failed',
+                [
+                    ...$context->errorMeta($name),
+                    'field' => 'editable_fields',
+                ],
+            );
         }
 
         $process->save();
@@ -76,8 +132,26 @@ final readonly class EditProcess
 
         if ($context->app !== null && $context->workspace === null) {
             $warnings = $this->ensureRuntimeUnits->handle($app);
+
+            if ($warnings === []) {
+                $warnings = $this->runtimeUnits->cleanupPrevious(
+                    $context,
+                    $previousRuntime,
+                    $previousRuntimeUnits,
+                    $runtimeUnits,
+                );
+            }
         } else {
-            $applyResult = $this->applyRuntimeUnits($context, $app, $process, $runtimeUnits, $previousRuntime);
+            $applyResult = $this->runtimeUnits->apply(
+                [
+                    'context' => $context,
+                    'app' => $app,
+                    'process' => $process,
+                    'runtime_units' => $runtimeUnits,
+                    'previous_runtime' => $previousRuntime,
+                    'previous_runtime_units' => $previousRuntimeUnits,
+                ],
+            );
             $warnings = $applyResult['warnings'];
             $restartableRuntimeUnits = $applyResult['applied_runtime_units'];
         }
@@ -85,7 +159,7 @@ final readonly class EditProcess
         if ($restart) {
             $warnings = [
                 ...$warnings,
-                ...$this->restartRuntimeUnits($context, $process, $restartableRuntimeUnits),
+                ...$this->runtimeUnits->restart($context, $process, $restartableRuntimeUnits),
             ];
         }
 
@@ -94,85 +168,11 @@ final readonly class EditProcess
                 'process' => [
                     ...$context->processPayload($process),
                 ],
+                'old_name' => in_array('name', $changed, strict: true) ? $oldName : null,
                 'changed' => $changed,
                 'runtime_units' => $runtimeUnits,
             ],
             'warnings' => $warnings,
         ];
-    }
-
-    /**
-     * @param  list<array{name: string, context: string}>  $runtimeUnits
-     * @return array{
-     *     warnings: list<array<string, mixed>>,
-     *     applied_runtime_units: list<array{name: string, context: string}>
-     * }
-     */
-    private function applyRuntimeUnits(
-        ProcessOwnerContext $context,
-        App $app,
-        Process $process,
-        array $runtimeUnits,
-        ProcessRuntime $previousRuntime,
-    ): array {
-        $warnings = [];
-        $appliedRuntimeUnits = [];
-        $driver = $this->runtimeDrivers->forProcess($process);
-
-        foreach ($runtimeUnits as $runtimeUnit) {
-            $name = $runtimeUnit['name'];
-            $workspace = $context->runtimeWorkspaceFor($process);
-            $cleanupScript = $previousRuntime !== $process->runtime
-                ? $this->runtimeDrivers->for($previousRuntime)->cleanupScript($name)
-                : null;
-            $applied = $driver->apply($context->node, $app, $process, $workspace, $cleanupScript);
-
-            if (! $applied) {
-                $warnings[] = [
-                    'code' => 'process.runtime_unit_apply_failed',
-                    'family' => 'process',
-                    'message' => "Process runtime unit '{$name}' could not be rendered or applied.",
-                    'next_command' => 'doctor --family=process --restore',
-                ];
-
-                continue;
-            }
-
-            $appliedRuntimeUnits[] = $runtimeUnit;
-        }
-
-        return [
-            'warnings' => $warnings,
-            'applied_runtime_units' => $appliedRuntimeUnits,
-        ];
-    }
-
-    /**
-     * Restart the rendered runtime units after a successful apply through the
-     * process runtime driver selected by `$process->runtime`.
-     *
-     * @param  list<array{name: string, context: string}>  $runtimeUnits
-     * @return list<array<string, mixed>>
-     */
-    private function restartRuntimeUnits(ProcessOwnerContext $context, Process $process, array $runtimeUnits): array
-    {
-        $warnings = [];
-        $driver = $this->runtimeDrivers->forProcess($process);
-
-        foreach ($runtimeUnits as $runtimeUnit) {
-            $name = $runtimeUnit['name'];
-            $restarted = $driver->restart($context->node, $name);
-
-            if (! $restarted) {
-                $warnings[] = [
-                    'code' => 'process.runtime_unit_restart_failed',
-                    'family' => 'process',
-                    'message' => "Process runtime unit '{$name}' was rendered but could not be restarted.",
-                    'next_command' => 'doctor --family=process --restore',
-                ];
-            }
-        }
-
-        return $warnings;
     }
 }

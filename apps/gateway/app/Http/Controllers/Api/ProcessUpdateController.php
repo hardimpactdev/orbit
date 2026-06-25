@@ -20,7 +20,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Orbit\Sdk\Laravel\GatewayApiException;
 
-#[RequiresPermission('process:edit', servingNode: ServingNode::AppOwning)]
+#[RequiresPermission('process:update', servingNode: ServingNode::AppOwning)]
 final class ProcessUpdateController implements Loggable
 {
     private ?Model $activitySubject = null;
@@ -60,7 +60,7 @@ final class ProcessUpdateController implements Loggable
             );
         }
 
-        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:edit');
+        $authorization = $this->authorizeProcessAccess($caller, $context->node, 'process:update');
 
         if ($authorization instanceof JsonResponse) {
             return $authorization;
@@ -95,13 +95,14 @@ final class ProcessUpdateController implements Loggable
     }
 
     /**
-     * @return array{node: string|null, app: string|null, workspace: string|null, changes: array{command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
+     * @return array{node: string|null, app: string|null, workspace: string|null, changes: array{name?: string, command?: string, restart_policy?: ProcessRestartPolicy, crash_notification?: ProcessCrashNotification, runtime?: ProcessRuntime}, restart: bool}|JsonResponse
      */
     private function validatedInput(Request $request): array|JsonResponse
     {
         $node = $this->optionalString($request, 'node');
         $app = $this->optionalString($request, 'app');
         $workspace = $this->optionalString($request, 'workspace');
+        $newName = $this->optionalString($request, 'name');
         $command = $this->optionalString($request, 'command');
         $restartPolicyInput = $this->optionalString($request, 'restart_policy');
         $crashNotificationInput = $this->optionalString($request, 'crash_notification');
@@ -131,7 +132,8 @@ final class ProcessUpdateController implements Loggable
         }
 
         if (
-            $command === null
+            $newName === null
+            && $command === null
             && $restartPolicyInput === null
             && $crashNotificationInput === null
             && $runtimeInput === null
@@ -145,6 +147,22 @@ final class ProcessUpdateController implements Loggable
         }
 
         $changes = [];
+
+        if ($newName !== null) {
+            if (! preg_match('/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/', $newName)) {
+                return $this->error(
+                    'validation_failed',
+                    'The process name must contain only lowercase letters, digits, and hyphens, cannot start or end with a hyphen, and may not exceed 64 characters.',
+                    [
+                        'field' => 'name',
+                        'value' => $newName,
+                    ],
+                    422,
+                );
+            }
+
+            $changes['name'] = $newName;
+        }
 
         if ($command !== null) {
             $changes['command'] = $command;
@@ -275,6 +293,7 @@ final class ProcessUpdateController implements Loggable
     {
         return match ($exception->errorCode()) {
             'process.not_found' => 404,
+            'process.name_conflict' => 409,
             'authorization_failed' => 403,
             default => 422,
         };
@@ -304,6 +323,7 @@ final class ProcessUpdateController implements Loggable
             'node' => $this->optionalString(request(), 'node'),
             'app' => $this->optionalString(request(), 'app'),
             'workspace' => $this->optionalString(request(), 'workspace'),
+            'new_name' => $this->optionalString(request(), 'name'),
         ];
     }
 

@@ -306,6 +306,45 @@ describe('process write commands', function (): void {
         expect($exitCode)->toBe(0)->and($decoded['success']['data']['process']['restart_policy'])->toBe('on_failure');
     });
 
+    it('patches process:update rename payloads to the gateway', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'process' => ['name' => 'app-mysql', 'node' => 'database-1', 'runtime' => 'docker'],
+            'old_name' => 'mysql',
+            'changed' => ['name'],
+            'runtime_units' => [['name' => 'orbit_node_database_1_app_mysql', 'context' => 'node']],
+        ], [
+            'warnings' => [],
+        ]));
+
+        [$exitCode, $output] = runCommand($this, command: 'process:update', params: [
+            'name' => 'mysql',
+            '--node' => 'database-1',
+            '--name' => 'app-mysql',
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        Http::assertSent(
+            fn (Request $request): bool => (
+                $request->method() === 'PATCH'
+                && $request->url() === 'https://gateway.test/api/processes/mysql'
+                && $request->data() === [
+                    'node' => 'database-1',
+                    'name' => 'app-mysql',
+                    'restart' => false,
+                ]
+            ),
+        );
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['process']['name'])
+            ->toBe('app-mysql')
+            ->and($decoded['success']['data']['old_name'])
+            ->toBe('mysql');
+    });
+
     it('rejects app scoped docker process:edit payloads before contacting the gateway', function (): void {
         Http::fake();
 
@@ -815,7 +854,7 @@ describe('process write commands', function (): void {
         expect($exitCode)
             ->toBe(0)
             ->and($output)
-            ->toContain('Editing Process')
+            ->toContain('Updating Process')
             ->and($output)
             ->toContain('Apply and verify process change')
             ->and($output)

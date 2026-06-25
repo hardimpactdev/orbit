@@ -21,6 +21,11 @@ it('routes process lifecycle actions through the runtime driver registry', funct
     foreach ($actionFiles as $action => $path) {
         $source = file_get_contents($path);
 
+        if ($action === 'EditProcess') {
+            $source .= file_get_contents(base_path('app/Actions/Processes/EditProcessRuntimeUnits.php'));
+            $source .= file_get_contents(base_path('app/Actions/Processes/EditProcessRuntimeUnitCleaner.php'));
+        }
+
         expect(str_contains($source, 'ProcessRuntimeDriverRegistry'))
             ->toBeTrue("{$action} must resolve lifecycle through ProcessRuntimeDriverRegistry.")
             ->and(str_contains($source, 'ProcessDockerRuntimeManager'))

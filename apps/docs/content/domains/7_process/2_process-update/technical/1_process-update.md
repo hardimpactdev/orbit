@@ -1,6 +1,6 @@
-# Technical Contract: `orbit process:edit [name]`
+# Technical Contract: `orbit process:update [name]`
 
-[Back to public `process:edit` documentation.](../process-edit.md)
+[Back to public `process:update` documentation.](../process-update.md)
 
 **Owner:** `process`.
 
@@ -10,13 +10,13 @@
 - The CLI caller can reach the Orbit gateway.
 - The gateway authorizes the authenticated peer for process-configuration
   mutation on the resolved owning node. During the compatibility window,
-  `process:edit` grants authorize `process:edit`.
+  `process:edit` grants authorize `process:update`.
 - To re-render runtime artifacts, the gateway must reach the owning node.
 
 ## Signature
 
 ```bash
-orbit process:edit [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--restart] [--json]
+orbit process:update [name] [--app=<app>] [--workspace=<workspace>] [--node=<node>] [--name=<new-name>] [--command=<command>] [--restart-policy=<never|on_failure|always>] [--crash-notification=<none|agent_ide>] [--runtime=<docker|docker-swarm|systemd>] [--restart] [--json]
 ```
 
 ## Input Contract
@@ -47,8 +47,8 @@ count as an editable field.
 
 ## Input Mode Contracts
 
-- [Interactive input mode](5.1_process-edit_input-mode_interactive.md)
-- [Non-interactive input mode](5.2_process-edit_input-mode_non-interactive.md)
+- [Interactive input mode](5.1_process-update_input-mode_interactive.md)
+- [Non-interactive input mode](5.2_process-update_input-mode_non-interactive.md)
 
 ## Behavior Contract
 
@@ -60,7 +60,7 @@ count as an editable field.
    scope and that the selected runtime/backend can safely replace derived unit
    identity before gateway state changes.
 4. Send the request to the gateway, which validates the authenticated peer's authorization.
-5. Edit gateway-owned process configuration. Rename changes are atomic at the
+5. Update gateway-owned process configuration. Rename updates are atomic at the
    gateway state layer: either the process row has the new identity and
    dependent gateway records point at it, or the old identity remains active.
 6. Re-render the runtime units that the process definition produces. Node-owned and workspace-owned processes normally derive one unit; app-owned processes derive one main-app unit plus one unit for each active workspace.
@@ -74,8 +74,8 @@ If process configuration is updated but re-rendering or optional restart fails, 
 
 ## Renderer Contracts
 
-- [Human renderer](6.1_process-edit_output-render_human.md)
-- [JSON renderer](6.2_process-edit_output-render_json.md)
+- [Human renderer](6.1_process-update_output-render_human.md)
+- [JSON renderer](6.2_process-update_output-render_json.md)
 
 ## Failure Semantics
 Standard failures defined in [Common Failures](../../../README.md#common-failures) apply; command-specific failures below.
@@ -91,7 +91,7 @@ Standard failures defined in [Common Failures](../../../README.md#common-failure
 
 ## Doctor Relationship
 
-`process:edit` changes process configuration and attempts to re-render the runtime units derived from that definition. [`process-doctor.md`](../../process-doctor.md) owns later detection and repair of missing, divergent, or orphaned runtime units and lifecycle event notifier material.
+`process:update` changes process configuration and attempts to re-render the runtime units derived from that definition. [`process-doctor.md`](../../process-doctor.md) owns later detection and repair of missing, divergent, or orphaned runtime units and lifecycle event notifier material.
 
 ## Activity Logging
 
@@ -114,7 +114,7 @@ Primary test owners:
 | Path | Coverage |
 | --- | --- |
 | `apps/gateway/tests/Feature/Http/Api/ProcessUpdateControllerTest.php` | Gateway API validation, authorization, rename uniqueness, runtime cleanup, unsupported rename, and warning envelopes. |
-| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | Process edit contract, rename uniqueness, grant authorization denial, required editable fields, app resolution, re-rendering/replacing derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
+| `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | Process update contract, rename uniqueness, grant authorization denial, required editable fields, app resolution, re-rendering/replacing derived units, optional restart behavior, repairable warnings on post-configuration apply failure, and no write on validation failure. |
 | `apps/cli/tests/Feature/Commands/Process/ProcessWriteCommandTest.php` | Required inputs, editable field validation, name validation, enum validation, no-op rejection, and `--json` input-mode selection. |
 
 Renderer and input-mode test mapping lives in the split companion files.
