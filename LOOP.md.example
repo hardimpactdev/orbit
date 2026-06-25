@@ -24,7 +24,7 @@ feature scratchpad. Keep code history in Git.
   - Multi-slice feature roadmap scratchpad exists before worker dispatch:
   - `.orbit/loop.md` links the feature roadmap and names the current slice:
   - If the source scratchpad lives in another Solo project, execution-project
-    scratchpad links back to it:
+    scratchpad links back to it and mirrors the roadmap substance:
 - Parallelization scan:
   - Candidate parallel lanes:
   - Serialized lanes, with required dependency/shared-state/provider-capacity/

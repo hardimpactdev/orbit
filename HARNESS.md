@@ -220,7 +220,11 @@ Use the least durable state that can keep the work coherent.
   or spawning workers, then put its `solo://` URL at the top of `.orbit/loop.md`
   and in worker prompts. If the work executes in a different Solo project or
   machine from the source scratchpad, create a reachable execution-project
-  roadmap that links back to the source scratchpad.
+  roadmap that links back to the source scratchpad and carries the source
+  roadmap substance: feature request, slice order, current-slice acceptance
+  criteria, deferred slices, and open decisions. A link-only execution
+  scratchpad is not enough because local workers and reviewers may not be able
+  to read the source project.
 - Solo todos are optional assignment cards. Create them only when a slice needs
   asynchronous delegation, queueing, or explicit tracking outside the active
   orchestrator thread. If a todo exists, keep it thin: point to the scratchpad
@@ -240,9 +244,11 @@ slices in one line each, and identify the current slice so a worker knows the
 branch may already contain earlier feature work.
 
 If a multi-slice feature reaches worker dispatch without a feature roadmap
-scratchpad link, pause the feature loop and create the scratchpad before
-continuing. Classify the miss in `.orbit/loop.md` final distillation and update
-`harness-signals/` only when existing guidance did not make the gate clear.
+scratchpad link, or with only a thin cross-project link that does not mirror the
+roadmap substance into the execution project, pause the feature loop and fix the
+scratchpad before continuing. Classify the miss in `.orbit/loop.md` final
+distillation and update `harness-signals/` only when existing guidance did not
+make the gate clear.
 
 ## Feature Cleanup
 

@@ -33,18 +33,22 @@ Root and skill guidance now make the scratchpad a pre-dispatch gate:
   scratchpad before worktree prep or worker dispatch;
 - `.orbit/loop.md` must link the roadmap and remain active-slice state;
 - when execution moves to another Solo project or machine, the execution
-  project gets its own reachable roadmap scratchpad that links the source.
+  project gets its own reachable roadmap scratchpad that links the source and
+  mirrors the source roadmap's feature request, slice order, current-slice
+  acceptance criteria, deferred slices, and open decisions.
 
 ## Verification
 
 ```bash
-rg -n "pre-dispatch gate|execution-project roadmap|feature roadmap scratchpad|Active slice start gate|Missing a feature scratchpad" AGENTS.md HARNESS.md LOOP.md.example .agents/skills/implementing-features/SKILL.md
+rg -n "pre-dispatch gate|execution-project roadmap|feature roadmap scratchpad|mirror|roadmap substance|Missing a feature scratchpad" AGENTS.md HARNESS.md LOOP.md.example .agents/skills/implementing-features/SKILL.md
 ```
 
 ## Reappearance Check
 
 If a future multi-slice implementation reaches worker dispatch without a linked
-feature roadmap scratchpad, treat the slice as off-loop and correct it before
-accepting implementation work. If the rule is still missed after this guardrail,
-consider adding a mechanical finalization check that blocks merge when
-`.orbit/loop.md` names multiple slices but has no `solo://` scratchpad link.
+feature roadmap scratchpad, or with a cross-project scratchpad that only links
+the source without mirroring the roadmap substance, treat the slice as off-loop
+and correct it before accepting implementation work. If the rule is still missed
+after this guardrail, consider adding a mechanical finalization check that blocks
+merge when `.orbit/loop.md` names multiple slices but has no usable `solo://`
+scratchpad roadmap.

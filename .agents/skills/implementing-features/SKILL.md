@@ -56,8 +56,9 @@ Responsibilities:
   feature worktree as the execution boundary. Use `.orbit/loop.md` for the
   active slice only, rewriting it when the next slice starts. If the source
   roadmap lives in another Solo project or machine, create a reachable
-  execution-project scratchpad that links back to the source before spawning
-  workers.
+  execution-project scratchpad that links back to the source and mirrors the
+  source roadmap's feature request, slice order, current-slice acceptance
+  criteria, deferred slices, and open decisions before spawning workers.
 - Run a dependency scan before spawning workers. If slices or verification lanes
   have disjoint ownership and neither needs the other's result, dispatch them in
   parallel through Solo by default. Use one worker serially only when ownership,
@@ -538,9 +539,11 @@ moving on to durable E2E.
    the scratchpad or `.orbit/loop.md` before narrowing the scope. Create the
    active slice Done Contract and proceed as feature owner. When execution is
    delegated to a different Solo project or machine than the source handoff,
-   create a local execution-project roadmap scratchpad that links the source.
-   Do not prepare the worktree or spawn workers for multi-slice work until the
-   feature roadmap scratchpad URL is recorded. Do not route through retired
+   create a local execution-project roadmap scratchpad that links the source
+   and mirrors the feature request, slice order, current-slice acceptance
+   criteria, deferred slices, and open decisions. Do not prepare the worktree or
+   spawn workers for multi-slice work until the feature roadmap scratchpad URL
+   and mirrored roadmap contents are recorded. Do not route through retired
    orchestration skills.
 2. Set up the workspace with `bin/orbit-prepare-worktree`.
 3. Read the handoff, `AGENTS.md`, `HARNESS.md`, `LOOP.md.example`,
@@ -825,8 +828,10 @@ is not required after ordinary `composer test:e2e` runs.
   slice outcomes, and final gate notes. Keep Solo todos optional; create them
   only for asynchronous assignment, queueing, or explicit tracking outside the
   active orchestrator thread. Missing a feature scratchpad before multi-slice
-  worker dispatch is a process miss; pause, create or link the scratchpad, and
-  record the correction in `.orbit/loop.md` final distillation.
+  worker dispatch is a process miss; a cross-project scratchpad that only links
+  the source without mirroring the roadmap substance is also a process miss.
+  Pause, create or fix the scratchpad, and record the correction in
+  `.orbit/loop.md` final distillation.
 - Run the repo feedback loop from `.orbit/loop.md` during the active slice,
   creating it from `LOOP.md.example` when needed. `.orbit/loop.md` is
   current-slice state, not feature history; rewrite it when the next slice

@@ -63,10 +63,14 @@ product authority and are not linted as product docs.
   scratchpad roadmap with rough slice order and update it at slice boundaries.
   This is a pre-dispatch gate: before preparing the implementation worktree or
   spawning workers, create or identify the feature roadmap scratchpad and carry
-  its `solo://` URL into the handoff. `.orbit/loop.md` is active-slice state and
-  is not a substitute for the roadmap. Create Solo todos only when a slice needs
-  asynchronous assignment, queueing, or explicit tracking outside the active
-  orchestrator thread. Do not update repository files while handling the request.
+  its `solo://` URL into the handoff. If execution moves to another Solo
+  project or machine, the execution-project scratchpad must mirror the source
+  roadmap's feature request, slice order, current-slice acceptance criteria,
+  deferred slices, and open decisions instead of only linking back.
+  `.orbit/loop.md` is active-slice state and is not a substitute for the
+  roadmap. Create Solo todos only when a slice needs asynchronous assignment,
+  queueing, or explicit tracking outside the active orchestrator thread. Do not
+  update repository files while handling the request.
 - Actual implementation happens through `.agents/skills/implementing-features`
   in an isolated worktree. That includes documentation updates, product-decision
   ledger entries, tests, and code changes. Read that skill before starting
