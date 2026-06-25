@@ -82,12 +82,18 @@ facts from another node.
 
 ### Node CLI Selection
 
-- Writes the node CLI PHP default in gateway tool facts.
+- Writes the node CLI PHP default in gateway `php` tool facts as `cli_version`.
+- Validates the target node through the host `php-cli` toolchain boundary, not
+  FrankenPHP image availability. The command requires the `php-cli` tool to be
+  installed on the target node before side effects begin.
 - Accepts only PHP 8.5, matching the production native Orbit CLI binary
   artifact's embedded PHP version and the `orbit-gateway` image baseline.
   Source-dev Docker/Incus development and E2E nodes invoke
   `<source>/apps/cli/orbit`.
-- Does not limit app or workspace FrankenPHP runtime versions.
+- Does not mutate app or workspace FrankenPHP runtime versions, container
+  artifacts, or proxy backends.
+- Reports `success.data.result.changed=false` when the node CLI default is
+  already PHP 8.5. Node CLI results omit FrankenPHP `image` data.
 
 ### Scope Boundaries
 

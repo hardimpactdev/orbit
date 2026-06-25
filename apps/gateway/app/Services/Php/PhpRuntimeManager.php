@@ -82,7 +82,7 @@ final readonly class PhpRuntimeManager
                 ));
             }
 
-            $availabilityFailure = $this->versionAvailabilityFailure($target['node'], $requestedVersion);
+            $availabilityFailure = $this->cliToolchainAvailabilityFailure($target['node']);
 
             if ($availabilityFailure instanceof PhpRuntimeFailure) {
                 return new PhpRuntimeOperation(failure: $availabilityFailure);
@@ -391,9 +391,34 @@ final readonly class PhpRuntimeManager
                 'workspace' => null,
                 'previous' => $previous,
                 'version' => $version,
-                'image' => $this->catalog->imageFor($version),
                 'inherits' => false,
                 'changed' => $previous !== $version,
+            ],
+        );
+    }
+
+    private function cliToolchainAvailabilityFailure(Node $node): ?PhpRuntimeFailure
+    {
+        $tool = NodeTool::query()
+            ->where('node_id', $node->id)
+            ->where('name', 'php-cli')
+            ->first();
+
+        if (
+            $tool instanceof NodeTool
+            && $tool->expected_state === 'installed'
+        ) {
+            return null;
+        }
+
+        return new PhpRuntimeFailure(
+            code: 'validation_failed',
+            message: "Host PHP CLI toolchain is not installed on node '{$node->name}'.",
+            meta: [
+                'field' => 'version',
+                'reason' => 'php_cli_missing',
+                'node' => $node->name,
+                'next_command' => 'tool:install php-cli --node='.$node->name,
             ],
         );
     }

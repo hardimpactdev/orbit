@@ -132,6 +132,82 @@ it('frankenphp rejects app writes when --node does not own the app', function ()
         ]);
 });
 
+it('selects node CLI PHP through host php-cli facts without FrankenPHP image data', function (): void {
+    $node = Node::factory()->appDev()->create(['name' => 'beast']);
+    $phpTool = NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'config' => [
+            'images' => [],
+            'versions' => [],
+            'cli_version' => '8.4',
+        ],
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php-cli',
+        'expected_state' => 'installed',
+    ]);
+
+    $result = app(PhpRuntimeManager::class)->use(version: '8.5', node: 'beast', cli: true);
+
+    expect($result->failed())
+        ->toBeFalse()
+        ->and($phpTool->refresh()->config['cli_version'])
+        ->toBe('8.5')
+        ->and($result->payload['result'])
+        ->toMatchArray([
+            'target' => 'node_cli',
+            'node' => 'beast',
+            'previous' => '8.4',
+            'version' => '8.5',
+            'changed' => true,
+        ])
+        ->and($result->payload['result'])
+        ->not->toHaveKey('image');
+});
+
+it('reports node CLI selection as idempotent when the default is already PHP 8.5', function (): void {
+    $node = Node::factory()->appDev()->create(['name' => 'beast']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'config' => ['cli_version' => '8.5'],
+    ]);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php-cli',
+        'expected_state' => 'installed',
+    ]);
+
+    $result = app(PhpRuntimeManager::class)->use(version: '8.5', node: 'beast', cli: true);
+
+    expect($result->failed())
+        ->toBeFalse()
+        ->and($result->payload['result']['changed'])
+        ->toBeFalse();
+});
+
+it('rejects node CLI selection when the host php-cli toolchain is missing', function (): void {
+    $node = Node::factory()->appDev()->create(['name' => 'beast']);
+    NodeTool::factory()->create([
+        'node_id' => $node->id,
+        'name' => 'php',
+        'config' => ['cli_version' => '8.4'],
+    ]);
+
+    $result = app(PhpRuntimeManager::class)->use(version: '8.5', node: 'beast', cli: true);
+
+    expect($result->failed())
+        ->toBeTrue()
+        ->and($result->failure?->meta)
+        ->toMatchArray([
+            'field' => 'version',
+            'reason' => 'php_cli_missing',
+            'node' => 'beast',
+        ]);
+});
+
 it('rejects CLI PHP selection for versions other than 8.5', function (): void {
     $node = Node::factory()->appDev()->create(['name' => 'app-1']);
     $tool = NodeTool::factory()->create([

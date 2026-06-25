@@ -103,6 +103,13 @@ it('stops at the first failing step and renders a failure footer', function (): 
         ->and($reached)
         ->toBe(['resolve', 'remove'])
         ->and($text)
+        ->toContain('Removing node from registry')
+        ->and($text)
+        ->toContain('node is the gateway')
+        ->and($text)
+        ->not
+        ->toContain('Removed node from registry')
+        ->and($text)
         ->toContain('Could not remove node.');
 });
 
