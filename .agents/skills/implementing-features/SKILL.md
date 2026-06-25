@@ -603,9 +603,8 @@ moving on to durable E2E.
    worker handoff into staged-stop-only prompts, and do not ask the worker to
    stop after "step 1" or wait for routine feature-owner approval between
    normal phases. The first narrow owned diff or explicit missing-context
-   blocker is still expected after the required local files are read. Treat
-   broad discovery without a first diff as a process problem to correct unless
-   the worker reports an explicit missing-context blocker.
+   blocker is still expected after the required local files are read. Broad
+   discovery without that diff or blocker is a process problem to correct.
    After one explicit first-diff correction, if the worker still produces no
    diff or blocker, stand down the worker, mark the matching harness signal
    recurring, and replace the worker instead of letting the process stall. If a
