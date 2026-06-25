@@ -146,6 +146,43 @@ it('keeps the project-owned orbit skill in the agents skill catalog', function (
         ->toBe(realpath(repo_path('.agents/skills')));
 });
 
+it('provides a compact Solo todo handoff skill for Claude Opus implementation agents', function (): void {
+    $skillPath = repo_path('.agents/skills/solo-todo-handoff/SKILL.md');
+    $skill = is_file($skillPath) ? (file_get_contents($skillPath) ?: '') : '';
+
+    preg_match('/## Prompt Skeleton\n\n```text\n([\s\S]*?)\n```/', $skill, $promptSkeleton);
+    $promptSkeletonBody = $promptSkeleton[1] ?? '';
+
+    expect($skillPath)
+        ->toBeFile()
+        ->and($skill)
+        ->toContain('name: solo-todo-handoff')
+        ->toContain('Solo todo')
+        ->toContain('todo_get')
+        ->toContain('list_agent_tools')
+        ->toContain('spawn_agent')
+        ->toContain('send_input')
+        ->toContain('--model')
+        ->toContain('opus')
+        ->toContain('--effort')
+        ->toContain('medium')
+        ->toContain('4000 characters')
+        ->toContain('send-and-forget handoff')
+        ->toContain('Do not poll, supervise, or')
+        ->toContain('send follow-up prompts')
+        ->toContain('.agents/skills/implementing-features/SKILL.md')
+        ->not->toContain('corrective prompt')
+        ->not->toContain('If Claude stops midway');
+
+    expect($promptSkeletonBody)
+        ->not
+        ->toBe('')
+        ->and(str_starts_with($promptSkeletonBody, '/goal '))
+        ->toBeTrue()
+        ->and(mb_strlen($promptSkeletonBody))
+        ->toBeLessThanOrEqual(4000);
+});
+
 it('does not keep gateway-local generated agent artifacts', function (): void {
     $gatewayRoot = repo_path('apps/gateway');
 
