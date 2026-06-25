@@ -7,9 +7,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 if [ "$#" -eq 0 ]; then
     cat >&2 <<'EOF'
 Usage:
-  bin/orbit-feature-finalization-check git merge <feature-branch>
-  bin/orbit-feature-finalization-check git worktree remove <worktree-path>
-  bin/orbit-feature-finalization-check git branch -d <feature-branch>
+  Required before merge-back:
+    bin/orbit-feature-finalization-check git merge <feature-branch>
+
+  Optional only after post-feature signal audit or explicit cleanup approval:
+    bin/orbit-feature-finalization-check git worktree remove <worktree-path>
+    bin/orbit-feature-finalization-check git branch -d <feature-branch>
 
 Run this before merge-back. For feature worktree or branch cleanup, run it only
 after post-feature signal audit is complete or the user explicitly approves
