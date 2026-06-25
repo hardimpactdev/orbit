@@ -62,10 +62,19 @@ use App\Services\Workspaces\WorkspaceRuntimeContainer;
 use App\Services\Workspaces\WorkspaceRuntimeContainerManager;
 use App\Services\Workspaces\WorkspaceRuntimeContainerRenderer;
 use App\Services\Workspaces\WorkspacesProbe;
+use Closure;
+use Illuminate\Contracts\Process\InvokedProcess;
+use Illuminate\Process\Exceptions\ProcessTimedOutException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Process as ProcessFacade;
+use Throwable;
 
 final readonly class DoctorReportRunner
 {
+    public const int FLEET_PROBE_BATCH_SIZE = 5;
+
+    private const int FLEET_PROBE_POLL_INTERVAL_MICROSECONDS = 50_000;
+
     private const array SUPPORTED_FAMILIES = [
         'node',
         'app',
@@ -281,38 +290,28 @@ final readonly class DoctorReportRunner
         $issues = [];
         /** @var list<array<string, mixed>> $nodes */
         $nodes = [];
-        /** @var array{
-         *     scope: array{
-         *         families: list<string>,
-         *         key: string|null,
-         *         onNodeProgress: mixed,
-         *         targets: Collection<int, Node>,
-         *     },
-         *     nodeProgressStatuses: list<array{node: string, status: string, completed?: int, total?: int}>,
-         *     issues: list<array<string, mixed>>,
-         *     nodes: list<array<string, mixed>>,
-         * } $fleetState
-         */
-        $fleetState = [
-            'scope' => [
-                'families' => $families,
-                'key' => $key,
-                'onNodeProgress' => $onNodeProgress,
-                'targets' => $targets,
-            ],
-            'nodeProgressStatuses' => $nodeProgressStatuses,
-            'issues' => $issues,
-            'nodes' => $nodes,
-        ];
+        $state = new FleetProbeRunState(
+            scope: new FleetProbeScope(
+                targets: $targets,
+                families: $families,
+                key: $key,
+                onNodeProgress: $onNodeProgress === null ? null : Closure::fromCallable($onNodeProgress),
+            ),
+            nodeProgressStatuses: $nodeProgressStatuses,
+            issues: $issues,
+            nodes: $nodes,
+        );
 
-        foreach ($targets as $nodeIndex => $node) {
-            $this->probeSingleFleetNode($node, $nodeIndex, $fleetState);
-        }
+        $this->probeFleetTargets($state);
 
-        $summary = $this->summary('verify', $fleetState['issues'], []);
+        $nodeProgressStatuses = $state->nodeProgressStatuses;
+        $issues = $state->issues;
+        $nodes = $state->nodes;
+
+        $summary = $this->summary('verify', $issues, []);
 
         return [
-            'healthy' => $fleetState['issues'] === [],
+            'healthy' => $issues === [],
             'mode' => 'verify',
             'scope' => [
                 'families' => $this->fleetFamilies($targets, $families),
@@ -328,93 +327,421 @@ final readonly class DoctorReportRunner
                     ->all(),
             ],
             'summary' => $summary,
-            'issues' => $fleetState['issues'],
+            'issues' => $issues,
             'actions' => [],
-            'nodes' => $fleetState['nodes'],
+            'nodes' => $nodes,
         ];
     }
 
-    /**
-     * @param  array{
-     *     scope: array{
-     *         families: list<string>,
-     *         key: string|null,
-     *         onNodeProgress: mixed,
-     *         targets: Collection<int, Node>,
-     *     },
-     *     nodeProgressStatuses: list<array{node: string, status: string, completed?: int, total?: int}>,
-     *     issues: list<array<string, mixed>>,
-     *     nodes: list<array<string, mixed>>,
-     * }  $fleetState
-     */
-    private function probeSingleFleetNode(Node $node, int $nodeIndex, array &$fleetState): void
+    private function probeFleetTargets(FleetProbeRunState $state): void
     {
-        $families = $fleetState['scope']['families'];
-        $key = $fleetState['scope']['key'];
-        $targets = $fleetState['scope']['targets'];
-        $roleCategories = $this->categoriesForNode($node);
-        $selectedFamilies = $families === []
-            ? $roleCategories
-            : array_values(array_intersect($families, $roleCategories));
-        $totalFamilies = count($selectedFamilies);
-        $doneFamilies = 0;
+        if ($this->canRunFleetProbeProcessWorkers()) {
+            $this->probeFleetTargetsConcurrently($state);
 
-        $fleetState['nodeProgressStatuses'][$nodeIndex] = ['node' => $node->name, 'status' => 'running'];
-
-        $this->invokeFleetNodeProgress($fleetState['scope']['onNodeProgress'], $node, 'running');
-
-        $onFamilyProgress = $this->fleetNodeFamilyProgressReporter(
-            $node,
-            $nodeIndex,
-            $totalFamilies,
-            $doneFamilies,
-            $fleetState,
-        );
-
-        try {
-            $report = $this->probe($node, families: $families, key: $key, onFamilyProgress: $onFamilyProgress);
-        } catch (RemoteShellFailed $exception) {
-            $report = $this->nodeProbeFailedReport($node, $families, $key, $exception);
+            return;
         }
 
-        $reportIssues = is_array($report['issues'] ?? null) ? $report['issues'] : [];
+        $this->probeFleetTargetsSequentially($state);
+    }
+
+    private function probeFleetTargetsSequentially(FleetProbeRunState $state): void
+    {
+        foreach ($state->scope->targets as $nodeIndex => $node) {
+            $this->probeFleetTarget(
+                node: $node,
+                nodeIndex: $nodeIndex,
+                state: $state,
+            );
+        }
+    }
+
+    private function probeFleetTargetsConcurrently(FleetProbeRunState $state): void
+    {
+        $nodeList = array_values($state->scope->targets->all());
+        /** @var array<int, array{node: Node, process: InvokedProcess}> $workers */
+        $workers = [];
+        $nextIndex = 0;
+
+        while ($nextIndex < count($nodeList) || $workers !== []) {
+            while (count($workers) < self::FLEET_PROBE_BATCH_SIZE && $nextIndex < count($nodeList)) {
+                $node = $nodeList[$nextIndex];
+                $state->nodeProgressStatuses[$nextIndex]['status'] = 'running';
+
+                if ($state->scope->onNodeProgress !== null) {
+                    ($state->scope->onNodeProgress)($node, 'running');
+                }
+
+                $process = $this->startFleetProbeProcessWorker($node, $state->scope->families, $state->scope->key);
+
+                if ($process === null) {
+                    $this->completeFleetProbeTarget(
+                        node: $node,
+                        nodeIndex: $nextIndex,
+                        state: $state,
+                        report: $this->probeFleetTargetReport($node, $state->scope->families, $state->scope->key),
+                    );
+                    $nextIndex++;
+
+                    continue;
+                }
+
+                $workers[$nextIndex] = [
+                    'node' => $node,
+                    'process' => $process,
+                ];
+                $nextIndex++;
+            }
+
+            foreach (array_keys($workers) as $index) {
+                $worker = $workers[$index];
+                $process = $worker['process'];
+
+                try {
+                    if (method_exists($process, 'ensureNotTimedOut')) {
+                        $process->ensureNotTimedOut();
+                    }
+
+                    if ($process->running()) {
+                        continue;
+                    }
+                } catch (ProcessTimedOutException) {
+                    $report = $this->probeFleetTargetReport(
+                        node: $worker['node'],
+                        families: $state->scope->families,
+                        key: $state->scope->key,
+                    );
+                    $this->completeFleetProbeTarget(
+                        node: $worker['node'],
+                        nodeIndex: $index,
+                        state: $state,
+                        report: $report,
+                    );
+                    unset($workers[$index]);
+
+                    continue;
+                }
+
+                $report = $this->resolveFleetProbeProcessReport(
+                    node: $worker['node'],
+                    process: $process,
+                    families: $state->scope->families,
+                    key: $state->scope->key,
+                );
+
+                $this->completeFleetProbeTarget(
+                    node: $worker['node'],
+                    nodeIndex: $index,
+                    state: $state,
+                    report: $report,
+                );
+
+                unset($workers[$index]);
+            }
+
+            if ($workers !== []) {
+                usleep(self::FLEET_PROBE_POLL_INTERVAL_MICROSECONDS);
+            }
+        }
+
+        $state->nodes = $this->orderedFleetNodeSummaries($state->scope->targets, $state->nodesByIndex);
+        $state->issues = $this->orderedFleetIssues($state->scope->targets, $state->issuesByIndex);
+    }
+
+    private function probeFleetTarget(
+        Node $node,
+        int $nodeIndex,
+        FleetProbeRunState $state,
+    ): void {
+        $state->nodeProgressStatuses[$nodeIndex]['status'] = 'running';
+
+        if ($state->scope->onNodeProgress !== null) {
+            ($state->scope->onNodeProgress)($node, 'running');
+        }
+
+        $roleCategories = $this->categoriesForNode($node);
+        $selectedFamilies = $state->scope->families === []
+            ? $roleCategories
+            : array_values(array_intersect($state->scope->families, $roleCategories));
+        $totalFamilies = count($selectedFamilies);
+        $doneFamilies = 0;
+        $onFamilyProgress = $this->fleetNodeFamilyProgressReporter(
+            node: $node,
+            nodeIndex: $nodeIndex,
+            totalFamilies: $totalFamilies,
+            doneFamilies: $doneFamilies,
+            state: $state,
+        );
+
+        $this->completeFleetProbeTarget(
+            node: $node,
+            nodeIndex: $nodeIndex,
+            state: $state,
+            report: $this->probeFleetTargetReport(
+                node: $node,
+                families: $state->scope->families,
+                key: $state->scope->key,
+                onFamilyProgress: $onFamilyProgress,
+            ),
+        );
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @param  (callable(string, 'running'|'done', list<array<string, mixed>>, ?int, ?int): void)|null  $onFamilyProgress
+     * @return array<string, mixed>
+     */
+    public function probeFleetTargetReport(
+        Node $node,
+        array $families,
+        ?string $key,
+        ?callable $onFamilyProgress = null,
+    ): array {
+        try {
+            return $this->probe($node, families: $families, key: $key, onFamilyProgress: $onFamilyProgress);
+        } catch (RemoteShellFailed $exception) {
+            return $this->nodeProbeFailedReport($node, $families, $key, $exception);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function completeFleetProbeTarget(
+        Node $node,
+        int $nodeIndex,
+        FleetProbeRunState $state,
+        array $report,
+    ): void {
+        $nodeSummary = $this->fleetNodeSummary($node, $report);
+        $nodeIssues = $this->fleetNodeIssues($report);
+
+        $state->issuesByIndex[$nodeIndex] = $nodeIssues;
+        $state->issues = $this->orderedFleetIssues($state->scope->targets, $state->issuesByIndex);
+        $state->nodesByIndex[$nodeIndex] = $nodeSummary;
+        $state->nodes = $this->orderedFleetNodeSummaries($state->scope->targets, $state->nodesByIndex);
+        $state->nodeProgressStatuses[$nodeIndex]['status'] = 'done';
+
+        if ($state->scope->onNodeProgress !== null) {
+            ($state->scope->onNodeProgress)(
+                $node,
+                'done',
+                $this->fleetProgressReport(
+                    targets: $state->scope->targets,
+                    scope: [
+                        'families' => $state->scope->families,
+                        'key' => $state->scope->key,
+                    ],
+                    issues: $state->issues,
+                    nodes: $state->nodes,
+                    nodeProgressStatuses: $state->nodeProgressStatuses,
+                ),
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     * @return array<string, mixed>
+     */
+    private function fleetNodeSummary(Node $node, array $report): array
+    {
         $reportSummary = is_array($report['summary'] ?? null) ? $report['summary'] : [];
         $reportScope = is_array($report['scope'] ?? null) ? $report['scope'] : [];
 
-        foreach ($reportIssues as $reportIssue) {
-            if (! is_array($reportIssue)) {
-                continue;
-            }
-
-            /** @var array<string, mixed> $reportIssue */
-            $fleetState['issues'][] = $reportIssue;
-        }
-
-        $fleetState['nodes'][] = [
+        return [
             'node' => $node->name,
             'role' => $node->displayRole(),
             'healthy' => ($report['healthy'] ?? false) === true,
             'families' => is_array($reportScope['families'] ?? null) ? $reportScope['families'] : [],
             'summary' => $reportSummary,
         ];
+    }
 
-        $fleetState['nodeProgressStatuses'][$nodeIndex] = ['node' => $node->name, 'status' => 'done'];
+    /**
+     * @param  array<string, mixed>  $report
+     * @return list<array<string, mixed>>
+     */
+    private function fleetNodeIssues(array $report): array
+    {
+        $reportIssues = is_array($report['issues'] ?? null) ? $report['issues'] : [];
+        $issues = [];
 
-        $this->invokeFleetNodeProgress(
-            $fleetState['scope']['onNodeProgress'],
-            $node,
-            'done',
-            $this->fleetProgressReport(
-                targets: $targets,
-                scope: [
-                    'families' => $families,
-                    'key' => $key,
-                ],
-                issues: $fleetState['issues'],
-                nodes: $fleetState['nodes'],
-                nodeProgressStatuses: $fleetState['nodeProgressStatuses'],
-            ),
-        );
+        foreach ($reportIssues as $reportIssue) {
+            if (is_array($reportIssue)) {
+                /** @var array<string, mixed> $reportIssue */
+                $issues[] = $reportIssue;
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  Collection<int, Node>  $targets
+     * @param  array<int, array<string, mixed>>  $nodesByIndex
+     * @return list<array<string, mixed>>
+     */
+    private function orderedFleetNodeSummaries(Collection $targets, array $nodesByIndex): array
+    {
+        $nodes = [];
+
+        foreach ($targets->values() as $index => $target) {
+            if (! isset($nodesByIndex[$index])) {
+                continue;
+            }
+
+            $nodes[] = $nodesByIndex[$index];
+        }
+
+        return $nodes;
+    }
+
+    /**
+     * @param  Collection<int, Node>  $targets
+     * @param  array<int, list<array<string, mixed>>>  $issuesByIndex
+     * @return list<array<string, mixed>>
+     */
+    private function orderedFleetIssues(Collection $targets, array $issuesByIndex): array
+    {
+        $issues = [];
+
+        foreach ($targets->values() as $index => $_target) {
+            if (! isset($issuesByIndex[$index])) {
+                continue;
+            }
+
+            foreach ($issuesByIndex[$index] as $issue) {
+                $issues[] = $issue;
+            }
+        }
+
+        return $issues;
+    }
+
+    private function canRunFleetProbeProcessWorkers(): bool
+    {
+        if (! function_exists('proc_open')) {
+            return false;
+        }
+
+        $defaultConnection = (string) config('database.default');
+        $database = config("database.connections.{$defaultConnection}.database");
+
+        return is_string($database) && $database !== '' && $database !== ':memory:';
+    }
+
+    /**
+     * @param  list<string>  $families
+     */
+    private function startFleetProbeProcessWorker(Node $node, array $families, ?string $key): ?InvokedProcess
+    {
+        $command = [
+            'php',
+            'artisan',
+            'orbit:internal:doctor-fleet-probe-node',
+            '--node='.$node->name,
+            '--no-ansi',
+        ];
+
+        foreach ($families as $family) {
+            $command[] = '--families='.$family;
+        }
+
+        if ($key !== null) {
+            $command[] = '--key='.$key;
+        }
+
+        try {
+            return ProcessFacade::path(base_path())
+                ->timeout(600)
+                ->env($this->fleetProbeProcessEnvironment())
+                ->start($command);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function fleetProbeProcessEnvironment(): array
+    {
+        $defaultConnection = (string) config('database.default');
+        $environment = [
+            'APP_ENV' => (string) config('app.env'),
+            'DB_CONNECTION' => $defaultConnection,
+        ];
+
+        $database = config("database.connections.{$defaultConnection}.database");
+
+        if (is_string($database) && $database !== '') {
+            $environment['DB_DATABASE'] = $database;
+        }
+
+        $appKey = config('app.key');
+
+        if (is_string($appKey) && $appKey !== '') {
+            $environment['APP_KEY'] = $appKey;
+        }
+
+        return $environment;
+    }
+
+    /**
+     * @param  list<string>  $families
+     * @return array<string, mixed>
+     */
+    private function resolveFleetProbeProcessReport(
+        Node $node,
+        InvokedProcess $process,
+        array $families,
+        ?string $key,
+    ): array {
+        try {
+            $result = $process->wait();
+        } catch (Throwable) {
+            return $this->probeFleetTargetReport($node, $families, $key);
+        }
+
+        if (! $result->successful()) {
+            return $this->probeFleetTargetReport($node, $families, $key);
+        }
+
+        $report = $this->decodeFleetProbeProcessReport($result->output());
+
+        if ($report === null) {
+            return $this->probeFleetTargetReport($node, $families, $key);
+        }
+
+        return $report;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decodeFleetProbeProcessReport(string $output): ?array
+    {
+        $line = trim($output);
+
+        if ($line === '') {
+            return null;
+        }
+
+        try {
+            /** @var array<string, mixed> $payload */
+            $payload = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            return null;
+        }
+
+        $report = $payload['report'] ?? null;
+
+        if (! is_array($report)) {
+            return null;
+        }
+
+        /** @var array<string, mixed> $report */
+        return $report;
     }
 
     /**
@@ -437,26 +764,12 @@ final readonly class DoctorReportRunner
         $onNodeProgress($node, $phase, $partialFleetReport);
     }
 
-    /**
-     * @param  array{
-     *     scope: array{
-     *         families: list<string>,
-     *         key: string|null,
-     *         onNodeProgress: mixed,
-     *         targets: Collection<int, Node>,
-     *     },
-     *     nodeProgressStatuses: list<array{node: string, status: string, completed?: int, total?: int}>,
-     *     issues: list<array<string, mixed>>,
-     *     nodes: list<array<string, mixed>>,
-     * }  $fleetState
-     * @return (callable(string, 'running'|'done', list<array<string, mixed>>, ?int, ?int): void)
-     */
     private function fleetNodeFamilyProgressReporter(
         Node $node,
         int $nodeIndex,
         int $totalFamilies,
         int &$doneFamilies,
-        array &$fleetState,
+        FleetProbeRunState $state,
     ): callable {
         return function (
             string $family,
@@ -464,17 +777,17 @@ final readonly class DoctorReportRunner
             array $familyIssues = [],
             ?int $completed = null,
             ?int $total = null,
-        ) use ($node, $nodeIndex, $totalFamilies, &$doneFamilies, $fleetState): void {
+        ) use ($node, $nodeIndex, $totalFamilies, &$doneFamilies, $state): void {
             if ($phase === 'running') {
                 if ($completed !== null && $total !== null && $total > 0) {
                     $nodeCompleted = ($doneFamilies * $total) + $completed;
                     $nodeTotal = $totalFamilies * $total;
 
                     if ($nodeCompleted < $nodeTotal) {
-                        $this->emitFleetNodeProgress($node, $nodeIndex, $fleetState, $nodeCompleted, $nodeTotal);
+                        $this->emitFleetNodeProgress($node, $nodeIndex, $state, $nodeCompleted, $nodeTotal);
                     }
                 } elseif ($totalFamilies > 0 && $doneFamilies < $totalFamilies) {
-                    $this->emitFleetNodeProgress($node, $nodeIndex, $fleetState, $doneFamilies, $totalFamilies);
+                    $this->emitFleetNodeProgress($node, $nodeIndex, $state, $doneFamilies, $totalFamilies);
                 }
             }
 
@@ -484,29 +797,13 @@ final readonly class DoctorReportRunner
         };
     }
 
-    /**
-     * @param  array{
-     *     scope: array{
-     *         families: list<string>,
-     *         key: string|null,
-     *         onNodeProgress: mixed,
-     *         targets: Collection<int, Node>,
-     *     },
-     *     nodeProgressStatuses: list<array{node: string, status: string, completed?: int, total?: int}>,
-     *     issues: list<array<string, mixed>>,
-     *     nodes: list<array<string, mixed>>,
-     * }  $fleetState
-     */
     private function emitFleetNodeProgress(
         Node $node,
         int $nodeIndex,
-        array &$fleetState,
+        FleetProbeRunState $state,
         int $completed,
         int $total,
     ): void {
-        $families = $fleetState['scope']['families'];
-        $key = $fleetState['scope']['key'];
-        $targets = $fleetState['scope']['targets'];
         $entry = ['node' => $node->name, 'status' => 'running'];
 
         if ($total > 0 && $completed < $total) {
@@ -514,22 +811,22 @@ final readonly class DoctorReportRunner
             $entry['total'] = $total;
         }
 
-        $fleetState['nodeProgressStatuses'][$nodeIndex] = $entry;
+        $state->nodeProgressStatuses[$nodeIndex] = $entry;
         $runningPhase = 'running';
 
         $this->invokeFleetNodeProgress(
-            $fleetState['scope']['onNodeProgress'],
+            $state->scope->onNodeProgress,
             $node,
             $runningPhase,
             $this->fleetProgressReport(
-                targets: $targets,
+                targets: $state->scope->targets,
                 scope: [
-                    'families' => $families,
-                    'key' => $key,
+                    'families' => $state->scope->families,
+                    'key' => $state->scope->key,
                 ],
-                issues: $fleetState['issues'],
-                nodes: $fleetState['nodes'],
-                nodeProgressStatuses: $fleetState['nodeProgressStatuses'],
+                issues: $state->issues,
+                nodes: $state->nodes,
+                nodeProgressStatuses: $state->nodeProgressStatuses,
             ),
         );
     }

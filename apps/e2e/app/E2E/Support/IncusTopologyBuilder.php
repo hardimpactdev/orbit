@@ -48,6 +48,9 @@ class IncusTopologyBuilder
 
     private const string PreparedSourceMountPath = '/mnt/orbit-source';
 
+    /** @var list<string> */
+    private const array SHARED_MULTI_SOURCE_BASE_ROLES = ['operator', 'gateway', 'dev', 'prod'];
+
     private readonly E2EPhaseTimer $timer;
 
     public function __construct(
@@ -191,6 +194,10 @@ class IncusTopologyBuilder
 
         $preservedTemplates = array_column($resumeCheckpoints, 'name');
 
+        if ($replaceExisting) {
+            $this->deleteTargetSnapshotsOnSharedBaseTemplates($kind);
+        }
+
         foreach ($this->templateNamesForRefresh($kind, $reusableBase, includeLegacyNames: $replaceExisting) as $name) {
             if (in_array($name, $preservedTemplates, true)) {
                 continue;
@@ -202,6 +209,10 @@ class IncusTopologyBuilder
 
             if (! $replaceExisting) {
                 throw new RuntimeException("Template instance [{$name}] already exists.");
+            }
+
+            if ($this->isSharedMultiSourceBaseTemplate($name)) {
+                continue;
             }
 
             $result = $this->host->deleteInstance($name);
@@ -219,10 +230,7 @@ class IncusTopologyBuilder
 
     private function resolveReusableBaseStage(E2ETopologyKind $kind): ?E2ETopologyKind
     {
-        if (
-            $kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent
-            || $kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket
-        ) {
+        if ($kind === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent) {
             return null;
         }
 
@@ -246,8 +254,6 @@ class IncusTopologyBuilder
 
     private function stageSnapshotsAvailable(E2ETopologyKind $stage): bool
     {
-        $snapshot = IncusTopologyTemplate::snapshotName($stage);
-
         foreach (IncusTopologyTemplate::rolesFor($stage) as $role) {
             $template = IncusTopologyTemplate::templateName($stage, $role);
 
@@ -255,12 +261,78 @@ class IncusTopologyBuilder
                 return false;
             }
 
-            if (! $this->host->snapshotExists($template, $snapshot)) {
+            if (! $this->stageSnapshotExistsOnTemplate($stage, $template)) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function stageSnapshotCandidates(E2ETopologyKind $stage): array
+    {
+        $snapshots = [IncusTopologyTemplate::snapshotName($stage)];
+
+        if ($stage === E2ETopologyKind::OperatorGatewayAppdevAppprodAgent) {
+            $snapshots[] = IncusTopologyTemplate::snapshotName(
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+            );
+        }
+
+        if ($stage === E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket) {
+            $snapshots[] = IncusTopologyTemplate::snapshotName(
+                E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+            );
+        }
+
+        return array_values(array_unique($snapshots));
+    }
+
+    private function stageSnapshotExistsOnTemplate(E2ETopologyKind $stage, string $template): bool
+    {
+        return array_any(
+            $this->stageSnapshotCandidates($stage),
+            fn (string $snapshot): bool => $this->host->snapshotExists($template, $snapshot),
+        );
+    }
+
+    private function isSharedMultiSourceBaseTemplate(string $name): bool
+    {
+        return array_any(
+            self::SHARED_MULTI_SOURCE_BASE_ROLES,
+            fn (string $role): bool => $name === IncusTopologyTemplate::templateName(E2ETopologyKind::Operator, $role),
+        );
+    }
+
+    private function deleteTargetSnapshotsOnSharedBaseTemplates(E2ETopologyKind $kind): void
+    {
+        $snapshot = IncusTopologyTemplate::snapshotName($kind);
+
+        foreach (IncusTopologyTemplate::rolesFor($kind) as $role) {
+            if (! in_array($role, self::SHARED_MULTI_SOURCE_BASE_ROLES, true)) {
+                continue;
+            }
+
+            $template = IncusTopologyTemplate::templateName($kind, $role);
+
+            if (! $this->host->instanceExists($template)) {
+                continue;
+            }
+
+            $result = $this->timer->measure(
+                "preflight.delete-target-snapshot.{$kind->value}.{$role}",
+                fn () => $this->host->deleteSnapshot($template, $snapshot),
+            );
+
+            if (! $result->successful()) {
+                throw new RuntimeException(
+                    "Could not delete target snapshot [{$template}/{$snapshot}]: {$result->errorOutput()}",
+                );
+            }
+        }
     }
 
     private function createWorkDirectory(): string
@@ -288,6 +360,16 @@ class IncusTopologyBuilder
 
         if (! $result->successful()) {
             throw new RuntimeException("Could not create SSH key pair: {$result->errorOutput()}");
+        }
+
+        $result = $this->host->run(sprintf(
+            'ssh-keygen -y -f %s > %s',
+            escapeshellarg($privateKeyPath),
+            escapeshellarg($publicKeyPath),
+        ));
+
+        if (! $result->successful()) {
+            throw new RuntimeException("Could not derive SSH public key: {$result->errorOutput()}");
         }
 
         return new SshKeyPair($privateKeyPath, $publicKeyPath);
@@ -543,13 +625,13 @@ class IncusTopologyBuilder
             return (
                 $this->remoteGatewayArtifactBundleDir !== null
                     ? [
-                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
                         E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
                     ]
                     : [
                         E2ETopologyKind::Operator,
                         E2ETopologyKind::OperatorGateway,
-                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+                        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
                         E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
                     ]
             );
@@ -957,14 +1039,20 @@ class IncusTopologyBuilder
             $rolesToBake[] = $role;
         }
 
-        $instances = [
-            ...$instances,
-            ...$this->timer->measure('prepared.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel(
+        /** @var array<string, IncusInstance> $preparedInstances */
+        $preparedInstances = $this->timer->measure(
+            'prepared.downstream.prepare',
+            fn (): array => $this->launchBaseRolesInParallel(
                 $rolesToPrepare,
                 $key,
                 $kind,
                 'prepared.downstream.prepare',
-            )),
+            ),
+        );
+
+        $instances = [
+            ...$instances,
+            ...$preparedInstances,
         ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -1051,6 +1139,10 @@ class IncusTopologyBuilder
         ));
         $this->timer->measure('prepared-ingress.gateway.provisioning-ssh-key', fn () => E2EGatewayApi::installProvisioningSshKey(
             $instances['gateway'],
+            $key,
+        ));
+        $this->timer->measure('prepared-ingress.dev.runtime-ssh-authorize', fn () => $this->authorizePreparedRuntimeUserSsh(
+            $instances['dev'],
             $key,
         ));
 
@@ -1147,14 +1239,20 @@ class IncusTopologyBuilder
             $rolesToBake[] = $role;
         }
 
-        $instances = [
-            ...$instances,
-            ...$this->timer->measure('prepared-websocket.downstream.prepare', fn (): array => $this->launchBaseRolesInParallel(
+        /** @var array<string, IncusInstance> $preparedInstances */
+        $preparedInstances = $this->timer->measure(
+            'prepared-websocket.downstream.prepare',
+            fn (): array => $this->launchBaseRolesInParallel(
                 $rolesToPrepare,
                 $key,
                 $kind,
                 'prepared-websocket.downstream.prepare',
-            )),
+            ),
+        );
+
+        $instances = [
+            ...$instances,
+            ...$preparedInstances,
         ];
 
         $devIp = $this->timer->measure('dev.ipv4', fn (): string => $instances['dev']->waitForIpv4());
@@ -2150,7 +2248,7 @@ class IncusTopologyBuilder
             $caseLines[] = sprintf(
                 '%s) %s ;;',
                 escapeshellarg($role),
-                $this->launchTopologyInstanceCommand($name, attachSource: false),
+                $this->launchOrStartTopologyInstanceCommand($name, attachSource: false),
             );
             $startLines[] = sprintf(
                 'prepare_role %s %s > %s 2>&1 & %s=$!;',
@@ -2443,7 +2541,7 @@ class IncusTopologyBuilder
     ): IncusInstance {
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
 
-        $start = $this->timer->measure("{$role}.start", fn () => $this->host->startInstance($name));
+        $start = $this->timer->measure("{$role}.start", fn () => $this->host->startInstancesIfStopped([$name]));
         if (! $start->successful()) {
             throw new RuntimeException("Could not start {$name}: {$start->errorOutput()}");
         }
@@ -2460,6 +2558,15 @@ class IncusTopologyBuilder
                 $this->host->config->operatorUser,
                 $key,
             ));
+        } elseif ($role !== 'gateway') {
+            $this->timer->measure("{$role}.ssh-authorize", fn () => $instance->authorizeSsh(
+                $this->host->config->bootstrapUser,
+                $key,
+            ));
+            $this->timer->measure("{$role}.ssh-ready", fn () => $instance->waitForSsh(
+                $this->host->config->bootstrapUser,
+                $key,
+            ));
         }
 
         return $instance;
@@ -2471,6 +2578,11 @@ class IncusTopologyBuilder
         E2ETopologyKind $templateKind = E2ETopologyKind::Operator,
     ): IncusInstance {
         $name = IncusTopologyTemplate::templateName($templateKind, $role);
+
+        if ($this->host->instanceExists($name)) {
+            return $this->startTemplateRole($role, $key, $templateKind);
+        }
+
         $attachSource = $role === 'gateway' || $this->remoteOrbitBinaryBundleDir === null;
         $this->timer->measure("{$role}.launch", fn () => $this->launchBase($name, attachSource: $attachSource));
         $instance = new IncusInstance($this->host, $name);
@@ -2525,7 +2637,10 @@ class IncusTopologyBuilder
             $caseLines[] = sprintf(
                 '%s) %s ;;',
                 escapeshellarg($role),
-                $this->launchTopologyInstanceCommand($name, attachSource: $this->remoteOrbitBinaryBundleDir === null),
+                $this->launchOrStartTopologyInstanceCommand(
+                    $name,
+                    attachSource: $this->remoteOrbitBinaryBundleDir === null,
+                ),
             );
             $startLines[] = sprintf(
                 'prepare_role %s %s > %s 2>&1 & %s=$!;',
@@ -4191,7 +4306,8 @@ class IncusTopologyBuilder
         }
 
         $copyScript = implode("\n", [...$copyLines, ...$waitLines]);
-        $copyResult = $this->timer->measure('copy.base-templates', fn () => $this->host->run(
+        /** @var ProcessResult $copyResult */
+        $copyResult = $this->timer->measure('copy.base-templates', fn (): ProcessResult => $this->host->run(
             $copyScript,
             timeoutSeconds: 600,
         ));
@@ -4203,9 +4319,13 @@ class IncusTopologyBuilder
         foreach ($selectedRoles as $role) {
             $slugTemplateName = IncusTopologyTemplate::templateName($sourceKind, $role);
 
-            $startResult = $this->timer->measure("selected.start.{$role}", fn () => $this->host->startInstance(
-                $slugTemplateName,
-            ));
+            /** @var ProcessResult $startResult */
+            $startResult = $this->timer->measure(
+                "selected.start.{$role}",
+                fn (): ProcessResult => $this->host->startInstance(
+                    $slugTemplateName,
+                ),
+            );
             if (! $startResult->successful()) {
                 throw new RuntimeException("Could not start [{$slugTemplateName}]: {$startResult->errorOutput()}");
             }
@@ -4221,17 +4341,25 @@ class IncusTopologyBuilder
 
             $this->timer->measure("selected.clear-known-hosts.{$role}", fn () => $this->clearKnownHosts($instance));
 
-            $stopResult = $this->timer->measure("selected.stop.{$role}", fn () => $this->host->stopInstance(
-                $slugTemplateName,
-            ));
+            /** @var ProcessResult $stopResult */
+            $stopResult = $this->timer->measure(
+                "selected.stop.{$role}",
+                fn (): ProcessResult => $this->host->stopInstance(
+                    $slugTemplateName,
+                ),
+            );
             if (! $stopResult->successful()) {
                 throw new RuntimeException("Could not stop [{$slugTemplateName}]: {$stopResult->errorOutput()}");
             }
 
-            $snapResult = $this->timer->measure("selected.snapshot.{$role}", fn () => $this->host->snapshotInstance(
-                $slugTemplateName,
-                $slugSnapshotName,
-            ));
+            /** @var ProcessResult $snapResult */
+            $snapResult = $this->timer->measure(
+                "selected.snapshot.{$role}",
+                fn (): ProcessResult => $this->host->snapshotInstance(
+                    $slugTemplateName,
+                    $slugSnapshotName,
+                ),
+            );
             if (! $snapResult->successful()) {
                 throw new RuntimeException(
                     "Could not snapshot [{$slugTemplateName}/{$slugSnapshotName}]: {$snapResult->errorOutput()}",
@@ -4435,5 +4563,18 @@ class IncusTopologyBuilder
         ];
 
         return implode(' ', array_filter($parts));
+    }
+
+    private function launchOrStartTopologyInstanceCommand(string $name, bool $attachSource = true): string
+    {
+        $quotedName = escapeshellarg($name);
+
+        return implode("\n", [
+            "if incus info {$quotedName} >/dev/null 2>&1; then",
+            "    incus start {$quotedName} >/dev/null 2>&1 || true",
+            'else',
+            $this->launchTopologyInstanceCommand($name, $attachSource),
+            'fi',
+        ]);
     }
 }

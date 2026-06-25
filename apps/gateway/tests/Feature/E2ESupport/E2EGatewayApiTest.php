@@ -75,8 +75,11 @@ it('installs provisioning SSH keys for gateway API container users', function ()
 
         expect(array_column($instance->copies, 'target'))->toBe([
             '/root/.ssh/id_ed25519',
+            '/root/.ssh/id_ed25519.pub',
             '/home/orbit/.ssh/id_ed25519',
+            '/home/orbit/.ssh/id_ed25519.pub',
             '/var/www/.ssh/id_ed25519',
+            '/var/www/.ssh/id_ed25519.pub',
         ]);
 
         $gatewayKeyInstall = collect($instance->commands)

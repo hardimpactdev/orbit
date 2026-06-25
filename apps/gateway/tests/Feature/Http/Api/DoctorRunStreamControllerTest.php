@@ -157,8 +157,10 @@ it('streams partial fleet doctor snapshots with completed-node issues on node do
         ->toBe('running')
         ->and(collect($appDevDone['doctor']['issues'])->pluck('node')->all())
         ->toContain('app-dev-1')
-        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-dev-1', 'done'))
-        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app-prod-1', 'running'));
+        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-dev-1', 'running'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app-dev-1', 'done'))
+        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-prod-1', 'running'))
+        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'app-prod-1', 'done'));
 });
 
 it('streams fleet per-node completed and total progress while a node is running', function (): void {
@@ -263,8 +265,14 @@ it('streams fleet doctor progress per node only with explicit all scope', functi
     expect($stepEvents)
         ->not
         ->toBeEmpty()
-        ->and(doctorRunStreamStepEventIndex($stepEvents, 'app-1', 'done'))
-        ->toBeLessThan(doctorRunStreamStepEventIndex($stepEvents, 'doctor-stream-caller', 'running'));
+        ->and(collect($stepEvents)->contains(
+            static fn (array $event): bool => $event['key'] === 'app-1' && $event['status'] === 'running',
+        ))
+        ->toBeTrue()
+        ->and(collect($stepEvents)->contains(
+            static fn (array $event): bool => $event['key'] === 'app-1' && $event['status'] === 'done',
+        ))
+        ->toBeTrue();
 });
 
 it('streams fleet doctor terminal error when a node proxy probe raises RemoteShellFailed', function (): void {

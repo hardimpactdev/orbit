@@ -187,28 +187,34 @@ final readonly class E2EGatewayApi
     {
         $sshDirectory = "{$home}/.ssh";
         $privateKey = "{$sshDirectory}/id_ed25519";
+        $publicKey = "{$privateKey}.pub";
 
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'install -d -m 700 -o %s -g %s %s',
+                'install -d -m 700 -o %s -g %s %s && rm -f %s %s',
                 escapeshellarg($user),
                 escapeshellarg($user),
                 escapeshellarg($sshDirectory),
+                escapeshellarg($privateKey),
+                escapeshellarg($publicKey),
             ),
             "Could not prepare {$user} SSH directory on gateway",
         );
 
         $gateway->copyFileToInstance($key->privateKeyPath, $privateKey);
+        $gateway->copyFileToInstance($key->publicKeyPath, $publicKey);
 
         E2ECommand::exec(
             $gateway,
             sprintf(
-                'chown %s:%s %s && chmod 600 %s',
+                'chown %s:%s %s %s && chmod 600 %s && chmod 644 %s',
                 escapeshellarg($user),
                 escapeshellarg($user),
                 escapeshellarg($privateKey),
+                escapeshellarg($publicKey),
                 escapeshellarg($privateKey),
+                escapeshellarg($publicKey),
             ),
             "Could not install {$user} SSH key on gateway",
         );

@@ -119,6 +119,7 @@ final readonly class SourceMountedCheckoutSyncer
     {
         $patterns = [
             './.orbit-e2e-source-sync.lock',
+            './tmp-e2e-tree-hash-*',
             ...E2ECurrentCheckout::archiveExcludePatterns(),
         ];
 
@@ -198,16 +199,20 @@ final readonly class SourceMountedCheckoutSyncer
             'attempt=0',
             'while ! mkdir "$lock" 2>/dev/null; do',
             '  now="$(date +%s)"',
+            '  created_at=0',
+            '  if [ -f "$lock/created_at" ]; then',
+            '    created_at="$(cat "$lock/created_at" 2>/dev/null || printf 0)"',
+            '    case "$created_at" in ""|*[!0-9]*) created_at=0;; esac',
+            '  fi',
+            '  lock_age="$((now - created_at))"',
             '  if [ -f "$lock/pid" ]; then',
             '    owner_pid="$(cat "$lock/pid" 2>/dev/null || printf "")"',
             '    owner_host="$(cat "$lock/host" 2>/dev/null || printf "")"',
             '    current_host="$(hostname)"',
             '    case "$owner_pid" in ""|*[!0-9]*) owner_pid="";; esac',
-            '    if [ -n "$owner_pid" ] && [ "$owner_host" = "$current_host" ] && ! kill -0 "$owner_pid" 2>/dev/null; then rm -rf "$lock"; continue; fi',
-            '  elif [ -f "$lock/created_at" ]; then',
-            '    created_at="$(cat "$lock/created_at" 2>/dev/null || printf 0)"',
-            '    case "$created_at" in ""|*[!0-9]*) created_at=0;; esac',
-            '    if [ "$((now - created_at))" -gt "$legacy_stale_after" ]; then rm -rf "$lock"; continue; fi',
+            '    if [ -n "$owner_pid" ] && [ "$owner_host" = "$current_host" ] && ! kill -0 "$owner_pid" 2>/dev/null && [ "$lock_age" -gt "$legacy_stale_after" ]; then rm -rf "$lock"; continue; fi',
+            '  elif [ "$created_at" -gt 0 ]; then',
+            '    if [ "$lock_age" -gt "$legacy_stale_after" ]; then rm -rf "$lock"; continue; fi',
             '  fi',
             '  attempt="$((attempt + 1))"',
             '  if [ "$attempt" -ge "$max_wait" ]; then echo "Timed out waiting ${max_wait}s for source sync lock $lock" >&2; exit 1; fi',

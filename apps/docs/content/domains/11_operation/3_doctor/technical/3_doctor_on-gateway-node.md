@@ -84,6 +84,23 @@ All node-family facts render under the `Node` row today; a planned `DNS`/`DNS/TL
 
 Family contracts remain authoritative for exact probe facts, issue codes, restore maps, and adopt maps. The gateway peer contract owns only where probing is orchestrated and which peer role is allowed to perform it.
 
+## Fleet Verification Concurrency
+
+Explicit `--all` fleet verification probes eligible nodes in batches of up to five
+concurrent node checks. Additional nodes stay queued until a running node
+finishes. Streamed fleet progress still emits per-node `running` and `done`
+events with the same partial and final doctor envelope shape.
+
+The gateway runs each node probe in a bounded pool of `artisan`
+`orbit:internal:doctor-fleet-probe-node` subprocess workers so HTTP-served
+doctor requests do not depend on `pcntl_fork`. Final fleet `nodes[]` and
+`issues[]` ordering follow the resolved target-node order even when probes
+complete out of order.
+
+When `proc_open` is unavailable or the gateway database is an isolated
+`:memory:` sqlite database, fleet verification falls back to the same
+deterministic serial node order.
+
 ## Resolution Boundary
 
 Gateway peers may resolve drift only when `--fix`, `--restore`, or `--adopt` is supplied. Verify-mode runs must not mutate configuration or reality. Resolution orchestration uses `doctor` (interactive), `doctor --restore` (bulk gateway-to-node), or `doctor --adopt` (bulk node-to-gateway).

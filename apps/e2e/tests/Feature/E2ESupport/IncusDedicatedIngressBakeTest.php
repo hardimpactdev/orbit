@@ -39,7 +39,6 @@ it('bakes dedicated ingress before app production references it', function (): v
     $builder = new IncusTopologyBuilder($host);
     $gateway = new IncusInstance($host, 'orbit-template-gateway-base', commandTransport: true);
     $method = new ReflectionMethod(IncusTopologyBuilder::class, 'runPreparedDedicatedIngressBakeInParallel');
-    $method->setAccessible(true);
 
     $method->invoke($builder, $gateway, '10.201.0.12', '10.201.0.13', '10.201.0.14');
 
@@ -101,7 +100,6 @@ it('refreshes the reused gateway checkout before dedicated ingress baking', func
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
     $method = new ReflectionMethod(IncusTopologyBuilder::class, 'buildPreparedDedicatedIngressStage');
-    $method->setAccessible(true);
     $method->invoke($builder, new SshKeyPair('/tmp/orbit-e2e-key', '/tmp/orbit-e2e-key.pub'));
 
     $commandOutput = implode("\n", $commands);
@@ -159,7 +157,6 @@ it('does not push an empty source bundle for artifact backed dedicated ingress b
     $builder->useGatewayArtifactBundle('/tmp/orbit-e2e-gateway-artifacts');
 
     $method = new ReflectionMethod(IncusTopologyBuilder::class, 'buildPreparedDedicatedIngressStage');
-    $method->setAccessible(true);
     $method->invoke($builder, new SshKeyPair('/tmp/orbit-e2e-key', '/tmp/orbit-e2e-key.pub'));
 
     expect(implode("\n", $commands))->not->toContain('incus file push -r -p');
@@ -177,12 +174,11 @@ it('limits reusable base snapshot deletion to the target topology chain', functi
 
     $builder = new IncusTopologyBuilder($host);
     $method = new ReflectionMethod(IncusTopologyBuilder::class, 'deleteSnapshotsAfterReusableBase');
-    $method->setAccessible(true);
 
     $method->invoke(
         $builder,
         E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
-        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
     );
 
     expect($deleted)
@@ -202,10 +198,9 @@ it('skips early operator and gateway stages for artifact backed dedicated ingres
     $builder->useGatewayArtifactBundle('/tmp/orbit-e2e-gateway-artifacts');
 
     $method = new ReflectionMethod(IncusTopologyBuilder::class, 'stagesThrough');
-    $method->setAccessible(true);
 
     expect($method->invoke($builder, E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))->toBe([
-        E2ETopologyKind::OperatorGatewayAppdevAppprodAgent,
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
         E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
     ]);
 });
@@ -217,7 +212,6 @@ it('authorizes the runtime user in gateway first prepared role scripts', functio
     $builder->useGatewayArtifactBundle('/tmp/orbit-e2e-gateway-artifacts');
 
     $method = new ReflectionMethod(IncusTopologyBuilder::class, 'artifactPreparedRolesScript');
-    $method->setAccessible(true);
 
     $script = $method->invoke(
         $builder,

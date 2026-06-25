@@ -8,7 +8,9 @@ use App\E2E\Support\E2EProvisionCheckpointManifest;
 use App\E2E\Support\E2ETopologyKind;
 use App\E2E\Support\IncusHost;
 use App\E2E\Support\IncusTopologyBuilder;
+use App\E2E\Support\IncusTopologyTemplate;
 use App\E2E\Support\SourceMountedCheckoutSyncer;
+use App\E2E\Support\SshKeyPair;
 use Illuminate\Contracts\Process\ProcessResult;
 use Illuminate\Support\Facades\Process;
 use Mockery as m;
@@ -216,18 +218,22 @@ it('throws when a target template instance already exists', function (): void {
         ->toThrow(RuntimeException::class, 'Template instance [orbit-template-operator-base] already exists');
 });
 
-it('deletes target template instances before replacing them', function (): void {
+it('deletes target snapshots from shared base templates before replacing them', function (): void {
     $config = E2EConfig::fromEnvironment();
+    $deletedSnapshots = [];
 
     $host = m::mock(IncusHost::class, [$config])->makePartial();
     $host->shouldReceive('imageExists')->andReturn(true);
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => $name === 'orbit-template-operator-base');
+    $host->shouldReceive('deleteInstance')->never();
     $host
-        ->shouldReceive('deleteInstance')
-        ->with('orbit-template-operator-base')
-        ->once()
-        ->andReturn(incusTopologyBuilderProcessResult());
+        ->shouldReceive('deleteSnapshot')
+        ->andReturnUsing(function (string $name, string $snapshot) use (&$deletedSnapshots): ProcessResult {
+            $deletedSnapshots[] = "{$name}/{$snapshot}";
+
+            return incusTopologyBuilderProcessResult();
+        });
     $host
         ->shouldReceive('run')
         ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
@@ -237,7 +243,9 @@ it('deletes target template instances before replacing them', function (): void 
     $builder->useBundle('/tmp/orbit-e2e-bundle-test');
 
     expect(fn () => $builder->build(E2ETopologyKind::Operator, replaceExisting: true))
-        ->toThrow(RuntimeException::class, 'Could not create work directory');
+        ->toThrow(RuntimeException::class, 'Could not create work directory')
+        ->and($deletedSnapshots)
+        ->toContain('orbit-template-operator-base/clean-operator-base');
 });
 
 it('does not delete unsuffixed Incus templates when replacing prepared topology artifacts', function (): void {
@@ -254,6 +262,7 @@ it('does not delete unsuffixed Incus templates when replacing prepared topology 
 
                 return str_starts_with($name, 'orbit-template-') && str_ends_with($name, '-base');
             });
+        $host->shouldReceive('deleteSnapshot')->andReturn(incusTopologyBuilderProcessResult());
         $host->shouldReceive('deleteInstance')
             ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
                 $deleted[] = $name;
@@ -272,7 +281,8 @@ it('does not delete unsuffixed Incus templates when replacing prepared topology 
             ->toThrow(RuntimeException::class, 'Could not create work directory')
             ->and($checked)
             ->not->toContain('orbit-template-operator')->and($deleted)
-            ->not->toContain('orbit-template-operator')->and($deleted)->toContain('orbit-template-operator-base');
+            ->not->toContain('orbit-template-operator')->and($deleted)
+            ->not->toContain('orbit-template-operator-base');
     });
 });
 
@@ -328,6 +338,7 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
     $host->shouldReceive('instanceExists')
         ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
     $host->shouldReceive('snapshotExists')->andReturn(false);
+    $host->shouldReceive('deleteSnapshot')->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
@@ -345,7 +356,7 @@ it('rebuilds prerequisites when no complete reusable base exists', function (): 
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdev, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deleted)
-        ->toBe(array_reverse($existing));
+        ->toBe([]);
 });
 
 it('does not reuse an operator-gateway stage when rebuilding the prepared full topology', function (): void {
@@ -375,6 +386,7 @@ it('does not reuse an operator-gateway stage when rebuilding the prepared full t
             $baseSnapshots,
             true,
         ));
+    $host->shouldReceive('deleteSnapshot')->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
@@ -392,13 +404,178 @@ it('does not reuse an operator-gateway stage when rebuilding the prepared full t
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgent, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deleted)
-        ->toBe([
-            'orbit-template-agent-base',
-            'orbit-template-app-prod-base',
-            'orbit-template-app-dev-base',
-            'orbit-template-gateway-base',
-            'orbit-template-operator-base',
-        ]);
+        ->toBe(['orbit-template-agent-base']);
+});
+
+it('treats agent websocket snapshots as satisfying agent stage reuse for ingress refresh', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $websocketSnapshot = IncusTopologyTemplate::snapshotName(
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+    );
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('instanceExists')->andReturn(true);
+    $host
+        ->shouldReceive('snapshotExists')
+        ->andReturnUsing(fn (string $template, string $snapshot): bool => $snapshot === $websocketSnapshot);
+
+    $builder = new IncusTopologyBuilder($host);
+    $method = new ReflectionMethod(IncusTopologyBuilder::class, 'resolveReusableBaseStage');
+    $method->setAccessible(true);
+
+    expect($method->invoke($builder, E2ETopologyKind::OperatorGatewayAppdevAppprodIngress))
+        ->toBe(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket);
+});
+
+it('excludes reusable common templates from artifact backed ingress refresh names', function (): void {
+    $config = E2EConfig::fromEnvironment();
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useGatewayArtifactBundle('/tmp/orbit-e2e-gateway-artifacts-test');
+
+    $method = new ReflectionMethod(IncusTopologyBuilder::class, 'templateNamesForRefresh');
+    $method->setAccessible(true);
+
+    $names = $method->invoke(
+        $builder,
+        E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+        true,
+    );
+
+    expect($names)
+        ->not->toContain('orbit-template-operator-base')
+        ->not->toContain('orbit-template-gateway-base')
+        ->not->toContain('orbit-template-app-dev-base')
+        ->not->toContain('orbit-template-app-prod-base');
+});
+
+it('generates idempotent launch commands for prepared downstream templates', function (): void {
+    $config = E2EConfig::fromEnvironment();
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $builder = new IncusTopologyBuilder($host);
+
+    $method = new ReflectionMethod(IncusTopologyBuilder::class, 'launchOrStartTopologyInstanceCommand');
+    $method->setAccessible(true);
+
+    $command = $method->invoke($builder, 'orbit-template-app-dev-base', true);
+
+    expect($command)
+        ->toContain("if incus info 'orbit-template-app-dev-base' >/dev/null 2>&1; then")
+        ->toContain("incus start 'orbit-template-app-dev-base' >/dev/null 2>&1 || true")
+        ->toContain("incus launch 'orbit-base-ubuntu-26.04-runtime' 'orbit-template-app-dev-base'");
+});
+
+it('does not delete shared base template instances when replacing artifact backed ingress topology', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $deletedInstances = [];
+    $deletedSnapshots = [];
+    $websocketSnapshot = IncusTopologyTemplate::snapshotName(
+        E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket,
+    );
+    $ingressSnapshot = IncusTopologyTemplate::snapshotName(
+        E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+    );
+
+    $existing = [
+        'orbit-template-operator-base',
+        'orbit-template-gateway-base',
+        'orbit-template-app-dev-base',
+        'orbit-template-app-prod-base',
+    ];
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->andReturn(true);
+    $host->shouldReceive('instanceExists')
+        ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
+    $host
+        ->shouldReceive('snapshotExists')
+        ->andReturnUsing(fn (string $template, string $snapshot): bool => $snapshot === $websocketSnapshot);
+    $host
+        ->shouldReceive('deleteSnapshot')
+        ->andReturnUsing(function (string $name, string $snapshot) use (&$deletedSnapshots): ProcessResult {
+            $deletedSnapshots[] = "{$name}/{$snapshot}";
+
+            return incusTopologyBuilderProcessResult();
+        });
+    $host
+        ->shouldReceive('deleteInstance')
+        ->andReturnUsing(function (string $name) use (&$deletedInstances): ProcessResult {
+            $deletedInstances[] = $name;
+
+            return incusTopologyBuilderProcessResult();
+        });
+    $host
+        ->shouldReceive('run')
+        ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
+        ->andReturn(incusTopologyBuilderProcessResult(successful: false));
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useGatewayArtifactBundle('/tmp/orbit-e2e-gateway-artifacts-test');
+
+    expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodIngress, replaceExisting: true))
+        ->toThrow(RuntimeException::class, 'Could not create work directory')
+        ->and($deletedInstances)
+        ->toBe([])
+        ->and($deletedSnapshots)
+        ->toContain("orbit-template-operator-base/{$ingressSnapshot}")
+        ->and($deletedSnapshots)
+        ->not->toContain("orbit-template-operator-base/{$websocketSnapshot}");
+});
+
+it('does not delete shared base template instances when replacing agent websocket prepared topology', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $deletedInstances = [];
+    $deletedSnapshots = [];
+
+    $existing = [
+        'orbit-template-operator-base',
+        'orbit-template-gateway-base',
+        'orbit-template-app-dev-base',
+        'orbit-template-app-prod-base',
+        'orbit-template-agent-base',
+    ];
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('imageExists')->andReturn(true);
+    $host->shouldReceive('instanceExists')
+        ->andReturnUsing(fn (string $name): bool => in_array($name, $existing, true));
+    $host->shouldReceive('snapshotExists')->andReturn(true);
+    $host
+        ->shouldReceive('deleteSnapshot')
+        ->andReturnUsing(function (string $name, string $snapshot) use (&$deletedSnapshots): ProcessResult {
+            $deletedSnapshots[] = "{$name}/{$snapshot}";
+
+            return incusTopologyBuilderProcessResult();
+        });
+    $host
+        ->shouldReceive('deleteInstance')
+        ->andReturnUsing(function (string $name) use (&$deletedInstances): ProcessResult {
+            $deletedInstances[] = $name;
+
+            return incusTopologyBuilderProcessResult();
+        });
+    $host
+        ->shouldReceive('run')
+        ->with(m::on(fn (string $command): bool => str_starts_with($command, 'mktemp -d ')))
+        ->andReturn(incusTopologyBuilderProcessResult(successful: false));
+
+    $builder = new IncusTopologyBuilder($host);
+    $builder->useBundle('/tmp/orbit-e2e-bundle-test');
+
+    expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppdevAppprodAgentWebsocket, replaceExisting: true))
+        ->toThrow(RuntimeException::class, 'Could not create work directory')
+        ->and($deletedInstances)
+        ->toBe(['orbit-template-agent-base'])
+        ->and($deletedInstances)
+        ->not->toContain('orbit-template-operator-base')->and($deletedSnapshots)->toContain(
+            'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_agent_websocket-base',
+        )->and($deletedSnapshots)
+        ->not->toContain(
+            'orbit-template-operator-base/clean-operator_gateway_app-dev_app-prod_ingress-base',
+        );
 });
 
 it('builds full prepared roles from the gateway base with parallel downstream baking', function (): void {
@@ -638,7 +815,7 @@ it('builds full prepared roles from the gateway base with parallel downstream ba
             )->and($wireGuardPhase)->toBeLessThan($runtimePrerequisitesPhase)->and(
                 $runtimePrerequisitesPhase,
             )->toBeLessThan($bakePhase)->and($runtimePrerequisitesPhase)->toBeLessThan($redisSeedPhase);
-        expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(2);
+        expect(substr_count($commandOutput, 'orbit-template-gateway-base/root/.ssh/id_ed25519'))->toBe(4);
     });
 });
 
@@ -1329,6 +1506,7 @@ it('rebuilds app production ingress through the prepared prod template', functio
             )
             && $snapshot === 'clean-operator_gateway-base',
         );
+    $host->shouldReceive('deleteSnapshot')->andReturn(incusTopologyBuilderProcessResult());
     $host->shouldReceive('deleteInstance')
         ->andReturnUsing(function (string $name) use (&$deleted): ProcessResult {
             $deleted[] = $name;
@@ -1346,14 +1524,11 @@ it('rebuilds app production ingress through the prepared prod template', functio
     expect(fn () => $builder->build(E2ETopologyKind::OperatorGatewayAppprodIngress, replaceExisting: true))
         ->toThrow(RuntimeException::class, 'Could not create work directory')
         ->and($deleted)
-        ->toContain('orbit-template-app-prod-base')
-        ->and($deleted)
-        ->toContain('orbit-template-operator_gateway_app-prod_ingress-operator-base')
-        ->and($deleted)
-        ->toContain('orbit-template-operator_gateway_app-prod_ingress-gateway-base')
-        ->and($deleted)
-        ->toContain('orbit-template-operator_gateway_app-prod_ingress-prod-base')
-        ->and($deleted)
+        ->not->toContain('orbit-template-app-prod-base')->and($deleted)->toContain(
+            'orbit-template-operator_gateway_app-prod_ingress-operator-base',
+        )->and($deleted)->toContain('orbit-template-operator_gateway_app-prod_ingress-gateway-base')->and(
+            $deleted,
+        )->toContain('orbit-template-operator_gateway_app-prod_ingress-prod-base')->and($deleted)
         ->not->toContain('orbit-template-ingress-prod')->and($deleted)
         ->not->toContain('orbit-template-ingress');
 });
@@ -1388,13 +1563,10 @@ it('restores a reusable base stage before continuing a force rebuild', function 
         ->once()
         ->andReturn(incusTopologyBuilderProcessResult());
     $host
-        ->shouldReceive('startInstance')
+        ->shouldReceive('startInstancesIfStopped')
+        ->with(['orbit-template-operator-base'])
         ->once()
-        ->andReturnUsing(function (string $name): ProcessResult {
-            expect($name)->toBe('orbit-template-operator-base');
-
-            return incusTopologyBuilderProcessResult(errorOutput: 'start failed', successful: false);
-        });
+        ->andReturn(incusTopologyBuilderProcessResult(errorOutput: 'start failed', successful: false));
     $host->shouldReceive('run')
         ->andReturnUsing(function (string $command): ProcessResult {
             if (str_starts_with($command, 'mktemp -d ')) {
@@ -1413,6 +1585,120 @@ it('restores a reusable base stage before continuing a force rebuild', function 
         ->toContain('orbit-template-operator-base:clean-operator_gateway-base')
         ->and($deletedSnapshots)
         ->not->toContain('orbit-template-operator-base:clean-operator_gateway_app-dev_app-prod_agent-base');
+});
+
+it('authorizes bootstrap ssh when reusing existing downstream template instances', function (): void {
+    $config = E2EConfig::fromEnvironment();
+    $commands = [];
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host
+        ->shouldReceive('startInstancesIfStopped')
+        ->with(['orbit-template-ingress-base'])
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')
+        ->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (&$commands): ProcessResult {
+            $commands[] = $command;
+
+            if (str_contains($command, '/1.0/instances/orbit-template-ingress-base/state')) {
+                return incusTopologyBuilderProcessResult("10.201.0.15\n");
+            }
+
+            return incusTopologyBuilderProcessResult();
+        });
+
+    $builder = new IncusTopologyBuilder($host);
+    $method = new ReflectionMethod(IncusTopologyBuilder::class, 'startTemplateRole');
+    $method->setAccessible(true);
+
+    $method->invoke(
+        $builder,
+        'ingress',
+        new SshKeyPair('/tmp/orbit-e2e-key', '/tmp/orbit-e2e-key.pub'),
+        E2ETopologyKind::OperatorGatewayAppdevAppprodIngress,
+    );
+
+    $commandOutput = implode("\n", $commands);
+
+    expect($commandOutput)
+        ->toContain('orbit-template-ingress-base/home/provisioner/.ssh/authorized_keys')
+        ->toContain("'provisioner@10.201.0.15'")
+        ->not->toContain('orbit-template-ingress-base/home/operator/.ssh/authorized_keys');
+});
+
+it('reauthorizes app development runtime ssh before dedicated ingress baking', function (): void {
+    $config = incusTopologyBuilderConfig();
+    $commands = [];
+
+    Process::fake([
+        'wg genkey' => Process::result(output: "private-key\n"),
+        'wg pubkey' => Process::result(output: "public-key\n"),
+    ]);
+
+    $host = m::mock(IncusHost::class, [$config])->makePartial();
+    $host->shouldReceive('instanceExists')->andReturn(false);
+    $host
+        ->shouldReceive('startInstancesIfStopped')
+        ->zeroOrMoreTimes()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host
+        ->shouldReceive('launchTopologyInstance')
+        ->with($config->baseImage, 'orbit-template-ingress-base', m::type('int'))
+        ->once()
+        ->andReturn(incusTopologyBuilderProcessResult());
+    $host->shouldReceive('run')->andReturnUsing(function (string $command, ?int $timeoutSeconds = null) use (
+        &$commands,
+    ): ProcessResult {
+        $commands[] = $command;
+
+        if (str_contains($command, 'docker exec wg-easy wg show wg0 public-key')) {
+            return incusTopologyBuilderProcessResult("wg-easy-public-key\n");
+        }
+
+        if (str_contains($command, 'orbit-template-ingress-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.15\n");
+        }
+
+        if (str_contains($command, 'orbit-template-app-prod-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.13\n");
+        }
+
+        if (str_contains($command, 'orbit-template-app-dev-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.12\n");
+        }
+
+        if (str_contains($command, 'orbit-template-gateway-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.11\n");
+        }
+
+        if (str_contains($command, 'orbit-template-operator-base')) {
+            return incusTopologyBuilderProcessResult("10.201.0.10\n");
+        }
+
+        return incusTopologyBuilderProcessResult();
+    });
+
+    $timer = new E2EPhaseTimer;
+    $builder = new IncusTopologyBuilder($host, $timer);
+    $method = new ReflectionMethod(IncusTopologyBuilder::class, 'buildPreparedDedicatedIngressStage');
+    $method->setAccessible(true);
+
+    $method->invoke($builder, new SshKeyPair('/tmp/orbit-e2e-key', '/tmp/orbit-e2e-key.pub'));
+
+    $phaseNames = array_column($timer->events(), 'name');
+    $runtimeSshAuthorizePhase = array_search('prepared-ingress.dev.runtime-ssh-authorize', $phaseNames, true);
+    $bakePhase = array_search('prepared-ingress.downstream.bake', $phaseNames, true);
+    $commandOutput = implode("\n", $commands);
+
+    expect($runtimeSshAuthorizePhase)
+        ->toBeInt()
+        ->toBeLessThan($bakePhase)
+        ->and($commandOutput)
+        ->toContain('orbit-template-app-dev-base/home/orbit/.ssh/authorized_keys')
+        ->toContain('orbit:internal:bake-app-node')
+        ->toContain('--user=')
+        ->toContain('orbit');
 });
 
 it('records phase timings while building topology templates', function (): void {

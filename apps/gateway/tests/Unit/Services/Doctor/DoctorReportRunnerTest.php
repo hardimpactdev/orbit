@@ -3165,6 +3165,82 @@ describe('DoctorReportRunner metrics role categories', function (): void {
     });
 });
 
+describe('DoctorReportRunner fleet probe batching', function (): void {
+    it('preserves fleet node ordering in the final doctor envelope', function (): void {
+        foreach (range(1, 3) as $index) {
+            createDoctorRunnerAppHostNode(['name' => sprintf('fleet-order-%02d', $index)]);
+        }
+
+        app()->instance(RemoteShell::class, new DoctorReportRunnerRemoteShell([]));
+
+        $report = app(DoctorReportRunner::class)->probeFleet(families: ['node']);
+
+        expect(collect($report['nodes'] ?? [])->pluck('node')->all())
+            ->toBe(['fleet-order-01', 'fleet-order-02', 'fleet-order-03']);
+    });
+
+    it('runs fleet node probes sequentially when process workers are unavailable', function (): void {
+        if (doctorRunnerFleetProbeProcessWorkersAvailable()) {
+            test()->markTestSkipped(
+                'This fallback contract is validated only when fleet process workers are unavailable.',
+            );
+        }
+
+        foreach (range(1, 3) as $index) {
+            createDoctorRunnerAppHostNode(['name' => "fleet-fallback-{$index}"]);
+        }
+
+        app()->instance(RemoteShell::class, new FleetProbeBatchDelayRemoteShell(delayMicroseconds: 10_000));
+
+        $maxConcurrent = 0;
+        $running = [];
+
+        app(DoctorReportRunner::class)->probeFleet(
+            families: ['node'],
+            onNodeProgress: function (Node $node, string $phase) use (&$maxConcurrent, &$running): void {
+                if ($phase === 'running') {
+                    $running[$node->name] = true;
+                    $maxConcurrent = max($maxConcurrent, count($running));
+
+                    return;
+                }
+
+                unset($running[$node->name]);
+            },
+        );
+
+        expect($maxConcurrent)->toBe(1);
+    });
+});
+
+function doctorRunnerFleetProbeProcessWorkersAvailable(): bool
+{
+    if (! function_exists('proc_open')) {
+        return false;
+    }
+
+    $database = config('database.connections.sqlite.database');
+
+    return is_string($database) && $database !== '' && $database !== ':memory:';
+}
+
+final readonly class FleetProbeBatchDelayRemoteShell implements RemoteShell
+{
+    public function __construct(
+        private int $delayMicroseconds = 10_000,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    public function run(Node $node, string $script, array $options = []): RemoteShellResult
+    {
+        usleep($this->delayMicroseconds);
+
+        return new RemoteShellResult(exitCode: 0, stdout: '', stderr: '', durationMs: 1);
+    }
+}
+
 final class DoctorReportRunnerThrowingRemoteShell implements RemoteShell
 {
     public function __construct(
