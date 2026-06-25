@@ -34,11 +34,11 @@ Subgate durations start when the actual subgate command starts, after any
 background-slot queue wait. Queue time is reflected in the aggregate gate
 duration, not in the individual `subgate_durations` values.
 
-`composer quality-check`, `composer quality-check:fix`, and E2E lanes that run
-against the prepared source checkout write local timing artifacts under
-`.orbit/quality-gates/`. The `:fix` lane records the same evidence shape with
-`mode=fix` so triage can distinguish read-only checks from auto-fix runs without
-rerunning the gate.
+`composer docs-lint`, `composer quality-check`, `composer quality-check:fix`,
+and E2E lanes that run against the prepared source checkout write local timing
+artifacts under `.orbit/quality-gates/`. The `:fix` lane records the same
+evidence shape with `mode=fix` so triage can distinguish read-only checks from
+auto-fix runs without rerunning the gate.
 
 The CLI Pest subgate runs the default CLI suite through
 `bin/orbit-cli-pest-quality`, which splits the suite into non-overlapping Pest
@@ -59,10 +59,11 @@ Core Pest still runs after all background Pest lanes because the core progress
 tests fork ticker children and must stay isolated from unrelated Pest process
 signals.
 
-Gate names for prepared-source E2E are:
+Gate names for docs and prepared-source E2E are:
 
 | Command | Gate |
 |---------|------|
+| `composer docs-lint` | `docs-lint` |
 | `composer test:e2e` | `e2e` |
 | `composer test:e2e:docker` | `e2e-docker` |
 | `composer test:e2e:docker:canary` | `e2e-docker-canary` |
@@ -107,12 +108,16 @@ warning-only. Without explicit `--gate` arguments, it analyzes the gates that
 already have artifacts in this worktree. It does not warn about missing E2E
 lanes that were not run.
 
-Feature finalization also reads E2E artifacts instead of rerunning lanes. When
-`.orbit/loop.md` records `Durable E2E: passed`, the row must name the exact E2E
-command or e2e quality-gate lane that ran. The merge/cleanup gate checks the
-latest matching `.orbit/quality-gates/` artifact and blocks missing or non-zero
-evidence. Use `composer quality-gate:final-check` to review warnings for stale
-commits or slow timings.
+Feature finalization also reads existing artifacts instead of rerunning lanes.
+The merge/cleanup gate derives the required proof from the branch diff:
+docs-only diffs need a successful `docs-lint` or broader `quality-check`
+artifact, other diffs need a successful `quality-check` artifact, and
+production PHP diffs also need Durable E2E to be `passed`. When `.orbit/loop.md` records
+`Durable E2E: passed`, the row must name the exact E2E command or e2e
+quality-gate lane that ran. The merge/cleanup gate checks the latest matching
+`.orbit/quality-gates/` artifact and blocks missing or non-zero evidence. Use
+`composer quality-gate:final-check` to review warnings for stale commits or
+slow timings.
 
 Evidence is stale when the latest artifact exceeds the configured max-age
 window or was captured for a different Git commit than the current worktree

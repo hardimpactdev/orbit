@@ -156,11 +156,12 @@ function existing_gates(string $artifactDir): array
 
     usort($gates, function (string $left, string $right): int {
         $order = [
-            'quality-check' => 0,
-            'e2e' => 1,
-            'e2e-docker' => 2,
-            'e2e-docker-canary' => 3,
-            'e2e-incus' => 4,
+            'docs-lint' => 0,
+            'quality-check' => 1,
+            'e2e' => 2,
+            'e2e-docker' => 3,
+            'e2e-docker-canary' => 4,
+            'e2e-incus' => 5,
         ];
 
         return ($order[$left] ?? 100) <=> ($order[$right] ?? 100)

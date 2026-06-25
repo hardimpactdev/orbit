@@ -689,11 +689,20 @@ moving on to durable E2E.
    vendor/bin/pint --dirty --format agent
    ```
 
-21. Before reporting completion, run the project quality gate:
+21. Before reporting completion, run the verification gate implied by the final
+    diff:
 
    ```bash
-   composer quality-check
+   composer docs-lint       # docs-only markdown diffs
+   composer quality-check   # PHP or broader repo diffs
    ```
+
+    `HARNESS.md` -> `Merge Boundary Gate` is the authority for the exact
+    finalization requirement. The gate reads the branch diff and existing
+    `.orbit/quality-gates/` artifacts: docs-only diffs need successful
+    docs-lint or broader quality-check evidence, other diffs need successful
+    quality-check evidence, and production PHP diffs also need artifact-backed
+    Durable E2E. Do not rerun expensive gates from the finalization check.
 
 22. Before committing or reporting completion, inspect the timing evidence
     already produced by the applicable gates:
@@ -706,10 +715,9 @@ moving on to durable E2E.
     Incus E2E, provision gates, or live-node commands. If timing evidence is
     missing, report that the timing analysis was skipped and decide whether the
     feature needs another gate run before merge.
-    Passed Durable E2E must be backed by the latest matching
-    `.orbit/quality-gates/` artifact from the exact command or gate recorded in
-    `.orbit/loop.md`; finalization reads that artifact and blocks missing or
-    non-zero evidence without rerunning E2E.
+    Finalization reads the latest matching `.orbit/quality-gates/` artifacts
+    for docs-lint, quality-check, and Durable E2E rows and blocks missing or
+    non-zero evidence without rerunning the gates.
 23. Before committing or reporting completion, run a Post-Feature Session
     Review. Treat `.orbit/loop.md` as the canonical local final packet and
     point it at the feature thread or handoff, Solo worker sessions, reviewer
@@ -732,16 +740,16 @@ moving on to durable E2E.
     coverage. Eliminate
     one-off handoffs, stale historical artifacts, reviewer findings fixed
     before merge, and ordinary feature work before considering promotion.
-    Required E2E that cannot be completed is a `blocked` feature-loop outcome
-    first, not a candidate signal; promote it only when the blocker exposes a
-    recurring process gap. Fill `.orbit/loop.md` `Required verification` with
-    explicit `passed`, `blocked`, or `not applicable` rows for durable E2E,
-    retained CLI ingress VM proof, and `composer quality-check`. A passed
-    Durable E2E row must name the exact E2E command or e2e quality-gate lane
-    whose latest `.orbit/quality-gates/` artifact exited zero. Do not mark the
-    loop `complete` or `complete + loop improvement` while any required
-    verification row is blocked, pending, skipped, missing, deferred,
-    unresolved, or not run. Update, create, curate, retire, or intentionally
+    Required verification that cannot be completed is a `blocked` feature-loop
+    outcome first, not a candidate signal; promote it only when the blocker
+    exposes a recurring process gap. Fill `.orbit/loop.md` `Required
+    verification` with explicit `passed`, `blocked`, or `not applicable` rows
+    for durable E2E, retained CLI ingress VM proof, and `composer
+    quality-check`. A passed Durable E2E row must name the exact E2E command or
+    e2e quality-gate lane whose latest `.orbit/quality-gates/` artifact exited
+    zero. Do not mark the loop `complete` or `complete + loop improvement`
+    while any diff-required verification is blocked, pending, skipped, missing,
+    deferred, unresolved, or not run. Update, create, curate, retire, or intentionally
     leave `harness-signals/` records and the smallest guardrail target only for
     concrete durable signals that pass the promotion gate in
     `HARNESS_SIGNALS.md`. Report the loop outcome as `complete`, `blocked`, or
@@ -949,6 +957,8 @@ Post-feature session review:
     applicable with topology/session/evidence, blocker, or reason>
   - `composer quality-check`: <passed, blocked, or not applicable with
     command/evidence, blocker, or reason>
+- Finalization gate fit: <why the branch diff makes docs-lint, quality-check,
+  Durable E2E, and retained CLI proof passed, blocked, or not applicable>
 - Distillation packet: <.orbit/loop.md canonical packet, not applicable, or
   blocked>
 - Fresh post-feature analyzer: <persona/process id/verdict, not used with

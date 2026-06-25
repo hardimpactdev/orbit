@@ -259,7 +259,7 @@ function check_merge(string $root, string $target): array
         ];
     }
 
-    return final_distillation_check($worktree, $branch);
+    return final_distillation_check($root, $worktree, $branch);
 }
 
 /**
@@ -275,7 +275,7 @@ function check_worktree_remove(string $root, string $path): array
 
     $branch = branch_for_worktree($root, $worktree) ?? $worktree;
 
-    return final_distillation_check($worktree, $branch);
+    return final_distillation_check($root, $worktree, $branch);
 }
 
 /**
@@ -295,13 +295,13 @@ function check_branch_delete(string $root, string $branch): array
         return ok();
     }
 
-    return final_distillation_check($worktree, $branch);
+    return final_distillation_check($root, $worktree, $branch);
 }
 
 /**
  * @return array{ok: bool, subject: string, reason: string}
  */
-function final_distillation_check(string $worktree, string $subject): array
+function final_distillation_check(string $root, string $worktree, string $subject): array
 {
     $loopPath = rtrim($worktree, '/').'/.orbit/loop.md';
 
@@ -350,7 +350,8 @@ function final_distillation_check(string $worktree, string $subject): array
         ];
     }
 
-    $requiredVerificationProblem = required_verification_problem($section, $worktree);
+    $requirements = verification_requirements($root, $worktree, $subject);
+    $requiredVerificationProblem = required_verification_problem($section, $worktree, $requirements);
 
     if ($requiredVerificationProblem !== null) {
         return [
@@ -418,7 +419,10 @@ function is_mergeable_loop_outcome(string $value): bool
     return in_array($normalized, ['complete', 'complete + loop improvement'], true);
 }
 
-function required_verification_problem(string $section, string $worktree): ?string
+/**
+ * @param  array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_production_php: bool}  $requirements
+ */
+function required_verification_problem(string $section, string $worktree, array $requirements): ?string
 {
     $values = markdown_list_values($section, ['Required verification']);
 
@@ -442,10 +446,167 @@ function required_verification_problem(string $section, string $worktree): ?stri
         }
     }
 
+    $docsOnlyProblem = docs_only_artifact_problem($worktree);
+
+    if ($requirements['docs_only'] && $docsOnlyProblem !== null) {
+        return 'docs-only diff requires `composer docs-lint` or broader `composer quality-check` evidence; '
+            .$docsOnlyProblem;
+    }
+
+    $qualityCheck = required_verification_row($values, '`composer quality-check`');
+
+    if ($requirements['requires_quality_check']) {
+        $qualityCheckReason = $requirements['has_php'] ? 'PHP diff' : 'non-docs diff';
+
+        if ($qualityCheck === null || ! is_passed_verification_value($qualityCheck)) {
+            $current = $qualityCheck ?? 'missing row';
+
+            return "{$qualityCheckReason} requires `composer quality-check: passed` with artifact-backed evidence; current row: {$current}";
+        }
+
+        $qualityCheckProblem = quality_gate_artifact_problem($worktree, 'quality-check', '`composer quality-check`');
+
+        if ($qualityCheckProblem !== null) {
+            return "{$qualityCheckReason} requires `composer quality-check` evidence; {$qualityCheckProblem}";
+        }
+    }
+
     $durableE2e = required_verification_row($values, 'Durable E2E');
+
+    if ($requirements['has_production_php'] && ($durableE2e === null || ! is_passed_verification_value($durableE2e))) {
+        $current = $durableE2e ?? 'missing row';
+
+        return "production PHP diff requires Durable E2E: passed with artifact-backed evidence; current row: {$current}";
+    }
 
     if ($durableE2e !== null && is_passed_verification_value($durableE2e)) {
         return durable_e2e_artifact_problem($worktree, $durableE2e);
+    }
+
+    return null;
+}
+
+/**
+ * @return array{changed_files: list<string>, docs_only: bool, requires_quality_check: bool, has_php: bool, has_production_php: bool}
+ */
+function verification_requirements(string $root, string $worktree, string $subject): array
+{
+    $changedFiles = changed_files($root, $worktree, $subject);
+    $docsOnly = $changedFiles !== [] && every($changedFiles, fn (string $path): bool => is_markdown_file($path));
+    $phpFiles = array_values(array_filter($changedFiles, fn (string $path): bool => is_php_file($path)));
+    $productionPhpFiles = array_values(array_filter($phpFiles, fn (string $path): bool => is_production_php_file($path)));
+
+    return [
+        'changed_files' => $changedFiles,
+        'docs_only' => $docsOnly,
+        'requires_quality_check' => $changedFiles !== [] && ! $docsOnly,
+        'has_php' => $phpFiles !== [],
+        'has_production_php' => $productionPhpFiles !== [],
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function changed_files(string $root, string $worktree, string $subject): array
+{
+    $branch = normalize_branch($subject);
+
+    if ($branch !== null && local_branch_exists($root, $branch)) {
+        return branch_changed_files($root, $branch);
+    }
+
+    if (! is_dir($worktree)) {
+        return [];
+    }
+
+    return branch_changed_files($worktree, 'HEAD');
+}
+
+/**
+ * @return list<string>
+ */
+function branch_changed_files(string $cwd, string $headRef): array
+{
+    $base = trim(run_git($cwd, ['merge-base', 'main', $headRef])['stdout']);
+
+    if ($base === '') {
+        return [];
+    }
+
+    $diff = run_git($cwd, ['diff', '--name-only', '--diff-filter=ACMRT', $base, $headRef]);
+
+    if ($diff['exit_code'] !== 0) {
+        return [];
+    }
+
+    return array_values(array_filter(
+        array_map('trim', preg_split('/\R/', $diff['stdout']) ?: []),
+        fn (string $path): bool => $path !== '',
+    ));
+}
+
+/**
+ * @param  list<string>  $items
+ */
+function every(array $items, callable $callback): bool
+{
+    foreach ($items as $item) {
+        if (! $callback($item)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function is_markdown_file(string $path): bool
+{
+    return preg_match('/\.md$/i', $path) === 1;
+}
+
+function is_php_file(string $path): bool
+{
+    return preg_match('/\.php$/i', $path) === 1;
+}
+
+function is_production_php_file(string $path): bool
+{
+    if (! is_php_file($path)) {
+        return false;
+    }
+
+    return ! str_contains('/'.$path, '/tests/');
+}
+
+function docs_only_artifact_problem(string $worktree): ?string
+{
+    $docsLintProblem = quality_gate_artifact_problem($worktree, 'docs-lint', '`composer docs-lint`');
+    $qualityCheckProblem = quality_gate_artifact_problem($worktree, 'quality-check', '`composer quality-check`');
+
+    if ($docsLintProblem === null || $qualityCheckProblem === null) {
+        return null;
+    }
+
+    return $docsLintProblem.'; '.$qualityCheckProblem;
+}
+
+function quality_gate_artifact_problem(string $worktree, string $gate, string $label): ?string
+{
+    $artifact = latest_quality_gate_artifact($worktree, $gate);
+
+    if ($artifact === null) {
+        return "{$label} is required, but no latest successful artifact was found for {$gate}";
+    }
+
+    $exitCode = artifact_exit_code($artifact);
+
+    if ($exitCode === null) {
+        return "{$label} is required, but latest {$gate} artifact has no numeric exit_code";
+    }
+
+    if ($exitCode !== 0) {
+        return "{$label} is required, but latest {$gate} artifact exited with code {$exitCode}";
     }
 
     return null;
