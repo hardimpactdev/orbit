@@ -61,9 +61,9 @@ Incus only.
 
 ## Lane variables
 
-`composer test:e2e` runs `bin/orbit-gateway-artisan e2e:test`, which reads `ORBIT_E2E_LANES`
-and starts selected prepared-topology lanes concurrently. The lane aliases set
-`ORBIT_E2E_LANES` before invoking the same orchestrator:
+`composer test:e2e` runs `bin/orbit-e2e-artisan e2e:test`, which reads
+`ORBIT_E2E_LANES` and starts selected prepared-topology lanes concurrently. The
+lane aliases set `ORBIT_E2E_LANES` before invoking the same orchestrator:
 `composer test:e2e:docker` selects `docker`, and `composer test:e2e:incus`
 selects `incus`.
 
@@ -84,16 +84,17 @@ lanes:
   gate. It launches the base VM, installs Orbit, provisions the gateway, and
   internally provisions app-dev, app-prod, and agent in parallel.
 
-Run feature lanes backed by prepared topologies first. Docker provision is only a Docker
-artifact refresh for runtime/support images, prepared role images, Docker host
-artifact distribution, or Docker topology-preparation changes. Incus provision
-is the fresh VM gate for installer, `node:new`, base image, WireGuard, systemd,
-package installation, and host mutation changes. Neither command is a
-prerequisite for `composer test:e2e`.
+When the user manually runs E2E, feature lanes backed by prepared topologies
+come first. Docker provision is only a Docker artifact refresh for
+runtime/support images, prepared role images, Docker host artifact distribution,
+or Docker topology-preparation changes. Incus provision is the fresh VM gate for
+installer, `node:new`, base image, WireGuard, systemd, package installation, and
+host mutation changes. Neither command is a prerequisite for
+`composer test:e2e`.
 
 `composer test:e2e:provision` is a human-only aggregate alias for both provider
-provision commands. Agents must not run the aggregate; they must choose the
-provider-specific provision command that matches their assigned lane.
+provision commands. Agents must not run the aggregate or provider-specific
+`composer test:e2e*` commands.
 
 ## Lease namespaces
 

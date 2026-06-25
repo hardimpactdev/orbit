@@ -215,7 +215,6 @@ it('keeps the aggregate quality gate complete', function (): void {
     $backgroundLabels = array_values(array_unique($backgroundLabelMatches['label']));
     $waitedBackgroundLabels = [
         ...$scriptLabels('STATIC_CHECK_LABELS'),
-        ...$scriptLabels('PRE_E2E_PEST_LABELS'),
         ...$scriptLabels('LONG_RUNNING_PEST_LABELS'),
     ];
     $aggregationLabels = $scriptLabels('CHECK_LABELS');
@@ -234,7 +233,6 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toContain('ORBIT_QUALITY_CHECK_MAX_BACKGROUND_JOBS')
         ->toContain('quality_check_default_max_background_jobs')
         ->toContain('STATIC_CHECK_LABELS=(')
-        ->toContain('PRE_E2E_PEST_LABELS=(')
         ->toContain('LONG_RUNNING_PEST_LABELS=(')
         ->toContain('wait_for_bg_slot')
         ->toContain('--path=testing')
@@ -269,9 +267,14 @@ it('keeps the aggregate quality gate complete', function (): void {
             'cd apps/e2e && vendor/bin/mago format',
         )->toContain('bin/orbit-cli-pest')->toContain('bin/orbit-docs-pest')->toContain(
             'cd packages/core && vendor/bin/pest',
-        )->toContain('cd packages/sdk && vendor/bin/pest')->toContain('cd apps/e2e && vendor/bin/pest')->toContain(
-            '--exclude-group=e2e-binary',
-        )->toContain('--exclude-group=e2e-provision')->toContain('bin/orbit-gateway-pest')->toContain(
+        )->toContain('cd packages/sdk && vendor/bin/pest')
+        ->not->toContain(
+            'cd apps/e2e && vendor/bin/pest',
+        )
+        ->not->toContain('run_bg e2e_pest')
+        ->not->toContain('PRE_E2E_PEST_LABELS=(')->toContain(
+            'bin/orbit-gateway-pest',
+        )->toContain(
             '--exclude-group=e2e',
         )->toContain('--exclude-group=slow')->toContain('--parallel')->toContain('--compact');
 
@@ -283,23 +286,19 @@ it('keeps the aggregate quality gate complete', function (): void {
         ->toBe($expectedAggregationLabels)
         ->and($aggregationLabels)
         ->toHaveCount(count(array_unique($aggregationLabels)))
-        ->and($scriptLabels('PRE_E2E_PEST_LABELS'))
-        ->toBe([
-            'cli_pest',
-        ])
         ->and($scriptLabels('LONG_RUNNING_PEST_LABELS'))
         ->toBe([
+            'cli_pest',
             'gateway_pest',
             'docs_pest',
-            'e2e_pest',
             'sdk_pest',
         ])
         ->and($scriptPosition('for label in "${STATIC_CHECK_LABELS[@]}"'))
         ->toBeLessThan($scriptPosition('for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
         ->and($scriptPosition('run_bg gateway_pest'))
-        ->toBeLessThan($scriptPosition('for label in "${PRE_E2E_PEST_LABELS[@]}"'))
-        ->and($scriptPosition('for label in "${PRE_E2E_PEST_LABELS[@]}"'))
-        ->toBeLessThan($scriptPosition('run_bg e2e_pest'))
+        ->toBeLessThan($scriptPosition('run_bg sdk_pest'))
+        ->and($scriptPosition('run_bg sdk_pest'))
+        ->toBeLessThan($scriptPosition('for label in "${STATIC_CHECK_LABELS[@]}"'))
         ->and($scriptPosition('for label in "${LONG_RUNNING_PEST_LABELS[@]}"'))
         ->toBeLessThan($scriptPosition('record_subgate_start core_pest'));
 
@@ -477,7 +476,9 @@ it('documents the supported verification lanes', function (): void {
     expect($testing)
         ->toContain('# In-memory tests')
         ->toContain('# E2E testing')
-        ->toContain('Feature E2E backed by Docker')
+        ->toContain('Retained topology proof for feature behavior')
+        ->toContain('Manual prepared E2E backed by Docker or Incus')
+        ->toContain('Agents must not run any `composer test:e2e*` command')
         ->toContain('composer test:e2e')
         ->toContain('composer test:e2e:docker')
         ->toContain('composer test:e2e:incus')

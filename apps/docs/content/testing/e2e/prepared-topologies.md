@@ -337,25 +337,28 @@ Required prepared sources for feature lanes:
 workers start when a selected provider is missing a required image, template, or
 snapshot, and print a scoped artifact command for the missing lane.
 
-Provider artifact/provision commands are explicit and safe to split across
-agents when both provider substrates independently changed:
+Provider artifact/provision commands are explicit manual commands when both
+provider substrates independently changed:
 
 ```bash
 composer test:e2e:provision:docker
 composer test:e2e:provision:incus
 ```
 
-Run prepared-topology feature tests before any affected provider
-artifact/provision command. Docker provision is only a Docker artifact refresh
-for runtime/support images, prepared role images, Docker host artifact
-distribution, or Docker topology-preparation changes. Incus provision is the
-fresh VM provisioning gate. Neither is a prerequisite for `composer test:e2e`,
-and Docker provision is not required after ordinary feature E2E passes.
+When the user manually runs prepared-topology E2E, feature tests should precede
+any affected provider artifact/provision command. Docker provision is only a
+Docker artifact refresh for runtime/support images, prepared role images,
+Docker host artifact distribution, or Docker topology-preparation changes.
+Incus provision is the fresh VM provisioning gate. Neither is a prerequisite for
+`composer test:e2e`, and Docker provision is not required after ordinary
+feature E2E passes.
 
 Agents must not run `composer test:e2e:provision`; that aggregate alias runs
-both provider provision commands and is reserved for humans.
+both provider provision commands and is reserved for humans. Agents must not run
+provider-specific `composer test:e2e*` commands either.
 
-Use `composer e2e:ensure-artifacts` to plan or run a targeted artifact refresh:
+When the user manually prepares E2E artifacts, `composer e2e:ensure-artifacts`
+plans or runs a targeted artifact refresh:
 
 ```bash
 # Build or pull Docker runtime/support images only when one is missing.
@@ -381,7 +384,7 @@ role refreshes are guarded; inspect the planned role templates with
 `e2e:ensure-artifacts` and use the explicit topology preparer only when
 intentionally rebuilding an Incus artifact set.
 
-Prepare the canonical provider artifacts once for the host pool:
+Manual canonical provider artifact preparation for the host pool:
 
 ```bash
 composer test:e2e:provision:docker

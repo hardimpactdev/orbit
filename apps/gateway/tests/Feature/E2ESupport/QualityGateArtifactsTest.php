@@ -873,7 +873,57 @@ it('keeps final-check wired as an evidence-only composer script', function (): v
             'composer quality-gate:final-check',
         )->toContain('must not rerun Pest')->toContain('timing analysis was skipped')->toContain(
             'first narrow diff',
-        )->toContain('broad discovery without a first diff as a process problem to correct');
+        )->toContain('broad repository discovery');
+});
+
+it('keeps e2e test commands manual only across default gates and skills', function (): void {
+    $composer = json_decode(
+        file_get_contents(repo_path('composer.json')) ?: '',
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    $defaultScriptNames = [
+        'docs-lint',
+        'quality-check',
+        'quality-check:fix',
+        'quality-gate:final-check',
+        'test',
+    ];
+
+    foreach ($defaultScriptNames as $scriptName) {
+        expect(implode("\n", (array) $composer['scripts'][$scriptName]))->not->toContain('test:e2e');
+    }
+
+    $agents = (string) file_get_contents(repo_path('AGENTS.md'));
+    $implementingFeaturesSkill = (string) file_get_contents(repo_path('.agents/skills/implementing-features/SKILL.md'));
+    $e2eSkill = (string) file_get_contents(repo_path('.agents/skills/e2e-verification-lanes/SKILL.md'));
+    $releaseSkill = (string) file_get_contents(repo_path('.agents/skills/release/SKILL.md'));
+    $qualityGateTriageSkill = (string) file_get_contents(repo_path('.agents/skills/quality-gate-triage/SKILL.md'));
+    $defaultGateScripts = [
+        'bin/orbit-codex-pre-tool-use-hook',
+        'bin/orbit-feature-finalization-check',
+        'bin/orbit-prepare-worktree',
+        'bin/quality-check.sh',
+        'bin/quality-gate-final-check',
+    ];
+
+    expect($agents)
+        ->toContain('default scripts must not trigger them')
+        ->toContain('user explicitly invokes the Composer command from a shell')
+        ->and($implementingFeaturesSkill)
+        ->toContain('Agents must not run `composer test:e2e*` commands')
+        ->and($e2eSkill)
+        ->toContain('Agents must not run, delegate, background, schedule, hook, or script any')
+        ->and($qualityGateTriageSkill)
+        ->toContain('Do not run any `composer test:e2e*` command')
+        ->and($releaseSkill)
+        ->not->toContain('composer test:e2e')
+        ->not->toContain('composer e2e:ensure-artifacts');
+
+    foreach ($defaultGateScripts as $scriptPath) {
+        expect((string) file_get_contents(repo_path($scriptPath)))->not->toContain('composer test:e2e');
+    }
 });
 
 it('keeps quality-check artifact capture wired into the aggregate gate script', function (): void {

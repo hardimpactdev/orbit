@@ -1,159 +1,69 @@
 ---
 name: e2e-verification-lanes
-description: Use when selecting, running, debugging, or delegating Orbit E2E verification lanes, including Docker or Incus feature tests, provider-specific provisioning, prepared topology refreshes, canary runs, and Solo agent E2E splits.
+description: Use when reading or triaging existing Orbit E2E artifacts, explaining manual composer test:e2e command references, or documenting E2E lane ownership. Never execute, delegate, schedule, or trigger E2E tests.
 ---
 
 # E2E Verification Lanes
 
-## Core Rule
+## Non-Execution Rule
 
-Agents must never run:
+Agents must not run, delegate, background, schedule, hook, or script any
+`composer test:e2e*` command. This includes provider-specific commands such as
+`composer test:e2e:docker`, `composer test:e2e:incus`,
+`composer test:e2e:provision:docker`, and `composer test:e2e:provision:incus`.
+
+E2E tests run only when the user explicitly invokes the Composer command from a
+shell. If E2E proof is desired, ask the user to run the command manually and
+share the terminal output or resulting `.orbit/quality-gates/` artifact.
+
+For normal feature completion, use retained topology proof instead: record the
+topology id/kind, inspected roles or nodes, exact command, terminal/session or
+artifact evidence, and result in `.orbit/loop.md` or `.orbit/evidence/`.
+
+## Allowed Agent Work
+
+Agents may:
+
+- Inspect existing `.orbit/quality-gates/` artifacts.
+- Run read-only analyzers such as `composer quality-gate:analyze` or
+  `composer quality-gate:final-check`; these commands must not rerun E2E.
+- Explain which manual E2E command a user may choose to run.
+- Update docs, tests, skills, or scripts so they do not trigger E2E tests.
+
+Agents may not:
+
+- Run any `composer test:e2e*` command.
+- Spawn a Solo worker to run any `composer test:e2e*` command.
+- Add a hook, quality gate, release flow, or skill instruction that runs E2E.
+- Treat missing E2E output as a feature-completion blocker; use retained
+  topology proof for the feature gate.
+
+## Manual Command Reference
+
+These commands remain available for user-run checks only:
 
 ```bash
-composer test:e2e:provision
-```
-
-That command is a human-only aggregate convenience alias. It runs both provider
-provision commands and is too broad for delegated agent work.
-
-## Agent Commands
-
-Use provider-specific commands.
-
-```bash
-# Docker artifact refresh for Docker image/topology-preparer changes
-composer test:e2e:provision:docker
-
-# Docker feature E2E
+composer test:e2e
 composer test:e2e:docker
-
-# Incus fresh provision gate
-composer test:e2e:provision:incus
-
-# Incus shared prepared topology refresh
-composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket
-
-# Incus feature E2E
 composer test:e2e:incus
+composer test:e2e:docker:canary
+composer test:e2e:topology-contract
+composer test:e2e:provision:docker
+composer test:e2e:provision:incus
 ```
 
-`composer test:e2e` is the prepared-feature aggregate for Docker plus Incus. Use
-provider-specific feature lanes when assigning work to separate agents.
+`composer test:e2e:provision` is the human-only aggregate for both provider
+provision commands. Agents must not run it.
 
-## Verification Order
+## Existing Artifact Triage
 
-Use the staged E2E model:
+When classifying existing E2E artifacts, inspect the recorded command, gate,
+exit code, Git commit, timing summaries, provider metadata, and captured Pest
+summary. Compare only like-for-like provider shape and runner capacity. If no
+artifact exists, report that no manual E2E evidence is present; do not create it
+by running E2E.
 
-1. Run in-memory Pest tests for command contracts and deterministic behavior.
-2. Use source/dev topology checks for fast diagnosis when a real topology is
-   needed during implementation.
-3. Run source-prepared feature lanes (`composer test:e2e:docker`,
-   `composer test:e2e:incus`, or `composer test:e2e`) as the normal durable E2E
-   signal. These lanes exercise the current source checkout through prepared
-   Docker/Incus topologies.
-4. Run artifact-backed feature lanes when production artifacts matter and that
-   lane exists for the provider.
-5. Run provider provision gates only as final/nightly substrate verification.
-
-Provider provision gates are not a symmetric post-`composer test:e2e` checklist.
-Docker provision is an artifact refresh for Docker runtime/support images,
-prepared role images, Docker host artifact distribution, or Docker topology
-preparation changes. Ordinary Docker feature behavior is proven by
-`composer test:e2e:docker` or the Docker lane inside `composer test:e2e`.
-
-Incus provision is the fresh VM provisioning gate for installer, `node:new`,
-base image, WireGuard, VM boot, package installation, systemd, and host mutation
-changes. It should run after the relevant Incus feature lane is green, not as a
-precondition for feature E2E.
-
-When production artifact behavior matters, the strongest final sequence is:
-
-1. Run the source/prepared-topology feature lane.
-2. Run the provider-specific provision gate.
-3. Run the feature lane that consumes the built assets, when that artifact lane
-   exists for the provider.
-
-## Solo Worker Delegation
-
-When a task needs both Docker and Incus E2E verification, split the work into
-provider-scoped Solo agents. Use Solo's agent spawning flow, not an ad hoc
-background shell and not a generic non-Solo subagent:
-
-- Docker feature agent: `composer test:e2e:docker`.
-- Incus feature agent: refresh the prepared source topology when needed with
-  `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket`,
-  then run `composer test:e2e:incus`.
-- Docker provision agent, only for Docker artifact/substrate refresh:
-  `composer test:e2e:provision:docker`.
-- Incus provision agent, only for final fresh-provision verification:
-  `composer test:e2e:provision:incus`.
-
-If a Solo process is already actively handling one provider lane, reuse that
-process for that lane instead of spawning a duplicate worker that competes for
-the same provider capacity.
-
-Do not assign `composer test:e2e` or `composer test:e2e:provision` to an agent
-when the intent is provider-parallel verification. Keep each agent scoped to one
-provider lane and report that provider's command results separately.
-
-## Provider Split
-
-Docker lane:
-
-1. Run `composer test:e2e:docker` for Docker-eligible feature behavior.
-2. Run `composer test:e2e:provision:docker` only when Docker runtime/support
-   images, Docker prepared role images, Docker host artifact distribution, or
-   Docker topology preparation changed. Do not run it merely because
-   `composer test:e2e` passed or because Incus provision is being checked.
-
-Incus lane:
-
-1. Run `composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent_websocket`
-   when Incus feature tests need refreshed source-prepared topology artifacts.
-2. Run `composer test:e2e:incus` for VM-feature behavior against the prepared
-   source topology.
-3. Run `composer test:e2e:provision:incus` as a final gate when base image
-   shape, installer, gateway provisioning, `node:new`, WireGuard, VM boot,
-   systemd, package installation, or host mutation changed.
-
-Docker and Incus provision lanes can run in parallel only when both are
-independently required. They mutate separate provider substrates, but Docker
-provision is not required for ordinary feature/E2E code changes.
-
-## Lane Selection
-
-- Use narrow Pest or in-memory tests for command contracts, validation, JSON
-  envelopes, renderers, and deterministic service logic.
-- For focused prepared-topology E2E runs, pass at most one explicit Pest path to
-  `composer test:e2e:docker` or `composer test:e2e:incus`. Pest/Paratest accepts
-  a single positional `path`; to cover multiple files in one focused run, pass
-  their shared directory and add `--filter='<regex>'`, or run the files as
-  separate commands.
-- Use `composer test:e2e:docker` for gateway API, CA trust, registry-backed
-  behavior, command forwarding, Docker runtime backend behavior, scheduler, and
-  process lifecycle.
-- Use `composer test:e2e:incus` for VM-only behavior: real WireGuard, SSH,
-  sudo, systemd, cloud-init, OS trust-store mutation, package installation, and
-  host init.
-- Use Docker provision only when Docker runtime/support images, prepared role
-  images, Docker host artifact distribution, or Docker topology preparation may
-  have changed.
-- Use Incus provision only when fresh VM provisioning behavior may have changed:
-  base image, installer, `node:new`, WireGuard, systemd, cloud-init, package
-  installation, or host mutation.
-
-Missing prepared artifacts are not fixed by switching providers. Follow the
-scoped artifact command printed by the failing lane, or run the matching
-provider provision command when a full refresh is intended.
-
-When a feature's acceptance requires E2E and the required lane cannot be fully
-performed, halt the feature loop if the E2E blocker cannot be resolved in the
-current slice. Do not treat a blocked E2E lane as a completed verification
-signal, and do not proceed to finalization, merge, cleanup, or final
-loop-improvement extraction. Record the blocker, owner, and unblock condition
-for the feature owner.
-
-Serving behavior (`app:new`, Caddy/FrankenPHP HTTP serving, and `app:exec
-composer install`) belongs in prepared feature lanes. It must not be tagged with
-the broad `e2e-provision` group unless a focused diagnostic is intentionally
-selected outside the default provision gate.
+Use `quality-gate-triage` for slow or failing artifact classification. Keep
+substrate failures separate from product regressions, especially provider pool
+capacity, stale prepared artifacts, host drift, missing credentials, and stale
+retained topology state.

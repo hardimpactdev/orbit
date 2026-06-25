@@ -42,7 +42,9 @@ the evidence permits.
 
 ## Hard Stops
 
-- Do not run `composer test:e2e:provision`; that aggregate is human-only.
+- Do not run any `composer test:e2e*` command. E2E artifacts may be inspected,
+  but E2E tests run only when the user explicitly invokes the Composer command
+  from a shell.
 - Do not mutate live nodes, persistent gateways, standing app nodes, provider
   hosts, or shared runner state while classifying.
 - Do not implement a product fix unless the feature owner explicitly assigns
@@ -114,9 +116,9 @@ output and report the missing evidence as a baseline or tooling action.
 
 The final analyzer inspects existing evidence and classifies the run. Run it
 with `composer quality-gate:analyze` from the repo root. It does not rerun
-expensive gates as part of analysis. A rerun can be the next command only after
-classification names why the rerun is useful, such as confirming a
-flake on the narrowest lane.
+expensive gates as part of analysis. A rerun can be the next command only for
+non-E2E lanes after classification names why the rerun is useful, such as
+confirming a flake on the narrowest lane.
 
 When the expected lane is provider-specific E2E, pass the provider gates
 explicitly instead of relying on the analyzer default:

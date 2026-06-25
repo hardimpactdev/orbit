@@ -47,10 +47,10 @@ manifests.
 - Live topology doctor status is the release safety baseline. Capture it before
   publishing a new release so post-`update:all` doctor output can be compared
   against known pre-existing drift.
-- No release may be published without E2E proof that the release candidate
-  artifacts are functional. The proof must apply to the target version and
-  commit being released, not an older branch, previous artifact set, or stale
-  prepared topology.
+- No release may be published without retained topology proof that the release
+  candidate artifacts are functional. The proof must apply to the target
+  version and commit being released, not an older branch, previous artifact set,
+  or stale topology.
 
 ## Workflow
 
@@ -65,19 +65,11 @@ manifests.
    bin/orbit-gateway-pest --compact tests/Feature/Release tests/Feature/Services/Operations/WorkloadNodeUpdaterTest.php
    ```
 
-5. Run release-candidate E2E proof before publishing anything. Without passing
-   E2E proof, stop; do not merge, tag, or publish a GitHub release.
-
-   ```bash
-   composer test:e2e
-   composer test:e2e:binary
-   composer test:e2e:docker:binary-acceptance
-   ```
-
-   Run any additional provider-specific or artifact-backed E2E lane required by
-   `apps/docs/content/testing/README.md` for the release assets or behavior
-   being shipped. Use `composer e2e:ensure-artifacts` only to prepare missing
-   artifacts; artifact preparation output is not proof by itself.
+5. Capture retained topology release-candidate proof before publishing anything.
+   Without passing retained topology proof, stop; do not merge, tag, or publish
+   a GitHub release. Record the topology id/kind, candidate version, manifest
+   commit, installed binary/image paths or digests, exact commands, and terminal
+   or artifact evidence. E2E artifact preparation output is not proof by itself.
 
 6. Build and publish the release candidate artifacts once. Use the central
    artifact store for files and GHCR for the gateway image. Do not use S3
@@ -323,9 +315,10 @@ manifests.
     feasible. For intentional or pre-existing live-topology migration work,
     create scoped follow-up tasks with the before/after doctor evidence.
 
-The release is not eligible to publish until release-candidate E2E proof and
-live candidate `update:all` acceptance pass. It is not complete until the GitHub
-workflow verifies the promoted assets and publishes the split package repos.
+The release is not eligible to publish until release-candidate retained
+topology proof and live candidate `update:all` acceptance pass. It is not
+complete until the GitHub workflow verifies the promoted assets and publishes
+the split package repos.
 
 ## Failure Handling
 

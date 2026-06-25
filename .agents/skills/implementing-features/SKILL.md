@@ -164,12 +164,12 @@ Rules:
   HARNESS_SIGNALS.md to select the smallest guardrail target. Update or create
   a signal record only when it belongs to this slice; otherwise report a scoped
   follow-up.
-- For CLI command changes, create or update Pest coverage first and E2E
-  coverage next. After the tests exist and the focused command behavior is
-  working, run or request the retained ingress VM Solo-terminal gate before
-  durable E2E or any live/release-candidate deployment. Report the topology
-  id, VM instance, terminal/session, exact commands, observed human/JSON/failure
-  results, and whether user verification is pending or complete.
+- For CLI command changes, create or update Pest coverage first. After the
+  focused command behavior is working, run or request retained topology proof
+  from the relevant VM before any live/release-candidate deployment. Report the
+  topology id, VM instance, terminal/session, exact commands, observed
+  human/JSON/failure results, and whether user verification is pending or
+  complete.
 - Do not commit, merge to main, delete the worktree, force-push, reset, clean,
   stash, or touch unrelated dirty files unless the feature owner explicitly
   gives you that exact boundary.
@@ -293,18 +293,20 @@ bin/orbit-prepare-worktree <branch-name>
 ```
 
 Use `--base=<ref>` when the todo must start from a branch other than `main`.
-Use `--with-e2e` when the change needs prepared-topology feature lanes. CLI
-command changes need `--with-e2e` because they must define durable E2E coverage
-and pass the retained ingress VM Solo-terminal gate before durable E2E or
-live/release-candidate deployment. The
-script creates or reuses `.worktrees/<branch-name>/`, installs dependencies,
-prepares Laravel app state, links `.env.e2e` when available, and runs
-`composer test` unless `--skip-tests` is explicitly passed.
+Do not use `--with-e2e` for feature work. CLI command changes require focused
+Pest coverage plus retained topology proof when topology behavior is in scope.
+The script creates or reuses `.worktrees/<branch-name>/`, installs
+dependencies, prepares Laravel app state, links `.env.e2e` when available, and
+runs `composer test` unless `--skip-tests` is explicitly passed.
 
 If preparation fails, leave the worktree in place for inspection and report the
 failing step instead of dispatching implementation onto a broken checkout.
 
 ## E2E Readiness And Resource Pool
+
+This section is for reading shared E2E provider state and existing artifacts
+only. Agents must not run `composer test:e2e*` commands. Normal feature
+completion uses retained topology proof instead of prepared E2E.
 
 The E2E provider pools are shared across every Orbit worktree on this machine.
 Worktrees symlink `.env.e2e` back to the main checkout, so provider selection,
@@ -318,16 +320,16 @@ Active `orbit-e2e` containers, networks, volumes, VMs, or lease files on those
 configured providers are normal while other features run in other worktrees.
 Resource existence or container count alone is not a stale-resource signal.
 
-Before running E2E in a worktree:
+When inspecting a user-run E2E lane in a worktree:
 
 1. `composer e2e:preflight` — verifies the configured Incus host is
-   reachable. Required for the Incus lane; safe to skip if only Docker
-   lanes are exercised.
+   reachable. This is a manual diagnostic command; do not run it as an agent
+   unless the task is retained topology setup rather than E2E testing.
 
-2. Treat the provider pool as a blocking lease pool. Run the assigned lane and
-   let workers wait for free slots. A long wait at startup usually means every
-   configured slot is currently leased by another worktree. Do not reap merely
-   because resources exist on a provider.
+2. Treat the provider pool as a blocking lease pool. If the user reports a long
+   wait at startup, it usually means every configured slot is currently leased
+   by another worktree. Do not reap merely because resources exist on a
+   provider.
 
 3. Use host diagnostics only after a wait exceeds
    `ORBIT_E2E_SLOT_WAIT_SECONDS`, or when recovering from an interrupted run.
@@ -356,8 +358,9 @@ Before running E2E in a worktree:
    Interpret output as context only. The resources may belong to live runs from
    other worktrees.
 
-4. If the shared pool is busy, wait or reduce only this command's temporary
-   demand. For Docker, pass a smaller `ORBIT_E2E_DOCKER_TEST_RUNNERS` value or
+4. If the shared pool is busy, report that the user-run command can wait or
+   reduce only that command's temporary demand. For Docker, the user can pass a
+   smaller `ORBIT_E2E_DOCKER_TEST_RUNNERS` value or
    `ORBIT_E2E_PARALLEL_PROCESSES=<n>` in the command environment. Do not commit
    or permanently edit `.env.e2e` just to make one worktree smaller; that file
    controls every worktree.
@@ -389,55 +392,51 @@ pool is fully booked by another worktree, not a real failure.
 
 ## Retained Incus Inspection Gate
 
-Retained Incus is the mandatory hands-on verification step before durable Incus
-E2E whenever the change touches real VM/node behavior: OS package installs,
-role baselines, doctor restore, tool repair, SSH/sudo, WireGuard, systemd,
-host mutation, gateway API shims, source-mounted checkout behavior, or anything
-that previously failed only inside an Incus topology.
+Retained Incus is the mandatory hands-on verification step whenever the change
+touches real VM/node behavior: OS package installs, role baselines, doctor
+restore, tool repair, SSH/sudo, WireGuard, systemd, host mutation, gateway API
+shims, source-mounted checkout behavior, or anything that previously failed
+only inside an Incus topology.
 
 Any feature that creates or changes a CLI command must also pass a retained
-ingress VM Solo-terminal gate before durable E2E or live/release-candidate
-deployment. This includes new commands, flags, options, arguments, human output,
-JSON schemas, validation, prompts, command side effects, and command-family
-behavior.
+ingress VM Solo-terminal gate before live/release-candidate deployment. This
+includes new commands, flags, options, arguments, human output, JSON schemas,
+validation, prompts, command side effects, and command-family behavior.
 
 For CLI changes, use this ordering:
 
 1. Create or update focused Pest tests for the command contract.
-2. Create or update durable E2E tests for the integrated command behavior.
-3. Implement the smallest slice that makes the focused command behavior work.
-4. Spawn or request a Solo terminal.
-5. Acquire a retained Incus topology with the relevant source-mounted VM.
-6. Verify which Orbit launcher will be exercised. For source-mounted retained
+2. Implement the smallest slice that makes the focused command behavior work.
+3. Spawn or request a Solo terminal.
+4. Acquire a retained Incus topology with the relevant source-mounted VM.
+5. Verify which Orbit launcher will be exercised. For source-mounted retained
    topology proof, run the command through the source checkout
    (`./apps/cli/orbit` from `/home/orbit/orbit-run`) or prove that
    `/usr/local/bin/orbit` resolves to that source checkout. For
    release-candidate or live-node proof, use the installed binary path being
    validated.
-7. Open an interactive shell inside the relevant retained VM, usually the
+6. Open an interactive shell inside the relevant retained VM, usually the
    ingress or operator VM, before running the changed command. The Solo
    terminal should land at `/home/orbit/orbit-run` inside the VM so the user can
    watch progress, spinners, blinking indicators, prompts, and streaming output
    while the command runs.
-8. Run or request CLI reviewer PTY frame analysis from the same runtime context
+7. Run or request CLI reviewer PTY frame analysis from the same runtime context
    before asking the user to inspect human UX/output. For retained Incus proof,
    prefer running the capture script inside the Solo terminal shell attached to
    the target VM. The reviewer inspects `summary.txt`, `chunks.jsonl`, and
    `transcript.txt` for cadence, liveness, skipped frames, wrapping, ANSI
    framing, and final shape.
-9. Prove the observed human output, JSON output, prompts, failure paths, and
+8. Prove the observed human output, JSON output, prompts, failure paths, and
    side effects that changed.
-10. Give the user a chance to inspect and confirm the VM-observed CLI behavior
+9. Give the user a chance to inspect and confirm the VM-observed CLI behavior
     only after the reviewer has summarized the PTY confidence basis or exact
     remaining mismatch.
-11. Only then run durable E2E and any broader quality or release-candidate flow.
+10. Then run broader quality or release-candidate flow when applicable.
 
 Do not spend the live topology or release-candidate path on a CLI change before
 this retained VM proof and user verification point. Do not treat retained Incus
 as optional "extra confidence" for those changes. The retained check is the
-operator-facing proof gate; it is not the final automated signal by itself, and
-the durable prepared Incus lane must still pass afterward when the change
-requires it.
+operator-facing proof gate for feature completion.
 
 Acquire the topology from the implementation worktree and source-mount only the
 roles that need the current checkout:
@@ -524,7 +523,7 @@ instances, Solo terminal or fallback session, commands run, and observed result
 in the Solo report. If you mutate state for a focused check, isolate unrelated
 prepared-state drift first and say what was isolated.
 
-Release and verify cleanup before starting durable E2E:
+Release and verify cleanup before finalizing the retained topology proof:
 
 ```bash
 composer e2e:incus -- --stop --id=<id> --json
@@ -534,7 +533,7 @@ ssh <incus-host> 'incus list --format csv -c ns | grep <id> || true'
 If `--stop` misses owned instances because the retained manifest is incomplete,
 delete only the owned leftovers by exact instance name, verify the grep is
 empty, and report the cleanup anomaly. Never leave retained VMs running while
-moving on to durable E2E.
+finalizing feature verification.
 
 ## Workflow
 
@@ -574,12 +573,11 @@ moving on to durable E2E.
    it names the concrete dependency, shared state, provider capacity limit, or
    merge-order reason. Being part of one goal or feature is not a dependency.
    If two tasks are isolated, dispatch them in parallel through Solo. Treat
-   in-memory/Pest optimization, Docker E2E optimization, and Incus E2E
-   optimization as separate lanes by default; start provider-lane investigation
-   while in-memory/app/package optimization continues instead of waiting for the
-   whole quality-check path to finish. Do not overlap full `composer
-   quality-check` with active provider E2E lanes unless shared E2E support state
-   is proven isolated. In parallel-worker mode, forbid broad
+   in-memory/Pest optimization and `composer quality-check` optimization as
+   separate lanes by default. Do not split out Docker E2E or Incus E2E lanes;
+   agents do not run or delegate `composer test:e2e*` commands. Do not overlap
+   full `composer quality-check` with active user-run provider E2E lanes unless
+   shared E2E support state is proven isolated. In parallel-worker mode, forbid broad
    dirty-file formatters/fixers inside workers; scope formatting/checks to the
    worker's owned files and run broad dirty-file tooling only after worker diffs
    are reconciled. Add a Claude documenter/librarian worker when documentation
@@ -639,33 +637,31 @@ moving on to durable E2E.
     implementation. A narrative claim that a test failed is not sufficient when
     the failure was used to prove red.
 13. Keep the smallest working vertical slice that makes the tests pass.
-14. For CLI command behavior, ensure durable E2E coverage has been created or
-    updated for the integrated behavior, then run the retained ingress VM
-    Solo-terminal gate from this worktree before durable E2E. For human
-    rendering, progress, prompts, or streaming output, run CLI reviewer PTY
-    frame analysis before user inspection. Give the user a chance to inspect the
-    VM-observed CLI behavior only after the reviewer has summarized the
-    confidence basis or blocker, and before any live/release-candidate
-    deployment. If implementation changes after PTY or retained-VM evidence was
-    captured, refresh the evidence in a new artifact directory and label older
-    artifacts as stale in the report. If this cannot be completed, report the
-    blocker explicitly instead of widening the release path.
+14. For CLI command behavior, run retained topology proof from this worktree
+    when the behavior touches topology, VM runtime, or operator-visible command
+    execution. For human rendering, progress, prompts, or streaming output, run
+    CLI reviewer PTY frame analysis before user inspection. Give the user a
+    chance to inspect the VM-observed CLI behavior only after the reviewer has
+    summarized the confidence basis or blocker, and before any
+    live/release-candidate deployment. If implementation changes after PTY or
+    retained-VM evidence was captured, refresh the evidence in a new artifact
+    directory and label older artifacts as stale in the report. If this cannot
+    be completed, report the blocker explicitly instead of widening the release
+    path.
 15. For VM/node/tool/package/doctor/role-baseline behavior, run the retained
-   Incus inspection gate from this worktree before durable Incus E2E. Retained
+   Incus inspection gate from this worktree. Retained
    topologies sync the current worktree into a runner-host source mount and
    execute from each VM's runtime mirror, so they are suitable for real VM
    inspection. Release and verify cleanup before continuing.
 16. Run focused in-memory verification for the active slice. For multi-slice
-    features, do not spend full E2E on every internal slice by default; run the
-    agreed E2E lane as the feature-level merge gate. For CLI behavior, durable
-    E2E still follows the retained VM/user-verification gate. For non-CLI
-    behavior, proceed to the relevant E2E lane once code and focused tests are
-    ready; no retained CLI confirmation gate applies. When the agreed E2E lane
-    is required for feature acceptance and cannot be completed, stop the loop if
-    the E2E blocker cannot be resolved inside this slice. Do not commit,
-    merge, clean up, or run final loop-improvement extraction while required
-    E2E is still blocked; record the blocker, owner, and unblock condition in
-    `.orbit/loop.md` and the report.
+    features, do not spend prepared E2E on every internal slice by default. Run
+    retained topology proof as the feature-level topology gate when the final
+    branch diff needs real topology evidence. When retained topology proof is
+    required for feature acceptance and cannot be completed, stop the loop if
+    the blocker cannot be resolved inside this slice. Do not commit, merge,
+    clean up, or run final loop-improvement extraction while required retained
+    topology proof is still blocked; record the blocker, owner, and unblock
+    condition in `.orbit/loop.md` and the report.
 17. Run the applicable reviewer persona from the `HARNESS.md` routing table once
     implementation evidence exists and before accepting the slice. For
     documentation-heavy changes, run `.agents/review-personas/docs-librarian.md`.
@@ -691,13 +687,12 @@ moving on to durable E2E.
     them to loop improvements only when the review process itself missed a
     recurring class of issue, or existing reviewer guidance would not catch the
     same issue next time.
-18. Run artifact-backed feature verification when production artifact behavior
-    matters and that lane exists for the provider.
-19. Run provider provision gates only as final/nightly substrate verification
-    when installer, host mutation, image, binary, or topology-preparation
-    behavior changed. Docker provision is only for Docker artifact/image or
-    Docker topology-preparer changes; do not run it as a generic post-`composer
-    test:e2e` gate.
+18. Do not run artifact-backed E2E verification. If the user manually runs an
+    artifact-backed E2E command, record the provided output or existing
+    `.orbit/quality-gates/` artifact.
+19. Do not run provider provision gates. If the user manually runs a provider
+    provision command, record the provided output or existing artifact and keep
+    it separate from the retained topology feature gate.
 20. If PHP changed, run:
 
    ```bash
@@ -716,8 +711,8 @@ moving on to durable E2E.
     finalization requirement. The gate reads the branch diff and existing
     `.orbit/quality-gates/` artifacts: docs-only diffs need successful
     docs-lint or broader quality-check evidence, other diffs need successful
-    quality-check evidence, and production PHP diffs also need artifact-backed
-    Durable E2E. Do not rerun expensive gates from the finalization check.
+    quality-check evidence, and production PHP diffs also need retained
+    topology proof. Do not rerun expensive gates from the finalization check.
 
 22. Before committing or reporting completion, inspect the timing evidence
     already produced by the applicable gates:
@@ -731,8 +726,10 @@ moving on to durable E2E.
     missing, report that the timing analysis was skipped and decide whether the
     feature needs another gate run before merge.
     Finalization reads the latest matching `.orbit/quality-gates/` artifacts
-    for docs-lint, quality-check, and Durable E2E rows and blocks missing or
-    non-zero evidence without rerunning the gates.
+    for docs-lint and quality-check rows and blocks missing or non-zero evidence
+    without rerunning the gates. Retained topology proof is recorded in
+    `.orbit/loop.md` or `.orbit/evidence/`; the finalization hook validates the
+    row status but does not run topology commands.
 23. Before committing or reporting completion, run a Post-Feature Session
     Review. Treat `.orbit/loop.md` as the canonical local final packet and
     point it at the feature thread or handoff, Solo worker sessions, reviewer
@@ -759,10 +756,10 @@ moving on to durable E2E.
     outcome first, not a candidate signal; promote it only when the blocker
     exposes a recurring process gap. Fill `.orbit/loop.md` `Required
     verification` with explicit `passed`, `blocked`, or `not applicable` rows
-    for durable E2E, retained CLI ingress VM proof, and `composer
-    quality-check`. A passed Durable E2E row must name the exact E2E command or
-    e2e quality-gate lane whose latest `.orbit/quality-gates/` artifact exited
-    zero. Do not mark the loop `complete` or `complete + loop improvement`
+    for retained topology proof and `composer quality-check`. A passed retained
+    topology row must name the topology id/kind, inspected roles or nodes, exact
+    command, and captured terminal/session or artifact evidence. Do not mark the
+    loop `complete` or `complete + loop improvement`
     while any diff-required verification is blocked, pending, skipped, missing,
     deferred, unresolved, or not run. Update, create, curate, retire, or intentionally
     leave `harness-signals/` records and the smallest guardrail target only for
@@ -794,7 +791,7 @@ Orbit is a TDD project. Every behavior change ships with Pest coverage that
 fails before the implementation lands and passes after. No exceptions for
 "trivial" changes — if behavior is worth changing, it is worth a test.
 
-Normal feature work follows a staged E2E model:
+Normal feature work follows a staged verification model:
 
 - **Pest unit/feature tests** in `tests/Unit/` or `tests/Feature/` that pin the
   internal contract: command output shape, JSON schema, validation, branching
@@ -816,40 +813,40 @@ Normal feature work follows a staged E2E model:
     edits are disposable unless copied back explicitly. Node-local mutable
     Orbit state remains under `/home/orbit/.config/orbit`.
   - Use retained/live Incus topologies to develop and test against real VM
-    behavior while keeping durable E2E coverage in sync. For
-    VM/node/tool/package/doctor/role-baseline changes, this retained check is a
-    required gate before `composer test:e2e:incus`, not an optional diagnostic.
-    It is still not proof by itself; durable prepared-topology E2E must pass.
+    behavior. For VM/node/tool/package/doctor/role-baseline changes, this
+    retained check is a required feature-completion gate, not an optional
+    diagnostic.
   - CLI command changes always use the retained ingress VM Solo-terminal gate
-    after focused Pest coverage and durable E2E coverage have been created or
-    updated, and before durable E2E execution or live/release-candidate
-    deployment. Prove the command behavior manually from
-    `/home/orbit/orbit-run` inside the retained ingress VM. Use
+    after focused Pest coverage and before live/release-candidate deployment.
+    Prove the command behavior manually from `/home/orbit/orbit-run` inside the
+    retained ingress VM. Use
     `./apps/cli/orbit` for source-mounted proof unless you first verify that
     `/usr/local/bin/orbit` resolves to the source checkout; use the installed
     binary only for release-candidate or live-node proof. Give the user a
-    chance to inspect it, then run the durable E2E lane.
+    chance to inspect it.
   - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
     or `composer e2e:incus -- --stop --all` when finished.
 - **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
-  (`composer test:e2e:docker` / `composer test:e2e:incus`). These lanes consume
-  prepared topologies containing the current source and are the normal durable
-  E2E signal.
-- **Artifact-backed feature E2E** when production artifacts matter and an
-  artifact lane exists. This consumes the built CLI binary and gateway image.
-- **Provider provision gates** only as final/nightly substrate verification.
+  (`composer test:e2e:docker` / `composer test:e2e:incus`) is manual-only. The
+  user may run these commands from a shell; agents must not run or delegate
+  them. These lanes consume prepared topologies containing the current source
+  and write timing artifacts when the user runs them.
+- **Artifact-backed feature E2E** is also manual-only. When the user runs it,
+  it consumes the built CLI binary and gateway image.
+- **Provider provision gates** are manual-only substrate verification commands.
   Docker provision refreshes Docker runtime/support images, prepared role
   images, Docker host artifact distribution, or Docker topology-preparation
   behavior. Incus provision proves the fresh VM path: installer, `node:new`,
   base image, WireGuard, systemd, package installation, and host mutation.
-  Agents run the relevant provider-specific command only; never run the
-  aggregate `composer test:e2e:provision`. There is no standing live-node lane —
-  see `apps/docs/content/testing/README.md` for the full lane map.
+  Agents do not run provider provision commands or the aggregate
+  `composer test:e2e:provision`. There is no standing live-node lane; see
+  `apps/docs/content/testing/README.md` for the full lane map.
 
 Workflow per change:
 
-1. Write the failing Pest test(s) first — unit/feature for the contract, E2E
-   for the integrated behavior.
+1. Write the failing Pest test(s) first for the contract. Do not add, update, or
+   run E2E tests unless the user's request is specifically about maintaining the
+   E2E test suite itself; even then, do not execute `composer test:e2e*`.
 2. Run them and capture the exact command and failing output that proves they
    fail for the expected reason. Store it in `.orbit/loop.md`, the feature
    scratchpad, or `.orbit/evidence/` when the red state matters to review.
@@ -857,10 +854,9 @@ Workflow per change:
 4. Re-run the smallest staged lane that proves the changed behavior before
    reporting completion.
 
-A feature is not done until the relevant in-memory and prepared-topology feature
-signals pass. Provider provision gates are required only when the change touches
-that provider's substrate or production artifact preparation; Docker provision
-is not required after ordinary `composer test:e2e` runs.
+A feature is not done until the relevant in-memory checks and retained topology
+proof pass. Provider provision gates are not part of agent-run feature
+verification.
 
 ## Implementation Rules
 
@@ -965,15 +961,13 @@ Reviewer personas:
 Post-feature session review:
 - Loop outcome: <complete, blocked, or complete + loop improvement>
 - Required verification:
-  - Durable E2E: <passed, blocked, or not applicable with command/evidence,
-    blocker, or reason; passed rows must name the exact E2E command or e2e
-    quality-gate artifact>
-  - Retained CLI ingress VM Solo-terminal check: <passed, blocked, or not
-    applicable with topology/session/evidence, blocker, or reason>
+  - Retained topology proof: <passed, blocked, or not applicable with topology
+    id/kind, inspected roles or nodes, exact command, terminal/session/artifact
+    evidence, blocker, or reason>
   - `composer quality-check`: <passed, blocked, or not applicable with
     command/evidence, blocker, or reason>
 - Finalization gate fit: <why the branch diff makes docs-lint, quality-check,
-  Durable E2E, and retained CLI proof passed, blocked, or not applicable>
+  and retained topology proof passed, blocked, or not applicable>
 - Distillation packet: <.orbit/loop.md canonical packet, not applicable, or
   blocked>
 - Fresh post-feature analyzer: <persona/process id/verdict, not used with
@@ -994,17 +988,16 @@ Post-feature session review:
 
 Tests:
 - Pest unit/feature: <test added or changed>
-- Pest E2E: <test added or changed>
+- Pest E2E: <not applicable, or suite-maintenance diff without execution>
 - Red-test evidence: <literal failing command/output path or not applicable>
 
 Verification:
 - `php artisan test --compact`: <result>
-- Retained CLI ingress VM Solo-terminal check: <topology id, instance,
-  terminal/session, command results, or not applicable>
+- Retained topology proof: <topology id/kind, instance or node, terminal/session
+  or artifact, command results, or not applicable>
 - PTY frame analysis before user review: <artifact paths, launcher, exit code,
   max idle gap, cadence/transcript finding, or not applicable>
 - User CLI verification: <confirmed, pending, blocked, or not applicable>
-- `composer test:e2e` (or the appropriate ephemeral lane): <result>
 - `composer quality-check`: <result>
 
 Merge-back:

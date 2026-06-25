@@ -16,12 +16,13 @@ composer docs-lint
 
 Run `composer quality-check` before handing off a change that should be broadly
 safe. That gate fans out docs linting, Mago analyze/lint/format checks, Rector
-dry-run, and the default Pest suite across each app and package. Default Pest subgates exclude
-`slow` tests. `composer test:slow` keeps real boundary checks available when
-the behavior under test is the boundary: PTY rendering, transport timing, and
-shell commands that build release packages. Use `bin/orbit-gateway-pest
---group=slow` or `bin/orbit-cli-pest --group=slow` for a lane-specific slow
-pass, or run a focused Pest command for the changed file.
+dry-run, and the default Pest suites for the gateway, CLI, docs, core, and SDK.
+Default Pest subgates exclude `slow` tests. `composer test:slow` keeps real
+boundary checks available when the behavior under test is the boundary: PTY
+rendering, transport timing, and shell commands that build release packages. Use
+a lane-specific command such as `bin/orbit-gateway-pest --group=slow` or
+`bin/orbit-cli-pest --group=slow`, or run a focused Pest command for the changed
+file.
 
 The wrapper caps background fan-out by default so local runner contention does
 not inflate the long Pest lane timings unnecessarily. The cap is derived from
@@ -48,12 +49,10 @@ those finish because it is more sensitive to nested runner contention. The split
 keeps the Laravel Zero CLI bootstrap isolated while reducing the quality-check
 critical path.
 
-The `apps/e2e` in-memory Pest lane and SDK Pest lane run as background subgates
-after the gateway lane has started and the CLI Pest split has finished. This
-keeps the fragile Laravel Zero bootstrap split out of the heaviest overlap while
-still letting E2E and SDK Pest overlap the gateway tail. The overlapped E2E Pest
-lane must keep work that builds checkout archives for the whole tree in
-topology/provision feature groups, outside the default in-memory pass.
+The SDK Pest lane runs as a background subgate after the gateway lane has
+started. Mago and Rector still cover `apps/e2e` during the aggregate
+quality-check, but E2E-app Pest tests are not part of the default aggregate
+gate. E2E Pest remains manual-only through the explicit E2E command surface.
 
 Core Pest still runs after all background Pest lanes because the core progress
 tests fork ticker children and must stay isolated from unrelated Pest process
@@ -108,10 +107,9 @@ Feature finalization also reads existing artifacts instead of rerunning lanes.
 The merge/cleanup gate derives the required proof from the branch diff:
 docs-only diffs need a successful `docs-lint` or broader `quality-check`
 artifact, other diffs need a successful `quality-check` artifact, and
-production PHP diffs also need Durable E2E to be `passed`. When `.orbit/loop.md` records
-`Durable E2E: passed`, the row must name the exact E2E command or e2e
-quality-gate lane that ran. The merge/cleanup gate checks the latest matching
-`.orbit/quality-gates/` artifact and blocks missing or non-zero evidence. Use
+production PHP diffs also need `Retained topology proof` to be `passed`. The
+retained topology row must name the topology id/kind, inspected roles or nodes,
+exact command, and captured terminal/session or artifact evidence. Use
 `composer quality-gate:final-check` to review warnings for stale commits or
 slow timings.
 
@@ -228,11 +226,18 @@ slowdown before treating it as a product regression.
 
 ## E2E gates
 
-Run `composer test:e2e` when behavior touches the integrated prepared topology.
-Use `composer test:e2e:docker` for Docker-eligible feature tests and
-`composer test:e2e:incus` for VM-feature behavior. These source-prepared lanes
-write timing artifacts through `bin/quality-gate-run`; the wrapper preserves the
-lane's exit code and does not change provider selection or argument forwarding.
+The `composer test:e2e*` commands are manual prepared-topology lanes, not
+default feature-completion gates. Use retained topology proof for ordinary
+feature verification when behavior touches the integrated topology.
+
+Agents, skills, hooks, release flows, and default scripts must not run or
+delegate `composer test:e2e`, `composer test:e2e:docker`, or
+`composer test:e2e:incus`. Those commands run only when the user explicitly
+invokes them from a shell.
+
+When run manually, these source-prepared lanes write timing artifacts through
+`bin/quality-gate-run`; the wrapper preserves the lane's exit code and does not
+change provider selection or argument forwarding.
 When an E2E gate emits `[orbit-e2e]` timing lines, the wrapper also stores the
 raw timing stream and `bin/e2e-timings.awk` summary under
 `.orbit/quality-gates/e2e-timings/`. The quality-gate JSON points at those
@@ -252,13 +257,12 @@ entries as `e2e plan` and `e2e plan env` lines. It also prints the final Pest
 `Tests:` summary when it was captured from stdout. Use that metadata to compare
 E2E timings only against runs with compatible Docker or Incus runner shape.
 
-Run feature E2E before any affected provider artifact/provision gate. The
-prepared-topology lanes exercise the current source checkout and are the normal
-behavior signal. Incus provision is final verification for fresh VM topology
-preparation, installer behavior, `node:new`, WireGuard provisioning, or other
-VM/provider setup behavior. Docker provision is only for Docker image shape,
-prepared role images, Docker host artifact distribution, or Docker topology
-preparation changes:
+When the user manually chooses an E2E/provision pass, feature E2E should precede
+any affected provider artifact/provision gate. Incus provision is manual final
+verification for fresh VM topology preparation, installer behavior, `node:new`,
+WireGuard provisioning, or other VM/provider setup behavior. Docker provision
+is only for Docker image shape, prepared role images, Docker host artifact
+distribution, or Docker topology preparation changes:
 
 ```bash
 composer test:e2e:provision:docker

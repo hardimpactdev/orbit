@@ -58,7 +58,8 @@ runtime state inside app workspaces or nodes.
 
 - `.orbit/loop.md`: current-slice state copied from `LOOP.md.example`.
 - `.orbit/quality-gates/`: local timing, analyzer, and triage reports for
-  Pest, quality-check, Docker E2E, and Incus E2E gates.
+  Pest, quality-check, Docker E2E, and Incus E2E gates when those commands are
+  explicitly run.
 - `.orbit/evidence/`: retained local evidence such as command transcripts,
   PTY summaries, screenshots, or pointers to Solo terminals and topology ids.
 
@@ -176,19 +177,18 @@ signal-outcome labels must contain a meaningful outcome before merge or cleanup.
 Custom headings, bare label lines without `- ` and `:`, or equivalent prose can
 support the explanation, but they do not satisfy the gate by themselves.
 
-Required verification rows use the status-first shape and must include Durable
-E2E, retained CLI ingress VM Solo-terminal proof, and `composer quality-check`:
-`- Durable E2E: passed | blocked | not applicable - <evidence or reason>`.
+Required verification rows use the status-first shape and must include retained
+topology proof and `composer quality-check`:
+`- Retained topology proof: passed | blocked | not applicable - <evidence or reason>`.
 If the feature required a lane and it is blocked, the feature outcome is
 `blocked`; do not write `complete` with a deferred verification follow-up.
 Docs-only diffs can satisfy the gate with a successful `composer docs-lint` or
 broader `composer quality-check` artifact. Other diffs require successful
 `composer quality-check` artifact evidence. Production PHP diffs additionally
-require Durable E2E to be `passed`. When Durable E2E is `passed`, name the exact
-E2E command or quality-gate lane that ran, such as `composer test:e2e`,
-`composer test:e2e:docker`, or `composer test:e2e:incus`; the gate reads the
-latest matching artifact and blocks missing or non-zero evidence. Stale-commit
-and timing-threshold warnings remain the job of
+require retained topology proof to be `passed`. A passed retained topology row
+names the topology id/kind, checkout roles or inspected nodes, exact command,
+and captured terminal/session or artifact evidence. Stale-commit and
+timing-threshold warnings remain the job of
 `composer quality-gate:final-check` and the quality-gate triage skill.
 
 The gate exists because feature agents repeatedly completed work, merged to
@@ -271,7 +271,8 @@ Use the least durable state that can keep the work coherent.
 
 One feature maps to one implementation worktree by default. Build related
 slices in that same worktree and merge to `main` only after the whole feature
-passes the feature-level final gate, including the agreed E2E lane. Do not
+passes the feature-level final gate, including retained topology proof when the
+diff requires topology evidence. Do not
 merge internal slices independently unless a slice is explicitly split into a
 separate feature with its own final gate.
 
@@ -339,14 +340,13 @@ plan before workers start:
 - merge-order constraints
 - lanes intentionally deferred, with the concrete reason and owner
 
-For quality-gate optimization, split the work into separate lanes by default:
-in-memory/Pest and `composer quality-check`, Docker E2E, and Incus E2E. Docker
-and Incus work may run at the same time when provider capacity allows. Do not
-optimize all in-memory/app/package checks first while provider lanes sit idle;
-start the independent provider investigation in parallel and reconcile the
-lane reports afterward. Do not overlap aggregate `composer quality-check` with
-active provider E2E unless the shared E2E support state is proven isolated; run
-that aggregate gate after provider workers are idle.
+For quality-gate optimization, split in-memory/Pest and `composer quality-check`
+work into separate lanes by default. Do not spawn Docker or Incus E2E workers;
+E2E artifacts are read-only evidence unless the user explicitly runs a
+`composer test:e2e*` command from a shell. Do not overlap aggregate
+`composer quality-check` with active user-run provider E2E unless the shared
+E2E support state is proven isolated; run that aggregate gate after the
+user-run provider command is idle.
 
 ## Solo Role Matrix
 
@@ -396,12 +396,12 @@ Use this table to pick the smallest workflow that can prove the change.
 | Surface | Skill | Authority Docs | Test Lane | Reviewer Needed | Loop Depth | Hard Stop |
 |---------|-------|----------------|-----------|-----------------|------------|-----------|
 | Docs-only | `updating-documentation`; `auditing-docs-drift` only for an explicit consistency scan | `apps/docs/content/**`, `PRODUCT_DECISIONS.md`, or root harness docs depending on scope | `composer docs-lint` when product docs change; otherwise `git diff --check` | `.agents/review-personas/docs-librarian.md` or human if authority changes | Record only repeated drift | Product docs conflict with latest product decision |
-| Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Claude documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest/E2E owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
+| Documentation-heavy feature | `updating-documentation`, `implementing-features`; optional Claude documenter/librarian worker | Product docs, command docs, product-decision ledger, changed tests | Docs contract review, then focused Pest owned by implementation | `.agents/review-personas/docs-librarian.md` before accepting docs contract | Record unclear authority, repeated docs/code mismatch, or docs-worker handoff gaps | Docs contract is unstable, authority conflict needs a decision, or docs/code workers disagree |
 | Quality-gate failure or slowdown | `quality-gate-triage`, plus `pest-testing`, `e2e-verification-lanes`, or `cli-output-pty-capture` by lane | `apps/docs/content/testing/README.md`, `quality-gates.md`, `in-memory/performance.md`, `e2e/environment.md`, `e2e/performance.md` | Inspect existing evidence under `.orbit/quality-gates/` and `.orbit/evidence/`; do not rerun expensive gates just to classify | Owner/human only after classification points at product behavior | Record recurring flakes, missing baselines, or confusing lane failures | Aggregate provision command, live-node mutation, or product fix before classification |
 | Post-feature analysis | `.agents/review-personas/post-feature-analyzer.md`, then `implementing-features` for orchestrator adjudication | `HARNESS.md`, `HARNESS_SIGNALS.md`, `harness-signals/README.md`, `.orbit/loop.md`, `.orbit/evidence/`, `.orbit/quality-gates/`, Codex/Solo session messages, changed diff, and evidence packet | No tests by default; run `git diff --check`, discoverability `rg`, docs-lint when product docs changed | Fresh analyzer report for non-trivial loops; orchestrator owns final decision | Promote only real repeated or costly mistakes with a counterfactual guardrail; reject missed, redundant, or wrong-target guardrails clearly | Guardrail added from weak evidence, no rejected/no-op rationale, analyzer asked to implement, or session/artifacts missing enough evidence to judge |
-| CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; E2E next; PTY frame capture and reviewer analysis before human UX review; retained Incus VM Solo-terminal gate before live or release-candidate deploy | `.agents/review-personas/cli-command.md` or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained VM proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
-| Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; E2E when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
-| Provisioning/live-node | `e2e-verification-lanes`, `implementing-features` | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Prepared-topology lane, retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |
+| CLI command | `command-designer`, `cli-output-pty-capture` when human rendering or cadence matters, `implementing-features` | Command docs under `apps/docs/content/`, command tests, `AGENTS.md` | Focused Pest first; retained topology proof; PTY frame capture and reviewer analysis before human UX review | `.agents/review-personas/cli-command.md` or human for UX/product contract changes | Search signals, update/create record for repeated command-contract issues | No failing/passing command proof, no retained topology proof when CLI behavior needs it, no PTY frame analysis before human UX review, or live topology would be touched without approval |
+| Gateway API | `implementing-features`, Laravel/PHP skills | `apps/docs/content/**`, gateway routes/controllers/tests | Focused gateway Pest; retained topology proof when behavior crosses node/topology boundaries | API/product reviewer when contract changes | Record repeated API contract or routing mistakes | API docs and implementation disagree, or authorization/security impact is unclear |
+| Provisioning/live-node | `implementing-features`; `e2e-verification-lanes` only for existing artifact triage or manual command reference | `apps/docs/content/testing/README.md`, provisioning docs, product decisions | Retained topology inspection, then approved live-node proof | Human before live mutation | Always capture topology/node evidence; record expensive or repeated failures | Provider pool/auth is ambiguous, role target is unclear, or live mutation lacks approval |
 | Release | `release` | Release skill, changelog/version files, product docs touched by release | Release gates: doctor before, `update:all`, doctor after, `node:list`, plus exception checks | Human before tag, publish, or merge/push beyond the approved release step | Record release-gate surprises and recurring fleet drift | Any release gate fails or approval boundary is not explicit |
 | App/package shared core | `implementing-features`, Laravel/PHP skills | `packages/core/**`, affected app docs/tests | Package tests plus focused impacted app tests; broaden to `composer quality-check` for shared contracts | Owner/reviewer for cross-app behavior | Record boundary leaks or repeated shared-contract misses | Affected apps are unknown, or shared behavior lacks targeted coverage |
 
@@ -446,23 +446,23 @@ for handoff.
 
 Validate each slice with the narrowest checks that keep the feature branch
 honest: focused Pest, docs-lint, static checks, or PTY proof when the slice
-changes terminal behavior. Do not spend full E2E on every internal slice by
-default. The finalization gate derives the feature-level proof from the final
+changes terminal behavior. Do not spend E2E on feature slices by default. The
+finalization gate derives the feature-level proof from the final
 branch diff: docs-only changes need docs-lint evidence, non-docs changes need
-quality-check evidence, and production PHP changes need the agreed E2E lane.
-Run E2E earlier only when the active slice itself cannot be judged without
+quality-check evidence, and production PHP changes need retained topology proof.
+Run retained topology proof when the active slice cannot be judged without real
 topology behavior.
 
-When the agreed E2E lane is required for acceptance and cannot be completed,
-the feature loop halts if the E2E blocker cannot be resolved inside the current
+When retained topology proof is required for acceptance and cannot be completed,
+the feature loop halts if the blocker cannot be resolved inside the current
 slice. Do not finalize, merge, clean up, or mine final loop improvements while
-required E2E is still blocked. Record the exact blocker, owner, and unblock
-condition in `.orbit/loop.md` under `Required verification`, set the loop
+required retained topology proof is still blocked. Record the exact blocker,
+owner, and unblock condition in `.orbit/loop.md` under `Required verification`, set the loop
 outcome to `blocked`, then hand back unresolved work.
 
 Treat this as the `blocked` feature-loop outcome, not as a candidate learning.
-It becomes a loop-improvement signal only when the reason for the E2E block
-reveals a recurring process gap.
+It becomes a loop-improvement signal only when the reason for the retained
+topology proof block reveals a recurring process gap.
 
 ## Review Scope
 
@@ -484,7 +484,7 @@ Orbit repo development follows a simple loop stack:
 1. **Implement**: scoped change in an isolated worktree; align docs, tests, and
    code.
 2. **Verify**: run the narrowest useful checks for the change type (Pest,
-   quality-check, E2E when touched).
+   quality-check, retained topology proof when touched).
 3. **Triage**: when something fails or review finds a gap, identify the missing
    context or guardrail.
 4. **Distill**: record candidate signals in `.orbit/loop.md` as they appear,

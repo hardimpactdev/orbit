@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
-it('blocks a complete loop outcome when required e2e is blocked', function (): void {
+it('blocks a complete loop outcome when retained topology proof is blocked', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 
@@ -13,8 +13,7 @@ it('blocks a complete loop outcome when required e2e is blocked', function (): v
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: blocked - provider topology unavailable
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: blocked - retained topology unavailable
           - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - None.
@@ -34,7 +33,7 @@ it('blocks a complete loop outcome when required e2e is blocked', function (): v
             ->and($process->getErrorOutput())
             ->toContain('required verification is incomplete')
             ->and($process->getErrorOutput())
-            ->toContain('Durable E2E: blocked - provider topology unavailable');
+            ->toContain('Retained topology proof: blocked - retained topology unavailable');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
@@ -81,8 +80,7 @@ it('blocks a complete loop outcome when one required verification row is missing
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - docs-only root harness edit
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - HARNESS.md clarified the workflow.
         - Rejected or already-covered signals:
@@ -99,7 +97,7 @@ it('blocks a complete loop outcome when one required verification row is missing
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('missing `composer quality-check` verification row');
+            ->toContain('missing Retained topology proof verification row');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
@@ -135,7 +133,7 @@ it('blocks a complete loop outcome when the outcome text contains a blocked veri
     }
 });
 
-it('allows a complete loop outcome with explicit non-applicable e2e', function (): void {
+it('allows a complete loop outcome with explicit non-applicable retained topology proof', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 
@@ -144,8 +142,7 @@ it('allows a complete loop outcome with explicit non-applicable e2e', function (
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - docs-only root harness edit
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: not applicable - docs-only root harness edit
           - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - HARNESS.md clarified the workflow.
@@ -176,8 +173,7 @@ it('blocks docs-only finalization when docs lint evidence is missing', function 
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - docs-only diff
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: not applicable - docs-only diff
           - `composer quality-check`: not applicable - docs-only diff
         - Accepted durable updates:
           - apps/docs/content/testing/quality-gates.md clarified docs-only finalization.
@@ -208,7 +204,7 @@ it('blocks docs-only finalization when docs lint evidence is missing', function 
     }
 });
 
-it('allows docs-only finalization with artifact-backed docs lint and no e2e', function (): void {
+it('allows docs-only finalization with artifact-backed docs lint and no retained topology proof', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 
@@ -217,8 +213,7 @@ it('allows docs-only finalization with artifact-backed docs lint and no e2e', fu
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - docs-only diff
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: not applicable - docs-only diff
           - `composer quality-check`: not applicable - docs-only diff; docs-lint passed
         - Accepted durable updates:
           - apps/docs/content/testing/quality-gates.md clarified docs-only finalization.
@@ -261,8 +256,7 @@ it('blocks php finalization when quality-check evidence is missing', function ()
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - test-only PHP diff
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: not applicable - test-only PHP diff
           - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - tests now cover the finalization gate.
@@ -302,8 +296,7 @@ it('blocks non-docs finalization when quality-check evidence is missing', functi
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - no production PHP diff
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: not applicable - no production PHP diff
           - `composer quality-check`: not applicable - shell script only
         - Accepted durable updates:
           - bin/example changed repository tooling.
@@ -333,7 +326,7 @@ it('blocks non-docs finalization when quality-check evidence is missing', functi
     }
 });
 
-it('blocks production php finalization when durable e2e is not applicable', function (): void {
+it('blocks production php finalization when retained topology proof is not applicable', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 
@@ -342,8 +335,7 @@ it('blocks production php finalization when durable e2e is not applicable', func
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: not applicable - production PHP diff
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: not applicable - production PHP diff
           - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - apps/gateway/app/Example.php changed production behavior.
@@ -373,13 +365,13 @@ it('blocks production php finalization when durable e2e is not applicable', func
         expect($process->getExitCode())
             ->toBe(2)
             ->and($process->getErrorOutput())
-            ->toContain('production PHP diff requires Durable E2E');
+            ->toContain('production PHP diff requires Retained topology proof');
     } finally {
         remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
     }
 });
 
-it('allows production php finalization with artifact-backed quality-check and e2e', function (): void {
+it('allows production php finalization with artifact-backed quality-check and retained topology proof', function (): void {
     [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
         # Orbit Current Slice State
 
@@ -388,8 +380,7 @@ it('allows production php finalization with artifact-backed quality-check and e2
         - Loop outcome:
           - complete
         - Required verification:
-          - Durable E2E: passed - composer test:e2e:docker
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - Retained topology proof: passed - topology dev-1a2b3c, operator VM, command `./apps/cli/orbit node:list --json`
           - `composer quality-check`: passed - composer quality-check
         - Accepted durable updates:
           - apps/gateway/app/Example.php changed production behavior.
@@ -412,176 +403,6 @@ it('allows production php finalization with artifact-backed quality-check and e2
         exitCode: 0,
         endedAt: '2026-06-25T10:00:00+00:00',
     );
-    write_finalization_gate_artifact(
-        worktree: $worktree,
-        gate: 'e2e-docker',
-        exitCode: 0,
-        endedAt: '2026-06-25T10:05:00+00:00',
-    );
-
-    try {
-        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
-
-        expect($process->getExitCode())
-            ->toBe(0, $process->getErrorOutput());
-    } finally {
-        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
-    }
-});
-
-it('blocks a passed durable e2e row when matching artifact evidence is missing', function (): void {
-    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
-        # Orbit Current Slice State
-
-        ## Final Distillation
-
-        - Loop outcome:
-          - complete
-        - Required verification:
-          - Durable E2E: passed - composer test:e2e:docker
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
-          - `composer quality-check`: passed - composer quality-check
-        - Accepted durable updates:
-          - HARNESS.md clarified the workflow.
-        - Rejected or already-covered signals:
-          - None.
-        - Deferred follow-ups:
-          - None.
-        - No-new-signal rationale:
-          - None.
-        MARKDOWN);
-
-    try {
-        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
-
-        expect($process->getExitCode())
-            ->toBe(2)
-            ->and($process->getErrorOutput())
-            ->toContain('Durable E2E is marked passed')
-            ->and($process->getErrorOutput())
-            ->toContain('no latest successful artifact was found for e2e-docker');
-    } finally {
-        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
-    }
-});
-
-it('blocks a passed durable e2e row when the latest matching artifact failed', function (): void {
-    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
-        # Orbit Current Slice State
-
-        ## Final Distillation
-
-        - Loop outcome:
-          - complete
-        - Required verification:
-          - Durable E2E: passed - composer test:e2e:incus
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
-          - `composer quality-check`: passed - composer quality-check
-        - Accepted durable updates:
-          - HARNESS.md clarified the workflow.
-        - Rejected or already-covered signals:
-          - None.
-        - Deferred follow-ups:
-          - None.
-        - No-new-signal rationale:
-          - None.
-        MARKDOWN);
-
-    write_finalization_gate_artifact(
-        worktree: $worktree,
-        gate: 'e2e-incus',
-        exitCode: 0,
-        endedAt: '2026-06-25T10:00:00+00:00',
-    );
-    write_finalization_gate_artifact(
-        worktree: $worktree,
-        gate: 'e2e-incus',
-        exitCode: 1,
-        endedAt: '2026-06-25T10:05:00+00:00',
-    );
-
-    try {
-        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
-
-        expect($process->getExitCode())
-            ->toBe(2)
-            ->and($process->getErrorOutput())
-            ->toContain('Durable E2E is marked passed')
-            ->and($process->getErrorOutput())
-            ->toContain('latest e2e-incus artifact exited with code 1');
-    } finally {
-        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
-    }
-});
-
-it('allows a complete loop outcome with artifact-backed durable e2e', function (): void {
-    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
-        # Orbit Current Slice State
-
-        ## Final Distillation
-
-        - Loop outcome:
-          - complete
-        - Required verification:
-          - Durable E2E: passed - composer test:e2e:docker
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
-          - `composer quality-check`: passed - composer quality-check
-        - Accepted durable updates:
-          - HARNESS.md clarified the workflow.
-        - Rejected or already-covered signals:
-          - None.
-        - Deferred follow-ups:
-          - None.
-        - No-new-signal rationale:
-          - None.
-        MARKDOWN);
-
-    write_finalization_gate_artifact(
-        worktree: $worktree,
-        gate: 'e2e-docker',
-        exitCode: 0,
-        endedAt: '2026-06-25T10:00:00+00:00',
-    );
-
-    try {
-        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
-
-        expect($process->getExitCode())
-            ->toBe(0, $process->getErrorOutput());
-    } finally {
-        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
-    }
-});
-
-it('maps the docker canary e2e command only to the docker canary artifact gate', function (): void {
-    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
-        # Orbit Current Slice State
-
-        ## Final Distillation
-
-        - Loop outcome:
-          - complete
-        - Required verification:
-          - Durable E2E: passed - composer test:e2e:docker:canary
-          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
-          - `composer quality-check`: passed - composer quality-check
-        - Accepted durable updates:
-          - HARNESS.md clarified the workflow.
-        - Rejected or already-covered signals:
-          - None.
-        - Deferred follow-ups:
-          - None.
-        - No-new-signal rationale:
-          - None.
-        MARKDOWN);
-
-    write_finalization_gate_artifact(
-        worktree: $worktree,
-        gate: 'e2e-docker-canary',
-        exitCode: 0,
-        endedAt: '2026-06-25T10:00:00+00:00',
-    );
-
     try {
         $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
 

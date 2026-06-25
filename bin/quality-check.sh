@@ -168,18 +168,6 @@ run_bg docs_pest bin/orbit-docs-pest --compact
 bin/orbit-gateway-artisan config:clear --ansi >/dev/null 2>&1 || true
 run_bg gateway_pest bin/orbit-gateway-pest --exclude-group=e2e --exclude-group=slow --parallel --compact "$@"
 
-PRE_E2E_PEST_LABELS=(
-    cli_pest
-)
-
-for label in "${PRE_E2E_PEST_LABELS[@]}"; do
-    wait_for_bg_label "$label"
-done
-
-# The default apps/e2e lane excludes topology/provision feature groups, so
-# whole-tree checkout archive installs stay out of this overlap. Keep future
-# archive-sensitive in-memory tests out of this background lane.
-run_bg e2e_pest bash -lc 'cd apps/e2e && vendor/bin/pest --exclude-group=e2e-binary --exclude-group=e2e-binary-acceptance --exclude-group=e2e-feature --exclude-group=e2e-provision --exclude-group=e2e-topology-contract --compact'
 run_bg sdk_pest bash -lc 'cd packages/sdk && vendor/bin/pest --compact'
 
 STATIC_CHECK_LABELS=(
@@ -216,9 +204,9 @@ STATIC_CHECK_LABELS=(
 )
 
 LONG_RUNNING_PEST_LABELS=(
+    cli_pest
     gateway_pest
     docs_pest
-    e2e_pest
     sdk_pest
 )
 
@@ -258,7 +246,6 @@ CHECK_LABELS=(
     docs_pest
     core_pest
     sdk_pest
-    e2e_pest
 )
 
 for label in "${STATIC_CHECK_LABELS[@]}"; do

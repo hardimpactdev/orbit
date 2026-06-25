@@ -15,14 +15,14 @@ Options:
   --base=<ref>       Base ref for new worktrees. Default: main
   --path=<path>      Worktree path. Default: .worktrees/<branch-with-slashes-as-dashes>
   --skip-tests       Prepare dependencies and app state, but do not run composer test
-  --with-e2e         Run composer e2e:preflight after composer test
+  --with-e2e         Manual Incus preflight only; does not run prepared E2E tests
   --frontend         Install and build gateway/docs frontend assets
   --dry-run          Print the resolved worktree assignment without changing files
   -h, --help         Show this help
 
 Examples:
   bin/orbit-prepare-worktree solo-641
-  bin/orbit-prepare-worktree solo-641-gateway-update --base=main --with-e2e
+  bin/orbit-prepare-worktree solo-641-gateway-update --base=main
 EOF
 }
 
@@ -278,7 +278,7 @@ else
 fi
 
 if [ "$run_e2e_preflight" -eq 1 ]; then
-    step "Running E2E preflight"
+    step "Running manual E2E preflight"
     run_in "$worktree_path" composer e2e:preflight
 fi
 

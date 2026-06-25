@@ -1,11 +1,15 @@
 # E2E testing
 
-Use E2E when the behavior depends on a prepared topology, gateway API and CA
-trust, registry-backed command behavior, real VM behavior, or provisioning.
+Prepared E2E is a manual command surface. Agents, skills, hooks, release flows,
+and default scripts must not run or delegate `composer test:e2e*` commands.
+Use retained topology proof for ordinary feature verification when behavior
+depends on a topology, gateway API and CA trust, registry-backed command
+behavior, real VM behavior, or provisioning.
 
 ## Commands
 
-Use these commands to run the aggregate lane or one provider-specific lane.
+These commands remain available when the user explicitly runs the aggregate lane
+or one provider-specific lane from a shell.
 
 ```bash
 # Prepared-topology feature aggregate
@@ -32,19 +36,18 @@ composer e2e:reap-docker
 composer e2e:reap-incus
 ```
 
-Run feature E2E backed by prepared topologies before any provider
-artifact/provision gate. The feature lanes consume prepared source artifacts and
-prove behavior against the current checkout. Incus provision is the fresh VM
-gate for installer, `node:new`, base image, WireGuard, systemd, package
-installation, and host mutation paths.
+When the user manually chooses E2E, feature E2E backed by prepared topologies
+should run before any provider artifact/provision gate. The feature lanes
+consume prepared source artifacts and prove behavior against the current
+checkout. Incus provision is the fresh VM gate for installer, `node:new`, base
+image, WireGuard, systemd, package installation, and host mutation paths.
 
 Docker provision is not a normal post-`composer test:e2e` gate; it refreshes
 Docker runtime/support images, prepared role images, Docker host artifact
-distribution, or Docker topology-preparation artifacts. When a change also
-affects production artifacts, prove the feature against source-prepared
-topologies first, run only the affected provider artifact/provision gate, then
-run the feature flow that consumes the built CLI/gateway assets when that
-artifact-backed lane exists.
+distribution, or Docker topology-preparation artifacts. When the user also
+checks production artifacts, prove the feature against source-prepared
+topologies first. Then run only the affected provider artifact/provision gate
+and the artifact-backed feature flow when that lane exists.
 
 `composer test:e2e` runs `bin/orbit-e2e-artisan e2e:test`, which selects prepared-topology
 lanes from `ORBIT_E2E_LANES` (`docker,incus` by default) and excludes
@@ -103,11 +106,11 @@ daemon behavior, sudo prompts, host init, or `systemd` service lifecycle. Mark
 these tests with `e2e-provider-incus` so Docker-only runs skip them without
 probing an unsuitable provider.
 
-Provisioning and installer changes finish with the Incus provision command after
-the matching prepared-topology feature lane is green. Docker image/runtime,
-prepared role image, Docker host artifact distribution, and Docker topology
-preparer changes belong in `composer test:e2e:provision:docker`. Incus VM,
-WireGuard, installer, `node:new`, and host-mutation changes belong in
+When the user manually runs provisioning checks, run the Incus provision command
+after the matching prepared-topology feature lane is green. Docker
+image/runtime, prepared role image, Docker host artifact distribution, and
+Docker topology preparer checks use `composer test:e2e:provision:docker`. Incus
+VM, WireGuard, installer, `node:new`, and host-mutation checks use
 `composer test:e2e:provision:incus`. Feature tests use prepared topology clones.
 
 ## Lane examples
@@ -126,17 +129,18 @@ Use these examples when a feature could fit more than one lane.
 | Docker runtime image, support image, or prepared role image changes | Docker provision | Refreshes the Docker substrate consumed by Docker feature tests. |
 | Base image, installer, superset topology preparation, `node:new`, WireGuard routing | Incus provision | Proves the fresh VM provision path used to build reusable Incus artifacts. |
 
-When in doubt, start with Docker feature. Move to Incus only when the assertion
-would be false confidence in Docker because the kernel, VM boot, host init, or
-OS package/trust layer is the behavior under test.
+When the user needs an E2E pass and the provider is unclear, Docker feature is
+the smaller manual lane. Incus is only needed when the assertion would be false
+confidence in Docker because the kernel, VM boot, host init, or OS package/trust
+layer is the behavior under test.
 
 ## E2E lanes
 
 The ephemeral E2E suite is split into two explicit Pest group lanes:
 
 - `e2e-feature` starts from prepared topology clones and verifies ported
-  commands, forwarding chains, or read-only behavior. Run Docker-eligible feature
-  tests with `composer test:e2e:docker`; run Incus-only feature tests with
+  commands, forwarding chains, or read-only behavior. Docker-eligible feature
+  tests use `composer test:e2e:docker`; Incus-only feature tests use
   `composer test:e2e:incus`. The aggregate `composer test:e2e` runs both
   prepared-topology feature lanes and fails if either selected provider cannot
   supply the required prepared topology.
@@ -147,12 +151,13 @@ The ephemeral E2E suite is split into two explicit Pest group lanes:
 - `composer test:e2e:provision:incus` runs the `e2e-provision` Pest group in an
   isolated namespace. It launches a fresh base VM, installs Orbit on the
   operator, provisions the gateway, runs `node:new` for app-dev, app-prod, and
-  agent in parallel, and bakes websocket against app-dev Redis. Run this after
-  the Incus feature lane backed by a prepared source, not before it.
+  agent in parallel, and bakes websocket against app-dev Redis. For a manual
+  full Incus proof, this follows the Incus feature lane backed by a prepared
+  source.
 
 `composer test:e2e:provision` is a human-only aggregate alias for both provider
-provision commands. Agents must never run it; agents choose
-`composer test:e2e:provision:docker` or `composer test:e2e:provision:incus`.
+provision commands. Agents must never run it. Agents also must not run E2E test
+commands for a specific provider.
 
 Each prepared topology has its own contract group:
 

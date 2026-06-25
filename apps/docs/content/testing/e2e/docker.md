@@ -1,8 +1,9 @@
 # Docker E2E
 
-Docker is the default provider for Docker-eligible feature tests. Once
-`.env.e2e` points at the standing Docker host pool and the runtime/topology
-images have been imported onto those hosts, the Docker-only lane is:
+Docker is the default provider for manual E2E checks that are eligible for
+Docker. Once `.env.e2e` points at the standing Docker host pool and the
+runtime/topology images have been imported onto those hosts, the Docker-only
+manual lane is:
 
 ```bash
 composer test:e2e:docker
@@ -12,21 +13,20 @@ composer test:e2e:docker
 rebuild Docker images. Missing support or role images fail the lane before Pest
 workers start and include a scoped `composer e2e:ensure-artifacts` command.
 
-Use the Docker provider provision lane only when the Docker runtime image,
-support images, prepared role images, Docker topology preparation, or Docker
-host artifact distribution may have changed:
+The Docker provider provision lane is a manual command for cases where the
+Docker runtime image, support images, prepared role images, Docker topology
+preparation, or Docker host artifact distribution may have changed:
 
 ```bash
 composer test:e2e:provision:docker
 ```
 
-This command refreshes all Docker artifacts and is the correct gate for agents.
-It is not a generic final gate after `composer test:e2e`. It delegates to the Docker host
-preparer for `operator_gateway_app-dev_app-prod_agent_websocket`. It can run in
-parallel with `composer test:e2e:provision:incus` only when both provider gates
-are independently required because the provider substrates are separate.
+This command refreshes all Docker artifacts. It is not a generic final gate
+after `composer test:e2e`. It delegates to the Docker host preparer for
+`operator_gateway_app-dev_app-prod_agent_websocket`. Agents must not run this
+command or any other `composer test:e2e*` command.
 
-Use the ensure command for targeted refreshes:
+For manual targeted refreshes, use the ensure command:
 
 ```bash
 composer e2e:ensure-artifacts -- --lanes=docker --runtime --force operator_gateway_app-dev_app-prod_agent_websocket
@@ -247,9 +247,9 @@ the Incus lane.
 
 ## Debugging selected tests
 
-For worktree debugging of a single file or related file set, pass paths through
-the Composer script. Add `--sequential-tests` when the selected tests should stay
-in one Pest process:
+For user-run worktree debugging of a single file or related file set, pass paths
+through the Composer script. Add `--sequential-tests` when the selected tests
+should stay in one Pest process:
 
 ```bash
 composer test:e2e:docker -- --sequential-tests apps/gateway/tests/E2E/AppListTest.php

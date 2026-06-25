@@ -1,8 +1,9 @@
 # E2E provisioning
 
-Use E2E backed by a VM only when the behavior depends on real provisioning,
-WireGuard, VM networking, OS trust-store mutation, systemd, package
-installation, or host-level daemon behavior.
+E2E backed by a VM is manual-only. Use retained topology proof for ordinary
+feature verification when behavior depends on real provisioning, WireGuard, VM
+networking, OS trust-store mutation, systemd, package installation, or
+host-level daemon behavior.
 
 ```bash
 composer e2e:preflight
@@ -12,27 +13,27 @@ composer test:e2e
 composer test:e2e:provision:incus
 ```
 
-Use provision commands for a specific provider only when topology, installer,
-image, `node:new`, WireGuard provisioning, or other provider setup behavior
-changes. Ordinary command ports should add feature tests that use prepared
-topologies instead.
+Provision commands for a specific provider are user-run commands for topology,
+installer, image, `node:new`, WireGuard provisioning, or other provider setup
+behavior. Ordinary command ports use focused Pest plus retained topology proof.
 
-Run feature E2E before provision gates. The topology preparer loads the current
-source checkout into prepared Docker/Incus artifacts, so `composer test:e2e`
-proves behavior against topologies prepared from source. Incus prepared topology
-builds sync the initiating worktree to the Incus host, bind-mount that synced
-copy into each VM, mirror it onto the VM ext4 filesystem, and snapshot the
-mirrored runtime. Incus provision is the last verification gate for fresh
-installation, `node:new`, VM boot, WireGuard, systemd, package installation,
-and host mutation.
+When the user manually runs E2E, feature E2E should precede provision gates.
+The topology preparer loads the current source checkout into prepared
+Docker/Incus artifacts, so `composer test:e2e` proves behavior against
+topologies prepared from source. Incus prepared topology builds sync the
+initiating worktree to the Incus host, bind-mount that synced copy into each VM,
+mirror it onto the VM ext4 filesystem, and snapshot the mirrored runtime. Incus
+provision is the last manual verification gate for fresh installation,
+`node:new`, VM boot, WireGuard, systemd, package installation, and host
+mutation.
 
 Docker provision is not part of the ordinary post-`composer test:e2e` sequence;
-run it only when Docker runtime/support images, prepared role images, Docker
-host artifact distribution, or Docker topology-preparation behavior changed.
-When production artifact behavior matters, the ideal final pass is feature E2E
-against a source-prepared topology, the affected provider artifact/provision
-gate, then an artifact-backed feature flow using the built CLI and gateway image
-when that lane exists.
+the user runs it only when Docker runtime/support images, prepared role images,
+Docker host artifact distribution, or Docker topology-preparation behavior
+changed. When production artifact behavior matters and the user chooses manual
+E2E, the final pass starts with feature E2E against a source-prepared topology.
+Then run the affected provider artifact/provision gate and the artifact-backed
+feature flow when that lane exists.
 
 `composer test:e2e:provision:docker` rebuilds and distributes the Docker
 runtime/support images and prepared role images. `composer
@@ -41,7 +42,8 @@ parallel only when both are independently required because Docker and Incus
 mutate separate provider substrates.
 
 `composer test:e2e:provision` is a human-only aggregate alias for both provider
-provision commands. Agents must never run the aggregate.
+provision commands. Agents must never run the aggregate or provider-specific
+`composer test:e2e*` commands.
 
 The Incus provision gate has one supported shape:
 
@@ -68,7 +70,7 @@ snapshot from the websocket-capable superset topology as its base. The default
 Incus provision gate runs only the build/validation path for that
 websocket-capable superset.
 
-Before running the Incus feature lane, refresh the shared Incus prepared
+Before the user runs an Incus feature lane, refresh the shared Incus prepared
 topology pool when the current source or topology shape changed:
 
 ```bash
@@ -76,8 +78,9 @@ composer e2e:prepare-topology -- --force operator_gateway_app-dev_app-prod_agent
 composer test:e2e:incus
 ```
 
-Run `composer test:e2e:provision:incus` after that source-prepared feature lane
-when the change also needs fresh VM provision verification.
+For a manual full Incus proof, `composer test:e2e:provision:incus` follows that
+source-prepared feature lane when the change also needs fresh VM provision
+verification.
 
 Command contracts use `e2e-feature` or in-memory Pest coverage when prepared
 topology state is enough to prove the behavior.

@@ -132,15 +132,16 @@ composer quality-check
 `composer quality-check` fans out docs linting, Pest, Mago, and Rector
 across every app/package.
 
-When behavior touches the integrated topology, run the ephemeral E2E lane:
+When behavior touches the integrated topology, require retained topology proof:
+capture the retained topology id/kind, inspected roles or nodes, exact command,
+terminal/session or artifact path, and result in `.orbit/loop.md` or
+`.orbit/evidence/`.
 
-```bash
-composer test:e2e
-```
-
-There is no standing live-node test lane. Provisioning, host-mutation, and
-repair/adoption flows belong in `composer test:e2e:provision`. See
-`apps/docs/content/testing/README.md` for the full verification model and lane map.
+The `composer test:e2e*` commands and E2E tests remain available, but agents,
+skills, hooks, release flows, and default scripts must not trigger them. They
+run only when the user explicitly invokes the Composer command from a shell.
+See `apps/docs/content/testing/README.md` for the full verification model and
+lane map.
 
 ## AI Guideline Precedence
 

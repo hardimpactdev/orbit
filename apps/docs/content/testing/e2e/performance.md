@@ -1,12 +1,13 @@
 # E2E performance
 
 Use this page for E2E timing baselines, SSH transport requirements, and resource
-diagnostics.
+diagnostics. E2E benchmark commands are manual-only; agents must not run
+`composer test:e2e*`.
 
 ## E2E Docker lane - benchmark protocol
 
-Use the timing parser to summarize repeated Docker lane runs by `label` and
-`event`:
+For user-run benchmark work, use the timing parser to summarize repeated Docker
+lane runs by `label` and `event`:
 
 The root `composer test:e2e*` scripts already preserve E2E timing summaries in
 `.orbit/quality-gates/e2e-timings/` when `[orbit-e2e]` timing lines are emitted.
@@ -24,8 +25,9 @@ ORBIT_E2E_TIMINGS=1 \
   2>&1 | tee /tmp/e2e-full.log | awk -f bin/e2e-timings.awk
 ```
 
-To record a Docker lane baseline, run three consecutive full-lane passes under
-identical conditions with unique `/tmp` log names and a wall-clock timer:
+To record a Docker lane baseline manually, run three consecutive full-lane
+passes under identical conditions with unique `/tmp` log names and a wall-clock
+timer:
 
 ```bash
 /usr/bin/time -p -o /tmp/e2e-full-run1.time \

@@ -431,8 +431,7 @@ function required_verification_problem(string $section, string $worktree, array 
     }
 
     foreach ([
-        'Durable E2E',
-        'Retained CLI ingress VM Solo-terminal check',
+        'Retained topology proof',
         '`composer quality-check`',
     ] as $requiredLabel) {
         if (! has_required_verification_row($values, $requiredLabel)) {
@@ -471,16 +470,12 @@ function required_verification_problem(string $section, string $worktree, array 
         }
     }
 
-    $durableE2e = required_verification_row($values, 'Durable E2E');
+    $retainedTopologyProof = required_verification_row($values, 'Retained topology proof');
 
-    if ($requirements['has_production_php'] && ($durableE2e === null || ! is_passed_verification_value($durableE2e))) {
-        $current = $durableE2e ?? 'missing row';
+    if ($requirements['has_production_php'] && ($retainedTopologyProof === null || ! is_passed_verification_value($retainedTopologyProof))) {
+        $current = $retainedTopologyProof ?? 'missing row';
 
-        return "production PHP diff requires Durable E2E: passed with artifact-backed evidence; current row: {$current}";
-    }
-
-    if ($durableE2e !== null && is_passed_verification_value($durableE2e)) {
-        return durable_e2e_artifact_problem($worktree, $durableE2e);
+        return "production PHP diff requires Retained topology proof: passed with retained topology evidence; current row: {$current}";
     }
 
     return null;
@@ -652,73 +647,6 @@ function is_passed_verification_value(string $value): bool
     $normalized = strtolower(trim($value));
 
     return preg_match('/^(?:[^:]+:\s*)?passed\b/', $normalized) === 1;
-}
-
-function durable_e2e_artifact_problem(string $worktree, string $value): ?string
-{
-    $gates = durable_e2e_gates($value);
-
-    if ($gates === []) {
-        return 'Durable E2E is marked passed but does not name `composer test:e2e`, `composer test:e2e:docker`, `composer test:e2e:docker:canary`, `composer test:e2e:incus`, or a matching e2e quality-gate artifact';
-    }
-
-    foreach ($gates as $gate) {
-        $artifact = latest_quality_gate_artifact($worktree, $gate);
-
-        if ($artifact === null) {
-            return "Durable E2E is marked passed, but no latest successful artifact was found for {$gate}";
-        }
-
-        $exitCode = artifact_exit_code($artifact);
-
-        if ($exitCode === null) {
-            return "Durable E2E is marked passed, but latest {$gate} artifact has no numeric exit_code";
-        }
-
-        if ($exitCode !== 0) {
-            return "Durable E2E is marked passed, but latest {$gate} artifact exited with code {$exitCode}";
-        }
-    }
-
-    return null;
-}
-
-/**
- * @return list<string>
- */
-function durable_e2e_gates(string $value): array
-{
-    $normalized = strtolower($value);
-    $gates = [];
-
-    foreach ([
-        'e2e-docker-canary' => [
-            '/\bcomposer\s+test:e2e:docker:canary(?![:\w-])/',
-            '/\be2e-docker-canary(?![\w-])/',
-        ],
-        'e2e-docker' => [
-            '/\bcomposer\s+test:e2e:docker(?![:\w-])/',
-            '/\be2e-docker(?![\w-])/',
-        ],
-        'e2e-incus' => [
-            '/\bcomposer\s+test:e2e:incus(?![:\w-])/',
-            '/\be2e-incus(?![\w-])/',
-        ],
-        'e2e' => [
-            '/\bcomposer\s+test:e2e(?![:\w-])/',
-            '/\bgate[:= ]+e2e(?![\w-])/',
-        ],
-    ] as $gate => $patterns) {
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $normalized) === 1) {
-                $gates[] = $gate;
-
-                break;
-            }
-        }
-    }
-
-    return array_values(array_unique($gates));
 }
 
 /**

@@ -1,34 +1,34 @@
 # Incus E2E
 
-Incus VM-feature tests use `e2e-feature`, carry the `e2e-provider-incus` group,
-and require VM capabilities:
+Incus VM-feature tests are manual E2E checks. They use `e2e-feature`, carry the
+`e2e-provider-incus` group, and require VM capabilities:
 
 ```php
 E2ETopologyFactory::fromEnvironment()
     ->requireCapabilities(E2ETopologyCapabilities::vm());
 ```
 
-Use this lane for prepared-topology tests that need real VM semantics but do not
-rebuild topology images and do not run provisioning:
+The manual prepared-topology lane for tests that need real VM semantics but do
+not rebuild topology images and do not run provisioning is:
 
 ```bash
 composer test:e2e:incus
 ```
 
-Use Incus for systemd-backed process lifecycle tests. Node-level Linux services
-such as OpenCode Server or PolyScope Server use `runtime=systemd` in the product
-model, and Docker prepared nodes do not model the real `systemctl` and journal
-behavior those tests need.
+Incus is the manual E2E provider for systemd-backed process lifecycle tests.
+Node-level Linux services such as OpenCode Server or PolyScope Server use
+`runtime=systemd` in the product model, and Docker prepared nodes do not model
+the real `systemctl` and journal behavior those tests need.
 
-Use the Incus provider provision gate when base image shape, installer behavior,
-gateway provisioning, `node:new`, WireGuard, VM boot, package installation, or
-host mutation may have changed:
+The Incus provider provision gate is a manual command for base image shape,
+installer behavior, gateway provisioning, `node:new`, WireGuard, VM boot,
+package installation, or host mutation changes:
 
 ```bash
 composer test:e2e:provision:incus
 ```
 
-After that gate passes, refresh the shared prepared Incus artifacts before
+For manual full Incus proof, refresh the shared prepared Incus artifacts before
 running feature tests against the new topology shape:
 
 ```bash
@@ -59,14 +59,15 @@ mount is always present for that run.
 
 When Incus is unavailable or the required prepared topology is missing, the
 selected lane fails before Pest workers start and includes a scoped
-`composer e2e:ensure-artifacts` command for the missing role set. Use
-`composer test:e2e:docker` when intentionally checking only Docker feature
+`composer e2e:ensure-artifacts` command for the missing role set. The user may
+run `composer test:e2e:docker` when intentionally checking only Docker feature
 coverage.
 
 Do not put provisioning tests in `e2e-provider-incus`. Provisioning tests stay in
 `e2e-provision` and run through `composer test:e2e:provision:incus`.
 `composer test:e2e:provision` is a human-only aggregate alias and must not be
-used by agents.
+used by agents. Agents must not run provider-specific `composer test:e2e*`
+commands either.
 
 ## Resource budgets
 
@@ -106,7 +107,7 @@ artifacts, not test-time provisioning:
 composer e2e:prepare-warm-topology -- --force operator_gateway_agent
 ```
 
-Enable warm acquisition explicitly:
+For a user-run warm acquisition, enable it explicitly:
 
 ```bash
 ORBIT_E2E_INCUS_WARM_SNAPSHOTS=1

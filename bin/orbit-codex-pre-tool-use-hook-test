@@ -96,8 +96,7 @@ write_loop() {
 - Loop outcome:
   - $loop_outcome
 - Required verification:
-  - Durable E2E: not applicable - hook fixture has no production PHP diff
-  - Retained CLI ingress VM Solo-terminal check: not applicable - hook fixture has no CLI runtime diff
+  - Retained topology proof: not applicable - hook fixture has no topology runtime diff
   - \`composer quality-check\`: not applicable - hook fixture has no branch diff
 - Distillation packet:
   - Location: .orbit/loop.md
