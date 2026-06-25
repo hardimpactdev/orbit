@@ -402,6 +402,12 @@ Any feature that creates or changes a CLI command must also pass a retained
 ingress VM Solo-terminal gate before live/release-candidate deployment. This
 includes new commands, flags, options, arguments, human output, JSON schemas,
 validation, prompts, command side effects, and command-family behavior.
+CLI retained topology proof must run in a Solo terminal, not only through a
+detached host command or captured artifact. Keep that Solo terminal open
+through feature completion and leave it available afterward. The preserved
+terminal lets the user later validate the addressed CLI commands and their output.
+The retained topology may be reaped after feature completion, but the Solo
+terminal stays preserved as the validation anchor.
 
 For CLI changes, use this ordering:
 
@@ -523,7 +529,7 @@ instances, Solo terminal or fallback session, commands run, and observed result
 in the Solo report. If you mutate state for a focused check, isolate unrelated
 prepared-state drift first and say what was isolated.
 
-Release and verify cleanup before finalizing the retained topology proof:
+After feature completion, release and verify retained topology cleanup:
 
 ```bash
 composer e2e:incus -- --stop --id=<id> --json
@@ -532,8 +538,9 @@ ssh <incus-host> 'incus list --format csv -c ns | grep <id> || true'
 
 If `--stop` misses owned instances because the retained manifest is incomplete,
 delete only the owned leftovers by exact instance name, verify the grep is
-empty, and report the cleanup anomaly. Never leave retained VMs running while
-finalizing feature verification.
+empty, and report the cleanup anomaly. Do not close or archive the Solo terminal
+as part of topology cleanup; preserve it for later user validation of the
+command address/output transcript.
 
 ## Workflow
 
@@ -822,8 +829,9 @@ Normal feature work follows a staged verification model:
     retained ingress VM. Use
     `./apps/cli/orbit` for source-mounted proof unless you first verify that
     `/usr/local/bin/orbit` resolves to the source checkout; use the installed
-    binary only for release-candidate or live-node proof. Give the user a
-    chance to inspect it.
+    binary only for release-candidate or live-node proof. Keep that Solo
+    terminal open through feature completion, leave it available afterward, and
+    give the user a chance to inspect it.
   - Release retained topologies with `composer e2e:incus -- --stop --id=<id>`
     or `composer e2e:incus -- --stop --all` when finished.
 - **Source-prepared feature E2E** via `composer test:e2e` or a provider lane
