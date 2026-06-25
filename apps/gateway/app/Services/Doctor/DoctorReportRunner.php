@@ -358,7 +358,9 @@ final readonly class DoctorReportRunner
     private function probeFleetTargetsConcurrently(FleetProbeRunState $state): void
     {
         $nodeList = array_values($state->scope->targets->all());
-        /** @var array<int, array{node: Node, process: InvokedProcess}> $workers */
+        /** @var array<int, int> $doneFamiliesByWorkerIndex */
+        $doneFamiliesByWorkerIndex = [];
+        /** @var array<int, array{node: Node, process: InvokedProcess, outputBuffer: string, onFamilyProgress: callable}> $workers */
         $workers = [];
         $nextIndex = 0;
 
@@ -385,9 +387,23 @@ final readonly class DoctorReportRunner
                     continue;
                 }
 
+                $roleCategories = $this->categoriesForNode($node);
+                $selectedFamilies = $state->scope->families === []
+                    ? $roleCategories
+                    : array_values(array_intersect($state->scope->families, $roleCategories));
+                $doneFamiliesByWorkerIndex[$nextIndex] = 0;
+
                 $workers[$nextIndex] = [
                     'node' => $node,
                     'process' => $process,
+                    'outputBuffer' => '',
+                    'onFamilyProgress' => $this->fleetNodeFamilyProgressReporter(
+                        node: $node,
+                        nodeIndex: $nextIndex,
+                        totalFamilies: count($selectedFamilies),
+                        doneFamilies: $doneFamiliesByWorkerIndex[$nextIndex],
+                        state: $state,
+                    ),
                 ];
                 $nextIndex++;
             }
@@ -402,8 +418,12 @@ final readonly class DoctorReportRunner
                     }
 
                     if ($process->running()) {
+                        $this->pollFleetProbeProcessWorkerProgress($workers[$index]);
+
                         continue;
                     }
+
+                    $this->pollFleetProbeProcessWorkerProgress($workers[$index]);
                 } catch (ProcessTimedOutException) {
                     $report = $this->probeFleetTargetReport(
                         node: $worker['node'],
@@ -417,6 +437,7 @@ final readonly class DoctorReportRunner
                         report: $report,
                     );
                     unset($workers[$index]);
+                    unset($doneFamiliesByWorkerIndex[$index]);
 
                     continue;
                 }
@@ -436,6 +457,7 @@ final readonly class DoctorReportRunner
                 );
 
                 unset($workers[$index]);
+                unset($doneFamiliesByWorkerIndex[$index]);
             }
 
             if ($workers !== []) {
@@ -723,7 +745,83 @@ final readonly class DoctorReportRunner
      */
     private function decodeFleetProbeProcessReport(string $output): ?array
     {
-        $line = trim($output);
+        $lines = array_values(array_filter(array_map(trim(...), explode("\n", $output))));
+
+        foreach (array_reverse($lines) as $line) {
+            try {
+                /** @var array<string, mixed> $payload */
+                $payload = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                continue;
+            }
+
+            $report = $payload['report'] ?? null;
+
+            if (! is_array($report)) {
+                continue;
+            }
+
+            /** @var array<string, mixed> $report */
+            return $report;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array{node: Node, process: InvokedProcess, outputBuffer: string, onFamilyProgress: callable}  $worker
+     */
+    private function pollFleetProbeProcessWorkerProgress(array &$worker): void
+    {
+        $chunk = $worker['process']->latestOutput();
+
+        if ($chunk === '') {
+            return;
+        }
+
+        $worker['outputBuffer'] .= $chunk;
+
+        while (($newlinePosition = strpos($worker['outputBuffer'], needle: "\n")) !== false) {
+            $line = substr($worker['outputBuffer'], offset: 0, length: $newlinePosition);
+            $worker['outputBuffer'] = substr($worker['outputBuffer'], offset: $newlinePosition + 1);
+
+            $this->applyFleetProbeProcessWorkerProgressLine($line, $worker['onFamilyProgress']);
+        }
+    }
+
+    /**
+     * @param  callable(string, 'running'|'done', list<array<string, mixed>>, ?int, ?int): void  $onFamilyProgress
+     */
+    private function applyFleetProbeProcessWorkerProgressLine(string $line, callable $onFamilyProgress): void
+    {
+        $progress = $this->decodeFleetProbeProcessProgressLine($line);
+
+        if ($progress === null) {
+            return;
+        }
+
+        $family = is_string($progress['family'] ?? null) ? $progress['family'] : '';
+        $phase = is_string($progress['phase'] ?? null) ? $progress['phase'] : '';
+
+        if ($family === '' || $phase !== 'running' && $phase !== 'done') {
+            return;
+        }
+
+        $completedValue = $progress['completed'] ?? null;
+        $totalValue = $progress['total'] ?? null;
+
+        $completed = is_int($completedValue) ? $completedValue : null;
+        $total = is_int($totalValue) ? $totalValue : null;
+
+        $onFamilyProgress($family, $phase, [], $completed, $total);
+    }
+
+    /**
+     * @return array<array-key, mixed>|null
+     */
+    private function decodeFleetProbeProcessProgressLine(string $line): ?array
+    {
+        $line = trim($line);
 
         if ($line === '') {
             return null;
@@ -731,19 +829,16 @@ final readonly class DoctorReportRunner
 
         try {
             /** @var array<string, mixed> $payload */
-            $payload = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+            $payload = json_decode($line, associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
             return null;
         }
 
-        $report = $payload['report'] ?? null;
-
-        if (! is_array($report)) {
+        if (! array_key_exists('progress', $payload) || ! is_array($payload['progress'])) {
             return null;
         }
 
-        /** @var array<string, mixed> $report */
-        return $report;
+        return $payload['progress'];
     }
 
     /**

@@ -158,6 +158,18 @@ it('preserves fleet node and issue ordering when subprocess workers complete out
     });
 });
 
+it('emits per-node completed and total progress while concurrent subprocess workers are running', function (): void {
+    if (! fleetDoctorProbeProcessWorkersAvailable()) {
+        test()->markTestSkipped(
+            'proc_open and a shared file-backed sqlite database are required for fleet doctor batch concurrency.',
+        );
+    }
+
+    fleetDoctorProbeWithFileDatabase(function (): void {
+        fleet_doctor_probe_expect_worker_progress();
+    });
+});
+
 it('returns a valid single-node report from the internal artisan command', function (): void {
     if (! fleetDoctorProbeProcessWorkersAvailable()) {
         test()->markTestSkipped(
@@ -178,14 +190,32 @@ it('returns a valid single-node report from the internal artisan command', funct
 
         expect($exitCode)->toBe(0);
 
-        $payload = json_decode(trim(Artisan::output()), true, 512, JSON_THROW_ON_ERROR);
+        $reportPayload = null;
+        $progressPayloads = [];
 
-        expect($payload['report'] ?? null)
+        foreach (array_filter(array_map('trim', explode(separator: "\n", string: trim(Artisan::output())))) as $line) {
+            $payload = json_decode($line, associative: true, depth: 512, flags: JSON_THROW_ON_ERROR);
+
+            $report = $payload['report'] ?? null;
+            $progress = $payload['progress'] ?? null;
+
+            if (is_array($report)) {
+                $reportPayload = $payload;
+            }
+
+            if (is_array($progress)) {
+                $progressPayloads[] = $payload;
+            }
+        }
+
+        expect($reportPayload)
             ->toBeArray()
-            ->and($payload['report']['scope']['node'] ?? null)
+            ->and($reportPayload['report']['scope']['node'] ?? null)
             ->toBe('fleet-cmd-node')
-            ->and($payload['report']['scope']['families'] ?? null)
-            ->toBe(['node']);
+            ->and($reportPayload['report']['scope']['families'] ?? null)
+            ->toBe(['node'])
+            ->and($progressPayloads)
+            ->not->toBeEmpty();
     });
 });
 
@@ -314,6 +344,139 @@ function fleetDoctorProbeReportList(array $report, string $key): array
     }
 
     return $list;
+}
+
+function fleet_doctor_probe_expect_worker_progress(): void
+{
+    fleetDoctorProbeBatchNode(['name' => 'fleet-progress-node']);
+
+    app()->instance(RemoteShell::class, new FleetDoctorProbeParentFallbackGuardRemoteShell);
+
+    Process::preventStrayProcesses();
+    Process::fake(
+        fn (PendingProcess $process): mixed => fleet_doctor_probe_progress_worker_process($process),
+    );
+
+    /** @var list<array{node: string, completed: int, total: int}> $runningNodeProgress */
+    $runningNodeProgress = [];
+
+    app(DoctorReportRunner::class)->probeFleet(
+        families: ['node'],
+        onNodeProgress: function (Node $node, string $phase, ?array $partialReport = null) use (
+            &$runningNodeProgress,
+        ): void {
+            if ($phase !== 'running') {
+                return;
+            }
+
+            array_push(
+                $runningNodeProgress,
+                ...fleet_doctor_probe_running_node_progress($node, $partialReport),
+            );
+        },
+    );
+
+    expect($runningNodeProgress)
+        ->not
+        ->toBeEmpty()
+        ->and($runningNodeProgress[0]['node'] ?? null)
+        ->toBe('fleet-progress-node')
+        ->and($runningNodeProgress[0]['completed'] ?? null)
+        ->toBe(0)
+        ->and($runningNodeProgress[0]['total'] ?? null)
+        ->toBe(3);
+}
+
+function fleet_doctor_probe_progress_worker_process(PendingProcess $process): mixed
+{
+    $nodeName = fleetDoctorProbeNodeNameFromCommand(fleetDoctorProbeCommand($process));
+
+    return Process::describe()
+        ->runsFor(4)
+        ->output([
+            fleet_doctor_probe_worker_progress_json(
+                family: 'node',
+                phase: 'running',
+                completed: 0,
+                total: 3,
+            ),
+            fleetDoctorProbeWorkerJson($nodeName, ['node']),
+        ])
+        ->exitCode(0);
+}
+
+/**
+ * @param  array<string, mixed>|null  $partialReport
+ * @return list<array{node: string, completed: int, total: int}>
+ */
+function fleet_doctor_probe_running_node_progress(Node $node, ?array $partialReport): array
+{
+    $nodes = $partialReport['progress']['nodes'] ?? [];
+
+    if (! is_array($nodes)) {
+        return [];
+    }
+
+    $progress = [];
+
+    foreach ($nodes as $entry) {
+        if (! is_array($entry)) {
+            continue;
+        }
+
+        /** @var array<string, mixed> $entry */
+        $progressEntry = fleet_doctor_probe_running_node_progress_entry($node, $entry);
+
+        if ($progressEntry !== null) {
+            $progress[] = $progressEntry;
+        }
+    }
+
+    return $progress;
+}
+
+/**
+ * @param  array<string, mixed>  $entry
+ * @return array{node: string, completed: int, total: int}|null
+ */
+function fleet_doctor_probe_running_node_progress_entry(Node $node, array $entry): ?array
+{
+    $completed = $entry['completed'] ?? null;
+    $total = $entry['total'] ?? null;
+
+    if (($entry['node'] ?? null) !== $node->name) {
+        return null;
+    }
+
+    if (($entry['status'] ?? null) !== 'running') {
+        return null;
+    }
+
+    if ($completed === null || $total === null) {
+        return null;
+    }
+
+    return [
+        'node' => $node->name,
+        'completed' => (int) $completed,
+        'total' => (int) $total,
+    ];
+}
+
+function fleet_doctor_probe_worker_progress_json(
+    string $family,
+    string $phase,
+    int $completed,
+    int $total,
+): string {
+    return json_encode([
+        'progress' => [
+            'family' => $family,
+            'phase' => $phase,
+            'completed' => $completed,
+            'total' => $total,
+        ],
+    ], JSON_THROW_ON_ERROR);
 }
 
 /**

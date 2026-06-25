@@ -48,7 +48,41 @@ final class DoctorFleetProbeNodeCommand extends Command
         ));
 
         $key = $this->stringOption('key');
-        $report = $runner->probeFleetTargetReport($node, $families, $key);
+        $report = $runner->probeFleetTargetReport(
+            node: $node,
+            families: $families,
+            key: $key,
+            onFamilyProgress: function (
+                string $family,
+                string $phase,
+                array $familyIssues,
+                ?int $completed,
+                ?int $total,
+            ): void {
+                if ($phase !== 'running' && $phase !== 'done') {
+                    return;
+                }
+
+                $progress = [
+                    'family' => $family,
+                    'phase' => $phase,
+                ];
+
+                if ($completed !== null) {
+                    $progress['completed'] = $completed;
+                }
+
+                if ($total !== null) {
+                    $progress['total'] = $total;
+                }
+
+                try {
+                    $this->output->writeln(json_encode(['progress' => $progress], JSON_THROW_ON_ERROR));
+                } catch (JsonException) {
+                    return;
+                }
+            },
+        );
 
         try {
             $this->output->writeln(json_encode(['report' => $report], JSON_THROW_ON_ERROR));
