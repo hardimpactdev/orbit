@@ -7,14 +7,15 @@ namespace App\Actions\Apps;
 use App\Contracts\SiteCertificateInstaller;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Models\App;
+use App\Models\Node;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
+use App\Services\Apps\AppOwningNodeResolver;
 use App\Services\Apps\AppRuntimeContainerApplyException;
 use App\Services\Apps\AppRuntimeContainerManager;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Apps\AppRuntimeImageUnavailableException;
 use App\Services\Apps\AppRuntimeUserUnavailableException;
 use App\Services\Processes\EnsureFrankenPhpRuntimeProcess;
-use RuntimeException;
 use Throwable;
 
 final readonly class EnactAppRuntime
@@ -26,6 +27,7 @@ final readonly class EnactAppRuntime
         private AppRuntimeContainerManager $appRuntimeContainerManager,
         private EnsureFrankenPhpRuntimeProcess $ensureFrankenPhpRuntimeProcess,
         private SiteCertificateInstaller $siteCertificateInstaller,
+        private AppOwningNodeResolver $appOwningNodeResolver,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
@@ -34,20 +36,16 @@ final readonly class EnactAppRuntime
      */
     public function handle(App $app): array
     {
-        $app->loadMissing('node');
-
-        if ($app->node === null) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
-        }
+        $owningNode = $this->appOwningNodeResolver->resolve($app);
 
         $warnings = [];
 
         if ($app->runtimeKind() === AppRuntimeKind::Php) {
             try {
                 $this->ensureFrankenPhpRuntimeProcess->forApp($app);
-                $this->ensureRuntimeTlsMaterial($app);
+                $this->ensureRuntimeTlsMaterial($app, $owningNode);
                 $container = $this->appRuntimeContainerRenderer->render($app);
-                $this->appRuntimeContainerManager->apply($app->node, $container);
+                $this->appRuntimeContainerManager->apply($owningNode, $container);
             } catch (AppRuntimeImageUnavailableException $exception) {
                 $warnings[] = $this->phpVersionUnavailableWarning($app, $exception);
             } catch (AppRuntimeUserUnavailableException $exception) {
@@ -75,14 +73,14 @@ final readonly class EnactAppRuntime
         ];
     }
 
-    private function ensureRuntimeTlsMaterial(App $app): void
+    private function ensureRuntimeTlsMaterial(App $app, Node $owningNode): void
     {
         if (! $this->innerTlsPolicy->appliesToApp($app)) {
             return;
         }
 
         $this->siteCertificateInstaller->ensureFor(
-            $app->node,
+            $owningNode,
             $this->innerTlsPolicy->appRouteDomain($app),
         );
     }

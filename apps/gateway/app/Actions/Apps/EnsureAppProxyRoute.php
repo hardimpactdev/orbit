@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\NodeTool;
 use App\Models\ProxyRoute;
 use App\Services\Apps\AppDevelopmentInnerTlsPolicy;
+use App\Services\Apps\AppOwningNodeResolver;
 use App\Services\Apps\AppRuntimeContainerRenderer;
 use App\Services\Ca\OrbitCaService;
 use App\Services\Gateway\CaddyGlobalConfig;
@@ -31,6 +32,7 @@ final readonly class EnsureAppProxyRoute
         private ProxyRouteRenderer $proxyRouteRenderer,
         private AppRuntimeContainerRenderer $appRuntimeContainerRenderer,
         private OrbitCaService $ca,
+        private AppOwningNodeResolver $appOwningNodeResolver,
         private AppDevelopmentInnerTlsPolicy $innerTlsPolicy = new AppDevelopmentInnerTlsPolicy,
     ) {}
 
@@ -39,14 +41,10 @@ final readonly class EnsureAppProxyRoute
      */
     public function handle(App $app): array
     {
-        $app->loadMissing('node');
+        $owningNode = $this->appOwningNodeResolver->resolve($app);
 
-        if ($app->node === null) {
-            throw new RuntimeException("App '{$app->name}' has no owning node.");
-        }
-
-        $domain = $this->domain($app);
-        [$servingNode, $config, $content] = $this->routeArtifact($app, $domain);
+        $domain = $this->domain($app, $owningNode);
+        [$servingNode, $config, $content] = $this->routeArtifact($app, $owningNode, $domain);
 
         ProxyRoute::query()->updateOrCreate(
             ['domain' => $domain],
@@ -140,11 +138,11 @@ final readonly class EnsureAppProxyRoute
                 $backendArtifact,
             );
 
-            $this->ensureGlobalCaddyfile($app->node);
-            $this->ensureRuntimeTrustPool($app->node, $config);
+            $this->ensureGlobalCaddyfile($owningNode);
+            $this->ensureRuntimeTrustPool($owningNode, $config);
             $backendResult = $this->remoteShell->run(
-                $app->node,
-                $this->renderInstallScript($app->node, $domain, $backendContent, backend: true),
+                $owningNode,
+                $this->renderInstallScript($owningNode, $domain, $backendContent, backend: true),
             );
 
             if (! $backendResult->successful()) {
@@ -322,13 +320,13 @@ final readonly class EnsureAppProxyRoute
         );
     }
 
-    private function domain(App $app): string
+    private function domain(App $app, Node $owningNode): string
     {
         if (is_string($app->domain) && $app->domain !== '') {
             return $app->domain;
         }
 
-        $tld = is_string($app->node?->tld) ? trim($app->node?->tld, '.') : '';
+        $tld = is_string($owningNode->tld) ? trim($owningNode->tld, '.') : '';
 
         if ($tld === '') {
             return $app->name;
@@ -340,13 +338,13 @@ final readonly class EnsureAppProxyRoute
     /**
      * @return array{0: Node, 1: array<string, mixed>, 2: string}
      */
-    private function routeArtifact(App $app, string $domain): array
+    private function routeArtifact(App $app, Node $owningNode, string $domain): array
     {
         $isPhp = $app->runtimeKind() === AppRuntimeKind::Php;
         $runtimeUpstream = $isPhp ? $this->appRuntimeContainerRenderer->upstreamUrl($app) : null;
 
         if ($app->environment !== 'production') {
-            $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($app->node, $domain);
+            $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($owningNode, $domain);
             $config = [
                 'document_root' => $app->documentRootPath(),
                 'runtime_upstream' => $runtimeUpstream,
@@ -358,19 +356,19 @@ final readonly class EnsureAppProxyRoute
             ];
 
             if ($this->innerTlsPolicy->appliesToApp($app)) {
-                $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($app->node, $domain);
+                $config['runtime_upstream_tls'] = $this->innerTlsPolicy->runtimeUpstreamTlsConfig($owningNode, $domain);
             }
 
-            return [$app->node, $config, $this->renderCaddySite($app, $domain, $config)];
+            return [$owningNode, $config, $this->renderCaddySite($app, $domain, $config)];
         }
 
-        $ingressNode = $this->ingressResolver->forAppNode($app->node);
+        $ingressNode = $this->ingressResolver->forAppNode($owningNode);
         $routerNode = $this->ingressResolver->router();
         $certificatePaths = $this->siteCertificateInstaller->expectedPathsFor($ingressNode, $domain);
         $backendArtifact = [
-            'node_id' => $app->node?->id,
+            'node_id' => $owningNode->id,
             'domain' => $domain,
-            'bind' => $app->node?->wireguard_address,
+            'bind' => $owningNode->wireguard_address,
             'document_root' => $app->documentRootPath(),
             'runtime_upstream' => $runtimeUpstream,
             'php_socket' => null,
@@ -385,9 +383,9 @@ final readonly class EnsureAppProxyRoute
             ],
             'router_backend_pool' => [
                 [
-                    'node_id' => $app->node?->id,
-                    'node' => $app->node?->name,
-                    'url' => $this->ingressResolver->backendUrl($app->node),
+                    'node_id' => $owningNode->id,
+                    'node' => $owningNode->name,
+                    'url' => $this->ingressResolver->backendUrl($owningNode),
                 ],
             ],
             'backend_artifacts' => [$backendArtifact],
