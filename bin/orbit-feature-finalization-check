@@ -11,9 +11,10 @@ Usage:
   bin/orbit-feature-finalization-check git worktree remove <worktree-path>
   bin/orbit-feature-finalization-check git branch -d <feature-branch>
 
-Run this before merge-back or feature cleanup. It applies the same final
-distillation gate as the Codex PreToolUse hook without relying on hook
-interception.
+Run this before merge-back. For feature worktree or branch cleanup, run it only
+after post-feature signal audit is complete or the user explicitly approves
+cleanup. It applies the same final distillation gate as the Codex PreToolUse
+hook without relying on hook interception.
 EOF
     exit 64
 fi

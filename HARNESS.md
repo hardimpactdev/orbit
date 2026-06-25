@@ -147,14 +147,15 @@ rationale when nothing changes.
 Orbit has two merge-boundary checks:
 
 1. `bin/orbit-feature-finalization-check` is the required explicit gate before
-   merge-back or feature cleanup.
+   merge-back and before any explicitly approved feature cleanup.
 2. `.codex/hooks.json` installs a best-effort Codex `PreToolUse` hook that
    calls the same gate when Codex intercepts the tool call.
 
 Codex hooks are useful but not a complete enforcement boundary: current Codex
 `PreToolUse` support does not intercept every newer shell execution path. Do
-not rely on the hook alone. Run the explicit gate before `git merge`,
-`git worktree remove`, or `git branch -d`:
+not rely on the hook alone. Run the explicit gate before `git merge`. Run the
+same gate before `git worktree remove` or `git branch -d` only when cleanup has
+been explicitly approved after post-feature signal audit:
 
 ```bash
 bin/orbit-feature-finalization-check git merge <feature-branch>
@@ -192,8 +193,8 @@ The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
 feature-session learnings undistilled. It does not run tests, inspect ordinary
 commands, mine old sessions, or promote signals automatically. It prevents the
-finalization checkpoint from being skipped before `git merge`,
-`git worktree remove`, or `git branch -d` hides the local context.
+finalization checkpoint from being skipped before `git merge` and before any
+explicitly approved cleanup command that would hide the local context.
 
 If the gate blocks, do not delete `.orbit/` or bypass the merge. Review the
 feature evidence, classify candidate learnings through `HARNESS_SIGNALS.md`,
@@ -292,11 +293,20 @@ make the gate clear.
 
 ## Feature Cleanup
 
-Cleanup has two boundaries.
+Merge and cleanup are separate boundaries.
 
-- Merge cleanup happens after the feature branch is committed, verified, and
-  merged into `main`. Remove the completed worktree and merged branch unless
-  the user explicitly asks to preserve them.
+- Merge happens after the feature branch is committed, verified, final
+  distillation is filled, and the merge boundary gate passes. Leave the
+  completed feature worktree and branch intact after merge by default.
+- Post-feature signal audit happens after merge while the worktree is still
+  available. Review `.orbit/loop.md`, `.orbit/evidence/`,
+  `.orbit/quality-gates/`, Solo scratchpads, reviewer output, and retained
+  terminal or PTY artifacts. Confirm accepted, rejected, already-covered, and
+  deferred signals were processed and that no harness signal was lost.
+- Worktree cleanup happens only after that audit is complete or the user
+  explicitly approves cleanup. Then run `bin/orbit-feature-finalization-check`
+  for the exact `git worktree remove` or `git branch -d` command before running
+  it.
 - Feature completion cleanup happens only after the user confirms the live
   topology works as expected, or explicitly says the feature can be considered
   complete. Then archive the feature scratchpad, close or resolve related Solo
@@ -306,8 +316,8 @@ Keep cleanup scoped to the feature. Do not archive unrelated scratchpads, close
 unrelated todos, or stop unrelated agents just because they are in the same Solo
 project. Before archiving Solo state, make sure the scratchpad or todo records
 the merge commit, final verification, live/user acceptance when applicable, and
-any preserved follow-up. If a worktree, scratchpad, todo, or agent must remain
-open, report the reason and owner.
+any preserved follow-up. If a worktree, scratchpad, todo, or agent remains open
+for post-analysis, report the reason and owner.
 
 ## Parallelization Gate
 
