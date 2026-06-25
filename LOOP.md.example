@@ -92,6 +92,13 @@ meaningful value.
 
 - Loop outcome:
   - <complete | blocked | complete + loop improvement>
+- Required verification:
+  - Durable E2E: <passed | blocked | not applicable> - <command/evidence,
+    blocker, or reason>
+  - Retained CLI ingress VM Solo-terminal check: <passed | blocked | not
+    applicable> - <topology/session/evidence, blocker, or reason>
+  - `composer quality-check`: <passed | blocked | not applicable> -
+    <command/evidence, blocker, or reason>
 - Distillation packet:
   - Location: `.orbit/loop.md`
   - Includes objective/final diff:

@@ -332,6 +332,34 @@ function final_distillation_check(string $worktree, string $subject): array
         ];
     }
 
+    $loopOutcome = loop_outcome($section);
+
+    if ($loopOutcome === null) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "{$loopPath} does not record a `Loop outcome` in `Final Distillation`",
+        ];
+    }
+
+    if (! is_mergeable_loop_outcome($loopOutcome)) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "{$loopPath} loop outcome is blocked or ambiguous: {$loopOutcome}",
+        ];
+    }
+
+    $requiredVerificationProblem = required_verification_problem($section);
+
+    if ($requiredVerificationProblem !== null) {
+        return [
+            'ok' => false,
+            'subject' => $subject,
+            'reason' => "{$loopPath} required verification is incomplete: {$requiredVerificationProblem}",
+        ];
+    }
+
     $outcomes = final_outcome_values($section);
 
     foreach ($outcomes as $value) {
@@ -376,25 +404,100 @@ function markdown_section(string $contents, string $heading): ?string
     return trim(implode("\n", $section));
 }
 
+function loop_outcome(string $section): ?string
+{
+    $outcomes = markdown_list_values($section, ['Loop outcome']);
+
+    return $outcomes[0] ?? null;
+}
+
+function is_mergeable_loop_outcome(string $value): bool
+{
+    $normalized = normalize_outcome_value($value);
+
+    return in_array($normalized, ['complete', 'complete + loop improvement'], true);
+}
+
+function required_verification_problem(string $section): ?string
+{
+    $values = markdown_list_values($section, ['Required verification']);
+
+    if ($values === []) {
+        return 'missing `Required verification` rows';
+    }
+
+    foreach ([
+        'Durable E2E',
+        'Retained CLI ingress VM Solo-terminal check',
+        '`composer quality-check`',
+    ] as $requiredLabel) {
+        if (! has_required_verification_row($values, $requiredLabel)) {
+            return "missing {$requiredLabel} verification row";
+        }
+    }
+
+    foreach ($values as $value) {
+        if (is_blocked_verification_value($value)) {
+            return $value;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param  list<string>  $values
+ */
+function has_required_verification_row(array $values, string $requiredLabel): bool
+{
+    $normalizedRequiredLabel = normalize_markdown_label($requiredLabel);
+
+    foreach ($values as $value) {
+        if (preg_match('/^([^:]+):/', $value, $matches) !== 1) {
+            continue;
+        }
+
+        if (normalize_markdown_label($matches[1]) === $normalizedRequiredLabel) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function is_blocked_verification_value(string $value): bool
+{
+    $normalized = strtolower(trim($value));
+
+    return preg_match('/^(?:[^:]+:\s*)?(?:blocked|pending|missing|skipped|deferred|unresolved|not\s+run)\b/', $normalized) === 1;
+}
+
 /**
  * @return list<string>
  */
 function final_outcome_values(string $section): array
 {
-    $labels = [
+    return markdown_list_values($section, [
         'Accepted durable updates',
         'Rejected or already-covered signals',
         'Deferred follow-ups',
         'No-new-signal rationale',
-    ];
+    ]);
+}
 
+/**
+ * @param  list<string>  $labels
+ * @return list<string>
+ */
+function markdown_list_values(string $section, array $labels): array
+{
     $values = [];
     $activeLabel = null;
 
     foreach (preg_split('/\R/', $section) as $line) {
         $trimmed = trim($line);
 
-        if (preg_match('/^-\s+([^:]+):\s*(.*)$/', $trimmed, $matches) === 1) {
+        if (preg_match('/^-\s+([^:]+):\s*(.*)$/', $line, $matches) === 1) {
             $label = $matches[1];
             $activeLabel = in_array($label, $labels, true) ? $label : null;
 
@@ -405,7 +508,7 @@ function final_outcome_values(string $section): array
             continue;
         }
 
-        if ($activeLabel !== null && preg_match('/^-\s+(.+)$/', $trimmed, $matches) === 1) {
+        if ($activeLabel !== null && preg_match('/^\s+-\s+(.+)$/', $line, $matches) === 1) {
             $values[] = trim($matches[1]);
         }
     }
@@ -415,13 +518,23 @@ function final_outcome_values(string $section): array
 
 function is_meaningful_outcome(string $value): bool
 {
-    $normalized = strtolower(trim($value, " \t\n\r\0\x0B`.'"));
+    $normalized = normalize_outcome_value($value);
 
     if ($normalized === '') {
         return false;
     }
 
     return ! in_array($normalized, ['none', 'n/a', 'na', 'not applicable', 'pending', 'todo', 'tbd', 'blocked'], true);
+}
+
+function normalize_outcome_value(string $value): string
+{
+    return strtolower(trim($value, " \t\n\r\0\x0B`.'"));
+}
+
+function normalize_markdown_label(string $value): string
+{
+    return strtolower(trim($value, " \t\n\r\0\x0B`.'"));
 }
 
 function normalize_branch(string $target): ?string
@@ -576,10 +689,16 @@ Reason: {$reason}
 
 Before merging or deleting the feature worktree, review `.orbit/` evidence,
 fill `.orbit/loop.md` -> `Final Distillation`, and record one of:
+- an exact loop outcome: `complete` or `complete + loop improvement`,
+- required verification rows with `passed`, `blocked`, or `not applicable`,
 - an accepted durable guardrail update,
 - a rejected or already-covered signal,
 - a deferred follow-up with owner and trigger, or
 - a no-new-signal rationale.
+
+Blocked, pending, skipped, missing, deferred, unresolved, or not-run required
+verification must be reported as a `blocked` feature-loop outcome instead of a
+completed merge/cleanup boundary.
 
 Then rerun the same git command.
 

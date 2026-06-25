@@ -159,15 +159,24 @@ feature worktree and branch intact.
 
 The gate is intentionally narrow: it only inspects git merge and
 feature-cleanup boundaries, then blocks when a targeted feature worktree has no
-completed `.orbit/loop.md` `Final Distillation` section.
+completed `.orbit/loop.md` `Final Distillation` section, when the loop outcome
+is not exactly `complete` or `complete + loop improvement`, when required
+verification rows are missing, or when required verification is still recorded
+as blocked, pending, skipped, missing, deferred, unresolved, or not run.
 
 The mechanical contract is label-based. Keep the exact Markdown bullet-label
-lines from `LOOP.md.example`: `- Accepted durable updates:`,
-`- Rejected or already-covered signals:`, `- Deferred follow-ups:`, and
-`- No-new-signal rationale:`. At least one of those labels must contain a
-meaningful outcome before merge or cleanup. Custom headings, bare label lines
-without `- ` and `:`, or equivalent prose can support the explanation, but they
-do not satisfy the gate by themselves.
+lines from `LOOP.md.example`: `- Loop outcome:`, `- Required verification:`,
+`- Accepted durable updates:`, `- Rejected or already-covered signals:`,
+`- Deferred follow-ups:`, and `- No-new-signal rationale:`. At least one of the
+signal-outcome labels must contain a meaningful outcome before merge or cleanup.
+Custom headings, bare label lines without `- ` and `:`, or equivalent prose can
+support the explanation, but they do not satisfy the gate by themselves.
+
+Required verification rows use the status-first shape and must include Durable
+E2E, retained CLI ingress VM Solo-terminal proof, and `composer quality-check`:
+`- Durable E2E: passed | blocked | not applicable - <evidence or reason>`.
+If the feature required a lane and it is blocked, the feature outcome is
+`blocked`; do not write `complete` with a deferred verification follow-up.
 
 The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
@@ -435,7 +444,8 @@ When the agreed E2E lane is required for acceptance and cannot be completed,
 the feature loop halts if the E2E blocker cannot be resolved inside the current
 slice. Do not finalize, merge, clean up, or mine final loop improvements while
 required E2E is still blocked. Record the exact blocker, owner, and unblock
-condition, then hand back unresolved work.
+condition in `.orbit/loop.md` under `Required verification`, set the loop
+outcome to `blocked`, then hand back unresolved work.
 
 Treat this as the `blocked` feature-loop outcome, not as a candidate learning.
 It becomes a loop-improvement signal only when the reason for the E2E block

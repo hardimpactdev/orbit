@@ -582,8 +582,9 @@ moving on to durable E2E.
    worker handoff into staged-stop-only prompts, and do not ask the worker to
    stop after "step 1" or wait for routine feature-owner approval between
    normal phases. The first narrow owned diff or explicit missing-context
-   blocker is still expected after the required local files are read; broad
-   discovery without that diff or blocker is a process problem to correct.
+   blocker is still expected after the required local files are read. Treat
+   broad discovery without a first diff as a process problem to correct unless
+   the worker reports an explicit missing-context blocker.
    After one explicit first-diff correction, if the worker still produces no
    diff or blocker, stand down the worker, mark the matching harness signal
    recurring, and replace the worker instead of letting the process stall. If a
@@ -721,7 +722,12 @@ moving on to durable E2E.
     before merge, and ordinary feature work before considering promotion.
     Required E2E that cannot be completed is a `blocked` feature-loop outcome
     first, not a candidate signal; promote it only when the blocker exposes a
-    recurring process gap. Update, create, curate, retire, or intentionally
+    recurring process gap. Fill `.orbit/loop.md` `Required verification` with
+    explicit `passed`, `blocked`, or `not applicable` rows for durable E2E,
+    retained CLI ingress VM proof, and `composer quality-check`. Do not mark the
+    loop `complete` or `complete + loop improvement` while any required
+    verification row is blocked, pending, skipped, missing, deferred,
+    unresolved, or not run. Update, create, curate, retire, or intentionally
     leave `harness-signals/` records and the smallest guardrail target only for
     concrete durable signals that pass the promotion gate in
     `HARNESS_SIGNALS.md`. Report the loop outcome as `complete`, `blocked`, or
@@ -921,6 +927,13 @@ Reviewer personas:
 
 Post-feature session review:
 - Loop outcome: <complete, blocked, or complete + loop improvement>
+- Required verification:
+  - Durable E2E: <passed, blocked, or not applicable with command/evidence,
+    blocker, or reason>
+  - Retained CLI ingress VM Solo-terminal check: <passed, blocked, or not
+    applicable with topology/session/evidence, blocker, or reason>
+  - `composer quality-check`: <passed, blocked, or not applicable with
+    command/evidence, blocker, or reason>
 - Distillation packet: <.orbit/loop.md canonical packet, not applicable, or
   blocked>
 - Fresh distillation reviewer: <persona/process id/verdict, not used with
