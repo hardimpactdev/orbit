@@ -186,6 +186,7 @@ class BootstrapGatewayLocalCommand extends Command
         });
 
         $caService->ensureRootCa();
+        $this->writeGatewayLocalCliConfig($wireguardAddress, $caService->rootCert());
         $wireguardServerPublicKey = null;
 
         if (! (bool) $this->option('skip-gateway-service-install')) {
@@ -315,6 +316,111 @@ class BootstrapGatewayLocalCommand extends Command
         return $password;
     }
 
+    private function writeGatewayLocalCliConfig(string $wireguardAddress, string $rootCert): void
+    {
+        $home = getenv('HOME');
+
+        if (! is_string($home) || trim($home) === '') {
+            return;
+        }
+
+        $configuredRoot = config('orbit.paths.config_root');
+
+        if (! is_string($configuredRoot) || trim($configuredRoot) === '') {
+            $configuredRoot = rtrim($home, '/').'/.config/orbit';
+        }
+
+        $configRoot = rtrim($configuredRoot, '/');
+        $gatewayRoot = "{$configRoot}/gateways/default";
+        $caPemPath = "{$gatewayRoot}/ca.pem";
+        $configPath = "{$configRoot}/config.json";
+        $sha = hash('sha256', $rootCert);
+
+        $this->ensurePrivateDirectory($gatewayRoot);
+        $this->writePrivateFile($caPemPath, $rootCert);
+
+        $config = $this->readGatewayLocalCliConfig($configPath);
+        $config['schema_version'] ??= 1;
+        $config['active_gateway'] = 'default';
+        $gateways = $config['gateways'] ?? [];
+        $gateways = is_array($gateways) ? $gateways : [];
+        $gateways['default'] = [
+            'url' => "https://{$wireguardAddress}",
+            'wireguard_ip' => $wireguardAddress,
+            'ca_pem_path' => $caPemPath,
+            'ca_sha256' => $sha,
+            'ca_fingerprint' => "sha256:{$sha}",
+            'timeout' => 30,
+            'self_mode' => 'wireguard_https',
+        ];
+        $config['gateways'] = $gateways;
+        $config['defaults'] = is_array($config['defaults'] ?? null)
+            ? $config['defaults']
+            : ['node' => null, 'profile' => null];
+        $meta = $config['meta'] ?? [];
+        $meta = is_array($meta) ? $meta : [];
+        $meta['imported_from'] = 'gateway-local-bootstrap';
+        $meta['imported_at'] = date(DATE_ATOM);
+        $config['meta'] = $meta;
+
+        $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n";
+
+        $this->writePrivateFile($configPath, $json);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function readGatewayLocalCliConfig(string $configPath): array
+    {
+        if (! File::exists($configPath)) {
+            return [];
+        }
+
+        try {
+            $config = json_decode(File::get($configPath), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            throw new RuntimeException("Gateway CLI config at {$configPath} must be valid JSON.", previous: $exception);
+        }
+
+        if (! is_array($config)) {
+            throw new RuntimeException("Gateway CLI config at {$configPath} must be a JSON object.");
+        }
+
+        foreach (array_keys($config) as $key) {
+            if (! is_string($key)) {
+                throw new RuntimeException("Gateway CLI config at {$configPath} must be a JSON object.");
+            }
+        }
+
+        /** @var array<string, mixed> $config */
+        return $config;
+    }
+
+    private function ensurePrivateDirectory(string $path): void
+    {
+        if (! is_dir($path) && ! mkdir(directory: $path, permissions: 0o700, recursive: true) && ! is_dir($path)) {
+            throw new RuntimeException("Unable to create directory {$path}.");
+        }
+
+        if (! chmod(filename: $path, permissions: 0o700)) {
+            throw new RuntimeException("Unable to set private permissions on {$path}.");
+        }
+    }
+
+    private function writePrivateFile(string $path, string $contents): void
+    {
+        $this->ensurePrivateDirectory(dirname($path));
+
+        if (file_put_contents($path, $contents) === false) {
+            throw new RuntimeException("Unable to write {$path}.");
+        }
+
+        if (! chmod(filename: $path, permissions: 0o600)) {
+            throw new RuntimeException("Unable to set private permissions on {$path}.");
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -384,7 +490,7 @@ class BootstrapGatewayLocalCommand extends Command
         $line = "{$key}={$value}";
 
         if (preg_match('/^'.preg_quote($key, '/').'=/m', $contents) === 1) {
-            $contents = (string) preg_replace('/^'.preg_quote($key, '/').'=.*$/m', $line, $contents);
+            $contents = (string) preg_replace('/^'.preg_quote($key, delimiter: '/').'=.*$/m', $line, $contents);
         } else {
             $contents = rtrim($contents)."\n{$line}\n";
         }
