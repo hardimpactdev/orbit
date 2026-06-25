@@ -76,14 +76,16 @@ as the version ceiling, then updates the caller-local CLI and workload nodes as
 fan-out targets. Streams per-node progress.
 
 ```bash
-orbit update:all [--json]
+orbit update:all [--json|--stream-json]
 ```
 
 Runs from the gateway or an authorized client. Failures on one fan-out node do
 not abort the others.
-`update:all` does not yet expose `--stream-json`; its durable operation stream
-and caller-local fan-out update need a separate command-contract pass before
-agent-facing NDJSON progress can be added safely.
+Use `--json` for the final result envelope, or `--stream-json` for
+newline-delimited gateway progress frames followed by one terminal frame. The
+two flags are mutually exclusive. A caller-local fan-out failure after the
+gateway phase is reported as a terminal `event=error` frame under
+`--stream-json` and as a `local_update_failed` error envelope under `--json`.
 
 ## `orbit profile`
 

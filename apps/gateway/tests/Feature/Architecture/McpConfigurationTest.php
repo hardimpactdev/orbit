@@ -270,8 +270,8 @@ it('keeps the project-owned orbit skill aligned with current CLI stream-json gui
         ->toContain('`deploy:run`')
         ->toContain('`tool:install`')
         ->toContain('`s3:publish`')
-        ->not->toContain('`update`')
-        ->not->toContain('`update:all`');
+        ->toContain('`update:all`')
+        ->not->toContain('`update`');
 
     expect($app)
         ->toContain('--runtime-proxy-transport')

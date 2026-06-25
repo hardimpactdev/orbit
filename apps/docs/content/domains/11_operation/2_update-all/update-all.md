@@ -18,7 +18,7 @@ manifest that channel resolves to during `Checking for updates`. Use
 ## Usage
 
 ```bash
-orbit update:all [--json]
+orbit update:all [--json|--stream-json]
 ```
 
 ## Examples
@@ -26,11 +26,14 @@ orbit update:all [--json]
 ```bash
 orbit update:all
 orbit update:all --json
+orbit update:all --stream-json
 ```
 
 ## Arguments and options
 
-- `--json`: Output JSON.
+- `--json`: Output the final result as a single JSON envelope.
+- `--stream-json`: Stream newline-delimited JSON progress frames while the fleet
+  update runs, followed by one terminal frame. Mutually exclusive with `--json`.
 
 ## What Happens
 
@@ -99,9 +102,10 @@ gateway replacement does not lose already-recorded state. See the
 [terminal output contract](technical/6.1_update-all_output-render_human.md) for
 the exact layout.
 
-Use `--json` for machine-readable output. See the
+Use `--json` for a single machine-readable result envelope, or `--stream-json`
+for newline-delimited progress frames followed by one terminal frame. See the
 [JSON renderer contract](technical/6.2_update-all_output-render_json.md) for
-the exact shape.
+the exact shape of both modes.
 
 ## Requirements
 

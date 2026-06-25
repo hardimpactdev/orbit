@@ -256,7 +256,7 @@ trait StreamsGatewayProgress
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function renderStreamJsonProgressFrame(ProgressEventType $type, array $payload): void
+    protected function renderStreamJsonProgressFrame(ProgressEventType $type, array $payload): void
     {
         $this->outputJsonLine([
             'event' => $type->value,

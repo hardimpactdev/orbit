@@ -21,7 +21,9 @@ final class UpdateAllCommand extends GatewayCommand
     private const string TopologyCandidateManifestSource = 'topology-candidate';
 
     #[\Override]
-    protected $signature = 'update:all {--json : Output JSON}';
+    protected $signature = 'update:all
+        {--json : Output JSON}
+        {--stream-json : Stream newline-delimited JSON progress frames}';
 
     #[\Override]
     protected $description = 'Update every managed Orbit installation through the gateway.';
@@ -30,11 +32,19 @@ final class UpdateAllCommand extends GatewayCommand
         RunsLocalUpdate $localUpdater,
         UpdateAllHumanProgressRenderer $progress,
     ): int {
-        if (! $this->wantsJson()) {
-            return $this->handleHuman($localUpdater, $progress);
+        if ($this->wantsJson() && $this->wantsStreamingJson()) {
+            return $this->renderFailure(
+                'validation_failed',
+                'Use either --json or --stream-json, not both.',
+                ['fields' => ['json', 'stream-json'], 'reason' => 'conflicting_options'],
+            );
         }
 
-        return $this->handleJson($localUpdater);
+        if ($this->wantsMachineJson()) {
+            return $this->handleMachine($localUpdater);
+        }
+
+        return $this->handleHuman($localUpdater, $progress);
     }
 
     private function handleHuman(
@@ -125,7 +135,15 @@ final class UpdateAllCommand extends GatewayCommand
         return self::SUCCESS;
     }
 
-    private function handleJson(RunsLocalUpdate $localUpdater): int
+    /**
+     * Machine-readable output path shared by --json and --stream-json.
+     *
+     * Both modes start the durable gateway operation, follow its event journal,
+     * and run the caller-local fan-out afterwards. --json stays silent until the
+     * terminal envelope; --stream-json additionally emits each gateway progress
+     * event as a newline-delimited frame using the shared streaming contract.
+     */
+    private function handleMachine(RunsLocalUpdate $localUpdater): int
     {
         $payload = $this->updateStartPayload();
 
@@ -149,12 +167,20 @@ final class UpdateAllCommand extends GatewayCommand
         }
 
         // Capture gateway terminal without rendering yet; we decide what to output
-        // based on whether the subsequent local fan-out also succeeds.
+        // based on whether the subsequent local fan-out also succeeds. In
+        // --stream-json mode, intermediate gateway frames stream as NDJSON while
+        // they arrive; --json mode stays silent until the terminal frame.
         try {
             $terminal = app(GatewayOperationFollower::class)->follow(
                 $eventsUrl,
                 function (ProgressEventType $type, array $payload): void {
-                    // Events are not rendered in JSON mode; only the terminal frame is.
+                    if ($type === ProgressEventType::Complete || $type === ProgressEventType::Error) {
+                        return;
+                    }
+
+                    if ($this->wantsStreamingJson()) {
+                        $this->renderStreamJsonProgressFrame($type, $payload);
+                    }
                 },
             );
         } catch (GatewayApiException $exception) {
@@ -188,29 +214,54 @@ final class UpdateAllCommand extends GatewayCommand
         );
 
         if (! $download['successful'] || ! is_string($download['staged_path']) || ! is_string($download['version'])) {
-            return $this->renderFailure(
-                'local_update_failed',
-                'Failed to update local Orbit checkout.',
-                ['failed_step' => 'download'],
-                $download['output'] !== '' ? ['output' => $download['output']] : [],
-            );
+            return $this->renderLocalUpdateFailure('download', $download['output']);
         }
 
         $replace = $localUpdater->replaceBinary($download['staged_path'], $download['version']);
 
         if (! $replace['successful']) {
-            return $this->renderFailure(
-                'local_update_failed',
-                'Failed to update local Orbit checkout.',
-                ['failed_step' => 'replace'],
-                $replace['output'] !== '' ? ['output' => $replace['output']] : [],
-            );
+            return $this->renderLocalUpdateFailure('replace', $replace['output']);
         }
 
         $localUpdater->runDoctor();
 
         // Local succeeded — output the gateway terminal event as the final JSON frame.
         return $this->renderProgressTerminalFrame($terminal['type'], $terminal['payload']);
+    }
+
+    /**
+     * Render a caller-local update failure for the machine-readable paths.
+     *
+     * --json emits the canonical `local_update_failed` error envelope. Once
+     * --stream-json has opened the progress stream, the same failure is emitted
+     * as a terminal `event=error` frame rather than a plain envelope, per the
+     * shared Stream JSON Frames contract.
+     */
+    private function renderLocalUpdateFailure(string $failedStep, string $output): int
+    {
+        $meta = ['failed_step' => $failedStep];
+        $data = $output !== '' ? ['output' => $output] : [];
+
+        if ($this->wantsStreamingJson()) {
+            return $this->renderProgressTerminalFrame(ProgressEventType::Error, [
+                'data' => array_filter(
+                    [
+                        'code' => 'local_update_failed',
+                        'message' => 'Failed to update local Orbit checkout.',
+                        'meta' => $meta,
+                        'data' => $data,
+                    ],
+                    fn (mixed $value): bool => $value !== [],
+                ),
+            ]);
+        }
+
+        return $this->renderFailure(
+            'local_update_failed',
+            'Failed to update local Orbit checkout.',
+            $meta,
+            $data,
+        );
     }
 
     /**

@@ -17,7 +17,7 @@
 ## Signature
 
 ```bash
-orbit update:all [--json]
+orbit update:all [--json|--stream-json]
 ```
 
 ## Input Contract
@@ -30,7 +30,15 @@ options are optional.
 
 | Field | Source | Required when | Forbidden when | Default | Validation |
 | --- | --- | --- | --- | --- | --- |
-| `json` | `--json` | Optional. | Never. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `json` | `--json` | Optional. | When `--stream-json` is present. | `false`. | Selects the JSON renderer and non-interactive input mode. |
+| `stream-json` | `--stream-json` | Optional. | When `--json` is present. | `false`. | Selects the stream JSON renderer and non-interactive input mode. Mutually exclusive with `--json`. |
+
+`--json` and `--stream-json` together fail with a `validation_failed` error
+envelope (`meta.fields = ["json", "stream-json"]`,
+`meta.reason = "conflicting_options"`) before the gateway is contacted.
+
+`--stream-json` follows the shared
+[Stream JSON Frames](../../../README.md#stream-json-frames) contract.
 
 ## Input Resolution
 

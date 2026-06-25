@@ -6,6 +6,7 @@ use App\Services\GatewayApiClient;
 use App\Services\GatewayOperationEventStreamClient;
 use App\Services\GatewayOperationFollower;
 use App\Services\Updates\RunsLocalUpdate;
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Orbit\Core\Progress\ProgressEventType;
@@ -143,6 +144,154 @@ it('reports partial failure in json mode when the local update fails after the g
         ->toBe('local_update_failed')
         ->and($decoded['error']['message'])
         ->toBe('Failed to update local Orbit checkout.');
+});
+
+it('advertises both the --json and --stream-json output modes', function (): void {
+    $command = app(Kernel::class)->all()['update:all'];
+
+    expect($command->getDefinition()->hasOption('json'))
+        ->toBeTrue()
+        ->and($command->getDefinition()->hasOption('stream-json'))
+        ->toBeTrue()
+        ->and($command->getDefinition()->getOption('stream-json')->getDescription())
+        ->toBe('Stream newline-delimited JSON progress frames');
+});
+
+it('streams newline-delimited progress frames then a terminal complete frame in stream-json mode', function (): void {
+    $follower = new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Tree, 'payload' => ['title' => 'Updating fleet', 'steps' => []]],
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running']],
+        ['type' => ProgressEventType::Complete, 'payload' => ['exit_code' => 0, 'data' => ['updates' => []]]],
+    ]);
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, $follower);
+
+    [$exitCode, $output] = runCommand($this, 'update:all', [
+        '--stream-json' => true,
+    ]);
+
+    $frames = array_map(
+        fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+        array_filter(explode("\n", trim($output))),
+    );
+
+    expect($exitCode)
+        ->toBe(0)
+        ->and($frames)
+        ->toHaveCount(3)
+        ->and($frames[0]['event'])
+        ->toBe('tree')
+        ->and($frames[1]['event'])
+        ->toBe('step')
+        ->and($frames[2])
+        ->toBe([
+            'event' => 'complete',
+            'success' => ['data' => ['updates' => []], 'meta' => []],
+        ])
+        // The local fan-out still runs after the gateway phase in machine mode.
+        ->and($this->localUpdater->calls)
+        ->toBe(['download', 'replace', 'doctor']);
+});
+
+it('rejects --json and --stream-json together before contacting the gateway', function (): void {
+    [$exitCode, $output] = runCommand($this, 'update:all', [
+        '--json' => true,
+        '--stream-json' => true,
+    ]);
+
+    $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+    Http::assertNothingSent();
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($decoded['error']['code'])
+        ->toBe('validation_failed')
+        ->and($decoded['error']['meta']['fields'])
+        ->toBe(['json', 'stream-json'])
+        ->and($decoded['error']['meta']['reason'])
+        ->toBe('conflicting_options');
+});
+
+it('emits a terminal error frame in stream-json mode when the gateway operation fails', function (): void {
+    $follower = new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running']],
+        [
+            'type' => ProgressEventType::Error,
+            'payload' => [
+                'data' => ['code' => 'gateway_update_failed', 'message' => 'Gateway update failed.', 'meta' => []],
+            ],
+        ],
+    ]);
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, $follower);
+
+    [$exitCode, $output] = runCommand($this, 'update:all', [
+        '--stream-json' => true,
+    ]);
+
+    $frames = array_map(
+        fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+        array_filter(explode("\n", trim($output))),
+    );
+
+    $terminal = end($frames);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($frames[0]['event'])
+        ->toBe('step')
+        ->and($terminal['event'])
+        ->toBe('error')
+        ->and($terminal['error']['code'])
+        ->toBe('gateway_update_failed')
+        // The local fan-out is skipped when the gateway phase fails.
+        ->and($this->localUpdater->calls)
+        ->toBe([]);
+});
+
+it('emits a terminal error frame in stream-json mode when the local update fails after the gateway phase', function (): void {
+    $this->localUpdater->results['download'] = [
+        'successful' => false,
+        'exit_code' => 1,
+        'output' => 'local binary update failed',
+        'staged_path' => null,
+        'version' => null,
+    ];
+
+    $follower = new UpdateAllCommandFakeFollower([
+        ['type' => ProgressEventType::Step, 'payload' => ['key' => 'gateway', 'status' => 'running']],
+        [
+            'type' => ProgressEventType::Complete,
+            'payload' => ['exit_code' => 0, 'data' => ['updates' => []], 'target_version' => '1.2.3'],
+        ],
+    ]);
+    fakeGateway(fakeUpdateAllStartEnvelope());
+    app()->instance(GatewayOperationFollower::class, $follower);
+
+    [$exitCode, $output] = runCommand($this, 'update:all', [
+        '--stream-json' => true,
+    ]);
+
+    $frames = array_map(
+        fn (string $line): array => json_decode($line, associative: true, flags: JSON_THROW_ON_ERROR),
+        array_filter(explode("\n", trim($output))),
+    );
+
+    $terminal = end($frames);
+
+    expect($exitCode)
+        ->toBe(1)
+        ->and($frames[0]['event'])
+        ->toBe('step')
+        ->and($terminal['event'])
+        ->toBe('error')
+        ->and($terminal['error']['code'])
+        ->toBe('local_update_failed')
+        ->and($terminal['error']['meta']['failed_step'])
+        ->toBe('download')
+        ->and($terminal['error']['data']['output'])
+        ->toBe('local binary update failed');
 });
 
 it('captures alternating local-row spinner frames from a pseudo-tty before replace completes', function (): void {

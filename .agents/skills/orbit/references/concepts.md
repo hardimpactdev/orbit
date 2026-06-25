@@ -118,11 +118,11 @@ For LLM agents, prefer `--stream-json` when the command offers it so progress
 arrives as newline-delimited JSON frames during slow gateway work. Current
 agent-facing stream JSON commands include `doctor`, `app:new`, `app:setup`,
 `workspace:new`, `workspace:setup`, gateway-streamed `node:new`, `deploy:run`,
-`tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, and
-`s3:unpublish`. `--stream-json` and `--json` are mutually exclusive; use
-`--json` when only the final machine-readable result is needed. `update:all`
-and local `update` still use their existing `--json` final-result contracts
-until their progress contracts are designed separately.
+`tool:install`, `tool:update`, `tool:reconfigure`, `s3:publish`, `s3:unpublish`,
+and `update:all`. `--stream-json` and `--json` are mutually exclusive; use
+`--json` when only the final machine-readable result is needed. Local `update`
+still uses its existing `--json` final-result contract until its progress
+contract is designed separately.
 
 ## Local node defaults
 
