@@ -6,6 +6,11 @@ use App\Services\OrbitConfigStore;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
+function strip_php_use_ansi(string $value): string
+{
+    return preg_replace('/\e\[[0-9;?]*[a-zA-Z]/', replacement: '', subject: $value) ?? $value;
+}
+
 describe('php:use', function (): void {
     it('posts app PHP runtime selections to the gateway and returns the canonical envelope', function (): void {
         fakeGateway(fakeSuccessEnvelope([
@@ -211,6 +216,108 @@ describe('php:use', function (): void {
             ->toBe('workspace');
     });
 
+    it('renders php:use --cli human output as a progress tree with host PHP CLI labels', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'php' => ['node' => 'beast', 'cli' => '8.5'],
+            'result' => [
+                'target' => 'node_cli',
+                'node' => 'beast',
+                'previous' => '8.4',
+                'version' => '8.5',
+                'changed' => true,
+            ],
+        ], ['warnings' => []]));
+
+        [$exitCode, $output] = runCommand($this, 'php:use', [
+            'version' => '8.5',
+            '--node' => 'beast',
+            '--cli' => true,
+        ]);
+
+        $plain = strip_php_use_ansi($output);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($plain)
+            ->toContain('Updating node CLI PHP on beast to PHP 8.5')
+            ->and($plain)
+            ->toMatch('/●\s+Resolved target beast\b/')
+            ->and($plain)
+            ->toContain('Validate host PHP CLI version')
+            ->and($plain)
+            ->toContain('Apply host PHP CLI default')
+            ->and($plain)
+            ->toContain('Successfully updated node CLI PHP on beast to PHP 8.5')
+            ->and($plain)
+            ->not->toMatch('/^php:/m')->and($plain)
+            ->not->toMatch('/^result:/m');
+    });
+
+    it('renders php:use --cli gateway failures as a failed tree step and footer', function (): void {
+        fakeGateway(
+            fakeErrorEnvelope(
+                code: 'authorization_failed',
+                message: 'This node is not authorized to manage the PHP runtime target.',
+            ),
+            status: 403,
+        );
+
+        [$exitCode, $output] = runCommand($this, command: 'php:use', params: [
+            'version' => '8.5',
+            '--node' => 'app-dev-1',
+            '--cli' => true,
+        ]);
+
+        $plain = strip_php_use_ansi($output);
+
+        expect($exitCode)
+            ->toBe(1)
+            ->and($plain)
+            ->toContain('Updating node CLI PHP on app-dev-1 to PHP 8.5')
+            ->and($plain)
+            ->toMatch('/●\s+Resolved target app-dev-1\b/')
+            ->and($plain)
+            ->toContain('Validate host PHP CLI version')
+            ->and($plain)
+            ->toContain('not authorized to manage the PHP runtime target')
+            ->and($plain)
+            ->not->toContain('Validated host PHP CLI version')->and($plain)
+            ->not->toContain('Applied host PHP CLI default')->and($plain)
+            ->not->toContain('Successfully updated node CLI PHP on app-dev-1 to PHP 8.5')->and($plain)
+            ->not->toMatch('/^php:/m')->and($plain)
+            ->not->toMatch('/^result:/m')->and($plain)
+            ->not->toContain('"error"');
+    });
+
+    it('does not emit a progress tree for php:use --cli in JSON mode', function (): void {
+        fakeGateway(fakeSuccessEnvelope([
+            'php' => ['node' => 'beast', 'cli' => '8.5'],
+            'result' => [
+                'target' => 'node_cli',
+                'node' => 'beast',
+                'version' => '8.5',
+                'changed' => true,
+            ],
+        ], ['warnings' => []]));
+
+        [$exitCode, $output] = runCommand($this, command: 'php:use', params: [
+            'version' => '8.5',
+            '--node' => 'beast',
+            '--cli' => true,
+            '--json' => true,
+        ]);
+
+        $decoded = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)
+            ->toBe(0)
+            ->and($decoded['success']['data']['result']['target'])
+            ->toBe('node_cli')
+            ->and($output)
+            ->not->toContain('Updating node CLI PHP')->and($output)
+            ->not->toContain('Resolve target');
+    });
+
     it('surfaces config store failures when resolving the default node for CLI scope', function (): void {
         $path = base_path('tests/.tmp-php-use-invalid-config.json');
         file_put_contents($path, '{invalid-json');
@@ -219,7 +326,7 @@ describe('php:use', function (): void {
         app()->instance(OrbitConfigStore::class, $store);
 
         try {
-            [$exitCode, $output] = runCommand($this, 'php:use', [
+            [$exitCode, $output] = runCommand($this, command: 'php:use', params: [
                 'version' => '8.5',
                 '--cli' => true,
                 '--json' => true,

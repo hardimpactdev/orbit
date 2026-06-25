@@ -93,7 +93,7 @@ final class StepTree
                     $index,
                     $total,
                     $this->summary->failure(
-                        $doneLabels[$index],
+                        $labels[$index],
                         $this->labelWidth,
                         $this->throwableMessage($exception),
                     ),

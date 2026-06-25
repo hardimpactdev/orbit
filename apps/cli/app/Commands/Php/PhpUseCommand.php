@@ -46,9 +46,29 @@ final class PhpUseCommand extends GatewayCommand
         }
 
         try {
-            $response = $this->gatewayPost('/api/php/use', $this->payload($version));
+            $payload = $this->payload($version);
         } catch (OrbitConfigStoreException $exception) {
             return $this->renderFailure($exception->orbitCode, $exception->getMessage());
+        }
+
+        if ($this->wantsJson()) {
+            return $this->executeJson($payload);
+        }
+
+        return new PhpUseHumanProgressRenderer($this->output)->render(
+            $payload,
+            $version,
+            fn (array $gatewayPayload): array => $this->gatewayPost('/api/php/use', $gatewayPayload),
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function executeJson(array $payload): int
+    {
+        try {
+            $response = $this->gatewayPost('/api/php/use', $payload);
         } catch (GatewayApiException $exception) {
             return $this->renderGatewayFailure($exception);
         }
@@ -137,7 +157,7 @@ final class PhpUseCommand extends GatewayCommand
                 'inherit' => $this->option('inherit') === true,
                 'cli' => $cli,
             ],
-            fn (mixed $value): bool => $value !== null && $value !== '',
+            static fn (mixed $value): bool => $value !== null && $value !== '',
         );
     }
 }
