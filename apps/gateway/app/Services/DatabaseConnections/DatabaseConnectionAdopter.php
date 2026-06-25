@@ -6,6 +6,7 @@ namespace App\Services\DatabaseConnections;
 
 use App\Contracts\RemoteShell;
 use App\Data\Doctor\AdoptResult;
+use App\Data\Doctor\DoctorTargetScope;
 use App\Enums\AdoptAction;
 use App\Models\App;
 use App\Models\DatabaseConnection;
@@ -31,28 +32,32 @@ final readonly class DatabaseConnectionAdopter
     /**
      * @return list<AdoptResult>
      */
-    public function adopt(Node $node): array
+    public function adopt(Node $node, ?DoctorTargetScope $scope = null): array
     {
+        $scope ??= DoctorTargetScope::none();
         $results = [];
 
-        foreach ($this->workspacesForNode($node) as $workspace) {
-            foreach ($this->payloadsFromEnvPath($node, rtrim($workspace->path, '/').'/.env') as $prefix => $payload) {
+        foreach ($this->workspacesForNode($node, $scope) as $scopedWorkspace) {
+            foreach ($this->payloadsFromEnvPath(
+                $node,
+                rtrim($scopedWorkspace->path, '/').'/.env',
+            ) as $prefix => $payload) {
                 $target = DatabaseConnectionTarget::query()
                     ->with('connection')
-                    ->where('workspace_id', $workspace->id)
+                    ->where('workspace_id', $scopedWorkspace->id)
                     ->where('env_prefix', $prefix)
                     ->first();
                 $baseSlug = sprintf(
                     '%s-%s%s',
-                    Str::slug($workspace->name),
-                    Str::slug($workspace->app?->name),
+                    Str::slug($scopedWorkspace->name),
+                    Str::slug($scopedWorkspace->app?->name),
                     $prefix === 'DB' ? '' : '-'.Str::slug($prefix),
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
 
                 DatabaseConnectionTarget::query()->updateOrCreate(
-                    ['workspace_id' => $workspace->id, 'env_prefix' => $prefix],
+                    ['workspace_id' => $scopedWorkspace->id, 'env_prefix' => $prefix],
                     ['database_connection_id' => $connection->id, 'app_id' => null],
                 );
 
@@ -60,35 +65,35 @@ final readonly class DatabaseConnectionAdopter
                     family: 'database_connection',
                     key: $key,
                     action: $action,
-                    summary: "Adopted database connection for workspace '{$workspace->name}'.",
+                    summary: "Adopted database connection for workspace '{$scopedWorkspace->name}'.",
                     detail: [
                         'target_type' => 'workspace',
-                        'target_id' => $workspace->id,
-                        'workspace' => $workspace->name,
-                        'app' => $workspace->app?->name,
+                        'target_id' => $scopedWorkspace->id,
+                        'workspace' => $scopedWorkspace->name,
+                        'app' => $scopedWorkspace->app?->name,
                         'env_prefix' => $prefix,
                     ],
                 );
             }
         }
 
-        foreach ($this->appsForNode($node) as $app) {
-            foreach ($this->payloadsFromEnvPath($node, rtrim($app->path, '/').'/.env') as $prefix => $payload) {
+        foreach ($this->appsForNode($node, $scope) as $scopedApp) {
+            foreach ($this->payloadsFromEnvPath($node, rtrim($scopedApp->path, '/').'/.env') as $prefix => $payload) {
                 $target = DatabaseConnectionTarget::query()
                     ->with('connection')
-                    ->where('app_id', $app->id)
+                    ->where('app_id', $scopedApp->id)
                     ->where('env_prefix', $prefix)
                     ->first();
                 $baseSlug = sprintf(
                     '%s%s',
-                    Str::slug($app->name),
+                    Str::slug($scopedApp->name),
                     $prefix === 'DB' ? '' : '-'.Str::slug($prefix),
                 );
 
                 [$connection, $action, $key] = $this->persistObservedConnection($target, $baseSlug, $payload, $node);
 
                 DatabaseConnectionTarget::query()->updateOrCreate(
-                    ['app_id' => $app->id, 'env_prefix' => $prefix],
+                    ['app_id' => $scopedApp->id, 'env_prefix' => $prefix],
                     ['database_connection_id' => $connection->id, 'workspace_id' => null],
                 );
 
@@ -96,11 +101,11 @@ final readonly class DatabaseConnectionAdopter
                     family: 'database_connection',
                     key: $key,
                     action: $action,
-                    summary: "Adopted database connection for app '{$app->name}'.",
+                    summary: "Adopted database connection for app '{$scopedApp->name}'.",
                     detail: [
                         'target_type' => 'app',
-                        'target_id' => $app->id,
-                        'app' => $app->name,
+                        'target_id' => $scopedApp->id,
+                        'app' => $scopedApp->name,
                         'env_prefix' => $prefix,
                     ],
                 );
@@ -414,21 +419,43 @@ final readonly class DatabaseConnectionAdopter
     /**
      * @return list<App>
      */
-    private function appsForNode(Node $node): array
+    private function appsForNode(Node $node, DoctorTargetScope $scope): array
     {
-        return App::query()->where('node_id', $node->id)->get()->all();
+        if ($scope->workspace !== null) {
+            return [];
+        }
+
+        $query = App::query()->where('node_id', $node->id);
+
+        if ($scope->app !== null) {
+            $query->where('name', $scope->app);
+        }
+
+        return $query->get()->all();
     }
 
     /**
      * @return list<Workspace>
      */
-    private function workspacesForNode(Node $node): array
+    private function workspacesForNode(Node $node, DoctorTargetScope $scope): array
     {
-        return Workspace::query()
+        if ($scope->workspace === null && $scope->app !== null) {
+            return [];
+        }
+
+        $query = Workspace::query()
             ->with('app')
-            ->whereHas('app', fn ($query) => $query->where('node_id', $node->id))
-            ->get()
-            ->all();
+            ->whereHas('app', static fn ($appQuery) => $appQuery->where('node_id', $node->id));
+
+        if ($scope->workspace !== null) {
+            $query->where('name', $scope->workspace);
+
+            if ($scope->app !== null) {
+                $query->whereHas('app', static fn ($appQuery) => $appQuery->where('name', $scope->app));
+            }
+        }
+
+        return $query->get()->all();
     }
 
     private function shouldUseLocalFilesystem(Node $node): bool

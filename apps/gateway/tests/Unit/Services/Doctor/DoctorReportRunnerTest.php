@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Contracts\RemoteShell;
 use App\Contracts\SiteCertificateInstaller;
+use App\Data\Doctor\DoctorRunRequest;
 use App\Data\RemoteShell\RemoteShellResult;
 use App\Enums\Apps\AppRuntimeKind;
 use App\Enums\Processes\ProcessRuntime;
@@ -2886,7 +2887,12 @@ describe('DoctorReportRunner', function (): void {
             doctorRunnerUpdateProbeResult(['reboot_required' => true]),
         ]));
 
-        $report = app(DoctorReportRunner::class)->run($node, mode: 'restore', families: ['node'], key: 'node.updates');
+        $report = app(DoctorReportRunner::class)->run(
+            $node,
+            mode: 'restore',
+            families: ['node'],
+            request: new DoctorRunRequest(key: 'node.updates'),
+        );
 
         expect($report['healthy'])
             ->toBeFalse()

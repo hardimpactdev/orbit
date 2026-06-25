@@ -41,6 +41,8 @@ final class DoctorProgressReportFactory
         array $familyStatuses,
         string $state = 'running',
         array $familyCheckCounts = [],
+        ?string $app = null,
+        ?string $workspace = null,
     ): array {
         return [
             'healthy' => false,
@@ -50,8 +52,8 @@ final class DoctorProgressReportFactory
                 'node' => $target->name,
                 'role' => $target->displayRole(),
                 'self' => false,
-                'app' => null,
-                'workspace' => null,
+                'app' => $app,
+                'workspace' => $workspace,
                 'key' => $key,
             ],
             'summary' => $this->summary($mode, $issues, $actions),
