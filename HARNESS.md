@@ -149,11 +149,11 @@ rationale when nothing changes.
 This section is the authority for feature merge and cleanup boundaries. Other
 instructions should point here instead of restating this policy.
 
-`bin/orbit-feature-finalization-check` is the executable gate. The Codex
-`PreToolUse` hook calls the same gate when that hook surface intercepts a
-boundary command, but hook status is diagnostic only. Use the helper directly
-before real merge or cleanup boundaries; run it with no arguments for current
-command usage.
+`bin/orbit-feature-finalization-check` is the executable gate. The Codex and
+Claude Code `PreToolUse` hooks call the same gate when those hook surfaces
+intercept a boundary command, but hook status is diagnostic only. Use the helper
+directly before real merge or cleanup boundaries; run it with no arguments for
+current command usage.
 
 Cleanup commands are valid only after the post-feature signal audit is complete
 or the user explicitly approves cleanup. Until then, leave the completed

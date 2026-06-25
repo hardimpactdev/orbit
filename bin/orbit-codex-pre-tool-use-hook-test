@@ -78,7 +78,8 @@ expect_check_block() {
 
 write_loop() {
     local path="$1"
-    local outcome="$2"
+    local loop_outcome="$2"
+    local no_new_signal_rationale="$3"
 
     mkdir -p "$(dirname "$path")"
 
@@ -92,6 +93,12 @@ write_loop() {
 
 ## Final Distillation
 
+- Loop outcome:
+  - $loop_outcome
+- Required verification:
+  - Durable E2E: not applicable - hook fixture has no production PHP diff
+  - Retained CLI ingress VM Solo-terminal check: not applicable - hook fixture has no CLI runtime diff
+  - \`composer quality-check\`: not applicable - hook fixture has no branch diff
 - Distillation packet:
   - Location: .orbit/loop.md
   - Includes objective/final diff: yes
@@ -110,7 +117,7 @@ write_loop() {
 - Deferred follow-ups:
   - none
 - No-new-signal rationale:
-  - $outcome
+  - $no_new_signal_rationale
 EOF
 }
 
@@ -185,19 +192,19 @@ git commit -m 'Initial test repo' >/dev/null
 
 git branch finalized
 git worktree add .worktrees/finalized finalized >/dev/null 2>&1
-write_loop "$REPO/.worktrees/finalized/.orbit/loop.md" 'No durable signal remained after reviewing the feature evidence.'
+write_loop "$REPO/.worktrees/finalized/.orbit/loop.md" 'complete' 'No durable signal remained after reviewing the feature evidence.'
 
 git branch historical-pending
 git worktree add .worktrees/historical-pending historical-pending >/dev/null 2>&1
-write_loop "$REPO/.worktrees/historical-pending/.orbit/loop.md" 'No durable signal remained after reviewing the historical pending-state block evidence.'
+write_loop "$REPO/.worktrees/historical-pending/.orbit/loop.md" 'complete' 'No durable signal remained after reviewing the historical pending-state block evidence.'
 
 git branch templated
 git worktree add .worktrees/templated templated >/dev/null 2>&1
-write_loop "$REPO/.worktrees/templated/.orbit/loop.md" '<why local cleanup, existing guardrails, or rejection was enough>'
+write_loop "$REPO/.worktrees/templated/.orbit/loop.md" 'complete' '<why local cleanup, existing guardrails, or rejection was enough>'
 
 git branch pending-outcome
 git worktree add .worktrees/pending-outcome pending-outcome >/dev/null 2>&1
-write_loop "$REPO/.worktrees/pending-outcome/.orbit/loop.md" 'pending'
+write_loop "$REPO/.worktrees/pending-outcome/.orbit/loop.md" 'pending' 'No durable signal remained after reviewing the pending outcome fixture.'
 
 git branch custom-outcome-heading
 git worktree add .worktrees/custom-outcome-heading custom-outcome-heading >/dev/null 2>&1

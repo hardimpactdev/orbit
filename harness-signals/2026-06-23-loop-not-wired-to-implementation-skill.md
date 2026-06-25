@@ -7,7 +7,7 @@ Last reviewed: 2026-06-25
 Source worktree: codex/root-harness-anchor-review-ui; post-feature-session-review; post-feature-distillation-reviewer; doctor-progress-scheduler; pre-merge-finalization-hook
 Source commit: b269f590; post-feature-session-review; post-feature-distillation-reviewer slice; pending pre-merge-finalization-hook commit
 Signal type: review-comment
-Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md, .codex/hooks.json, bin/orbit-codex-pre-tool-use-hook
+Guardrail target: .agents/skills/implementing-features/SKILL.md, HARNESS.md, LOOP.md.example, HARNESS_SIGNALS.md, .agents/review-personas/post-feature-distillation.md, .codex/hooks.json, .claude/settings.json, bin/orbit-codex-pre-tool-use-hook
 Guardrail change: 38ff38aa; post-feature-session-review; current post-feature distillation reviewer slice; loop-hardening-session-guardrails; pending pre-merge-finalization-hook commit
 Related signals:
 harness-signals/2026-06-23-cli-ux-needs-pty-analysis-before-human-review.md,
@@ -124,13 +124,13 @@ implementation, and requires the loop improver to patch durable repo guardrails
 or explicitly reject/defer repeated signals instead of waiting for the user to
 ask.
 
-After the Mago recurrence, Orbit now has a project-local Codex `PreToolUse`
-hook. The hook watches only Bash git merge and feature-cleanup boundaries. It
-blocks `git merge`, `git worktree remove`, and `git branch -d` when the targeted
-feature worktree has no `.orbit/loop.md` final-distillation section or still
-contains template/pending finalization fields. This turns the existing manual
-requirement into a cheap boundary check without mining sessions on every run or
-auto-promoting raw `.orbit/` artifacts.
+After the Mago recurrence, Orbit now has project-local Codex and Claude Code
+`PreToolUse` hooks. The hooks watch only Bash git merge and feature-cleanup
+boundaries. They block `git merge`, `git worktree remove`, and `git branch -d`
+when the targeted feature worktree has no `.orbit/loop.md` final-distillation
+section or still contains template/pending finalization fields. This turns the
+existing manual requirement into a cheap boundary check without mining sessions
+on every run or auto-promoting raw `.orbit/` artifacts.
 
 After the Mago baseline cleanup recurrence, `HARNESS.md` now states that
 waiting for a worker, reviewer, retained terminal, or quality gate is active
@@ -176,12 +176,12 @@ For the merge-boundary recurrence, run:
 
 ```bash
 bin/orbit-codex-pre-tool-use-hook-test
-rg -n "Merge Boundary Gate|orbit-codex-pre-tool-use-hook|PreToolUse|Final Distillation" HARNESS.md .codex/hooks.json bin/orbit-codex-pre-tool-use-hook harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
+rg -n "Merge Boundary Gate|orbit-codex-pre-tool-use-hook|PreToolUse|Final Distillation" HARNESS.md .codex/hooks.json .claude/settings.json bin/orbit-codex-pre-tool-use-hook harness-signals/2026-06-23-loop-not-wired-to-implementation-skill.md
 ```
 
-This shows the Codex hook is installed, blocks missing or templated
-final-distillation state, and is discoverable from the root harness and signal
-record.
+This shows the Codex and Claude Code hooks are installed, block missing or
+templated final-distillation state, and are discoverable from the root harness
+and signal record.
 
 ## Reappearance Check
 
