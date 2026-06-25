@@ -350,7 +350,7 @@ function final_distillation_check(string $worktree, string $subject): array
         ];
     }
 
-    $requiredVerificationProblem = required_verification_problem($section);
+    $requiredVerificationProblem = required_verification_problem($section, $worktree);
 
     if ($requiredVerificationProblem !== null) {
         return [
@@ -418,7 +418,7 @@ function is_mergeable_loop_outcome(string $value): bool
     return in_array($normalized, ['complete', 'complete + loop improvement'], true);
 }
 
-function required_verification_problem(string $section): ?string
+function required_verification_problem(string $section, string $worktree): ?string
 {
     $values = markdown_list_values($section, ['Required verification']);
 
@@ -442,6 +442,12 @@ function required_verification_problem(string $section): ?string
         }
     }
 
+    $durableE2e = required_verification_row($values, 'Durable E2E');
+
+    if ($durableE2e !== null && is_passed_verification_value($durableE2e)) {
+        return durable_e2e_artifact_problem($worktree, $durableE2e);
+    }
+
     return null;
 }
 
@@ -449,6 +455,14 @@ function required_verification_problem(string $section): ?string
  * @param  list<string>  $values
  */
 function has_required_verification_row(array $values, string $requiredLabel): bool
+{
+    return required_verification_row($values, $requiredLabel) !== null;
+}
+
+/**
+ * @param  list<string>  $values
+ */
+function required_verification_row(array $values, string $requiredLabel): ?string
 {
     $normalizedRequiredLabel = normalize_markdown_label($requiredLabel);
 
@@ -458,11 +472,11 @@ function has_required_verification_row(array $values, string $requiredLabel): bo
         }
 
         if (normalize_markdown_label($matches[1]) === $normalizedRequiredLabel) {
-            return true;
+            return $value;
         }
     }
 
-    return false;
+    return null;
 }
 
 function is_blocked_verification_value(string $value): bool
@@ -470,6 +484,175 @@ function is_blocked_verification_value(string $value): bool
     $normalized = strtolower(trim($value));
 
     return preg_match('/^(?:[^:]+:\s*)?(?:blocked|pending|missing|skipped|deferred|unresolved|not\s+run)\b/', $normalized) === 1;
+}
+
+function is_passed_verification_value(string $value): bool
+{
+    $normalized = strtolower(trim($value));
+
+    return preg_match('/^(?:[^:]+:\s*)?passed\b/', $normalized) === 1;
+}
+
+function durable_e2e_artifact_problem(string $worktree, string $value): ?string
+{
+    $gates = durable_e2e_gates($value);
+
+    if ($gates === []) {
+        return 'Durable E2E is marked passed but does not name `composer test:e2e`, `composer test:e2e:docker`, `composer test:e2e:docker:canary`, `composer test:e2e:incus`, or a matching e2e quality-gate artifact';
+    }
+
+    foreach ($gates as $gate) {
+        $artifact = latest_quality_gate_artifact($worktree, $gate);
+
+        if ($artifact === null) {
+            return "Durable E2E is marked passed, but no latest successful artifact was found for {$gate}";
+        }
+
+        $exitCode = artifact_exit_code($artifact);
+
+        if ($exitCode === null) {
+            return "Durable E2E is marked passed, but latest {$gate} artifact has no numeric exit_code";
+        }
+
+        if ($exitCode !== 0) {
+            return "Durable E2E is marked passed, but latest {$gate} artifact exited with code {$exitCode}";
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @return list<string>
+ */
+function durable_e2e_gates(string $value): array
+{
+    $normalized = strtolower($value);
+    $gates = [];
+
+    foreach ([
+        'e2e-docker-canary' => [
+            '/\bcomposer\s+test:e2e:docker:canary(?![:\w-])/',
+            '/\be2e-docker-canary(?![\w-])/',
+        ],
+        'e2e-docker' => [
+            '/\bcomposer\s+test:e2e:docker(?![:\w-])/',
+            '/\be2e-docker(?![\w-])/',
+        ],
+        'e2e-incus' => [
+            '/\bcomposer\s+test:e2e:incus(?![:\w-])/',
+            '/\be2e-incus(?![\w-])/',
+        ],
+        'e2e' => [
+            '/\bcomposer\s+test:e2e(?![:\w-])/',
+            '/\bgate[:= ]+e2e(?![\w-])/',
+        ],
+    ] as $gate => $patterns) {
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $normalized) === 1) {
+                $gates[] = $gate;
+
+                break;
+            }
+        }
+    }
+
+    return array_values(array_unique($gates));
+}
+
+/**
+ * @return array<string, mixed>|null
+ */
+function latest_quality_gate_artifact(string $worktree, string $gate): ?array
+{
+    $directory = rtrim($worktree, '/').'/.orbit/quality-gates';
+
+    if (! is_dir($directory)) {
+        return null;
+    }
+
+    $paths = glob($directory.'/*.json');
+
+    if ($paths === false) {
+        return null;
+    }
+
+    $artifacts = [];
+
+    foreach ($paths as $path) {
+        $contents = file_get_contents($path);
+
+        if ($contents === false) {
+            continue;
+        }
+
+        $payload = json_decode($contents, true);
+
+        if (! is_array($payload) || ($payload['gate'] ?? null) !== $gate) {
+            continue;
+        }
+
+        $artifacts[] = [
+            'path' => $path,
+            'payload' => $payload,
+            'timestamp' => artifact_timestamp($payload, $path),
+        ];
+    }
+
+    if ($artifacts === []) {
+        return null;
+    }
+
+    usort(
+        $artifacts,
+        fn (array $left, array $right): int => $right['timestamp'] <=> $left['timestamp'],
+    );
+
+    return $artifacts[0];
+}
+
+/**
+ * @param  array<string, mixed>  $artifact
+ */
+function artifact_exit_code(array $artifact): ?int
+{
+    $payload = $artifact['payload'] ?? null;
+
+    if (! is_array($payload)) {
+        return null;
+    }
+
+    $exitCode = $payload['exit_code'] ?? null;
+
+    if (is_int($exitCode)) {
+        return $exitCode;
+    }
+
+    if (is_string($exitCode) && ctype_digit($exitCode)) {
+        return (int) $exitCode;
+    }
+
+    return null;
+}
+
+/**
+ * @param  array<string, mixed>  $payload
+ */
+function artifact_timestamp(array $payload, string $path): int
+{
+    $endedAt = $payload['ended_at'] ?? null;
+
+    if (is_string($endedAt)) {
+        $timestamp = strtotime($endedAt);
+
+        if ($timestamp !== false) {
+            return $timestamp;
+        }
+    }
+
+    $modifiedAt = filemtime($path);
+
+    return $modifiedAt === false ? 0 : $modifiedAt;
 }
 
 /**

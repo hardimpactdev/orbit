@@ -107,6 +107,13 @@ warning-only. Without explicit `--gate` arguments, it analyzes the gates that
 already have artifacts in this worktree. It does not warn about missing E2E
 lanes that were not run.
 
+Feature finalization also reads E2E artifacts instead of rerunning lanes. When
+`.orbit/loop.md` records `Durable E2E: passed`, the row must name the exact E2E
+command or e2e quality-gate lane that ran. The merge/cleanup gate checks the
+latest matching `.orbit/quality-gates/` artifact and blocks missing or non-zero
+evidence. Use `composer quality-gate:final-check` to review warnings for stale
+commits or slow timings.
+
 Evidence is stale when the latest artifact exceeds the configured max-age
 window or was captured for a different Git commit than the current worktree
 `HEAD`. The final check does not rerun `composer quality-check`, Pest, Docker

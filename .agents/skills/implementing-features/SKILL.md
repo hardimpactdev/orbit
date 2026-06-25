@@ -701,6 +701,10 @@ moving on to durable E2E.
     Incus E2E, provision gates, or live-node commands. If timing evidence is
     missing, report that the timing analysis was skipped and decide whether the
     feature needs another gate run before merge.
+    Passed Durable E2E must be backed by the latest matching
+    `.orbit/quality-gates/` artifact from the exact command or gate recorded in
+    `.orbit/loop.md`; finalization reads that artifact and blocks missing or
+    non-zero evidence without rerunning E2E.
 23. Before committing or reporting completion, run a Post-Feature Session
     Review. Treat `.orbit/loop.md` as the canonical local final packet and
     point it at the feature thread or handoff, Solo worker sessions, reviewer
@@ -724,7 +728,9 @@ moving on to durable E2E.
     first, not a candidate signal; promote it only when the blocker exposes a
     recurring process gap. Fill `.orbit/loop.md` `Required verification` with
     explicit `passed`, `blocked`, or `not applicable` rows for durable E2E,
-    retained CLI ingress VM proof, and `composer quality-check`. Do not mark the
+    retained CLI ingress VM proof, and `composer quality-check`. A passed
+    Durable E2E row must name the exact E2E command or e2e quality-gate lane
+    whose latest `.orbit/quality-gates/` artifact exited zero. Do not mark the
     loop `complete` or `complete + loop improvement` while any required
     verification row is blocked, pending, skipped, missing, deferred,
     unresolved, or not run. Update, create, curate, retire, or intentionally
@@ -929,7 +935,8 @@ Post-feature session review:
 - Loop outcome: <complete, blocked, or complete + loop improvement>
 - Required verification:
   - Durable E2E: <passed, blocked, or not applicable with command/evidence,
-    blocker, or reason>
+    blocker, or reason; passed rows must name the exact E2E command or e2e
+    quality-gate artifact>
   - Retained CLI ingress VM Solo-terminal check: <passed, blocked, or not
     applicable with topology/session/evidence, blocker, or reason>
   - `composer quality-check`: <passed, blocked, or not applicable with

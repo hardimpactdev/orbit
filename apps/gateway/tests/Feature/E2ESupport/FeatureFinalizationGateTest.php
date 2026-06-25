@@ -167,6 +167,169 @@ it('allows a complete loop outcome with explicit non-applicable e2e', function (
     }
 });
 
+it('blocks a passed durable e2e row when matching artifact evidence is missing', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Durable E2E: passed - composer test:e2e:docker
+          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - `composer quality-check`: passed - composer quality-check
+        - Accepted durable updates:
+          - HARNESS.md clarified the workflow.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('Durable E2E is marked passed')
+            ->and($process->getErrorOutput())
+            ->toContain('no latest successful artifact was found for e2e-docker');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('blocks a passed durable e2e row when the latest matching artifact failed', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Durable E2E: passed - composer test:e2e:incus
+          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - `composer quality-check`: passed - composer quality-check
+        - Accepted durable updates:
+          - HARNESS.md clarified the workflow.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'e2e-incus',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'e2e-incus',
+        exitCode: 1,
+        endedAt: '2026-06-25T10:05:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(2)
+            ->and($process->getErrorOutput())
+            ->toContain('Durable E2E is marked passed')
+            ->and($process->getErrorOutput())
+            ->toContain('latest e2e-incus artifact exited with code 1');
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('allows a complete loop outcome with artifact-backed durable e2e', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Durable E2E: passed - composer test:e2e:docker
+          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - `composer quality-check`: passed - composer quality-check
+        - Accepted durable updates:
+          - HARNESS.md clarified the workflow.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'e2e-docker',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
+it('maps the docker canary e2e command only to the docker canary artifact gate', function (): void {
+    [$repo, $worktree] = create_finalization_gate_fixture(<<<'MARKDOWN'
+        # Orbit Current Slice State
+
+        ## Final Distillation
+
+        - Loop outcome:
+          - complete
+        - Required verification:
+          - Durable E2E: passed - composer test:e2e:docker:canary
+          - Retained CLI ingress VM Solo-terminal check: not applicable - no CLI surface
+          - `composer quality-check`: passed - composer quality-check
+        - Accepted durable updates:
+          - HARNESS.md clarified the workflow.
+        - Rejected or already-covered signals:
+          - None.
+        - Deferred follow-ups:
+          - None.
+        - No-new-signal rationale:
+          - None.
+        MARKDOWN);
+
+    write_finalization_gate_artifact(
+        worktree: $worktree,
+        gate: 'e2e-docker-canary',
+        exitCode: 0,
+        endedAt: '2026-06-25T10:00:00+00:00',
+    );
+
+    try {
+        $process = run_finalization_gate(repo: $repo, command: 'git merge feature');
+
+        expect($process->getExitCode())
+            ->toBe(0, $process->getErrorOutput());
+    } finally {
+        remove_finalization_gate_fixture(repo: $repo, worktree: $worktree);
+    }
+});
+
 /**
  * @return array{string, string}
  */
@@ -206,6 +369,37 @@ function run_finalization_gate(string $repo, string $command): Process
     $process->run();
 
     return $process;
+}
+
+function write_finalization_gate_artifact(string $worktree, string $gate, int $exitCode, string $endedAt): void
+{
+    $artifactDirectory = "{$worktree}/.orbit/quality-gates";
+
+    if (! is_dir($artifactDirectory)) {
+        mkdir($artifactDirectory, recursive: true);
+    }
+
+    $payload = [
+        'gate' => $gate,
+        'command' => "composer {$gate}",
+        'exit_code' => $exitCode,
+        'duration_ms' => 1000,
+        'started_at' => '2026-06-25T09:59:59+00:00',
+        'ended_at' => $endedAt,
+        'git' => [
+            'branch' => 'feature',
+            'commit' => trim(new Process(['git', 'rev-parse', 'HEAD'], $worktree)->mustRun()->getOutput()),
+            'dirty' => false,
+        ],
+    ];
+
+    $encodedPayload = json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+    $timestamp = str_replace([':', '+'], '-', $endedAt);
+
+    file_put_contents(
+        filename: "{$artifactDirectory}/{$gate}-{$timestamp}.json",
+        data: $encodedPayload.PHP_EOL,
+    );
 }
 
 /**

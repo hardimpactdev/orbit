@@ -8,7 +8,7 @@ Source worktree: php command no-human-renderer loop on Mini
 Source commit: none
 Signal type: agent-mistake
 Guardrail target: HARNESS.md, LOOP.md.example, .agents/skills/implementing-features/SKILL.md, bin/orbit-codex-pre-tool-use-hook
-Guardrail change: required verification rows are now part of the finalization gate
+Guardrail change: required verification rows are now part of the finalization gate; passed Durable E2E rows require matching quality-gate artifacts
 Related signals: harness-signals/2026-06-24-codex-hook-best-effort-finalization-check.md
 Superseded by: none
 Tags: finalization, e2e, verification, loop-engineering
@@ -45,6 +45,9 @@ or described only as follow-up prose.
   the loop outcome is `blocked`, not complete.
 - `bin/orbit-codex-pre-tool-use-hook` now blocks merge/cleanup when the final
   packet omits required verification rows or records blocked/incomplete status.
+- A `Durable E2E: passed` row must name the exact E2E command or e2e quality
+  gate. The hook reads the latest matching `.orbit/quality-gates/` artifact and
+  blocks missing or non-zero evidence without rerunning E2E.
 
 ## Verification
 
@@ -58,14 +61,21 @@ The new feature-finalization tests cover missing verification rows, a missing
 individual row, blocked Durable E2E, ambiguous blocked outcome text, and the
 allowed `not applicable` case.
 
+The artifact-backed tests cover passed Durable E2E with no matching artifact,
+passed Durable E2E with a latest failed artifact, and passed Durable E2E with a
+latest successful artifact.
+
 ## Reappearance Check
 
 If a future loop marks a feature complete with skipped E2E, retained PTY proof,
 or `composer quality-check`, inspect `.orbit/loop.md` first. If the required
 verification rows are absent or incomplete and the merge/cleanup still passed,
 tighten `bin/orbit-codex-pre-tool-use-hook` and add a test for the missed row
-shape. If the rows are present and correctly blocked, classify the feature as
-blocked instead of adding another guardrail.
+shape. If the Durable E2E row says `passed`, also inspect the latest matching
+artifact under `.orbit/quality-gates/`; missing or non-zero artifacts are a hook
+bug, while stale/timing warnings belong to `composer quality-gate:final-check`
+and quality-gate triage. If the rows are present and correctly blocked,
+classify the feature as blocked instead of adding another guardrail.
 
 ## Curation Notes
 

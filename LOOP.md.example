@@ -94,7 +94,8 @@ meaningful value.
   - <complete | blocked | complete + loop improvement>
 - Required verification:
   - Durable E2E: <passed | blocked | not applicable> - <command/evidence,
-    blocker, or reason>
+    blocker, or reason; if passed, name the exact E2E command or e2e quality
+    gate with its `.orbit/quality-gates/` artifact>
   - Retained CLI ingress VM Solo-terminal check: <passed | blocked | not
     applicable> - <topology/session/evidence, blocker, or reason>
   - `composer quality-check`: <passed | blocked | not applicable> -

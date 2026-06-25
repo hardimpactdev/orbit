@@ -177,6 +177,12 @@ E2E, retained CLI ingress VM Solo-terminal proof, and `composer quality-check`:
 `- Durable E2E: passed | blocked | not applicable - <evidence or reason>`.
 If the feature required a lane and it is blocked, the feature outcome is
 `blocked`; do not write `complete` with a deferred verification follow-up.
+When Durable E2E is `passed`, name the exact E2E command or quality-gate lane
+that ran, such as `composer test:e2e`, `composer test:e2e:docker`, or
+`composer test:e2e:incus`. The merge/cleanup gate reads the latest matching
+artifact under `.orbit/quality-gates/` and blocks missing or non-zero evidence;
+it does not rerun E2E. Stale-commit and timing-threshold warnings remain the
+job of `composer quality-gate:final-check` and the quality-gate triage skill.
 
 The gate exists because feature agents repeatedly completed work, merged to
 `main`, and cleaned up the worktree while leaving `.orbit/` evidence and
